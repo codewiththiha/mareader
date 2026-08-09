@@ -80,7 +80,7 @@ fn Placeholder(state: AppState) -> impl IntoView {
             <div class="flex max-w-md flex-col items-center gap-2 text-center">
                 <p class="text-lg">{text()}</p>
                 <crate::components::atoms::button::Button
-                    on_click=move |_| {}
+                    on_click=move |_| crate::components::molecules::toolbar::open_dialog(state)
                     kind=crate::components::atoms::button::ButtonKind::Primary
                     label="Open…".to_string()
                     title="Open a PDF file".to_string()

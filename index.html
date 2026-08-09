@@ -7,7 +7,11 @@
     <!-- pdf.js text-layer base rules (required for selectable text). Served from public/. -->
     <link rel="stylesheet" href="vendor/pdfjs/pdf_viewer.css" />
     <link data-trunk rel="css" href="styles.css" />
-    <link data-trunk rel="copy-dir" href="public" />
+    <!-- Copy static assets to the dist ROOT so root-absolute URLs (/vendor/..., /pdfEngine.js)
+         resolve in the packaged app. Trunk's copy-dir preserves the referenced dir's basename. -->
+    <link data-trunk rel="copy-dir" href="public/vendor" />
+    <link data-trunk rel="copy-dir" href="public/samples" />
+    <link data-trunk rel="copy-file" href="public/pdfEngine.js" />
     <link data-trunk rel="rust" data-wasm-opt="z" />
     <!-- pdf.js (ESM-only in v6): must load BEFORE the engine so globalThis.pdfjsLib exists. -->
     <script type="module" src="/vendor/pdfjs/pdf.min.mjs"></script>
