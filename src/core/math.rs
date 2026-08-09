@@ -65,10 +65,6 @@ pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
     }
 }
 
-pub fn custom_zoom_clamp(s: f64) -> f64 {
-    clamp_scale(s)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -117,11 +117,17 @@ pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> Resu
     resolve::<RenderResult>(value, "render").await
 }
 
+/// Re-render one canvas at a new scale without a full remount (cancel + render).
+/// Engine API contract; unused while PageCanvas handles
+/// scale changes itself.
+#[allow(dead_code)]
 pub async fn update_page(canvas_id: &str, scale: f64) -> Result<RenderResult, EngineError> {
     let value = bridge::update_page(canvas_id, scale).await;
     resolve::<RenderResult>(value, "update").await
 }
 
+/// One canvas entry for `render_pages`. Engine API contract.
+#[allow(dead_code)]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderEntry {
@@ -134,6 +140,9 @@ pub struct RenderEntry {
 }
 
 /// Batch render for the continuous view. Returns one result per entry.
+/// Engine API contract; the continuous view currently relies
+/// on per-page re-render, but this stays as the future batching path.
+#[allow(dead_code)]
 pub async fn render_pages(entries: &[RenderEntry], scale: f64) -> Vec<Result<RenderResult, EngineError>> {
     let payload = serde_wasm_bindgen::to_value(&entries).unwrap();
     let value = bridge::render_pages(payload, scale).await;

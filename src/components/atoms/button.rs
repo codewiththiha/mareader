@@ -46,7 +46,7 @@ pub fn Button(
             on:click=move |ev| on_click(ev)
             title=title
             disabled=disabled
-            class=(base.to_string() + " " + kind_class + " " + state_class)
+            class=base.to_string() + " " + kind_class + " " + state_class
         >
             {icon.map(|name| view! { <Icon name=name size=16/> })}
             {label.map(|l| view! { <span>{l}</span> })}

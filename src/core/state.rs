@@ -120,8 +120,3 @@ impl Default for AppState {
     }
 }
 
-impl AppState {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}

@@ -25,7 +25,6 @@ pub enum IconName {
     Noise,
     Close,
     Check,
-    Settings,
     SinglePage,
     Continuous,
 }
@@ -53,7 +52,6 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Noise => ("0 0 24 24", "<path d='M2 12c1.5 0 1.5-4 3-4s1.5 8 3 8 1.5-12 3-12 1.5 16 3 16 1.5-8 3-8 1.5 4 3 4'/>"),
         IconName::Close => ("0 0 24 24", "<path d='M18 6 6 18M6 6l12 12'/>"),
         IconName::Check => ("0 0 24 24", "<path d='M20 6 9 17l-5-5'/>"),
-        IconName::Settings => ("0 0 24 24", "<circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z'/>"),
         IconName::SinglePage => ("0 0 24 24", "<rect x='4' y='3' width='16' height='18' rx='2'/><path d='M4 9h16'/>"),
         IconName::Continuous => ("0 0 24 24", "<rect x='4' y='3' width='16' height='4' rx='1'/><rect x='4' y='10' width='16' height='4' rx='1'/><rect x='4' y='17' width='16' height='4' rx='1'/>"),
     }

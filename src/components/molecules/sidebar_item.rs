@@ -25,7 +25,7 @@ pub fn SidebarItem(
         <button
             type="button"
             on:click=move |_| on_click()
-            class=(format!("{base} {state_cls}"))
+            class=format!("{base} {state_cls}")
             title=title_attr
         >
             <Icon name=icon size=16 />

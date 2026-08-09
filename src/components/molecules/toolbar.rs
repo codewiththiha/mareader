@@ -11,6 +11,7 @@ use leptos::task::spawn_local;
 use crate::api::engine;
 use crate::components::atoms::button::{Button, ButtonKind};
 use crate::components::atoms::icon::{Icon, IconName};
+use crate::components::atoms::kbd::Kbd;
 use crate::components::atoms::separator::Separator;
 use crate::components::atoms::tooltip::Tooltip;
 use crate::core::document::DocStatus;
@@ -151,6 +152,7 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                         label="Open".to_string()
                         title="Open PDF (Cmd/Ctrl+O)".to_string()
                     />
+                    <span class="ml-1"><Kbd>{"⌘O"}</Kbd></span>
                 </Tooltip>
                 <Separator vertical=true />
                 <Tooltip text="Single page view".to_string()>

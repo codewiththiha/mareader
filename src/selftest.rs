@@ -43,6 +43,10 @@ async fn run() {
     };
 
     if open_ok {
+        if let Ok(m) = &opened {
+            let pc = engine::page_count();
+            check(pc == m.num_pages, &format!("page_count={pc} matches numPages"));
+        }
         let host_id = "selftest-host";
         let canvas_id = "selftest-canvas";
 

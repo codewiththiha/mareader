@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::themes::{theme_by_id, THEMES};
+use crate::core::themes::{is_valid_theme, theme_by_id};
 
 pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
@@ -89,7 +89,7 @@ impl Default for Settings {
 /// Ensures a persisted `Settings` is internally valid (bad theme id / out-of-range
 /// values after deserialization or manual edits).
 pub fn sanitize(settings: &mut Settings) {
-    if settings.theme_id.is_empty() || !THEMES.iter().any(|t| t.id == settings.theme_id) {
+    if settings.theme_id.is_empty() || !is_valid_theme(&settings.theme_id) {
         settings.theme_id = theme_by_id("light").id.to_string();
     }
     settings.noise_intensity = settings.noise_intensity.min(100);

@@ -17,12 +17,15 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
     let header = move || {
         let mode = state.sidebar.get();
         let search_total = state.search.total.get();
+        // Computed before view! — rstml's attribute parser can't handle a bare
+        // if/else expression, so keep the value out of the macro.
+        let search_badge = if search_total > 0 { search_total.to_string() } else { String::new() };
         view! {
             <div class="flex flex-col gap-0.5 border-b border-line p-2">
                 <SidebarItem
                     icon=IconName::Outline
                     label="Outline".to_string()
-                    active=(mode == SidebarMode::Outline)
+                    active=mode == SidebarMode::Outline
                     on_click=move || {
                         state.sidebar.set(if state.sidebar.get() == SidebarMode::Outline {
                             SidebarMode::None
@@ -34,8 +37,8 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                 <SidebarItem
                     icon=IconName::Search
                     label="Search".to_string()
-                    active=(mode == SidebarMode::Search)
-                    badge=(if search_total > 0 { search_total.to_string() } else { String::new() })
+                    active=mode == SidebarMode::Search
+                    badge=search_badge
                     on_click=move || {
                         state.sidebar.set(if state.sidebar.get() == SidebarMode::Search {
                             SidebarMode::None
@@ -47,7 +50,7 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                 <SidebarItem
                     icon=IconName::Thumbs
                     label="Thumbs".to_string()
-                    active=(mode == SidebarMode::Thumbs)
+                    active=mode == SidebarMode::Thumbs
                     on_click=move || {
                         state.sidebar.set(if state.sidebar.get() == SidebarMode::Thumbs {
                             SidebarMode::None
