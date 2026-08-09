@@ -88,9 +88,16 @@ pub fn PageCanvas(
                     {
                         // Note: cannot use host.style() (tachys ElementExt::style shadows
                         // web_sys' inherent method); set the inline style attribute directly.
+                        // The engine also sets `--scale-factor` inline on the host during
+                        // render; this FULL attribute replace must carry it forward or the
+                        // text layer's custom-property math (font-size + setLayerDimensions
+                        // container sizing) recomputes at scale 1 and misaligns selection.
                         let _ = host.set_attribute(
                             "style",
-                            &format!("width:{}px;height:{}px", r.width, r.height),
+                            &format!(
+                                "width:{}px;height:{}px;--scale-factor:{}",
+                                r.width, r.height, s
+                            ),
                         );
                     }
                     if let Some(cb) = cb {

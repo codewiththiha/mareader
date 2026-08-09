@@ -41,13 +41,19 @@
   --canvas-blend: multiply;
   --noise-opacity: 0;
   --app-radius: 8px;
+  /* Selected-text glyph color: white in EVERY theme, so selected text reads
+     as white-on-the-highlight regardless of mode (canvas glyphs are hidden
+     under the highlight block; the white layer is what shows). */
+  --selection-text-color: #ffffff;
 }
 
 /* ---------------------------------------------------------------------
    3. Eye-protection / reading themes — the ONLY place theme values live.
    Each mode swaps the 7 color tokens + a canvas filter pipeline + a blend
-   mode (multiply keeps light themes paper-like; soft-light suits inverted
-   canvases where most pixels are dark after invert()).
+   mode (multiply keeps light themes paper-like; screen suits inverted canvases
+   — it leaves the near-white inverted text light over the dark page backdrop,
+   whereas multiply/soft-light would crush it back to dark and make the page
+   unreadable).
    --------------------------------------------------------------------- */
 :root[data-theme="dark"] {
   --color-paper: #131316;
@@ -58,7 +64,7 @@
   --color-accent: #60a5fa;
   --color-accent-soft: #1d2b3a;
   --canvas-filter: invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02);
-  --canvas-blend: soft-light;
+  --canvas-blend: screen;
 }
 :root[data-theme="sepia"] {
   --color-paper: #f4ecd8;
@@ -91,7 +97,7 @@
   --color-accent: #7bc47f;
   --color-accent-soft: #1d2b1e;
   --canvas-filter: invert(0.9) hue-rotate(180deg) sepia(0.25) brightness(0.85) contrast(0.95);
-  --canvas-blend: soft-light;
+  --canvas-blend: screen;
 }
 :root[data-theme="dim"] {
   --color-paper: #1a1c1f;
@@ -133,6 +139,17 @@
   filter: var(--canvas-filter, none);
 }
 
+/* Thumbnails render raw canvases without the .pdf-page host, so they miss the
+   theme's canvas pipeline. Apply it here so thumbnails follow the active theme
+   (e.g. inverted in dark/night) instead of staying raw white pages. The filter
+   alone is not enough: in dim the page looks dark because the canvas
+   soft-light-blends over the dark .pdf-page backdrop — a bare canvas needs the
+   same blend over its (bg-surface) card to match. */
+.thumb-canvas {
+  filter: var(--canvas-filter, none);
+  mix-blend-mode: var(--canvas-blend, multiply);
+}
+
 .pdf-page .textLayer {
   position: absolute;
   inset: 0;
@@ -142,12 +159,17 @@
 
 .pdf-page .textLayer ::selection {
   background: var(--color-accent-soft);
-  color: transparent;
+  color: var(--selection-text-color);
 }
 
-/* Search highlights (engine appends .highlight divs into the text layer). */
+/* Search highlights (engine appends .highlight divs into the text layer).
+   The vendored pdf_viewer.css `.textLayer .highlight` rule adds a 1px
+   margin/padding (for pdf.js's own merged highlights); neutralise it so our
+   rects sit exactly on the glyphs. */
 .pdf-page .textLayer .highlight {
   position: absolute;
+  margin: 0;
+  padding: 0;
   background: color-mix(in srgb, var(--color-accent) 30%, transparent);
   mix-blend-mode: multiply;
   border-radius: 2px;
@@ -261,4 +283,31 @@ body {
 }
 *::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ---------------------------------------------------------------------
+   8. Toolbar glass — frosted overlay bar.
+   The `<header>` in reader_view.rs carries backdrop-blur + a theme-tinted
+   translucent bg (the "milky glass") and is absolutely stacked over the
+   viewer, so content scrolls underneath it, blurred. The toolbar's foreground
+   glyphs (icons, labels, readouts) are pure-white + mix-blend-difference so
+   they auto-invert against the glass — and whatever scrolls beneath it —
+   readable over ANY color, exactly like the status bar.
+   Only the PAINTED glyphs blend; button/input backgrounds stay unblended so
+   they keep their shape. The Tooltip wrapper spans (`.inline-flex`) are
+   excluded: blending a wrapper would treat the whole button as one unit and
+   turn its opaque background into a black block. Dropdown popovers (theme /
+   texture / noise menus) opt out via `.menu-popover` to keep normal theming.
+   --------------------------------------------------------------------- */
+.toolbar-glass svg,
+.toolbar-glass span:not(.inline-flex) {
+  color: #fff;
+  mix-blend-mode: difference;
+}
+
+/* Dropdown panels revert to normal theme colors (no blend). */
+.menu-popover svg,
+.menu-popover span {
+  color: revert;
+  mix-blend-mode: revert;
 }

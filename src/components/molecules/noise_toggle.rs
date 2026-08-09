@@ -24,8 +24,12 @@ pub fn NoiseToggle(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
 
     let settings_now = move || state.settings.get();
-    let (enabled, set_enabled) = signal(settings_now().noise_enabled);
-    let (intensity, set_intensity) = signal(settings_now().noise_intensity as f64);
+    // Seed the local mirrors from the persisted settings. read_untracked avoids
+    // the "signal read outside a tracking context" warning: seeding at setup is
+    // intentionally one-shot; the Effect below keeps the mirrors in sync.
+    let seed = state.settings.read_untracked();
+    let (enabled, set_enabled) = signal(seed.noise_enabled);
+    let (intensity, set_intensity) = signal(seed.noise_intensity as f64);
 
     // Keep the local mirrors in sync if settings are written from elsewhere.
     Effect::new(move || {
@@ -71,7 +75,7 @@ pub fn NoiseToggle(state: AppState) -> impl IntoView {
                 </svg>
             </button>
             <Show when=move || open.get()>
-                <div class="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-line bg-surface p-3 shadow-lg">
+                <div class="menu-popover absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-line bg-surface p-3 shadow-lg">
                     <div class="flex items-center justify-between gap-3">
                         <span class="text-sm text-ink">"Film grain"</span>
                         <Toggle

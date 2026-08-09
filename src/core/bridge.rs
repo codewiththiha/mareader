@@ -23,10 +23,13 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub fn version() -> String;
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    // Rust fns are snake_case; js_name maps each to the engine's camelCase API.
+    // Without the override wasm-bindgen would emit
+    // `window.PDFReader.storage_get`, which does not exist and panics the mount.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "storageGet")]
     pub fn storage_get(key: &str) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "storageSet")]
     pub fn storage_set(key: &str, value: &str);
 
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
@@ -35,33 +38,33 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub async fn destroy() -> JsValue;
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "pageCount")]
     pub fn page_count() -> u32;
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "registerPage")]
     pub fn register_page(payload: JsValue);
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "unregisterPage")]
     pub fn unregister_page(canvas_id: &str);
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "cancelPage")]
     pub fn cancel_page(canvas_id: &str);
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPage")]
     pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPages")]
     pub async fn render_pages(entries: JsValue, scale: f64) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "updatePage")]
     pub async fn update_page(canvas_id: &str, scale: f64) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "buildSearchIndex")]
     pub async fn build_search_index() -> JsValue;
 
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub async fn search(query: &str) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "clearHighlights")]
     pub fn clear_highlights();
 }

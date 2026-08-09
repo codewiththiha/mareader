@@ -11,7 +11,6 @@ use leptos::task::spawn_local;
 use crate::api::engine;
 use crate::components::atoms::button::{Button, ButtonKind};
 use crate::components::atoms::icon::{Icon, IconName};
-use crate::components::atoms::kbd::Kbd;
 use crate::components::atoms::separator::Separator;
 use crate::components::atoms::tooltip::Tooltip;
 use crate::core::document::DocStatus;
@@ -42,6 +41,9 @@ pub fn open_dialog(state: AppState) {
                         let page1 = open.page1_size;
                         // Document state.
                         state.doc.num_pages.set(open.num_pages);
+                        // Forget the previous document's measured heights
+                        // (PageList re-seeds them from page1_size on mount).
+                        state.doc.page_heights.set(Vec::new());
                         state.doc.title.set(open.title);
                         state.doc.author.set(open.author);
                         state.doc.outline.set(open.outline);
@@ -55,15 +57,8 @@ pub fn open_dialog(state: AppState) {
                         state.viewer.scroll_top.set(0.0);
                         state.viewer.fit.set(FitMode::Width);
                         let (cw, ch) = state.viewer.container_size.get();
-                        let s = fit_scale(
-                            FitMode::Width,
-                            cw,
-                            ch,
-                            page1.width,
-                            page1.height,
-                            48.0,
-                            1.0,
-                        );
+                        let s =
+                            fit_scale(FitMode::Width, cw, ch, page1.width, page1.height, 48.0, 1.0);
                         state.viewer.scale.set(s);
                         state.viewer.render_scale.set(s);
 
@@ -141,7 +136,7 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
     let thumbs_state = state;
 
     view! {
-        <div class="flex h-12 items-center gap-2 border-b border-line bg-surface px-3">
+        <div class="flex h-12 items-center gap-2 px-3">
             // Left group: open + view-mode switch.
             <div class="flex items-center gap-1">
                 <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
@@ -152,41 +147,9 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                         label="Open".to_string()
                         title="Open PDF (Cmd/Ctrl+O)".to_string()
                     />
-                    <span class="ml-1"><Kbd>{"⌘O"}</Kbd></span>
                 </Tooltip>
                 <Separator vertical=true />
-                <Tooltip text="Single page view".to_string()>
-                    <ToggleButton
-                        icon=IconName::SinglePage
-                        title="Single page view".to_string()
-                        active=move || mode.get() == ViewMode::Single
-                        on_click=move || mode_state.viewer.mode.set(ViewMode::Single)
-                    />
-                </Tooltip>
-                <Tooltip text="Continuous scroll".to_string()>
-                    <ToggleButton
-                        icon=IconName::Continuous
-                        title="Continuous scroll".to_string()
-                        active=move || mode.get() == ViewMode::Continuous
-                        on_click=move || mode_state.viewer.mode.set(ViewMode::Continuous)
-                    />
-                </Tooltip>
-            </div>
-
-            // Center: page navigation.
-            <div class="flex flex-1 items-center justify-center">
-                <PageNav state=state.clone() />
-            </div>
-
-            // Right group: zoom, theme/texture/noise menus, sidebar toggles.
-            <div class="flex items-center gap-1">
-                <ZoomControls state=state.clone() />
-                <Separator vertical=true />
-                <ThemeMenu state=state.clone() />
-                <TextureMenu state=state.clone() />
-                <NoiseToggle state=state.clone() />
-                <Separator vertical=true />
-                <Tooltip text="Outline".to_string()>
+                    <Tooltip text="Outline".to_string()>
                     <ToggleButton
                         icon=IconName::Outline
                         title="Outline".to_string()
@@ -231,6 +194,41 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                         }
                     />
                 </Tooltip>
+                  </div>
+
+            // Center: page navigation.
+            <div class="flex flex-1 items-center justify-center">
+                <PageNav state=state.clone() />
+            </div>
+
+            // Right group: zoom, theme/texture/noise menus, sidebar toggles.
+            <div class="flex items-center gap-1">
+                <ZoomControls state=state.clone() />
+                <Separator vertical=true />
+                <ThemeMenu state=state.clone() />
+                <TextureMenu state=state.clone() />
+                <NoiseToggle state=state.clone() />
+                <Separator vertical=true />
+                   <Tooltip text="Single page view".to_string()>
+                    <ToggleButton
+                        icon=IconName::SinglePage
+                        title="Single page view".to_string()
+                        active=move || mode.get() == ViewMode::Single
+                        on_click=move || mode_state.viewer.mode.set(ViewMode::Single)
+                    />
+                </Tooltip>
+                <Tooltip text="Continuous scroll".to_string()>
+                    <ToggleButton
+                        icon=IconName::Continuous
+                        title="Continuous scroll".to_string()
+                        active=move || mode.get() == ViewMode::Continuous
+                        on_click=move || mode_state.viewer.mode.set(ViewMode::Continuous)
+                    />
+                </Tooltip>
+
+
+
+
             </div>
         </div>
     }

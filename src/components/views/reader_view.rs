@@ -10,11 +10,19 @@ use leptos::prelude::*;
 use crate::core::document::DocStatus;
 use crate::core::layout::ViewMode;
 use crate::core::state::AppState;
+use crate::effects::fit::fit_effect;
+use crate::effects::page_tracking::page_tracking;
 use crate::effects::theme_applier::theme_applier;
 
 #[component]
 pub fn ReaderView(state: AppState) -> impl IntoView {
     theme_applier(state.clone());
+    // Fit width / fit page recompute in BOTH view modes (each view reports its
+    // container size into the same signal).
+    fit_effect(state.clone());
+    // Keep `viewer.page` and the scroll position in sync in continuous mode
+    // (status-bar counter, page jumps, mode-switch position).
+    page_tracking(state.clone());
 
     // Hoist signal handles + owned state clones BEFORE the view! macro. Each
     // `move` closure below captures exactly one owned value, so there is no
@@ -31,8 +39,10 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     let is_ready = move || status.get() == DocStatus::Ready;
 
     view! {
-        <div class="flex h-full w-full flex-col bg-paper text-ink">
-            <header>
+        <div class="relative flex h-full w-full flex-col bg-paper text-ink">
+            <header
+                class="toolbar-glass absolute inset-x-0 top-0 z-50 border-b border-line/60 bg-surface/60 backdrop-blur-xl"
+            >
                 <crate::components::molecules::toolbar::Toolbar state=state_toolbar />
             </header>
             <div class="flex min-h-0 flex-1">
@@ -57,7 +67,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                     </Show>
                 </main>
             </div>
-            <footer>
+            <footer class="pointer-events-none absolute inset-x-0 bottom-0 z-50 mix-blend-difference">
                 <crate::components::organisms::status_bar::StatusBar state=state_status />
             </footer>
             <div class="noise-overlay"></div>
@@ -78,7 +88,7 @@ fn Placeholder(state: AppState) -> impl IntoView {
     view! {
         <div class="flex h-full w-full items-center justify-center text-muted">
             <div class="flex max-w-md flex-col items-center gap-2 text-center">
-                <p class="text-lg">{text()}</p>
+                <p class="text-lg">{text}</p>
                 <crate::components::atoms::button::Button
                     on_click=move |_| crate::components::molecules::toolbar::open_dialog(state)
                     kind=crate::components::atoms::button::ButtonKind::Primary

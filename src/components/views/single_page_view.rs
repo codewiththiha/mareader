@@ -11,7 +11,6 @@ use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;
 
 use crate::components::organisms::page_canvas::PageCanvas;
-use crate::core::math::{fit_scale, FitMode};
 use crate::core::state::AppState;
 
 #[component]
@@ -54,29 +53,8 @@ pub fn SinglePageView(state: AppState) -> impl IntoView {
         }
     });
 
-    // --- Fit effect ---------------------------------------------------------
-    // Recomputes scale/render_scale whenever fit, container size, or page 1 size
-    // change. `scale` is read untracked so writing it back doesn't self-trigger.
-    Effect::new(move || {
-        let fit = state.viewer.fit.get();
-        if fit == FitMode::None {
-            return;
-        }
-        let (cw, ch) = state.viewer.container_size.get();
-        if let Some(p) = state.doc.page1_size.get() {
-            let s = fit_scale(
-                fit,
-                cw,
-                ch,
-                p.width,
-                p.height,
-                48.0,
-                state.viewer.scale.get_untracked(),
-            );
-            state.viewer.scale.set(s);
-            state.viewer.render_scale.set(s);
-        }
-    });
+    // Fit-width/fit-page scale computation now lives in the app-root
+    // `effects::fit::fit_effect` (shared with the continuous view).
 
     view! {
         <div

@@ -92,7 +92,11 @@ async fn run() {
         let _ = host.remove();
     }
 
-    engine::destroy().await;
+    // Deliberately do NOT call engine::destroy() here: this check runs at mount,
+    // potentially concurrently with the user opening a document in the first
+    // second after launch. Destroying here would wipe a document the UI is
+    // rendering. The next `open()` destroys this check's document as part of its
+    // normal teardown, so leaving it loaded is harmless.
     log(&format!(
         "[selftest] {}",
         if pass { "PASS" } else { "FAIL (see steps above)" }

@@ -24,10 +24,16 @@ let numPages = 0;
 
 // canvasId -> { page, canvas, host, textLayerEl, renderTask, textLayer, viewport, scale }
 const stateByCanvasId = new Map();
-// page (1-based) -> [{ x, y, w, h, str }] rects in scale-1 CSS px (search index)
+// page (1-based) -> [{ str, x, y, w, h }] searchable text with rects in TOP-origin
+// scale-1 CSS px (see itemRect). Used for search matching + the results API.
 const textIndex = new Map();
-// page (1-based) -> [{ x, y, w, h }] current search highlights in scale-1 CSS px
+// page (1-based) -> [{ x, y, w, h }] match rects (top-origin scale-1) fed to the
+// search results JSON. NOTE: on-page highlight boxes are NOT drawn from these —
+// applyHighlights derives them from the rendered DOM spans so they always align
+// pixel-perfectly with the text regardless of font/scale rounding.
 const highlightsByPage = new Map();
+// Lowercased, trimmed query from the last search(); drives DOM-derived highlights.
+let searchQuery = "";
 
 let renderCount = 0;
 const CLEANUP_EVERY = 5;
@@ -46,34 +52,51 @@ function el(id) {
   return document.getElementById(id);
 }
 
-function itemRect(item) {
-  // Approximate CSS-px bounding box of a text item from its transform.
+function itemRect(item, pageH) {
+  // Approximate TOP-origin CSS-px bounding box of a text item at scale 1.
+  // pdf.js text items use PDF user space (y-up, origin at page BOTTOM-left):
+  // transform[4]/[5] = x / baseline y from the bottom. The TextLayer places a
+  // span's TOP at `pageHeight - baselineY - ascent` (see its span-positioning
+  // code), so we mirror that here. ascent ≈ 0.8 * fontSize for the default
+  // fonts pdf.js substitutes; on-page highlights don't rely on this (they are
+  // derived from the DOM spans), these rects only feed the results JSON.
   const t = item.transform || [1, 0, 0, 1, 0, 0];
+  const fontSize = Math.hypot(t[2], t[3]);
+  const ascent = (fontSize || 0) * 0.8;
   return {
     x: t[4],
-    y: t[5] - (item.height || 0),
+    y: (pageH || 0) - t[5] - ascent,
     w: item.width || 0,
     h: item.height || 0,
   };
 }
 
 // --- bytes -----------------------------------------------------------
-async function fetchBytes(path) {
-  let src = path;
-  if (!/^https?:\/\//i.test(path) && !path.startsWith("/")) {
-    // Absolute filesystem path inside Tauri -> asset protocol URL.
-    const tauri = globalThis.__TAURI__;
-    if (tauri && tauri.core && typeof tauri.core.convertFileSrc === "function") {
-      src = tauri.core.convertFileSrc(path);
-    } else {
-      throw Object.assign(new Error("No Tauri asset bridge available"), { name: "MissingPDFException" });
-    }
-  }
+async function doFetch(src) {
   const res = await fetch(src);
   if (!res.ok) {
     throw Object.assign(new Error("HTTP " + res.status), { name: "UnexpectedResponseException" });
   }
   return new Uint8Array(await res.arrayBuffer());
+}
+
+async function fetchBytes(path) {
+  // http(s) URLs are always fetched directly.
+  if (/^https?:\/\//i.test(path)) return doFetch(path);
+
+  const tauri = globalThis.__TAURI__;
+  if (tauri && tauri.core && typeof tauri.core.convertFileSrc === "function") {
+    // Inside Tauri, prefer the asset protocol (real filesystem path picked from
+    // the dialog). Fall back to a web fetch for bundled assets (/samples/, /vendor/)
+    // which don't exist on the filesystem at that path. Note: absolute macOS paths
+    // start with "/" just like web paths, so we cannot branch on path shape alone.
+    try {
+      return await doFetch(tauri.core.convertFileSrc(path));
+    } catch (_) {
+      // not a real file on disk -> try as a web path below
+    }
+  }
+  return doFetch(path);
 }
 
 async function flattenOutline(items, depth, acc) {
@@ -154,7 +177,8 @@ async function open(path) {
         e.name === "MissingPDFException" ||
         e.name === "UnexpectedResponseException")
     ) {
-      return fail("corrupt", "Could not read this PDF.");
+      const d = errorInfo(e);
+      return fail("corrupt", `Could not read this PDF. (${d.name}: ${d.message})`);
     }
     const info = errorInfo(e);
     return fail(info.name, info.message);
@@ -169,6 +193,7 @@ async function destroy() {
   stateByCanvasId.clear();
   textIndex.clear();
   highlightsByPage.clear();
+  searchQuery = "";
   if (loadingTask) {
     try { await loadingTask.destroy(); } catch (_) {}
     loadingTask = null;
@@ -215,17 +240,29 @@ function cancelPage(canvasId) {
   }
 }
 
-function applyHighlights(host, page, scale) {
-  const rects = highlightsByPage.get(page);
-  if (!rects) return;
-  for (const r of rects) {
+function applyHighlights(st) {
+  // DOM-derived highlights: overlay a box over each rendered span whose text
+  // contains the current query. Because rects come from getBoundingClientRect()
+  // on the SAME spans the user sees, highlights always align with the glyphs —
+  // regardless of scale rounding, font substitution, or the span's scaleX
+  // kerning transform. Highlight divs go INSIDE the text layer so the
+  // `.textLayer .highlight` CSS rules apply.
+  const { host, textLayerEl } = st;
+  host.querySelectorAll(".highlight").forEach((n) => n.remove());
+  if (!searchQuery) return;
+  const origin = host.getBoundingClientRect();
+  for (const span of textLayerEl.querySelectorAll("span")) {
+    if (!span.textContent || !span.textContent.toLowerCase().includes(searchQuery)) {
+      continue;
+    }
+    const r = span.getBoundingClientRect();
     const d = document.createElement("div");
     d.className = "highlight";
-    d.style.left = r.x * scale + "px";
-    d.style.top = r.y * scale + "px";
-    d.style.width = Math.max(1, r.w * scale) + "px";
-    d.style.height = Math.max(1, r.h * scale) + "px";
-    host.appendChild(d);
+    d.style.left = r.x - origin.x + "px";
+    d.style.top = r.y - origin.y + "px";
+    d.style.width = Math.max(1, r.width) + "px";
+    d.style.height = Math.max(1, r.height) + "px";
+    textLayerEl.appendChild(d);
   }
 }
 
@@ -280,7 +317,7 @@ async function renderPageInternal(canvasId, scale, renderText) {
       const info = errorInfo(e);
       return fail(info.name, info.message);
     }
-    applyHighlights(st.host, st.page, scale);
+    applyHighlights(st);
   }
 
   st.viewport = viewport;
@@ -332,10 +369,11 @@ async function buildSearchIndex() {
     try {
       const page = await pdf.getPage(n);
       const tc = await page.getTextContent();
+      const pageH = page.getViewport({ scale: 1 }).height;
       const items = [];
       for (const item of tc.items || []) {
         if (!item.str) continue;
-        const r = itemRect(item);
+        const r = itemRect(item, pageH);
         if (r.w <= 0) continue;
         items.push({ str: item.str, x: r.x, y: r.y, w: r.w, h: r.h });
       }
@@ -352,6 +390,7 @@ async function search(query) {
   const q = String(query || "").toLowerCase().trim();
   if (!q) return { ok: true, query: "", total: 0, results: [] };
 
+  searchQuery = q;
   highlightsByPage.clear();
   const results = [];
   let total = 0;
@@ -388,6 +427,7 @@ function snippetText(str, q) {
 
 function clearHighlights() {
   highlightsByPage.clear();
+  searchQuery = "";
   for (const st of stateByCanvasId.values()) {
     if (st.host) {
       st.host.querySelectorAll(".highlight").forEach((n) => n.remove());

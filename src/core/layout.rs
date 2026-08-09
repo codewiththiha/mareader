@@ -28,6 +28,24 @@ pub fn total_height_css(heights: &[f64], gap: f64) -> f64 {
     }
 }
 
+/// 1-based page index whose vertical span contains `scroll_top` — i.e. the page
+/// at the top of the scrollport. Returns the last page for scroll positions past
+/// the end of the document, and 1 when no page heights are known yet (so callers
+/// can no-op instead of jumping to a wrong page).
+pub fn page_from_scroll(scroll_top: f64, heights: &[f64], gap: f64) -> u32 {
+    if heights.is_empty() {
+        return 1;
+    }
+    let mut acc = 0.0;
+    for (i, &h) in heights.iter().enumerate() {
+        if scroll_top < acc + h {
+            return (i + 1) as u32;
+        }
+        acc += h + gap;
+    }
+    heights.len() as u32
+}
+
 /// 0-based inclusive range of page indices visible in the scrollport
 /// `[scroll_top, scroll_top + viewport_h]`, expanded by `buffer` pages on each
 /// side (so renders can start slightly before they scroll into view).
@@ -114,5 +132,20 @@ mod tests {
     fn visible_range_gap_handling() {
         // top at page1 = 124 (100 + 24 gap). A viewport 100..115 sits in the gap.
         assert_eq!(visible_range(100.0, 15.0, &H, 24.0, 0), None);
+    }
+
+    #[test]
+    fn page_from_scroll_bounds() {
+        assert_eq!(page_from_scroll(0.0, &H, 24.0), 1);
+        assert_eq!(page_from_scroll(99.0, &H, 24.0), 1);
+        // Bottom edge of page 0: page 1 is now at the top of the scrollport.
+        assert_eq!(page_from_scroll(100.0, &H, 24.0), 2);
+        assert_eq!(page_from_scroll(124.0, &H, 24.0), 2);
+        assert_eq!(page_from_scroll(323.0, &H, 24.0), 2);
+        assert_eq!(page_from_scroll(324.0, &H, 24.0), 3);
+        // Past the end -> last page, not out of range.
+        assert_eq!(page_from_scroll(9999.0, &H, 24.0), 3);
+        // No measured heights yet -> 1 (caller no-ops instead of jumping).
+        assert_eq!(page_from_scroll(500.0, &[], 24.0), 1);
     }
 }

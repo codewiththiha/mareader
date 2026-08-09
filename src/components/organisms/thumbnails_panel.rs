@@ -119,7 +119,7 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
                                 }
                             >
                                 <div class="w-full rounded-md border border-line bg-surface p-1">
-                                    <canvas id=cid class="block" />
+                                    <canvas id=cid class="thumb-canvas block" />
                                 </div>
                                 <span class="text-xs text-muted">{p}</span>
                             </button>

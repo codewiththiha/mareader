@@ -91,7 +91,7 @@ pub fn PageList(state: AppState) -> impl IntoView {
                         )
                     };
                     view! {
-                        <div style=style>
+                        <div id=format!("cont-{i}-wrap") style=style>
                             <PageCanvas
                                 page={(i + 1) as u32}
                                 scale=render_scale

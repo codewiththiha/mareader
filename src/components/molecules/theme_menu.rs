@@ -74,7 +74,7 @@ pub fn ThemeMenu(state: AppState) -> impl IntoView {
                 </svg>
             </button>
             <Show when=move || open.get()>
-                <div class="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-line bg-surface p-1 shadow-lg">
+                <div class="menu-popover absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-line bg-surface p-1 shadow-lg">
                     <For
                         each=move || theme_rows()
                         key=|t| t.id

@@ -81,6 +81,10 @@ pub async fn open(path: &str) -> Result<OpenResult, EngineError> {
     resolve::<OpenResult>(value, "open").await
 }
 
+/// Contract API: explicit teardown for a future "close document"
+/// action. Not called yet — opening a new doc already destroys the previous one
+/// inside the engine — but kept wired to the JS surface so the contract holds.
+#[allow(dead_code)]
 pub async fn destroy() {
     let _ = bridge::destroy().await;
 }
