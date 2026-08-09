@@ -9,9 +9,44 @@ leptos = { version = "0.7", features = ["csr"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
+# Feature set kept broad so feature branches (viewer/continuous, viewer/chrome,
+# panels/sidebar, panels/settings) never need to edit Cargo.toml.
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Document",
+  "Element",
+  "HtmlElement",
+  "HtmlDivElement",
+  "HtmlCanvasElement",
+  "HtmlInputElement",
+  "HtmlButtonElement",
+  "HtmlSelectElement",
+  "HtmlOptionElement",
+  "Node",
+  "NodeList",
+  "Text",
+  "DomTokenList",
+  "CssStyleDeclaration",
+  "Storage",
+  "Event",
+  "MouseEvent",
+  "KeyboardEvent",
+  "WheelEvent",
+  "InputEvent",
+  "ResizeObserver",
+  "ResizeObserverEntry",
+  "DomRect",
+] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
+serde_json = "1"
 console_error_panic_hook = "0.1.7"
 
 [workspace]
 members = ["src-tauri"]
+
+[profile.release]
+# Keep wasm small for a desktop app.
+opt-level = "z"
+lto = true
+codegen-units = 1

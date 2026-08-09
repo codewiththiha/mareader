@@ -1,0 +1,264 @@
+/* =====================================================================
+   PDF Reader — design tokens, themes, textures, noise, PDF page host.
+   Compiled to styles.css by the Tailwind v4 CLI (Trunk pre_build hook).
+
+   Rule: ALL visual values live here in CSS. Rust stores only
+   { id, label, is_dark } per theme and never duplicates hex/filter values.
+   ===================================================================== */
+
+@import "tailwindcss";
+
+/* --- content scanning --- */
+/* Tailwind's auto-detector skips .gitignore'd files; src/ is tracked so this
+   is mostly belt-and-braces, but keeps scanning explicit. Classes must be
+   static literals in .rs files — never built with format!(). */
+@source "../src";
+
+/* --- class-based dark variant --- */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------
+   1. Design tokens (light defaults).
+   Emits utilities: bg-paper text-ink bg-surface text-muted border-line
+   bg-accent text-accent bg-accent-soft text-accent-soft.
+   Runtime themes only rewrite these variables under :root[data-theme=...].
+   --------------------------------------------------------------------- */
+@theme {
+  --color-paper: #ffffff;
+  --color-ink: #1f2937;
+  --color-muted: #6b7280;
+  --color-surface: #f3f4f6;
+  --color-line: #e5e7eb;
+  --color-accent: #2563eb;
+  --color-accent-soft: #dbeafe;
+}
+
+/* ---------------------------------------------------------------------
+   2. Runtime (non-utility) variables — defaults for light.
+   --------------------------------------------------------------------- */
+:root {
+  --canvas-filter: none;
+  --canvas-blend: multiply;
+  --noise-opacity: 0;
+  --app-radius: 8px;
+}
+
+/* ---------------------------------------------------------------------
+   3. Eye-protection / reading themes — the ONLY place theme values live.
+   Each mode swaps the 7 color tokens + a canvas filter pipeline + a blend
+   mode (multiply keeps light themes paper-like; soft-light suits inverted
+   canvases where most pixels are dark after invert()).
+   --------------------------------------------------------------------- */
+:root[data-theme="dark"] {
+  --color-paper: #131316;
+  --color-ink: #e5e7eb;
+  --color-muted: #9ca3af;
+  --color-surface: #1a1a1e;
+  --color-line: #2b2b31;
+  --color-accent: #60a5fa;
+  --color-accent-soft: #1d2b3a;
+  --canvas-filter: invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02);
+  --canvas-blend: soft-light;
+}
+:root[data-theme="sepia"] {
+  --color-paper: #f4ecd8;
+  --color-ink: #5b4636;
+  --color-muted: #8a7462;
+  --color-surface: #efe6d2;
+  --color-line: #d9c9a8;
+  --color-accent: #8a5a2b;
+  --color-accent-soft: #e6d7bb;
+  --canvas-filter: sepia(0.35) contrast(0.95) saturate(0.9);
+  --canvas-blend: multiply;
+}
+:root[data-theme="green"] {
+  --color-paper: #dce7d5;
+  --color-ink: #2f3e2e;
+  --color-muted: #5d6f5a;
+  --color-surface: #d3e0cb;
+  --color-line: #b9cbb0;
+  --color-accent: #3f6d3f;
+  --color-accent-soft: #c2d5b8;
+  --canvas-filter: sepia(0.4) saturate(1.5) hue-rotate(70deg) brightness(1.02);
+  --canvas-blend: multiply;
+}
+:root[data-theme="night"] {
+  --color-paper: #0f1410;
+  --color-ink: #c9d1c9;
+  --color-muted: #7d8a7d;
+  --color-surface: #131a13;
+  --color-line: #223022;
+  --color-accent: #7bc47f;
+  --color-accent-soft: #1d2b1e;
+  --canvas-filter: invert(0.9) hue-rotate(180deg) sepia(0.25) brightness(0.85) contrast(0.95);
+  --canvas-blend: soft-light;
+}
+:root[data-theme="dim"] {
+  --color-paper: #1a1c1f;
+  --color-ink: #c3c6cb;
+  --color-muted: #8b8f96;
+  --color-surface: #202328;
+  --color-line: #2e3238;
+  --color-accent: #7a9bd4;
+  --color-accent-soft: #232b36;
+  --canvas-filter: brightness(0.8) saturate(0.75) contrast(0.9);
+  --canvas-blend: soft-light;
+}
+
+/* ---------------------------------------------------------------------
+   4. PDF page host — replaces the missing `.pdfViewer .page` rule that
+   pdf.js's TextLayer relies on for its custom-property math. The canvas and
+   the .textLayer share the same origin (position:absolute; inset:0) which,
+   together with the shared scale, keeps text pixel-aligned with the render.
+   --------------------------------------------------------------------- */
+.pdf-page {
+  position: relative;
+  background-color: var(--color-paper);
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+
+  --user-unit: 1;
+  --scale-factor: 1;
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+}
+
+.pdf-page canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: var(--canvas-blend, multiply);
+  filter: var(--canvas-filter, none);
+}
+
+.pdf-page .textLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  color: transparent;
+}
+
+.pdf-page .textLayer ::selection {
+  background: var(--color-accent-soft);
+  color: transparent;
+}
+
+/* Search highlights (engine appends .highlight divs into the text layer). */
+.pdf-page .textLayer .highlight {
+  position: absolute;
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  mix-blend-mode: multiply;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------
+   5. Texture modes — layered ::before BEHIND the canvas. The canvas uses
+   mix-blend-mode (multiply in light themes) so light areas let the texture
+   show through while dark text stays dark and legible.
+   --------------------------------------------------------------------- */
+.pdf-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.pdf-page.texture-paper::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+}
+
+.pdf-page.texture-lined::before {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.06) 0 1px,
+    transparent 1px 26px
+  );
+}
+
+.pdf-page.texture-grid::before {
+  background-image:
+    repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.05) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(to right, rgb(0 0 0 / 0.05) 0 1px, transparent 1px 26px);
+}
+
+.pdf-page.texture-dotted::before {
+  background-image: radial-gradient(rgb(0 0 0 / 0.14) 1px, transparent 1.5px);
+  background-size: 8px 8px;
+}
+
+.pdf-page.texture-cross::before {
+  background-image:
+    repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.06) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(to right, rgb(0 0 0 / 0.06) 0 1px, transparent 1px 26px),
+    radial-gradient(rgb(0 0 0 / 0.1) 1.5px, transparent 2px);
+  background-size:
+    26px 26px,
+    26px 26px,
+    26px 26px;
+}
+
+/* ---------------------------------------------------------------------
+   6. Noise overlay — app-wide film grain, independent toggle + intensity.
+   body.noise-enabled shows it; --noise-opacity drives strength.
+   --------------------------------------------------------------------- */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  display: none;
+  opacity: var(--noise-opacity, 0);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+body.noise-enabled .noise-overlay {
+  display: block;
+}
+
+/* ---------------------------------------------------------------------
+   7. App shell defaults.
+   --------------------------------------------------------------------- */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Thin scrollbars for the reader chrome. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}

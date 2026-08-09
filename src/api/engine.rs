@@ -1,0 +1,166 @@
+//! Typed wrappers over the JS engine (window.PDFReader). This is the ONLY module
+//! that calls engine functions; views and effects never touch wasm-bindgen types.
+//!
+//! Every engine fn resolves to `{ok:true, ...}` or `{ok:false, error:{name,message}}`
+//! (except `buildSearchIndex` which resolves to a number). We check `ok` here and
+//! surface a `Result<T, String>`.
+
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
+
+use crate::core::bridge;
+use crate::core::document::{OpenResult, RenderResult};
+use crate::core::search::SearchResponse;
+
+#[derive(Debug, Clone)]
+pub struct EngineError {
+    pub name: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for EngineError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.name, self.message)
+    }
+}
+
+fn js_str(v: JsValue) -> String {
+    v.as_string().unwrap_or_default()
+}
+
+/// Parses a `{ok:bool, error?:{name,message}, ...fields}` value into `T`.
+async fn resolve<T: DeserializeOwned>(value: JsValue, what: &str) -> Result<T, EngineError> {
+    let is_ok = js_sys::Reflect::get(&value, &JsValue::from_str("ok"))
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if is_ok {
+        serde_wasm_bindgen::from_value(value)
+            .map_err(|e| EngineError {
+                name: "parse".to_string(),
+                message: format!("{what}: bad engine payload ({e})"),
+            })
+    } else {
+        let err = js_sys::Reflect::get(&value, &JsValue::from_str("error")).unwrap_or(JsValue::UNDEFINED);
+        let name = js_sys::Reflect::get(&err, &JsValue::from_str("name"))
+            .map(js_str)
+            .unwrap_or_default();
+        let message = js_sys::Reflect::get(&err, &JsValue::from_str("message"))
+            .map(js_str)
+            .unwrap_or_else(|_| "unknown engine error".to_string());
+        Err(EngineError { name, message })
+    }
+}
+
+/// Native open-file dialog (Tauri dialog plugin). Returns the chosen path, or
+/// `Err` on cancel / no plugin.
+pub async fn pick_pdf() -> Result<String, String> {
+    let opts = js_sys::Object::new();
+    js_sys::Reflect::set(&opts, &JsValue::from_str("multiple"), &JsValue::FALSE).unwrap();
+    js_sys::Reflect::set(&opts, &JsValue::from_str("directory"), &JsValue::FALSE).unwrap();
+    let filters = js_sys::Array::new();
+    let filter = js_sys::Object::new();
+    js_sys::Reflect::set(&filter, &JsValue::from_str("name"), &JsValue::from_str("PDF")).unwrap();
+    let exts = js_sys::Array::new();
+    exts.push(&JsValue::from_str("pdf"));
+    js_sys::Reflect::set(&filter, &JsValue::from_str("extensions"), &exts).unwrap();
+    filters.push(&filter);
+    js_sys::Reflect::set(&opts, &JsValue::from_str("filters"), &filters).unwrap();
+
+    let value = bridge::pick_file(opts.into()).await;
+    match value.as_string() {
+        Some(path) if !path.is_empty() => Ok(path),
+        _ => Err("Open cancelled".to_string()),
+    }
+}
+
+pub async fn open(path: &str) -> Result<OpenResult, EngineError> {
+    let value = bridge::open(path).await;
+    resolve::<OpenResult>(value, "open").await
+}
+
+pub async fn destroy() {
+    let _ = bridge::destroy().await;
+}
+
+pub fn page_count() -> u32 {
+    bridge::page_count()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterPagePayload {
+    pub page: u32,
+    pub canvas_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_id: Option<String>,
+}
+
+pub fn register_page(page: u32, canvas_id: &str, host_id: Option<&str>) {
+    let payload = RegisterPagePayload {
+        page,
+        canvas_id: canvas_id.to_string(),
+        host_id: host_id.map(str::to_string),
+    };
+    let value = serde_wasm_bindgen::to_value(&payload).unwrap();
+    bridge::register_page(value);
+}
+
+pub fn unregister_page(canvas_id: &str) {
+    bridge::unregister_page(canvas_id);
+}
+
+pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> Result<RenderResult, EngineError> {
+    let value = bridge::render_page(canvas_id, scale, render_text).await;
+    resolve::<RenderResult>(value, "render").await
+}
+
+pub async fn update_page(canvas_id: &str, scale: f64) -> Result<RenderResult, EngineError> {
+    let value = bridge::update_page(canvas_id, scale).await;
+    resolve::<RenderResult>(value, "update").await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenderEntry {
+    pub page: u32,
+    pub canvas_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub render_text: Option<bool>,
+}
+
+/// Batch render for the continuous view. Returns one result per entry.
+pub async fn render_pages(entries: &[RenderEntry], scale: f64) -> Vec<Result<RenderResult, EngineError>> {
+    let payload = serde_wasm_bindgen::to_value(&entries).unwrap();
+    let value = bridge::render_pages(payload, scale).await;
+    let arr = value.unchecked_into::<js_sys::Array>();
+    let mut out = Vec::with_capacity(arr.length() as usize);
+    for item in arr.iter() {
+        out.push(resolve::<RenderResult>(item, "render").await);
+    }
+    out
+}
+
+pub async fn build_search_index() -> Result<u32, EngineError> {
+    let value = bridge::build_search_index().await;
+    value
+        .as_f64()
+        .map(|n| n as u32)
+        .ok_or_else(|| EngineError {
+            name: "parse".to_string(),
+            message: "build_search_index: bad payload".to_string(),
+        })
+}
+
+pub async fn search(query: &str) -> Result<SearchResponse, EngineError> {
+    let value = bridge::search(query).await;
+    resolve::<SearchResponse>(value, "search").await
+}
+
+pub fn clear_highlights() {
+    bridge::clear_highlights();
+}

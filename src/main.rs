@@ -1,4 +1,10 @@
+mod api;
 mod app;
+mod components;
+mod core;
+mod effects;
+mod selftest;
+mod util;
 
 use app::*;
 use leptos::prelude::*;
