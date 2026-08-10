@@ -120,24 +120,31 @@ fn ThumbCell(
                     if gen_async.load(Ordering::Relaxed) != gen_now {
                         return;
                     }
-                    if let Some(canvas) = web_sys::window()
+                    if let Some(canvas_el) = web_sys::window()
                         .and_then(|w| w.document())
                         .and_then(|d| d.get_element_by_id(&cid2))
                     {
-                        // Cap the CSS width to the cell, size the card to the
-                        // actual render aspect, and drop the fixed skeleton
-                        // height so mixed-aspect documents fit without
-                        // overflow/under-fill.
-                        let _ = canvas.set_attribute(
-                            "style",
-                            &format!(
-                                "width:{}px;max-width:100%;height:{}px",
-                                r.width, cell_h
-                            ),
-                        );
-                        if let Some(card) = canvas.parent_element() {
-                            if let Ok(Some(h)) = card.query_selector(".thumb-num") {
-                                let _ = h.remove_attribute("style");
+                        // Set individual properties; NEVER replace the whole
+                        // style attribute (a full replace would nuke any inline
+                        // custom property the theme/CSS relies on — the same
+                        // trap PageCanvas documents for --scale-factor).
+                        if let Some(html_el) = canvas_el.dyn_ref::<web_sys::HtmlElement>()
+                        {
+                            let style = html_el.style();
+                            let _ = style.set_property("width", &format!("{}px", r.width));
+                            let _ = style.set_property("max-width", "100%");
+                            let _ = style.set_property("height", &format!("{}px", cell_h));
+                        }
+                        // Settle the number band to the real card height instead
+                        // of deleting its fixed height (which collapsed it for a
+                        // frame and made the backdrop color snap more obvious).
+                        if let Some(card) = canvas_el.parent_element() {
+                            if let Ok(Some(num)) = card.query_selector(".thumb-num") {
+                                if let Some(num_el) = num.dyn_ref::<web_sys::HtmlElement>()
+                                {
+                                    let _ =
+                                        num_el.style().set_property("height", &format!("{}px", cell_h));
+                                }
                             }
                         }
                     }
@@ -167,13 +174,14 @@ fn ThumbCell(
             }
         >
             // Skeleton: gray placeholder with the page number while the render
-            // is in flight. The card settles to `bg-surface` once loaded because
-            // `.thumb-canvas` mix-blends against it (the documented dark-theme
-            // blend backdrop) — `bg-line/60` is only the unloaded skeleton tint.
+            // is in flight. ONE permanent themed backdrop class (`thumb-card`)
+            // serves both states — the old code swapped `bg-line/60` (themed
+            // skeleton tint) for `bg-surface` (neutral) at resolve, so the
+            // backdrop cross-faded to neutral the instant the canvas faded in.
+            // The skeleton only pulses on top of the same tint; `.thumb-canvas`
+            // mix-blends against it in every state.
             <div
-                class="relative w-[120px] rounded-md ring-1 ring-line transition-colors"
-                class=("bg-line/60", move || !loaded.get())
-                class=("bg-surface", move || loaded.get())
+                class="thumb-card relative w-[120px] rounded-md ring-1 ring-line"
                 class=("animate-pulse", move || !loaded.get())
             >
                 <div

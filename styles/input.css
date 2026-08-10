@@ -139,12 +139,30 @@
   filter: var(--canvas-filter, none);
 }
 
+/* Thumbnail card backdrop — ONE permanent themed backdrop shared by the
+   skeleton and the loaded canvas, so a thumbnail never snaps from the old
+   themed skeleton tint (bg-line/60) to a neutral --surface the instant the
+   render resolves. The hue mirrors each theme's --line at ~60% strength over
+   its surface (the old skeleton look), so the whole fade-in stays in the theme
+   family and the .thumb-canvas blend composites land on the same tint in
+   every state. Light uses plain surface (its line≈surface anyway). */
+:root                     { --thumb-bg: var(--color-surface); }
+:root[data-theme="dark"]  { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
+:root[data-theme="sepia"] { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
+:root[data-theme="green"] { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
+:root[data-theme="night"] { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
+:root[data-theme="dim"]   { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
+.thumb-card {
+  background: var(--thumb-bg);
+}
+
 /* Thumbnails render raw canvases without the .pdf-page host, so they miss the
-   theme's canvas pipeline. Apply it here so thumbnails follow the active theme
-   (e.g. inverted in dark/night) instead of staying raw white pages. The filter
+   theme's canvas pipeline. Apply the SAME per-theme filter/blend vars the
+   .pdf-page canvas uses here, so thumbnails follow the active theme (e.g.
+   inverted in dark/night) instead of staying raw white pages. The filter
    alone is not enough: in dim the page looks dark because the canvas
-   soft-light-blends over the dark .pdf-page backdrop — a bare canvas needs the
-   same blend over its (bg-surface) card to match. */
+   soft-light-blends over the dark backdrop — a bare canvas needs the same
+   blend over its themed (.thumb-card) backdrop to match. */
 .thumb-canvas {
   filter: var(--canvas-filter, none);
   mix-blend-mode: var(--canvas-blend, multiply);
