@@ -9,6 +9,7 @@ use crate::components::atoms::icon::IconName;
 use crate::core::state::AppState;
 use crate::effects::search_effects::run_search;
 
+#[allow(dead_code)] // orphaned once U5 removes the sidebar Search tab (Phase 2, parallel)
 #[component]
 pub fn SearchBox(state: AppState) -> impl IntoView {
     let do_search = move || spawn_local(run_search(state));

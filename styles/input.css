@@ -311,3 +311,21 @@ body {
   color: revert;
   mix-blend-mode: revert;
 }
+
+/* ---------------------------------------------------------------------
+   9. Floating search entrance — slide-down + fade-in (U4).
+   --------------------------------------------------------------------- */
+@keyframes search-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.floating-search-enter {
+  animation: search-in 180ms ease-out;
+}
