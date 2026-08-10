@@ -1,6 +1,10 @@
 //! Generic <select> atom. The selected option is driven by `value` (a signal) and
-//! changes flow back out through `on_change`. Options are a static list (the
-//! zoom presets / textures / themes never change at runtime).
+//! changes flow back out through `on_change`. Options are a static list.
+//!
+//! UNUSED since U2 replaced the zoom preset `<select>` with a percent popover;
+//! kept for a later texture/theme consumer if one appears.
+
+#![allow(dead_code)] // fully unused after the U2 zoom redesign
 
 use leptos::prelude::*;
 
