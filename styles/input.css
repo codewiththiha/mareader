@@ -395,3 +395,46 @@ body {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------
+   12. Toast entrance (U10) — app-root toast host.
+   The toast node is remounted per value (the host renders `toast.get().map`),
+   so each new toast replays the animation. The X translate stays -50%
+   because the toast is centered by `left-1/2`: dropping it would make the
+   toast jump sideways at animation start/end. `both` fill keeps the final
+   `translate(-50%, 0)` after the animation ends, so the centering persists
+   once the entrance completes.
+   --------------------------------------------------------------------- */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.toast-enter {
+  animation: toast-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ---------------------------------------------------------------------
+   13. Global reduced-motion safety net (U10).
+   Users who prefer reduced motion get effectively instant animations
+   everywhere (0.01ms still runs the keyframe, so opacity/transform end
+   states still apply — an animation that only fades/slides in is fine, just
+   instant). This supersedes U8's per-animation guard above (which remains,
+   untouched, for the page-turn rules specifically).
+   --------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

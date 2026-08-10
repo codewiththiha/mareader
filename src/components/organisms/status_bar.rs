@@ -4,16 +4,12 @@
 //! `x / y` page counter.
 //!
 //! While `DocStatus::Ready`, the counter reads the live `viewer.page` /
-//! `doc.num_pages`; any other status shows `– / –`. A mid-session open error
-//! (toast system arrives in a later phase) is surfaced inline: when
-//! `doc.error` is `Some`, the message replaces the counter, prefixed with a
-//! warning glyph and truncating so it never breaks layout. It clears
-//! automatically on the next open (which resets `doc.error`) — no timer.
+//! `doc.num_pages`; any other status shows `– / –`.
 //!
-//! The error rides the footer's `mix-blend-difference` like the counter, so
-//! its hue inverts against the page (red-400 reads red on dark pages, teal on
-//! white ones); the glyph and semibold weight carry the warning signal even
-//! when the hue inverts, and the blend keeps it legible over any color.
+//! Mid-session open errors are surfaced by the toast system (U10): the
+//! open-flow in `molecules/toolbar.rs` emits an error toast and the transient
+//! `doc.error` span that used to live here was removed. When no document is
+//! open, the ReaderView placeholder still shows `doc.error` directly.
 //!
 //! Rendered as an overlay: the `<footer>` in ReaderView positions it
 //! absolutely over the bottom of the viewer (no layout space of its own) and
@@ -36,30 +32,16 @@ use crate::core::state::AppState;
 pub fn StatusBar(state: AppState) -> impl IntoView {
     view! {
         <div class="flex h-8 items-center justify-center gap-3 px-3 text-xs text-white">
-            {move || {
-                if let Some(err) = state.doc.error.get() {
-                    view! {
-                        <span class="min-w-0 max-w-[60vw] truncate font-semibold text-red-400">
-                            {format!("⚠ {err}")}
-                        </span>
-                    }
-                    .into_any()
-                } else {
-                    view! {
-                        <span class="whitespace-nowrap">
-                            {match state.doc.status.get() {
-                                DocStatus::Ready => format!(
-                                    "{} / {}",
-                                    state.viewer.page.get(),
-                                    state.doc.num_pages.get()
-                                ),
-                                _ => "– / –".to_string(),
-                            }}
-                        </span>
-                    }
-                    .into_any()
-                }
-            }}
+            <span class="whitespace-nowrap">
+                {move || match state.doc.status.get() {
+                    DocStatus::Ready => format!(
+                        "{} / {}",
+                        state.viewer.page.get(),
+                        state.doc.num_pages.get()
+                    ),
+                    _ => "– / –".to_string(),
+                }}
+            </span>
         </div>
     }
 }

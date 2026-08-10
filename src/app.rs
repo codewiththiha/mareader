@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 
+use crate::components::organisms::toast::ToastHost;
 use crate::components::views::reader_view::ReaderView;
 use crate::core::state::AppState;
 use crate::effects::shortcuts::shortcuts;
@@ -24,5 +25,12 @@ pub fn App() -> impl IntoView {
     shortcuts(state);
     theme_ui(state);
 
-    view! { <ReaderView state=state /> }
+    view! {
+        <>
+            <ReaderView state=state />
+            // App-root toast host: fixed overlay, safe outside the toolbar's
+            // backdrop-blur stacking context.
+            <ToastHost state=state.clone() />
+        </>
+    }
 }

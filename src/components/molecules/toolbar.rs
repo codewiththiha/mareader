@@ -21,7 +21,7 @@ use crate::components::atoms::tooltip::Tooltip;
 use crate::core::document::DocStatus;
 use crate::core::layout::ViewMode;
 use crate::core::math::{fit_scale, FitMode};
-use crate::core::state::{AppState, SidebarMode};
+use crate::core::state::{AppState, SidebarMode, Toast, ToastKind};
 
 use super::appearance_menu::AppearanceMenu;
 use super::more_menu::MoreMenu;
@@ -38,8 +38,12 @@ pub fn open_dialog(state: AppState) {
             Ok(path) => open_path(state, path),
             Err(msg) => {
                 if msg != "Open cancelled" {
-                    state.doc.error.set(Some(msg));
+                    state.doc.error.set(Some(msg.clone()));
                     state.doc.status.set(DocStatus::Error);
+                    state.toast.set(Some(Toast {
+                        kind: ToastKind::Error,
+                        message: format!("Could not open PDF: {}", msg),
+                    }));
                 }
             }
         }
@@ -69,6 +73,8 @@ pub fn open_path(state: AppState, path: String) {
                 state.doc.path.set(Some(path.clone()));
                 state.doc.error.set(None);
                 state.doc.status.set(DocStatus::Ready);
+                // A successful open dismisses any stale error toast.
+                state.toast.set(None);
 
                 // Viewer: back to page 1, fit width.
                 state.viewer.page.set(1);
@@ -101,8 +107,12 @@ pub fn open_path(state: AppState, path: String) {
                 state.settings.update(|s| s.last_path = Some(path));
             }
             Err(e) => {
-                state.doc.error.set(Some(e.message));
+                state.doc.error.set(Some(e.message.clone()));
                 state.doc.status.set(DocStatus::Error);
+                state.toast.set(Some(Toast {
+                    kind: ToastKind::Error,
+                    message: format!("Could not open PDF: {}", e.message),
+                }));
             }
         }
     });
