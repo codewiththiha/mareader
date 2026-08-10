@@ -11,14 +11,13 @@ use crate::core::math::FitMode;
 use crate::core::search::SearchResult;
 use crate::core::settings::Settings;
 
-#[allow(dead_code)] // consumed in phase 5 (organisms::toast / open-error emission)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
+    #[allow(dead_code)] // reserved: info toasts (only errors are emitted so far)
     Info,
     Error,
 }
 
-#[allow(dead_code)] // consumed in phase 5 (organisms::toast / open-error emission)
 #[derive(Debug, Clone, PartialEq)]
 pub struct Toast {
     pub kind: ToastKind,
@@ -122,7 +121,7 @@ pub struct AppState {
     pub viewer: ViewerState,
     pub search: SearchState,
     pub sidebar: RwSignal<SidebarMode>,
-    #[allow(dead_code)] // consumed in phase 5 (organisms::toast / open-error emission)
+    /// Current toast (if any), rendered by the app-root `ToastHost`.
     pub toast: RwSignal<Option<Toast>>,
 }
 
