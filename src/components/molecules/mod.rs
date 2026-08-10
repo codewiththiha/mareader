@@ -1,3 +1,5 @@
+pub mod appearance_menu;
+pub mod more_menu;
 pub mod noise_toggle;
 pub mod page_nav;
 pub mod search_box;

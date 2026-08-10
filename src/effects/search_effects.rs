@@ -31,7 +31,7 @@ pub async fn run_search(state: AppState) {
         Ok(resp) => {
             state.search.total.set(resp.total);
             state.search.results.set(resp.results);
-            state.search.active.set(None);
+            state.search.active.set(Some(0));
             // Force mounted PageCanvases to re-render so the engine re-applies
             // its stored highlights to the freshly searched query.
             state.viewer.render_scale.update(|s| *s += 0.0001);
@@ -58,5 +58,18 @@ pub fn jump_to_result(state: AppState, page: u32) {
             list.set_scroll_top(top as i32);
         }
         state.viewer.render_scale.update(|s| *s += 0.0001);
+    }
+}
+
+/// Advance the active search result by `dir` (±1) and jump to its page.
+#[allow(dead_code)] // consumed by organisms::floating_search in phase 2
+pub fn search_navigate(state: AppState, dir: i32) {
+    let results = state.search.results.get();
+    let Some(next) = crate::core::search::next_search_index(results.len(), state.search.active.get(), dir) else {
+        return;
+    };
+    state.search.active.set(Some(next));
+    if let Some(r) = results.get(next) {
+        jump_to_result(state, r.page);
     }
 }

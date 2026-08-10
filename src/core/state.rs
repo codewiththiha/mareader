@@ -11,6 +11,20 @@ use crate::core::math::FitMode;
 use crate::core::search::SearchResult;
 use crate::core::settings::Settings;
 
+#[allow(dead_code)] // consumed in phase 5 (organisms::toast / open-error emission)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToastKind {
+    Info,
+    Error,
+}
+
+#[allow(dead_code)] // consumed in phase 5 (organisms::toast / open-error emission)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Toast {
+    pub kind: ToastKind,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidebarMode {
     None,
@@ -85,6 +99,8 @@ pub struct SearchState {
     pub results: RwSignal<Vec<SearchResult>>,
     pub active: RwSignal<Option<usize>>,
     pub index_built: RwSignal<bool>,
+    /// Floating-search overlay visibility; read+written by shortcuts (Cmd+F / Escape).
+    pub visible: RwSignal<bool>,
 }
 
 impl Default for SearchState {
@@ -95,6 +111,7 @@ impl Default for SearchState {
             results: RwSignal::new(Vec::new()),
             active: RwSignal::new(None),
             index_built: RwSignal::new(false),
+            visible: RwSignal::new(false),
         }
     }
 }
@@ -106,6 +123,8 @@ pub struct AppState {
     pub viewer: ViewerState,
     pub search: SearchState,
     pub sidebar: RwSignal<SidebarMode>,
+    #[allow(dead_code)] // consumed in phase 5 (organisms::toast / open-error emission)
+    pub toast: RwSignal<Option<Toast>>,
 }
 
 impl Default for AppState {
@@ -116,6 +135,7 @@ impl Default for AppState {
             viewer: ViewerState::default(),
             search: SearchState::default(),
             sidebar: RwSignal::new(SidebarMode::None),
+            toast: RwSignal::new(None),
         }
     }
 }

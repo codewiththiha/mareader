@@ -68,10 +68,11 @@ pub fn shortcuts(state: AppState) {
                     ev.prevent_default();
                     state.viewer.fit.set(FitMode::Width);
                 }
-                // Cmd/Ctrl+F -> search sidebar
+                // Cmd/Ctrl+F -> search sidebar + floating overlay
                 "f" => {
                     ev.prevent_default();
                     state.sidebar.set(SidebarMode::Search);
+                    state.search.visible.set(true);
                 }
                 // Cmd/Ctrl+1 / 2 -> view mode
                 "1" => {
@@ -116,6 +117,14 @@ pub fn shortcuts(state: AppState) {
                 if state.viewer.mode.get() == ViewMode::Single {
                     ev.prevent_default();
                     page_next(state);
+                }
+            }
+            // Escape closes the floating search overlay first, then the sidebar.
+            "Escape" => {
+                if state.search.visible.get() {
+                    state.search.visible.set(false);
+                } else if state.sidebar.get() != SidebarMode::None {
+                    state.sidebar.set(SidebarMode::None);
                 }
             }
             _ => {}
