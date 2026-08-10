@@ -4,7 +4,12 @@
 //! engine directly — `PageCanvas` always builds a text layer, thumbnails must
 //! not. Clicking a thumbnail jumps to that page and closes the panel. The panel
 //! self-cleans: every canvas unregisters when its cell unmounts, which keeps
-//! WKWebView memory in check.
+//! WKWebView memory in check. The panel itself stays permanently mounted (the
+//! sidebar toggles it with `visibility`, not a remount), so its visible
+//! virtualization window of canvases remains engine-bound while the sidebar is
+//! collapsed or on Outline — bounded to the window (never the whole document),
+//! and released on scroll-out, document change, or app teardown. That is the
+//! accepted trade-off for instant thumbnails on every open.
 //!
 //! Rendering is scroll-windowed: an in-flow spacer spans the full grid height
 //! (so the scrollbar covers every page) while only the rows overlapping the
@@ -19,9 +24,9 @@
 //! While `render_page` is in flight the cell shows a gray skeleton with the
 //! page number (`animate-pulse`); the canvas fades in over it once resolved.
 //!
-//! A generation counter (`Arc<AtomicU32>`, bumped on document change and on
-//! panel hide) aborts in-flight renders from a previous document so they can
-//! never paint into a fresh document's canvases.
+//! A generation counter (`Arc<AtomicU32>`, bumped on document change) aborts
+//! in-flight renders from a previous document so they can never paint into a
+//! fresh document's canvases.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -55,18 +60,17 @@ const PAD: f64 = 12.0;
 /// One thumbnail cell: a skeleton box with the page number, the `.thumb-canvas`
 /// fading in over it when the engine render resolves. Registers its canvas on
 /// mount and unregisters it on `on_cleanup` (which fires when the cell scrolls
-/// out of the window, the document changes, or the panel unmounts).
+/// out of the window, the document changes, or the app tears down).
 #[component]
 fn ThumbCell(
     state: AppState,
     /// 1-based page number this cell renders.
     page: u32,
-    /// Document generation guard, bumped on document change / panel hide so a
-    /// stale in-flight render can't paint into a fresh document's canvas.
+    /// Document generation guard, bumped on document change so a stale
+    /// in-flight render can't paint into a fresh document's canvas.
     generation: Arc<AtomicU32>,
-    /// Registry of pages whose canvases are currently engine-bound, used by the
-    /// panel's defensive unregister when the sidebar leaves Thumbs while the
-    /// panel is still mounted.
+    /// Registry of pages whose canvases are currently engine-bound, kept so a
+    /// cell can remove itself from it on unmount.
     bound: Arc<Mutex<Vec<u32>>>,
 ) -> impl IntoView {
     let loaded = RwSignal::new(false);
@@ -91,7 +95,7 @@ fn ThumbCell(
     let cell_h = CELL_W * aspect();
 
     // Release the engine binding when this cell unmounts (scrolled out of the
-    // window, document switch, or panel hide).
+    // window, document switch, or app teardown).
     let cid_cleanup = cid.clone();
     let page_cleanup = page;
     let bound_cleanup = bound.clone();
@@ -122,7 +126,7 @@ fn ThumbCell(
             }
             match engine::render_page(&cid2, THUMB_SCALE, false).await {
                 Ok(r) => {
-                    // A newer document or a panel hide superseded this render.
+                    // A newer document superseded this render.
                     if gen_async.load(Ordering::Relaxed) != gen_now {
                         return;
                     }
@@ -253,14 +257,20 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
         StoredValue::new_local(None);
 
     // Generation guard: bumped whenever the document identity changes (page
-    // count / page-1 size) or the panel is hidden, so in-flight renders from an
-    // older document abort. `doc_key` mirrors it reactively to re-key the row
+    // count / page-1 size), so in-flight renders from an older document abort.
+    // `doc_key` mirrors it reactively to re-key the row
     // `<For>`: a document switch forces every mounted cell to remount
     // (re-register + re-render) — otherwise a new file with the same page count
     // would leave the previous document's canvases painted.
+    //
+    // Because the panel is permanently mounted, this effect is now the ONLY
+    // path that re-renders thumbnails for a new document — every document-open
+    // path must write `num_pages`/`page1_size` (RwSignal::set always notifies,
+    // so a write always re-keys the grid).
     let generation = Arc::new(AtomicU32::new(0));
     let doc_key = RwSignal::new(0u32);
-    // Registry of engine-bound thumbnail canvases, for the defensive unregister.
+    // Registry of engine-bound thumbnail canvases, kept so a cell can remove
+    // itself on unmount.
     let bound: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
 
     // `started` is set once the effect has seen the document it mounts with;
@@ -290,25 +300,6 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
                 scroll_top_reset.set(0.0);
             } else {
                 doc_seen.set_value(true);
-            }
-        }
-    });
-
-    // Defensive: if the panel is somehow still mounted while the sidebar leaves
-    // Thumbs, abort in-flight renders and unregister every canvas still bound.
-    // Normally the panel unmounts with the mode and each ThumbCell's on_cleanup
-    // unregisters its own canvas; this is belt-and-suspenders.
-    let gen_defensive = generation.clone();
-    let bound_defensive = bound.clone();
-    Effect::new(move || {
-        if state.sidebar.get() != SidebarMode::Thumbs {
-            gen_defensive.fetch_add(1, Ordering::Relaxed);
-            let pages: Vec<u32> = bound_defensive
-                .lock()
-                .map(|mut guard| guard.drain(..).collect())
-                .unwrap_or_default();
-            for p in pages {
-                engine::unregister_page(&format!("thumb-{p}"));
             }
         }
     });
