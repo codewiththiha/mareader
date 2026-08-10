@@ -14,7 +14,10 @@
 //! recompute 120ms after the size has been stable yields exactly one re-render
 //! per sidebar toggle, at the end of the slide. `container_size` itself stays
 //! live — page tracking and the visible-page math still need it — only the
-//! scale write is debounced.
+//! scale write is debounced. Changes that leave the fit scale essentially
+//! unchanged are skipped: if the recomputed scale is within `0.0005` of the
+//! current `render_scale`, the write is a no-op and does not force a
+//! full re-render of every `PageCanvas`.
 
 use std::time::Duration;
 
@@ -50,8 +53,11 @@ pub fn fit_effect(state: AppState) {
                     48.0,
                     state.viewer.scale.get_untracked(),
                 );
-                state.viewer.scale.set(s);
-                state.viewer.render_scale.set(s);
+                let prev = state.viewer.render_scale.get_untracked();
+                if (s - prev).abs() >= 0.0005 {
+                    state.viewer.scale.set(s);
+                    state.viewer.render_scale.set(s);
+                }
             },
             Duration::from_millis(120),
         )
