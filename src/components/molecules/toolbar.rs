@@ -194,6 +194,23 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
 
             // RIGHT GROUP.
             <div class="ml-auto flex items-center gap-1">
+                // Floating-search toggle (U4): lets mouse-only users open search
+                // between Phase 1 and Phase 3; Cmd/Ctrl+F does the same. A raw
+                // button (not the Button atom) so pointerdown can stop
+                // propagation: the floating bar's outside-click dismiss listens
+                // on window pointerdown, which would otherwise close the bar and
+                // then the click would re-open it — making the toggle one-way.
+                <Tooltip text="Search (Cmd/Ctrl+F)".to_string()>
+                    <button
+                        type="button"
+                        title="Search (Cmd/Ctrl+F)"
+                        on:pointerdown=move |ev| ev.stop_propagation()
+                        on:click=move |_| state.search.visible.set(!state.search.visible.get())
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <Icon name=IconName::Search size=16 />
+                    </button>
+                </Tooltip>
                 <ZoomControls state=state.clone() />
                 <Separator vertical=true />
                 <ThemeMenu state=state.clone() />
