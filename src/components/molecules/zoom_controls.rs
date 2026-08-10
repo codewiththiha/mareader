@@ -4,6 +4,7 @@
 //! Select. Any manual zoom clears the fit mode. The readout reads `viewer.scale`
 //! directly, so a non-preset fit value like 137% shows correctly.
 
+use leptos::html;
 use leptos::prelude::*;
 
 use crate::components::atoms::button::{Button, ButtonKind};
@@ -24,6 +25,44 @@ fn apply_zoom(state: AppState, scale: f64) {
 #[component]
 pub fn ZoomControls(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
+    let root_ref: NodeRef<html::Div> = NodeRef::new();
+
+    // Outside-click dismiss (U7): while the popover is open, any pointerdown
+    // landing outside the control closes it. Re-registered per open-flip,
+    // removed on cleanup (same lifecycle as the floating-search overlay).
+    Effect::new(move |_| {
+        if open.get() {
+            let handle = window_event_listener(
+                leptos::ev::pointerdown,
+                move |ev: leptos::ev::PointerEvent| {
+                    let target: web_sys::Node = event_target(&ev);
+                    let contains = root_ref
+                        .get()
+                        .as_ref()
+                        .map_or(false, |c| c.contains(Some(&target)));
+                    if !contains {
+                        open.set(false);
+                    }
+                },
+            );
+            on_cleanup(move || handle.remove());
+        }
+    });
+
+    // Escape dismiss (U7): same window-listener lifecycle.
+    Effect::new(move |_| {
+        if open.get() {
+            let handle = window_event_listener(
+                leptos::ev::keydown,
+                move |ev: leptos::ev::KeyboardEvent| {
+                    if ev.key() == "Escape" {
+                        open.set(false);
+                    }
+                },
+            );
+            on_cleanup(move || handle.remove());
+        }
+    });
 
     let zoom_out_state = state;
     let zoom_in_state = state;
@@ -42,7 +81,7 @@ pub fn ZoomControls(state: AppState) -> impl IntoView {
     };
 
     view! {
-        <div class="flex items-center gap-1">
+        <div node_ref=root_ref class="flex items-center gap-1">
             <Tooltip text="Zoom out (-)".to_string()>
                 <Button
                     on_click=move |_| {

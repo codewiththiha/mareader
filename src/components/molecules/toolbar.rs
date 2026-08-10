@@ -1,8 +1,10 @@
 //! Top toolbar. OWNED BY branch B (viewer/chrome).
 //! Redesigned (U2): hamburger + filename on the left, true viewport-centered
-//! page nav (Single mode only), zoom + theme/texture/noise on the right. The
-//! sidebar panel toggles were removed — the sidebar's own tab rail is the single
-//! source of truth for which panel is open.
+//! page nav (Single mode only). The right group is the U7 audit layout:
+//! search + segmented Single/Continuous + zoom, then a single Appearance menu
+//! (U6) and a More (⋯) overflow menu. The sidebar panel toggles were removed —
+//! the sidebar's own tab rail is the single source of truth for which panel is
+//! open.
 //!
 //! Also owns the shared file-open flow (`open_dialog` / `open_path`), reused by
 //! the keyboard shortcuts (src/effects/shortcuts.rs) and later by drag-drop.
@@ -13,6 +15,7 @@ use leptos::task::spawn_local;
 use crate::api::engine;
 use crate::components::atoms::button::{Button, ButtonKind};
 use crate::components::atoms::icon::{Icon, IconName};
+use crate::components::atoms::segmented::{Segmented, SegmentedLabel};
 use crate::components::atoms::separator::Separator;
 use crate::components::atoms::tooltip::Tooltip;
 use crate::core::document::DocStatus;
@@ -20,10 +23,9 @@ use crate::core::layout::ViewMode;
 use crate::core::math::{fit_scale, FitMode};
 use crate::core::state::{AppState, SidebarMode};
 
-use super::noise_toggle::NoiseToggle;
+use super::appearance_menu::AppearanceMenu;
+use super::more_menu::MoreMenu;
 use super::page_nav::PageNav;
-use super::texture_menu::TextureMenu;
-use super::theme_menu::ThemeMenu;
 use super::zoom_controls::ZoomControls;
 
 /// Native open-dialog flow: pick a file, then run the shared open-flow.
@@ -106,34 +108,6 @@ pub fn open_path(state: AppState, path: String) {
     });
 }
 
-/// Small toolbar icon-button whose active styling is reactive (the Button atom's
-/// `active`/`disabled` props are static, so raw elements are used here).
-#[component]
-fn ToggleButton(
-    icon: IconName,
-    title: String,
-    active: impl Fn() -> bool + Send + 'static,
-    on_click: impl Fn() + Send + 'static,
-) -> impl IntoView {
-    let base = "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
-    view! {
-        <button
-            type="button"
-            title=title
-            class=move || {
-                if active() {
-                    format!("{base} border-accent bg-accent-soft text-accent")
-                } else {
-                    format!("{base} border-line bg-surface text-ink hover:bg-line")
-                }
-            }
-            on:click=move |_| on_click()
-        >
-            <Icon name=icon size=16 />
-        </button>
-    }
-}
-
 #[component]
 pub fn Toolbar(state: AppState) -> impl IntoView {
     let mode = state.viewer.mode;
@@ -211,28 +185,20 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                         <Icon name=IconName::Search size=16 />
                     </button>
                 </Tooltip>
+                <Tooltip text="View mode".to_string()>
+                    <Segmented
+                        options=vec![
+                            (ViewMode::Single, SegmentedLabel::Icon(IconName::SinglePage)),
+                            (ViewMode::Continuous, SegmentedLabel::Icon(IconName::Continuous)),
+                        ]
+                        value={mode.read_only()}
+                        on_change=move |m: ViewMode| mode_state.viewer.mode.set(m)
+                    />
+                </Tooltip>
                 <ZoomControls state=state.clone() />
                 <Separator vertical=true />
-                <ThemeMenu state=state.clone() />
-                <TextureMenu state=state.clone() />
-                <NoiseToggle state=state.clone() />
-                <Separator vertical=true />
-                <Tooltip text="Single page view".to_string()>
-                    <ToggleButton
-                        icon=IconName::SinglePage
-                        title="Single page view".to_string()
-                        active=move || mode.get() == ViewMode::Single
-                        on_click=move || mode_state.viewer.mode.set(ViewMode::Single)
-                    />
-                </Tooltip>
-                <Tooltip text="Continuous scroll".to_string()>
-                    <ToggleButton
-                        icon=IconName::Continuous
-                        title="Continuous scroll".to_string()
-                        active=move || mode.get() == ViewMode::Continuous
-                        on_click=move || mode_state.viewer.mode.set(ViewMode::Continuous)
-                    />
-                </Tooltip>
+                <AppearanceMenu state={state.clone()} />
+                <MoreMenu state={state.clone()} />
             </div>
         </div>
     }
