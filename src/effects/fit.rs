@@ -6,6 +6,17 @@
 //! is active it computes the matching scale and writes `viewer.scale` +
 //! `viewer.render_scale`. `scale` is read untracked so the write-back does not
 //! retrigger this effect (no loop).
+//!
+//! The scale write is DEBOUNCED: the sidebar `<aside>` animates its width over
+//! 300ms, emitting a burst of `container_size` writes, and an immediate
+//! recompute per frame would cancel every in-flight render (`PageCanvas`
+//! re-renders on a scale change), flashing the visible pages. Scheduling the
+//! recompute 120ms after the size has been stable yields exactly one re-render
+//! per sidebar toggle, at the end of the slide. `container_size` itself stays
+//! live — page tracking and the visible-page math still need it — only the
+//! scale write is debounced.
+
+use std::time::Duration;
 
 use leptos::prelude::*;
 
@@ -14,7 +25,7 @@ use crate::core::state::AppState;
 
 /// Must be called once from the app root (ReaderView).
 pub fn fit_effect(state: AppState) {
-    Effect::new(move || {
+    Effect::new(move |_| {
         let fit = state.viewer.fit.get();
         if fit == FitMode::None {
             return;
@@ -23,16 +34,32 @@ pub fn fit_effect(state: AppState) {
         let Some(p) = state.doc.page1_size.get() else {
             return;
         };
-        let s = fit_scale(
-            fit,
-            cw,
-            ch,
-            p.width,
-            p.height,
-            48.0,
-            state.viewer.scale.get_untracked(),
-        );
-        state.viewer.scale.set(s);
-        state.viewer.render_scale.set(s);
+
+        // Debounce: each `container_size` change re-runs this effect, which
+        // clears the previous timer (same pattern as the toast auto-dismiss in
+        // organisms/toast.rs), so the recompute only fires once the size has
+        // settled for ~120ms.
+        let handle = set_timeout_with_handle(
+            move || {
+                let s = fit_scale(
+                    fit,
+                    cw,
+                    ch,
+                    p.width,
+                    p.height,
+                    48.0,
+                    state.viewer.scale.get_untracked(),
+                );
+                state.viewer.scale.set(s);
+                state.viewer.render_scale.set(s);
+            },
+            Duration::from_millis(120),
+        )
+        .ok();
+        on_cleanup(move || {
+            if let Some(h) = handle {
+                h.clear();
+            }
+        });
     });
 }
