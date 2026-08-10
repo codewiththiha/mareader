@@ -40,6 +40,8 @@ web-sys = { version = "0.3", features = [
   "DomRect",
   "DragEvent",
   "DataTransfer",
+  "ScrollToOptions",
+  "ScrollBehavior",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"

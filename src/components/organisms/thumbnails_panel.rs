@@ -23,6 +23,8 @@
 //! panel hide) aborts in-flight renders from a previous document so they can
 //! never paint into a fresh document's canvases.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -68,6 +70,10 @@ fn ThumbCell(
     bound: Arc<Mutex<Vec<u32>>>,
 ) -> impl IntoView {
     let loaded = RwSignal::new(false);
+    // Whether this cell is the reader's current page (drives the accent ring
+    // and number-band highlight). Reads `viewer.page` so every cell re-evaluates
+    // as the reader turns pages in the main viewer.
+    let is_current = move || state.viewer.page.get() == page;
     let cid = format!("thumb-{page}");
 
     // Page-1 aspect drives the fixed cell geometry; falls back to a 3:4
@@ -181,14 +187,26 @@ fn ThumbCell(
             // The skeleton only pulses on top of the same tint; `.thumb-canvas`
             // mix-blends against it in every state.
             <div
-                class="thumb-card relative w-[120px] rounded-md ring-1 ring-line"
+                class="thumb-card relative w-[120px] rounded-md"
+                // Current page gets an accent ring; other pages the quiet line
+                // ring. Single-token conditional classes only (see the sidebar.rs
+                // classList gotcha — a space-separated token would throw).
+                class=("ring-2", is_current)
+                class=("ring-accent", is_current)
+                class=("ring-1", move || !is_current())
+                class=("ring-line", move || !is_current())
                 class=("animate-pulse", move || !loaded.get())
             >
                 <div
                     class="thumb-num flex w-full items-center justify-center"
                     style:height=format!("{}px", cell_h)
                 >
-                    <span class="text-xs text-muted">{page}</span>
+                    <span
+                        class="text-xs"
+                        class=("text-accent", is_current)
+                        class=("font-semibold", is_current)
+                        class=("text-muted", move || !is_current())
+                    >{page}</span>
                 </div>
                 <canvas
                     id=cid
@@ -220,6 +238,19 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
     // Scroll window of the container (populated by the listener/observer below).
     let scroll_top = RwSignal::new(0.0);
     let viewport_h = RwSignal::new(0.0);
+
+    // Last time the USER physically scrolled/dragged the thumb panel. The
+    // auto-center effect yields to it for a grace period so the grid never
+    // fights someone who is browsing the thumbs themselves. NEG_INFINITY = the
+    // user has never driven it (auto-center always allowed).
+    let last_user_drive: Rc<Cell<f64>> = Rc::new(Cell::new(f64::NEG_INFINITY));
+    // (was-this-panel-open, last-centered page) — auto-center only acts on a
+    // panel open or a real page change, never on churn. Kept in a StoredValue so
+    // reading/writing it never registers a reactive dependency.
+    let centered = StoredValue::new_local((false, 0u32));
+    // Keeps the user-drive listener Closure alive for the panel's lifetime.
+    let drive_slot: StoredValue<Option<Closure<dyn FnMut(Event)>>, _> =
+        StoredValue::new_local(None);
 
     // Generation guard: bumped whenever the document identity changes (page
     // count / page-1 size) or the panel is hidden, so in-flight renders from an
@@ -312,6 +343,9 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
         }
     });
 
+    // The drive tracker lives past the spawn_local (the auto-center effect
+    // reads it), so hand the listener a clone instead of moving it in.
+    let drive_owner = last_user_drive.clone();
     spawn_local(async move {
         if listener_slot.with_value(|l| l.is_some()) {
             return; // already set up (component body re-run)
@@ -344,6 +378,23 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
             listener_slot.set_value(Some(closure));
         }
 
+        // User-drive tracker: any wheel / pointerdown / touchstart on the panel
+        // stamps the current time so the auto-center effect stands down for a
+        // grace period (the Closure is parked in `drive_slot` to stay alive).
+        let drive = {
+            let drive_last = drive_owner.clone();
+            move |_: Event| {
+                drive_last.set(js_sys::Date::now());
+            }
+        };
+        let drive_closure = Closure::new(drive);
+        let drive_fn: js_sys::Function =
+            drive_closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
+        for ev in ["wheel", "pointerdown", "touchstart"] {
+            let _ = el.add_event_listener_with_callback(ev, &drive_fn);
+        }
+        drive_slot.set_value(Some(drive_closure));
+
         // Container size -> viewport height (fires initially too).
         let callback: Closure<dyn FnMut(Vec<ResizeObserverEntry>)> = Closure::wrap(
             Box::new(move |entries: Vec<ResizeObserverEntry>| {
@@ -360,6 +411,72 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
             observer_handle.set_value(Some(observer));
             callback_handle.set_value(Some(callback));
         }
+    });
+
+    // --- auto-center the current page ---------------------------------------
+    // Follows the reader's page (main-viewer scroll in continuous mode, page
+    // turns in single mode) by gliding the current page's row to the vertical
+    // middle of the panel. Reads every dependency it subscribes to
+    // UNCONDITIONALLY at the top (see the page_tracking.rs gotcha), and leaves
+    // the "panel open" flag UNSET until geometry is real — otherwise the first
+    // mount run (element/viewport not seeded yet) would consume the "just
+    // opened" transition and the panel would then never center on open. The geo
+    // math needs no DOM measurement: the spacer gives the container its full
+    // height, so the scroll lands before the virtualization window mounts the
+    // row. The scroll we write fires the existing scroll listener, which drives
+    // the virtualization window as usual.
+    Effect::new(move |_| {
+        let in_thumbs = state.sidebar.get() == SidebarMode::Thumbs;
+        let p = state.viewer.page.get();
+        let vh = viewport_h.get();
+        let rh = row_height();
+        let cell_h = CELL_W * aspect();
+        let total_rows = rows();
+
+        let (was_open, prev_p) = centered.get_value();
+        if !in_thumbs {
+            centered.set_value((false, 0));
+            return;
+        }
+        // Element/geometry not ready yet (fresh mount): stay "unopened" so the
+        // first run with real geometry counts as the panel just opening.
+        let Some(el) = container_el.get_value() else {
+            return;
+        };
+        if vh <= 0.0 || rh <= 0.0 || total_rows == 0 {
+            return;
+        }
+
+        let just_opened = !was_open;
+        if !just_opened && p == prev_p {
+            return;
+        }
+        // User is browsing the thumb grid themselves -> don't yank (1.5 s grace).
+        if !just_opened && js_sys::Date::now() - last_user_drive.get() < 1500.0 {
+            return;
+        }
+
+        // Row containing page p (2 columns per row, 0-based).
+        let row = (p.saturating_sub(1) / 2) as f64;
+        let cell_center_y = PAD + row * rh + cell_h / 2.0;
+        let max_scroll = (PAD * 2.0 + total_rows as f64 * rh - vh).max(0.0);
+        let target = (cell_center_y - vh / 2.0).clamp(0.0, max_scroll);
+
+        let cur = el.scroll_top() as f64;
+        if (target - cur).abs() <= 1.0 {
+            centered.set_value((true, p));
+            return;
+        }
+        let opts = web_sys::ScrollToOptions::new();
+        opts.set_top(target);
+        // Instant on panel open or far jumps; smooth for nearby page turns.
+        if just_opened || (target - cur).abs() > 2.0 * vh {
+            opts.set_behavior(web_sys::ScrollBehavior::Auto);
+        } else {
+            opts.set_behavior(web_sys::ScrollBehavior::Smooth);
+        }
+        centered.set_value((true, p));
+        el.scroll_to_with_scroll_to_options(&opts);
     });
 
     view! {
