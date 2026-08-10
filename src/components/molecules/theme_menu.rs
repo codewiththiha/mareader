@@ -1,18 +1,28 @@
-//! Eye-protection theme menu (light/dark/sepia/green/night/dim). OWNED BY branch D
-//! (panels/settings).
+//! Theme section renderer — one section of the consolidated 🎨 Appearance menu.
 //!
-//! A dropdown listing every theme from `crate::core::themes::THEMES`. Clicking an
-//! entry sets `settings.theme_id`; the foundation `theme_applier` effect pushes it
-//! to the DOM (`<html data-theme=...>` + `.dark`). The popover closes on selection
-//! and whenever any settings change, so only one menu is ever open at a time.
+//! Renders the theme rows (Light/Dark/Sepia/Green/Night/Dim from
+//! `crate::core::themes::THEMES`) with check-on-active, a color dot, and the
+//! "dark" badge. Clicking a row sets `settings.theme_id`; the foundation
+//! `theme_applier` effect pushes it to the DOM (`<html data-theme=...>` + `.dark`).
+//!
+//! This is content only — no trigger button, no popover, no open state. The
+//! owning `AppearanceMenu` watches `theme_id` and closes itself on selection.
+//! Until the U7 toolbar rewrite lands, the Phase-2 toolbar still mounts this
+//! bare (no popover wrapper) — that transient render is expected to look wrong
+//! and is compile-only.
 
 use leptos::prelude::*;
 
 use crate::components::atoms::icon::{Icon, IconName};
 use crate::core::state::AppState;
-use crate::core::themes::{theme_by_id, THEMES};
+use crate::core::themes::THEMES;
 
 /// Maps a theme id to its toolbar icon (matches the ids in `THEMES` / CSS).
+///
+/// Used by the old per-theme toolbar trigger; the consolidated 🎨 Appearance
+/// trigger uses a single `Palette` icon instead. Kept alive (allow) so the
+/// theme icon set stays in the sprite and the mapping is documented.
+#[allow(dead_code)]
 fn theme_icon(id: &str) -> IconName {
     match id {
         "dark" => IconName::Moon,
@@ -39,70 +49,37 @@ fn dot_class(is_dark: bool) -> &'static str {
 
 #[component]
 pub fn ThemeMenu(state: AppState) -> impl IntoView {
-    let open = RwSignal::new(false);
-
     let current = move || state.settings.get().theme_id;
-    let current_icon = move || theme_icon(theme_by_id(&current()).id);
-
-    let trigger_class = move || {
-        let base = "inline-flex items-center justify-center gap-1.5 rounded-lg border h-9 px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent border-line bg-surface text-ink hover:bg-line";
-        if open.get() {
-            format!("{base} border-accent text-accent")
-        } else {
-            base.to_string()
-        }
-    };
-
-    // Close the popover whenever settings change (a selection here, or any other
-    // menu changing theme/texture/noise) so only one menu is open at a time.
-    Effect::new(move || {
-        let _ = state.settings.get();
-        open.set(false);
-    });
 
     view! {
-        <div class="relative inline-flex">
-            <button
-                type="button"
-                title="Theme"
-                on:click=move |_| open.set(!open.get())
-                class=trigger_class
-            >
-                {move || view! { <Icon name=current_icon() size=16/> }}
-                <svg class="text-muted" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="m6 9 6 6 6-6"/>
-                </svg>
-            </button>
-            <Show when=move || open.get()>
-                <div class="menu-popover absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-line bg-surface p-1 shadow-lg">
-                    <For
-                        each=move || theme_rows()
-                        key=|t| t.id
-                        children=move |t| {
-                            let t = *t;
-                            view! {
-                                <button
-                                    type="button"
-                                    on:click=move |_| {
-                                        state.settings.update(|s| s.theme_id = t.id.to_string());
-                                        open.set(false);
-                                    }
-                                    class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
-                                >
-                                    <span class="inline-flex w-4 shrink-0 justify-center text-accent">
-                                        {move || (current() == t.id).then(|| view! { <Icon name=IconName::Check size=14/> })}
-                                    </span>
-                                    <span class=dot_class(t.is_dark) />
-                                    <span>{t.label}</span>
-                                    {t.is_dark.then(|| view! {
-                                        <span class="ml-auto rounded bg-line px-1 text-[10px] text-muted">"dark"</span>
-                                    })}
-                                </button>
+        <For
+            each=move || theme_rows()
+            key=|t| t.id
+            children=move |t| {
+                let t = *t;
+                view! {
+                    <button
+                        type="button"
+                        on:click=move |_| state.settings.update(|s| s.theme_id = t.id.to_string())
+                        class=move || {
+                            if current() == t.id {
+                                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium bg-accent-soft text-accent"
+                            } else {
+                                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
                             }
                         }
-                    />
-                </div>
-            </Show>
-        </div>
+                    >
+                        <span class="inline-flex w-4 shrink-0 justify-center text-accent">
+                            {move || (current() == t.id).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                        </span>
+                        <span class=dot_class(t.is_dark) />
+                        <span>{t.label}</span>
+                        {t.is_dark.then(|| view! {
+                            <span class="ml-auto rounded bg-line px-1 text-[10px] text-muted">"dark"</span>
+                        })}
+                    </button>
+                }
+            }
+        />
     }
 }
