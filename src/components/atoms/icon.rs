@@ -27,6 +27,20 @@ pub enum IconName {
     Check,
     SinglePage,
     Continuous,
+    // --- phase 2/3 surface (consumed by floating search / appearance menu /
+    // MoreMenu); unused until those units land, hence the allow. ---
+    #[allow(dead_code)] // consumed in phase 2 (floating_search)
+    Menu,
+    #[allow(dead_code)] // consumed in phase 3 (appearance_menu)
+    Palette,
+    #[allow(dead_code)] // consumed in phase 3 (more_menu)
+    More,
+    #[allow(dead_code)] // consumed in phase 3 (more_menu fullscreen)
+    Fullscreen,
+    #[allow(dead_code)] // consumed in phase 3 (more_menu print)
+    Print,
+    #[allow(dead_code)] // consumed in phase 3 (more_menu shortcuts)
+    Keyboard,
 }
 
 fn icon_data(name: IconName) -> (&'static str, &'static str) {
@@ -54,6 +68,12 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Check => ("0 0 24 24", "<path d='M20 6 9 17l-5-5'/>"),
         IconName::SinglePage => ("0 0 24 24", "<rect x='4' y='3' width='16' height='18' rx='2'/><path d='M4 9h16'/>"),
         IconName::Continuous => ("0 0 24 24", "<rect x='4' y='3' width='16' height='4' rx='1'/><rect x='4' y='10' width='16' height='4' rx='1'/><rect x='4' y='17' width='16' height='4' rx='1'/>"),
+        IconName::Menu => ("0 0 24 24", "<path d='M4 6h16 M4 12h16 M4 18h16'/>"),
+        IconName::Palette => ("0 0 24 24", "<path d='M12 22a10 10 0 1 1 10-10c0 2-1.5 3-3 3h-2a2 2 0 0 0-2 2c0 1 .5 1.5 1 2s-1 3-4 3z'/>"),
+        IconName::More => ("0 0 24 24", "<circle cx='5' cy='12' r='1.5'/><circle cx='12' cy='12' r='1.5'/><circle cx='19' cy='12' r='1.5'/>"),
+        IconName::Fullscreen => ("0 0 24 24", "<path d='M8 3H5a2 2 0 0 0-2 2v3 M16 3h3a2 2 0 0 1 2 2v3 M8 21H5a2 2 0 0 1-2-2v-3 M16 21h3a2 2 0 0 0 2-2v-3'/>"),
+        IconName::Print => ("0 0 24 24", "<path d='M6 9V2h12v7'/><path d='M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2'/><path d='M6 14h12v8H6z'/>"),
+        IconName::Keyboard => ("0 0 24 24", "<path d='M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/><path d='M6 10h.01 M10 10h.01 M14 10h.01 M18 10h.01 M6 14h.01 M18 14h.01 M10 14h4'/>"),
     }
 }
 

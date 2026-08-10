@@ -1,5 +1,7 @@
+pub mod floating_search;
 pub mod outline_panel;
 pub mod page_canvas;
+pub mod toast;
 pub mod page_list;
 pub mod search_panel;
 pub mod sidebar;

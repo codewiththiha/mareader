@@ -10,7 +10,9 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 # Feature set kept broad so feature branches (viewer/continuous, viewer/chrome,
-# panels/sidebar, panels/settings) never need to edit Cargo.toml.
+# panels/sidebar, panels/settings) and the redesign units (floating search,
+# appearance/more menus, drag-drop) never need to edit Cargo.toml. DragEvent +
+# DataTransfer are consumed by ReaderView drag-drop in phase 5.
 web-sys = { version = "0.3", features = [
   "Window",
   "Document",
@@ -36,6 +38,8 @@ web-sys = { version = "0.3", features = [
   "ResizeObserver",
   "ResizeObserverEntry",
   "DomRect",
+  "DragEvent",
+  "DataTransfer",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"

@@ -67,4 +67,15 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "clearHighlights")]
     pub fn clear_highlights();
+
+    // --- Tauri v2 window/event surface ---
+    // Tauri v2 window handle (used by MoreMenu fullscreen, phase 3) and event
+    // listener (used by ReaderView drag-drop, phase 5). js_name mapping is load-bearing.
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "window"], js_name = "getCurrentWindow")]
+    #[allow(dead_code)]
+    pub fn tauri_get_current_window() -> JsValue;
+
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = "listen")]
+    #[allow(dead_code)]
+    pub async fn tauri_listen(event: &str, handler: js_sys::Function) -> JsValue;
 }
