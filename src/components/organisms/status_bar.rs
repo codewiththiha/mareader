@@ -1,5 +1,19 @@
-//! Bottom status bar (page x/y, zoom %, doc title/error). OWNED BY branch B
-//! (viewer/chrome). Falls back to "No document" when status != Ready.
+//! Bottom status bar (page position only). OWNED BY branch B (viewer/chrome).
+//! Phase 1 redesign: the filename and zoom readouts leave this bar (they move
+//! to the toolbar and the zoom controls) — it now shows just the centered
+//! `x / y` page counter.
+//!
+//! While `DocStatus::Ready`, the counter reads the live `viewer.page` /
+//! `doc.num_pages`; any other status shows `– / –`. A mid-session open error
+//! (toast system arrives in a later phase) is surfaced inline: when
+//! `doc.error` is `Some`, the message replaces the counter, prefixed with a
+//! warning glyph and truncating so it never breaks layout. It clears
+//! automatically on the next open (which resets `doc.error`) — no timer.
+//!
+//! The error rides the footer's `mix-blend-difference` like the counter, so
+//! its hue inverts against the page (red-400 reads red on dark pages, teal on
+//! white ones); the glyph and semibold weight carry the warning signal even
+//! when the hue inverts, and the blend keeps it legible over any color.
 //!
 //! Rendered as an overlay: the `<footer>` in ReaderView positions it
 //! absolutely over the bottom of the viewer (no layout space of its own) and
@@ -21,45 +35,31 @@ use crate::core::state::AppState;
 #[component]
 pub fn StatusBar(state: AppState) -> impl IntoView {
     view! {
-        <div class="flex h-8 items-center gap-3 px-3 text-xs text-white">
-            <span class="min-w-0 flex-1 truncate">
-                {move || match state.doc.status.get() {
-                    DocStatus::Ready => state
-                        .doc
-                        .title
-                        .get()
-                        .unwrap_or_else(|| "Untitled".to_string()),
-                    DocStatus::Opening => "Opening…".to_string(),
-                    DocStatus::Error => state
-                        .doc
-                        .error
-                        .get()
-                        .unwrap_or_else(|| "Could not open PDF".to_string()),
-                    DocStatus::Idle => "No document".to_string(),
-                }}
-            </span>
-            <span class="whitespace-nowrap">
-                {move || match state.doc.status.get() {
-                    DocStatus::Ready => format!(
-                        "{} / {}",
-                        state.viewer.page.get(),
-                        state.doc.num_pages.get()
-                    ),
-                    _ => "– / –".to_string(),
-                }}
-            </span>
-            <span class="whitespace-nowrap">
-                {move || {
-                    if state.doc.status.get() == DocStatus::Ready {
-                        format!(
-                            "{}%",
-                            (state.viewer.render_scale.get() * 100.0).round() as u32
-                        )
-                    } else {
-                        String::new()
+        <div class="flex h-8 items-center justify-center gap-3 px-3 text-xs text-white">
+            {move || {
+                if let Some(err) = state.doc.error.get() {
+                    view! {
+                        <span class="min-w-0 max-w-[60vw] truncate font-semibold text-red-400">
+                            {format!("⚠ {err}")}
+                        </span>
                     }
-                }}
-            </span>
+                    .into_any()
+                } else {
+                    view! {
+                        <span class="whitespace-nowrap">
+                            {match state.doc.status.get() {
+                                DocStatus::Ready => format!(
+                                    "{} / {}",
+                                    state.viewer.page.get(),
+                                    state.doc.num_pages.get()
+                                ),
+                                _ => "– / –".to_string(),
+                            }}
+                        </span>
+                    }
+                    .into_any()
+                }
+            }}
         </div>
     }
 }
