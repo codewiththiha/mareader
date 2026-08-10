@@ -180,6 +180,13 @@
   color: var(--selection-text-color);
 }
 
+/* Snapshot overlay stacked while a scale re-render is in flight
+   (page_canvas.rs). `.pdf-page canvas` already supplies its
+   position/size/filter/blend; this only keeps it click-through. */
+.pdf-page canvas.page-snapshot {
+  pointer-events: none;
+}
+
 /* Search highlights (engine appends .highlight divs into the text layer).
    The vendored pdf_viewer.css `.textLayer .highlight` rule adds a 1px
    margin/padding (for pdf.js's own merged highlights); neutralise it so our
