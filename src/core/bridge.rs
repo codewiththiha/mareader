@@ -76,6 +76,31 @@ extern "C" {
     pub fn tauri_get_current_window() -> JsValue;
 
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = "listen")]
-    #[allow(dead_code)]
     pub async fn tauri_listen(event: &str, handler: js_sys::Function) -> JsValue;
+}
+
+/// Subscribe to a Tauri event. `handler` receives the event object (a JsValue,
+/// e.g. Tauri's `tauri://drag-drop` event). Returns the unlisten handle — keep
+/// it to unsubscribe later, or drop it to keep the listener registered for the
+/// lifetime of the webview. Thin wrapper so views don't call the wasm-bindgen
+/// extern directly.
+pub async fn listen(event: &str, handler: js_sys::Function) -> JsValue {
+    tauri_listen(event, handler).await
+}
+
+/// True when the app runs inside Tauri (`window.__TAURI__` is present).
+///
+/// Must be checked BEFORE any `window.__TAURI__.*` call: the wasm-bindgen shim
+/// evaluates the global chain directly and throws a TypeError when the global
+/// is absent (e.g. `trunk serve` in a plain browser). See more_menu.rs for the
+/// same probe.
+pub fn has_tauri() -> bool {
+    web_sys::window()
+        .map(|w| {
+            let g: js_sys::Object = w.unchecked_into();
+            js_sys::Reflect::get(&g, &JsValue::from_str("__TAURI__"))
+                .map(|v| !(v.is_undefined() || v.is_null()))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
 }
