@@ -29,7 +29,6 @@ pub struct Toast {
 pub enum SidebarMode {
     None,
     Outline,
-    Search,
     Thumbs,
 }
 
