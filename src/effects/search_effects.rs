@@ -30,8 +30,12 @@ pub async fn run_search(state: AppState) {
     match engine::search(&query).await {
         Ok(resp) => {
             state.search.total.set(resp.total);
-            state.search.results.set(resp.results);
-            state.search.active.set(Some(0));
+            // `active` must stay within `results` bounds (contract for the
+            // floating-search counter / prev-next): only mark the first result
+            // active when there actually are results.
+            let results = resp.results;
+            state.search.active.set((!results.is_empty()).then_some(0));
+            state.search.results.set(results);
             // Force mounted PageCanvases to re-render so the engine re-applies
             // its stored highlights to the freshly searched query.
             state.viewer.render_scale.update(|s| *s += 0.0001);

@@ -49,12 +49,25 @@ fn is_form_target(ev: &leptos::ev::KeyboardEvent) -> bool {
 /// remove it on cleanup if needed.
 pub fn shortcuts(state: AppState) {
     window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
+        let key = ev.key();
+
+        // Escape is a dismiss action, never text input, so it must work even
+        // while a search input is focused — handle it before the form-target
+        // guard. Closes the floating search overlay first, then the sidebar.
+        if key == "Escape" {
+            if state.search.visible.get() {
+                state.search.visible.set(false);
+            } else if state.sidebar.get() != SidebarMode::None {
+                state.sidebar.set(SidebarMode::None);
+            }
+            return;
+        }
+
         if is_form_target(&ev) {
             return;
         }
 
         let meta = ev.meta_key() || ev.ctrl_key();
-        let key = ev.key();
 
         if meta {
             match key.to_lowercase().as_str() {
@@ -117,14 +130,6 @@ pub fn shortcuts(state: AppState) {
                 if state.viewer.mode.get() == ViewMode::Single {
                     ev.prevent_default();
                     page_next(state);
-                }
-            }
-            // Escape closes the floating search overlay first, then the sidebar.
-            "Escape" => {
-                if state.search.visible.get() {
-                    state.search.visible.set(false);
-                } else if state.sidebar.get() != SidebarMode::None {
-                    state.sidebar.set(SidebarMode::None);
                 }
             }
             _ => {}
