@@ -199,6 +199,22 @@
    mix-blend-mode (multiply in light themes) so light areas let the texture
    show through while dark text stays dark and legible.
    --------------------------------------------------------------------- */
+/* The stroke colors live behind these vars so the three DARK themes (which get
+   the `.dark` class on <html>, see theme_applier.rs) can flip them to LIGHT
+   strokes: the canvas inverts its page to dark paper, and black strokes would
+   simply vanish against it. Light-family themes (light/sepia/green) keep the
+   subtle dark strokes via the `:root` defaults. */
+:root {
+  --texture-line: rgba(15, 23, 42, 0.16); /* lined / grid / dotted / cross strokes */
+  --texture-strong: rgba(15, 23, 42, 0.26); /* margins / header rules (reserved) */
+  --texture-paper: rgba(15, 23, 42, 0.05); /* paper-grain tint */
+}
+:root.dark {
+  --texture-line: rgba(255, 255, 255, 0.22);
+  --texture-strong: rgba(255, 255, 255, 0.36);
+  --texture-paper: rgba(255, 255, 255, 0.08);
+}
+
 .pdf-page::before {
   content: "";
   position: absolute;
@@ -210,32 +226,36 @@
 
 .pdf-page.texture-paper::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  /* Tint the gray fractal noise toward the theme's grain color (dark strokes
+     on light paper, light on dark) without losing the noise pattern. */
+  background-color: var(--texture-paper);
+  background-blend-mode: multiply;
 }
 
 .pdf-page.texture-lined::before {
   background-image: repeating-linear-gradient(
     to bottom,
-    rgb(0 0 0 / 0.06) 0 1px,
+    var(--texture-line) 0 1px,
     transparent 1px 26px
   );
 }
 
 .pdf-page.texture-grid::before {
   background-image:
-    repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.05) 0 1px, transparent 1px 26px),
-    repeating-linear-gradient(to right, rgb(0 0 0 / 0.05) 0 1px, transparent 1px 26px);
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(to right, var(--texture-line) 0 1px, transparent 1px 26px);
 }
 
 .pdf-page.texture-dotted::before {
-  background-image: radial-gradient(rgb(0 0 0 / 0.14) 1px, transparent 1.5px);
+  background-image: radial-gradient(var(--texture-line) 1px, transparent 1.5px);
   background-size: 8px 8px;
 }
 
 .pdf-page.texture-cross::before {
   background-image:
-    repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.06) 0 1px, transparent 1px 26px),
-    repeating-linear-gradient(to right, rgb(0 0 0 / 0.06) 0 1px, transparent 1px 26px),
-    radial-gradient(rgb(0 0 0 / 0.1) 1.5px, transparent 2px);
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(to right, var(--texture-line) 0 1px, transparent 1px 26px),
+    radial-gradient(var(--texture-line) 1.5px, transparent 2px);
   background-size:
     26px 26px,
     26px 26px,
