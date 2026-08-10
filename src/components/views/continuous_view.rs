@@ -50,7 +50,36 @@ pub fn ContinuousView(state: AppState) -> impl IntoView {
         }
     });
 
+    // "How far through the document am I" indicator (U8): fraction of the
+    // scrollable range currently passed. The total scrollable height is
+    // memoized over `page_heights` so scroll ticks only re-read the numerator
+    // (heights only change on render/zoom, not on scroll).
+    let total_height = Memo::new(move |_| {
+        let heights = state.doc.page_heights.get();
+        crate::core::layout::total_height_css(&heights, crate::core::layout::PAGE_GAP)
+    });
+    let progress = move || {
+        let st = state.viewer.scroll_top.get();
+        let (_, vh) = state.viewer.container_size.get();
+        let total = total_height.get();
+        if total > vh && total > 0.0 {
+            (st / (total - vh)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    };
+
     view! {
-        <crate::components::organisms::page_list::PageList state=state />
+        <div class="relative h-full w-full">
+            <crate::components::organisms::page_list::PageList state=state />
+            // Thin scroll-progress bar pinned to the bottom of the view. The
+            // outer track is pointer-events-none so it never blocks scrolling.
+            <div class="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-0.5">
+                <div
+                    class="h-full bg-accent/80 transition-[width] duration-100"
+                    style:width=move || format!("{}%", progress() * 100.0)
+                ></div>
+            </div>
+        </div>
     }
 }
