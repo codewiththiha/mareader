@@ -40,12 +40,15 @@ pub fn ToastHost(state: AppState) -> impl IntoView {
     });
 
     view! {
-        // Centered host, click-through. The wrapper is centered with Tailwind's
-        // `-translate-x-1/2`; the toast inside is additionally offset by
-        // `left-1/2` and re-centered by the keyframe's `translate(-50%, ...)`
-        // (the keyframe keeps the -50% X so the centering is maintained during
-        // the entrance slide, and `both` fill holds it once the animation ends).
-        <div class="pointer-events-none fixed left-1/2 top-4 z-[100] -translate-x-1/2">
+        // Centered host, click-through. `top-16` parks it just BELOW the 48px
+        // toolbar header, so it never covers the toolbar's viewport-centered
+        // PageNav (which also sits at 50% X). The wrapper is centered with
+        // Tailwind's `-translate-x-1/2`; the toast inside is additionally
+        // offset by `left-1/2` and re-centered by the keyframe's
+        // `translate(-50%, ...)` (the keyframe keeps the -50% X so the centering
+        // is maintained during the entrance slide, and `both` fill holds it once
+        // the animation ends).
+        <div class="pointer-events-none fixed left-1/2 top-16 z-[100] -translate-x-1/2">
             {move || {
                 state.toast.get().map(|t| {
                     let (surface, icon) = match t.kind {
