@@ -35,6 +35,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     let state_single = state.clone();
     let state_cont = state.clone();
     let state_placeholder = state.clone();
+    let state_floating = state.clone();
 
     let is_ready = move || status.get() == DocStatus::Ready;
 
@@ -65,6 +66,11 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                             .into_any(),
                         }}
                     </Show>
+                    // Floating search overlay (U4): mounted at the viewer slot so
+                    // its absolute positioning anchors below the toolbar (not
+                    // inside the backdrop-blur header, which would trap fixed
+                    // descendants).
+                    <crate::components::organisms::floating_search::FloatingSearch state=state_floating />
                 </main>
             </div>
             <footer class="pointer-events-none absolute inset-x-0 bottom-0 z-50 mix-blend-difference">

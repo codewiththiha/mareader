@@ -42,7 +42,6 @@ fn Chevron(up: bool) -> impl IntoView {
     }
 }
 
-#[allow(dead_code)] // mounted by the coordinator (reader_view slot wiring) after this branch merges
 #[component]
 pub fn FloatingSearch(state: AppState) -> impl IntoView {
     let last_query = RwSignal::new(String::new());
