@@ -81,10 +81,9 @@ pub fn shortcuts(state: AppState) {
                     ev.prevent_default();
                     state.viewer.fit.set(FitMode::Width);
                 }
-                // Cmd/Ctrl+F -> search sidebar + floating overlay
+                // Cmd/Ctrl+F -> open the floating search overlay
                 "f" => {
                     ev.prevent_default();
-                    state.sidebar.set(SidebarMode::Search);
                     state.search.visible.set(true);
                 }
                 // Cmd/Ctrl+1 / 2 -> view mode
