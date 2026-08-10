@@ -153,6 +153,11 @@
 :root[data-theme="night"] { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
 :root[data-theme="dim"]   { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
 .thumb-card {
+  /* Clip the SQUARE canvas to the rounded card. Without this the canvas
+     corners poke past the radius; in dim (soft-light of a light,
+     non-inverted page) those protrusions lighten the chrome and read as a
+     pale square frame. The ring-* box-shadows are NOT clipped by overflow. */
+  overflow: hidden;
   background: var(--thumb-bg);
 }
 
@@ -166,6 +171,7 @@
 .thumb-canvas {
   filter: var(--canvas-filter, none);
   mix-blend-mode: var(--canvas-blend, multiply);
+  border-radius: inherit;
 }
 
 .pdf-page .textLayer {
