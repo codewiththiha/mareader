@@ -53,7 +53,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
             >
                 <crate::components::molecules::toolbar::Toolbar state=state_toolbar />
             </header>
-            <div class="flex min-h-0 flex-1">
+            <div class="mt-12 flex min-h-0 flex-1">
                 <crate::components::organisms::sidebar::Sidebar state=state_sidebar />
                 <main id="viewer-slot" class="relative min-w-0 flex-1">
                     <Show

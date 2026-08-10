@@ -135,7 +135,7 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                     <Button
                         on_click=move |_| {
                             let next = if menu_state.sidebar.get() == SidebarMode::None {
-                                SidebarMode::Outline
+                                SidebarMode::Thumbs
                             } else {
                                 SidebarMode::None
                             };

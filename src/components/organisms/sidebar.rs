@@ -32,18 +32,6 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
         view! {
             <div class="flex flex-col gap-0.5 border-b border-line p-2">
                 <SidebarItem
-                    icon=IconName::Outline
-                    label="Outline".to_string()
-                    active=mode == SidebarMode::Outline
-                    on_click=move || {
-                        state.sidebar.set(if state.sidebar.get() == SidebarMode::Outline {
-                            SidebarMode::None
-                        } else {
-                            SidebarMode::Outline
-                        });
-                    }
-                />
-                <SidebarItem
                     icon=IconName::Thumbs
                     label="Thumbs".to_string()
                     active=mode == SidebarMode::Thumbs
@@ -52,6 +40,18 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                             SidebarMode::None
                         } else {
                             SidebarMode::Thumbs
+                        });
+                    }
+                />
+                <SidebarItem
+                    icon=IconName::Outline
+                    label="Outline".to_string()
+                    active=mode == SidebarMode::Outline
+                    on_click=move || {
+                        state.sidebar.set(if state.sidebar.get() == SidebarMode::Outline {
+                            SidebarMode::None
+                        } else {
+                            SidebarMode::Outline
                         });
                     }
                 />
