@@ -25,8 +25,6 @@ use super::noise_toggle::NoiseToggle;
 use super::texture_menu::TextureMenu;
 use super::theme_menu::ThemeMenu;
 
-#[allow(dead_code)] // consumed by U7's toolbar rewrite (parallel); this tree's
-                    // Phase-2 toolbar still mounts ThemeMenu/TextureMenu/NoiseToggle directly
 #[component]
 pub fn AppearanceMenu(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
