@@ -189,6 +189,19 @@
   border-radius: inherit;
 }
 
+/* A thumbnail canvas that has not been painted yet must not composite at all.
+   With no width/height attributes a canvas is 300x150 by default — a 2:1 box
+   stretched over a ~3:4 card — and the rule above makes it a blended, filtered
+   layer regardless of whether it holds pixels. Under the fading cover that
+   empty surface tinted the cell (worst in the multiply themes: sepia, green)
+   and then changed shape the instant the real 153x198 bitmap replaced it. Same
+   rule as `.pdf-page`: never blend a layer with no real pixels in it. The class
+   is dropped the moment `loaded` flips, which is also when the cover starts to
+   fade, so the bitmap is revealed by the cover's own crossfade. */
+.thumb-canvas-blank {
+  visibility: hidden;
+}
+
 /* Thumbnail render skeleton — the crossfade COVER. Sits ABOVE the fully
    blended `.thumb-canvas` (absolute inset-0, mounted after it in the cell).
    Fading the canvas itself interpolates between the raw un-blended canvas and
@@ -417,6 +430,32 @@
   z-index: 0;
   pointer-events: none;
   opacity: 0.9;
+
+  /* TEXTURE ANCHORING.
+     The paper texture is part of the PAGE, not a filter over the viewport, so
+     its pattern must scale with the page exactly like the printed content does.
+     Every texture below is a repeating background whose geometry used to be
+     hard-coded in CSS px (26px rules, an 8px dot pitch, a 180px noise tile), so
+     zooming grew the page but left the pattern pitch identical: at 140% zoom the
+     host was 1.402x larger while `background-size` stayed `auto`, and the lines
+     visibly slid across the text instead of moving with it. That is what reads
+     as "the texture behaves like a filter".
+
+     `--scale-factor` is already maintained on the host by page_canvas.rs (the
+     text layer depends on it), so it is the page's own scale and is written in
+     the SAME inline style as the host's width/height — the texture therefore
+     rescales on exactly the frame the page does, with no extra plumbing and no
+     drift during a zoom animation.
+
+     `--tex-unit` is the scaled pitch every texture derives from; `--tex-line`
+     keeps hairlines from disappearing at small zoom or turning into fat bars at
+     large zoom by clamping their scaled width. background-origin/position pin
+     the pattern to the page's top-left corner so it never slides. */
+  --tex-scale: var(--scale-factor, 1);
+  --tex-unit: calc(26px * var(--tex-scale));
+  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  background-origin: border-box;
+  background-position: 0 0;
 }
 
 .pdf-page.texture-paper::before {
@@ -429,36 +468,42 @@
      the screen blend to actually render the grain. */
   background-color: var(--texture-paper);
   background-blend-mode: var(--texture-blend, multiply);
+  /* The SVG tile is authored 180x180; scaling the background-size zooms the
+     grain with the page instead of holding a fixed screen-space pitch. */
+  background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
 }
 
 .pdf-page.texture-lined::before {
   background-image: repeating-linear-gradient(
     to bottom,
-    var(--texture-line) 0 1px,
-    transparent 1px 26px
+    var(--texture-line) 0 var(--tex-line),
+    transparent var(--tex-line) var(--tex-unit)
   );
 }
 
 .pdf-page.texture-grid::before {
   background-image:
-    repeating-linear-gradient(to bottom, var(--texture-line) 0 1px, transparent 1px 26px),
-    repeating-linear-gradient(to right, var(--texture-line) 0 1px, transparent 1px 26px);
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
 }
 
 .pdf-page.texture-dotted::before {
-  background-image: radial-gradient(var(--texture-line) 1px, transparent 1.5px);
-  background-size: 8px 8px;
+  background-image: radial-gradient(
+    var(--texture-line) calc(1px * var(--tex-scale)),
+    transparent calc(1.5px * var(--tex-scale))
+  );
+  background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
 }
 
 .pdf-page.texture-cross::before {
   background-image:
-    repeating-linear-gradient(to bottom, var(--texture-line) 0 1px, transparent 1px 26px),
-    repeating-linear-gradient(to right, var(--texture-line) 0 1px, transparent 1px 26px),
-    radial-gradient(var(--texture-line) 1.5px, transparent 2px);
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    radial-gradient(var(--texture-line) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
   background-size:
-    26px 26px,
-    26px 26px,
-    26px 26px;
+    var(--tex-unit) var(--tex-unit),
+    var(--tex-unit) var(--tex-unit),
+    var(--tex-unit) var(--tex-unit);
 }
 
 /* ---------------------------------------------------------------------

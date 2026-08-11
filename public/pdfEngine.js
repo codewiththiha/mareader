@@ -196,6 +196,29 @@ async function fetchBytes(path) {
   return doFetch(path);
 }
 
+/// Normalise one outline entry's title into something that can actually be
+/// rendered as a row of text.
+///
+/// `it.title || "(untitled)"` only catches the empty string. Real PDFs also
+/// carry titles that are whitespace-only ("   "), newline-only ("\r\n"), or
+/// made of zero-width characters (U+200B, U+FEFF, soft hyphen) — often from
+/// generators that emit a spacer bookmark. Those produce a row whose text has
+/// no height, so the row collapsed from 28px to 8px: the "outline entries are
+/// too low to be seen, barely visible as dots" report.
+///
+/// Also collapses interior newlines/tabs: a title that legitimately contains a
+/// line break would otherwise wrap and make one row twice as tall as the rest.
+function outlineTitle(raw) {
+  const s = String(raw == null ? "" : raw)
+    // Zero-width and BOM-ish characters render as nothing but are not
+    // whitespace, so `trim()` keeps them and the row still looks blank.
+    .replace(/[\u200b-\u200f\u2028\u2029\ufeff\u00ad]/g, "")
+    // Any run of real whitespace (incl. newlines/tabs) becomes one space.
+    .replace(/\s+/g, " ")
+    .trim();
+  return s.length > 0 ? s : "(untitled)";
+}
+
 async function flattenOutline(items, depth, acc) {
   for (const it of items || []) {
     let page = null;
@@ -221,7 +244,7 @@ async function flattenOutline(items, depth, acc) {
     } catch (_) {
       page = null;
     }
-    if (page) acc.push({ title: it.title || "(untitled)", page, depth });
+    if (page) acc.push({ title: outlineTitle(it.title), page, depth });
     await flattenOutline(it.items, depth + 1, acc);
   }
   return acc;

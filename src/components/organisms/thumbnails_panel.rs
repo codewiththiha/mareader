@@ -362,9 +362,21 @@ fn ThumbCell(
                         class=("px-1.5", is_current)
                     >{page}</span>
                 </div>
+                // `thumb-canvas-blank` until this cell has a bitmap. A canvas
+                // with no width/height attributes defaults to 300x150 — a 2:1
+                // box stretched over a ~3:4 card — and `.thumb-canvas` carries
+                // `mix-blend-mode` + the theme filter, so that empty, wrong
+                // aspect surface was still a compositing layer underneath the
+                // fading cover. In the multiply themes (sepia/green especially)
+                // it tinted the cell for the first frames of the reveal and
+                // then changed shape when the real 153x198 bitmap arrived,
+                // which is the residual flicker on newly rendered thumbs. Same
+                // invariant as the page canvas: never blend a layer that has no
+                // real pixels in it yet.
                 <canvas
                     id=cid
                     class="thumb-canvas absolute inset-0 block h-full w-full"
+                    class=("thumb-canvas-blank", move || !loaded.get())
                 />
                 // The fade-out cover: plain themed tint (no filter, no blend),
                 // mounted after the canvas so it stacks above it. It pulses

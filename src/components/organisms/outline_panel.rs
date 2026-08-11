@@ -91,7 +91,16 @@ pub fn OutlinePanel(state: AppState) -> impl IntoView {
                                     <button
                                         type="button"
                                         title=tooltip
-                                        class="block w-full truncate border-l-2 border-transparent px-3 py-1 text-left text-sm text-muted hover:bg-line hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                        // `min-h-7` + `leading-5` is a floor on
+                                        // the row box: the engine now
+                                        // normalises blank titles to
+                                        // "(untitled)", but a row must never be
+                                        // able to collapse to a sliver just
+                                        // because its text has no height (a
+                                        // whitespace/zero-width title used to
+                                        // render an 8px row instead of 28px —
+                                        // the "barely visible as dots" bug).
+                                        class="block min-h-7 w-full truncate border-l-2 border-transparent px-3 py-1 text-left text-sm leading-5 text-muted hover:bg-line hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                         style:padding-left=move || format!("{}px", indent_px(depth))
                                         on:click=move |_| {
                                             state.viewer.page.set(page);
