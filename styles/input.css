@@ -295,6 +295,29 @@
   pointer-events: none;
 }
 
+/* END-OF-ZOOM FLICKER FIX.
+   For the one frame where the snapshot and the freshly rendered canvas are both
+   in the host, BOTH carry `mix-blend-mode` + `--canvas-filter`. Two layers each
+   multiplying against the paper backdrop composite as B*L*S instead of B*L, so
+   that single frame is visibly darker — and the theme filter is applied twice,
+   so green's hue-rotate(70deg) lands as 140deg. Measured on the blank paper of
+   the sepia theme: rgb(238,230,206) -> rgb(232,224,197) for one frame. In light
+   mode the shift is exactly 0 (white multiplied by white is white), which is
+   why the flicker was invisible there and obvious in sepia/green/textured.
+
+   Hiding the live canvas while a snapshot covers it leaves exactly ONE blended
+   layer at all times. The snapshot is a pixel copy of that canvas, so nothing
+   disappears visually.
+
+   `:has()` rather than a class toggled from Rust deliberately: the rule stops
+   matching the instant the snapshot leaves the DOM, so a render that errors out
+   or a missed cleanup can never strand the page invisible. Where `:has()` is
+   unsupported this degrades to exactly the old behaviour (a one-frame flicker),
+   never to a blank page. */
+.pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
+  visibility: hidden;
+}
+
 /* Search highlights (engine appends .highlight divs into the text layer).
    The vendored pdf_viewer.css `.textLayer .highlight` rule adds a 1px
    margin/padding (for pdf.js's own merged highlights); neutralise it so our
