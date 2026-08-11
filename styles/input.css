@@ -174,6 +174,37 @@
   border-radius: inherit;
 }
 
+/* Thumbnail render skeleton — the crossfade COVER. Sits ABOVE the fully
+   blended `.thumb-canvas` (absolute inset-0, mounted after it in the cell).
+   Fading the canvas itself interpolates between the raw un-blended canvas and
+   the multiply-blend result, which in sepia/green reads as a neon flash
+   settling to muted. The cover is plain themed tint (no filter, no blend), so
+   the crossfade interpolates between two same-family themed colors instead.
+
+   The loading pulse animates background-color, NOT opacity: an opacity
+   animation on the cover would both be invisible (the cover's tint equals the
+   `.thumb-card` tint directly beneath it, so 1↔0.5 reveals the same color) and
+   fight the fade-out — removing an opacity animation the same frame the
+   opacity transition starts drives the transition's before-change value to a
+   random mid-pulse opacity, and on WebKit can snap the cover off with no
+   transition at all. A background-color pulse reads against the same-family
+   backdrop and leaves opacity untouched, so the fade always starts from 1. */
+.thumb-skeleton {
+  background: var(--thumb-bg);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+@keyframes thumb-skeleton-pulse {
+  50% {
+    background-color: color-mix(in srgb, var(--color-line) 28%, var(--color-surface));
+  }
+}
+
+.thumb-skeleton-loading {
+  animation: thumb-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
 .pdf-page .textLayer {
   position: absolute;
   inset: 0;

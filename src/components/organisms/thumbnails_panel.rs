@@ -21,8 +21,13 @@
 //! Each cell is its own `ThumbCell`, which registers + renders its canvas on
 //! mount and unregisters it in `on_cleanup`; `<For>` evicts out-of-window cells
 //! automatically, so canvases are created lazily and released as you scroll.
-//! While `render_page` is in flight the cell shows a gray skeleton with the
-//! page number (`animate-pulse`); the canvas fades in over it once resolved.
+//! While `render_page` is in flight a themed skeleton cover
+//! (`thumb-skeleton-loading`, a background-tint pulse) hides the still-empty
+//! canvas; once resolved, the cover fades OUT. The
+//! canvas itself stays fully opaque and blended from its first painted frame,
+//! so the crossfade interpolates between two same-family themed colors instead
+//! of between the raw un-blended canvas and the multiply result — the
+//! sepia/green "neon flash" settling to muted.
 //!
 //! A generation counter (`Arc<AtomicU32>`, bumped on document change) aborts
 //! in-flight renders from a previous document so they can never paint into a
@@ -70,10 +75,11 @@ const GLIDE_DEBOUNCE_MS: u64 = 150;
 /// inside the grace is NOT dropped — it is centered once the grace lapses.
 const GRACE_MS: f64 = 1500.0;
 
-/// One thumbnail cell: a skeleton box with the page number, the `.thumb-canvas`
-/// fading in over it when the engine render resolves. Registers its canvas on
-/// mount and unregisters it on `on_cleanup` (which fires when the cell scrolls
-/// out of the window, the document changes, or the app tears down).
+/// One thumbnail cell: a fully-opaque, fully-blended `.thumb-canvas` under a
+/// themed `.thumb-skeleton` cover that fades out once the engine render
+/// resolves. Registers its canvas on mount and unregisters it on `on_cleanup`
+/// (which fires when the cell scrolls out of the window, the document changes,
+/// or the app tears down).
 #[component]
 fn ThumbCell(
     state: AppState,
@@ -200,13 +206,17 @@ fn ThumbCell(
                 state.sidebar.set(SidebarMode::None);
             }
         >
-            // Skeleton: gray placeholder with the page number while the render
-            // is in flight. ONE permanent themed backdrop class (`thumb-card`)
-            // serves both states — the old code swapped `bg-line/60` (themed
-            // skeleton tint) for `bg-surface` (neutral) at resolve, so the
-            // backdrop cross-faded to neutral the instant the canvas faded in.
-            // The skeleton only pulses on top of the same tint; `.thumb-canvas`
-            // mix-blends against it in every state.
+            // The card holds ONE permanent themed backdrop (`thumb-card`) under
+            // an always-opaque, always-blended `.thumb-canvas`. The crossfade
+            // is inverted: fading the canvas itself in would interpolate
+            // between the raw un-blended canvas and the multiply result — the
+            // sepia/green "neon flash" settling to muted. Instead a plain
+            // themed `.thumb-skeleton` cover sits ABOVE the canvas and fades
+            // OUT once the render resolves, so the crossfade interpolates
+            // between two same-family themed colors. The cover pulses while
+            // the render is in flight; the canvas is transparent until the
+            // engine paints it (so the cover shows through), and the first
+            // painted frame is already fully filtered + multiply-blended.
             <div
                 class="thumb-card relative w-[120px] rounded-md"
                 // Current page gets an accent ring; other pages the quiet line
@@ -216,7 +226,6 @@ fn ThumbCell(
                 class=("ring-accent", is_current)
                 class=("ring-1", move || !is_current())
                 class=("ring-line", move || !is_current())
-                class=("animate-pulse", move || !loaded.get())
             >
                 <div
                     class="thumb-num flex w-full items-center justify-center"
@@ -241,10 +250,32 @@ fn ThumbCell(
                 </div>
                 <canvas
                     id=cid
-                    class="thumb-canvas absolute inset-0 block h-full w-full transition-opacity duration-300"
-                    class=("opacity-0", move || !loaded.get())
-                    class=("opacity-100", move || loaded.get())
+                    class="thumb-canvas absolute inset-0 block h-full w-full"
                 />
+                // The fade-out cover: plain themed tint (no filter, no blend),
+                // mounted after the canvas so it stacks above it. It pulses
+                // (background-tint, see .thumb-skeleton-loading) and fully
+                // covers the card while the render is in flight, then fades to
+                // transparent once `loaded` flips — interpolating between two
+                // same-family themed colors, never between the raw and the
+                // blended canvas. aria-hidden: the page number is already
+                // announced by the in-flow `.thumb-num` band (which also reads
+                // through the transparent canvas pre-resolve), so the cover's
+                // copy must not double-announce; for the current page the
+                // cover's number is also hidden visually so it can't ghost
+                // behind the z-10 accent pill.
+                <div
+                    class="thumb-skeleton absolute inset-0 flex items-center justify-center transition-opacity duration-300"
+                    aria-hidden="true"
+                    class=("thumb-skeleton-loading", move || !loaded.get())
+                    class=("opacity-100", move || !loaded.get())
+                    class=("opacity-0", move || loaded.get())
+                >
+                    <span
+                        class="text-xs text-muted"
+                        class=("invisible", is_current)
+                    >{page}</span>
+                </div>
             </div>
         </button>
     }
