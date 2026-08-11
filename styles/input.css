@@ -221,11 +221,16 @@
   --texture-line: rgba(15, 23, 42, 0.16); /* lined / grid / dotted / cross strokes */
   --texture-strong: rgba(15, 23, 42, 0.26); /* margins / header rules (reserved) */
   --texture-paper: rgba(15, 23, 42, 0.05); /* paper-grain tint */
+  --texture-blend: multiply; /* dark grain tint over light paper */
 }
 :root.dark {
   --texture-line: rgba(255, 255, 255, 0.22);
   --texture-strong: rgba(255, 255, 255, 0.36);
   --texture-paper: rgba(255, 255, 255, 0.08);
+  /* multiply of a near-white tint is an identity (it can only darken), so the
+     light grain would stay dark-on-dark and invisible; screen lightens the
+     noise into the intended subtle light grain on dark paper. */
+  --texture-blend: screen;
 }
 
 .pdf-page::before {
@@ -239,10 +244,14 @@
 
 .pdf-page.texture-paper::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
-  /* Tint the gray fractal noise toward the theme's grain color (dark strokes
-     on light paper, light on dark) without losing the noise pattern. */
+  /* Tint the gray fractal noise toward the theme's grain color without losing
+     the noise pattern. The blend is driven by --texture-blend: multiply in the
+     light family (dark grain tint darkens the noise on light paper) and screen
+     on the dark themes (the light tint lightens the noise into light grain on
+     dark paper) — multiply alone could never lighten, so the dark themes need
+     the screen blend to actually render the grain. */
   background-color: var(--texture-paper);
-  background-blend-mode: multiply;
+  background-blend-mode: var(--texture-blend, multiply);
 }
 
 .pdf-page.texture-lined::before {
