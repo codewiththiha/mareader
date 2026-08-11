@@ -5,10 +5,13 @@
 //! The `<aside>` is ALWAYS mounted and animates its `width` between 18rem and 0
 //! (single-phase slide, no two-phase unmount). The inner content stays fixed at
 //! `w-72` so it doesn't collapse mid-transition — `overflow-hidden` on the aside
-//! clips it while closed. The PANEL below the rail is what mounts/unmounts on
-//! mode change, so `ThumbnailsPanel`'s `on_cleanup` (canvas unregistration)
-//! still fires when the sidebar collapses. When collapsed the content is made
-//! `inert` so the clipped rail can't be tab-focused / activated.
+//! clips it while closed. BOTH panels below the rail stay mounted for the app
+//! lifetime; the inactive one is `invisible` (`visibility:hidden`) — NOT
+//! `hidden` (`display:none`), whose height collapse would re-evict the
+//! thumbnails virtualization window and re-render every thumb on each open.
+//! Visibility keeps layout + ResizeObserver geometry alive, so canvases stay
+//! engine-bound across toggles. When collapsed the content is made `inert` so
+//! the clipped rail can't be tab-focused / activated.
 //!
 //! Gotcha: each reactive `class=("name", cond)` toggle becomes one
 //! `classList.add("name")` call — a space-separated token throws a swallowed
@@ -59,15 +62,6 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
         }
     };
 
-    // Active panel below the tab rail. Kept inside the `state.sidebar.get()`
-    // match so the panel (de)mounts with the mode — ThumbnailsPanel's
-    // `on_cleanup` unregisters its canvases when the sidebar leaves Thumbs.
-    let panel = move || match state.sidebar.get() {
-        SidebarMode::Outline => view! { <OutlinePanel state=state.clone() /> }.into_any(),
-        SidebarMode::Thumbs => view! { <ThumbnailsPanel state=state.clone() /> }.into_any(),
-        SidebarMode::None => ().into_any(),
-    };
-
     view! {
         <aside
             class="flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-300 ease-in-out"
@@ -80,8 +74,23 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                 prop:inert=move || state.sidebar.get() == SidebarMode::None
             >
                 {header}
-                <div class="flex min-h-0 flex-1 flex-col">
-                    {panel}
+                // Both panels stay permanently mounted; the inactive one is
+                // `invisible` (`visibility:hidden`, which keeps layout +
+                // ResizeObserver geometry alive) so the thumbnails virtualization
+                // window never evicts — and re-renders — on sidebar toggles.
+                <div class="relative min-h-0 flex-1">
+                    <div
+                        class="absolute inset-0 flex flex-col"
+                        class=("invisible", move || state.sidebar.get() != SidebarMode::Outline)
+                    >
+                        <OutlinePanel state=state.clone() />
+                    </div>
+                    <div
+                        class="absolute inset-0 flex flex-col"
+                        class=("invisible", move || state.sidebar.get() != SidebarMode::Thumbs)
+                    >
+                        <ThumbnailsPanel state=state.clone() />
+                    </div>
                 </div>
             </div>
         </aside>
