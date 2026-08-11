@@ -24,6 +24,25 @@ let numPages = 0;
 
 // canvasId -> { page, canvas, host, textLayerEl, renderTask, textLayer, viewport, scale }
 const stateByCanvasId = new Map();
+// --- thumbnail bitmap cache ------------------------------------------------
+// page (1-based) -> { canvas, width, height, cssW, cssH, scale }
+//
+// Thumbnails are virtualized: a cell UNMOUNTS when it scrolls out of the grid
+// window and REMOUNTS when it scrolls back. Without a cache every remount
+// restarts a full pdf.js render, so a row re-entering the viewport showed its
+// loading skeleton and then crossfaded to the painted canvas — the subtle
+// per-row brightness flicker on scroll. The cache keeps the finished bitmap of
+// every page the user has already seen, so a remount can blit it into the fresh
+// canvas SYNCHRONOUSLY (see paintThumb) — painted on the first frame, no
+// skeleton, no crossfade, no flicker.
+//
+// LRU-bounded: entries are re-inserted on hit (Map preserves insertion order)
+// and the oldest are dropped past THUMB_CACHE_MAX, so a 2000-page document
+// can't grow the cache without limit.
+const thumbCache = new Map();
+const THUMB_CACHE_MAX = 256;
+// canvasId -> in-flight thumbnail RenderTask (cancelled by cancelThumb).
+const thumbTasks = new Map();
 // page (1-based) -> [{ str, x, y, w, h }] searchable text with rects in TOP-origin
 // scale-1 CSS px (see itemRect). Used for search matching + the results API.
 const textIndex = new Map();
@@ -50,6 +69,84 @@ function errorInfo(e) {
 function el(id) {
   if (typeof id !== "string" || !id) return null;
   return document.getElementById(id);
+}
+
+// --- thumbnail cache helpers ----------------------------------------------
+/// LRU insert: re-inserting an existing key moves it to the end (Map keeps
+/// insertion order), so the first key is always the least recently used.
+function cachePut(page, entry) {
+  if (thumbCache.has(page)) thumbCache.delete(page);
+  thumbCache.set(page, entry);
+  while (thumbCache.size > THUMB_CACHE_MAX) {
+    const oldest = thumbCache.keys().next();
+    if (oldest.done) break;
+    thumbCache.delete(oldest.value);
+  }
+}
+
+/// Blit a cached bitmap into `dst` (a live <canvas>) 1:1. Returns the CSS size
+/// of the source frame, or null when nothing was painted.
+///
+/// Only the BACKING STORE (width/height attributes) is touched — the canvas's
+/// CSS box is owned by the cell's stylesheet classes. Assigning width/height
+/// clears the target, but the very next statement paints the full cached frame
+/// in the SAME task, so the browser never composites the empty intermediate.
+function paintCached(dst, entry) {
+  if (!dst || !entry || entry.canvas.width <= 0 || entry.canvas.height <= 0) {
+    return null;
+  }
+  dst.width = entry.canvas.width;
+  dst.height = entry.canvas.height;
+  const ctx = dst.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(entry.canvas, 0, 0);
+  return { width: entry.cssW, height: entry.cssH };
+}
+
+/// SYNCHRONOUS cache probe: is `page` already rendered at `scale`?
+///
+/// The Rust cell calls this while BUILDING its view, before the first frame is
+/// composited, so a cache-hit cell can mount with its loading cover already
+/// transparent and un-animated. Without the probe every remounted row would
+/// mount an opaque skeleton for one frame and then crossfade it away — the
+/// per-row flicker when scrolling a virtualized grid back over pages that were
+/// already rendered once.
+function hasThumb(page, scale) {
+  const hit = thumbCache.get(page);
+  return !!hit && Math.abs(hit.scale - scale) < 1e-9;
+}
+
+/// Paint the cached THUMBNAIL of `page` into a full-size page canvas as a
+/// placeholder, stretched to fill it. Returns true if anything was painted.
+///
+/// A page scrolled freshly into view is a white card until its render resolves
+/// — a bright pop against the reader. The sidebar has usually already
+/// rasterised a thumbnail of that page, and an upscaled thumbnail is blurry but
+/// the RIGHT COLOUR and the right shape, so the card reads as "this page,
+/// loading" instead of a flash of white. The real render replaces it a moment
+/// later.
+///
+/// Purely additive and best-effort: no cache entry, no canvas, no paint — the
+/// caller carries on exactly as before. Scale is ignored deliberately; any
+/// cached thumbnail of the page is better than nothing.
+function blitThumb(canvasId, page) {
+  const dst = el(canvasId);
+  const hit = thumbCache.get(page);
+  if (!dst || !hit || hit.canvas.width <= 0 || hit.canvas.height <= 0) return false;
+  // Keep the destination's own backing store if it already has one (the host
+  // sizes it); otherwise adopt the thumb's aspect at a usable resolution.
+  if (dst.width <= 0 || dst.height <= 0) {
+    dst.width = hit.canvas.width;
+    dst.height = hit.canvas.height;
+  }
+  const ctx = dst.getContext("2d");
+  if (!ctx) return false;
+  try {
+    ctx.drawImage(hit.canvas, 0, 0, dst.width, dst.height);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 function itemRect(item, pageH) {
@@ -191,6 +288,13 @@ async function destroy() {
     try { st.textLayer && st.textLayer.cancel(); } catch (_) {}
   }
   stateByCanvasId.clear();
+  // Thumbnail lane: cancel in-flight renders and drop every cached bitmap —
+  // a new document must never blit the previous one's pages.
+  for (const task of thumbTasks.values()) {
+    try { task.cancel(); } catch (_) {}
+  }
+  thumbTasks.clear();
+  thumbCache.clear();
   textIndex.clear();
   highlightsByPage.clear();
   searchQuery = "";
@@ -245,17 +349,35 @@ function applyHighlights(st) {
   // contains the current query. Because rects come from getBoundingClientRect()
   // on the SAME spans the user sees, highlights always align with the glyphs —
   // regardless of scale rounding, font substitution, or the span's scaleX
-  // kerning transform. Highlight divs go INSIDE the text layer so the
-  // `.textLayer .highlight` CSS rules apply.
+  // kerning transform.
+  //
+  // Highlight divs go INSIDE the text layer so the `.textLayer .highlight` CSS
+  // rules apply. That placement makes them direct children of the layer, which
+  // the vendored pdf_viewer.css styles with a transform + font-size intended
+  // for text spans; `styles/input.css` resets both on `.highlight`, so the
+  // already-transformed rects measured here are not transformed a SECOND time.
+  // Keep the two in sync: measuring in final screen px only lines up while the
+  // boxes themselves are transform-free.
   const { host, textLayerEl } = st;
+  // Remove the previous pass before measuring: a stale highlight is itself a
+  // laid-out box, and leaving it would also let duplicates accumulate across
+  // re-renders (doubled, slightly-offset highlight boxes).
   host.querySelectorAll(".highlight").forEach((n) => n.remove());
-  if (!searchQuery) return;
+  if (!searchQuery || !textLayerEl) return;
   const origin = host.getBoundingClientRect();
+  // Collect first, mutate after: appending into the layer while iterating a
+  // live query would force a re-layout per insertion (and could re-measure
+  // against shifted geometry).
+  const boxes = [];
   for (const span of textLayerEl.querySelectorAll("span")) {
     if (!span.textContent || !span.textContent.toLowerCase().includes(searchQuery)) {
       continue;
     }
     const r = span.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    boxes.push(r);
+  }
+  for (const r of boxes) {
     const d = document.createElement("div");
     d.className = "highlight";
     d.style.left = r.x - origin.x + "px";
@@ -279,14 +401,27 @@ async function renderPageInternal(canvasId, scale, renderText) {
   const page = await pdf.getPage(st.page);
   const viewport = page.getViewport({ scale });
 
-  // HiDPI backing store; CSS size stays CSS px.
+  // HiDPI backing store. Only the BACKING STORE (width/height attributes) is
+  // touched — the canvas's CSS box is owned by the stylesheet
+  // (`.pdf-page canvas { inset: 0; width: 100%; height: 100% }`), exactly as it
+  // already is for thumbnails in `paintCached`.
+  //
+  // ZOOM-STRETCH FIX: this used to also pin `style.width/height` to the render's
+  // CSS px. An inline style beats the stylesheet, so the canvas was frozen at
+  // the size of the LAST COMPLETED render while the host (and its ::before paper
+  // texture, which is inset:0 and therefore does track) grew frame by frame
+  // during a zoom. Measured on a single `+`: the host animated 1152 -> 1224px
+  // while the canvas sat at 1152 the whole way, a 72px divergence that snapped
+  // shut only on the final frame — the page bitmap visibly lagging its own
+  // texture and border. Dropping the inline size lets the painted bitmap stretch
+  // with the host every frame (which is the whole premise of zoom: animate
+  // already-painted bitmaps, then land one crisp render), and the crisp render
+  // below still resets the backing store to the new scale.
   const out = Math.min(globalThis.devicePixelRatio || 1, 2);
   const cssW = Math.floor(viewport.width);
   const cssH = Math.floor(viewport.height);
   st.canvas.width = Math.floor(viewport.width * out);
   st.canvas.height = Math.floor(viewport.height * out);
-  st.canvas.style.width = cssW + "px";
-  st.canvas.style.height = cssH + "px";
   const ctx = st.canvas.getContext("2d");
   const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 
@@ -303,10 +438,29 @@ async function renderPageInternal(canvasId, scale, renderText) {
   if (renderText && st.host && st.textLayerEl) {
     // Same viewport + same scale as the canvas render -> text aligns perfectly.
     st.host.style.setProperty("--scale-factor", String(scale));
-    st.textLayerEl.textContent = "";
+
+    // --- GHOST-TEXT FIX: build into a DETACHED layer, then swap atomically ---
+    // The old code reused the live `.textLayer` node: it cleared it and handed
+    // the SAME element to every new TextLayer. `TextLayer.cancel()` only aborts
+    // the stream reader — a chunk already read is still appended by the pump's
+    // pending microtask, and it appends into that shared node. So a superseded
+    // render (scale change, search re-render, fast scroll) could drop a partial
+    // set of spans on top of the current one: two overlapping copies of the
+    // same text. Invisible normally (spans are transparent), but selecting drew
+    // the selection over BOTH copies — the "double / slightly offset text" on
+    // selection — and the same duplicates doubled the search highlight boxes.
+    //
+    // Building into a detached div means a stale pump can only ever write into
+    // a node that is never attached and is garbage-collected. The live layer is
+    // replaced in ONE mutation, only after this render's text is complete, so
+    // the host holds exactly one set of spans at all times.
+    const layer = document.createElement("div");
+    layer.className = "textLayer";
+    layer.setAttribute("aria-hidden", "true");
+
     const tl = new TextLayer({
       textContentSource: page.streamTextContent(),
-      container: st.textLayerEl,
+      container: layer,
       viewport,
     });
     st.textLayer = tl;
@@ -317,6 +471,19 @@ async function renderPageInternal(canvasId, scale, renderText) {
       const info = errorInfo(e);
       return fail(info.name, info.message);
     }
+
+    // Swap in the finished layer. Re-read the current node from the host: an
+    // earlier swap may have replaced the one captured at register time.
+    const live = st.host.querySelector(".textLayer");
+    if (live && live.parentNode) {
+      live.replaceWith(layer);
+    } else {
+      st.host.appendChild(layer);
+    }
+    st.textLayerEl = layer;
+
+    // Highlights are derived from the spans' live client rects, so they must be
+    // applied only once the layer is attached and laid out.
     applyHighlights(st);
   }
 
@@ -338,6 +505,96 @@ async function renderPage(canvasId, scale, renderText) {
   } catch (e) {
     const info = errorInfo(e);
     return fail(info.name, info.message);
+  }
+}
+
+// --- thumbnails ------------------------------------------------------------
+/// Render ONE thumbnail into `canvasId` at `scale`, using (and filling) the
+/// bitmap cache. No text layer, no highlights, no registration in
+/// `stateByCanvasId` — thumbnails are a separate, cheap lane.
+///
+/// Returns `{ok, width, height, scale, cached}` where `cached:true` means the
+/// bitmap was blitted SYNCHRONOUSLY from the cache before this function ever
+/// awaited. That flag is the contract the Rust cell uses to skip its skeleton
+/// entirely: a cached thumbnail is already painted on the first frame it is
+/// mounted, so showing (and then crossfading out) a loading cover over it is
+/// exactly the subtle flicker this lane removes.
+async function renderThumb(canvasId, page, scale) {
+  const canvas = el(canvasId);
+  if (!canvas) return fail("no_canvas", "No canvas: " + canvasId);
+  if (!pdf) return fail("no_document", "No document open");
+
+  // --- fast path: cached bitmap, painted before the first composite --------
+  const hit = thumbCache.get(page);
+  if (hit && Math.abs(hit.scale - scale) < 1e-9) {
+    const size = paintCached(canvas, hit);
+    if (size) {
+      // Refresh LRU position.
+      cachePut(page, hit);
+      return { ok: true, width: size.width, height: size.height, scale, cached: true };
+    }
+  }
+
+  // --- slow path: real render, into a DETACHED canvas ----------------------
+  // Rendering off-DOM and blitting the finished frame in one statement means
+  // the live canvas is never shown mid-render (pdf.js wipes the backing store
+  // when it starts, which is what made a remounting row flash).
+  try { thumbTasks.get(canvasId)?.cancel(); } catch (_) {}
+  thumbTasks.delete(canvasId);
+
+  try {
+    const pg = await pdf.getPage(page);
+    const viewport = pg.getViewport({ scale });
+    const out = Math.min(globalThis.devicePixelRatio || 1, 2);
+    const cssW = Math.floor(viewport.width);
+    const cssH = Math.floor(viewport.height);
+
+    const off = document.createElement("canvas");
+    off.width = Math.floor(viewport.width * out);
+    off.height = Math.floor(viewport.height * out);
+    const ctx = off.getContext("2d");
+    if (!ctx) return fail("no_context", "No 2d context");
+    const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
+
+    const task = pg.render({ canvasContext: ctx, viewport, transform });
+    thumbTasks.set(canvasId, task);
+    try {
+      await task.promise;
+    } catch (e) {
+      thumbTasks.delete(canvasId);
+      if (e && e.name === "RenderingCancelledException") {
+        return fail("cancelled", "Thumb render cancelled");
+      }
+      const info = errorInfo(e);
+      return fail(info.name, info.message);
+    }
+    thumbTasks.delete(canvasId);
+    pg.cleanup();
+
+    const entry = { canvas: off, cssW, cssH, scale };
+    cachePut(page, entry);
+
+    // The cell may have unmounted while the render was in flight; re-resolve
+    // the element instead of trusting the one captured above.
+    const live = el(canvasId);
+    if (live) paintCached(live, entry);
+
+    return { ok: true, width: cssW, height: cssH, scale, cached: false };
+  } catch (e) {
+    thumbTasks.delete(canvasId);
+    const info = errorInfo(e);
+    return fail(info.name, info.message);
+  }
+}
+
+/// Cancel an in-flight thumbnail render (called when a cell unmounts). The
+/// cache is deliberately NOT touched: a page that scrolls out and back must
+/// still repaint instantly from its cached bitmap.
+function cancelThumb(canvasId) {
+  const task = thumbTasks.get(canvasId);
+  if (task) {
+    try { task.cancel(); } catch (_) {}
+    thumbTasks.delete(canvasId);
   }
 }
 
@@ -463,6 +720,10 @@ globalThis.PDFReader = {
   cancelPage,
   renderPage,
   renderPages,
+  renderThumb,
+  cancelThumb,
+  hasThumb,
+  blitThumb,
   updatePage,
   buildSearchIndex,
   search,

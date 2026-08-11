@@ -8,10 +8,13 @@
 //!   1. mode-flip — entering continuous mode aligns `scroll_top` to the current
 //!      page. `viewer.page` is the source of truth here, NOT the stale offset
 //!      left over from a previous continuous session.
-//!   2. scroll->page — scrolling derives the page at the top of the scrollport
-//!      and writes `viewer.page`. This also reacts to height changes (zoom,
-//!      lazy render fills), so the counter tracks whichever page the current
-//!      offset now shows.
+//!   2. scroll->page — scrolling derives the DOMINANT page (the one filling
+//!      most of the viewport) and writes `viewer.page`. This also reacts to
+//!      height changes (zoom, lazy render fills), so the counter tracks
+//!      whichever page the current offset now shows. It deliberately does NOT
+//!      use the top-edge page: zooming out slides more of the previous page
+//!      into the top of the viewport, which walked the counter (1 -> 2 -> 3...)
+//!      while the reader was in fact holding perfectly still.
 //!   3. page->scroll — an explicit page jump scrolls the `scroll_top` signal AND
 //!      the actual `#page-list` DOM to the page top when they disagree, rounded
 //!      UP so a fractional page top is crossed (an `as i32` floor would land
@@ -40,12 +43,39 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::core::layout::{page_from_scroll, page_top_css, ViewMode, PAGE_GAP};
+use crate::core::layout::{dominant_page, page_top_css, ViewMode, PAGE_GAP};
 use crate::core::state::AppState;
+
+/// How long a smooth jump is allowed to be in flight. The browser owns the
+/// animation and doesn't tell us when it finishes, so effect 4's takeover
+/// detection is gated for this long: during a smooth scroll the offset moves
+/// on its own, which looks exactly like the user grabbing the scrollbar. Long
+/// enough to cover a ~300ms native smooth scroll with margin.
+const JUMP_SETTLE_MS: f64 = 450.0;
+
+/// Scroll `#page-list` to `top`, smoothly for nearby targets and instantly for
+/// far ones.
+///
+/// Preview glides between adjacent pages but cuts straight to a distant jump —
+/// a smooth scroll across fifty pages is a long blur through content nobody
+/// asked to see, and it thrashes the virtualizer mounting and unmounting every
+/// page on the way. The `2 * viewport` threshold is the same one the thumbnail
+/// panel's glide uses, so navigation feels consistent in both places.
+fn scroll_to(list: &web_sys::Element, top: f64, smooth: bool) {
+    let opts = web_sys::ScrollToOptions::new();
+    opts.set_top(top);
+    opts.set_behavior(if smooth {
+        web_sys::ScrollBehavior::Smooth
+    } else {
+        web_sys::ScrollBehavior::Instant
+    });
+    list.scroll_to_with_scroll_to_options(&opts);
+}
 
 /// Uniform page height used when real heights haven't been measured yet — the
 /// same placeholder PageList seeds `page_heights` with.
@@ -99,7 +129,16 @@ pub fn page_tracking(state: AppState) {
         if hs.is_empty() {
             return;
         }
-        let p = page_from_scroll(st, &hs, PAGE_GAP);
+        // Read the scrollport's real height; `container_size` is tracked too so
+        // this re-runs when the viewer is resized.
+        let (_, cont_h) = state.viewer.container_size.get();
+        let vh = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id("page-list"))
+            .map(|el| el.client_height() as f64)
+            .filter(|h| *h > 1.0)
+            .unwrap_or(cont_h);
+        let p = dominant_page(st, vh, &hs, PAGE_GAP);
         if page.get_untracked() != p {
             suppress_a.set(true);
             page.set(p);
@@ -120,8 +159,14 @@ pub fn page_tracking(state: AppState) {
     //               while the target moves, so we keep re-aiming.
     let pending = Rc::new(Cell::new(None::<u32>));
     let last_ours = Rc::new(Cell::new(f64::NAN));
+    // Timestamp until which a smooth jump owns the scrollport (0 = none).
+    let jump_settle = Rc::new(Cell::new(0.0f64));
+    // Wakes effect 4 once the settle gate lapses.
+    let settle_timer: StoredValue<Option<TimeoutHandle>> = StoredValue::new(None);
     let pending_e3 = pending.clone();
     let last_ours_e3 = last_ours.clone();
+    let jump_settle_e3 = jump_settle.clone();
+    let jump_settle_e4 = jump_settle;
     Effect::new(move || {
         // `page`/`mode` are read unconditionally (see module docs).
         let p = page.get();
@@ -143,7 +188,15 @@ pub fn page_tracking(state: AppState) {
         // tops — `as i32` truncation (floor) would land short.
         let target_px = target_top.ceil();
         // Align the scroll signal (drives the visible-page window)...
-        if hs.is_empty() || page_from_scroll(scroll_top.get_untracked(), &hs, PAGE_GAP) != p {
+        // Compared with the SAME metric effect 2 uses, or the two would
+        // disagree about whether we have arrived and fight each other.
+        let vh_now = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id("page-list"))
+            .map(|el| el.client_height() as f64)
+            .filter(|h| *h > 1.0)
+            .unwrap_or_else(|| state.viewer.container_size.get_untracked().1);
+        if hs.is_empty() || dominant_page(scroll_top.get_untracked(), vh_now, &hs, PAGE_GAP) != p {
             scroll_top.set(target_px);
         }
         // ...and the real scrollport.
@@ -151,8 +204,19 @@ pub fn page_tracking(state: AppState) {
             .and_then(|w| w.document())
             .and_then(|d| d.get_element_by_id("page-list"))
         {
-            if hs.is_empty() || page_from_scroll(list.scroll_top() as f64, &hs, PAGE_GAP) != p {
-                let _ = list.set_scroll_top(target_px as i32);
+            if hs.is_empty() || dominant_page(list.scroll_top() as f64, vh_now, &hs, PAGE_GAP) != p {
+                let cur = list.scroll_top() as f64;
+                let vh = list.client_height() as f64;
+                // Nearby (a page turn) glides; far (outline/thumb/search jump)
+                // cuts. See `scroll_to`.
+                let smooth = vh > 0.0 && (target_px - cur).abs() <= 2.0 * vh;
+                scroll_to(&list, target_px, smooth);
+                if smooth {
+                    // Arm the settle gate: a smooth scroll moves the offset for
+                    // the next few hundred ms, and effect 4 must not read that
+                    // motion as the user taking over and abandon the landing.
+                    jump_settle_e3.set(js_sys::Date::now() + JUMP_SETTLE_MS);
+                }
             }
         }
         // The target wrapper may not be mounted yet for a far jump; effect 4
@@ -184,6 +248,29 @@ pub fn page_tracking(state: AppState) {
         let Some(target) = pending_b.get() else {
             return;
         };
+        // A smooth jump is still gliding: the offset is moving under browser
+        // control, which is indistinguishable from a user drag by value alone.
+        // Hold off entirely until it settles, then do ONE instant correction if
+        // it mis-landed (heights can change mid-glide as pages render in).
+        let settling = js_sys::Date::now() < jump_settle_e4.get();
+        if settling {
+            // Re-check after the gate lapses; without this the correction would
+            // only run if some other signal happened to fire again.
+            let remain = (jump_settle_e4.get() - js_sys::Date::now()).max(0.0);
+            if let Some(h) = settle_timer.get_value() {
+                h.clear();
+            }
+            let bump = scroll_top;
+            settle_timer.set_value(
+                set_timeout_with_handle(
+                    move || bump.update(|v| *v += 0.0),
+                    Duration::from_millis(remain as u64 + 30),
+                )
+                .ok(),
+            );
+            return;
+        }
+
         // User takeover: the scroll signal moved to something we didn't write.
         let mine = last_ours_b.get();
         if !mine.is_nan() && (scroll_top.get() - mine).abs() >= 0.5 {

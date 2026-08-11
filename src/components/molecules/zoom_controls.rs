@@ -11,15 +11,35 @@ use crate::components::atoms::button::{Button, ButtonKind};
 use crate::components::atoms::icon::{Icon, IconName};
 use crate::components::atoms::separator::Separator;
 use crate::components::atoms::tooltip::Tooltip;
-use crate::core::math::{clamp_scale, nearest_zoom, FitMode, ZOOM_STEPS};
+use crate::core::math::{nearest_zoom, FitMode, ZOOM_STEPS};
 use crate::core::state::AppState;
+use crate::effects::fit::request_zoom;
 
-/// Apply a manual zoom level: exit fit mode, then set scale + render_scale.
+/// Apply a manual zoom level: exit fit mode, then hand the target to the zoom
+/// coordinator.
+///
+/// It must NOT write `scale`/`render_scale` itself. Doing that was the original
+/// bug: the scale changed instantly while the wrappers' `top:` offsets and the
+/// spacer height only caught up as each render resolved, so the scroll offset
+/// ended up pointing at a different page. `request_zoom` animates the layout
+/// and re-anchors the scroll in the same frames, then renders once.
 fn apply_zoom(state: AppState, scale: f64) {
-    let z = clamp_scale(scale);
     state.viewer.fit.set(FitMode::None);
-    state.viewer.scale.set(z);
-    state.viewer.render_scale.set(z);
+    request_zoom(state, scale, true);
+}
+
+/// The zoom a `+`/`-` step should be measured from: the target of an in-flight
+/// gesture if there is one, else what is on screen. See `shortcuts::zoom_by`
+/// for why neither `scale` nor `display_scale` alone is correct — without this,
+/// clicking `+` twice quickly moves only one preset.
+fn step_base(state: AppState) -> f64 {
+    state
+        .viewer
+        .zoom_request
+        .get_untracked()
+        .filter(|_| state.viewer.zoom_animating.get_untracked())
+        .map(|(target, _, _)| target)
+        .unwrap_or_else(|| state.viewer.display_scale.get_untracked())
 }
 
 #[component]
@@ -85,7 +105,7 @@ pub fn ZoomControls(state: AppState) -> impl IntoView {
             <Tooltip text="Zoom out (-)".to_string()>
                 <Button
                     on_click=move |_| {
-                        let cur = zoom_out_state.viewer.scale.get();
+                        let cur = step_base(zoom_out_state);
                         apply_zoom(zoom_out_state, nearest_zoom(cur, -1));
                     }
                     kind=ButtonKind::Ghost
@@ -96,7 +116,7 @@ pub fn ZoomControls(state: AppState) -> impl IntoView {
             <Tooltip text="Zoom in (+)".to_string()>
                 <Button
                     on_click=move |_| {
-                        let cur = zoom_in_state.viewer.scale.get();
+                        let cur = step_base(zoom_in_state);
                         apply_zoom(zoom_in_state, nearest_zoom(cur, 1));
                     }
                     kind=ButtonKind::Ghost

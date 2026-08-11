@@ -56,6 +56,26 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPages")]
     pub async fn render_pages(entries: JsValue, scale: f64) -> JsValue;
 
+    // Thumbnail lane: a separate, cheap render path
+    // with a bitmap cache. `renderThumb` resolves `{ok, width, height, scale,
+    // cached}`; `cached:true` means the bitmap was blitted synchronously from
+    // the cache, so the caller must NOT show a loading skeleton over it.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderThumb")]
+    pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> JsValue;
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "cancelThumb")]
+    pub fn cancel_thumb(canvas_id: &str);
+
+    /// SYNCHRONOUS cache probe, read while a thumbnail cell builds its view so
+    /// a cache-hit cell can mount without a skeleton at all.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "hasThumb")]
+    pub fn has_thumb(page: u32, scale: f64) -> bool;
+
+    /// Paint the cached thumbnail of `page` into `canvas_id` as a blurry
+    /// placeholder. Best-effort: returns false when there is nothing cached.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "blitThumb")]
+    pub fn blit_thumb(canvas_id: &str, page: u32) -> bool;
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "updatePage")]
     pub async fn update_page(canvas_id: &str, scale: f64) -> JsValue;
 

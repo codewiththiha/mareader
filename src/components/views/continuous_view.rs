@@ -50,6 +50,21 @@ pub fn ContinuousView(state: AppState) -> impl IntoView {
         }
     });
 
+    // MUST disconnect before the Closure is dropped. Dropping the Rust handles
+    // does NOT stop the browser-side observer: it keeps a reference to the
+    // wasm-bindgen shim, and unmounting this view (a mode switch) removes
+    // `#page-list`, which itself queues a resize notification. That callback
+    // then reaches a freed closure and the runtime aborts with "closure invoked
+    // recursively or after being dropped". Disconnecting first guarantees no
+    // further callbacks can be delivered.
+    on_cleanup(move || {
+        if let Some(observer) = observer_handle.try_get_value().flatten() {
+            observer.disconnect();
+        }
+        observer_handle.try_set_value(None);
+        callback_handle.try_set_value(None);
+    });
+
     // "How far through the document am I" indicator (U8): fraction of the
     // scrollable range currently passed. The total scrollable height is
     // memoized over `page_heights` so scroll ticks only re-read the numerator

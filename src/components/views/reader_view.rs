@@ -14,7 +14,7 @@ use web_sys::Event;
 use crate::core::document::DocStatus;
 use crate::core::layout::ViewMode;
 use crate::core::state::AppState;
-use crate::effects::fit::fit_effect;
+use crate::effects::fit::{fit_effect, zoom_system};
 use crate::effects::page_tracking::page_tracking;
 use crate::effects::theme_applier::theme_applier;
 
@@ -24,6 +24,9 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     // Fit width / fit page recompute in BOTH view modes (each view reports its
     // container size into the same signal).
     fit_effect(state.clone());
+    // Owns display_scale/render_scale during a zoom; every zoom control posts
+    // to it via `request_zoom`. Must be wired alongside fit_effect.
+    zoom_system(state.clone());
     // Keep `viewer.page` and the scroll position in sync in continuous mode
     // (status-bar counter, page jumps, mode-switch position).
     page_tracking(state.clone());

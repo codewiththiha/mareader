@@ -74,6 +74,27 @@ pub struct ViewerState {
     pub render_scale: RwSignal<f64>,
     /// (width, height) of the viewer content area in CSS px.
     pub container_size: RwSignal<(f64, f64)>,
+
+    // --- zoom pipeline (see `effects::fit`) ----------------------------------
+    // Zoom is a LAYOUT animation over bitmaps we already painted, not a
+    // render-driven relayout. That requires separating the two scales:
+    //
+    //   `display_scale` — what the layout is currently drawn at. Written every
+    //     animation frame. Pages CSS-stretch to follow it; nothing re-renders.
+    //   `render_scale`  — what the bitmaps were rasterised at. Written ONCE per
+    //     gesture, when it settles, so there is exactly one crisp re-render.
+    //
+    // `scale` remains the committed, user-visible zoom (the toolbar %), and is
+    // the value presets/fit compare against.
+    /// Scale the layout is painted at right now; drives CSS size, never render.
+    pub display_scale: RwSignal<f64>,
+    /// True while a zoom animation is in flight. Renders and geometry
+    /// write-back are suspended so a mid-flight render can't relayout under us.
+    pub zoom_animating: RwSignal<bool>,
+    /// A zoom asked for by any control: `(target_scale, animate, token)`. The
+    /// token makes every request unique, so mashing `+` retargets the SAME
+    /// animation instead of being swallowed as a duplicate signal write.
+    pub zoom_request: RwSignal<Option<(f64, bool, u64)>>,
 }
 
 impl Default for ViewerState {
@@ -86,6 +107,9 @@ impl Default for ViewerState {
             scroll_top: RwSignal::new(0.0),
             render_scale: RwSignal::new(1.0),
             container_size: RwSignal::new((800.0, 600.0)),
+            display_scale: RwSignal::new(1.0),
+            zoom_animating: RwSignal::new(false),
+            zoom_request: RwSignal::new(None),
         }
     }
 }

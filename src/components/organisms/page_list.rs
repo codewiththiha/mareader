@@ -50,11 +50,23 @@ pub fn PageList(state: AppState) -> impl IntoView {
         )
     });
 
-    // The scale every mounted PageCanvas renders at (updated by zoom/fit).
-    let render_scale = state.viewer.render_scale.read_only();
+    // The scale the layout is DRAWN at. During a zoom this moves every frame
+    // and the canvases CSS-stretch to follow it; `render_scale` (what the
+    // bitmaps were rasterised at) is read by PageCanvas itself and only changes
+    // once, when the gesture settles.
+    let display_scale = state.viewer.display_scale.read_only();
 
     // Store the real rendered height back into page_heights (0-based index).
     let on_geometry = Callback::new(move |(p, _w, h): (u32, f64, f64)| {
+        // While a zoom animation is running the coordinator owns page_heights:
+        // it rescales the whole vector per frame. A render that resolves
+        // mid-flight would write ONE page's height at the old scale into that
+        // vector, shifting every page below it and yanking the scroll — the
+        // teleport bug in miniature. The post-settle render reports the true
+        // height a moment later, so nothing is lost by skipping here.
+        if state.viewer.zoom_animating.get_untracked() {
+            return;
+        }
         let idx = p.saturating_sub(1) as usize;
         state.doc.page_heights.update(|v| {
             while v.len() <= idx {
@@ -94,7 +106,7 @@ pub fn PageList(state: AppState) -> impl IntoView {
                         <div id=format!("cont-{i}-wrap") style=style>
                             <PageCanvas
                                 page={(i + 1) as u32}
-                                scale=render_scale
+                                scale=display_scale
                                 canvas_id=format!("cont-{i}-cv")
                                 host_id=format!("cont-{i}-pg")
                                 render_text=true

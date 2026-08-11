@@ -1,5 +1,6 @@
 pub mod bridge;
 pub mod document;
+pub mod filename;
 pub mod layout;
 pub mod math;
 pub mod search;

@@ -42,6 +42,24 @@ pub struct RenderResult {
     pub scale: f64,
 }
 
+/// `{ok:true, width, height, scale, cached}` — engine.renderThumb.
+///
+/// `cached` is the load-bearing field: `true` means the engine blitted an
+/// already-rendered bitmap into the canvas SYNCHRONOUSLY (before the promise
+/// ever suspended), so the thumbnail is painted on the very first frame the
+/// cell is mounted. The cell uses it to skip its loading skeleton entirely —
+/// covering an already-painted thumbnail and then crossfading the cover away
+/// is precisely the per-row flicker seen when scrolling a virtualized grid.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbResult {
+    pub width: f64,
+    pub height: f64,
+    pub scale: f64,
+    #[serde(default)]
+    pub cached: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DocStatus {

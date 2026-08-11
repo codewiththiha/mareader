@@ -20,9 +20,15 @@ pub enum SegmentedLabel {
     Icon(IconName),
 }
 
+/// Segmented control.
+///
+/// Each option is `(value, label, title)`. The `title` is REQUIRED because the
+/// labels are typically icon-only: without it the buttons are anonymous to
+/// screen readers, hover tooltips, and automated tests. The wrapping `Tooltip`
+/// atom titles the group as a whole, not the individual segments.
 #[component]
 pub fn Segmented<T: PartialEq + Copy + Send + Sync + 'static>(
-    options: Vec<(T, SegmentedLabel)>,
+    options: Vec<(T, SegmentedLabel, &'static str)>,
     value: ReadSignal<T>,
     on_change: impl Fn(T) + 'static,
 ) -> impl IntoView {
@@ -34,7 +40,7 @@ pub fn Segmented<T: PartialEq + Copy + Send + Sync + 'static>(
         <div class="inline-flex items-center gap-0.5 rounded-lg border border-line bg-surface p-0.5">
             {options
                 .into_iter()
-                .map(move |(t, label)| {
+                .map(move |(t, label, title)| {
                     let cb = Rc::clone(&on_change);
                     let class = move || {
                         let base = "inline-flex h-8 items-center justify-center rounded-md px-2.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -52,6 +58,9 @@ pub fn Segmented<T: PartialEq + Copy + Send + Sync + 'static>(
                         <button
                             type="button"
                             class=class
+                            title=title
+                            aria-label=title
+                            aria-pressed=move || (value.get() == t).to_string()
                             on:click=move |_| cb(t)
                         >
                             {content}

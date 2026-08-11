@@ -18,16 +18,34 @@
 //! proven `page_list.rs` pattern and means a 200-page document mounts only a
 //! handful of canvases instead of 200.
 //!
-//! Each cell is its own `ThumbCell`, which registers + renders its canvas on
-//! mount and unregisters it in `on_cleanup`; `<For>` evicts out-of-window cells
-//! automatically, so canvases are created lazily and released as you scroll.
-//! While `render_page` is in flight a themed skeleton cover
-//! (`thumb-skeleton-loading`, a background-tint pulse) hides the still-empty
-//! canvas; once resolved, the cover fades OUT. The
-//! canvas itself stays fully opaque and blended from its first painted frame,
-//! so the crossfade interpolates between two same-family themed colors instead
-//! of between the raw un-blended canvas and the multiply result — the
-//! sepia/green "neon flash" settling to muted.
+//! Each cell is its own `ThumbCell`, which renders its canvas on mount through
+//! the engine's CACHED thumbnail lane (`renderThumb` / `hasThumb` /
+//! `cancelThumb`) and cancels any in-flight render in `on_cleanup`; `<For>`
+//! evicts out-of-window cells automatically, so renders are started lazily and
+//! aborted as you scroll.
+//!
+//! The engine keeps every rendered thumbnail bitmap in an LRU cache, so a row
+//! that scrolls out and back is BLITTED synchronously rather than re-rendered.
+//! `ThumbCell` probes that cache (`engine::has_thumb`) while it builds its view
+//! and, on a hit, mounts with `loaded = true` and no animation classes at all:
+//! no opaque cover, no pulse, no crossfade. That is what removes the last
+//! subtle scroll flicker — previously each remounted row replayed the whole
+//! skeleton→crossfade sequence over a bitmap that was about to be painted
+//! instantly, a faint brightness blip on both columns of the row entering view.
+//! A static `thumb-skeleton-loading` (a background-tint pulse) covers the
+//! still-empty canvas while `render_page` is in flight and keeps pulsing
+//! through the fade-out, so resolve never cancels a running animation; once
+//! the fade has run its full duration the cover is invisible and a short
+//! timer removes the pulse. The canvas itself stays fully opaque and blended
+//! from its first painted frame, so the crossfade interpolates between two
+//! same-family themed colors instead of between the raw un-blended canvas and
+//! the multiply result — the sepia/green "neon flash" settling to muted. The
+//! pulse 50% keyframe DARKENS (color-mix toward black), never brightens: a
+//! brightening pulse was the residual sepia/green scroll flicker — in those
+//! themes the old lighter 50% tint was partially visible over the darker
+//! multiply-blended canvas mid-fade, spiking the visible color brighter
+//! before settling. Darker pulse keeps both ends of the crossfade on the
+//! dark side of base, so no theme peaks bright during the fade.
 //!
 //! A generation counter (`Arc<AtomicU32>`, bumped on document change) aborts
 //! in-flight renders from a previous document so they can never paint into a
@@ -39,6 +57,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::closure::Closure;
@@ -58,7 +77,14 @@ const CELL_W: f64 = 120.0;
 /// CSS-px gap between rows (the page-number band lives inside each cell).
 const ROW_GAP: f64 = 8.0;
 /// Extra rows rendered above/below the visible window (pre-render margin).
-const ROW_BUFFER: usize = 1;
+///
+/// Two, not one. With a single buffer row the row that scrolls into view is the
+/// one mounted an instant earlier, so on a fast scroll it is still mid-render
+/// when the user first sees it — the row appears, then settles. Two rows of lead
+/// time means a genuinely new row has finished (and been cached) before it
+/// reaches the viewport edge. It costs nothing on revisits: cached rows blit
+/// synchronously.
+const ROW_BUFFER: usize = 2;
 /// CSS-px padding on the scroll container (`p-3`). Rows are inset by this and
 /// positioned from the content box, so the virtualization math stays exact.
 const PAD: f64 = 12.0;
@@ -74,6 +100,14 @@ const GLIDE_DEBOUNCE_MS: u64 = 150;
 /// the panel away from the row they are browsing. A page change that lands
 /// inside the grace is NOT dropped — it is centered once the grace lapses.
 const GRACE_MS: f64 = 1500.0;
+/// Delay (ms) before the skeleton pulse is removed after a thumbnail render
+/// resolves. The cover's opacity fade runs `duration-300` (300 ms); this sits
+/// just past it so the pulse keeps running through the whole fade and the
+/// class is only dropped once the cover is fully transparent — removing it
+/// earlier would CANCEL the running `background-color` animation and snap the
+/// cover back to base mid-fade (the flicker this code eliminates). Bounded
+/// one-shot, not a forever-animation, so idle cells don't pulse indefinitely.
+const PULSE_STOP_MS: u64 = 400;
 
 /// One thumbnail cell: a fully-opaque, fully-blended `.thumb-canvas` under a
 /// themed `.thumb-skeleton` cover that fades out once the engine render
@@ -92,7 +126,29 @@ fn ThumbCell(
     /// cell can remove itself from it on unmount.
     bound: Arc<Mutex<Vec<u32>>>,
 ) -> impl IntoView {
-    let loaded = RwSignal::new(false);
+    // SYNCHRONOUS cache probe, read while the view is being built — BEFORE the
+    // cell's first frame is composited. When this page's bitmap is already in
+    // the engine's thumbnail cache the render will blit it in the same task the
+    // cell mounts in, so the cell must mount ALREADY "loaded": cover
+    // transparent, no pulse animation, no opacity transition.
+    //
+    // This is the fix for the residual subtle scroll flicker. The grid is
+    // virtualized, so scrolling up re-mounts rows that were rendered moments
+    // earlier. Every such remount used to replay the full skeleton→crossfade
+    // sequence over a bitmap that was about to be painted instantly, which read
+    // as a faint brightness blip on the row entering view — most visible on the
+    // 2nd row from the scroll edge (buffer row 1 mounts off-screen, so the row
+    // the user actually watches appear is the one that flickers) and on BOTH
+    // columns of it, because both cells remount together in the same row node.
+    // A cached cell now has no cover state to animate at all.
+    let starts_cached = engine::has_thumb(page, THUMB_SCALE);
+    let loaded = RwSignal::new(starts_cached);
+    // Two-phase skeleton-stop state: a NodeRef onto the cover (the timer
+    // removes the pulse class from the real DOM node) and the timer handle,
+    // parked in a StoredValue so on_cleanup can cancel a pending removal if
+    // this cell unmounts mid-fade.
+    let cover_ref: NodeRef<html::Div> = NodeRef::new();
+    let pulse_timer = StoredValue::new_local(None::<TimeoutHandle>);
     // Whether this cell is the reader's current page (drives the accent ring
     // and the number-band highlight). Reads `viewer.page` so every cell
     // re-evaluates as the reader turns pages in the main viewer. The number
@@ -118,20 +174,36 @@ fn ThumbCell(
     let cell_h = CELL_W * aspect();
 
     // Release the engine binding when this cell unmounts (scrolled out of the
-    // window, document switch, or app teardown).
+    // window, document switch, or app teardown). `cancel_thumb` aborts an
+    // in-flight render but deliberately KEEPS the cached bitmap, so scrolling
+    // this row back into view repaints it instantly instead of re-rendering.
     let cid_cleanup = cid.clone();
     let page_cleanup = page;
     let bound_cleanup = bound.clone();
     on_cleanup(move || {
-        engine::unregister_page(&cid_cleanup);
+        engine::cancel_thumb(&cid_cleanup);
         if let Ok(mut guard) = bound_cleanup.lock() {
             guard.retain(|&p| p != page_cleanup);
         }
+        // Cancel a pending pulse-removal so it can't fire on a detached node.
+        if let Some(h) = pulse_timer.get_value() {
+            h.clear();
+        }
     });
 
-    // Register + render on mount. `render_page` awaits engine work; by the time
-    // it resolves the document may have been replaced, so the generation is
-    // re-checked before painting.
+    // Render on mount through the engine's CACHED thumbnail lane.
+    //
+    // The cache is what kills the residual scroll flicker. Previously every
+    // remount (a row re-entering the virtualization window) restarted a full
+    // pdf.js render: the cell mounted an opaque skeleton, pulsed, then
+    // crossfaded to the painted canvas — visible as a brightness blip on the
+    // rows re-entering view. Now:
+    //   * `has_thumb` is probed SYNCHRONOUSLY while the view is built, so a
+    //     cached cell mounts with `loaded = true`: no opaque cover, no pulse,
+    //     no crossfade — there is nothing to flicker.
+    //   * `render_thumb` blits the cached bitmap before it ever suspends, so
+    //     the canvas is painted in the same task the cell mounts in.
+    // Only genuinely NEW pages take the slow path and show the skeleton once.
     let cid_render = cid.clone();
     let gen = generation.clone();
     let bound_render = bound.clone();
@@ -141,50 +213,75 @@ fn ThumbCell(
         let gen_async = gen.clone();
         let bound_async = bound_render.clone();
         spawn_local(async move {
-            engine::register_page(page, &cid2, None);
             if let Ok(mut guard) = bound_async.lock() {
                 if !guard.contains(&page) {
                     guard.push(page);
                 }
             }
-            match engine::render_page(&cid2, THUMB_SCALE, false).await {
+            match engine::render_thumb(&cid2, page, THUMB_SCALE).await {
                 Ok(r) => {
                     // A newer document superseded this render.
                     if gen_async.load(Ordering::Relaxed) != gen_now {
                         return;
                     }
+                    // Settle the number band to the real card height instead
+                    // of deleting its fixed height (which collapsed it for a
+                    // frame and made the backdrop color snap more obvious).
                     if let Some(canvas_el) = web_sys::window()
                         .and_then(|w| w.document())
                         .and_then(|d| d.get_element_by_id(&cid2))
                     {
-                        // Set individual properties; NEVER replace the whole
-                        // style attribute (a full replace would nuke any inline
-                        // custom property the theme/CSS relies on — the same
-                        // trap PageCanvas documents for --scale-factor).
-                        if let Some(html_el) = canvas_el.dyn_ref::<web_sys::HtmlElement>()
-                        {
-                            let style = html_el.style();
-                            let _ = style.set_property("width", &format!("{}px", r.width));
-                            let _ = style.set_property("max-width", "100%");
-                            let _ = style.set_property("height", &format!("{}px", cell_h));
-                        }
-                        // Settle the number band to the real card height instead
-                        // of deleting its fixed height (which collapsed it for a
-                        // frame and made the backdrop color snap more obvious).
                         if let Some(card) = canvas_el.parent_element() {
                             if let Ok(Some(num)) = card.query_selector(".thumb-num") {
                                 if let Some(num_el) = num.dyn_ref::<web_sys::HtmlElement>()
                                 {
-                                    let _ =
-                                        num_el.style().set_property("height", &format!("{}px", cell_h));
+                                    let _ = num_el
+                                        .style()
+                                        .set_property("height", &format!("{}px", cell_h));
                                 }
                             }
                         }
                     }
+                    // Already-painted (cache hit): `loaded` was seeded true at
+                    // build time, so this is a no-op write and NO transition
+                    // runs. Only a fresh render actually flips it.
+                    if r.cached {
+                        return;
+                    }
                     loaded.set(true);
+                    // Deterministic two-phase stop: the pulse stays live
+                    // through the fade (resolve never cancels a running
+                    // animation), and ~PULSE_STOP_MS later — once the fade
+                    // has run its full duration — the cover is fully
+                    // transparent, so removing the pulse class snaps only an
+                    // invisible background. A timer (not `transitionend`) so
+                    // the removal can't be lost to event-delivery edge cases
+                    // (WebKit <13.1 fires only `webkitTransitionEnd`, a
+                    // bubbled descendant opacity transition could remove the
+                    // class mid-fade, and a throttled renderer may never
+                    // dispatch the event). The handle is parked so on_cleanup
+                    // cancels it if the cell unmounts mid-fade. If the render
+                    // errors, `loaded` stays false and the pulsing skeleton
+                    // persists as the intended fallback.
+                    if let Some(h) = set_timeout_with_handle(
+                        move || {
+                            if let Some(el) = cover_ref.get() {
+                                let _ =
+                                    el.class_list().remove_1("thumb-skeleton-loading");
+                            }
+                        },
+                        Duration::from_millis(PULSE_STOP_MS),
+                    )
+                    .ok()
+                    {
+                        if let Some(prev) = pulse_timer.get_value() {
+                            prev.clear();
+                        }
+                        pulse_timer.set_value(Some(h));
+                    }
                 }
                 Err(e) => {
-                    // Cancellations are the normal eviction path (unregister
+                    // Cancellations are the normal eviction path (unmount
                     // aborts an in-flight render while scrolling); the skeleton
                     // is the intended fallback, so only genuine failures log.
                     if e.name != "cancelled" {
@@ -237,9 +334,8 @@ fn ThumbCell(
                     style:height=format!("{}px", cell_h)
                 >
                     <span
-                        class="text-xs"
+                        class="text-sm font-bold"
                         class=("text-accent", is_current)
-                        class=("font-semibold", is_current)
                         class=("text-muted", move || !is_current())
                         // Translucent surface pill behind the accent digit so
                         // it stays legible over the rendered page.
@@ -254,25 +350,68 @@ fn ThumbCell(
                 />
                 // The fade-out cover: plain themed tint (no filter, no blend),
                 // mounted after the canvas so it stacks above it. It pulses
-                // (background-tint, see .thumb-skeleton-loading) and fully
-                // covers the card while the render is in flight, then fades to
-                // transparent once `loaded` flips — interpolating between two
-                // same-family themed colors, never between the raw and the
-                // blended canvas. aria-hidden: the page number is already
-                // announced by the in-flow `.thumb-num` band (which also reads
-                // through the transparent canvas pre-resolve), so the cover's
-                // copy must not double-announce; for the current page the
-                // cover's number is also hidden visually so it can't ghost
-                // behind the z-10 accent pill.
+                // (background-tint, see .thumb-skeleton-loading) — a STATIC
+                // class, NOT gated on `loaded` — and fully covers the card
+                // while the render is in flight, then fades to transparent
+                // once `loaded` flips — interpolating between two same-family
+                // themed colors, never between the raw and the blended
+                // canvas. The pulse is deliberately NOT dropped at resolve:
+                // removing the class on the same frame the fade starts would
+                // CANCEL the running `background-color` animation mid-flight,
+                // and a cancelled CSS animation snaps its property back to
+                // the base value in one frame — the cover jumps from its
+                // mid-pulse tint to base `--thumb-bg` just as the fade
+                // begins (a residual snap). Left alive, the pulse continues
+                // smoothly under the fade and is simply invisible at opacity
+                // 0.
+                //
+                // The pulse 50% keyframe DARKENS (color-mix toward black),
+                // never brightens. A brightening pulse was the root cause of
+                // the sepia/green scroll flicker: in those themes --color-line
+                // is darker than --color-surface, so the old "lighter line-mix"
+                // 50% keyframe produced a tint LIGHTER than the base --thumb-bg,
+                // and during the 300ms opacity fade-out that lighter tint was
+                // partially visible over the multiply-blended canvas (which
+                // is DARKER — multiply darkens a white page toward the
+                // backdrop tint), spiking the visible color brighter mid-fade
+                // before settling to the canvas result — the "high brightness
+                // then fall back to normal" flicker the user observed on
+                // scroll. Darker pulse keeps both ends of the crossfade on
+                // the dark side of base, so no theme peaks bright during the
+                // fade. Two-phase stop: the pulse stays live THROUGH the fade
+                // so the background is continuous at resolve, and
+                // `PULSE_STOP_MS` (~400ms) later — once the opacity
+                // transition has run its full duration — the cover is fully
+                // invisible, so the timer drops the class to halt the
+                // now-invisible infinite animation (a deterministic timer
+                // instead of `transitionend`, which WebKit <13.1 never fires,
+                // bubbles from descendant transitions, and throttled renderers
+                // can drop). If the render never resolves, `loaded` stays
+                // false — no fade, no timer, no removal — and the pulsing
+                // skeleton persists as the intended fallback. aria-hidden: the
+                // page number is already announced by the in-flow `.thumb-num`
+                // band (which also reads through the transparent canvas
+                // pre-resolve), so the cover's copy must not double-announce;
+                // for the current page the cover's number is also hidden
+                // visually so it can't ghost behind the z-10 accent pill.
+                // A cell that mounts with a CACHED bitmap gets neither the
+                // pulse animation nor the opacity transition: it is already
+                // painted, so there is nothing to cover and nothing to fade.
+                // Attaching either would make a re-entering row blip — the
+                // subtle scroll flicker. Only a genuinely new render mounts
+                // the animated cover.
                 <div
-                    class="thumb-skeleton absolute inset-0 flex items-center justify-center transition-opacity duration-300"
+                    node_ref=cover_ref
+                    class="thumb-skeleton absolute inset-0 flex items-center justify-center"
                     aria-hidden="true"
-                    class=("thumb-skeleton-loading", move || !loaded.get())
+                    class=("thumb-skeleton-loading", move || !starts_cached)
+                    class=("transition-opacity", move || !starts_cached)
+                    class=("duration-300", move || !starts_cached)
                     class=("opacity-100", move || !loaded.get())
                     class=("opacity-0", move || loaded.get())
                 >
                     <span
-                        class="text-xs text-muted"
+                        class="text-sm font-bold text-muted"
                         class=("invisible", is_current)
                     >{page}</span>
                 </div>
@@ -401,6 +540,15 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
         if let Some((el, cb)) = cleanup_slot.get_value() {
             let _ = el.remove_event_listener_with_callback("scroll", &cb);
         }
+        // Disconnect BEFORE the Closure is dropped: the browser keeps its own
+        // reference to the wasm-bindgen shim, so a resize notification queued
+        // during teardown would invoke a freed closure and abort the runtime
+        // ("closure invoked recursively or after being dropped").
+        if let Some(observer) = observer_handle.try_get_value().flatten() {
+            observer.disconnect();
+        }
+        observer_handle.try_set_value(None);
+        callback_handle.try_set_value(None);
     });
 
     // The drive tracker lives past the spawn_local (the auto-center effect

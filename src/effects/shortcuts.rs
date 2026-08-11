@@ -9,16 +9,33 @@ use wasm_bindgen::JsCast;
 
 use crate::components::molecules::toolbar::open_dialog;
 use crate::core::layout::ViewMode;
-use crate::core::math::{clamp_scale, nearest_zoom, FitMode};
+use crate::core::math::{nearest_zoom, FitMode};
 use crate::core::state::{AppState, SidebarMode};
+use crate::effects::fit::request_zoom;
 
 /// Applies a manual zoom step and exits fit mode.
+///
+/// Steps from the zoom currently being aimed at, falling back to the displayed
+/// scale when nothing is in flight. Both alternatives are wrong:
+///   * `scale` still holds the PREVIOUS committed value during an animation,
+///     so a fast `+ +` would resolve to the same preset twice and the second
+///     press would do nothing.
+///   * `display_scale` is a partway value mid-animation, so `nearest_zoom`
+///     would usually return the preset it is already travelling towards —
+///     again, a swallowed press.
+/// Chaining from the in-flight target means each press advances exactly one
+/// preset, while the coordinator retargets the running animation from wherever
+/// it currently is rather than restarting it.
 fn zoom_by(state: AppState, dir: i32) {
-    let cur = state.viewer.scale.get();
-    let z = clamp_scale(nearest_zoom(cur, dir));
+    let cur = state
+        .viewer
+        .zoom_request
+        .get_untracked()
+        .filter(|_| state.viewer.zoom_animating.get_untracked())
+        .map(|(target, _, _)| target)
+        .unwrap_or_else(|| state.viewer.display_scale.get_untracked());
     state.viewer.fit.set(FitMode::None);
-    state.viewer.scale.set(z);
-    state.viewer.render_scale.set(z);
+    request_zoom(state, nearest_zoom(cur, dir), true);
 }
 
 fn page_prev(state: AppState) {

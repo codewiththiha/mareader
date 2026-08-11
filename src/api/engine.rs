@@ -11,7 +11,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
 use crate::core::bridge;
-use crate::core::document::{OpenResult, RenderResult};
+use crate::core::document::{OpenResult, RenderResult, ThumbResult};
 use crate::core::search::SearchResponse;
 
 #[derive(Debug, Clone)]
@@ -119,6 +119,36 @@ pub fn unregister_page(canvas_id: &str) {
 pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> Result<RenderResult, EngineError> {
     let value = bridge::render_page(canvas_id, scale, render_text).await;
     resolve::<RenderResult>(value, "render").await
+}
+
+/// Render one thumbnail through the engine's cached thumbnail lane.
+///
+/// Unlike `render_page` this needs no `register_page` (the engine resolves the
+/// canvas by id per call) and never builds a text layer. When the page's bitmap
+/// is already cached the engine blits it synchronously and returns
+/// `cached: true` — the caller must then skip its loading skeleton, because the
+/// canvas is already painted on the first mounted frame.
+pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> Result<ThumbResult, EngineError> {
+    let value = bridge::render_thumb(canvas_id, page, scale).await;
+    resolve::<ThumbResult>(value, "thumb").await
+}
+
+/// Cancel an in-flight thumbnail render (cell unmounted). Does NOT evict the
+/// cached bitmap: a page that scrolls out and back must repaint instantly.
+pub fn cancel_thumb(canvas_id: &str) {
+    bridge::cancel_thumb(canvas_id);
+}
+
+/// Synchronous probe: is this page's thumbnail already cached at `scale`?
+/// Read while a cell builds its view so a hit can mount with no skeleton.
+pub fn has_thumb(page: u32, scale: f64) -> bool {
+    bridge::has_thumb(page, scale)
+}
+
+/// Paint the cached thumbnail of `page` into `canvas_id`, upscaled, as a
+/// placeholder while the real render is in flight. Returns true if painted.
+pub fn blit_thumb(canvas_id: &str, page: u32) -> bool {
+    bridge::blit_thumb(canvas_id, page)
 }
 
 /// Re-render one canvas at a new scale without a full remount (cancel + render).
