@@ -236,6 +236,30 @@
   animation: thumb-skeleton-pulse 1.6s ease-in-out infinite;
 }
 
+/* THUMBNAIL REVEAL FLICKER FIX.
+   The pulse is deliberately left running through the 300ms fade-out (removing
+   the class mid-fade would cancel the animation and snap the tint back to base
+   in one frame). But the pulse swings a long way: measured in sepia it moves
+   54 luminance units, min 159.7 / max 213.7, on a 1.6s cycle. A render can
+   resolve at ANY phase of that cycle, so each newly rendered cell starts its
+   reveal from a different brightness and keeps oscillating while it fades —
+   neighbouring cells in the same row resolve a few ms apart and therefore
+   shimmer against each other. That is the residual flicker on freshly rendered
+   thumbnails during virtual scrolling.
+
+   `thumb-settling` freezes the tint for the duration of the fade: the pulse is
+   PAUSED (not removed, so nothing snaps) at whatever value it currently holds,
+   and the same timer that already exists then drops both classes once the cover
+   is fully transparent. Every cell now reveals from a stable colour, so the
+   reveal is a plain monotonic fade regardless of pulse phase.
+
+   `animation-play-state: paused` keeps the computed background exactly where it
+   was — this is why it must be a separate class from the removal, and why the
+   removal still happens only after the cover is invisible. */
+.thumb-skeleton-settling {
+  animation-play-state: paused;
+}
+
 .pdf-page .textLayer {
   position: absolute;
   inset: 0;

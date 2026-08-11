@@ -249,11 +249,27 @@ fn ThumbCell(
                         return;
                     }
                     loaded.set(true);
-                    // Deterministic two-phase stop: the pulse stays live
-                    // through the fade (resolve never cancels a running
-                    // animation), and ~PULSE_STOP_MS later — once the fade
-                    // has run its full duration — the cover is fully
-                    // transparent, so removing the pulse class snaps only an
+                    // FREEZE the pulse for the duration of the fade. The pulse
+                    // swings a long way (measured in sepia: 54 luminance units
+                    // over its 1.6s cycle) and a render can resolve at ANY
+                    // phase of it, so without this each cell begins its reveal
+                    // from a different brightness AND keeps oscillating while
+                    // it fades. Row-mates resolve a few ms apart, so they
+                    // shimmer against each other — the residual flicker on
+                    // freshly rendered thumbnails during virtual scrolling.
+                    //
+                    // Pausing (not removing) is what keeps this safe: the
+                    // computed background stays exactly where the animation
+                    // left it, so nothing snaps. The class is only REMOVED
+                    // below, once the cover is fully transparent.
+                    if let Some(el) = cover_ref.get() {
+                        let _ = el.class_list().add_1("thumb-skeleton-settling");
+                    }
+                    // Deterministic two-phase stop: the pulse stays live (now
+                    // paused) through the fade — resolve never cancels a
+                    // running animation — and ~PULSE_STOP_MS later, once the
+                    // fade has run its full duration, the cover is fully
+                    // transparent, so removing the classes snaps only an
                     // invisible background. A timer (not `transitionend`) so
                     // the removal can't be lost to event-delivery edge cases
                     // (WebKit <13.1 fires only `webkitTransitionEnd`, a
@@ -268,6 +284,8 @@ fn ThumbCell(
                             if let Some(el) = cover_ref.get() {
                                 let _ =
                                     el.class_list().remove_1("thumb-skeleton-loading");
+                                let _ =
+                                    el.class_list().remove_1("thumb-skeleton-settling");
                             }
                         },
                         Duration::from_millis(PULSE_STOP_MS),
