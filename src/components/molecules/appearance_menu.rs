@@ -1,18 +1,19 @@
-//! Consolidated 🎨 Appearance menu (phase 3 / U6): theme + page texture + film
-//! grain in ONE popover, replacing the three separate toolbar buttons. The three
-//! repurposed section renderers (`ThemeMenu`, `TextureMenu`, `NoiseToggle`) are
-//! stacked here under small section headers.
+//! The 🎨 Appearance popover: presets, base mode + tint, texture, film grain.
 //!
-//! Dismissal rules (the audit's key fix):
-//! - Theme selection closes the popover (a `theme_id` watcher fires).
-//! - Texture selection stays open (deliberate).
-//! - Noise toggle/slider NEVER close it — the slider must stay usable mid-drag.
+//! Dismissal rules:
 //! - Outside-click and Escape close it. This also gives menu-exclusivity:
 //!   pointerdown on any other toolbar trigger lands outside this root, closing
 //!   this popover first, then the click opens the other.
-
-use std::cell::RefCell;
-use std::rc::Rc;
+//! - NOTHING inside closes it. The old menu closed on theme selection, which
+//!   made sense when a theme was one click and you were done. It is actively
+//!   wrong now: choosing a preset and then nudging its tint is the normal
+//!   workflow, and a popover that vanished on the first click would make that
+//!   impossible. Every control here is live-preview, so staying open IS the
+//!   feedback loop.
+//!
+//! The popover scrolls: with five sections it can exceed the viewport on a
+//! short window, and a menu that overflows off-screen loses its bottom
+//! controls entirely.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -21,9 +22,17 @@ use crate::components::atoms::icon::{Icon, IconName};
 use crate::components::atoms::separator::Separator;
 use crate::core::state::AppState;
 
-use super::noise_toggle::NoiseToggle;
-use super::texture_menu::TextureMenu;
-use super::theme_menu::ThemeMenu;
+use super::appearance::base_section::BaseSection;
+use super::appearance::noise_section::NoiseSection;
+use super::appearance::preset_section::PresetSection;
+use super::appearance::texture_section::TextureSection;
+
+#[component]
+fn SectionLabel(#[prop(into)] text: String) -> impl IntoView {
+    view! {
+        <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">{text}</p>
+    }
+}
 
 #[component]
 pub fn AppearanceMenu(state: AppState) -> impl IntoView {
@@ -38,20 +47,6 @@ pub fn AppearanceMenu(state: AppState) -> impl IntoView {
             base.to_string()
         }
     };
-
-    // Close on theme selection only. Reading `theme_id` subscribes to every
-    // settings write (texture + noise included), but we only fire when the theme
-    // actually changes — the same prev-tracking pattern NoiseToggle used.
-    let prev_theme: Rc<RefCell<Option<String>>> =
-        Rc::new(RefCell::new(Some(state.settings.read_untracked().theme_id.clone())));
-    Effect::new(move || {
-        let theme_id = state.settings.get().theme_id;
-        let mut prev = prev_theme.borrow_mut();
-        if prev.as_ref() != Some(&theme_id) {
-            *prev = Some(theme_id);
-            open.set(false);
-        }
-    });
 
     // While open: outside-click and Escape close it. Re-registered per open via
     // an Effect (reads `open`); the previous run's cleanup removes the listeners.
@@ -96,15 +91,18 @@ pub fn AppearanceMenu(state: AppState) -> impl IntoView {
                 <Icon name=IconName::Palette size=16 />
             </button>
             <Show when=move || open.get()>
-                <div class="menu-popover absolute right-0 top-full z-50 mt-1 w-60 rounded-lg border border-line bg-surface p-3 shadow-lg">
-                    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">"Theme"</p>
-                    <ThemeMenu state=state.clone() />
+                <div class="menu-popover absolute right-0 top-full z-50 mt-1 max-h-[min(70vh,32rem)] w-72 overflow-y-auto rounded-lg border border-line bg-surface p-3 shadow-lg">
+                    <SectionLabel text="Presets" />
+                    <PresetSection state=state.clone() />
                     <div class="my-3"><Separator vertical=false /></div>
-                    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">"Page texture"</p>
-                    <TextureMenu state=state.clone() />
+                    <SectionLabel text="Mode & colour" />
+                    <BaseSection state=state.clone() />
                     <div class="my-3"><Separator vertical=false /></div>
-                    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">"Film grain"</p>
-                    <NoiseToggle state=state.clone() />
+                    <SectionLabel text="Page texture" />
+                    <TextureSection state=state.clone() />
+                    <div class="my-3"><Separator vertical=false /></div>
+                    <SectionLabel text="Film grain" />
+                    <NoiseSection state=state.clone() />
                 </div>
             </Show>
         </div>

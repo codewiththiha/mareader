@@ -21,7 +21,8 @@
    1. Design tokens (light defaults).
    Emits utilities: bg-paper text-ink bg-surface text-muted border-line
    bg-accent text-accent bg-accent-soft text-accent-soft.
-   Runtime themes only rewrite these variables under :root[data-theme=...].
+   Base modes rewrite the --base-* tokens under :root[data-base=...]; the
+   colour tint overrides --color-* inline from effects/theme_applier.rs.
    --------------------------------------------------------------------- */
 @theme {
   --color-paper: #ffffff;
@@ -61,60 +62,54 @@
    whereas multiply/soft-light would crush it back to dark and make the page
    unreadable).
    --------------------------------------------------------------------- */
-:root[data-theme="dark"] {
-  --color-paper: #131316;
-  --color-ink: #e5e7eb;
-  --color-muted: #9ca3af;
-  --color-surface: #1a1a1e;
-  --color-line: #2b2b31;
-  --color-accent: #60a5fa;
-  --color-accent-soft: #1d2b3a;
-  --canvas-filter: invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02);
-  --canvas-blend: screen;
+/* BASE PALETTES.
+   Only THREE now (light / dark / dim), and they are the STRUCTURE — the colour
+   tint is computed in Rust and pushed as inline custom properties on <html>
+   (see effects/theme_applier.rs). Sepia, Green and Night are no longer CSS
+   blocks: they are presets, i.e. points in {base, hue, strength} space, which
+   is what lets a reader dial in ANY hue instead of the six we happened to
+   hand-write.
+
+   Each base defines --base-* and then aliases --color-* to it. The tint
+   overrides --color-* inline, mixing FROM the --base-* value, so the mix
+   always starts from the untinted palette and can never be applied twice. */
+:root {
+  --base-paper: #ffffff;
+  --base-ink: #1f2937;
+  --base-muted: #6b7280;
+  --base-surface: #f3f4f6;
+  --base-line: #e5e7eb;
+  --base-accent: #2563eb;
+  --base-accent-soft: #dbeafe;
 }
-:root[data-theme="sepia"] {
-  --color-paper: #f4ecd8;
-  --color-ink: #5b4636;
-  --color-muted: #8a7462;
-  --color-surface: #efe6d2;
-  --color-line: #d9c9a8;
-  --color-accent: #8a5a2b;
-  --color-accent-soft: #e6d7bb;
-  --canvas-filter: sepia(0.35) contrast(0.95) saturate(0.9);
-  --canvas-blend: multiply;
+:root[data-base="dark"] {
+  --base-paper: #131316;
+  --base-ink: #e5e7eb;
+  --base-muted: #9ca3af;
+  --base-surface: #1a1a1e;
+  --base-line: #2b2b31;
+  --base-accent: #60a5fa;
+  --base-accent-soft: #1d2b3a;
 }
-:root[data-theme="green"] {
-  --color-paper: #dce7d5;
-  --color-ink: #2f3e2e;
-  --color-muted: #5d6f5a;
-  --color-surface: #d3e0cb;
-  --color-line: #b9cbb0;
-  --color-accent: #3f6d3f;
-  --color-accent-soft: #c2d5b8;
-  --canvas-filter: sepia(0.4) saturate(1.5) hue-rotate(70deg) brightness(1.02);
-  --canvas-blend: multiply;
+/* Dim is NOT an inverted theme: it dims the page and keeps the document's own
+   colours, which is the reason to choose it over Dark. */
+:root[data-base="dim"] {
+  --base-paper: #1a1c1f;
+  --base-ink: #c3c6cb;
+  --base-muted: #8b8f96;
+  --base-surface: #202328;
+  --base-line: #2e3238;
+  --base-accent: #7a9bd4;
+  --base-accent-soft: #232b36;
 }
-:root[data-theme="night"] {
-  --color-paper: #0f1410;
-  --color-ink: #c9d1c9;
-  --color-muted: #7d8a7d;
-  --color-surface: #131a13;
-  --color-line: #223022;
-  --color-accent: #7bc47f;
-  --color-accent-soft: #1d2b1e;
-  --canvas-filter: invert(0.9) hue-rotate(180deg) sepia(0.25) brightness(0.85) contrast(0.95);
-  --canvas-blend: screen;
-}
-:root[data-theme="dim"] {
-  --color-paper: #1a1c1f;
-  --color-ink: #c3c6cb;
-  --color-muted: #8b8f96;
-  --color-surface: #202328;
-  --color-line: #2e3238;
-  --color-accent: #7a9bd4;
-  --color-accent-soft: #232b36;
-  --canvas-filter: brightness(0.8) saturate(0.75) contrast(0.9);
-  --canvas-blend: soft-light;
+:root {
+  --color-paper: var(--base-paper);
+  --color-ink: var(--base-ink);
+  --color-muted: var(--base-muted);
+  --color-surface: var(--base-surface);
+  --color-line: var(--base-line);
+  --color-accent: var(--base-accent);
+  --color-accent-soft: var(--base-accent-soft);
 }
 
 /* ---------------------------------------------------------------------
@@ -161,12 +156,11 @@
    its surface (the old skeleton look), so the whole fade-in stays in the theme
    family and the .thumb-canvas blend composites land on the same tint in
    every state. Light uses plain surface (its line≈surface anyway). */
-:root                     { --thumb-bg: var(--color-surface); }
-:root[data-theme="dark"]  { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
-:root[data-theme="sepia"] { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
-:root[data-theme="green"] { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
-:root[data-theme="night"] { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
-:root[data-theme="dim"]   { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
+:root { --thumb-bg: var(--color-surface); }
+/* Dark families need the tinted mix; light's --line ≈ --surface so plain
+   surface is already right. One rule replaces five near-identical per-theme
+   copies. */
+:root.dark { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
 .thumb-card {
   /* Clip the SQUARE canvas to the rounded card. Without this the canvas
      corners poke past the radius; in dim (soft-light of a light,
@@ -429,7 +423,9 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.9;
+  /* User-controlled texture strength. 0.9 was the old hard-coded value and is
+     still the default, so an untouched install looks identical. */
+  opacity: var(--texture-opacity, 0.9);
 
   /* TEXTURE ANCHORING.
      The paper texture is part of the PAGE, not a filter over the viewport, so
@@ -451,7 +447,11 @@
      keeps hairlines from disappearing at small zoom or turning into fat bars at
      large zoom by clamping their scaled width. background-origin/position pin
      the pattern to the page's top-left corner so it never slides. */
-  --tex-scale: var(--scale-factor, 1);
+  /* The user's pitch multiplier COMPOSES with the page scale rather than
+     replacing it. The texture is part of the page (appendix 7): it must still
+     zoom with the document, so the slider stretches the NATURAL pitch and the
+     product is what every pattern below derives from. */
+  --tex-scale: calc(var(--scale-factor, 1) * var(--texture-scale-user, 1));
   --tex-unit: calc(26px * var(--tex-scale));
   --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
   background-origin: border-box;
@@ -517,11 +517,62 @@
   pointer-events: none;
   display: none;
   opacity: var(--noise-opacity, 0);
-  mix-blend-mode: overlay;
+  /* BLEND DIRECTION — the same family rule the paper textures use.
+     This was a flat `overlay`, which is very nearly a NO-OP at both ends of
+     the range: overlay preserves highlights and shadows, so mid-gray noise
+     over white paper stays white and over a near-black dark theme stays black.
+     On a measured swatch, 80% grain over #fff and over #131316 were both
+     indistinguishable from no grain at all — the control did nothing on
+     exactly the two backgrounds people actually read on.
+     multiply darkens light paper; screen lightens dark paper. */
+  mix-blend-mode: var(--noise-blend, multiply);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+:root { --noise-blend: multiply; }
+:root.dark { --noise-blend: screen; }
 body.noise-enabled .noise-overlay {
   display: block;
+}
+
+/* ANIMATED GRAIN.
+   Real film grain crawls; a static tile reads as dirt on the glass. The
+   obvious implementation — re-randomising the feTurbulence seed every frame —
+   re-rasterises a full-viewport SVG filter 60x a second, which drops frames
+   while scrolling.
+
+   Instead the tile is oversized and simply MOVED. steps(1) sampling makes it
+   jump between discrete offsets rather than sliding: a sliding grain reads as
+   a texture panning across the screen (very obviously wrong), while discrete
+   jumps read as the frame-to-frame randomness of real grain. Because it is a
+   pure transform it runs on the compositor — no repaint, no filter work. */
+body.noise-animated .noise-overlay {
+  background-image: none;
+}
+body.noise-animated .noise-overlay::after {
+  content: "";
+  position: absolute;
+  /* Oversized and centred so the moving tile never exposes an edge. */
+  inset: -100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: noise-crawl 0.66s steps(1) infinite;
+  will-change: transform;
+}
+@keyframes noise-crawl {
+  0%    { transform: translate3d(0, 0, 0); }
+  12.5% { transform: translate3d(-13px, 7px, 0); }
+  25%   { transform: translate3d(9px, -14px, 0); }
+  37.5% { transform: translate3d(-6px, -9px, 0); }
+  50%   { transform: translate3d(14px, 5px, 0); }
+  62.5% { transform: translate3d(-11px, 12px, 0); }
+  75%   { transform: translate3d(5px, -6px, 0); }
+  87.5% { transform: translate3d(-8px, -13px, 0); }
+  100%  { transform: translate3d(0, 0, 0); }
+}
+/* Respect the OS setting: crawling grain is exactly the kind of constant
+   peripheral motion that triggers vestibular discomfort. The grain stays; it
+   just stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  body.noise-animated .noise-overlay::after { animation: none; }
 }
 
 /* ---------------------------------------------------------------------
@@ -581,17 +632,21 @@ body {
    turn its opaque background into a black block. Dropdown popovers (theme /
    texture / noise menus) opt out via `.menu-popover` to keep normal theming.
    --------------------------------------------------------------------- */
-.toolbar-glass svg,
-.toolbar-glass span:not(.inline-flex) {
+/* Popover contents are EXCLUDED at the source rather than opted out below.
+   The old opt-out (`.menu-popover span { mix-blend-mode: revert }`) had
+   specificity (0,1,1) against this rule's (0,2,1), so it never actually won —
+   dropdown glyphs were difference-blended the whole time. Harmless while the
+   menus held only text and small dots, but it inverted the preset thumbnails:
+   a white "Light" swatch differenced against the light popover renders BLACK,
+   so the gallery showed every look as its own negative.
+
+   These glyphs must auto-invert against the glass, but nothing inside a
+   popover ever sits on the glass — a popover paints its own opaque themed
+   background. */
+.toolbar-glass svg:not(:is(.menu-popover, .menu-popover *)),
+.toolbar-glass span:not(.inline-flex):not(:is(.menu-popover, .menu-popover *)) {
   color: #fff;
   mix-blend-mode: difference;
-}
-
-/* Dropdown panels revert to normal theme colors (no blend). */
-.menu-popover svg,
-.menu-popover span {
-  color: revert;
-  mix-blend-mode: revert;
 }
 
 /* ---------------------------------------------------------------------
@@ -719,4 +774,199 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* =====================================================================
+   10. Appearance system additions (task 11): hue picker, preset
+   thumbnails, and the clickable link layer.
+   ===================================================================== */
+
+/* --- hue strip ------------------------------------------------------------
+   The track paints the actual hue circle so the control previews its own
+   output. Authored in sRGB/HSL, NOT oklch: the tint is applied with
+   `hue-rotate()`, which works in sRGB, and the two spaces disagree badly —
+   oklch hue 34 is pink where sRGB 34 is the warm tan sepia wants. Matching the
+   space is what makes the swatch you click the colour you get. */
+.hue-strip {
+  background-image: linear-gradient(
+    to right,
+    hsl(0 60% 55%), hsl(60 60% 55%), hsl(120 60% 55%),
+    hsl(180 60% 55%), hsl(240 60% 55%), hsl(300 60% 55%), hsl(360 60% 55%)
+  );
+}
+.hue-strip::-webkit-slider-thumb {
+  appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+  cursor: pointer;
+}
+.hue-strip::-moz-range-thumb {
+  height: 14px;
+  width: 14px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+  cursor: pointer;
+}
+
+/* --- preset thumbnails ----------------------------------------------------
+   A miniature page rendered in the preset's OWN look. The swatch root carries
+   that appearance as inline custom properties (Appearance::preview_style), and
+   because custom properties inherit, everything inside resolves --color-paper,
+   --canvas-filter and the --tex-* chain against THAT preset rather than the
+   applied one. The same .texture-* classes the real page uses apply here
+   unchanged, so a swatch cannot drift from what selecting it does. */
+.preset-swatch {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+}
+.preset-page {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The page BACKDROP, exactly like .pdf-page: themed paper, never filtered. */
+  background-color: var(--color-paper);
+}
+/* The stand-in "canvas".
+   This mirrors the real DOM (.pdf-page > canvas) rather than approximating it,
+   because the filter belongs to the CANVAS alone. Applying it to the whole
+   swatch instead — as the first attempt did — inverted the page backdrop too,
+   so every dark preset rendered as a LIGHT rectangle: invert() of a dark
+   --color-paper is near-white. Here the inner surface is a white sheet with
+   dark ruled "glyphs", which is what a PDF page actually is, and the same
+   filter + blend the engine uses turn it into the look being previewed. */
+.preset-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 15% 12% 0;
+  background-color: #fff;
+  filter: var(--canvas-filter, none);
+  mix-blend-mode: var(--canvas-blend, multiply);
+}
+/* Stand-in text: dark bars on the white sheet so the filter has real content
+   to act on. Deliberately a fixed near-black rather than --color-ink — this is
+   page CONTENT (black in the source PDF), not themed chrome. */
+.preset-line {
+  display: block;
+  height: 6%;
+  margin-bottom: 9%;
+  border-radius: 1px;
+  background-color: #24303f;
+}
+.preset-line-a { width: 100%; }
+.preset-line-b { width: 84%; }
+.preset-line-c { width: 92%; }
+
+/* The swatch re-declares .pdf-page's texture chain locally: .preset-page is
+   not a .pdf-page, and making it one would drag in the host's shadow, flex and
+   sizing rules. z-index 2 keeps it above the stand-in canvas. */
+.preset-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: var(--texture-opacity, 0.9);
+  --tex-scale: var(--texture-scale-user, 1);
+  --tex-unit: calc(26px * var(--tex-scale));
+  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  background-origin: border-box;
+  background-position: 0 0;
+}
+.preset-page.texture-paper::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  background-color: var(--texture-paper);
+  background-blend-mode: var(--texture-blend, multiply);
+  background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
+}
+.preset-page.texture-lined::before {
+  background-image: repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+}
+.preset-page.texture-grid::before {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+}
+.preset-page.texture-dotted::before {
+  background-image: radial-gradient(var(--texture-line) calc(1px * var(--tex-scale)), transparent calc(1.5px * var(--tex-scale)));
+  background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
+}
+.preset-page.texture-cross::before {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    radial-gradient(var(--texture-line) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
+  background-size: var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit);
+}
+
+/* Grain preview, above the texture so the stack matches the real page. */
+.preset-page.preset-noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: var(--noise-opacity, 0);
+  mix-blend-mode: var(--noise-blend, multiply);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* An animated preset must LOOK animated in its thumbnail, or the two grain
+   modes are indistinguishable in the gallery. */
+.preset-page.preset-noise-animated::after {
+  animation: noise-crawl 0.66s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .preset-page.preset-noise-animated::after { animation: none; }
+}
+
+/* --- link layer -----------------------------------------------------------
+   Clickable annotation targets over the page.
+
+   Sits ABOVE the text layer (z-index 3 vs 2). The text layer covers the whole
+   page with transparent spans, so a link underneath it would never receive a
+   click; putting links on top and giving only the ANCHORS pointer-events means
+   text selection still works everywhere except the few pixels that are a link
+   — the same trade-off every PDF viewer makes.
+
+   Neither blended nor filtered: the affordance is UI, not page content, so it
+   must stay legible whatever the tint or base mode is doing to the canvas. */
+.pdf-page .linkLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.pdf-page .linkLayer .pdf-link {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 2px;
+  /* Invisible until hovered. A PDF's own link styling (usually coloured text
+     or an underline) is already painted into the canvas, so a permanent box on
+     top would double it up on every well-made document. */
+  background-color: transparent;
+  outline: 1px solid transparent;
+  transition: background-color 120ms ease, outline-color 120ms ease;
+}
+.pdf-page .linkLayer .pdf-link:hover {
+  background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  outline-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+/* Keyboard users get the affordance permanently while focused — links are
+   reachable by Tab and an invisible focus target is a dead end. */
+.pdf-page .linkLayer .pdf-link:focus-visible {
+  background-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }

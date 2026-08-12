@@ -56,7 +56,7 @@ pub fn PageCanvas(
     let texture = move || {
         state
             .as_ref()
-            .map(|s| s.settings.get().texture.as_str().to_string())
+            .map(|s| s.settings.get().appearance.texture.as_str().to_string())
             .unwrap_or_else(|| "none".to_string())
     };
     let host_class = move || {

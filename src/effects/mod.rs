@@ -5,14 +5,14 @@
 //!   - continuous_scroll    branch A (viewer/continuous)
 //!   - shortcuts            branch B (viewer/chrome)
 //!   - search_effects       branch C (panels/sidebar)
-//!   - theme_ui             branch D (panels/settings)
 //!
-//! mod.rs is FROZEN after the foundation commit.
+//! The FROZEN-mod.rs rule from the foundation commit was lifted for the
+//! task-8 modularisation; new effects are added here as normal.
 
 pub mod continuous_scroll;
 pub mod fit;
+pub mod link_nav;
 pub mod page_tracking;
 pub mod search_effects;
 pub mod shortcuts;
 pub mod theme_applier;
-pub mod theme_ui;

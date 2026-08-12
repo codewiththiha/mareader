@@ -433,6 +433,134 @@ function applyHighlights(st) {
   }
 }
 
+/// Resolve a pdf.js destination (named or explicit array) to a 1-based page
+/// number, or null if it cannot be resolved.
+async function destToPage(dest) {
+  if (!pdf || !dest) return null;
+  try {
+    // Named destinations arrive as a string and need a lookup; explicit ones
+    // are already the array form.
+    const explicit = typeof dest === "string" ? await pdf.getDestination(dest) : dest;
+    if (!Array.isArray(explicit) || !explicit.length) return null;
+    const ref = explicit[0];
+    // A page can be referenced either by object ref or by a direct index.
+    if (typeof ref === "object" && ref !== null) {
+      return (await pdf.getPageIndex(ref)) + 1;
+    }
+    if (Number.isInteger(ref)) return ref + 1;
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Only allow schemes that are safe to hand to the OS/browser.
+///
+/// A PDF is untrusted input and its annotations can carry any URI at all,
+/// including `javascript:` (script execution in our origin) and `file:`
+/// (probing the local filesystem). Allow-list rather than block-list: a new
+/// exotic scheme should be inert by default, not enabled by omission.
+function safeExternalUrl(raw) {
+  if (typeof raw !== "string" || !raw) return null;
+  let u;
+  try {
+    u = new URL(raw, globalThis.location ? globalThis.location.href : undefined);
+  } catch (_) {
+    return null;
+  }
+  return ["http:", "https:", "mailto:"].includes(u.protocol) ? u.href : null;
+}
+
+/// Build the clickable link layer for a page.
+///
+/// WHY THIS EXISTS. The reader only ever built a canvas and a text layer, so a
+/// URL in a PDF was rendered as pixels with selectable text on top and nothing
+/// else — it looked like a link and did nothing. Link targets live in the
+/// page's ANNOTATIONS, which is a separate stream from both the content and
+/// the text, so no amount of scanning the text layer recovers them (and
+/// regex-detecting URLs in the text would both miss real links whose anchor
+/// text is not a URL, and invent links the document never declared).
+///
+/// Built detached and swapped in, for the same reason the text layer is: a
+/// superseded render must never drop a half-built set of anchors on top of the
+/// live ones.
+async function buildLinkLayer(st, viewport) {
+  const { host } = st;
+  if (!host) return;
+
+  let annots = [];
+  try {
+    const page = await pdf.getPage(st.page);
+    annots = await page.getAnnotations({ intent: "display" });
+  } catch (_) {
+    annots = [];
+  }
+
+  const layer = document.createElement("div");
+  layer.className = "linkLayer";
+
+  for (const a of annots) {
+    if (!a || a.subtype !== "Link" || !Array.isArray(a.rect)) continue;
+
+    const url = safeExternalUrl(a.url);
+    const page = url ? null : await destToPage(a.dest);
+    if (!url && !page) continue; // no usable target (e.g. a JS action)
+
+    // Map PDF user space (y-up, origin bottom-left) to the rendered viewport.
+    // convertToViewportPoint applies the viewport transform, so scale AND
+    // rotation are handled for us — doing this arithmetic by hand is what
+    // usually leaves link boxes offset on rotated pages. (The older
+    // convertToViewportRectangle helper is not present in this pdf.js build,
+    // so both corners are converted and normalised instead: after a rotation
+    // the "bottom-left" corner may no longer be the min corner on screen.)
+    const [x1, y1] = viewport.convertToViewportPoint(a.rect[0], a.rect[1]);
+    const [x2, y2] = viewport.convertToViewportPoint(a.rect[2], a.rect[3]);
+    const x = Math.min(x1, x2);
+    const y = Math.min(y1, y2);
+    const w = Math.abs(x2 - x1);
+    const h = Math.abs(y2 - y1);
+    if (!(w > 0) || !(h > 0)) continue;
+
+    const el = document.createElement("a");
+    el.className = "pdf-link";
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+    el.style.width = w + "px";
+    el.style.height = h + "px";
+
+    if (url) {
+      el.href = url;
+      el.target = "_blank";
+      // noopener is a security requirement, not a nicety: without it the opened
+      // page gets a handle on this window via window.opener.
+      el.rel = "noopener noreferrer";
+      el.title = url;
+    } else {
+      // Internal jump: no href, so it can never navigate the SPA away. The Rust
+      // side owns page navigation, so tell it rather than scrolling from here —
+      // that keeps one source of truth for the current page and reuses the
+      // existing jump/settle logic.
+      el.href = "#";
+      el.title = "Go to page " + page;
+      el.dataset.page = String(page);
+      el.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        globalThis.dispatchEvent(
+          new CustomEvent("pdfreader:navigate", { detail: { page } })
+        );
+      });
+    }
+    layer.appendChild(el);
+  }
+
+  const live = host.querySelector(".linkLayer");
+  if (live && live.parentNode) {
+    live.replaceWith(layer);
+  } else {
+    host.appendChild(layer);
+  }
+}
+
 async function renderPageInternal(canvasId, scale, renderText) {
   const st = stateByCanvasId.get(canvasId);
   if (!st) return fail("not_registered", "Page not registered: " + canvasId);
@@ -530,6 +658,11 @@ async function renderPageInternal(canvasId, scale, renderText) {
     // Highlights are derived from the spans' live client rects, so they must be
     // applied only once the layer is attached and laid out.
     applyHighlights(st);
+
+    // Links ride along with the text layer: both are per-page overlays that
+    // only matter for the pages the reader can actually interact with, and
+    // both must be rebuilt at the new geometry after a scale change.
+    await buildLinkLayer(st, viewport);
   }
 
   st.viewport = viewport;

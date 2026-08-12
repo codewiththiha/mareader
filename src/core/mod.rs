@@ -1,10 +1,11 @@
+pub mod appearance;
 pub mod bridge;
 pub mod document;
 pub mod filename;
 pub mod layout;
 pub mod math;
 pub mod open_flow;
+pub mod presets;
 pub mod search;
 pub mod settings;
 pub mod state;
-pub mod themes;

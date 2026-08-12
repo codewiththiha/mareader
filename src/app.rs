@@ -4,7 +4,7 @@ use crate::components::organisms::toast::ToastHost;
 use crate::components::views::reader_view::ReaderView;
 use crate::core::state::AppState;
 use crate::effects::shortcuts::shortcuts;
-use crate::effects::theme_ui::theme_ui;
+use crate::effects::link_nav::link_nav;
 use crate::util::storage::load_settings;
 
 #[component]
@@ -15,9 +15,12 @@ pub fn App() -> impl IntoView {
     };
     provide_context(state.clone());
 
-    // App-root hooks: global keyboard shortcuts + settings-UI glue.
+    // App-root hooks: global keyboard shortcuts + internal PDF link jumps.
+    // (The old `theme_ui` hook was removed with the appearance refactor — it
+    // only logged a sidebar transition and held a subscription to settings
+    // fields that no longer exist.)
     shortcuts(state);
-    theme_ui(state);
+    link_nav(state);
 
     view! {
         <>
