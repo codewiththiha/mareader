@@ -231,107 +231,26 @@ fn percent_decode(s: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Title-vs-path arbitration: a usable /Title wins, an unusable one falls
+    /// back to the file name, and with neither there is nothing to show.
     #[test]
-    fn junk_path_title_falls_back_to_file_name() {
-        // The exact bug: Distiller wrote a truncated source path as /Title.
-        let name = display_name(
-            Some("file:///F|/Mis%20docum"),
-            Some("/Users/me/Books/Programming Pearls (2nd Edition) - Jon Bentley.pdf"),
-        );
+    fn picks_the_best_available_name() {
+        // A good title wins over the path.
         assert_eq!(
-            name.as_deref(),
+            display_name(Some("The Rust Programming Language"), Some("/tmp/trpl.pdf")).as_deref(),
+            Some("The Rust Programming Language")
+        );
+        // The exact bug: Distiller wrote a truncated source path as /Title, so
+        // the file name has to take over.
+        assert_eq!(
+            display_name(
+                Some("file:///F|/Mis%20docum"),
+                Some("/Users/me/Books/Programming Pearls (2nd Edition) - Jon Bentley.pdf"),
+            )
+            .as_deref(),
             Some("Programming Pearls (2nd Edition) - Jon Bentley")
         );
-    }
-
-    #[test]
-    fn good_title_wins() {
-        let name = display_name(Some("The Rust Programming Language"), Some("/tmp/trpl.pdf"));
-        assert_eq!(name.as_deref(), Some("The Rust Programming Language"));
-    }
-
-    #[test]
-    fn special_characters_survive_in_file_names() {
-        // Parens, ampersands, dashes, unicode — all legitimate in a name.
-        for (path, want) in [
-            ("/b/Programming Pearls (2nd Edition) - Jon Bentley.pdf",
-             "Programming Pearls (2nd Edition) - Jon Bentley"),
-            ("/b/Kernighan & Ritchie — C, 2nd ed. [ANSI].pdf",
-             "Kernighan & Ritchie — C, 2nd ed. [ANSI]"),
-            ("/b/日本語のファイル.pdf", "日本語のファイル"),
-            ("/b/report_v1.2_final.pdf", "report_v1.2_final"),
-        ] {
-            assert_eq!(display_name(None, Some(path)).as_deref(), Some(want));
-        }
-    }
-
-    #[test]
-    fn percent_encoded_paths_are_decoded() {
-        assert_eq!(
-            display_name(None, Some("file:///C:/Docs/My%20Book%20(1).pdf")).as_deref(),
-            Some("My Book (1)")
-        );
-        // UTF-8 multi-byte escapes.
-        assert_eq!(
-            file_stem_from_path("/x/Caf%C3%A9%20Notes.pdf").as_deref(),
-            Some("Café Notes")
-        );
-    }
-
-    #[test]
-    fn windows_paths_split_on_backslash() {
-        assert_eq!(
-            display_name(None, Some(r"C:\Users\me\Docs\Deep Work.pdf")).as_deref(),
-            Some("Deep Work")
-        );
-        assert_eq!(
-            display_name(None, Some(r"\\server\share\Annual Report.pdf")).as_deref(),
-            Some("Annual Report")
-        );
-    }
-
-    #[test]
-    fn rejects_placeholder_and_path_shaped_titles() {
-        for junk in [
-            "untitled",
-            "Untitled",
-            "UNKNOWN",
-            "file:///F|/Mis%20docum",
-            "http://example.com/a.pdf",
-            r"C:\Users\me\thesis.tex",
-            "/home/me/thesis.pdf",
-            "~/notes.pdf",
-            "a/b/c/d",
-            "Mis%20documentos",
-            "___",
-            "",
-            "   ",
-        ] {
-            assert!(
-                !is_usable_title(&clean_title(junk)),
-                "should have rejected {junk:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn accepts_ordinary_titles() {
-        for good in [
-            "Programming Pearls",
-            "Either/Or: A Fragment of Life",
-            "Chapter 7 — Concurrency",
-            "Rust 1.75 Release Notes",
-            "C. Elegans: a study",
-        ] {
-            assert!(
-                is_usable_title(&clean_title(good)),
-                "should have accepted {good:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn strips_office_export_prefix_and_extension() {
+        // Office exports and stray extensions are stripped off the title.
         assert_eq!(
             display_name(Some("Microsoft Word - Chapter3.doc"), Some("/x/y.pdf")).as_deref(),
             Some("Chapter3")
@@ -340,38 +259,71 @@ mod tests {
             display_name(Some("Thesis Draft.pdf"), Some("/x/y.pdf")).as_deref(),
             Some("Thesis Draft")
         );
-    }
-
-    #[test]
-    fn collapses_embedded_whitespace() {
+        // Embedded runs of whitespace collapse to single spaces.
         assert_eq!(
             display_name(Some("A  Tale\nof\tTwo   Cities"), None).as_deref(),
             Some("A Tale of Two Cities")
         );
-    }
-
-    #[test]
-    fn no_title_no_path_is_none() {
+        // Nothing usable anywhere.
         assert_eq!(display_name(None, None), None);
         assert_eq!(display_name(Some("  "), None), None);
         assert_eq!(display_name(Some("untitled"), Some("")), None);
     }
 
+    /// What counts as a usable title. Placeholders, URLs and path-shaped
+    /// strings are rejected; ordinary prose — including slashes, colons and
+    /// version numbers — is kept.
     #[test]
-    fn overlong_titles_are_rejected() {
-        let long = "x".repeat(MAX_TITLE_LEN + 1);
-        assert!(!is_usable_title(&long));
-        let ok = "x".repeat(MAX_TITLE_LEN);
-        assert!(is_usable_title(&ok));
+    fn title_usability() {
+        for junk in [
+            "untitled", "Untitled", "UNKNOWN",
+            "file:///F|/Mis%20docum", "http://example.com/a.pdf",
+            r"C:\Users\me\thesis.tex", "/home/me/thesis.pdf", "~/notes.pdf",
+            "a/b/c/d", "Mis%20documentos", "___", "", "   ",
+        ] {
+            assert!(!is_usable_title(&clean_title(junk)), "should have rejected {junk:?}");
+        }
+        for good in [
+            "Programming Pearls",
+            "Either/Or: A Fragment of Life",
+            "Chapter 7 — Concurrency",
+            "Rust 1.75 Release Notes",
+            "C. Elegans: a study",
+        ] {
+            assert!(is_usable_title(&clean_title(good)), "should have accepted {good:?}");
+        }
+        // Length cap, exactly at the boundary.
+        assert!(is_usable_title(&"x".repeat(MAX_TITLE_LEN)));
+        assert!(!is_usable_title(&"x".repeat(MAX_TITLE_LEN + 1)));
     }
 
+    /// Extracting a display name from a path: separators (both kinds), percent
+    /// escapes, extensions and the degenerate shapes.
     #[test]
-    fn directory_trailing_separator_and_bare_names() {
-        assert_eq!(file_stem_from_path("/a/b/").as_deref(), Some("b"));
-        assert_eq!(file_stem_from_path("book.pdf").as_deref(), Some("book"));
-        assert_eq!(file_stem_from_path("/").as_deref(), None);
-        // A literal percent that is not an escape survives.
-        assert_eq!(file_stem_from_path("/x/100%25 done.pdf").as_deref(), Some("100% done"));
-        assert_eq!(file_stem_from_path("/x/50% off.pdf").as_deref(), Some("50% off"));
+    fn file_stem_extraction() {
+        for (path, want) in [
+            // Unicode, punctuation and spacing all survive intact.
+            ("/b/Programming Pearls (2nd Edition) - Jon Bentley.pdf",
+             Some("Programming Pearls (2nd Edition) - Jon Bentley")),
+            ("/b/Kernighan & Ritchie — C, 2nd ed. [ANSI].pdf",
+             Some("Kernighan & Ritchie — C, 2nd ed. [ANSI]")),
+            ("/b/日本語のファイル.pdf", Some("日本語のファイル")),
+            ("/b/report_v1.2_final.pdf", Some("report_v1.2_final")),
+            // Percent escapes, including multi-byte UTF-8.
+            ("file:///C:/Docs/My%20Book%20(1).pdf", Some("My Book (1)")),
+            ("/x/Caf%C3%A9%20Notes.pdf", Some("Café Notes")),
+            // A literal percent that is not an escape survives.
+            ("/x/100%25 done.pdf", Some("100% done")),
+            ("/x/50% off.pdf", Some("50% off")),
+            // Windows and UNC separators.
+            (r"C:\Users\me\Docs\Deep Work.pdf", Some("Deep Work")),
+            (r"\\server\share\Annual Report.pdf", Some("Annual Report")),
+            // Trailing separator, bare name, and nothing at all.
+            ("/a/b/", Some("b")),
+            ("book.pdf", Some("book")),
+            ("/", None),
+        ] {
+            assert_eq!(file_stem_from_path(path).as_deref(), want, "path {path:?}");
+        }
     }
 }

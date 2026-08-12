@@ -69,42 +69,39 @@ pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
 mod tests {
     use super::*;
 
+    /// Fit modes: width uses the container width, page takes the smaller of the
+    /// two ratios (so the whole page shows), and padding comes off first.
     #[test]
-    fn fit_width_uses_container_width() {
+    fn fit_modes() {
         let s = fit_scale(FitMode::Width, 600.0, 800.0, 300.0, 400.0, 0.0, 1.0);
         assert!((s - 2.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn fit_page_takes_min_of_width_and_height() {
-        // 300x400 page in 500x1000 -> height-limited (500/300=1.66 vs 1000/400=2.5)
+        // 300x400 page in 500x1000 -> height-limited (500/300=1.66 vs 1000/400=2.5).
         let s = fit_scale(FitMode::Page, 500.0, 1000.0, 300.0, 400.0, 0.0, 1.0);
         assert!((s - 1.6666).abs() < 1e-3);
-        // in 500x600 -> width-limited (1.6666 vs 1.5)
-        let s2 = fit_scale(FitMode::Page, 500.0, 600.0, 300.0, 400.0, 0.0, 1.0);
-        assert!((s2 - 1.5).abs() < 1e-9);
-    }
-
-    #[test]
-    fn fit_respects_padding() {
+        // ...and in 500x600 -> width-limited (1.6666 vs 1.5).
+        let s = fit_scale(FitMode::Page, 500.0, 600.0, 300.0, 400.0, 0.0, 1.0);
+        assert!((s - 1.5).abs() < 1e-9);
+        // Padding is removed from the container before dividing.
         let s = fit_scale(FitMode::Width, 600.0, 800.0, 300.0, 400.0, 20.0, 1.0);
         assert!((s - (580.0 / 300.0)).abs() < 1e-9);
     }
 
+    /// Zoom presets: clamped to the supported range, and stepping moves to the
+    /// adjacent preset — including from a value that is not itself a preset.
     #[test]
-    fn scale_clamped() {
+    fn zoom_clamping_and_steps() {
         assert_eq!(clamp_scale(0.1), MIN_SCALE);
         assert_eq!(clamp_scale(99.0), MAX_SCALE);
         assert_eq!(clamp_scale(1.0), 1.0);
-    }
-
-    #[test]
-    fn zoom_steps() {
-        assert!((nearest_zoom(1.0, 1) - 1.25).abs() < 1e-9);
-        assert!((nearest_zoom(1.0, -1) - 0.9).abs() < 1e-9);
-        assert!((nearest_zoom(0.1, -1) - 0.25).abs() < 1e-9);
-        assert!((nearest_zoom(99.0, 1) - 5.0).abs() < 1e-9);
-        // non-preset current value steps to nearest adjacent preset
-        assert!((nearest_zoom(1.2, 1) - 1.25).abs() < 1e-9);
+        for (from, dir, want) in [
+            (1.0, 1, 1.25),
+            (1.0, -1, 0.9),
+            (0.1, -1, 0.25),
+            (99.0, 1, 5.0),
+            // A non-preset current value steps to the nearest adjacent preset.
+            (1.2, 1, 1.25),
+        ] {
+            assert!((nearest_zoom(from, dir) - want).abs() < 1e-9, "{from} dir {dir}");
+        }
     }
 }

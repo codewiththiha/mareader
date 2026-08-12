@@ -61,23 +61,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rows_are_two_abreast_and_round_up() {
+    fn grid_geometry_holds() {
+        // Two cells per row, rounding up.
         assert_eq!(row_count(0), 0);
         assert_eq!(row_count(1), 1);
         assert_eq!(row_count(4), 2);
         assert_eq!(row_count(5), 3);
-    }
-
-    #[test]
-    fn two_cells_and_the_gap_fit_the_sidebar_content_box() {
-        // w-72 sidebar (288) minus its p-3 padding on both sides.
-        let content = 288.0 - 2.0 * PAD;
-        assert!(2.0 * CELL_W + ROW_GAP + 4.0 <= content);
-    }
-
-    #[test]
-    fn row_height_tracks_the_page_aspect() {
-        // A4-ish portrait page is taller than a landscape one.
+        // Two cells and the gap fit the w-72 sidebar's content box.
+        assert!(2.0 * CELL_W + ROW_GAP + 4.0 <= 288.0 - 2.0 * PAD);
+        // Row height follows the page aspect: portrait is taller than landscape.
         assert!(row_height(842.0 / 595.0) > row_height(612.0 / 792.0));
         assert_eq!(row_height(1.0), CELL_W + ROW_GAP);
     }

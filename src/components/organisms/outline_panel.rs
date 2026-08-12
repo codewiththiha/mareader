@@ -40,28 +40,19 @@ mod tests {
     /// Enough for a meaningful fragment of a title, not just an ellipsis.
     const MIN_TEXT_W: u32 = 100;
 
+    /// Indent grows with depth, is capped, and — the regression — never eats
+    /// so much of the row that the title has no room left (at depth 12+ the
+    /// old formula left <= 0px).
     #[test]
-    fn indent_grows_with_depth() {
+    fn indent_grows_but_always_leaves_room_for_the_title() {
+        assert_eq!(indent_px(0), 8);
         assert!(indent_px(0) < indent_px(1));
         assert!(indent_px(1) < indent_px(2));
-        assert_eq!(indent_px(0), 8);
-    }
-
-    #[test]
-    fn deep_nesting_always_leaves_room_for_the_title() {
-        // This is the regression: at depth 12+ the old formula left <= 0px.
+        assert_eq!(indent_px(1000), indent_px(10), "indent must be capped");
         for depth in 0..64 {
             let text_w = PANEL_W - indent_px(depth) - PADDING_RIGHT;
-            assert!(
-                text_w >= MIN_TEXT_W,
-                "depth {depth}: only {text_w}px left for the title"
-            );
+            assert!(text_w >= MIN_TEXT_W, "depth {depth}: only {text_w}px left for the title");
         }
-    }
-
-    #[test]
-    fn indent_is_capped() {
-        assert_eq!(indent_px(1000), indent_px(10));
     }
 }
 

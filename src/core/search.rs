@@ -49,43 +49,38 @@ pub fn next_search_index(len: usize, active: Option<usize>, dir: i32) -> Option<
 mod tests {
     use super::*;
 
+    /// Cycling through results: wrap in both directions, start at the first or
+    /// last when nothing is active, and treat a single result as its own
+    /// neighbour. `dir` carries only a sign, so a larger stride behaves the same.
     #[test]
-    fn empty_results_return_none() {
+    fn cycles_and_wraps() {
+        // (len, active, dir, expected)
+        let cases: &[(usize, Option<usize>, i32, Option<usize>)] = &[
+            (3, Some(2), 1, Some(0)),
+            (3, Some(0), -1, Some(2)),
+            (3, Some(1), 1, Some(2)),
+            (3, Some(1), -1, Some(0)),
+            (3, Some(0), 1, Some(1)),
+            (3, None, 1, Some(0)),
+            (3, None, -1, Some(2)),
+            (1, Some(0), 1, Some(0)),
+            (1, Some(0), -1, Some(0)),
+            (1, None, 1, Some(0)),
+            (1, None, -1, Some(0)),
+        ];
+        for &(len, active, dir, want) in cases {
+            assert_eq!(next_search_index(len, active, dir), want, "len={len} active={active:?} dir={dir}");
+        }
+    }
+
+    /// No results means nothing to select, and `dir == 0` means stay put.
+    #[test]
+    fn empty_results_and_zero_direction() {
         assert_eq!(next_search_index(0, None, 1), None);
         assert_eq!(next_search_index(0, None, -1), None);
         assert_eq!(next_search_index(0, Some(0), 1), None);
-    }
-
-    #[test]
-    fn single_result_wraps_to_itself() {
-        assert_eq!(next_search_index(1, Some(0), 1), Some(0));
-        assert_eq!(next_search_index(1, Some(0), -1), Some(0));
-        assert_eq!(next_search_index(1, None, 1), Some(0));
-        assert_eq!(next_search_index(1, None, -1), Some(0));
-    }
-
-    #[test]
-    fn forward_and_back_wrap_around() {
-        assert_eq!(next_search_index(3, Some(2), 1), Some(0));
-        assert_eq!(next_search_index(3, Some(0), -1), Some(2));
-        assert_eq!(next_search_index(3, Some(1), 1), Some(2));
-        assert_eq!(next_search_index(3, Some(1), -1), Some(0));
-        // larger strides behave the same (dir only carries sign)
-        assert_eq!(next_search_index(3, Some(0), 1), Some(1));
-    }
-
-    #[test]
-    fn none_active_starts_at_first_or_last() {
-        assert_eq!(next_search_index(3, None, 1), Some(0));
-        assert_eq!(next_search_index(3, None, -1), Some(2));
-    }
-
-    #[test]
-    fn zero_dir_is_a_noop() {
-        // dir == 0 means neither forward nor back: stay put.
         assert_eq!(next_search_index(3, Some(1), 0), Some(1));
         assert_eq!(next_search_index(1, Some(0), 0), Some(0));
-        // nothing active and no direction: no movement.
         assert_eq!(next_search_index(3, None, 0), None);
     }
 }

@@ -33,20 +33,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn theme_ids_match_contract() {
+    fn theme_table_matches_the_stylesheet() {
         // These ids are hardcoded in styles/input.css `:root[data-theme=...]`.
         for id in ["light", "dark", "sepia", "green", "night", "dim"] {
             assert!(is_valid_theme(id), "missing theme {id}");
         }
-    }
-
-    #[test]
-    fn unknown_id_falls_back_to_light() {
+        // Unknown ids fall back rather than panicking.
         assert_eq!(theme_by_id("neon").id, "light");
-    }
-
-    #[test]
-    fn dark_flags() {
+        // The dark flag drives the blend/filter families.
         assert!(theme_by_id("dark").is_dark);
         assert!(theme_by_id("night").is_dark);
         assert!(!theme_by_id("sepia").is_dark);

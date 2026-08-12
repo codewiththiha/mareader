@@ -281,38 +281,27 @@ mod tests {
         assert_eq!(total_height_css(&[], 24.0), 0.0);
     }
 
+    /// `visible_range` over the fixture column [100, 200, 100] with gap 24
+    /// (page tops 0 / 124 / 348). Covers the plain window, the buffer's
+    /// expand-and-clamp, both empty cases and the strict top edge: a viewport
+    /// lying entirely inside a gap sees nothing.
     #[test]
-    fn visible_range_basic() {
-        // viewport 0..100 sees page 0; with buffer 0 -> (0,0)
-        assert_eq!(visible_range(0.0, 100.0, &H, 24.0, 0), Some((0, 0)));
-        // viewport 124..324 sees page 1
-        assert_eq!(visible_range(124.0, 200.0, &H, 24.0, 0), Some((1, 1)));
-        // viewport 100..400 sees pages 1-2
-        assert_eq!(visible_range(100.0, 300.0, &H, 24.0, 0), Some((1, 2)));
-    }
-
-    #[test]
-    fn visible_range_buffer_expands_and_clamps() {
-        // page 1 visible, buffer 1 -> (0, 2)
-        assert_eq!(visible_range(124.0, 200.0, &H, 24.0, 1), Some((0, 2)));
-        // page 2 visible, buffer 2 -> (0, 2) clamped to last
-        assert_eq!(visible_range(348.0, 100.0, &H, 24.0, 2), Some((0, 2)));
-    }
-
-    #[test]
-    fn visible_range_empty() {
+    fn visible_range_windows() {
+        // (scroll_top, viewport_h, buffer, expected)
+        let cases: &[(f64, f64, usize, Option<(usize, usize)>)] = &[
+            (0.0, 100.0, 0, Some((0, 0))),
+            (124.0, 200.0, 0, Some((1, 1))),
+            (100.0, 300.0, 0, Some((1, 2))),
+            (124.0, 200.0, 1, Some((0, 2))),
+            (348.0, 100.0, 2, Some((0, 2))),
+            // A viewport 100..115 sits wholly inside the gap below page 0.
+            (100.0, 15.0, 0, None),
+            (9999.0, 100.0, 0, None),
+        ];
+        for &(st, vh, buf, want) in cases {
+            assert_eq!(visible_range(st, vh, &H, 24.0, buf), want, "st={st} vh={vh} buf={buf}");
+        }
         assert_eq!(visible_range(0.0, 500.0, &[], 24.0, 0), None);
-    }
-
-    #[test]
-    fn visible_range_past_end() {
-        assert_eq!(visible_range(9999.0, 100.0, &H, 24.0, 0), None);
-    }
-
-    #[test]
-    fn visible_range_gap_handling() {
-        // top at page1 = 124 (100 + 24 gap). A viewport 100..115 sits in the gap.
-        assert_eq!(visible_range(100.0, 15.0, &H, 24.0, 0), None);
     }
 
     #[test]
@@ -330,61 +319,44 @@ mod tests {
         assert_eq!(page_from_scroll(500.0, &[], 24.0), 1);
     }
 
+    /// `visible_grid_rows` over a 3-row grid of 120px rows (the thumbnail
+    /// panel's virtualization). Covers the plain window, buffer expand/clamp,
+    /// both no-overlap directions, exact row boundaries (a row ending exactly
+    /// at scroll_top is scrolled out) and a zero-height viewport, which still
+    /// yields the row containing scroll_top.
     #[test]
-    fn visible_grid_rows_basic() {
-        // 3 rows of 120px. viewport 0..100 sees row 0.
-        assert_eq!(visible_grid_rows(0.0, 100.0, 3, 120.0, 0), Some((0, 0)));
-        // viewport 120..320 overlaps rows 1 and 2.
-        assert_eq!(visible_grid_rows(120.0, 200.0, 3, 120.0, 0), Some((1, 2)));
-        // viewport 0..240 sees rows 0..2 (row 2 starts exactly at the bottom edge).
-        assert_eq!(visible_grid_rows(0.0, 240.0, 3, 120.0, 0), Some((0, 2)));
-    }
-
-    #[test]
-    fn visible_grid_rows_buffer_expands_and_clamps() {
-        // row 1 visible, buffer 1 -> (0, 2)
-        assert_eq!(visible_grid_rows(120.0, 200.0, 3, 120.0, 1), Some((0, 2)));
-        // row 2 visible, buffer 2 -> (0, 2) clamped to last
-        assert_eq!(visible_grid_rows(240.0, 100.0, 3, 120.0, 2), Some((0, 2)));
-    }
-
-    #[test]
-    fn visible_grid_rows_empty() {
-        assert_eq!(visible_grid_rows(0.0, 500.0, 0, 120.0, 0), None);
-    }
-
-    #[test]
-    fn visible_grid_rows_no_overlap() {
-        // Past the end of the grid -> nothing overlaps.
-        assert_eq!(visible_grid_rows(9999.0, 100.0, 3, 120.0, 0), None);
-        // Fully above the grid -> nothing overlaps.
-        assert_eq!(visible_grid_rows(-100.0, 50.0, 3, 120.0, 0), None);
-    }
-
-    #[test]
-    fn visible_grid_rows_single_row() {
-        assert_eq!(visible_grid_rows(0.0, 100.0, 1, 120.0, 0), Some((0, 0)));
-        // Buffer clamps to the single row.
-        assert_eq!(visible_grid_rows(50.0, 200.0, 1, 120.0, 1), Some((0, 0)));
-        // Past the end of the single row -> None.
-        assert_eq!(visible_grid_rows(120.0, 100.0, 1, 120.0, 0), None);
-    }
-
-    #[test]
-    fn visible_grid_rows_exact_top_boundary() {
-        // Row 0 ends exactly at scroll_top=120 -> strictly scrolled out.
-        assert_eq!(visible_grid_rows(120.0, 100.0, 3, 120.0, 0), Some((1, 1)));
-        // Row 1 ends exactly at scroll_top=240 -> row 2 is the first visible.
-        assert_eq!(visible_grid_rows(240.0, 100.0, 3, 120.0, 0), Some((2, 2)));
-    }
-
-    #[test]
-    fn visible_grid_rows_empty_viewport() {
-        // Zero-height viewport still yields the row containing scroll_top.
-        assert_eq!(visible_grid_rows(50.0, 0.0, 3, 120.0, 0), Some((0, 0)));
-        assert_eq!(visible_grid_rows(200.0, 0.0, 3, 120.0, 0), Some((1, 1)));
-        // ... and None when there are no rows.
-        assert_eq!(visible_grid_rows(0.0, 0.0, 0, 120.0, 0), None);
+    fn visible_grid_rows_windows() {
+        // (scroll_top, viewport_h, rows, buffer, expected)
+        let cases: &[(f64, f64, usize, usize, Option<(usize, usize)>)] = &[
+            (0.0, 100.0, 3, 0, Some((0, 0))),
+            (120.0, 200.0, 3, 0, Some((1, 2))),
+            (0.0, 240.0, 3, 0, Some((0, 2))),
+            (120.0, 200.0, 3, 1, Some((0, 2))),
+            (240.0, 100.0, 3, 2, Some((0, 2))),
+            // Exact boundaries: the row above has strictly scrolled out.
+            (120.0, 100.0, 3, 0, Some((1, 1))),
+            (240.0, 100.0, 3, 0, Some((2, 2))),
+            // Zero-height viewport still resolves to the row under scroll_top.
+            (50.0, 0.0, 3, 0, Some((0, 0))),
+            (200.0, 0.0, 3, 0, Some((1, 1))),
+            // No overlap: past the end, or entirely above the grid.
+            (9999.0, 100.0, 3, 0, None),
+            (-100.0, 50.0, 3, 0, None),
+            // Single row, including its buffer clamp and its past-the-end case.
+            (0.0, 100.0, 1, 0, Some((0, 0))),
+            (50.0, 200.0, 1, 1, Some((0, 0))),
+            (120.0, 100.0, 1, 0, None),
+            // No rows at all.
+            (0.0, 500.0, 0, 0, None),
+            (0.0, 0.0, 0, 0, None),
+        ];
+        for &(st, vh, rows, buf, want) in cases {
+            assert_eq!(
+                visible_grid_rows(st, vh, rows, 120.0, buf),
+                want,
+                "st={st} vh={vh} rows={rows} buf={buf}"
+            );
+        }
     }
 }
 
@@ -396,17 +368,14 @@ mod anchor_tests {
     /// H=[100,200], gap=24, vh=100, f=2, anchor at the viewport centre.
     ///
     /// Posed with st=1 rather than the spec's st=0 so it measures the ANCHOR
-    /// rather than the top-pin shortcut above (at st=0 the answer is 0 by
-    /// definition — see `top_of_document_stays_pinned`). doc_y = 1 + 50 = 51,
-    /// i.e. 51% down page 0; after doubling that point sits at 102, and
-    /// keeping it at screen y=50 means scrolling to 52.
+    /// rather than the top-pin shortcut (at st=0 the answer is 0 by
+    /// definition). doc_y = 1 + 50 = 51, i.e. 51% down page 0; after doubling
+    /// that point sits at 102, and keeping it at screen y=50 means 52.
     #[test]
     fn spec_hand_case() {
         let h = [100.0, 200.0];
         let got = anchored_scroll(1.0, 100.0, &h, 24.0, 2.0, 50.0).unwrap();
         assert!((got - 52.0).abs() < 1e-9, "expected 52.0, got {got}");
-        // The spec's exact st=0 form, under the top-pin rule.
-        assert_eq!(anchored_scroll(0.0, 100.0, &h, 24.0, 2.0, 50.0), Some(0.0));
     }
 
     /// At the top of the document, zooming keeps the top pinned rather than
@@ -432,42 +401,35 @@ mod anchor_tests {
         }
     }
 
-    /// Zooming out near the end of the document can't leave the scroll past
-    /// the new (shorter) content: it clamps to max_scroll, never negative.
+    /// Both clamps: zooming out near the end lands exactly on the new
+    /// max_scroll, and a document shorter than the viewport lands on 0 rather
+    /// than going negative.
     #[test]
-    fn clamps_at_end_when_zooming_out() {
+    fn clamps_to_the_new_scrollable_extent() {
         let h = [1000.0, 1000.0];
-        // total = 2024, vh = 100 -> parked at the very bottom.
         let bottom = 1000.0 + 1000.0 + 24.0 - 100.0;
         let got = anchored_scroll(bottom, 100.0, &h, 24.0, 0.5, 50.0).unwrap();
         let new_max = 500.0 + 500.0 + 24.0 - 100.0;
         assert!((got - new_max).abs() < 1e-9, "expected {new_max}, got {got}");
-        assert!(got >= 0.0);
+        // Shorter than the viewport: clamps to 0. Posed away from the top so
+        // the top-pin shortcut isn't what's being measured.
+        assert_eq!(anchored_scroll(600.0, 500.0, &[1000.0], 24.0, 0.1, 250.0), Some(0.0));
     }
 
-    /// Zooming out a short document clamps to 0 rather than going negative.
-    #[test]
-    fn clamps_at_zero() {
-        let h = [1000.0];
-        // Zooming out a document shorter than the viewport lands at 0, not
-        // negative. Posed away from the top so the pin isn't what's tested.
-        let got = anchored_scroll(600.0, 500.0, &h, 24.0, 0.1, 250.0).unwrap();
-        assert_eq!(got, 0.0);
-    }
-
-    /// Nothing measured yet => nothing to anchor to.
+    /// Nothing measured yet, or a degenerate factor => nothing to anchor to.
     #[test]
     fn empty_heights_is_none() {
         assert!(anchored_scroll(0.0, 100.0, &[], 24.0, 2.0, 50.0).is_none());
-        // Degenerate factors are refused too.
-        assert!(anchored_scroll(0.0, 100.0, &[100.0], 24.0, 0.0, 50.0).is_none());
-        assert!(anchored_scroll(0.0, 100.0, &[100.0], 24.0, -1.0, 50.0).is_none());
-        assert!(anchored_scroll(0.0, 100.0, &[100.0], 24.0, f64::NAN, 50.0).is_none());
+        for f in [0.0, -1.0, f64::NAN] {
+            assert!(anchored_scroll(0.0, 100.0, &[100.0], 24.0, f, 50.0).is_none(), "factor {f}");
+        }
     }
 
     /// An anchor that lands inside a GAP resolves to the page above it, and the
     /// gap does NOT scale — so the anchor stays put rather than drifting by the
-    /// gap's growth.
+    /// gap's growth. This one test kills three separate mutations of the
+    /// page-location loop (gap excluded from the span, the overshoot dropped,
+    /// and the fraction clamp), so keep it exact.
     #[test]
     fn anchor_in_gap_uses_page_above_and_gap_is_unscaled() {
         let h = [100.0, 100.0];
@@ -478,8 +440,7 @@ mod anchor_tests {
         let total_new = 200.0 + 200.0 + 24.0;
         let expected = (210.0f64 - 50.0).clamp(0.0, total_new - 100.0);
         assert!((got - expected).abs() < 1e-9, "expected {expected}, got {got}");
-        // ...and the mapping is continuous across the boundary: a point 1px
-        // above the gap and 1px below it stay 1px-ish apart, never jumping.
+        // ...and the mapping stays monotonic across the page/gap boundary.
         let a = anchored_scroll(49.0, 100.0, &h, 24.0, 2.0, 50.0).unwrap();
         let b = anchored_scroll(75.0, 100.0, &h, 24.0, 2.0, 50.0).unwrap();
         assert!(b > a, "monotonic across the page/gap boundary");
@@ -489,25 +450,19 @@ mod anchor_tests {
     /// the property that actually kills the "teleports to another page" bug.
     #[test]
     fn anchored_page_is_preserved() {
-        let h = vec![800.0, 800.0, 800.0, 800.0, 800.0, 800.0];
-        let gap = 24.0;
-        let vh = 900.0;
+        let h = vec![800.0; 6];
+        let (gap, vh) = (24.0, 900.0);
         for &st in &[0.0, 500.0, 1650.0, 3300.0, 4000.0] {
             for &f in &[1.25, 1.5, 2.0, 0.8, 0.5] {
                 let before = page_from_scroll(st + vh * 0.5, &h, gap);
                 let scaled: Vec<f64> = h.iter().map(|x| x * f).collect();
                 let after_st = anchored_scroll(st, vh, &h, gap, f, vh * 0.5).unwrap();
                 let after = page_from_scroll(after_st + vh * 0.5, &scaled, gap);
-                // Allow the CLAMPED cases to differ: at either extreme the
-                // scroll physically cannot keep the anchor (there is no
-                // content left to scroll to). Elsewhere the page must hold.
+                // The CLAMPED extremes may differ: there is physically no
+                // content left to scroll to. Everywhere else the page holds.
                 let total_new: f64 = scaled.iter().sum::<f64>() + gap * 5.0;
-                let clamped = after_st <= 1e-6
-                    || after_st >= (total_new - vh).max(0.0) - 1e-6;
-                assert!(
-                    before == after || clamped,
-                    "st={st} f={f}: page {before} -> {after}"
-                );
+                let clamped = after_st <= 1e-6 || after_st >= (total_new - vh).max(0.0) - 1e-6;
+                assert!(before == after || clamped, "st={st} f={f}: page {before} -> {after}");
             }
         }
     }
@@ -517,33 +472,51 @@ mod anchor_tests {
 mod dominant_page_tests {
     use super::*;
 
-    /// Zoomed in, one tall page fills the viewport and wins outright.
+    /// The basic contract: the page covering most of the viewport wins, a tall
+    /// page filling it wins outright, and degenerate inputs fall back to
+    /// `page_from_scroll` instead of guessing.
     #[test]
-    fn tall_page_filling_viewport_wins() {
-        let h = [2000.0, 2000.0, 2000.0];
-        // Deep inside page 2 (spans 2024..4024).
-        assert_eq!(dominant_page(2500.0, 800.0, &h, 24.0), 2);
+    fn most_visible_page_wins() {
+        // Straddling the boundary at 1000 with an 800-tall viewport.
+        let h = [1000.0, 1000.0];
+        // scroll 700 -> page 1 covers 300, page 2 covers 476 (after the gap).
+        assert_eq!(dominant_page(700.0, 800.0, &h, 24.0), 2);
+        // scroll 400 -> page 1 covers 600, page 2 covers 176.
+        assert_eq!(dominant_page(400.0, 800.0, &h, 24.0), 1);
+        // One tall page fills the viewport outright (page 2 spans 2024..4024).
+        assert_eq!(dominant_page(2500.0, 800.0, &[2000.0; 3], 24.0), 2);
+        // Nothing measured -> 1. No viewport height yet -> top-edge answer.
+        assert_eq!(dominant_page(0.0, 800.0, &[], 24.0), 1);
+        assert_eq!(dominant_page(900.0, 0.0, &[800.0, 800.0], 24.0), 2);
     }
 
-    /// THE REGRESSION THIS FIXES: zooming out must not walk the counter.
-    /// The reader holds still (the anchor is preserved by `anchored_scroll`),
-    /// so the reported page must not change as everything shrinks.
+    /// A jump that aligns page P's top with the viewport top reports P, even
+    /// when several shorter pages are visible below it.
+    #[test]
+    fn jump_to_page_top_reports_that_page() {
+        let h = vec![400.0; 10];
+        for target in 1..=8u32 {
+            let top = page_top_css(target as usize - 1, &h, 24.0);
+            assert_eq!(dominant_page(top, 800.0, &h, 24.0), target, "target {target}");
+        }
+    }
+
+    /// Zooming out must not walk the counter: the reader holds still (the
+    /// anchor is preserved by `anchored_scroll`), so the reported page must not
+    /// change as everything shrinks.
     #[test]
     fn zoom_out_does_not_walk_the_counter() {
         let base = vec![800.0; 20];
-        let gap = 24.0;
-        let vh = 752.0;
+        let (gap, vh) = (24.0, 752.0);
         // Reading page 11: park the viewport centre in the middle of it.
         let idx = 10usize;
-        let st0 = page_top_css(idx, &base, gap) + base[idx] / 2.0 - vh / 2.0;
-        let start = dominant_page(st0, vh, &base, gap);
+        let mut st = page_top_css(idx, &base, gap) + base[idx] / 2.0 - vh / 2.0;
+        let start = dominant_page(st, vh, &base, gap);
         assert_eq!(start, 11);
-        let mut st = st0;
-        let mut heights = base.clone();
+        let mut heights = base;
         for f in [0.93, 0.857, 0.833, 0.8] {
-            let new_st = anchored_scroll(st, vh, &heights, gap, f, vh * 0.5).unwrap();
+            st = anchored_scroll(st, vh, &heights, gap, f, vh * 0.5).unwrap();
             heights = heights.iter().map(|x| x * f).collect();
-            st = new_st;
             assert_eq!(
                 dominant_page(st, vh, &heights, gap),
                 start,
@@ -552,61 +525,20 @@ mod dominant_page_tests {
         }
     }
 
-    /// A jump that aligns page P's top with the viewport top reports P, even
-    /// when several shorter pages are visible below it.
-    #[test]
-    fn jump_to_page_top_reports_that_page() {
-        let h = vec![400.0; 10];
-        let gap = 24.0;
-        let vh = 800.0;
-        for target in 1..=8u32 {
-            let top = page_top_css(target as usize - 1, &h, gap);
-            assert_eq!(dominant_page(top, vh, &h, gap), target, "target {target}");
-        }
-    }
-
-    /// Degenerate inputs fall back instead of guessing.
-    #[test]
-    fn falls_back_when_unmeasurable() {
-        assert_eq!(dominant_page(0.0, 800.0, &[], 24.0), 1);
-        // No viewport height yet -> top-edge answer.
-        let h = [800.0, 800.0];
-        assert_eq!(dominant_page(900.0, 0.0, &h, 24.0), 2);
-    }
-
-    /// Half-and-half: the page covering more of the viewport wins.
-    #[test]
-    fn larger_share_wins() {
-        let h = [1000.0, 1000.0];
-        // Viewport 800 tall, straddling the boundary at 1000.
-        // scroll 700 -> page 1 covers 300, page 2 covers 476 (after the gap).
-        assert_eq!(dominant_page(700.0, 800.0, &h, 24.0), 2);
-        // scroll 400 -> page 1 covers 600, page 2 covers 176.
-        assert_eq!(dominant_page(400.0, 800.0, &h, 24.0), 1);
-    }
-
-    /// Regression: a full zoom round-trip must land on the page it started on,
-    /// in a document whose pages are NOT all the same height.
-    ///
-    /// This is the arithmetic half of the "zoom out then back in jumps tens of
-    /// pages" bug. The other half lived in the DOM
-    /// (a scroll write clamped by a not-yet-grown spacer); this guards the
-    /// invariant the maths has to satisfy for that fix to be meaningful.
+    /// Regression: a full zoom round-trip must land
+    /// on the page it started on, in a document whose pages are NOT all the
+    /// same height. This is the arithmetic half of the fix; the other half was
+    /// a scroll write clamped by a not-yet-grown spacer, which lives in the DOM.
     #[test]
     fn zoom_round_trip_keeps_the_same_page_in_a_mixed_size_document() {
         // 300 pages: mostly letter, with legal / A4 / landscape mixed in — the
         // shape of a real book with plates and inserts.
         let intrinsic: Vec<f64> = (0..300)
-            .map(|i| {
-                if i % 37 == 0 {
-                    612.0
-                } else if i % 13 == 0 {
-                    842.0
-                } else if i % 7 == 0 {
-                    1008.0
-                } else {
-                    792.0
-                }
+            .map(|i| match i {
+                _ if i % 37 == 0 => 612.0,
+                _ if i % 13 == 0 => 842.0,
+                _ if i % 7 == 0 => 1008.0,
+                _ => 792.0,
             })
             .collect();
         let vh = 800.0;
@@ -616,12 +548,11 @@ mod dominant_page_tests {
         let mut scale = 1.0_f64;
         let mut heights = at(scale);
         // Park the viewport centre inside page 256.
-        let start = page_top_css(255, &heights, PAGE_GAP) + heights[255] * 0.5 - anchor;
-        let start_page = dominant_page(start, vh, &heights, PAGE_GAP);
+        let mut scroll = page_top_css(255, &heights, PAGE_GAP) + heights[255] * 0.5 - anchor;
+        let start_page = dominant_page(scroll, vh, &heights, PAGE_GAP);
         assert_eq!(start_page, 256, "test setup should start on page 256");
 
-        let mut scroll = start;
-        // Out to 25%, back in to 175%, then back to 100% — the user's gesture.
+        // Out to 25%, back in to 175%, then home — the user's gesture.
         for target in [0.5_f64, 0.25, 0.5, 1.0, 1.75, 1.0] {
             let factor = target / scale;
             scroll = anchored_scroll(scroll, vh, &heights, PAGE_GAP, factor, anchor)
@@ -642,13 +573,11 @@ mod dominant_page_tests {
     #[test]
     fn page_offsets_follow_each_pages_own_height() {
         let mixed = [792.0, 1008.0, 792.0, 842.0];
-        let seeded_from_page1 = [792.0; 4];
         assert_ne!(
             page_top_css(3, &mixed, PAGE_GAP),
-            page_top_css(3, &seeded_from_page1, PAGE_GAP),
+            page_top_css(3, &[792.0; 4], PAGE_GAP),
             "uniform seeding hides real offsets in a mixed-size document"
         );
-        // 792 + 1008 + 792, plus three gaps.
         assert_eq!(page_top_css(3, &mixed, PAGE_GAP), 792.0 + 1008.0 + 792.0 + 3.0 * PAGE_GAP);
     }
 }
