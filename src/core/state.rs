@@ -103,6 +103,18 @@ pub struct ViewerState {
     /// token makes every request unique, so mashing `+` retargets the SAME
     /// animation instead of being swallowed as a duplicate signal write.
     pub zoom_request: RwSignal<Option<(f64, bool, u64)>>,
+
+    /// The zoom the READER asked for, independent of whether it currently fits.
+    ///
+    /// `scale` is what the page is shown at; this is what was requested. They
+    /// differ whenever the window (or the sidebar) leaves too little room: the
+    /// page is then shown shrunk-to-fit while this remembers the choice, so
+    /// the exact original zoom can be restored when the space comes back —
+    /// and so growing back STOPS there instead of continuing indefinitely.
+    ///
+    /// Only a real zoom gesture writes this. A resize never does; that is
+    /// precisely what makes the memory survive a resize.
+    pub desired_scale: RwSignal<f64>,
 }
 
 impl Default for ViewerState {
@@ -118,6 +130,7 @@ impl Default for ViewerState {
             display_scale: RwSignal::new(1.0),
             zoom_animating: RwSignal::new(false),
             zoom_request: RwSignal::new(None),
+            desired_scale: RwSignal::new(1.0),
         }
     }
 }

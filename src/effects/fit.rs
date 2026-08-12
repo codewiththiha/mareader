@@ -60,7 +60,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::core::layout::{anchored_scroll, total_height_css, PAGE_GAP};
-use crate::core::math::{clamp_scale, fit_scale, FitMode};
+use crate::core::math::{clamp_scale, constrained_scale, fit_scale, FitMode};
 use crate::core::state::{AppState, SidebarMode};
 use crate::util::dom::page_list;
 
@@ -103,6 +103,14 @@ fn viewport_h(state: AppState) -> f64 {
 /// window resize and other programmatic relayouts, which should look instant).
 pub fn request_zoom(state: AppState, target: f64, animate: bool) {
     let target = clamp_scale(target);
+    // A zoom gesture is the ONLY thing that changes what the reader wants.
+    //
+    // Recording it here — the single entry point every control and shortcut
+    // already goes through — is what lets a resize shrink the page to fit
+    // without destroying the choice, and what gives the page a definite place
+    // to stop growing when the space returns. A resize deliberately does NOT
+    // write this.
+    state.viewer.desired_scale.set(target);
     // Monotonic token: makes every request distinct so two identical targets
     // in a row both register, and so in-flight frames can detect they are stale.
     let token = ZOOM_TOKEN.with(|t| {
@@ -278,20 +286,15 @@ pub fn fit_effect(state: AppState) {
     // a sidebar slide: both move `container_size`, but only the former moves
     // `window.innerWidth`. No timers, no guessing.
     let last_win_w: StoredValue<f64> = StoredValue::new(f64::NAN);
-    // Container width at the previous run, so a slide can be followed
-    // proportionally when there is no fit mode to recompute from.
-    let last_cw: StoredValue<f64> = StoredValue::new(f64::NAN);
-    // Whether the sidebar was open last time, and whether we are currently
-    // riding out a slide it started.
-    let prev_open: StoredValue<bool> = StoredValue::new(false);
-    let following_slide: StoredValue<bool> = StoredValue::new(false);
 
     Effect::new(move |_| {
         let fit = state.viewer.fit.get();
         let (cw, ch) = state.viewer.container_size.get();
-        // Tracked so a sidebar toggle re-runs this effect the moment it starts,
-        // not only once the animation has moved the container.
-        let sidebar_open = state.sidebar.get() != SidebarMode::None;
+        // Tracked (and deliberately unused) so a sidebar toggle re-runs this
+        // effect the moment it starts, not only once the animation has begun
+        // moving the container. The value itself no longer matters: the page
+        // is sized from the space that is actually available, whatever took it.
+        let _sidebar_open = state.sidebar.get() != SidebarMode::None;
         let Some(p) = state.doc.page1_size.get() else {
             return;
         };
@@ -308,14 +311,6 @@ pub fn fit_effect(state: AppState) {
             last_win_w.set_value(win_w);
         }
 
-        let prev_cw = last_cw.get_value();
-        last_cw.set_value(cw);
-        let was_open = prev_open.get_value();
-        prev_open.set_value(sidebar_open);
-        if !first_run && was_open != sidebar_open {
-            // A toggle just started: follow the slide until it settles.
-            following_slide.set_value(true);
-        }
 
         // The scale this run is aiming at.
         //
@@ -331,11 +326,43 @@ pub fn fit_effect(state: AppState) {
         // no fit mode leaves the scale alone, which is what every other reader
         // does: making the window bigger must not silently re-zoom the document.
         let target = if fit != FitMode::None {
-            fit_scale(fit, cw, ch, p.width, p.height, 48.0, state.viewer.scale.get_untracked())
-        } else if following_slide.get_value() && !window_resized && prev_cw.is_finite() && prev_cw > 1.0 && cw > 1.0 {
-            clamp_scale(state.viewer.display_scale.get_untracked() * (cw / prev_cw))
+            let t = fit_scale(fit, cw, ch, p.width, p.height, 48.0, state.viewer.scale.get_untracked());
+            // A fit mode IS a deliberate choice, so it owns the ceiling too.
+            // Without this, leaving fit mode would resurrect a `desired_scale`
+            // from some earlier gesture and the page would jump to it.
+            state.viewer.desired_scale.set(t);
+            t
+        } else if cw > 1.0 {
+            // NO FIT MODE: the reader picked this zoom by hand.
+            //
+            // Their choice is remembered in `desired_scale` and shown whenever
+            // it fits. When it does not — a narrowed window, or the sidebar
+            // taking room — the page is SHRUNK TO FIT instead of being cropped,
+            // because a cropped page hides content with no affordance to
+            // recover it. When the room comes back the page grows again, and
+            // stops exactly at `desired_scale`: it is a ceiling, so the app
+            // never overrides a deliberate zoom by growing past it.
+            //
+            // Computing from `desired_scale` (not from the current scale) is
+            // what makes this lossless. The old code multiplied the live scale
+            // by the container ratio each run, so a slide accumulated rounding
+            // and the page never quite returned to where it started; and it
+            // only ran during a sidebar slide, which is why narrowing the
+            // WINDOW just cropped the page.
+            let fit_w = fit_scale(
+                FitMode::Width,
+                cw,
+                ch,
+                p.width,
+                p.height,
+                48.0,
+                state.viewer.scale.get_untracked(),
+            );
+            let desired = state.viewer.desired_scale.get_untracked();
+            constrained_scale(desired, fit_w)
         } else {
-            // Nothing to do: no fit mode and not mid-slide.
+            // Container not measured yet: a zero width would "fit" nothing and
+            // slam the page to the minimum scale.
             return;
         };
 
@@ -369,7 +396,6 @@ pub fn fit_effect(state: AppState) {
         // for ~120ms — one render per slide or per resize drag, at the end.
         let handle = set_timeout_with_handle(
             move || {
-                following_slide.set_value(false);
                 if first_run {
                     // Opening a document: no layout to animate from.
                     commit_scale(state, target);

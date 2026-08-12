@@ -45,6 +45,46 @@ pub fn fit_scale(
     }
 }
 
+/// The scale a manually-zoomed page should be shown at, given the space
+/// actually available.
+///
+/// THE UX RULE. When the window narrows or the sidebar takes space, a
+/// hand-zoomed page used to keep its scale and simply get cropped — the reader
+/// lost the edges of their document with no way to see them but to zoom out by
+/// hand. It must instead SHRINK TO FIT. When the space comes back it must grow
+/// again, but only as far as the scale the reader actually chose: growing past
+/// it would be the app overriding a deliberate choice.
+///
+/// So there are two numbers, and keeping them separate is the whole design:
+///
+///   `desired`   what the reader asked for. Only a real zoom gesture changes
+///               it. This is the CEILING, and the memory that lets the page
+///               return to exactly where it was.
+///   the result  what fits right now: `min(desired, fit_width)`.
+///
+/// Because the result is always recomputed from `desired` rather than from the
+/// previous result, shrinking is lossless — a window dragged narrow and back
+/// returns to `desired` exactly, with no drift accumulated across the
+/// intermediate sizes.
+///
+/// `fit_w` is the width-fit scale for the CURRENT container. Returns `desired`
+/// unchanged when it already fits, so a reader who is zoomed out below the fit
+/// scale is never pushed up to it — this only ever shrinks.
+pub fn constrained_scale(desired: f64, fit_w: f64) -> f64 {
+    if !desired.is_finite() || !fit_w.is_finite() || fit_w <= 0.0 {
+        return clamp_scale(desired);
+    }
+    clamp_scale(desired.min(fit_w))
+}
+
+/// Whether `available` is enough to show `desired` without cropping.
+///
+/// Used to decide whether the page is currently being held below the reader's
+/// chosen zoom, which the zoom readout needs in order to explain itself.
+pub fn is_space_constrained(desired: f64, fit_w: f64) -> bool {
+    desired.is_finite() && fit_w.is_finite() && fit_w > 0.0 && desired > fit_w + 1e-9
+}
+
 /// Next/previous zoom preset. `dir > 0` zooms in, `dir < 0` zooms out.
 pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
     if dir > 0 {
@@ -67,6 +107,79 @@ pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use super::{constrained_scale, is_space_constrained};
+
+    #[test]
+    fn a_page_that_fits_is_left_completely_alone() {
+        // The common case: plenty of room, so the reader's zoom is honoured.
+        assert_eq!(constrained_scale(1.0, 2.0), 1.0);
+        assert_eq!(constrained_scale(0.5, 2.0), 0.5);
+        // Exactly fitting is still fitting.
+        assert_eq!(constrained_scale(1.5, 1.5), 1.5);
+    }
+
+    #[test]
+    fn a_page_too_big_for_the_space_shrinks_to_fit() {
+        // THE BUG THIS FIXES: this used to stay at 2.0 and get cropped.
+        assert_eq!(constrained_scale(2.0, 0.8), 0.8);
+    }
+
+    #[test]
+    fn shrinking_never_pushes_a_zoomed_out_reader_back_up() {
+        // Someone at 50% in a huge window must stay at 50%; this constraint
+        // only ever removes scale, it is not a fit mode.
+        assert_eq!(constrained_scale(0.5, 3.0), 0.5);
+    }
+
+    #[test]
+    fn the_original_zoom_is_recovered_exactly_when_the_space_returns() {
+        // The whole point of keeping `desired` separate: no drift, no matter
+        // how many intermediate widths the window passed through.
+        let desired = 2.5;
+        let mut seen = Vec::new();
+        for fit_w in [2.0, 1.2, 0.6, 0.9, 1.8, 4.0] {
+            seen.push(constrained_scale(desired, fit_w));
+        }
+        assert_eq!(seen, vec![2.0, 1.2, 0.6, 0.9, 1.8, 2.5]);
+        // Back to exactly what the reader chose, not 2.4999 or 2.5001.
+        assert_eq!(*seen.last().unwrap(), desired);
+    }
+
+    #[test]
+    fn the_result_never_exceeds_what_the_reader_asked_for() {
+        // Growing back must STOP at `desired`, however much room appears.
+        for fit_w in [1.0, 5.0, 50.0] {
+            assert!(constrained_scale(1.25, fit_w) <= 1.25);
+        }
+    }
+
+    #[test]
+    fn the_clamp_still_applies_at_the_extremes() {
+        assert_eq!(constrained_scale(999.0, 999.0), super::MAX_SCALE);
+        assert_eq!(constrained_scale(0.0001, 0.0001), super::MIN_SCALE);
+    }
+
+    #[test]
+    fn a_useless_container_measurement_is_ignored_rather_than_collapsing_the_page() {
+        // A zero/NaN width arrives during mount and while the sidebar animates.
+        // Treating it as "fits nothing" would slam the page to MIN_SCALE.
+        assert_eq!(constrained_scale(1.0, 0.0), 1.0);
+        assert_eq!(constrained_scale(1.0, -3.0), 1.0);
+        assert_eq!(constrained_scale(1.0, f64::NAN), 1.0);
+        assert_eq!(constrained_scale(1.0, f64::INFINITY), 1.0);
+    }
+
+    #[test]
+    fn constrained_is_reported_only_when_the_page_is_actually_being_held_back() {
+        assert!(is_space_constrained(2.0, 1.0));
+        assert!(!is_space_constrained(1.0, 2.0));
+        // Equal is not constrained — it fits.
+        assert!(!is_space_constrained(1.5, 1.5));
+        // Garbage geometry is never reported as constrained.
+        assert!(!is_space_constrained(2.0, 0.0));
+        assert!(!is_space_constrained(2.0, f64::NAN));
+    }
+
     use super::*;
 
     /// Fit modes: width uses the container width, page takes the smaller of the
