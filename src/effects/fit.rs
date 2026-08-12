@@ -488,6 +488,27 @@ pub fn fit_effect(state: AppState) {
             }
         }
 
+        // Nothing to do? Then do NOTHING — do not arm the timer.
+        //
+        // This effect TRACKS `zoom_animating`, and the timer's quiet path below
+        // writes it. Arming a timer when the layout is already settled
+        // therefore fed the effect its own output: timer fires -> writes
+        // `zoom_animating` -> effect re-runs -> arms another timer -> forever,
+        // a self-sustaining 120ms loop that re-rendered the page endlessly.
+        //
+        // It showed up after zooming in past the fit in a NARROW window and
+        // then widening it: the page ends up at a scale that already fits and
+        // is already rendered, so every run took the quiet path. The page never
+        // moved, which is why the width looked stable while the reader saw
+        // constant flicker. A zoom click "fixed" it only because a gesture ends
+        // in `commit_scale`, whose echo makes the next run return early and
+        // breaks the cycle.
+        let settled = (target - state.viewer.render_scale.get_untracked()).abs() < 0.0005
+            && (target - state.viewer.display_scale.get_untracked()).abs() < 0.0005;
+        if settled && !state.viewer.zoom_animating.get_untracked() {
+            return;
+        }
+
         // Debounce: each `container_size` change re-runs this effect and clears
         // the previous timer, so the commit fires once the size has been stable
         // for ~120ms — one render per slide or per resize drag, at the end.
@@ -501,9 +522,13 @@ pub fn fit_effect(state: AppState) {
                 let prev = state.viewer.render_scale.get_untracked();
                 if (target - prev).abs() >= 0.0005 {
                     commit_scale(state, target);
-                } else {
+                } else if state.viewer.zoom_animating.get_untracked() {
                     // Already rendered at this scale (e.g. the sidebar returned
                     // to where it started): just release the gate.
+                    //
+                    // Guarded because a Leptos `set` notifies even when the
+                    // value is unchanged, and this effect tracks this signal —
+                    // an unconditional write here is a self-retrigger.
                     state.viewer.zoom_animating.set(false);
                 }
             },
