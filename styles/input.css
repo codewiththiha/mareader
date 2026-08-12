@@ -151,16 +151,32 @@
 
 /* Thumbnail card backdrop — ONE permanent themed backdrop shared by the
    skeleton and the loaded canvas, so a thumbnail never snaps from the old
-   themed skeleton tint (bg-line/60) to a neutral --surface the instant the
-   render resolves. The hue mirrors each theme's --line at ~60% strength over
-   its surface (the old skeleton look), so the whole fade-in stays in the theme
-   family and the .thumb-canvas blend composites land on the same tint in
-   every state. Light uses plain surface (its line≈surface anyway). */
-:root { --thumb-bg: var(--color-surface); }
-/* Dark families need the tinted mix; light's --line ≈ --surface so plain
-   surface is already right. One rule replaces five near-identical per-theme
-   copies. */
-:root.dark { --thumb-bg: color-mix(in srgb, var(--color-line) 60%, var(--color-surface)); }
+   themed skeleton tint to a different colour the instant the render resolves.
+
+   THIS MUST BE `--color-paper`, NOT `--color-surface`.
+   A thumbnail canvas is blended (`multiply` in light) over this backdrop, and
+   multiplying a white page pixel by the backdrop yields THE BACKDROP ITSELF.
+   So whatever this variable is, IT is the "paper" the reader sees in every
+   thumbnail — and the real page's paper is `--color-paper`. While the two
+   happened to be near-identical in the old fixed themes the mismatch was
+   invisible, but the computed tint moves them apart (paper keeps L=1.00 while
+   surface sits at 0.967 with more chroma), so at high tint every thumbnail
+   rendered visibly darker and more saturated than the page it depicts:
+   measured rgb(204,255,219) against the page's rgb(230,255,225).
+
+   Symptom worth remembering: the correct colour was visible for one frame
+   during a re-render — the skeleton cover is unblended, so it briefly showed
+   the honest tint before the blended canvas composited over this backdrop and
+   pulled it off-colour. A one-frame flash of the RIGHT colour means the final
+   composite is wrong, not the render.
+
+   The card keeps a distinct frame via its ring/border, so using paper here
+   costs no separation against the surrounding chrome. */
+:root { --thumb-bg: var(--color-paper); }
+/* Dark bases previously mixed in --line to lift the card off the panel. That
+   is no longer needed for separation (the ring does it) and it is exactly what
+   made dark thumbnails disagree with the page too — the page's backdrop is
+   --color-paper in every base, so the thumbnail's must be as well. */
 .thumb-card {
   /* Clip the SQUARE canvas to the rounded card. Without this the canvas
      corners poke past the radius; in dim (soft-light of a light,
