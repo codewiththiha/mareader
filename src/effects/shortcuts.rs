@@ -7,7 +7,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::components::molecules::toolbar::open_dialog;
+use crate::core::open_flow::open_dialog;
 use crate::core::layout::ViewMode;
 use crate::core::math::{nearest_zoom, FitMode};
 use crate::core::state::{AppState, SidebarMode};

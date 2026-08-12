@@ -6,4 +6,4 @@ pub mod page_list;
 pub mod search_panel;
 pub mod sidebar;
 pub mod status_bar;
-pub mod thumbnails_panel;
+pub mod thumbnails;

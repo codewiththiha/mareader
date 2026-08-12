@@ -22,7 +22,7 @@ pub struct OutlineNode {
     pub depth: u32,
 }
 
-/// `{ok:true, numPages, title, author, outline, page1Size}` — engine.open().
+/// `{ok:true, numPages, title, author, outline, page1Size, pageHeights}` — engine.open().
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenResult {
@@ -31,6 +31,12 @@ pub struct OpenResult {
     pub author: Option<String>,
     pub outline: Vec<OutlineNode>,
     pub page1_size: PageSize,
+    /// Intrinsic (scale-1) height of every page, in document order.
+    ///
+    /// Empty only for engines predating this field; callers fall back to
+    /// `page1_size.height` for every page in that case.
+    #[serde(default)]
+    pub page_heights: Vec<f64>,
 }
 
 /// `{ok:true, width, height, scale}` — engine.renderPage / renderPages / updatePage.

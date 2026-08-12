@@ -3,7 +3,6 @@ mod app;
 mod components;
 mod core;
 mod effects;
-mod selftest;
 mod util;
 
 use app::*;

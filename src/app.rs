@@ -5,7 +5,6 @@ use crate::components::views::reader_view::ReaderView;
 use crate::core::state::AppState;
 use crate::effects::shortcuts::shortcuts;
 use crate::effects::theme_ui::theme_ui;
-use crate::selftest::selftest;
 use crate::util::storage::load_settings;
 
 #[component]
@@ -15,11 +14,6 @@ pub fn App() -> impl IntoView {
         ..AppState::default()
     };
     provide_context(state.clone());
-
-    // Fire the dev self-check after the first frame.
-    Effect::new(move |_| {
-        selftest();
-    });
 
     // App-root hooks: global keyboard shortcuts + settings-UI glue.
     shortcuts(state);

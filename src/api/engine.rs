@@ -89,6 +89,10 @@ pub async fn destroy() {
     let _ = bridge::destroy().await;
 }
 
+/// Contract API: the engine's own page count. The UI reads
+/// `doc.num_pages` (set from `open`) instead, but the call stays wired so the
+/// documented JS surface remains complete and callable.
+#[allow(dead_code)]
 pub fn page_count() -> u32 {
     bridge::page_count()
 }

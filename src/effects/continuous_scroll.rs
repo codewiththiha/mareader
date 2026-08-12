@@ -17,6 +17,7 @@ use wasm_bindgen::JsCast;
 use web_sys::Event;
 
 use crate::core::state::AppState;
+use crate::util::dom::page_list;
 
 /// The wasm-side wrapper around the JS scroll handler. Not `Send + Sync`, so it
 /// can't be captured by `on_cleanup` — it is parked in a local `StoredValue`
@@ -47,9 +48,7 @@ pub fn continuous_scroll(state: AppState) {
     });
 
     spawn_local(async move {
-        let Some(el) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("page-list"))
+        let Some(el) = page_list()
         else {
             return;
         };

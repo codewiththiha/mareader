@@ -50,6 +50,7 @@ use wasm_bindgen::JsCast;
 
 use crate::core::layout::{dominant_page, page_top_css, ViewMode, PAGE_GAP};
 use crate::core::state::AppState;
+use crate::util::dom::page_list;
 
 /// How long a smooth jump is allowed to be in flight. The browser owns the
 /// animation and doesn't tell us when it finishes, so effect 4's takeover
@@ -132,9 +133,7 @@ pub fn page_tracking(state: AppState) {
         // Read the scrollport's real height; `container_size` is tracked too so
         // this re-runs when the viewer is resized.
         let (_, cont_h) = state.viewer.container_size.get();
-        let vh = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("page-list"))
+        let vh = page_list()
             .map(|el| el.client_height() as f64)
             .filter(|h| *h > 1.0)
             .unwrap_or(cont_h);
@@ -190,9 +189,7 @@ pub fn page_tracking(state: AppState) {
         // Align the scroll signal (drives the visible-page window)...
         // Compared with the SAME metric effect 2 uses, or the two would
         // disagree about whether we have arrived and fight each other.
-        let vh_now = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("page-list"))
+        let vh_now = page_list()
             .map(|el| el.client_height() as f64)
             .filter(|h| *h > 1.0)
             .unwrap_or_else(|| state.viewer.container_size.get_untracked().1);
@@ -200,9 +197,7 @@ pub fn page_tracking(state: AppState) {
             scroll_top.set(target_px);
         }
         // ...and the real scrollport.
-        if let Some(list) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("page-list"))
+        if let Some(list) = page_list()
         {
             if hs.is_empty() || dominant_page(list.scroll_top() as f64, vh_now, &hs, PAGE_GAP) != p {
                 let cur = list.scroll_top() as f64;
@@ -277,9 +272,7 @@ pub fn page_tracking(state: AppState) {
             pending_b.set(None);
             return;
         }
-        let Some(list) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("page-list"))
+        let Some(list) = page_list()
         else {
             return;
         };

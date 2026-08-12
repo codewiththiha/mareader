@@ -7,6 +7,7 @@ use leptos::prelude::*;
 use crate::api::engine;
 use crate::core::layout::{page_top_css, ViewMode, PAGE_GAP};
 use crate::core::state::AppState;
+use crate::util::dom::page_list;
 
 /// Build the search index (once), run the query, store the results, then nudge
 /// `render_scale` so mounted PageCanvases re-render and the engine re-applies
@@ -55,9 +56,7 @@ pub fn jump_to_result(state: AppState, page: u32) {
     } else {
         let heights = state.doc.page_heights.get();
         let top = page_top_css(page.saturating_sub(1) as usize, &heights, PAGE_GAP);
-        if let Some(list) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("page-list"))
+        if let Some(list) = page_list()
         {
             list.set_scroll_top(top as i32);
         }

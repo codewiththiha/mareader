@@ -3,6 +3,7 @@ pub mod document;
 pub mod filename;
 pub mod layout;
 pub mod math;
+pub mod open_flow;
 pub mod search;
 pub mod settings;
 pub mod state;

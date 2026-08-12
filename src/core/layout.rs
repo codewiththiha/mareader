@@ -584,4 +584,71 @@ mod dominant_page_tests {
         // scroll 400 -> page 1 covers 600, page 2 covers 176.
         assert_eq!(dominant_page(400.0, 800.0, &h, 24.0), 1);
     }
+
+    /// Regression: a full zoom round-trip must land on the page it started on,
+    /// in a document whose pages are NOT all the same height.
+    ///
+    /// This is the arithmetic half of the "zoom out then back in jumps tens of
+    /// pages" bug. The other half lived in the DOM
+    /// (a scroll write clamped by a not-yet-grown spacer); this guards the
+    /// invariant the maths has to satisfy for that fix to be meaningful.
+    #[test]
+    fn zoom_round_trip_keeps_the_same_page_in_a_mixed_size_document() {
+        // 300 pages: mostly letter, with legal / A4 / landscape mixed in — the
+        // shape of a real book with plates and inserts.
+        let intrinsic: Vec<f64> = (0..300)
+            .map(|i| {
+                if i % 37 == 0 {
+                    612.0
+                } else if i % 13 == 0 {
+                    842.0
+                } else if i % 7 == 0 {
+                    1008.0
+                } else {
+                    792.0
+                }
+            })
+            .collect();
+        let vh = 800.0;
+        let anchor = vh * 0.5;
+        let at = |scale: f64| -> Vec<f64> { intrinsic.iter().map(|h| h * scale).collect() };
+
+        let mut scale = 1.0_f64;
+        let mut heights = at(scale);
+        // Park the viewport centre inside page 256.
+        let start = page_top_css(255, &heights, PAGE_GAP) + heights[255] * 0.5 - anchor;
+        let start_page = dominant_page(start, vh, &heights, PAGE_GAP);
+        assert_eq!(start_page, 256, "test setup should start on page 256");
+
+        let mut scroll = start;
+        // Out to 25%, back in to 175%, then back to 100% — the user's gesture.
+        for target in [0.5_f64, 0.25, 0.5, 1.0, 1.75, 1.0] {
+            let factor = target / scale;
+            scroll = anchored_scroll(scroll, vh, &heights, PAGE_GAP, factor, anchor)
+                .expect("anchored_scroll should produce a position");
+            scale = target;
+            heights = at(scale);
+        }
+
+        assert_eq!(
+            dominant_page(scroll, vh, &heights, PAGE_GAP),
+            start_page,
+            "a zoom round-trip must not move the reader off their page"
+        );
+    }
+
+    /// The height column must be derived from each page's OWN size. Seeding
+    /// every page from page 1 mislocates every page below the first odd one.
+    #[test]
+    fn page_offsets_follow_each_pages_own_height() {
+        let mixed = [792.0, 1008.0, 792.0, 842.0];
+        let seeded_from_page1 = [792.0; 4];
+        assert_ne!(
+            page_top_css(3, &mixed, PAGE_GAP),
+            page_top_css(3, &seeded_from_page1, PAGE_GAP),
+            "uniform seeding hides real offsets in a mixed-size document"
+        );
+        // 792 + 1008 + 792, plus three gaps.
+        assert_eq!(page_top_css(3, &mixed, PAGE_GAP), 792.0 + 1008.0 + 792.0 + 3.0 * PAGE_GAP);
+    }
 }

@@ -42,7 +42,14 @@ pub struct DocumentState {
     pub outline: RwSignal<Vec<OutlineNode>>,
     /// CSS-px size of page 1 at scale 1 (used for fit modes before any render).
     pub page1_size: RwSignal<Option<PageSize>>,
-    /// Rendered CSS-px heights per page, 0-based, filled lazily by on_geometry.
+    /// Intrinsic (scale-1) height of every page, 0-based, from engine.open().
+    ///
+    /// Unlike `page_heights` this is scale-independent and complete from the
+    /// moment the document opens, so `PageList` can lay out the whole column
+    /// correctly before anything has rendered.
+    pub page_sizes: RwSignal<Vec<f64>>,
+    /// Rendered CSS-px heights per page, 0-based, seeded from `page_sizes` and
+    /// refined by on_geometry as pages actually render.
     pub page_heights: RwSignal<Vec<f64>>,
 }
 
@@ -57,6 +64,7 @@ impl Default for DocumentState {
             author: RwSignal::new(None),
             outline: RwSignal::new(Vec::new()),
             page1_size: RwSignal::new(None),
+            page_sizes: RwSignal::new(Vec::new()),
             page_heights: RwSignal::new(Vec::new()),
         }
     }

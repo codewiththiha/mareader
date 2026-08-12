@@ -279,6 +279,27 @@ async function open(path) {
     const page1 = await pdf.getPage(1);
     const vp = page1.getViewport({ scale: 1 });
 
+    // Intrinsic (scale-1) height of EVERY page, in document order.
+    //
+    // The continuous viewer needs a height for every page up front so its
+    // spacer and its scroll->page mapping are correct before a page has
+    // rendered. Seeding all of them from page 1 makes the document silently
+    // change height as off-screen pages are measured for the first time,
+    // which slides the scroll anchor and lands the reader on the wrong page
+    // after a zoom. getPage is cheap here: it
+    // only parses the page dictionary, not its content stream.
+    const pageHeights = new Array(numPages);
+    pageHeights[0] = vp.height;
+    for (let n = 2; n <= numPages; n += 1) {
+      try {
+        const pg = await pdf.getPage(n);
+        pageHeights[n - 1] = pg.getViewport({ scale: 1 }).height;
+        pg.cleanup();
+      } catch (_) {
+        pageHeights[n - 1] = vp.height; // unreadable page: fall back to page 1
+      }
+    }
+
     return {
       ok: true,
       numPages,
@@ -286,6 +307,7 @@ async function open(path) {
       author,
       outline,
       page1Size: { width: vp.width, height: vp.height },
+      pageHeights,
     };
   } catch (e) {
     if (e && e.name === "PasswordException") {

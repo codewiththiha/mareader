@@ -20,21 +20,41 @@ use crate::core::state::AppState;
 
 #[component]
 pub fn PageList(state: AppState) -> impl IntoView {
-    // Seed unmeasured pages with a `page1_size.height * scale` placeholder so
-    // the scrollbar spans the whole document before any page has rendered.
-    // Only fires while the heights vector is empty; `on_geometry` reports from
-    // PageCanvas then overwrite each entry with the real rendered height.
+    // Seed every page's height from its OWN intrinsic size, at the scale in
+    // force when the document is first laid out.
+    //
+    // Seeding all pages from page 1 (as this once did) is only correct for a
+    // uniform document. In a mixed-size PDF every page that had not yet
+    // rendered carried page 1's height until `on_geometry` corrected it, so
+    // the document's total height — and every page offset below the viewport
+    // — changed as pages were measured. Zooming out pulls a batch of
+    // never-measured pages into view at once; correcting them all shifts the
+    // content under the scroll anchor, and the reader lands on a different
+    // page than the one they left.
+    //
+    // Seeds ONLY when the vector does not match the document, i.e. on open or
+    // document change. It must not re-seed on scale changes: the zoom
+    // coordinator rescales this same vector frame by frame and re-anchors
+    // scroll against it, so a competing write mid-gesture would fight the
+    // anchor and reintroduce the very drift this fixes.
     Effect::new(move || {
-        let n = state.doc.num_pages.get();
+        let n = state.doc.num_pages.get() as usize;
         let scale = state.viewer.render_scale.get();
-        let base_h = state.doc.page1_size.get().map(|s| s.height).unwrap_or(0.0);
-        if n > 0 && base_h > 0.0 {
-            state.doc.page_heights.update(|v| {
-                if v.is_empty() {
-                    v.resize(n as usize, base_h * scale);
-                }
-            });
+        let sizes = state.doc.page_sizes.get();
+        let fallback = state.doc.page1_size.get().map(|s| s.height).unwrap_or(0.0);
+        if n == 0 || scale <= 0.0 || (sizes.is_empty() && fallback <= 0.0) {
+            return;
         }
+        state.doc.page_heights.update(|v| {
+            if v.len() == n {
+                return; // already laid out for this document
+            }
+            *v = (0..n)
+                .map(|i| {
+                    sizes.get(i).copied().filter(|h| *h > 0.0).unwrap_or(fallback) * scale
+                })
+                .collect();
+        });
     });
 
     // Visible page window [first, last] (0-based, inclusive), expanded by

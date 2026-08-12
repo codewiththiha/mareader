@@ -23,7 +23,7 @@ use leptos::prelude::*;
 use crate::components::atoms::icon::IconName;
 use crate::components::molecules::sidebar_item::SidebarItem;
 use crate::components::organisms::outline_panel::OutlinePanel;
-use crate::components::organisms::thumbnails_panel::ThumbnailsPanel;
+use crate::components::organisms::thumbnails::ThumbnailsPanel;
 use crate::core::state::{AppState, SidebarMode};
 
 #[component]

@@ -57,10 +57,12 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
-use crate::core::layout::{anchored_scroll, PAGE_GAP};
+use crate::core::layout::{anchored_scroll, total_height_css, PAGE_GAP};
 use crate::core::math::{clamp_scale, fit_scale, FitMode};
 use crate::core::state::AppState;
+use crate::util::dom::page_list;
 
 /// Duration of the zoom layout animation. Long enough to read as motion,
 /// short enough that the crisp render feels immediate.
@@ -87,9 +89,7 @@ fn prefers_reduced_motion() -> bool {
 
 /// The scrollport's height, used as the anchor reference.
 fn viewport_h(state: AppState) -> f64 {
-    web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id("page-list"))
+    page_list()
         .map(|el| el.client_height() as f64)
         .filter(|h| *h > 1.0)
         .unwrap_or_else(|| state.viewer.container_size.get_untracked().1)
@@ -146,10 +146,35 @@ pub fn relayout_to(state: AppState, factor: f64) {
 
     if let Some(new_st) = new_st {
         state.viewer.scroll_top.set(new_st);
-        if let Some(list) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("page-list"))
+        if let Some(list) = page_list()
         {
+            // Grow the scrollable extent BEFORE moving the scrollbar.
+            //
+            // `scrollTop` is clamped by the browser to the CURRENT
+            // `scrollHeight - clientHeight`. Leptos applies the spacer's new
+            // height in its own effect pass, i.e. after this function returns,
+            // so when zooming IN the element is still the old (shorter) size
+            // at this instant and a deep scroll target is silently truncated.
+            // The scroll listener then reads that truncated value back into
+            // `viewer.scroll_top`, so every frame of a zoom-in gesture loses a
+            // little more distance and the reader drifts backwards through the
+            // document — tens of pages over a full gesture, always toward the
+            // end of the book, which is where the clamp bites hardest.
+            //
+            // Writing the spacer height synchronously here makes the extent
+            // correct before the scroll write. Leptos's own effect writes the
+            // identical value moments later, so this is idempotent, not a
+            // competing source of truth.
+            if let Some(spacer) = list
+                .first_element_child()
+                .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+            {
+                let total = total_height_css(
+                    &heights.iter().map(|h| h * factor).collect::<Vec<_>>(),
+                    PAGE_GAP,
+                );
+                let _ = spacer.style().set_property("height", &format!("{total}px"));
+            }
             let _ = list.set_scroll_top(new_st.round() as i32);
         }
     }

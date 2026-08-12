@@ -102,7 +102,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
 ///      the app keeps working.
 ///   2. A `tauri://drag-drop` subscription via `bridge::listen`. The handler
 ///      reads `payload.paths[0]` and routes it through the shared open-flow
-///      (`toolbar::open_path`). The Closure is parked in a StoredValue:
+///      (`open_flow::open_path`). The Closure is parked in a StoredValue:
 ///      dropping the JS function would unregister the listener.
 fn drag_drop(state: AppState) {
     // Layer 1: DOM prevent-default listeners. Parked in a StoredValue so they
@@ -136,7 +136,7 @@ fn drag_drop(state: AppState) {
     let cb: Closure<dyn FnMut(Event)> = Closure::wrap(
         Box::new(move |ev: Event| {
             if let Some(path) = first_drop_path(&ev) {
-                crate::components::molecules::toolbar::open_path(st, path);
+                crate::core::open_flow::open_path(st, path);
             }
         }) as Box<dyn FnMut(Event)>,
     );
@@ -206,7 +206,7 @@ fn Placeholder(state: AppState) -> impl IntoView {
     };
     let open_last = move |_| {
         if let Some(path) = last_path() {
-            crate::components::molecules::toolbar::open_path(state, path);
+            crate::core::open_flow::open_path(state, path);
         }
     };
     view! {
@@ -228,7 +228,7 @@ fn Placeholder(state: AppState) -> impl IntoView {
                     />
                 </Show>
                 <crate::components::atoms::button::Button
-                    on_click=move |_| crate::components::molecules::toolbar::open_dialog(state)
+                    on_click=move |_| crate::core::open_flow::open_dialog(state)
                     kind=crate::components::atoms::button::ButtonKind::Primary
                     label="Open…".to_string()
                     title="Open a PDF file".to_string()
