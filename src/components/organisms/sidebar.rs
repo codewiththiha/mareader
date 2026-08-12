@@ -26,6 +26,18 @@ use crate::components::organisms::outline_panel::OutlinePanel;
 use crate::components::organisms::thumbnails::ThumbnailsPanel;
 use crate::core::state::{AppState, SidebarMode};
 
+/// Ask the visible panel to scroll to wherever the reader currently is.
+///
+/// A CustomEvent rather than a signal in `AppState`: this is a one-shot
+/// gesture with no state to hold, and a counter signal would need to be read
+/// by both panels and could not distinguish "asked twice" from "asked once"
+/// without extra bookkeeping. Same mechanism the PDF link layer uses.
+fn request_reveal_active() {
+    if let Some(win) = web_sys::window() {
+        let _ = win.dispatch_event(&web_sys::CustomEvent::new("pdfreader:reveal-active").unwrap());
+    }
+}
+
 #[component]
 pub fn Sidebar(state: AppState) -> impl IntoView {
     // Tab rail: re-runs when the active mode changes so the `active` highlight
@@ -39,11 +51,17 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                     label="Thumbs".to_string()
                     active=mode == SidebarMode::Thumbs
                     on_click=move || {
-                        state.sidebar.set(if state.sidebar.get() == SidebarMode::Thumbs {
-                            SidebarMode::None
+                        // Re-clicking the ACTIVE tab means "take me to where I
+                        // am", not "close". Closing is what the toolbar's
+                        // Toggle sidebar button is for, and a reader who has
+                        // scrolled the panel away from their position has no
+                        // other way to get back to it — they were hunting for
+                        // it by hand.
+                        if state.sidebar.get() == SidebarMode::Thumbs {
+                            request_reveal_active();
                         } else {
-                            SidebarMode::Thumbs
-                        });
+                            state.sidebar.set(SidebarMode::Thumbs);
+                        }
                     }
                 />
                 <SidebarItem
@@ -51,11 +69,11 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                     label="Outline".to_string()
                     active=mode == SidebarMode::Outline
                     on_click=move || {
-                        state.sidebar.set(if state.sidebar.get() == SidebarMode::Outline {
-                            SidebarMode::None
+                        if state.sidebar.get() == SidebarMode::Outline {
+                            request_reveal_active();
                         } else {
-                            SidebarMode::Outline
-                        });
+                            state.sidebar.set(SidebarMode::Outline);
+                        }
                     }
                 />
             </div>

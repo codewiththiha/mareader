@@ -286,6 +286,58 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
     // row. The scroll we write fires the existing scroll listener, which drives
     // the virtualization window as usual.
     //
+    // "Take me to where I am": re-clicking the active Thumbs tab.
+    //
+    // The auto-centre effect below already follows the reader, but it
+    // deliberately yields to the user-drive grace — if you have been scrolling
+    // the grid yourself it will not yank the view back. That is right for
+    // passive following and wrong for an explicit request, so this clears the
+    // grace timestamp and centres immediately.
+    {
+        let reveal_drive = last_user_drive.clone();
+        Effect::new(move |_| {
+            let Some(win) = web_sys::window() else { return };
+            let handler = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new({
+                let reveal_drive = reveal_drive.clone();
+                move |_: web_sys::Event| {
+                    if state.sidebar.get_untracked() != SidebarMode::Thumbs {
+                        return;
+                    }
+                    let Some(el) = container_el.get_value() else { return };
+                    let vh = el.client_height() as f64;
+                    let rh = row_height();
+                    let total_rows = rows();
+                    if vh <= 0.0 || rh <= 0.0 || total_rows == 0 {
+                        return;
+                    }
+                    // Clear the grace so the request is honoured even if the
+                    // reader was just scrolling the grid — that IS how they got
+                    // lost, so refusing to move would defeat the gesture.
+                    reveal_drive.set(f64::NEG_INFINITY);
+
+                    let p = state.viewer.page.get_untracked();
+                    let row = (p.saturating_sub(1) / 2) as f64;
+                    let cell_h = CELL_W * aspect();
+                    let cell_center_y = PAD + row * rh + cell_h / 2.0;
+                    let max_scroll = (PAD * 2.0 + total_rows as f64 * rh - vh).max(0.0);
+                    let target = (cell_center_y - vh / 2.0).clamp(0.0, max_scroll);
+
+                    let opts = web_sys::ScrollToOptions::new();
+                    opts.set_top(target);
+                    opts.set_behavior(web_sys::ScrollBehavior::Smooth);
+                    el.scroll_to_with_scroll_to_options(&opts);
+                }
+            });
+            use wasm_bindgen::JsCast;
+            let _ = win.add_event_listener_with_callback(
+                "pdfreader:reveal-active",
+                handler.as_ref().unchecked_ref(),
+            );
+            // The panel is mounted for the app lifetime, so the listener is too.
+            handler.forget();
+        });
+    }
+
     // The glide is DEBOUNCED and grace-aware. In continuous mode the reader
     // writes `viewer.page` at every row boundary, so an immediate smooth
     // scroll per write would keep re-starting the in-flight glide — the panel

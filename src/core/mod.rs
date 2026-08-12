@@ -4,6 +4,7 @@ pub mod document;
 pub mod filename;
 pub mod layout;
 pub mod math;
+pub mod oklch;
 pub mod open_flow;
 pub mod presets;
 pub mod search;

@@ -21,6 +21,40 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Map an sRGB hue angle (what `tint_hue` means, because the page tint is
+/// applied with `hue-rotate()`, which works in sRGB) to the corresponding
+/// OKLCH hue angle (what the UI tokens are emitted in).
+///
+/// The two circles are rotated relative to each other and not by a constant:
+/// sRGB 34deg is a warm tan that sits near 60deg in OKLCH, while OKLCH 34 is
+/// pink. Feeding the raw number to both is why an early build produced
+/// warm-brown paper with pink chrome at the same setting. Converting a fully
+/// saturated sRGB colour at the requested angle recovers the right OKLCH hue,
+/// so one slider drives both consistently.
+pub fn ui_hue_oklch(srgb_hue: f64) -> f64 {
+    let h = srgb_hue.rem_euclid(360.0) / 60.0;
+    let i = h.floor() as i32;
+    let f = h - h.floor();
+    // hsl(H 100% 50%) -> rgb, without a colour library.
+    let (r, g, b) = match i.rem_euclid(6) {
+        0 => (1.0, f, 0.0),
+        1 => (1.0 - f, 1.0, 0.0),
+        2 => (0.0, 1.0, f),
+        3 => (0.0, 1.0 - f, 1.0),
+        4 => (f, 0.0, 1.0),
+        _ => (1.0, 0.0, 1.0 - f),
+    };
+    let hex = format!(
+        "#{:02x}{:02x}{:02x}",
+        (r * 255.0).round() as u8,
+        (g * 255.0).round() as u8,
+        (b * 255.0).round() as u8
+    );
+    crate::core::oklch::hex_to_oklch(&hex)
+        .map(|(_, _, h)| h)
+        .unwrap_or(srgb_hue)
+}
+
 /// The structural half of a look: what the canvas filter pipeline does, and
 /// which direction the grain/texture blends go. A tint can be layered on any
 /// of these; the tint never changes which family you are in.
@@ -305,46 +339,81 @@ impl Appearance {
     /// The seven UI colour tokens, tinted to match the page.
     ///
     /// The UI has to follow the page, or a tinted document sits in a stark
-    /// white frame and the tint reads as a bug. Each token is mixed toward the
-    /// tint hue in OKLCH, which keeps perceived LIGHTNESS constant while only
-    /// chroma and hue move — so contrast ratios survive the tint and text does
-    /// not become unreadable at high strength. `color-mix` does this in the
-    /// browser, so there is no colour-space maths to maintain in Rust.
+    /// white frame and the tint reads as a bug.
     ///
-    /// UI mixing is deliberately gentler than the canvas tint (the `* 0.5`
-    /// below, and less again for ink): chrome is a large flat area, and the
-    /// strength that looks right on paper is overwhelming across a whole
-    /// window.
+    /// WHY NOT `color-mix`. The first version mixed each token TOWARD the tint
+    /// colour. Mixing toward a mid-lightness colour drags every token toward
+    /// that lightness, so at 90% tint in light mode paper (L=1.00), surface
+    /// (0.97) and line (0.93) all landed within 0.02 of each other: the page,
+    /// sidebar, toolbar and thumbnail cards converged into one flat slab with
+    /// no edges between them. Dark mode hid it — its bases start low, so being
+    /// pulled up still left them dark enough to read as chrome.
+    ///
+    /// So the tint now preserves each token's OWN LIGHTNESS — which is what
+    /// encodes the hierarchy (page brighter than chrome, chrome brighter than
+    /// its borders) — and moves only hue and chroma:
+    ///
+    ///   L: unchanged, always
+    ///   H: rotated toward the tint hue by `strength`
+    ///   C: base chroma + a strength-scaled amount, capped per token
+    ///
+    /// Because L never moves, contrast ratios are preserved by construction at
+    /// every strength, and the ladder survives a 100% tint.
     pub fn ui_overrides(&self) -> Vec<(&'static str, String)> {
         if !self.has_tint() {
             return Vec::new();
         }
         let t = self.tint_strength as f64 / 100.0;
-        let hue = self.tint_hue;
-        // A vivid anchor at the requested hue, specified in sRGB/HSL.
+        // tint_hue is an sRGB angle; the tokens are emitted in OKLCH.
+        let target_h = ui_hue_oklch(self.tint_hue as f64);
+
+        // Per-token chroma ceiling at full strength. Large flat areas (paper,
+        // surface) need restraint — the strength that looks right on a page
+        // is overwhelming across a whole window — while accents are supposed
+        // to be saturated.
         //
-        // COLOUR-SPACE TRAP: the anchor must live in the SAME hue space as
-        // `hue-rotate()`, which is sRGB. An earlier version used
-        // `oklch(0.72 0.13 H)` here, and the two disagreed badly — OKLCH hue 34
-        // is pink while sRGB 34 is the warm tan sepia actually wants, so the
-        // page went warm-brown while the UI went pink at the same setting.
-        // Only the HUE comes from this anchor; the MIX is still done in oklch
-        // (below), which is what keeps perceived lightness — and therefore text
-        // contrast — stable as the tint strengthens.
-        let tint = format!("hsl({hue} 60% 55%)");
+        // Ink is deliberately near-zero: text carries the reading contrast and
+        // a coloured ink on coloured paper is what makes tinted themes feel
+        // murky. It picks up a whisper of the hue and nothing more.
+        let tokens: [(&'static str, &'static str, f64); 7] = [
+            ("--color-paper", "--base-paper", 0.055),
+            ("--color-surface", "--base-surface", 0.070),
+            ("--color-line", "--base-line", 0.090),
+            ("--color-ink", "--base-ink", 0.020),
+            ("--color-muted", "--base-muted", 0.045),
+            ("--color-accent", "--base-accent", 0.150),
+            ("--color-accent-soft", "--base-accent-soft", 0.110),
+        ];
 
-        let pct = |f: f64| -> String { format!("{:.1}%", (t * f * 100.0).clamp(0.0, 100.0)) };
+        let palette = self.base_palette();
+        let mut out = Vec::with_capacity(tokens.len());
+        for (name, base_var, max_c) in tokens {
+            let Some(hex) = palette.iter().find(|(k, _)| *k == base_var).map(|(_, v)| *v) else {
+                continue;
+            };
+            let Some((l, c0, h0)) = crate::core::oklch::hex_to_oklch(hex) else {
+                continue;
+            };
 
-        vec![
-            ("--color-paper", format!("color-mix(in oklch, var(--base-paper), {tint} {})", pct(0.50))),
-            ("--color-surface", format!("color-mix(in oklch, var(--base-surface), {tint} {})", pct(0.50))),
-            ("--color-line", format!("color-mix(in oklch, var(--base-line), {tint} {})", pct(0.55))),
-            // Ink barely moves: it carries the text contrast.
-            ("--color-ink", format!("color-mix(in oklch, var(--base-ink), {tint} {})", pct(0.18))),
-            ("--color-muted", format!("color-mix(in oklch, var(--base-muted), {tint} {})", pct(0.30))),
-            ("--color-accent", format!("color-mix(in oklch, var(--base-accent), {tint} {})", pct(0.35))),
-            ("--color-accent-soft", format!("color-mix(in oklch, var(--base-accent-soft), {tint} {})", pct(0.45))),
-        ]
+            // Rotate the SHORT way around the circle, so a hue near 350 does
+            // not sweep the entire spectrum on its way to 10.
+            let mut delta = target_h - h0;
+            while delta > 180.0 {
+                delta -= 360.0;
+            }
+            while delta < -180.0 {
+                delta += 360.0;
+            }
+            let h = (h0 + delta * t).rem_euclid(360.0);
+
+            // Near-neutral bases (white paper, gray line) have a meaningless
+            // hue, so blend from their own chroma up to the ceiling rather
+            // than preserving a hue that was never really there.
+            let c = c0 + (max_c - c0).max(0.0) * t;
+
+            out.push((name, crate::core::oklch::oklch_css(l, c, h)));
+        }
+        out
     }
 
     /// The base palette for a mode, as `(token, value)` pairs.
@@ -536,13 +605,101 @@ mod tests {
         assert!(tinted(BaseMode::Light, 34, 0).ui_overrides().is_empty());
         let o = tinted(BaseMode::Light, 34, 50).ui_overrides();
         assert_eq!(o.len(), 7, "all seven tokens must move together");
-        // Ink must move LESS than paper or the text loses contrast.
-        let pctof = |name: &str| -> f64 {
-            let v = &o.iter().find(|(k, _)| *k == name).unwrap().1;
-            let i = v.rfind(' ').unwrap();
-            v[i + 1..].trim_end_matches("%)").parse().unwrap()
-        };
-        assert!(pctof("--color-ink") < pctof("--color-paper"));
+    }
+
+    /// (L, C, H) of a token in an override set.
+    fn lch(o: &[(&'static str, String)], name: &str) -> (f64, f64, f64) {
+        let v = &o.iter().find(|(k, _)| *k == name).unwrap().1;
+        let inner = v.trim_start_matches("oklch(").trim_end_matches(')');
+        let mut it = inner.split_whitespace().map(|x| x.parse::<f64>().unwrap());
+        (it.next().unwrap(), it.next().unwrap(), it.next().unwrap())
+    }
+
+    #[test]
+    fn the_tint_preserves_each_tokens_lightness_exactly() {
+        // THE BUG THIS PREVENTS: mixing toward the tint colour dragged paper,
+        // surface and line to a common lightness, so page/sidebar/toolbar/
+        // thumbnails merged into one flat slab. Lightness must never move.
+        for strength in [10u8, 50, 90, 100] {
+            let o = tinted(BaseMode::Light, 104, strength).ui_overrides();
+            for (token, base_hex) in [
+                ("--color-paper", "#ffffff"),
+                ("--color-surface", "#f3f4f6"),
+                ("--color-line", "#e5e7eb"),
+                ("--color-ink", "#1f2937"),
+            ] {
+                let want = crate::core::oklch::hex_to_oklch(base_hex).unwrap().0;
+                let got = lch(&o, token).0;
+                assert!(
+                    (got - want).abs() < 0.001,
+                    "{token} at {strength}%: L moved {want} -> {got}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_lightness_ladder_survives_a_full_strength_tint() {
+        // Page brighter than chrome, chrome brighter than its borders. If this
+        // collapses the UI loses all its edges.
+        let o = tinted(BaseMode::Light, 104, 100).ui_overrides();
+        let paper = lch(&o, "--color-paper").0;
+        let surface = lch(&o, "--color-surface").0;
+        let line = lch(&o, "--color-line").0;
+        assert!(paper > surface + 0.01, "paper {paper} vs surface {surface}");
+        assert!(surface > line + 0.01, "surface {surface} vs line {line}");
+
+        // ...and inverted in dark mode.
+        let d = tinted(BaseMode::Dark, 104, 100).ui_overrides();
+        let dpaper = lch(&d, "--color-paper").0;
+        let dsurface = lch(&d, "--color-surface").0;
+        assert!(dpaper < dsurface, "dark paper must stay the darkest");
+    }
+
+    #[test]
+    fn the_accent_actually_follows_the_tint_hue() {
+        // REGRESSION: the accent used to stay blue on a green tint, because
+        // mixing a saturated blue 31% toward green barely moves its hue. At
+        // full strength every token must land ON the requested hue.
+        let o = tinted(BaseMode::Light, 104, 100).ui_overrides();
+        let want = ui_hue_oklch(104.0);
+        for token in ["--color-paper", "--color-accent", "--color-accent-soft", "--color-line"] {
+            let h = lch(&o, token).2;
+            let d = (h - want).abs().min(360.0 - (h - want).abs());
+            assert!(d < 1.0, "{token} hue {h} should be ~{want}");
+        }
+    }
+
+    #[test]
+    fn hue_rotation_takes_the_short_way_round_the_circle() {
+        // A base at ~265deg tinted to 10deg must rotate forward through 300,
+        // not sweep backwards through the whole spectrum. At half strength the
+        // result should sit between the two, going the short way.
+        let o = tinted(BaseMode::Light, 10, 50).ui_overrides();
+        let h = lch(&o, "--color-line").2; // base line hue ≈ 265
+        let target = ui_hue_oklch(10.0);
+        assert!(target < 90.0, "sanity: sRGB 10 maps low, got {target}");
+        assert!(
+            (280.0..=360.0).contains(&h),
+            "expected a short forward rotation through 300, got {h}"
+        );
+    }
+
+    #[test]
+    fn ink_stays_almost_neutral_so_text_does_not_go_murky() {
+        let o = tinted(BaseMode::Light, 104, 100).ui_overrides();
+        let ink_c = lch(&o, "--color-ink").1;
+        let paper_c = lch(&o, "--color-paper").1;
+        let accent_c = lch(&o, "--color-accent").1;
+        assert!(ink_c < 0.03, "ink chroma {ink_c} too colourful");
+        assert!(accent_c > paper_c, "the accent must be the most saturated");
+    }
+
+    #[test]
+    fn chroma_rises_with_strength(){
+        let weak = tinted(BaseMode::Light, 104, 20).ui_overrides();
+        let strong = tinted(BaseMode::Light, 104, 90).ui_overrides();
+        assert!(lch(&weak, "--color-paper").1 < lch(&strong, "--color-paper").1);
     }
 
     #[test]
@@ -568,18 +725,25 @@ mod tests {
     }
 
     #[test]
-    fn the_ui_tint_anchor_lives_in_the_same_hue_space_as_hue_rotate() {
-        // REGRESSION: the anchor was oklch(0.72 0.13 H) while the canvas tint
-        // uses hue-rotate(), which is sRGB. The same `tint_hue` then meant two
-        // different colours — at 34 the page went warm tan and the UI went
-        // pink. Both must be driven from an sRGB hue.
-        let o = tinted(BaseMode::Light, 34, 50).ui_overrides();
-        let paper = &o.iter().find(|(k, _)| *k == "--color-paper").unwrap().1;
-        assert!(paper.contains("hsl(34"), "UI anchor must be sRGB-hued: {paper}");
-        assert!(!paper.contains("oklch(0.72"), "stale oklch anchor: {paper}");
-        // The MIX still happens in oklch: that is what holds perceived
-        // lightness (and text contrast) steady as the tint strengthens.
-        assert!(paper.contains("in oklch"), "mix must stay perceptual: {paper}");
+    fn the_ui_hue_matches_the_hue_the_page_filter_produces() {
+        // COLOUR-SPACE TRAP: `hue-rotate()` works in sRGB, so `tint_hue` is an
+        // sRGB angle. The UI tokens are emitted in OKLCH, whose hue circle is
+        // rotated relative to sRGB — feeding the raw number straight in made
+        // the page go warm tan while the chrome went pink at hue 34.
+        // `ui_hue_oklch` maps between them, so both land on the same colour.
+        let o = tinted(BaseMode::Light, 34, 100).ui_overrides();
+        let h = o
+            .iter()
+            .find(|(k, _)| *k == "--color-paper")
+            .map(|(_, v)| {
+                let inner = v.trim_start_matches("oklch(").trim_end_matches(')');
+                inner.split_whitespace().nth(2).unwrap().parse::<f64>().unwrap()
+            })
+            .unwrap();
+        // sRGB 34deg (a warm tan) sits near 60deg on the OKLCH circle, NOT 34.
+        let want = crate::core::appearance::ui_hue_oklch(34.0);
+        assert!((h - want).abs() < 1.0, "paper hue {h} should be {want}");
+        assert!(h > 40.0, "a warm tan must not be emitted as OKLCH 34 (pink)");
     }
 
     #[test]
@@ -589,7 +753,7 @@ mod tests {
         let p = tinted(BaseMode::Dark, 110, 40).preview_style();
         assert!(p.contains("--base-paper:#131316"), "{p}");
         assert!(p.contains("--canvas-filter:invert"), "{p}");
-        assert!(p.contains("--color-paper:color-mix"), "tint must reach the swatch");
+        assert!(p.contains("--color-paper:oklch("), "tint must reach the swatch");
 
         // An untinted preview still pins the palette, or it would inherit the
         // live (possibly tinted) tokens and show the wrong colour.

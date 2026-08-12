@@ -81,3 +81,72 @@ pub fn observe_content_size(element_id: &'static str, sink: RwSignal<(f64, f64)>
         let _ = callback_handle.try_set_value(None);
     });
 }
+
+/// Scroll `el`'s scroll parent so `el` is comfortably visible, but ONLY if it
+/// is currently out of view.
+///
+/// WHY "only if out of view". The reader has two jobs here: following along as
+/// the reader scrolls the document, and landing somewhere sensible when the
+/// panel is opened. Unconditionally centring on every page change would yank
+/// the list under the cursor while someone is reading down it — the row they
+/// were about to click slides away. Scrolling only when the target is off
+/// screen keeps the list still during normal browsing and still guarantees the
+/// active row is reachable.
+///
+/// `margin` keeps the row off the very edge of the viewport, so there is
+/// visible context above/below it rather than the row being flush against the
+/// frame.
+pub fn reveal_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element, margin: f64) {
+    let parent_h = parent.client_height() as f64;
+    if parent_h <= 0.0 {
+        return;
+    }
+    // offset_top is relative to the offset parent, which is not necessarily
+    // the scroller, so measure through bounding rects instead — they share a
+    // viewport origin and therefore always subtract correctly.
+    let er = el.get_bounding_client_rect();
+    let pr = parent.get_bounding_client_rect();
+    let scroll_top = parent.scroll_top() as f64;
+
+    // Position of the row within the scrollable content.
+    let top = er.top() - pr.top() + scroll_top;
+    let bottom = top + er.height();
+
+    let view_top = scroll_top + margin;
+    let view_bottom = scroll_top + parent_h - margin;
+
+    let target = if top < view_top {
+        // Above the fold: bring it to the top edge (plus margin).
+        Some(top - margin)
+    } else if bottom > view_bottom {
+        // Below the fold: bring it to the bottom edge (minus margin).
+        Some(bottom - parent_h + margin)
+    } else {
+        None
+    };
+
+    if let Some(t) = target {
+        let max = (parent.scroll_height() as f64 - parent_h).max(0.0);
+        parent.set_scroll_top(t.clamp(0.0, max) as i32);
+    }
+}
+
+/// Centre `el` within its scroll `parent`, unconditionally.
+///
+/// Used for the deliberate "take me to where I am" gesture (re-clicking the
+/// active sidebar tab), where the reader has explicitly asked to be moved and
+/// the gentler `reveal_in_scroll_parent` would do nothing if the row happened
+/// to already be barely on screen.
+pub fn center_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element) {
+    let parent_h = parent.client_height() as f64;
+    if parent_h <= 0.0 {
+        return;
+    }
+    let er = el.get_bounding_client_rect();
+    let pr = parent.get_bounding_client_rect();
+    let scroll_top = parent.scroll_top() as f64;
+    let top = er.top() - pr.top() + scroll_top;
+    let target = top - (parent_h - er.height()) / 2.0;
+    let max = (parent.scroll_height() as f64 - parent_h).max(0.0);
+    parent.set_scroll_top(target.clamp(0.0, max) as i32);
+}

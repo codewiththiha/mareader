@@ -620,34 +620,40 @@ body {
 
 /* ---------------------------------------------------------------------
    8. Toolbar glass — frosted overlay bar.
+
    The `<header>` in reader_view.rs carries backdrop-blur + a theme-tinted
    translucent bg (the "milky glass") and is absolutely stacked over the
-   viewer, so content scrolls underneath it, blurred. The toolbar's foreground
-   glyphs (icons, labels, readouts) are pure-white + mix-blend-difference so
-   they auto-invert against the glass — and whatever scrolls beneath it —
-   readable over ANY color, exactly like the status bar.
-   Only the PAINTED glyphs blend; button/input backgrounds stay unblended so
-   they keep their shape. The Tooltip wrapper spans (`.inline-flex`) are
-   excluded: blending a wrapper would treat the whole button as one unit and
-   turn its opaque background into a black block. Dropdown popovers (theme /
-   texture / noise menus) opt out via `.menu-popover` to keep normal theming.
-   --------------------------------------------------------------------- */
-/* Popover contents are EXCLUDED at the source rather than opted out below.
-   The old opt-out (`.menu-popover span { mix-blend-mode: revert }`) had
-   specificity (0,1,1) against this rule's (0,2,1), so it never actually won —
-   dropdown glyphs were difference-blended the whole time. Harmless while the
-   menus held only text and small dots, but it inverted the preset thumbnails:
-   a white "Light" swatch differenced against the light popover renders BLACK,
-   so the gallery showed every look as its own negative.
+   viewer, so content scrolls underneath it, blurred.
 
-   These glyphs must auto-invert against the glass, but nothing inside a
-   popover ever sits on the glass — a popover paints its own opaque themed
-   background. */
-.toolbar-glass svg:not(:is(.menu-popover, .menu-popover *)),
-.toolbar-glass span:not(.inline-flex):not(:is(.menu-popover, .menu-popover *)) {
+   AUTO-INVERTING GLYPHS, AND WHY THEY ARE NOW OPT-IN.
+   Icons and labels used to be pure-white + mix-blend-difference across the
+   board, so they inverted against whatever scrolled beneath the glass. That
+   works for near-black or near-white ink, where difference lands far from the
+   backdrop. It FAILS for mid-grey: `--color-muted` (#6b7280) differenced
+   against the light glass resolves to a near-white, and the "/ 12" total in
+   the page navigator rendered at a measured luminance spread of 7/255 —
+   invisible — while the "1" input beside it (which has its own opaque
+   background, so it never blended) stayed properly dark.
+
+   Difference-blending is therefore no longer applied to text by default. Two
+   things actually need it, and they are marked explicitly:
+
+     .glass-invert  — opt IN. For glyphs that genuinely sit over scrolling
+                      page content with no background of their own.
+
+   Everything else keeps its normal themed colour. That is not a downgrade:
+   the header is `bg-surface/60` over the page, and every themed token is
+   already chosen for contrast against surface. The tint keeps each token's
+   OWN lightness (see core/oklch.rs), so that contrast survives any hue.
+   --------------------------------------------------------------------- */
+.toolbar-glass .glass-invert,
+.toolbar-glass .glass-invert svg {
   color: #fff;
   mix-blend-mode: difference;
 }
+
+/* The status bar keeps the auto-inverting treatment: it floats directly over
+   the page with no background at all, so the backdrop really is arbitrary. */
 
 /* ---------------------------------------------------------------------
    9. Floating search entrance — slide-down + fade-in (U4).
@@ -910,16 +916,30 @@ body {
   background-size: var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit);
 }
 
-/* Grain preview, above the texture so the stack matches the real page. */
+/* Grain preview, above the texture so the stack matches the real page.
+
+   OVERSIZED ON PURPOSE. `noise-crawl` translates the tile by up to 14px, and
+   the swatch is only ~49x65px. At `inset: 0` that dragged the tile's own EDGE
+   into frame every few steps: the Cinema thumbnail showed a hard vertical seam
+   down one side and a bare, blotchy corner — it read as a rendering fault
+   rather than film grain. The full-page overlay already solved this with
+   `inset: -100%`; the swatch needs the same margin, and the parent's
+   `overflow: hidden` clips the excess. */
 .preset-page.preset-noise::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: -100%;
   z-index: 3;
   pointer-events: none;
   opacity: var(--noise-opacity, 0);
   mix-blend-mode: var(--noise-blend, multiply);
+  /* A ~40px tile instead of the full 160px one. The page-sized overlay can
+     afford a large tile because it covers a whole viewport, but scaled into a
+     49px swatch the same tile shows only a handful of its blobs, which reads
+     as smudges rather than grain. A tighter pitch puts a comparable amount of
+     visible grain per unit area in the thumbnail as on the real page. */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 40px 40px;
 }
 /* An animated preset must LOOK animated in its thumbnail, or the two grain
    modes are indistinguishable in the gallery. */

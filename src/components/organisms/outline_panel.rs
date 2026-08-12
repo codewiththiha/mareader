@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use crate::core::document::OutlineNode;
-use crate::core::state::AppState;
+use crate::core::state::{AppState, SidebarMode};
 
 fn outline_key(node: &OutlineNode) -> String {
     format!("{}-{}-{}", node.page, node.depth, node.title)
@@ -116,8 +116,120 @@ mod tests {
 
 #[component]
 pub fn OutlinePanel(state: AppState) -> impl IntoView {
+    let scroller: NodeRef<leptos::html::Div> = NodeRef::new();
+
+    // Keep the active entry on screen.
+    //
+    // The panel always rendered from the top, so on a long document the reader
+    // had to hunt down the list to find where they were — the highlight was
+    // useless until you scrolled to it. This reveals it instead, but only when
+    // it is actually off screen (see `reveal_in_scroll_parent`): scrolling on
+    // every page change would drag the list out from under someone reading it.
+    //
+    // Runs on page changes AND when the panel becomes visible, because the rows
+    // have no layout while the sidebar is closed and a scroll written then
+    // would be silently clamped to zero.
+    Effect::new(move |_| {
+        let page = state.viewer.page.get();
+        let showing = state.sidebar.get() == SidebarMode::Outline;
+        let outline = state.doc.outline.get();
+        let Some(parent) = scroller.get() else { return };
+        if !showing || outline.is_empty() {
+            return;
+        }
+        let Some(idx) = active_outline_index(&outline, page) else {
+            return;
+        };
+        let parent: web_sys::Element = parent.into();
+        // Defer past the <For> rebuild.
+        //
+        // This effect and the row list are driven by the SAME signals, so it
+        // can run before the rows for the new page exist — and one rAF is not
+        // always enough: `aria-current`/`data-outline-index` are re-keyed, so
+        // the row for `idx` may still be the OLD node (or missing) on the next
+        // frame. Measuring then either finds nothing or scrolls to a stale
+        // position, which is why a single-step jump silently did nothing while
+        // a multi-step scroll happened to work.
+        //
+        // Retry across a few frames and stop at the first attempt that finds
+        // a laid-out row. Bounded, so a genuinely absent row costs 4 frames
+        // and no more.
+        let attempt = std::rc::Rc::new(std::cell::Cell::new(0u8));
+        let try_reveal: std::rc::Rc<dyn Fn()> = {
+            let attempt = attempt.clone();
+            let holder: std::rc::Rc<std::cell::RefCell<Option<std::rc::Rc<dyn Fn()>>>> =
+                std::rc::Rc::new(std::cell::RefCell::new(None));
+            let weak = std::rc::Rc::downgrade(&holder);
+            let f: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
+                let row = parent
+                    .query_selector(&format!("button[data-outline-index=\"{idx}\"]"))
+                    .ok()
+                    .flatten();
+                match row {
+                    // A row with no height is not laid out yet; keep waiting.
+                    Some(row) if row.get_bounding_client_rect().height() > 0.0 => {
+                        crate::util::dom::reveal_in_scroll_parent(&row, &parent, 24.0);
+                    }
+                    _ => {
+                        let n = attempt.get();
+                        if n < 4 {
+                            attempt.set(n + 1);
+                            if let Some(next) =
+                                weak.upgrade().and_then(|h| h.borrow().clone())
+                            {
+                                request_animation_frame(move || next());
+                            }
+                        }
+                    }
+                }
+            });
+            *holder.borrow_mut() = Some(f.clone());
+            // Keep the holder alive for as long as the closure can re-arm.
+            let keep = holder.clone();
+            std::rc::Rc::new(move || {
+                let _ = &keep;
+                f();
+            })
+        };
+        request_animation_frame(move || try_reveal());
+    });
+
+    // The deliberate "take me to where I am" gesture: re-clicking the active
+    // Outline tab. Unlike the passive reveal above this CENTRES unconditionally
+    // — the reader explicitly asked to be moved, so doing nothing because the
+    // row is technically one pixel on screen would feel broken.
+    Effect::new(move |_| {
+        let Some(win) = web_sys::window() else { return };
+        let handler = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(
+            move |_: web_sys::Event| {
+                if state.sidebar.get_untracked() != SidebarMode::Outline {
+                    return;
+                }
+                let outline = state.doc.outline.get_untracked();
+                let page = state.viewer.page.get_untracked();
+                let Some(idx) = active_outline_index(&outline, page) else { return };
+                let Some(parent) = scroller.get_untracked() else { return };
+                let parent: web_sys::Element = parent.into();
+                if let Some(row) = parent
+                    .query_selector(&format!("button[data-outline-index=\"{idx}\"]"))
+                    .ok()
+                    .flatten()
+                {
+                    crate::util::dom::center_in_scroll_parent(&row, &parent);
+                }
+            },
+        );
+        use wasm_bindgen::JsCast;
+        let _ = win.add_event_listener_with_callback(
+            "pdfreader:reveal-active",
+            handler.as_ref().unchecked_ref(),
+        );
+        // The panel is mounted for the app lifetime, so the listener is too.
+        handler.forget();
+    });
+
     view! {
-        <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div node_ref=scroller class="flex min-h-0 flex-1 flex-col overflow-y-auto">
             {move || {
                 if state.doc.outline.get().is_empty() {
                     view! {
@@ -142,7 +254,7 @@ pub fn OutlinePanel(state: AppState) -> impl IntoView {
                             key=|(i, node, is_active): &(usize, OutlineNode, bool)| {
                                 format!("{i}-{}-{}", outline_key(node), is_active)
                             }
-                            children=move |(_, node, is_active): (usize, OutlineNode, bool)| {
+                            children=move |(row_index, node, is_active): (usize, OutlineNode, bool)| {
                                 let page = node.page;
                                 let depth = node.depth;
                                 let title = node.title.clone();
@@ -153,6 +265,11 @@ pub fn OutlinePanel(state: AppState) -> impl IntoView {
                                     <button
                                         type="button"
                                         title=tooltip
+                                        // Lets the reveal effect locate this
+                                        // row without holding a NodeRef per
+                                        // entry (the list is rebuilt on every
+                                        // page change).
+                                        data-outline-index=row_index.to_string()
                                         // `aria-current` is the semantic half of
                                         // the highlight: a screen reader
                                         // announces the active section without
