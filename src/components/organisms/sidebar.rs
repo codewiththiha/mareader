@@ -5,18 +5,34 @@
 //! The `<aside>` is ALWAYS mounted and animates its `width` between 18rem and 0
 //! (single-phase slide, no two-phase unmount). The inner content stays fixed at
 //! `w-72` so it doesn't collapse mid-transition — `overflow-hidden` on the aside
-//! clips it while closed. BOTH panels below the rail stay mounted for the app
-//! lifetime; the inactive one is `invisible` (`visibility:hidden`) — NOT
-//! `hidden` (`display:none`), whose height collapse would re-evict the
-//! thumbnails virtualization window and re-render every thumb on each open.
-//! Visibility keeps layout + ResizeObserver geometry alive, so canvases stay
-//! engine-bound across toggles. When collapsed the content is made `inert` so
-//! the clipped rail can't be tab-focused / activated.
+//! clips it while closed. When collapsed the content is made `inert` so the
+//! clipped rail can't be tab-focused / activated.
+//!
+//! CLOSE / OPEN (appendix 22). The rail labels (Thumbs / Outline) outro by
+//! being clipped as the aside shrinks — a 300ms ease-in-out the reader
+//! already has. The panels used to go `visibility:hidden` on the FIRST frame
+//! of that slide, so the thumbnail grid popped off while the labels slid
+//! away. Worse, toggling visibility on a stack of `filter` + `mix-blend-mode`
+//! canvases makes WKWebView allocate a fresh compositor layer per thumb;
+//! close-and-reopen-quickly stacked those layers into a RAM spike.
+//!
+//! So the last-open panel STAYS PAINTED for the whole slide (it fades with
+//! `.sidebar-panel.is-outro` and clips with the aside). Only after the 300ms
+//! does the grid unmount, which `cancelThumb`s every live canvas and drops
+//! the backing stores. A reopen inside that window never unmounts, never
+//! re-renders, never reallocates.
+//!
+//! Tab switches (Thumbs ↔ Outline) still use `invisible` on the inactive
+//! panel so the virtualization window stays engine-bound and a switch back
+//! is instant. `hidden` (`display:none`) is still forbidden: its height
+//! collapse would re-evict the window and re-render every thumb.
 //!
 //! Gotcha: each reactive `class=("name", cond)` toggle becomes one
 //! `classList.add("name")` call — a space-separated token throws a swallowed
 //! SyntaxError and the class is silently never applied. Keep every conditional
 //! class to a SINGLE token (hence `w-0` and `border-r-0` as separate toggles).
+
+use std::time::Duration;
 
 use leptos::prelude::*;
 
@@ -25,6 +41,11 @@ use crate::components::molecules::sidebar_item::SidebarItem;
 use crate::components::organisms::outline_panel::OutlinePanel;
 use crate::components::organisms::thumbnails::ThumbnailsPanel;
 use crate::core::state::{AppState, SidebarMode};
+
+/// Must match the aside's `duration-300` width slide. The panel fade and
+/// the deferred canvas release both key off this so the three outros land
+/// together and a quick reopen cannot beat the unmount.
+pub(crate) const SIDEBAR_SLIDE_MS: u64 = 300;
 
 /// Ask the visible panel to scroll to wherever the reader currently is.
 ///
@@ -38,8 +59,91 @@ fn request_reveal_active() {
     }
 }
 
+/// Whether `panel` should stay painted this frame.
+///
+/// Open: only the active panel. Closing: the panel that was showing, for
+/// the whole slide, so it can fade and clip with the rail labels instead
+/// of popping off on frame one.
+pub(crate) fn panel_is_shown(
+    panel: SidebarMode,
+    mode: SidebarMode,
+    collapsing: bool,
+    last: SidebarMode,
+) -> bool {
+    mode == panel || (mode == SidebarMode::None && collapsing && last == panel)
+}
+
+/// Whether the thumbnail grid should keep its cells mounted.
+///
+/// Mounted while Thumbs is showing, while Outline is showing (so a tab
+/// switch does not re-render every thumb), and while the Thumbs panel is
+/// mid-outro. Dropped only once a close from Thumbs has finished — that
+/// is what releases the live canvases without a quick-reopen spike.
+pub(crate) fn thumbs_should_stay_mounted(
+    mode: SidebarMode,
+    collapsing: bool,
+    last: SidebarMode,
+) -> bool {
+    match mode {
+        SidebarMode::Thumbs | SidebarMode::Outline => true,
+        SidebarMode::None => collapsing && last == SidebarMode::Thumbs,
+    }
+}
+
 #[component]
 pub fn Sidebar(state: AppState) -> impl IntoView {
+    // Last non-None mode, and whether a close slide is still in flight.
+    // `last` is what we keep painted during the outro; `collapsing` flips
+    // off SIDEBAR_SLIDE_MS after a close so the grid can unmount. A reopen
+    // inside that window clears the timer and never unmounts.
+    let last_mode = RwSignal::new(SidebarMode::Thumbs);
+    let collapsing = RwSignal::new(false);
+    let collapse_timer = StoredValue::new_local(None::<TimeoutHandle>);
+
+    Effect::new(move |_| {
+        let mode = state.sidebar.get();
+        if mode != SidebarMode::None {
+            last_mode.set(mode);
+            collapsing.set(false);
+            if let Some(h) = collapse_timer.get_value() {
+                h.clear();
+                collapse_timer.set_value(None);
+            }
+        } else {
+            collapsing.set(true);
+            if let Some(h) = collapse_timer.get_value() {
+                h.clear();
+            }
+            let handle = set_timeout_with_handle(
+                move || collapsing.set(false),
+                Duration::from_millis(SIDEBAR_SLIDE_MS),
+            )
+            .ok();
+            collapse_timer.set_value(handle);
+        }
+    });
+
+    let show_outline = Signal::derive(move || {
+        panel_is_shown(
+            SidebarMode::Outline,
+            state.sidebar.get(),
+            collapsing.get(),
+            last_mode.get(),
+        )
+    });
+    let show_thumbs = Signal::derive(move || {
+        panel_is_shown(
+            SidebarMode::Thumbs,
+            state.sidebar.get(),
+            collapsing.get(),
+            last_mode.get(),
+        )
+    });
+    let thumbs_live = Signal::derive(move || {
+        thumbs_should_stay_mounted(state.sidebar.get(), collapsing.get(), last_mode.get())
+    });
+    let is_closed = Signal::derive(move || state.sidebar.get() == SidebarMode::None);
+
     // Tab rail: re-runs when the active mode changes so the `active` highlight
     // stays in sync.
     let header = move || {
@@ -92,25 +196,108 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                 prop:inert=move || state.sidebar.get() == SidebarMode::None
             >
                 {header}
-                // Both panels stay permanently mounted; the inactive one is
-                // `invisible` (`visibility:hidden`, which keeps layout +
-                // ResizeObserver geometry alive) so the thumbnails virtualization
-                // window never evicts — and re-renders — on sidebar toggles.
                 <div class="relative min-h-0 flex-1">
                     <div
-                        class="absolute inset-0 flex flex-col"
-                        class=("invisible", move || state.sidebar.get() != SidebarMode::Outline)
+                        class="sidebar-panel absolute inset-0 flex flex-col"
+                        class=("invisible", move || !show_outline.get())
+                        class=("is-outro", move || is_closed.get())
                     >
                         <OutlinePanel state=state.clone() />
                     </div>
                     <div
-                        class="absolute inset-0 flex flex-col"
-                        class=("invisible", move || state.sidebar.get() != SidebarMode::Thumbs)
+                        class="sidebar-panel absolute inset-0 flex flex-col"
+                        class=("invisible", move || !show_thumbs.get())
+                        class=("is-outro", move || is_closed.get())
                     >
-                        <ThumbnailsPanel state=state.clone() />
+                        <ThumbnailsPanel state=state.clone() live=thumbs_live />
                     </div>
                 </div>
             </div>
         </aside>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{panel_is_shown, thumbs_should_stay_mounted, SIDEBAR_SLIDE_MS};
+    use crate::core::state::SidebarMode;
+
+    #[test]
+    fn the_slide_matches_the_css_duration() {
+        // The fade, the width tween and the deferred unmount must share one
+        // number. Drift here is how the thumbs popped off before the labels.
+        assert_eq!(SIDEBAR_SLIDE_MS, 300);
+    }
+
+    #[test]
+    fn a_close_keeps_the_open_panel_painted_until_the_slide_ends() {
+        // Frame one of a Thumbs close: still painted, so it can fade/clip.
+        assert!(panel_is_shown(
+            SidebarMode::Thumbs,
+            SidebarMode::None,
+            true,
+            SidebarMode::Thumbs
+        ));
+        assert!(!panel_is_shown(
+            SidebarMode::Outline,
+            SidebarMode::None,
+            true,
+            SidebarMode::Thumbs
+        ));
+        // After the slide: both hidden.
+        assert!(!panel_is_shown(
+            SidebarMode::Thumbs,
+            SidebarMode::None,
+            false,
+            SidebarMode::Thumbs
+        ));
+    }
+
+    #[test]
+    fn a_tab_switch_shows_only_the_active_panel() {
+        assert!(panel_is_shown(
+            SidebarMode::Outline,
+            SidebarMode::Outline,
+            false,
+            SidebarMode::Outline
+        ));
+        assert!(!panel_is_shown(
+            SidebarMode::Thumbs,
+            SidebarMode::Outline,
+            false,
+            SidebarMode::Outline
+        ));
+    }
+
+    #[test]
+    fn thumbs_stay_mounted_across_a_tab_switch_but_not_a_finished_close() {
+        // Instant Thumbs ↔ Outline: keep the canvases.
+        assert!(thumbs_should_stay_mounted(
+            SidebarMode::Outline,
+            false,
+            SidebarMode::Outline
+        ));
+        assert!(thumbs_should_stay_mounted(
+            SidebarMode::Thumbs,
+            false,
+            SidebarMode::Thumbs
+        ));
+        // Mid-outro from Thumbs: keep them so a quick reopen is free.
+        assert!(thumbs_should_stay_mounted(
+            SidebarMode::None,
+            true,
+            SidebarMode::Thumbs
+        ));
+        // Slide finished, or we closed from Outline: drop the live canvases.
+        assert!(!thumbs_should_stay_mounted(
+            SidebarMode::None,
+            false,
+            SidebarMode::Thumbs
+        ));
+        assert!(!thumbs_should_stay_mounted(
+            SidebarMode::None,
+            true,
+            SidebarMode::Outline
+        ));
     }
 }

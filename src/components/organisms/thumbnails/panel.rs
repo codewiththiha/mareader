@@ -5,12 +5,13 @@
 //! not. Clicking a thumbnail jumps to that page and closes the panel. The panel
 //! self-cleans: every canvas is cancelled (and its backing store zeroed) when
 //! its cell unmounts. Unmount alone is not enough in WKWebView — see
-//! `releaseCanvas` in `pdfEngine.js`. The panel itself stays permanently mounted (the
-//! sidebar toggles it with `visibility`, not a remount), so its visible
-//! virtualization window of canvases remains engine-bound while the sidebar is
-//! collapsed or on Outline — bounded to the window (never the whole document),
-//! and released on scroll-out, document change, or app teardown. That is the
-//! accepted trade-off for instant thumbnails on every open.
+//! `releaseCanvas` in `pdfEngine.js`. The panel stays permanently mounted.
+//! Tab switches hide it with `visibility` so the virtualization window stays
+//! engine-bound on Outline. A CLOSE keeps the grid painted for the 300ms
+//! slide (fade/clip with the rail labels) and only then unmounts its cells.
+//! A reopen inside that window never unmounts — that is what stops the
+//! close-and-reopen-quickly RAM spike. Settled-closed RAM is the cache
+//! only. Cells also release on scroll-out, document change, or teardown.
 //!
 //! Rendering is scroll-windowed: an in-flow spacer spans the full grid height
 //! (so the scrollbar covers every page) while only the rows overlapping the
@@ -74,7 +75,16 @@ use super::geometry::{
 };
 
 #[component]
-pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
+pub fn ThumbnailsPanel(
+    state: AppState,
+    /// False once a close slide from Thumbs has finished. The `<For>` then
+    /// emits no rows, every cell unmounts, and `cancelThumb` zeros the live
+    /// canvases. True while the panel is showing, while Outline is showing
+    /// (instant tab switch), and while the 300ms Thumbs outro is in flight
+    /// (a quick reopen must not remount).
+    #[prop(into)]
+    live: Signal<bool>,
+) -> impl IntoView {
     let num_pages = state.doc.num_pages;
     let page1_size = state.doc.page1_size;
 
@@ -500,6 +510,12 @@ pub fn ThumbnailsPanel(state: AppState) -> impl IntoView {
             ></div>
             <For
                 each=move || {
+                    // Drop every cell once the close slide has finished so
+                    // WKWebView releases the live backing stores. The cache
+                    // is untouched, so the next open is a sync blit.
+                    if !live.get() {
+                        return Vec::new();
+                    }
                     let k = doc_key.get();
                     visible
                         .get()

@@ -13,3 +13,8 @@
 
 # Node
 /node_modules/
+
+# Local-only tooling
+/.script/
+CONTRACTS.md
+contracts.md
