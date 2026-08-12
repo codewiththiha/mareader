@@ -677,6 +677,27 @@ body {
   mix-blend-mode: difference;
 }
 
+/* While a toolbar popover is open the glass layer is rebuilt as a solid
+   surface. WKWebView caches `backdrop-filter` against the page that was
+   behind the header; switching Dark → Light updates the PAGE immediately
+   but the frosted bar keeps compositing the old dark snapshot under the
+   new light tokens — the toolbar sits at a mid-mix until the menu closes
+   and the layer is torn down. Dropping the filter (and going opaque) while
+   the menu is up means the tokens the reader is picking paint live. */
+.toolbar-glass:has(.menu-popover) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: var(--color-surface);
+}
+
+/* One-frame mute of color transitions so a base/preset swap cannot leave
+   a button interpolated between the old and new tokens. Toggled from
+   theme_applier.rs around paint_appearance_now. */
+html.theme-switching,
+html.theme-switching * {
+  transition: none !important;
+}
+
 /* The status bar keeps the auto-inverting treatment: it floats directly over
    the page with no background at all, so the backdrop really is arbitrary. */
 

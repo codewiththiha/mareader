@@ -114,11 +114,47 @@ fn set_scrubbing(on: bool) {
     }
 }
 
+/// Drop the frosted-header backdrop snapshot for one reflow.
+///
+/// WKWebView caches `backdrop-filter` against the pixels that were
+/// behind the toolbar. Changing `--color-surface` / `data-base` updates
+/// the PAGE immediately, but the glass layer keeps compositing the OLD
+/// dark page under the NEW light surface — the toolbar sits at a mid-mix
+/// until something (unmounting the appearance popover) rebuilds the
+/// layer. Forcing `backdrop-filter: none` through a reflow makes it
+/// re-sample the page that is actually on screen.
+fn kick_backdrop_surfaces() {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    for sel in [".toolbar-glass", ".floating-search-enter"] {
+        let Some(el) = doc.query_selector(sel).ok().flatten() else {
+            continue;
+        };
+        let Ok(html) = el.dyn_into::<web_sys::HtmlElement>() else {
+            continue;
+        };
+        let style = html.style();
+        let _ = style.set_property("-webkit-backdrop-filter", "none");
+        let _ = style.set_property("backdrop-filter", "none");
+        let _ = html.offset_height();
+        let _ = style.remove_property("-webkit-backdrop-filter");
+        let _ = style.remove_property("backdrop-filter");
+    }
+}
+
 /// Write every appearance CSS custom property / class from `a`. Synchronous.
 /// The filter string is the same one `Appearance::canvas_filter` already
 /// produces — this does not invent a second pipeline.
 pub fn paint_appearance_now(a: Appearance) {
     let Some(el) = document_element() else { return };
+
+    let prev_base = el.get_attribute("data-base");
+    // Only a Light/Dark/Dim swap needs the glass layer rebuilt. Slider
+    // ticks must not (appendix 19), and a same-base tint is already live
+    // on `--color-*` — `.toolbar-glass:has(.menu-popover)` drops the
+    // stale backdrop while the picker is open.
+    let kick = prev_base.as_deref() != Some(a.base.as_str());
 
     let _ = el.set_attribute("data-base", a.base.as_str());
     let class = el.class_list();
@@ -127,8 +163,17 @@ pub fn paint_appearance_now(a: Appearance) {
     } else {
         let _ = class.remove_1("dark");
     }
+    if kick {
+        // Kill color transitions for this frame so toolbar buttons cannot
+        // linger at a mid-mix of the old and new tokens.
+        let _ = class.add_1("theme-switching");
+    }
 
     if let Some(style) = html_style() {
+        let _ = style.set_property(
+            "color-scheme",
+            if a.base.is_dark() { "dark" } else { "light" },
+        );
         let _ = style.set_property("--canvas-filter", &a.canvas_filter());
         let _ = style.set_property("--canvas-blend", a.canvas_blend());
         for tok in UI_TOKENS {
@@ -147,6 +192,15 @@ pub fn paint_appearance_now(a: Appearance) {
         );
     }
 
+    if kick {
+        kick_backdrop_surfaces();
+        request_animation_frame(move || {
+            if let Some(el) = document_element() {
+                let _ = el.class_list().remove_1("theme-switching");
+            }
+        });
+    }
+
     let Some(body) = body_el() else { return };
     let class = body.class_list();
     if a.noise.is_on() {
@@ -159,9 +213,10 @@ pub fn paint_appearance_now(a: Appearance) {
     } else {
         let _ = class.remove_1("noise-animated");
     }
-    let _ = body
-        .style()
-        .set_property("--noise-opacity", &format!("{}", a.noise_intensity.min(100) as f64 / 100.0));
+    let _ = body.style().set_property(
+        "--noise-opacity",
+        &format!("{}", a.noise_intensity.min(100) as f64 / 100.0),
+    );
 }
 
 /// Coalesce paints onto the next animation frame. A 60Hz slider would
