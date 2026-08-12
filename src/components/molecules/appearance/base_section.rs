@@ -14,6 +14,9 @@ use crate::components::atoms::icon::{Icon, IconName};
 use crate::components::atoms::slider::Slider;
 use crate::core::appearance::BaseMode;
 use crate::core::state::AppState;
+use crate::effects::theme_applier::{
+    flush_appearance_commit, preview_appearance, AppearanceScrub,
+};
 
 fn base_icon(b: BaseMode) -> IconName {
     match b {
@@ -50,6 +53,9 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                             title=b.label()
                             aria-pressed=move || (current_base() == b).to_string()
                             on:click=move |_| {
+                                // Keep the hue the reader was just dialling,
+                                // then switch family.
+                                flush_appearance_commit();
                                 state
                                     .settings
                                     .update(|s| {
@@ -79,18 +85,19 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 359.0);
                     set_hue.set(v);
-                    state
-                        .settings
-                        .update(|s| {
-                            s.appearance.tint_hue = v as u16;
-                            // Dragging the hue with no strength shows nothing,
-                            // which reads as a broken control. Give it a
-                            // visible-but-gentle default so the choice lands.
-                            if s.appearance.tint_strength == 0 {
-                                s.appearance.tint_strength = 35;
-                            }
-                            s.touch_appearance();
-                        });
+                    // Dragging the hue with no strength shows nothing, which
+                    // reads as a broken control. Give it a visible-but-gentle
+                    // default so the choice lands — locally AND in the scrub,
+                    // because Settings is not written until the drag pauses.
+                    let mut st = strength.get_untracked().round().clamp(0.0, 100.0) as u8;
+                    if st == 0 {
+                        st = 35;
+                        set_strength.set(35.0);
+                    }
+                    preview_appearance(
+                        state,
+                        AppearanceScrub::Tint { hue: v as u16, strength: st },
+                    );
                 }
             />
         </div>
@@ -105,12 +112,13 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 100.0);
                     set_strength.set(v);
-                    state
-                        .settings
-                        .update(|s| {
-                            s.appearance.tint_strength = v as u8;
-                            s.touch_appearance();
-                        });
+                    // Live hue signal, not Settings: a hue drag may not have
+                    // committed yet.
+                    let hue = hue.get_untracked().round().clamp(0.0, 359.0) as u16;
+                    preview_appearance(
+                        state,
+                        AppearanceScrub::Tint { hue, strength: v as u8 },
+                    );
                 }
                 label="Tint strength".to_string()
             />

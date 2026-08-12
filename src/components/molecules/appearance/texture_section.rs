@@ -12,6 +12,9 @@ use crate::components::atoms::icon::{Icon, IconName};
 use crate::components::atoms::slider::Slider;
 use crate::core::appearance::TextureMode;
 use crate::core::state::AppState;
+use crate::effects::theme_applier::{
+    flush_appearance_commit, preview_appearance, AppearanceScrub,
+};
 
 #[component]
 pub fn TextureSection(state: AppState) -> impl IntoView {
@@ -38,6 +41,7 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                             type="button"
                             aria-pressed=move || (current() == mode).to_string()
                             on:click=move |_| {
+                                flush_appearance_commit();
                                 state
                                     .settings
                                     .update(|s| {
@@ -81,12 +85,7 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 100.0);
                     set_opacity.set(v);
-                    state
-                        .settings
-                        .update(|s| {
-                            s.appearance.texture_opacity = v as u8;
-                            s.touch_appearance();
-                        });
+                    preview_appearance(state, AppearanceScrub::TextureOpacity(v as u8));
                 }
                 label="Texture opacity".to_string()
             />
@@ -99,12 +98,7 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                 on_change=move |v| {
                     let v = v.round().clamp(25.0, 400.0);
                     set_tscale.set(v);
-                    state
-                        .settings
-                        .update(|s| {
-                            s.appearance.texture_scale = v as u16;
-                            s.touch_appearance();
-                        });
+                    preview_appearance(state, AppearanceScrub::TextureScale(v as u16));
                 }
                 label="Texture scale".to_string()
             />

@@ -14,10 +14,22 @@
 //! palettes; the computed values are pushed here. Setting a property to the
 //! empty string removes the override and lets the stylesheet's own value win
 //! again, which is how a tint is cleanly un-applied.
+//!
+//! SLIDER RAM (appendix 19). Writing `settings` on every `input` event made
+//! WKWebView allocate a fresh filter intermediate for every visible page,
+//! every tick — that is the 1.2GB spike while dragging Colour / Tint
+//! strength. Sliders now live-paint CSS at most once per animation frame and
+//! commit the Settings signal (and localStorage) only after the gesture
+//! pauses. The filter STRING is unchanged, so the look is byte-identical.
+
+use std::cell::{Cell, RefCell};
+use std::time::Duration;
 
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
+use crate::core::appearance::Appearance;
+use crate::core::settings::Settings;
 use crate::core::state::AppState;
 use crate::util::storage::save_settings;
 
@@ -34,6 +46,45 @@ const UI_TOKENS: [&str; 7] = [
     "--color-accent-soft",
 ];
 
+/// How long after the last slider tick we write Settings. Long enough that a
+/// continuous drag is one write; short enough that a tap still feels instant.
+const COMMIT_MS: u64 = 180;
+/// Persist can wait a beat — last_path and a finished drag both settle here.
+const SAVE_MS: u64 = 350;
+
+/// One field a slider is allowed to live-edit. Structural clicks (preset,
+/// base, texture mode, grain mode) go through `settings.update` directly
+/// and must either flush or cancel a pending scrub first.
+#[derive(Debug, Clone, Copy)]
+pub enum AppearanceScrub {
+    Tint { hue: u16, strength: u8 },
+    TextureOpacity(u8),
+    TextureScale(u16),
+    NoiseIntensity(u8),
+}
+
+fn apply_scrub(a: &mut Appearance, p: AppearanceScrub) {
+    match p {
+        AppearanceScrub::Tint { hue, strength } => {
+            a.tint_hue = hue;
+            a.tint_strength = strength;
+        }
+        AppearanceScrub::TextureOpacity(v) => a.texture_opacity = v,
+        AppearanceScrub::TextureScale(v) => a.texture_scale = v,
+        AppearanceScrub::NoiseIntensity(v) => a.noise_intensity = v,
+    }
+    a.sanitize();
+}
+
+thread_local! {
+    static PAINT_PENDING: Cell<Option<Appearance>> = const { Cell::new(None) };
+    static PAINT_SCHEDULED: Cell<bool> = const { Cell::new(false) };
+    static COMMIT_GEN: Cell<u64> = const { Cell::new(0) };
+    static COMMIT_TIMER: RefCell<Option<TimeoutHandle>> = const { RefCell::new(None) };
+    static COMMIT_PAYLOAD: Cell<Option<(AppState, AppearanceScrub)>> = const { Cell::new(None) };
+    static SAVE_TIMER: RefCell<Option<TimeoutHandle>> = const { RefCell::new(None) };
+}
+
 fn document_element() -> Option<web_sys::Element> {
     web_sys::window()
         .and_then(|w| w.document())
@@ -46,82 +97,184 @@ fn html_style() -> Option<web_sys::CssStyleDeclaration> {
         .map(|h| h.style())
 }
 
-pub fn theme_applier(state: AppState) {
-    // --- base mode + computed tint -------------------------------------------
-    Effect::new(move || {
-        let a = state.settings.get().appearance;
-        let Some(el) = document_element() else { return };
+fn body_el() -> Option<web_sys::HtmlElement> {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.body())
+        .and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok())
+}
 
-        let _ = el.set_attribute("data-base", a.base.as_str());
-        let class = el.class_list();
-        if a.base.is_dark() {
-            let _ = class.add_1("dark");
-        } else {
-            let _ = class.remove_1("dark");
-        }
+fn set_scrubbing(on: bool) {
+    let Some(body) = body_el() else { return };
+    let class = body.class_list();
+    if on {
+        let _ = class.add_1("appearance-scrubbing");
+    } else {
+        let _ = class.remove_1("appearance-scrubbing");
+    }
+}
 
-        let Some(style) = html_style() else { return };
+/// Write every appearance CSS custom property / class from `a`. Synchronous.
+/// The filter string is the same one `Appearance::canvas_filter` already
+/// produces — this does not invent a second pipeline.
+pub fn paint_appearance_now(a: Appearance) {
+    let Some(el) = document_element() else { return };
+
+    let _ = el.set_attribute("data-base", a.base.as_str());
+    let class = el.class_list();
+    if a.base.is_dark() {
+        let _ = class.add_1("dark");
+    } else {
+        let _ = class.remove_1("dark");
+    }
+
+    if let Some(style) = html_style() {
         let _ = style.set_property("--canvas-filter", &a.canvas_filter());
         let _ = style.set_property("--canvas-blend", a.canvas_blend());
-
-        // Clear first, then re-apply: switching from a tinted preset to an
-        // untinted one has to actually remove the overrides.
         for tok in UI_TOKENS {
             let _ = style.remove_property(tok);
         }
         for (name, value) in a.ui_overrides() {
             let _ = style.set_property(name, &value);
         }
-    });
-
-    // --- texture opacity + scale ---------------------------------------------
-    Effect::new(move || {
-        let a = state.settings.get().appearance;
-        let Some(style) = html_style() else { return };
         let _ = style.set_property(
             "--texture-opacity",
             &format!("{:.3}", a.texture_opacity as f64 / 100.0),
         );
-        // A multiplier on the page's own scale, NOT an absolute pitch: the
-        // texture must still track zoom, so the user
-        // control scales the natural pitch rather than replacing it.
         let _ = style.set_property(
             "--texture-scale-user",
             &format!("{:.3}", a.texture_scale as f64 / 100.0),
         );
-    });
+    }
 
-    // --- noise ---------------------------------------------------------------
+    let Some(body) = body_el() else { return };
+    let class = body.class_list();
+    if a.noise.is_on() {
+        let _ = class.add_1("noise-enabled");
+    } else {
+        let _ = class.remove_1("noise-enabled");
+    }
+    if matches!(a.noise, crate::core::appearance::NoiseMode::Animated) {
+        let _ = class.add_1("noise-animated");
+    } else {
+        let _ = class.remove_1("noise-animated");
+    }
+    let _ = body
+        .style()
+        .set_property("--noise-opacity", &format!("{}", a.noise_intensity.min(100) as f64 / 100.0));
+}
+
+/// Coalesce paints onto the next animation frame. A 60Hz slider would
+/// otherwise rewrite `--canvas-filter` more than once per composite, and
+/// each rewrite is a new WKWebView filter intermediate per visible page.
+fn paint_appearance(a: Appearance) {
+    PAINT_PENDING.with(|p| p.set(Some(a)));
+    if PAINT_SCHEDULED.with(|s| s.get()) {
+        return;
+    }
+    PAINT_SCHEDULED.with(|s| s.set(true));
+    request_animation_frame(move || {
+        PAINT_SCHEDULED.with(|s| s.set(false));
+        if let Some(a) = PAINT_PENDING.with(|p| p.take()) {
+            paint_appearance_now(a);
+        }
+    });
+}
+
+fn bump_commit_gen() -> u64 {
+    COMMIT_GEN.with(|g| {
+        let n = g.get() + 1;
+        g.set(n);
+        n
+    })
+}
+
+fn clear_commit_timer() {
+    if let Some(h) = COMMIT_TIMER.with(|t| t.borrow_mut().take()) {
+        h.clear();
+    }
+}
+
+/// Drop a pending slider commit without writing Settings. Used when a
+/// preset (or any other structural click) should win over an in-flight drag.
+pub fn cancel_appearance_commit() {
+    bump_commit_gen();
+    clear_commit_timer();
+    COMMIT_PAYLOAD.with(|p| p.set(None));
+    set_scrubbing(false);
+}
+
+/// Apply a pending slider commit NOW, then clear the timer. Used when a
+/// structural click (base / texture mode / grain mode) should keep the
+/// hue the reader just dialled.
+pub fn flush_appearance_commit() {
+    clear_commit_timer();
+    let payload = COMMIT_PAYLOAD.with(|p| p.take());
+    bump_commit_gen();
+    set_scrubbing(false);
+    if let Some((state, patch)) = payload {
+        state.settings.update(|s| {
+            apply_scrub(&mut s.appearance, patch);
+            s.touch_appearance();
+        });
+    }
+}
+
+/// Live-preview a slider: paint CSS this frame, write Settings once the
+/// gesture pauses. Does NOT notify `settings` on the way, so PageCanvas /
+/// presets / localStorage stay quiet for the whole drag.
+pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
+    let mut a = state.settings.get_untracked().appearance;
+    apply_scrub(&mut a, patch);
+    set_scrubbing(true);
+    paint_appearance(a);
+
+    let gen = bump_commit_gen();
+    COMMIT_PAYLOAD.with(|p| p.set(Some((state, patch))));
+    clear_commit_timer();
+    let handle = set_timeout_with_handle(
+        move || {
+            if COMMIT_GEN.with(|g| g.get()) != gen {
+                return;
+            }
+            COMMIT_PAYLOAD.with(|p| p.set(None));
+            set_scrubbing(false);
+            state.settings.update(|s| {
+                apply_scrub(&mut s.appearance, patch);
+                s.touch_appearance();
+            });
+        },
+        Duration::from_millis(COMMIT_MS),
+    )
+    .ok();
+    COMMIT_TIMER.with(|t| *t.borrow_mut() = handle);
+}
+
+fn schedule_save(settings: Settings) {
+    if let Some(h) = SAVE_TIMER.with(|t| t.borrow_mut().take()) {
+        h.clear();
+    }
+    let handle = set_timeout_with_handle(
+        move || {
+            save_settings(&settings);
+        },
+        Duration::from_millis(SAVE_MS),
+    )
+    .ok();
+    SAVE_TIMER.with(|t| *t.borrow_mut() = handle);
+}
+
+pub fn theme_applier(state: AppState) {
+    // One effect, one paint: hue / texture / grain all live on Appearance,
+    // and the live-preview path writes the same properties, so splitting
+    // them into three effects just tripled the work on every settings write.
     Effect::new(move || {
         let a = state.settings.get().appearance;
-        let opacity = (a.noise_intensity.min(100) as f64) / 100.0;
-        let Some(body) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.body())
-        else {
-            return;
-        };
-        let class = body.class_list();
-        if a.noise.is_on() {
-            let _ = class.add_1("noise-enabled");
-        } else {
-            let _ = class.remove_1("noise-enabled");
-        }
-        // The animation is a separate class so toggling intensity does not
-        // restart it, and so a static grain costs no compositing work at all.
-        if matches!(a.noise, crate::core::appearance::NoiseMode::Animated) {
-            let _ = class.add_1("noise-animated");
-        } else {
-            let _ = class.remove_1("noise-animated");
-        }
-        if let Some(style) = body.dyn_ref::<web_sys::HtmlElement>().map(|h| h.style()) {
-            let _ = style.set_property("--noise-opacity", &format!("{opacity}"));
-        }
+        paint_appearance_now(a);
     });
 
-    // Persist on change.
     Effect::new(move || {
         let settings = state.settings.get();
-        save_settings(&settings);
+        schedule_save(settings);
     });
 }

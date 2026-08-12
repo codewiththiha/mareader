@@ -11,6 +11,7 @@ use leptos::prelude::*;
 use crate::components::atoms::icon::{Icon, IconName};
 use crate::core::presets::{group_presets, is_builtin, make_preset_id, user_group_names, Preset};
 use crate::core::state::AppState;
+use crate::effects::theme_applier::{cancel_appearance_commit, flush_appearance_commit};
 
 /// One preset thumbnail: a miniature page with a couple of text-ish rules on
 /// it, so tint and texture both have something to act on.
@@ -39,6 +40,9 @@ fn PresetSwatch(preset: Preset, state: AppState) -> impl IntoView {
                     let id = id_for_click.clone();
                     move |_| {
                         let id = id.clone();
+                        // A preset is an explicit look: drop any in-flight
+                        // slider commit so it cannot overwrite this a beat later.
+                        cancel_appearance_commit();
                         state.settings.update(|s| s.apply_preset(&id));
                     }
                 }
@@ -119,6 +123,8 @@ pub fn PresetSection(state: AppState) -> impl IntoView {
             return;
         }
         let group = new_group.get_untracked().trim().to_string();
+        // Persist any in-flight slider so we save what the reader sees.
+        flush_appearance_commit();
         state.settings.update(|s| {
             let id = make_preset_id(&name, &s.user_presets);
             s.user_presets.push(Preset {

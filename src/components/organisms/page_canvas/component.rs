@@ -31,6 +31,7 @@ use super::host::{remove_snapshots, stretch_host};
 use leptos::task::spawn_local;
 
 use crate::api::engine;
+use crate::core::appearance::TextureMode;
 use crate::core::state::AppState;
 
 #[component]
@@ -53,18 +54,20 @@ pub fn PageCanvas(
     on_geometry: Option<Callback<(u32, f64, f64)>>,
 ) -> impl IntoView {
     let state = use_context::<AppState>();
-    let texture = move || {
+    // Memo so a hue/strength write (or last_path persist) does not rebuild
+    // every page host's class. Only a real texture change notifies.
+    let texture = Memo::new(move |_| {
         state
             .as_ref()
-            .map(|s| s.settings.get().appearance.texture.as_str().to_string())
-            .unwrap_or_else(|| "none".to_string())
-    };
+            .map(|s| s.settings.get().appearance.texture)
+            .unwrap_or(TextureMode::None)
+    });
     let host_class = move || {
-        let t = texture();
-        let base = if t == "none" {
+        let t = texture.get();
+        let base = if t == TextureMode::None {
             "pdf-page".to_string()
         } else {
-            format!("pdf-page texture-{t}")
+            format!("pdf-page texture-{}", t.as_str())
         };
         if class.is_empty() {
             base

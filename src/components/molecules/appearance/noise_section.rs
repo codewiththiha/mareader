@@ -9,6 +9,9 @@ use leptos::prelude::*;
 use crate::components::atoms::slider::Slider;
 use crate::core::appearance::NoiseMode;
 use crate::core::state::AppState;
+use crate::effects::theme_applier::{
+    flush_appearance_commit, preview_appearance, AppearanceScrub,
+};
 
 #[component]
 pub fn NoiseSection(state: AppState) -> impl IntoView {
@@ -32,6 +35,7 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
                             type="button"
                             aria-pressed=move || (current() == m).to_string()
                             on:click=move |_| {
+                                flush_appearance_commit();
                                 state
                                     .settings
                                     .update(|s| {
@@ -72,12 +76,7 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 100.0);
                     set_intensity.set(v);
-                    state
-                        .settings
-                        .update(|s| {
-                            s.appearance.noise_intensity = v as u8;
-                            s.touch_appearance();
-                        });
+                    preview_appearance(state, AppearanceScrub::NoiseIntensity(v as u8));
                 }
                 label="Grain intensity".to_string()
             />
