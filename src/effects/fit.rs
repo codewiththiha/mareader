@@ -60,7 +60,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::core::layout::{anchored_scroll, total_height_css, PAGE_GAP};
-use crate::core::math::{clamp_scale, constrained_scale, fit_scale, FitMode};
+use crate::core::math::{clamp_scale, constrained_scale, fit_scale, page_intrinsic, FitMode};
 use crate::core::state::{AppState, SidebarMode};
 use crate::util::dom::page_list;
 
@@ -324,10 +324,19 @@ pub fn fit_effect(state: AppState) {
     // a sidebar slide: both move `container_size`, but only the former moves
     // `window.innerWidth`. No timers, no guessing.
     let last_win_w: StoredValue<f64> = StoredValue::new(f64::NAN);
+    // Last page we computed a fit for. A page-only change must NOT follow
+    // the layout on the same frame (that would zoom on every row boundary
+    // while the reader is scrolling); it waits for the existing debounce.
+    let last_fit_page: StoredValue<u32> = StoredValue::new(0);
 
     Effect::new(move |_| {
         let fit = state.viewer.fit.get();
         let (cw, ch) = state.viewer.container_size.get();
+        // Tracked: a wide plate scrolling into view is the same kind of
+        // "the space the page needs changed" as the sidebar opening.
+        let page = state.viewer.page.get();
+        let widths = state.doc.page_widths.get();
+        let intrins_h = state.doc.page_sizes.get();
         // A zoom GESTURE owns the layout while it runs.
         //
         // `apply_zoom` writes `fit` (to None) and then calls `request_zoom`, so
@@ -377,9 +386,16 @@ pub fn fit_effect(state: AppState) {
         // moving the container. The value itself no longer matters: the page
         // is sized from the space that is actually available, whatever took it.
         let _sidebar_open = state.sidebar.get() != SidebarMode::None;
-        let Some(p) = state.doc.page1_size.get() else {
+        let Some(p1) = state.doc.page1_size.get() else {
             return;
         };
+        // The page under the eyes, not page 1. A landscape insert is cropped
+        // (and a following portrait page stays over-shrunk) if we keep using
+        // the first sheet's size for every page.
+        let (pw, ph) = page_intrinsic(page, &widths, &intrins_h, p1.width, p1.height);
+        let prev_page = last_fit_page.get_value();
+        let page_changed = prev_page != 0 && prev_page != page;
+        last_fit_page.set_value(page);
 
         let win_w = web_sys::window()
             .and_then(|w| w.inner_width().ok())
@@ -408,7 +424,7 @@ pub fn fit_effect(state: AppState) {
         // no fit mode leaves the scale alone, which is what every other reader
         // does: making the window bigger must not silently re-zoom the document.
         let target = if fit != FitMode::None {
-            let t = fit_scale(fit, cw, ch, p.width, p.height, 48.0, state.viewer.scale.get_untracked());
+            let t = fit_scale(fit, cw, ch, pw, ph, 48.0, state.viewer.scale.get_untracked());
             // A fit mode IS a deliberate choice, so it owns the ceiling too.
             // Without this, leaving fit mode would resurrect a `desired_scale`
             // from some earlier gesture and the page would jump to it.
@@ -435,8 +451,8 @@ pub fn fit_effect(state: AppState) {
                 FitMode::Width,
                 cw,
                 ch,
-                p.width,
-                p.height,
+                pw,
+                ph,
                 48.0,
                 state.viewer.scale.get_untracked(),
             );
@@ -479,7 +495,11 @@ pub fn fit_effect(state: AppState) {
             // which is the case it was written for.
             return;
         }
-        if !first_run {
+        // Sidebar / window changes follow the layout on every frame so the
+        // page does not squish. A PAGE change must not: scrolling through a
+        // mixed-size book would zoom on every row boundary. Those wait for
+        // the debounce below, which fires once the reader pauses.
+        if !first_run && !page_changed {
             let cur = state.viewer.display_scale.get_untracked();
             if (target - cur).abs() >= 0.0005 {
                 state.viewer.zoom_animating.set(true);
@@ -518,6 +538,15 @@ pub fn fit_effect(state: AppState) {
                     // Opening a document: no layout to animate from.
                     commit_scale(state, target);
                     return;
+                }
+                // A page-change refit skipped the per-frame relayout (so
+                // scrolling a mixed-size book does not zoom on every row).
+                // Do that relayout NOW, before the crisp render, or the
+                // heights stay at the old scale and the scroll teleports.
+                let cur = state.viewer.display_scale.get_untracked();
+                if (target - cur).abs() >= 0.0005 {
+                    relayout_to(state, target / cur);
+                    state.viewer.display_scale.set(target);
                 }
                 let prev = state.viewer.render_scale.get_untracked();
                 if (target - prev).abs() >= 0.0005 {

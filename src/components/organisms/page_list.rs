@@ -99,7 +99,7 @@ pub fn PageList(state: AppState) -> impl IntoView {
     });
 
     view! {
-        <div id="page-list" class="relative h-full w-full overflow-y-auto">
+        <div id="page-list" class="relative h-full w-full overflow-y-auto outline-none" tabindex="0">
             // Spacer: makes the scrollbar span the whole column.
             <div
                 aria-hidden="true"

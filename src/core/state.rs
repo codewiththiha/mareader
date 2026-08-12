@@ -48,6 +48,13 @@ pub struct DocumentState {
     /// moment the document opens, so `PageList` can lay out the whole column
     /// correctly before anything has rendered.
     pub page_sizes: RwSignal<Vec<f64>>,
+    /// Intrinsic (scale-1) width of every page, 0-based, from engine.open().
+    ///
+    /// Fit and shrink-to-fit read the CURRENT page's width from here, not
+    /// `page1_size`. A landscape insert in a portrait book would otherwise
+    /// be cropped (or a portrait page over-shrunk) because the ceiling was
+    /// computed from the wrong sheet.
+    pub page_widths: RwSignal<Vec<f64>>,
     /// Rendered CSS-px heights per page, 0-based, seeded from `page_sizes` and
     /// refined by on_geometry as pages actually render.
     pub page_heights: RwSignal<Vec<f64>>,
@@ -65,6 +72,7 @@ impl Default for DocumentState {
             outline: RwSignal::new(Vec::new()),
             page1_size: RwSignal::new(None),
             page_sizes: RwSignal::new(Vec::new()),
+            page_widths: RwSignal::new(Vec::new()),
             page_heights: RwSignal::new(Vec::new()),
         }
     }

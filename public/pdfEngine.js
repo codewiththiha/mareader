@@ -387,14 +387,19 @@ async function open(path) {
     // after a zoom. getPage is cheap here: it
     // only parses the page dictionary, not its content stream.
     const pageHeights = new Array(numPages);
+    const pageWidths = new Array(numPages);
     pageHeights[0] = vp.height;
+    pageWidths[0] = vp.width;
     for (let n = 2; n <= numPages; n += 1) {
       try {
         const pg = await pdf.getPage(n);
-        pageHeights[n - 1] = pg.getViewport({ scale: 1 }).height;
+        const v = pg.getViewport({ scale: 1 });
+        pageHeights[n - 1] = v.height;
+        pageWidths[n - 1] = v.width;
         pg.cleanup();
       } catch (_) {
         pageHeights[n - 1] = vp.height; // unreadable page: fall back to page 1
+        pageWidths[n - 1] = vp.width;
       }
     }
     try { page1.cleanup(); } catch (_) {}
@@ -407,6 +412,7 @@ async function open(path) {
       outline,
       page1Size: { width: vp.width, height: vp.height },
       pageHeights,
+      pageWidths,
     };
   } catch (e) {
     if (e && e.name === "PasswordException") {

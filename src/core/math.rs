@@ -19,6 +19,38 @@ pub fn clamp_scale(s: f64) -> f64 {
     s.clamp(MIN_SCALE, MAX_SCALE)
 }
 
+/// Intrinsic (scale-1) size of page `page` (1-based) from the parallel
+/// width/height columns the engine returns on open.
+///
+/// Fit and shrink-to-fit must use the page under the reader's eyes, not
+/// page 1. A landscape plate in an otherwise-portrait book is cropped if
+/// the ceiling is computed from the letter pages around it; a portrait
+/// page after a plate would stay over-shrunk the other way.
+///
+/// Missing / non-positive entries fall back to `fallback_w` / `fallback_h`
+/// (typically page 1), so an older engine that only reported heights still
+/// produces a usable size.
+pub fn page_intrinsic(
+    page: u32,
+    widths: &[f64],
+    heights: &[f64],
+    fallback_w: f64,
+    fallback_h: f64,
+) -> (f64, f64) {
+    let i = page.saturating_sub(1) as usize;
+    let w = widths
+        .get(i)
+        .copied()
+        .filter(|w| *w > 0.0)
+        .unwrap_or(fallback_w);
+    let h = heights
+        .get(i)
+        .copied()
+        .filter(|h| *h > 0.0)
+        .unwrap_or(fallback_h);
+    (w.max(1.0), h.max(1.0))
+}
+
 /// Scale that fits a page (base CSS-px size `page_w` x `page_h`) into a
 /// container of `container_w` x `container_h`, leaving `padding` px of air.
 /// `FitMode::None` should never call this — it returns the caller's current scale.
@@ -181,6 +213,21 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn fit_uses_the_page_under_the_eyes_not_page_one() {
+        // Portrait letter, then a landscape plate twice as wide.
+        let widths = [612.0, 1224.0, 612.0];
+        let heights = [792.0, 792.0, 792.0];
+        assert_eq!(page_intrinsic(1, &widths, &heights, 1.0, 1.0), (612.0, 792.0));
+        assert_eq!(page_intrinsic(2, &widths, &heights, 1.0, 1.0), (1224.0, 792.0));
+        // Same container: the plate must fit at half the scale of the letter.
+        let letter = fit_scale(FitMode::Width, 600.0, 800.0, 612.0, 792.0, 0.0, 1.0);
+        let plate = fit_scale(FitMode::Width, 600.0, 800.0, 1224.0, 792.0, 0.0, 1.0);
+        assert!((letter - 2.0 * plate).abs() < 1e-9, "letter {letter} plate {plate}");
+        // A missing column falls back rather than inventing a zero-width page.
+        assert_eq!(page_intrinsic(9, &[], &[], 612.0, 792.0), (612.0, 792.0));
+    }
 
     /// Fit modes: width uses the container width, page takes the smaller of the
     /// two ratios (so the whole page shows), and padding comes off first.

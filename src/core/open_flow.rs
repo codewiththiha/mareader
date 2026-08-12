@@ -49,9 +49,10 @@ pub fn open_path(state: AppState, path: String) {
                 let page1 = open.page1_size;
                 // Document state.
                 state.doc.num_pages.set(open.num_pages);
-                // Intrinsic per-page heights, straight from the engine. These
+                // Intrinsic per-page sizes, straight from the engine. These
                 // replace the previous document's measured column outright.
                 state.doc.page_sizes.set(open.page_heights.clone());
+                state.doc.page_widths.set(open.page_widths.clone());
                 state.doc.title.set(open.title);
                 state.doc.author.set(open.author);
                 state.doc.outline.set(open.outline);

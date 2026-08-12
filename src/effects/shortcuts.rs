@@ -12,6 +12,7 @@ use crate::core::layout::ViewMode;
 use crate::core::math::{nearest_zoom, FitMode};
 use crate::core::state::{AppState, SidebarMode};
 use crate::effects::fit::request_zoom;
+use crate::util::dom::page_list;
 
 /// Applies a manual zoom step and exits fit mode.
 ///
@@ -60,6 +61,52 @@ fn is_form_target(ev: &leptos::ev::KeyboardEvent) -> bool {
         target.dyn_ref::<web_sys::HtmlInputElement>().is_some()
             || target.dyn_ref::<web_sys::HtmlSelectElement>().is_some()
     })
+}
+
+/// True when the key landed inside a chrome scroller (thumbs, outline, a
+/// popover). Those own their own arrow keys; the reader must not steal them.
+fn is_chrome_scroll_target(ev: &leptos::ev::KeyboardEvent) -> bool {
+    let Some(el) = ev
+        .target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+    else {
+        return false;
+    };
+    for sel in ["#thumb-scroll", "aside", ".menu-popover", ".floating-search-enter"] {
+        if el.closest(sel).ok().flatten().is_some() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Scroll `#page-list` by `dy` CSS px, clamped to the scrollable extent.
+///
+/// Arrow keys in continuous mode used to rely on the BROWSER scrolling
+/// whatever had focus. Focus was almost always a text-layer span on the
+/// page the reader had clicked. Virtualization unmounts that page a few
+/// screens later, the focused node is removed, key-repeat dies, and the
+/// next press lands on `<body>` which is not the scroll container — the
+/// arrows "stop working" until the reader clicks the page again.
+/// Owning the keys on `window` means they keep working regardless of
+/// which node currently has focus.
+fn scroll_reader(dy: f64) {
+    let Some(list) = page_list() else { return };
+    let max = (list.scroll_height() as f64 - list.client_height() as f64).max(0.0);
+    let next = (list.scroll_top() as f64 + dy).clamp(0.0, max);
+    list.set_scroll_top(next.round() as i32);
+}
+
+fn scroll_reader_line(dir: f64) {
+    let Some(list) = page_list() else { return };
+    let step = (list.client_height() as f64 * 0.15).clamp(48.0, 140.0);
+    scroll_reader(dir * step);
+}
+
+fn scroll_reader_page(dir: f64) {
+    let Some(list) = page_list() else { return };
+    let step = (list.client_height() as f64 * 0.9).max(1.0);
+    scroll_reader(dir * step);
 }
 
 /// Must be called once from the app root. Returns a handle so the caller can
@@ -134,18 +181,49 @@ pub fn shortcuts(state: AppState) {
                 ev.prevent_default();
                 page_next(state);
             }
-            // In single-page mode up/down page; in continuous mode they scroll
-            // naturally, so leave them alone.
+            // Single-page: up/down turn the page. Continuous: WE scroll
+            // `#page-list` ourselves — see `scroll_reader`.
             "ArrowUp" => {
                 if state.viewer.mode.get() == ViewMode::Single {
                     ev.prevent_default();
                     page_prev(state);
+                } else if !is_chrome_scroll_target(&ev) {
+                    ev.prevent_default();
+                    scroll_reader_line(-1.0);
                 }
             }
             "ArrowDown" => {
                 if state.viewer.mode.get() == ViewMode::Single {
                     ev.prevent_default();
                     page_next(state);
+                } else if !is_chrome_scroll_target(&ev) {
+                    ev.prevent_default();
+                    scroll_reader_line(1.0);
+                }
+            }
+            "PageUp" => {
+                if state.viewer.mode.get() == ViewMode::Continuous && !is_chrome_scroll_target(&ev) {
+                    ev.prevent_default();
+                    scroll_reader_page(-1.0);
+                }
+            }
+            "PageDown" => {
+                if state.viewer.mode.get() == ViewMode::Continuous && !is_chrome_scroll_target(&ev) {
+                    ev.prevent_default();
+                    scroll_reader_page(1.0);
+                }
+            }
+            " " => {
+                let on_button = ev
+                    .target()
+                    .and_then(|t| t.dyn_into::<web_sys::HtmlButtonElement>().ok())
+                    .is_some();
+                if !on_button
+                    && state.viewer.mode.get() == ViewMode::Continuous
+                    && !is_chrome_scroll_target(&ev)
+                {
+                    ev.prevent_default();
+                    scroll_reader_page(if ev.shift_key() { -1.0 } else { 1.0 });
                 }
             }
             _ => {}

@@ -37,6 +37,14 @@ pub struct OpenResult {
     /// `page1_size.height` for every page in that case.
     #[serde(default)]
     pub page_heights: Vec<f64>,
+    /// Intrinsic (scale-1) width of every page, in document order.
+    ///
+    /// Fit / shrink-to-fit must use the page the reader is LOOKING AT, not
+    /// page 1: a landscape plate in an otherwise-A4 book is cropped if the
+    /// ceiling is computed from the letter pages around it. Empty only for
+    /// engines predating this field; callers fall back to `page1_size.width`.
+    #[serde(default)]
+    pub page_widths: Vec<f64>,
 }
 
 /// `{ok:true, width, height, scale}` — engine.renderPage / renderPages / updatePage.
