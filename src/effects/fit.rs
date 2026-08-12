@@ -111,6 +111,9 @@ pub fn request_zoom(state: AppState, target: f64, animate: bool) {
     // to stop growing when the space returns. A resize deliberately does NOT
     // write this.
     state.viewer.desired_scale.set(target);
+    // Claim the layout for this gesture, so `fit_effect` stops writing
+    // `display_scale` underneath the animation. Released by `commit_scale`.
+    set_gesture_owns_layout(true);
     // Monotonic token: makes every request distinct so two identical targets
     // in a row both register, and so in-flight frames can detect they are stale.
     let token = ZOOM_TOKEN.with(|t| {
@@ -123,6 +126,32 @@ pub fn request_zoom(state: AppState, target: f64, animate: bool) {
 
 thread_local! {
     static ZOOM_TOKEN: Cell<u64> = const { Cell::new(0) };
+    /// True while a zoom GESTURE (not a resize/slide) owns the layout.
+    ///
+    /// Both `zoom_system` and `fit_effect` animate `display_scale` and both
+    /// raise `zoom_animating`, so that signal cannot say WHICH of them is
+    /// driving. This can, and only the gesture may lock the other out.
+    static ZOOM_GESTURE: Cell<bool> = const { Cell::new(false) };
+    /// Set by `commit_scale`, consumed by the `fit_effect` run it triggers.
+    static COMMIT_ECHO: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether a zoom gesture currently owns the layout.
+fn gesture_owns_layout() -> bool {
+    ZOOM_GESTURE.with(|g| g.get())
+}
+
+/// Mark the start/end of a zoom gesture's ownership of the layout.
+fn set_gesture_owns_layout(owns: bool) {
+    ZOOM_GESTURE.with(|g| g.set(owns));
+}
+
+/// Consume the "a commit just happened" marker, returning whether it was set.
+///
+/// One-shot: the next `fit_effect` run after a commit is the echo of that
+/// commit's own signal writes, and must not be mistaken for a resize.
+fn take_commit_echo() -> bool {
+    COMMIT_ECHO.with(|c| c.replace(false))
 }
 
 /// Applies a scale change to the layout IMMEDIATELY and atomically: page
@@ -218,9 +247,13 @@ pub fn zoom_system(state: AppState) {
         let from = state.viewer.display_scale.get_untracked();
         if (target - from).abs() < 1e-9 {
             // Nothing to move, but still commit so `scale`/render agree.
-            state.viewer.scale.set(target);
-            state.viewer.render_scale.set(target);
-            state.viewer.zoom_animating.set(false);
+            //
+            // MUST go through `commit_scale`: it is what releases the gesture's
+            // claim on the layout. Hand-rolling the three signal writes here
+            // (as this did) left the claim set forever, so `fit_effect` was
+            // permanently locked out and the sidebar stopped resizing the page
+            // at all — a dead reader, from one missing release.
+            commit_scale(state, target);
             return;
         }
 
@@ -274,6 +307,11 @@ pub fn zoom_system(state: AppState) {
 /// Ordering matters — releasing `zoom_animating` before `render_scale` would
 /// let the canvases render once at the stale scale first.
 fn commit_scale(state: AppState, s: f64) {
+    // The gesture is over: hand the layout back to `fit_effect`, which will
+    // re-run (it tracks `zoom_animating`) and reconcile this scale against the
+    // space actually available.
+    set_gesture_owns_layout(false);
+    COMMIT_ECHO.with(|c| c.set(true));
     state.viewer.display_scale.set(s);
     state.viewer.scale.set(s);
     state.viewer.render_scale.set(s);
@@ -290,6 +328,50 @@ pub fn fit_effect(state: AppState) {
     Effect::new(move |_| {
         let fit = state.viewer.fit.get();
         let (cw, ch) = state.viewer.container_size.get();
+        // A zoom GESTURE owns the layout while it runs.
+        //
+        // `apply_zoom` writes `fit` (to None) and then calls `request_zoom`, so
+        // this effect re-runs at the very start of every zoom. Without a guard
+        // it recomputed the same target and wrote `display_scale` straight to
+        // it — the rAF animation was then interpolating from a value that had
+        // already arrived, so every zoom SNAPPED in a single frame.
+        //
+        // The flag must distinguish a GESTURE from this effect's own slide
+        // following, which also raises `zoom_animating`. Keying off
+        // `zoom_animating` alone would make the effect block itself: the first
+        // container_size of a sidebar slide would set it, and every subsequent
+        // frame of that slide would bail out — turning the smooth slide into a
+        // one-frame jump, i.e. trading one snap for another.
+        //
+        // `zoom_animating` is still read REACTIVELY so that when the gesture
+        // commits and the flag drops, this effect re-runs and reconciles the
+        // settled scale against the space available — that is what still
+        // shrinks a zoom-in that would overflow a narrow window.
+        //
+        // The ownership flag alone is the gate — NOT `zoom_animating && owned`.
+        // `request_zoom` claims ownership before `zoom_system` has raised
+        // `zoom_animating` (the request is a signal write; the system reacts to
+        // it afterwards). During that gap the guard would still be open, and
+        // this effect — re-run by the `fit` write in `apply_zoom` — would move
+        // `display_scale` all the way to the target. `zoom_system` then started
+        // its animation with `from == target` and had nothing left to
+        // interpolate, which is exactly the snap that survived the first fix.
+        let _animating = state.viewer.zoom_animating.get();
+        if gesture_owns_layout() {
+            return;
+        }
+        // `commit_scale` writes `scale`/`display_scale`/`render_scale` and
+        // releases ownership, and this effect re-runs as a result. That run
+        // must NOT re-enter the slide path: doing so raised `zoom_animating`
+        // again and armed another commit, a self-feeding loop that turned one
+        // render into dozens.
+        //
+        // Comparing the container width is NOT a reliable way to detect it —
+        // the effect legitimately runs twice for each container size during a
+        // slide (measured), so half of a real slide's frames would be
+        // misclassified as "just committed". An explicit one-shot marker set by
+        // `commit_scale` is unambiguous.
+        let just_committed = take_commit_echo();
         // Tracked (and deliberately unused) so a sidebar toggle re-runs this
         // effect the moment it starts, not only once the animation has begun
         // moving the container. The value itself no longer matters: the page
@@ -382,6 +464,21 @@ pub fn fit_effect(state: AppState) {
         // debounce below then commits ONE crisp render when the slide settles.
         // Same rule as a zoom gesture, same machinery — a smooth ride, one
         // render, and no distortion at any point along the way.
+        if just_committed {
+            // A gesture just landed: leave it exactly where the reader put it.
+            //
+            // The shrink-to-fit ceiling answers "the space got smaller", NOT
+            // "the reader asked for more". Reconciling here applied the ceiling
+            // to the gesture itself, so from a fit-width start every `+` was
+            // computed, animated, and then immediately undone — the zoom
+            // control looked broken because the page could never grow past the
+            // window. Zooming in past the fit is deliberate and allowed; the
+            // page simply overflows and scrolls, as in every desktop reader.
+            //
+            // The ceiling still applies on the next real container change,
+            // which is the case it was written for.
+            return;
+        }
         if !first_run {
             let cur = state.viewer.display_scale.get_untracked();
             if (target - cur).abs() >= 0.0005 {

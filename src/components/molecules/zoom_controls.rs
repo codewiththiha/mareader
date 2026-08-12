@@ -11,7 +11,7 @@ use crate::components::atoms::button::{Button, ButtonKind};
 use crate::components::atoms::icon::{Icon, IconName};
 use crate::components::atoms::separator::Separator;
 use crate::components::atoms::tooltip::Tooltip;
-use crate::core::math::{nearest_zoom, FitMode, ZOOM_STEPS};
+use crate::core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
 use crate::core::state::AppState;
 use crate::effects::fit::request_zoom;
 
@@ -91,6 +91,35 @@ pub fn ZoomControls(state: AppState) -> impl IntoView {
 
     let percent = move || format!("{}%", (state.viewer.scale.get() * 100.0).round() as u32);
 
+    // When the window (or the sidebar) leaves too little room, the page is held
+    // BELOW the zoom the reader picked so it fits instead of being cropped.
+    // The readout then shows a percentage nobody chose, which looks like the
+    // app forgot the setting — so the tooltip says what is going on and what it
+    // will return to. Purely explanatory: the number itself stays honest about
+    // what is on screen.
+    let zoom_title = move || {
+        let shown = state.viewer.scale.get();
+        let desired = state.viewer.desired_scale.get();
+        let (cw, ch) = state.viewer.container_size.get();
+        let held_back = state
+            .doc
+            .page1_size
+            .get()
+            .map(|p| {
+                let fit_w = fit_scale(FitMode::Width, cw, ch, p.width, p.height, 48.0, shown);
+                is_space_constrained(desired, fit_w)
+            })
+            .unwrap_or(false);
+        if held_back {
+            format!(
+                "Zoom — fitted to the window; returns to {}% when there is room",
+                (desired * 100.0).round() as u32
+            )
+        } else {
+            "Zoom".to_string()
+        }
+    };
+
     let trigger_class = move || {
         let base = "inline-flex items-center justify-center gap-1.5 rounded-lg border h-9 px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent border-line bg-surface text-ink hover:bg-line";
         if open.get() {
@@ -145,7 +174,12 @@ pub fn ZoomControls(state: AppState) -> impl IntoView {
             <div class="relative inline-flex">
                 <button
                     type="button"
-                    title="Zoom"
+                    // Stable hook for tests and tooling. `title` is USER-FACING
+                    // copy that now changes to explain a space-constrained
+                    // zoom, so it is not an identity — anything selecting this
+                    // control must use this attribute instead.
+                    data-zoom-readout="true"
+                    title=zoom_title
                     on:click=move |_| open.set(!open.get())
                     class=trigger_class
                 >
