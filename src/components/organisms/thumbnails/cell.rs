@@ -15,7 +15,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api::engine;
-use crate::core::state::{AppState, SidebarMode};
+use crate::core::state::AppState;
 
 use super::geometry::{CELL_W, PULSE_STOP_MS, THUMB_SCALE};
 
@@ -226,9 +226,11 @@ pub fn ThumbCell(
         <button
             type="button"
             class="flex w-full cursor-pointer flex-col items-center"
+            // Jumping to a page does NOT close the panel: browsing thumbnails
+            // is a navigation loop (jump, look, jump again), and closing the
+            // sidebar on every click forces the reader to reopen it each time.
             on:click=move |_| {
                 state.viewer.page.set(page);
-                state.sidebar.set(SidebarMode::None);
             }
         >
             // The card holds ONE permanent themed backdrop (`thumb-card`) under

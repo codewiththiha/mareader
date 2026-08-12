@@ -61,7 +61,7 @@ use wasm_bindgen::JsCast;
 
 use crate::core::layout::{anchored_scroll, total_height_css, PAGE_GAP};
 use crate::core::math::{clamp_scale, fit_scale, FitMode};
-use crate::core::state::AppState;
+use crate::core::state::{AppState, SidebarMode};
 use crate::util::dom::page_list;
 
 /// Duration of the zoom layout animation. Long enough to read as motion,
@@ -278,13 +278,20 @@ pub fn fit_effect(state: AppState) {
     // a sidebar slide: both move `container_size`, but only the former moves
     // `window.innerWidth`. No timers, no guessing.
     let last_win_w: StoredValue<f64> = StoredValue::new(f64::NAN);
+    // Container width at the previous run, so a slide can be followed
+    // proportionally when there is no fit mode to recompute from.
+    let last_cw: StoredValue<f64> = StoredValue::new(f64::NAN);
+    // Whether the sidebar was open last time, and whether we are currently
+    // riding out a slide it started.
+    let prev_open: StoredValue<bool> = StoredValue::new(false);
+    let following_slide: StoredValue<bool> = StoredValue::new(false);
 
     Effect::new(move |_| {
         let fit = state.viewer.fit.get();
-        if fit == FitMode::None {
-            return;
-        }
         let (cw, ch) = state.viewer.container_size.get();
+        // Tracked so a sidebar toggle re-runs this effect the moment it starts,
+        // not only once the animation has moved the container.
+        let sidebar_open = state.sidebar.get() != SidebarMode::None;
         let Some(p) = state.doc.page1_size.get() else {
             return;
         };
@@ -301,15 +308,36 @@ pub fn fit_effect(state: AppState) {
             last_win_w.set_value(win_w);
         }
 
-        let target = fit_scale(
-            fit,
-            cw,
-            ch,
-            p.width,
-            p.height,
-            48.0,
-            state.viewer.scale.get_untracked(),
-        );
+        let prev_cw = last_cw.get_value();
+        last_cw.set_value(cw);
+        let was_open = prev_open.get_value();
+        prev_open.set_value(sidebar_open);
+        if !first_run && was_open != sidebar_open {
+            // A toggle just started: follow the slide until it settles.
+            following_slide.set_value(true);
+        }
+
+        // The scale this run is aiming at.
+        //
+        // With a fit mode, that is whatever fits the new container. WITHOUT one
+        // (the reader has zoomed by hand, so `fit` is `None`) there is nothing
+        // to recompute — but the sidebar must still push the page around, so
+        // the zoom is carried across the slide PROPORTIONALLY: the page keeps
+        // the same fraction of the container width it had before, which is what
+        // makes opening the panel shrink the page and closing it grow the page
+        // back to exactly where it was.
+        //
+        // This is deliberately scoped to a sidebar slide. A window resize with
+        // no fit mode leaves the scale alone, which is what every other reader
+        // does: making the window bigger must not silently re-zoom the document.
+        let target = if fit != FitMode::None {
+            fit_scale(fit, cw, ch, p.width, p.height, 48.0, state.viewer.scale.get_untracked())
+        } else if following_slide.get_value() && !window_resized && prev_cw.is_finite() && prev_cw > 1.0 && cw > 1.0 {
+            clamp_scale(state.viewer.display_scale.get_untracked() * (cw / prev_cw))
+        } else {
+            // Nothing to do: no fit mode and not mid-slide.
+            return;
+        };
 
         // --- the sidebar slide ------------------------------------------------
         // The `<aside>` animates its width over 300ms, so `container_size`
@@ -341,6 +369,7 @@ pub fn fit_effect(state: AppState) {
         // for ~120ms — one render per slide or per resize drag, at the end.
         let handle = set_timeout_with_handle(
             move || {
+                following_slide.set_value(false);
                 if first_run {
                     // Opening a document: no layout to animate from.
                     commit_scale(state, target);
