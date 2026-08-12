@@ -8,7 +8,9 @@
 //!    margin). Each page is an absolutely-positioned wrapper centered in the
 //!    column, containing a shared foundation `PageCanvas`. Evicted pages are
 //!    unmounted by `<For>` (their `on_cleanup` unregisters them with the
-//!    engine); entering pages render via PageCanvas's own `scale` effect.
+//!    engine, which zeros the canvas backing store — WKWebView will not
+//!    release it on DOM removal alone); entering pages render via
+//!    PageCanvas's own `scale` effect.
 
 use leptos::prelude::*;
 

@@ -3,8 +3,9 @@
 //! Renders a low-scale canvas for every page (no text layer) by talking to the
 //! engine directly — `PageCanvas` always builds a text layer, thumbnails must
 //! not. Clicking a thumbnail jumps to that page and closes the panel. The panel
-//! self-cleans: every canvas unregisters when its cell unmounts, which keeps
-//! WKWebView memory in check. The panel itself stays permanently mounted (the
+//! self-cleans: every canvas is cancelled (and its backing store zeroed) when
+//! its cell unmounts. Unmount alone is not enough in WKWebView — see
+//! `releaseCanvas` in `pdfEngine.js`. The panel itself stays permanently mounted (the
 //! sidebar toggles it with `visibility`, not a remount), so its visible
 //! virtualization window of canvases remains engine-bound while the sidebar is
 //! collapsed or on Outline — bounded to the window (never the whole document),

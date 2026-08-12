@@ -25,7 +25,7 @@ let numPages = 0;
 // canvasId -> { page, canvas, host, textLayerEl, renderTask, textLayer, viewport, scale }
 const stateByCanvasId = new Map();
 // --- thumbnail bitmap cache ------------------------------------------------
-// page (1-based) -> { canvas, width, height, cssW, cssH, scale }
+// page (1-based) -> { bitmap|canvas, cssW, cssH, scale }
 //
 // Thumbnails are virtualized: a cell UNMOUNTS when it scrolls out of the grid
 // window and REMOUNTS when it scrolls back. Without a cache every remount
@@ -33,16 +33,26 @@ const stateByCanvasId = new Map();
 // loading skeleton and then crossfaded to the painted canvas — the subtle
 // per-row brightness flicker on scroll. The cache keeps the finished bitmap of
 // every page the user has already seen, so a remount can blit it into the fresh
-// canvas SYNCHRONOUSLY (see paintThumb) — painted on the first frame, no
+// canvas SYNCHRONOUSLY (see paintCached) — painted on the first frame, no
 // skeleton, no crossfade, no flicker.
 //
 // LRU-bounded: entries are re-inserted on hit (Map preserves insertion order)
-// and the oldest are dropped past THUMB_CACHE_MAX, so a 2000-page document
-// can't grow the cache without limit.
+// and the oldest are dropped past THUMB_CACHE_MAX. 64 is ~6 screens of the
+// 2-column grid — enough that a remount inside normal browsing is still a
+// sync blit — without pinning hundreds of bitmaps. Evicted entries are
+// released immediately (ImageBitmap.close / canvas width=0); just deleting
+// the Map key is not enough in WKWebView.
+//
+// Stored as ImageBitmap when the browser allows it so eviction can free GPU
+// memory synchronously. Falls back to a detached canvas.
 const thumbCache = new Map();
-const THUMB_CACHE_MAX = 256;
+const THUMB_CACHE_MAX = 64;
 // canvasId -> in-flight thumbnail RenderTask (cancelled by cancelThumb).
 const thumbTasks = new Map();
+// canvasId -> the cell unmounted while a render was in flight. The slow path
+// still caches the finished frame (so a remount is instant) but must NOT
+// re-allocate a backing store on a canvas Leptos is about to drop.
+const thumbCancelled = new Set();
 // page (1-based) -> [{ str, x, y, w, h }] searchable text with rects in TOP-origin
 // scale-1 CSS px (see itemRect). Used for search matching + the results API.
 const textIndex = new Map();
@@ -55,7 +65,13 @@ const highlightsByPage = new Map();
 let searchQuery = "";
 
 let renderCount = 0;
+// pdf.js keeps operator lists / decoded images per page. Once a page has
+// left the window we want those gone; every-N is a backstop for pages that
+// stay mounted across many re-renders (zoom).
 const CLEANUP_EVERY = 5;
+// Cap one page's RGBA backing store. At 5× zoom on a retina display an
+// uncapped letter page is ~48MP / 192MB; 8MP is 32MB and still sharp.
+const PAGE_MAX_PIXELS = 8 * 1024 * 1024;
 
 // --- helpers ---------------------------------------------------------
 const fail = (name, message) => ({ ok: false, error: { name, message } });
@@ -71,16 +87,95 @@ function el(id) {
   return document.getElementById(id);
 }
 
+/// Force the browser to drop a canvas backing store.
+///
+/// Removing a <canvas> from the DOM is NOT enough in WKWebView (Tauri): the
+/// IOSurface stays allocated until a later GC, so RAM grows with every page
+/// the reader has scrolled past — 400MB, then 800MB, then 1GB. Assigning
+/// width/height to 0 releases the buffer immediately.
+function releaseCanvas(canvas) {
+  if (!canvas) return;
+  try {
+    if (canvas.width !== 0) canvas.width = 0;
+    if (canvas.height !== 0) canvas.height = 0;
+  } catch (_) { /* detached / already gone */ }
+}
+
+/// Drop a cached thumbnail's GPU buffer. ImageBitmap.close() is synchronous;
+/// a leftover canvas is zeroed the same way as a live page.
+function releaseThumbEntry(entry) {
+  if (!entry) return;
+  try {
+    if (entry.bitmap && typeof entry.bitmap.close === "function") {
+      entry.bitmap.close();
+    }
+  } catch (_) { /* already closed */ }
+  entry.bitmap = null;
+  releaseCanvas(entry.canvas);
+  entry.canvas = null;
+}
+
+/// Zero every canvas inside a page host (the live bitmap AND any zoom
+/// snapshot) and drop the text/link layers the state object is keeping alive.
+function releasePageSurfaces(st) {
+  if (!st) return;
+  if (st.host) {
+    try {
+      st.host.querySelectorAll("canvas").forEach(releaseCanvas);
+      const text = st.host.querySelector(".textLayer");
+      if (text) text.replaceChildren();
+      const links = st.host.querySelector(".linkLayer");
+      if (links) links.remove();
+      st.host.querySelectorAll(".highlight").forEach((n) => n.remove());
+      st.host.querySelectorAll(".page-snapshot").forEach((n) => n.remove());
+    } catch (_) { /* host already detached */ }
+  }
+  releaseCanvas(st.canvas);
+  st.canvas = null;
+  st.host = null;
+  st.textLayerEl = null;
+  st.viewport = null;
+}
+
+function sweepPdf() {
+  if (!pdf) return;
+  try { pdf.cleanup(); } catch (_) {}
+}
+
+/// Device-pixel scale for a page raster. Retina up to 2× while the page is
+/// small; shrinks below 1× when the CSS box itself would blow the pixel budget
+/// (a 5× zoom of a letter page is already 12MP before any DPR multiply).
+function pageOutputScale(cssW, cssH) {
+  const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
+  if (!(cssW > 0) || !(cssH > 0)) return dpr;
+  const capped = Math.sqrt(PAGE_MAX_PIXELS / (cssW * cssH));
+  return Math.min(dpr, Math.max(0.5, capped));
+}
+
+function thumbSource(entry) {
+  if (!entry) return null;
+  if (entry.bitmap && entry.bitmap.width > 0) return entry.bitmap;
+  if (entry.canvas && entry.canvas.width > 0) return entry.canvas;
+  return null;
+}
+
 // --- thumbnail cache helpers ----------------------------------------------
 /// LRU insert: re-inserting an existing key moves it to the end (Map keeps
 /// insertion order), so the first key is always the least recently used.
+/// Evicted / replaced entries are RELEASED, not just dropped from the Map.
 function cachePut(page, entry) {
-  if (thumbCache.has(page)) thumbCache.delete(page);
+  if (thumbCache.has(page)) {
+    const prev = thumbCache.get(page);
+    thumbCache.delete(page);
+    if (prev && prev !== entry) releaseThumbEntry(prev);
+  }
   thumbCache.set(page, entry);
   while (thumbCache.size > THUMB_CACHE_MAX) {
     const oldest = thumbCache.keys().next();
     if (oldest.done) break;
+    const oldEntry = thumbCache.get(oldest.value);
     thumbCache.delete(oldest.value);
+    if (oldEntry && oldEntry !== entry) releaseThumbEntry(oldEntry);
   }
 }
 
@@ -92,14 +187,13 @@ function cachePut(page, entry) {
 /// clears the target, but the very next statement paints the full cached frame
 /// in the SAME task, so the browser never composites the empty intermediate.
 function paintCached(dst, entry) {
-  if (!dst || !entry || entry.canvas.width <= 0 || entry.canvas.height <= 0) {
-    return null;
-  }
-  dst.width = entry.canvas.width;
-  dst.height = entry.canvas.height;
+  const src = thumbSource(entry);
+  if (!dst || !src) return null;
+  dst.width = src.width;
+  dst.height = src.height;
   const ctx = dst.getContext("2d");
   if (!ctx) return null;
-  ctx.drawImage(entry.canvas, 0, 0);
+  ctx.drawImage(src, 0, 0);
   return { width: entry.cssW, height: entry.cssH };
 }
 
@@ -131,18 +225,18 @@ function hasThumb(page, scale) {
 /// cached thumbnail of the page is better than nothing.
 function blitThumb(canvasId, page) {
   const dst = el(canvasId);
-  const hit = thumbCache.get(page);
-  if (!dst || !hit || hit.canvas.width <= 0 || hit.canvas.height <= 0) return false;
+  const src = thumbSource(thumbCache.get(page));
+  if (!dst || !src) return false;
   // Keep the destination's own backing store if it already has one (the host
   // sizes it); otherwise adopt the thumb's aspect at a usable resolution.
   if (dst.width <= 0 || dst.height <= 0) {
-    dst.width = hit.canvas.width;
-    dst.height = hit.canvas.height;
+    dst.width = src.width;
+    dst.height = src.height;
   }
   const ctx = dst.getContext("2d");
   if (!ctx) return false;
   try {
-    ctx.drawImage(hit.canvas, 0, 0, dst.width, dst.height);
+    ctx.drawImage(src, 0, 0, dst.width, dst.height);
     return true;
   } catch (_) {
     return false;
@@ -259,6 +353,10 @@ async function open(path) {
       data: bytes,
       cMapUrl: "/vendor/pdfjs/cmaps/",
       cMapPacked: true,
+      // We already hold the full byte buffer; don't let the worker prefetch
+      // every page's stream on top of that.
+      disableAutoFetch: true,
+      disableStream: true,
     });
     pdf = await loadingTask.promise;
     numPages = pdf.numPages;
@@ -299,6 +397,7 @@ async function open(path) {
         pageHeights[n - 1] = vp.height; // unreadable page: fall back to page 1
       }
     }
+    try { page1.cleanup(); } catch (_) {}
 
     return {
       ok: true,
@@ -329,16 +428,21 @@ async function open(path) {
 
 async function destroy() {
   for (const st of stateByCanvasId.values()) {
+    st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) {}
     try { st.textLayer && st.textLayer.cancel(); } catch (_) {}
+    releasePageSurfaces(st);
   }
   stateByCanvasId.clear();
   // Thumbnail lane: cancel in-flight renders and drop every cached bitmap —
-  // a new document must never blit the previous one's pages.
+  // a new document must never blit the previous one's pages. close()/zero
+  // each entry; Map.clear() alone leaves the IOSurfaces alive in WKWebView.
   for (const task of thumbTasks.values()) {
     try { task.cancel(); } catch (_) {}
   }
   thumbTasks.clear();
+  thumbCancelled.clear();
+  for (const entry of thumbCache.values()) releaseThumbEntry(entry);
   thumbCache.clear();
   textIndex.clear();
   highlightsByPage.clear();
@@ -358,6 +462,14 @@ function pageCount() {
 function registerPage(payload) {
   const canvas = el(payload.canvasId);
   if (!canvas) return;
+  const existing = stateByCanvasId.get(payload.canvasId);
+  if (existing) {
+    // Same id, new mount (or a stray re-register). Kill the old render but
+    // do NOT zero the canvas — the element is being reused.
+    existing.dead = true;
+    try { existing.renderTask && existing.renderTask.cancel(); } catch (_) {}
+    try { existing.textLayer && existing.textLayer.cancel(); } catch (_) {}
+  }
   const host = payload.hostId ? el(payload.hostId) : null;
   const textLayerEl = host ? host.querySelector(".textLayer") : null;
   stateByCanvasId.set(payload.canvasId, {
@@ -369,16 +481,23 @@ function registerPage(payload) {
     textLayer: null,
     viewport: null,
     scale: 1,
+    dead: false,
   });
 }
 
 function unregisterPage(canvasId) {
   const st = stateByCanvasId.get(canvasId);
   if (st) {
+    st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) {}
     try { st.textLayer && st.textLayer.cancel(); } catch (_) {}
+    // Zero the backing store BEFORE the element leaves the DOM. This is the
+    // load-bearing WKWebView fix: without it, every page the reader has
+    // scrolled past keeps its full-resolution IOSurface forever.
+    releasePageSurfaces(st);
   }
   stateByCanvasId.delete(canvasId);
+  sweepPdf();
 }
 
 function cancelPage(canvasId) {
@@ -484,14 +603,19 @@ function safeExternalUrl(raw) {
 /// Built detached and swapped in, for the same reason the text layer is: a
 /// superseded render must never drop a half-built set of anchors on top of the
 /// live ones.
-async function buildLinkLayer(st, viewport) {
+async function buildLinkLayer(st, viewport, page) {
   const { host } = st;
   if (!host) return;
 
   let annots = [];
   try {
-    const page = await pdf.getPage(st.page);
-    annots = await page.getAnnotations({ intent: "display" });
+    // Reuse the page the caller already has — a second getPage would pin
+    // another PDFPageProxy until the next cleanup sweep.
+    const src = page || await pdf.getPage(st.page);
+    annots = await src.getAnnotations({ intent: "display" });
+    if (!page) {
+      try { src.cleanup(); } catch (_) {}
+    }
   } catch (_) {
     annots = [];
   }
@@ -572,6 +696,11 @@ async function renderPageInternal(canvasId, scale, renderText) {
   st.textLayer = null;
 
   const page = await pdf.getPage(st.page);
+  if (st.dead || !st.canvas) {
+    try { page.cleanup(); } catch (_) {}
+    releasePageSurfaces(st);
+    return fail("cancelled", "Render cancelled");
+  }
   const viewport = page.getViewport({ scale });
 
   // HiDPI backing store. Only the BACKING STORE (width/height attributes) is
@@ -590,11 +719,15 @@ async function renderPageInternal(canvasId, scale, renderText) {
   // with the host every frame (which is the whole premise of zoom: animate
   // already-painted bitmaps, then land one crisp render), and the crisp render
   // below still resets the backing store to the new scale.
-  const out = Math.min(globalThis.devicePixelRatio || 1, 2);
+  //
+  // PIXEL BUDGET: retina up to 2×, but never more than PAGE_MAX_PIXELS. An
+  // uncapped 5× letter page on a 2× display is ~192MB of RGBA; the budget
+  // keeps that at 32MB and the CSS box still stretches the bitmap.
   const cssW = Math.floor(viewport.width);
   const cssH = Math.floor(viewport.height);
-  st.canvas.width = Math.floor(viewport.width * out);
-  st.canvas.height = Math.floor(viewport.height * out);
+  const out = pageOutputScale(cssW, cssH);
+  st.canvas.width = Math.max(1, Math.floor(viewport.width * out));
+  st.canvas.height = Math.max(1, Math.floor(viewport.height * out));
   const ctx = st.canvas.getContext("2d");
   const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 
@@ -603,9 +736,16 @@ async function renderPageInternal(canvasId, scale, renderText) {
   try {
     await task.promise;
   } catch (e) {
+    try { page.cleanup(); } catch (_) {}
+    if (st.dead) releasePageSurfaces(st);
     if (e && e.name === "RenderingCancelledException") return fail("cancelled", "Render cancelled");
     const info = errorInfo(e);
     return fail(info.name, info.message);
+  }
+  if (st.dead) {
+    try { page.cleanup(); } catch (_) {}
+    releasePageSurfaces(st);
+    return fail("cancelled", "Render cancelled");
   }
 
   if (renderText && st.host && st.textLayerEl) {
@@ -640,9 +780,16 @@ async function renderPageInternal(canvasId, scale, renderText) {
     try {
       await tl.render();
     } catch (e) {
+      try { page.cleanup(); } catch (_) {}
+      if (st.dead) releasePageSurfaces(st);
       if (e && e.name === "AbortException") return fail("cancelled", "Text render cancelled");
       const info = errorInfo(e);
       return fail(info.name, info.message);
+    }
+    if (st.dead) {
+      try { page.cleanup(); } catch (_) {}
+      releasePageSurfaces(st);
+      return fail("cancelled", "Render cancelled");
     }
 
     // Swap in the finished layer. Re-read the current node from the host: an
@@ -662,7 +809,7 @@ async function renderPageInternal(canvasId, scale, renderText) {
     // Links ride along with the text layer: both are per-page overlays that
     // only matter for the pages the reader can actually interact with, and
     // both must be rebuilt at the new geometry after a scale change.
-    await buildLinkLayer(st, viewport);
+    await buildLinkLayer(st, viewport, page);
   }
 
   st.viewport = viewport;
@@ -670,9 +817,7 @@ async function renderPageInternal(canvasId, scale, renderText) {
   page.cleanup();
 
   renderCount += 1;
-  if (renderCount % CLEANUP_EVERY === 0) {
-    try { pdf.cleanup(); } catch (_) {}
-  }
+  if (renderCount % CLEANUP_EVERY === 0) sweepPdf();
 
   return { ok: true, width: cssW, height: cssH, scale };
 }
@@ -719,17 +864,21 @@ async function renderThumb(canvasId, page, scale) {
   // when it starts, which is what made a remounting row flash).
   try { thumbTasks.get(canvasId)?.cancel(); } catch (_) {}
   thumbTasks.delete(canvasId);
+  thumbCancelled.delete(canvasId);
 
   try {
     const pg = await pdf.getPage(page);
     const viewport = pg.getViewport({ scale });
-    const out = Math.min(globalThis.devicePixelRatio || 1, 2);
+    // Thumbs are painted into a 120px CSS card. Scale 0.25 already gives
+    // ~153 CSS px on a letter page — 1× device pixels is enough, and 2×
+    // was 4× the memory for no visible gain.
+    const out = 1;
     const cssW = Math.floor(viewport.width);
     const cssH = Math.floor(viewport.height);
 
     const off = document.createElement("canvas");
-    off.width = Math.floor(viewport.width * out);
-    off.height = Math.floor(viewport.height * out);
+    off.width = Math.max(1, Math.floor(viewport.width * out));
+    off.height = Math.max(1, Math.floor(viewport.height * out));
     const ctx = off.getContext("2d");
     if (!ctx) return fail("no_context", "No 2d context");
     const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
@@ -740,6 +889,8 @@ async function renderThumb(canvasId, page, scale) {
       await task.promise;
     } catch (e) {
       thumbTasks.delete(canvasId);
+      releaseCanvas(off);
+      try { pg.cleanup(); } catch (_) {}
       if (e && e.name === "RenderingCancelledException") {
         return fail("cancelled", "Thumb render cancelled");
       }
@@ -749,13 +900,26 @@ async function renderThumb(canvasId, page, scale) {
     thumbTasks.delete(canvasId);
     pg.cleanup();
 
-    const entry = { canvas: off, cssW, cssH, scale };
+    // Prefer ImageBitmap: close() frees GPU memory on eviction. Fall back
+    // to keeping the detached canvas when createImageBitmap is missing.
+    let entry = { canvas: off, cssW, cssH, scale };
+    if (typeof createImageBitmap === "function") {
+      try {
+        const bitmap = await createImageBitmap(off);
+        releaseCanvas(off);
+        entry = { bitmap, cssW, cssH, scale };
+      } catch (_) { /* keep the canvas */ }
+    }
     cachePut(page, entry);
 
-    // The cell may have unmounted while the render was in flight; re-resolve
-    // the element instead of trusting the one captured above.
-    const live = el(canvasId);
-    if (live) paintCached(live, entry);
+    // The cell may have unmounted while the render was in flight. Still
+    // cache the frame (so a remount is instant) but do not paint — that
+    // would re-allocate a backing store on an element about to die.
+    if (!thumbCancelled.has(canvasId)) {
+      const live = el(canvasId);
+      if (live) paintCached(live, entry);
+    }
+    thumbCancelled.delete(canvasId);
 
     return { ok: true, width: cssW, height: cssH, scale, cached: false };
   } catch (e) {
@@ -767,13 +931,28 @@ async function renderThumb(canvasId, page, scale) {
 
 /// Cancel an in-flight thumbnail render (called when a cell unmounts). The
 /// cache is deliberately NOT touched: a page that scrolls out and back must
-/// still repaint instantly from its cached bitmap.
+/// still repaint instantly from its cached bitmap. The LIVE canvas is
+/// zeroed so WKWebView drops its backing store with the cell.
 function cancelThumb(canvasId) {
   const task = thumbTasks.get(canvasId);
   if (task) {
     try { task.cancel(); } catch (_) {}
     thumbTasks.delete(canvasId);
   }
+  thumbCancelled.add(canvasId);
+  releaseCanvas(el(canvasId));
+}
+
+/// Engine-owned resource counts. Used by the verify harness to assert that
+/// unmount / destroy actually drop canvases rather than just forgetting the
+/// Map key. Additive; not part of the render contract.
+function stats() {
+  return {
+    pages: stateByCanvasId.size,
+    thumbs: thumbCache.size,
+    thumbLimit: THUMB_CACHE_MAX,
+    thumbTasks: thumbTasks.size,
+  };
 }
 
 async function renderPages(entries, scale) {
@@ -902,6 +1081,7 @@ globalThis.PDFReader = {
   cancelThumb,
   hasThumb,
   blitThumb,
+  stats,
   updatePage,
   buildSearchIndex,
   search,

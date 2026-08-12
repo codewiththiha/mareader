@@ -102,12 +102,20 @@ pub(super) fn stretch_host(
 /// Remove every `.page-snapshot` overlay from a `.pdf-page` host. Iterates
 /// backwards because `query_selector_all` returns a live NodeList: removing a
 /// node shifts later indices, so a forward loop could skip one.
+///
+/// The backing store is zeroed BEFORE the node is removed. WKWebView (Tauri)
+/// does not release a canvas IOSurface on DOM removal alone, so a snapshot
+/// dropped after every zoom would otherwise leak a full-page RGBA buffer.
 pub(super) fn remove_snapshots(host: &web_sys::Element) {
     if let Ok(stale) = host.query_selector_all(".page-snapshot") {
         let mut i = stale.length();
         while i > 0 {
             i -= 1;
             if let Some(n) = stale.get(i) {
+                if let Some(cv) = n.dyn_ref::<web_sys::HtmlCanvasElement>() {
+                    cv.set_width(0);
+                    cv.set_height(0);
+                }
                 if let Some(el) = n.dyn_ref::<web_sys::Element>() {
                     el.remove();
                 }
