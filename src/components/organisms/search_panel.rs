@@ -1,4 +1,11 @@
 //! Search results panel. OWNED BY branch C (panels/sidebar).
+//!
+//! `SearchPanel` is orphaned (U5 moved search into the floating overlay, which
+//! composes `ResultList` directly) but is kept as the panel form of the UI.
+//! The `allow` is module-scoped rather than on the item because leptos 0.8
+//! expands a component into a generated `…Props` struct, and an attribute on
+//! the fn does not reach that struct's fields.
+#![allow(dead_code)]
 
 use leptos::prelude::*;
 

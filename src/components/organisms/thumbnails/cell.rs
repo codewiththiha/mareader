@@ -115,12 +115,12 @@ pub fn ThumbCell(
     //     the canvas is painted in the same task the cell mounts in.
     // Only genuinely NEW pages take the slow path and show the skeleton once.
     let cid_render = cid.clone();
-    let gen = generation.clone();
+    let doc_gen = generation.clone();
     let bound_render = bound.clone();
     Effect::new(move || {
-        let gen_now = gen.load(Ordering::Relaxed);
+        let gen_now = doc_gen.load(Ordering::Relaxed);
         let cid2 = cid_render.clone();
-        let gen_async = gen.clone();
+        let gen_async = doc_gen.clone();
         let bound_async = bound_render.clone();
         spawn_local(async move {
             if let Ok(mut guard) = bound_async.lock() {

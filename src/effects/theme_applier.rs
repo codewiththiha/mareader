@@ -284,12 +284,12 @@ pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
     set_scrubbing(true);
     paint_appearance(a);
 
-    let gen = bump_commit_gen();
+    let commit_gen = bump_commit_gen();
     COMMIT_PAYLOAD.with(|p| p.set(Some((state, patch))));
     clear_commit_timer();
     let handle = set_timeout_with_handle(
         move || {
-            if COMMIT_GEN.with(|g| g.get()) != gen {
+            if COMMIT_GEN.with(|g| g.get()) != commit_gen {
                 return;
             }
             COMMIT_PAYLOAD.with(|p| p.set(None));
