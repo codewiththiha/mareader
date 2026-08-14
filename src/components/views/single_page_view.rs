@@ -46,7 +46,10 @@ pub fn SinglePageView(state: AppState) -> impl IntoView {
             id=SINGLE_PAGE_CONTAINER_ID
             class="flex h-full w-full items-start justify-center overflow-auto bg-surface"
         >
-            <div class="p-6">
+            // `pt-18` = the 1.5rem the page always had plus the 3rem toolbar,
+            // so the sheet clears the glass header while the scroller still
+            // spans the full window and lets the page slide under the bar.
+            <div class="px-6 pb-6 pt-18">
                 <For
                     // Single-item keyed list: the key IS the page, so a page
                     // change unmounts the old wrapper and mounts a fresh one

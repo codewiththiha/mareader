@@ -110,12 +110,12 @@ pub fn FloatingSearch(state: AppState) -> impl IntoView {
             return;
         }
         search_gen.update(|g| *g += 1);
-        let gen = search_gen.get();
+        let started_gen = search_gen.get();
         spawn_local(async move {
             run_search(state).await;
             // Only the newest submit applies; skip if a newer search was
             // submitted or the input changed while this one was in flight.
-            if search_gen.get() == gen && state.search.query.get() == q {
+            if search_gen.get() == started_gen && state.search.query.get() == q {
                 // Mark as searched only when this query actually produced
                 // results, so a failed/empty search can be retried with Enter.
                 if !state.search.results.get().is_empty() {
@@ -155,7 +155,12 @@ pub fn FloatingSearch(state: AppState) -> impl IntoView {
         <Show when=move || state.search.visible.get()>
             <div
                 node_ref=container_ref
-                class="floating-search-enter absolute right-4 top-2 z-40 w-[min(560px,90vw)] rounded-xl border border-line bg-surface/90 shadow-xl backdrop-blur-md"
+                // top-14 == TOOLBAR_H (48px) + the old top-2 (8px) gap. The
+                // offset parent is now the full-height content row, which
+                // starts at the window top so pages can travel under the glass
+                // toolbar; without this the panel would render *behind* the
+                // z-50 header and be unclickable.
+                class="floating-search-enter absolute right-4 top-14 z-40 w-[min(560px,90vw)] rounded-xl border border-line bg-surface/90 shadow-xl backdrop-blur-md"
             >
                 <div class="flex items-center gap-1.5 p-1.5">
                     <button

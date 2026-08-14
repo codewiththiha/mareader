@@ -671,6 +671,43 @@ body {
    already chosen for contrast against surface. The tint keeps each token's
    OWN lightness (see core/oklch.rs), so that contrast survives any hue.
    --------------------------------------------------------------------- */
+/* THE GLASS ITSELF.
+   Previously the header carried Tailwind's `bg-surface/60 backdrop-blur-xl`
+   and still read as a flat light or flat dark bar, never as glass.
+
+   ROOT CAUSE: NOTHING WAS EVER BEHIND IT. The header is absolutely positioned
+   and therefore out of flow, but the content row below it carried `mt-12` —
+   exactly the header's own height (toolbar-row is h-12). The viewer began on
+   the first pixel after the bar ended, so no page content ever passed beneath
+   it. `backdrop-filter` had only the flat `bg-paper` fill to sample, and
+   blurring a solid colour returns that same solid colour. The translucency was
+   real the whole time; there was simply nothing behind it to see. The margin
+   is gone now (reader_view.rs) and each view pads its own scroller instead, so
+   pages genuinely travel under the bar.
+
+   Owning the background here (rather than via `bg-surface/60`) keeps the
+   blur radius, the saturation boost and the alpha as one coherent unit that a
+   utility class cannot half-override, and gives the no-backdrop-filter
+   fallback below something to attach to. A tint still tints the glass, because
+   the mix reads whatever `--color-surface` is live.
+
+   The saturate() is what sells it as glass rather than as fog: blurring alone
+   averages colour toward grey, and pushing saturation back up keeps the page
+   tint readable through the bar. */
+.toolbar-glass {
+  background-color: color-mix(in oklab, var(--color-surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Progressive enhancement: where backdrop-filter is unavailable the bar must
+   still be legible, so it falls back to a near-opaque surface. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .toolbar-glass {
+    background-color: color-mix(in oklab, var(--color-surface) 96%, transparent);
+  }
+}
+
 .toolbar-glass .glass-invert,
 .toolbar-glass .glass-invert svg {
   color: #fff;

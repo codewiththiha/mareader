@@ -52,11 +52,15 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     view! {
         <div class="relative flex h-full w-full flex-col bg-paper text-ink">
             <header
-                class="toolbar-glass absolute inset-x-0 top-0 z-50 border-b border-line/60 bg-surface/60 backdrop-blur-xl"
+                class="toolbar-glass absolute inset-x-0 top-0 z-50 border-b border-line/60"
             >
                 <crate::components::molecules::toolbar::Toolbar state=state_toolbar />
             </header>
-            <div class="mt-12 flex min-h-0 flex-1">
+            // No top margin: the viewer starts at the very top so page content
+            // scrolls UNDER the translucent header, which is what gives the
+            // glass something to refract. Each view pads its own scroller by
+            // the toolbar height so the first page is not born behind the bar.
+            <div class="flex min-h-0 flex-1">
                 <crate::components::organisms::sidebar::Sidebar state=state_sidebar />
                 <main id="viewer-slot" class="relative min-w-0 flex-1">
                     <Show
@@ -76,10 +80,11 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                             .into_any(),
                         }}
                     </Show>
-                    // Floating search overlay (U4): mounted at the viewer slot so
-                    // its absolute positioning anchors below the toolbar (not
-                    // inside the backdrop-blur header, which would trap fixed
-                    // descendants).
+                    // Floating search overlay (U4): mounted at the viewer slot,
+                    // not inside the backdrop-blur header (which would trap
+                    // fixed descendants). The slot now starts at the window top
+                    // so pages can scroll under the glass, so the panel carries
+                    // its own top-14 offset to clear the toolbar.
                     <crate::components::organisms::floating_search::FloatingSearch state=state_floating />
                 </main>
             </div>
@@ -210,7 +215,10 @@ fn Placeholder(state: AppState) -> impl IntoView {
         }
     };
     view! {
-        <div class="flex h-full w-full items-center justify-center text-muted">
+        // pt-12 == TOOLBAR_H: the slot now spans the full window height, so
+        // without this the empty state centres against the window rather than
+        // against the space the user can actually see below the toolbar.
+        <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
             <div class="flex max-w-md flex-col items-center gap-3 text-center">
                 <Show when=is_opening fallback=|| ()>
                     <div class="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent"></div>

@@ -6,6 +6,17 @@
 //! lazily as pages report their geometry.
 
 pub const PAGE_GAP: f64 = 24.0;
+
+/// Height of the glass toolbar, in CSS px.
+///
+/// The viewer scrollport spans the FULL window height so pages travel under the
+/// translucent header (that is what the backdrop-filter refracts). The visible
+/// reading area is therefore the container minus this inset, and each view
+/// offsets its own content by the same amount — `mt-12` on the continuous
+/// column, `pt-18` (12 + the page's own 6) on the single-page sheet.
+///
+/// Keep this in sync with `h-12` on `#toolbar-row`: 12 * 0.25rem = 3rem = 48px.
+pub const TOOLBAR_H: f64 = 48.0;
 pub const SCROLL_BUFFER: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

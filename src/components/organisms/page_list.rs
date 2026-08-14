@@ -99,7 +99,22 @@ pub fn PageList(state: AppState) -> impl IntoView {
     });
 
     view! {
-        <div id="page-list" class="relative h-full w-full overflow-y-auto outline-none" tabindex="0">
+        <div id="page-list" class="h-full w-full overflow-y-auto outline-none" tabindex="0">
+        // Inner column, offset by the toolbar height so the first page starts
+        // below the glass header while the scrollport itself still runs the
+        // full height of the window — that is what lets pages travel UNDER the
+        // bar and give the backdrop-filter something to refract.
+        //
+        // The offset is a margin on this wrapper, NOT padding on the scroller,
+        // and this wrapper (not #page-list) is the positioned ancestor. Both
+        // details are load-bearing for the scroll maths:
+        //   * pages are absolutely positioned against THIS box, so `offsetTop`
+        //     still equals `page_top_css(i)` exactly, as effect 4 assumes;
+        //   * a page's top in scroll coordinates becomes `48 + page_top_css(i)`,
+        //     and landing it just under a 48px bar needs
+        //     `scrollTop = page_top_css(i)` — precisely what page_tracking and
+        //     search_effects already write. No offset arithmetic anywhere.
+        <div class="relative mt-12">
             // Spacer: makes the scrollbar span the whole column.
             <div
                 aria-hidden="true"
@@ -138,6 +153,7 @@ pub fn PageList(state: AppState) -> impl IntoView {
                     }
                 }
             />
+        </div>
         </div>
     }
 }

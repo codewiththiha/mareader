@@ -59,7 +59,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::core::layout::{anchored_scroll, total_height_css, PAGE_GAP};
+use crate::core::layout::{anchored_scroll, total_height_css, PAGE_GAP, TOOLBAR_H};
 use crate::core::math::{clamp_scale, constrained_scale, fit_scale, page_intrinsic, FitMode};
 use crate::core::state::{AppState, SidebarMode};
 use crate::util::dom::page_list;
@@ -423,8 +423,23 @@ pub fn fit_effect(state: AppState) {
         // This is deliberately scoped to a sidebar slide. A window resize with
         // no fit mode leaves the scale alone, which is what every other reader
         // does: making the window bigger must not silently re-zoom the document.
+        // The scrollport now runs the full window height so pages can slide
+        // under the glass toolbar, so the height actually available for reading
+        // is the container MINUS that inset. Without this subtraction fit-page
+        // would size the sheet to a viewport 48px taller than the reader can
+        // see, and the bottom of every page would sit under the bar.
+        let ch_visible = (ch - TOOLBAR_H).max(1.0);
+
         let target = if fit != FitMode::None {
-            let t = fit_scale(fit, cw, ch, pw, ph, 48.0, state.viewer.scale.get_untracked());
+            let t = fit_scale(
+                fit,
+                cw,
+                ch_visible,
+                pw,
+                ph,
+                48.0,
+                state.viewer.scale.get_untracked(),
+            );
             // A fit mode IS a deliberate choice, so it owns the ceiling too.
             // Without this, leaving fit mode would resurrect a `desired_scale`
             // from some earlier gesture and the page would jump to it.
