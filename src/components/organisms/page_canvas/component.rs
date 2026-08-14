@@ -100,6 +100,9 @@ pub fn PageCanvas(
     // behaviour rather than rendering nothing.
     let render_scale_sig = state.as_ref().map(|s| s.viewer.render_scale);
     let zoom_anim_sig = state.as_ref().map(|s| s.viewer.zoom_animating);
+    // The theme is baked into the raster, so a theme change means the pixels on
+    // screen are stale and this page has to be drawn again.
+    let theme_gen_sig = state.as_ref().map(|s| s.viewer.theme_gen);
 
     // --- Stretch effect ------------------------------------------------------
     // Follows `display_scale`. Pure CSS: resize the host so the EXISTING bitmap
@@ -127,6 +130,9 @@ pub fn PageCanvas(
         // subscribes to what it READS during a run, so a conditional read would
         // silently drop the subscription the first time the branch was skipped.
         let anim = zoom_anim_sig.map(|z| z.get()).unwrap_or(false);
+        // Subscribe unconditionally (see the note above): bumping this is how a
+        // theme change asks for a re-render through the new baked filter.
+        let _theme_gen = theme_gen_sig.map(|t| t.get()).unwrap_or(0);
         let s = match render_scale_sig {
             Some(rs) => rs.get(),
             None => scale.get(),

@@ -328,8 +328,22 @@ impl Appearance {
     /// inverted text back into the dark page and destroy readability).
     /// Dim is not inverted but is darkened, and soft-light preserves its
     /// midtones where multiply would double up the darkening.
+    /// PERFORMANCE. A blend mode on a full-page layer is re-composited on every
+    /// frame the page moves, and it is not free: scrolling a blended page
+    /// measured 30fps against 60fps for an unblended one. So the blend is only
+    /// emitted when it actually changes a pixel.
+    ///
+    /// In light mode with no tint the paper is pure white, and `multiply`
+    /// against white is the identity — measured as a byte-identical screenshot,
+    /// and the same fact the end-of-zoom flicker note in `input.css` relies on.
+    /// Tinted light paper is NOT white, so there the blend is what carries the
+    /// tint onto the page and must stay. Dark and dim always blend against a
+    /// non-white backdrop, so they always need it.
     pub fn canvas_blend(&self) -> &'static str {
         match self.base {
+            // `normal` is the CSS initial value: the compositor can skip the
+            // blend entirely rather than running an identity operation.
+            BaseMode::Light if !self.has_tint() => "normal",
             BaseMode::Light => "multiply",
             BaseMode::Dark => "screen",
             BaseMode::Dim => "soft-light",
@@ -595,9 +609,21 @@ mod tests {
     #[test]
     fn blend_families_match_the_base() {
         // multiply on a dark canvas would crush the inverted text away.
-        assert_eq!(tinted(BaseMode::Light, 0, 0).canvas_blend(), "multiply");
         assert_eq!(tinted(BaseMode::Dark, 0, 0).canvas_blend(), "screen");
         assert_eq!(tinted(BaseMode::Dim, 0, 0).canvas_blend(), "soft-light");
+        // Light paper is tinted, so multiply is what carries the tint onto it.
+        assert_eq!(tinted(BaseMode::Light, 34, 60).canvas_blend(), "multiply");
+    }
+
+    /// Blending an opaque page against PURE WHITE paper is the identity, and a
+    /// blend on a scrolling layer costs real frames (measured 30fps against
+    /// 60fps), so the untinted light theme must not ask for one.
+    #[test]
+    fn untinted_light_skips_the_no_op_blend() {
+        assert_eq!(tinted(BaseMode::Light, 0, 0).canvas_blend(), "normal");
+        assert_eq!(tinted(BaseMode::Light, 34, 0).canvas_blend(), "normal");
+        // The moment there is a tint, the paper is no longer white.
+        assert_eq!(tinted(BaseMode::Light, 34, 1).canvas_blend(), "multiply");
     }
 
     #[test]
