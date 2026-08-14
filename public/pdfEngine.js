@@ -1098,8 +1098,42 @@ function storageSet(key, value) {
 }
 
 // --- expose ----------------------------------------------------------
+/// Release every canvas backing store SYNCHRONOUSLY, for teardown.
+///
+/// WebKit bug 195325: canvas memory is not accounted against the page, so it
+/// is NOT reclaimed when the document goes away — a reload starts with the
+/// previous document's canvas budget still spent, and enough reloads make
+/// `getContext("2d")` start returning null ("Total canvas memory use exceeds
+/// the maximum limit"). WebKit's own position is that zeroing the dimensions
+/// before the element is dropped is the correct workaround, so we do it on
+/// the way out as well as during normal eviction.
+///
+/// Deliberately synchronous and allocation-free: `pagehide` may be the last
+/// callback that runs, and anything awaited here is not guaranteed to
+/// complete. `destroy()` still does the full teardown for the in-app path;
+/// this is the backstop for a reload or a window close.
+function releaseAllSurfaces() {
+  for (const st of stateByCanvasId.values()) {
+    st.dead = true;
+    try { st.renderTask && st.renderTask.cancel(); } catch (_) {}
+    try { st.textLayer && st.textLayer.cancel(); } catch (_) {}
+    releasePageSurfaces(st);
+  }
+  for (const entry of thumbCache.values()) releaseThumbEntry(entry);
+  // Catch anything not owned by the two registries above (e.g. a zoom
+  // snapshot mid-swap): at this point nothing is going to be drawn again.
+  try {
+    document.querySelectorAll("canvas").forEach(releaseCanvas);
+  } catch (_) { /* document already torn down */ }
+}
+
+// `pagehide` rather than `unload`: it also fires when the page enters the
+// back/forward cache, and `unload` is unreliable (and deprecated) in WebKit.
+globalThis.addEventListener("pagehide", releaseAllSurfaces);
+
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
+  releaseAllSurfaces,
   storageGet,
   storageSet,
   open,
