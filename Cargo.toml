@@ -61,3 +61,25 @@ members = ["src-tauri", "crates/virtual-list"]
 opt-level = "z"
 lto = true
 codegen-units = 1
+
+# DEV BUILDS SHIP A REAL BINARY TOO.
+#
+# `cargo tauri dev` builds the frontend unoptimized, and an unoptimized wasm
+# build of this app is 46MB against 713KB for a release build. That is not just
+# download size: the module is parsed and kept resident, and it accounted for
+# roughly half of the "400MB at idle" this profile exists to prevent. Debug
+# assertions and overflow checks stay on -- this only turns on the optimiser
+# and strips the debug tables that make the module enormous.
+#
+# Set `debug = 2` here temporarily if you need to step through Rust in the
+# browser devtools.
+[profile.dev]
+opt-level = 1
+debug = false
+strip = "debuginfo"
+
+# Dependencies are not what you are debugging, and optimising them costs
+# nothing after the first build.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
