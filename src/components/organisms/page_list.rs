@@ -4,9 +4,11 @@
 //! A scroll container (`#page-list`) holding:
 //!  - an in-flow spacer whose height equals the full document height, so the
 //!    scrollbar spans the whole column,
-//!  - a keyed `<For>` over the visible page window (plus a `SCROLL_BUFFER`
-//!    margin). Each page is an absolutely-positioned wrapper centered in the
-//!    column, containing a shared foundation `PageCanvas`. Evicted pages are
+//!  - a keyed `<For>` over the mounted page window (what is on screen plus a
+//!    `RenderBudget` read-ahead, measured in screenfuls so it means the same
+//!    thing at every zoom). Each page is an absolutely-positioned wrapper
+//!    centered in the column, containing a shared foundation
+//!    `PageCanvas`. Evicted pages are
 //!    unmounted by `<For>` (their `on_cleanup` unregisters them with the
 //!    engine, which zeros the canvas backing store — WKWebView will not
 //!    release it on DOM removal alone); entering pages render via
@@ -16,7 +18,7 @@ use leptos::prelude::*;
 
 use crate::components::organisms::page_canvas::PageCanvas;
 use crate::core::layout::{
-    page_top_css, total_height_css, visible_range, PAGE_GAP, SCROLL_BUFFER,
+    page_top_css, render_range, total_height_css, RenderBudget, PAGE_GAP,
 };
 use crate::core::state::AppState;
 
@@ -59,16 +61,21 @@ pub fn PageList(state: AppState) -> impl IntoView {
         });
     });
 
-    // Visible page window [first, last] (0-based, inclusive), expanded by
-    // SCROLL_BUFFER on each side. `None` => no pages to render yet.
+    // Mounted page window [first, last] (0-based, inclusive). `None` => no
+    // pages to render yet.
+    //
+    // The read-ahead is measured in SCREENFULS, not pages (see RenderBudget),
+    // so it means the same thing at 50% and at 500%. That is what keeps a
+    // zoomed-in reader from holding six multi-megabyte off-screen rasters
+    // they cannot reach for many seconds of scrolling.
     let visible = Memo::new(move |_| {
         let heights = state.doc.page_heights.get();
-        visible_range(
+        render_range(
             state.viewer.scroll_top.get(),
             state.viewer.container_size.get().1,
             &heights,
             PAGE_GAP,
-            SCROLL_BUFFER,
+            RenderBudget::default(),
         )
     });
 
