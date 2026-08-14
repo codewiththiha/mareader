@@ -550,20 +550,20 @@ body.noise-enabled .noise-overlay {
   display: block;
 }
 
-/* While a COLOUR or TEXTURE slider is being dragged we drop the grain layer:
-   those re-filter every visible page on each tick, and blending grain on top
-   of that is what pushed RAM to 1.2GB. The grain is back the instant the
-   gesture commits.
-
-   The GRAIN slider deliberately does not set this class — hiding the grain
-   while you adjust the grain made the layer vanish for the whole drag and
-   snap back afterwards, which reads as a flicker and leaves the control
-   impossible to dial by eye. Changing --noise-opacity only re-composites this
-   one layer, so it is cheap enough to stay live. See
-   AppearanceScrub::hides_grain. */
-body.appearance-scrubbing .noise-overlay {
-  display: none !important;
-}
+/* The grain used to be force-hidden (`display: none`) for the duration of any
+   colour or texture drag, on the theory that compositing it over pages being
+   re-filtered each tick was what drove RAM to 1.2GB. That is no longer true,
+   and the hide was the direct cause of the grain flickering whenever the
+   colour or tint sliders moved.
+   - The 1.2GB was mounted-canvas cost, not grain: 7 pages at up to 184.9MB of
+     RGBA each. Page virtualization cut that to 1-2 mounted pages, and the
+     measured peak fell ~71%.
+   - Re-measured directly: a 2.5s tint drag zoomed in 2 steps runs at 33.4ms
+     per frame with the grain live and blended, and 33.4ms with it hidden.
+     Removing the layer buys nothing.
+   So the grain now simply stays on screen for every slider, which is also the
+   only way a reader can judge colour and tint against the texture they will
+   actually be reading through. */
 
 /* ANIMATED GRAIN.
    Real film grain crawls; a static tile reads as dirt on the glass. The

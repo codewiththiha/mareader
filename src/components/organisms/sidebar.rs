@@ -191,8 +191,12 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
             class=("w-0", move || state.sidebar.get() == SidebarMode::None)
             class=("border-r-0", move || state.sidebar.get() == SidebarMode::None)
         >
+            // pt-12 == TOOLBAR_H. The content row spans the full window height
+            // so pages can travel under the glass toolbar, which means this
+            // rail starts at y=0 too — without the inset the first tab
+            // (Thumbs) renders behind the z-50 header and cannot be clicked.
             <div
-                class="flex h-full w-72 min-h-0 flex-col"
+                class="flex h-full w-72 min-h-0 flex-col pt-12"
                 prop:inert=move || state.sidebar.get() == SidebarMode::None
             >
                 {header}
