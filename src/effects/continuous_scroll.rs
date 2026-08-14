@@ -33,7 +33,12 @@ pub fn continuous_scroll(state: AppState) {
     // parked here so `on_cleanup` (which requires `Send + Sync`) can detach the
     // listener on unmount. The JS `Function` handle is independent of the wasm
     // `Closure`, so removal is safe even though the Closure itself is !Send.
-    let cleanup_slot: StoredValue<Option<(web_sys::Element, js_sys::Function)>> =
+    // Every (event, JS function) pair attached to that element, so `on_cleanup`
+    // can detach all of them. Holding the element once with a list of listeners
+    // keeps "what we attached" and "what we remove" impossible to get out of
+    // sync, which is how pointerdown/focusout came to be attached but never
+    // detached.
+    let cleanup_slot: StoredValue<Option<(web_sys::Element, Vec<(&'static str, js_sys::Function)>)>> =
         StoredValue::new(None);
 
     // Holds the wasm Closure alive for the lifetime of this view. Dropped when
@@ -44,8 +49,10 @@ pub fn continuous_scroll(state: AppState) {
         StoredValue::new_local(None);
 
     on_cleanup(move || {
-        if let Some((el, cb)) = cleanup_slot.get_value() {
-            let _ = el.remove_event_listener_with_callback("scroll", &cb);
+        if let Some((el, listeners)) = cleanup_slot.get_value() {
+            for (event, cb) in &listeners {
+                let _ = el.remove_event_listener_with_callback(event, cb);
+            }
         }
     });
 
@@ -113,10 +120,16 @@ pub fn continuous_scroll(state: AppState) {
             fo_closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
         let _ = el.add_event_listener_with_callback("pointerdown", &ptr_cb);
         let _ = el.add_event_listener_with_callback("focusout", &fo_cb);
-        // Park the extra Closures next to the scroll listener so they live
-        // for the view's lifetime. The scroll cleanup only removes "scroll";
-        // these die with the owner, which is fine — the element is gone.
-        let _ = (ptr_closure, fo_closure);
+        // Park the extra Closures so they live for the view's lifetime.
+        //
+        // This MUST be a real store, not `let _ = (ptr_closure, fo_closure)`:
+        // `let _ = x` drops x immediately rather than extending its life, so
+        // that version freed both Closures at the end of this task while the
+        // element still held their function pointers. Focus recovery then
+        // called into freed wasm closures. `extra_slots` exists precisely to
+        // own them; leaving it unread is what the dead-code warning was
+        // reporting.
+        extra_slots.set_value(Some((ptr_closure, fo_closure)));
 
         let last = Rc::new(Cell::new(f64::NAN));
         let handler = {
@@ -135,7 +148,10 @@ pub fn continuous_scroll(state: AppState) {
         let closure = Closure::new(handler);
         let cb: js_sys::Function = closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
         if el.add_event_listener_with_callback("scroll", &cb).is_ok() {
-            cleanup_slot.set_value(Some((el, cb)));
+            cleanup_slot.set_value(Some((
+                el,
+                vec![("scroll", cb), ("pointerdown", ptr_cb), ("focusout", fo_cb)],
+            )));
             listener_slot.set_value(Some(closure));
         }
     });
