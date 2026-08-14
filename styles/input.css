@@ -550,9 +550,17 @@ body.noise-enabled .noise-overlay {
   display: block;
 }
 
-/* While a colour/texture/grain slider is being dragged we drop the grain
-   layer. Filter + a 3×-viewport blend on every tick is what pushed RAM
-   to 1.2GB; the grain is back the instant the gesture commits. */
+/* While a COLOUR or TEXTURE slider is being dragged we drop the grain layer:
+   those re-filter every visible page on each tick, and blending grain on top
+   of that is what pushed RAM to 1.2GB. The grain is back the instant the
+   gesture commits.
+
+   The GRAIN slider deliberately does not set this class — hiding the grain
+   while you adjust the grain made the layer vanish for the whole drag and
+   snap back afterwards, which reads as a flicker and leaves the control
+   impossible to dial by eye. Changing --noise-opacity only re-composites this
+   one layer, so it is cheap enough to stay live. See
+   AppearanceScrub::hides_grain. */
 body.appearance-scrubbing .noise-overlay {
   display: none !important;
 }

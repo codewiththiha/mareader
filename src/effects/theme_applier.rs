@@ -114,6 +114,27 @@ fn set_scrubbing(on: bool) {
     }
 }
 
+impl AppearanceScrub {
+    /// Whether dragging this slider must drop the grain layer for the duration
+    /// of the gesture.
+    ///
+    /// Grain is a full-viewport blended layer sitting over every page. While
+    /// the COLOUR or TEXTURE sliders move, each tick re-filters the pages
+    /// underneath it, and compositing the grain on top of that is what drove
+    /// RAM to 1.2GB — so it is dropped and restored on commit.
+    ///
+    /// The grain slider itself is the exception, and dropping it there was a
+    /// plain bug: it hid the very thing being adjusted, so the layer vanished
+    /// on the first tick, stayed gone for the whole drag, and snapped back
+    /// ~180ms after release. That reads as a flicker and makes the control
+    /// impossible to dial by eye. Changing `--noise-opacity` does not re-filter
+    /// the pages underneath — it only changes one layer's alpha, which is
+    /// cheap — so the grain can stay live and animate with the slider.
+    fn hides_grain(self) -> bool {
+        !matches!(self, AppearanceScrub::NoiseIntensity(_))
+    }
+}
+
 /// Drop the frosted-header backdrop snapshot for one reflow.
 ///
 /// WKWebView caches `backdrop-filter` against the pixels that were
@@ -281,7 +302,10 @@ pub fn flush_appearance_commit() {
 pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
     let mut a = state.settings.get_untracked().appearance;
     apply_scrub(&mut a, patch);
-    set_scrubbing(true);
+    // Only the sliders that re-filter the pages underneath drop the grain; the
+    // grain slider keeps it on screen so the reader can see what they are
+    // dialling. See `AppearanceScrub::hides_grain`.
+    set_scrubbing(patch.hides_grain());
     paint_appearance(a);
 
     let commit_gen = bump_commit_gen();
