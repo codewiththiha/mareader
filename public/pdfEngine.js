@@ -538,14 +538,41 @@ function applyHighlights(st) {
   // Collect first, mutate after: appending into the layer while iterating a
   // live query would force a re-layout per insertion (and could re-measure
   // against shifted geometry).
+  //
+  // MEASURE THE MATCHED SUBSTRING, NOT THE SPAN. A pdf.js text-layer span is
+  // whatever run of glyphs the PDF happened to emit as one item — frequently a
+  // whole line. Highlighting `span.getBoundingClientRect()` therefore painted
+  // the entire line for a two-letter query. A Range over just the matched
+  // character offsets measures the glyphs themselves, and `getClientRects()`
+  // returns one rect per line box, so a match that wraps still lands correctly.
   const boxes = [];
+  const qlen = searchQuery.length;
   for (const span of textLayerEl.querySelectorAll("span")) {
-    if (!span.textContent || !span.textContent.toLowerCase().includes(searchQuery)) {
-      continue;
+    const text = span.textContent;
+    if (!text) continue;
+    const hay = text.toLowerCase();
+    if (!hay.includes(searchQuery)) continue;
+    // The text node is what a Range can address; a span with no text child
+    // (or a nested structure) is skipped rather than mismeasured.
+    const node = span.firstChild;
+    if (!node || node.nodeType !== 3 || node.length < qlen) continue;
+    // Every occurrence within the span, not just the first.
+    for (let at = hay.indexOf(searchQuery); at !== -1; at = hay.indexOf(searchQuery, at + qlen)) {
+      let rects;
+      try {
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + qlen);
+        rects = range.getClientRects();
+        range.detach?.();
+      } catch (_) {
+        continue;
+      }
+      for (const r of rects) {
+        if (r.width <= 0 || r.height <= 0) continue;
+        boxes.push(r);
+      }
     }
-    const r = span.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) continue;
-    boxes.push(r);
   }
   for (const r of boxes) {
     const d = document.createElement("div");
