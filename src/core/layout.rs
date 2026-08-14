@@ -5,6 +5,8 @@
 //! `heights` holds each page's rendered CSS-px height (0-based index), filled
 //! lazily as pages report their geometry.
 
+pub use virtual_list::{Budget, Strip};
+
 pub const PAGE_GAP: f64 = 24.0;
 
 /// Height of the glass toolbar, in CSS px.
@@ -35,27 +37,26 @@ pub const TOOLBAR_H: f64 = 48.0;
 /// reader is genuinely near it.
 ///
 /// TO TUNE THIS, change these two numbers and nothing else.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RenderBudget {
-    /// Read-ahead/behind as a multiple of the viewport height. 1.0 = keep one
-    /// screenful mounted on each side of what is visible.
-    pub look_frac: f64,
-    /// Hard ceiling on mounted pages. Only ever trims pages that are NOT
-    /// visible, so correctness never depends on this being large enough.
-    pub max_pages: usize,
-}
+/// How many pages may be mounted at once, and how far ahead to look.
+///
+/// This is [`virtual_list::Budget`] under the project's own name. The rationale
+/// for measuring read-ahead in SCREENFULS rather than pages lives on that type;
+/// the short version is that a fixed page count means a modest read-ahead when
+/// zoomed out and several screens of wasted rasters when zoomed in.
+///
+/// TO TUNE THIS, change the two numbers in `RenderBudget::default` and nothing
+/// else.
+pub type RenderBudget = Budget;
 
-impl Default for RenderBudget {
-    fn default() -> Self {
-        Self {
-            look_frac: 1.0,
-            // Zoomed out, many short pages are legitimately on screen at once;
-            // this is the ceiling for that case, and is never the binding
-            // constraint when zoomed in (where `look_frac` decides).
-            max_pages: 7,
-        }
-    }
-}
+/// The project default: one screenful of read-ahead each way, at most 7 pages.
+///
+/// Zoomed out, many short pages are legitimately on screen at once and 7 is the
+/// ceiling for that case; zoomed in it is never the binding constraint because
+/// `look_frac` decides first.
+pub const RENDER_BUDGET: RenderBudget = RenderBudget {
+    look_frac: 1.0,
+    max_items: 7,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -65,34 +66,12 @@ pub enum ViewMode {
 
 /// Vertical offset of the top of page `page0` (0-based) within the column.
 pub fn page_top_css(page0: usize, heights: &[f64], gap: f64) -> f64 {
-    heights.iter().take(page0).sum::<f64>() + gap * page0 as f64
+    Strip::new(heights.iter().copied(), gap).offset(page0)
 }
 
 /// Total scrollable height of the whole column (pages + gaps).
 pub fn total_height_css(heights: &[f64], gap: f64) -> f64 {
-    if heights.is_empty() {
-        0.0
-    } else {
-        heights.iter().sum::<f64>() + gap * (heights.len().saturating_sub(1)) as f64
-    }
-}
-
-/// 1-based page index whose vertical span contains `scroll_top` — i.e. the page
-/// at the top of the scrollport. Returns the last page for scroll positions past
-/// the end of the document, and 1 when no page heights are known yet (so callers
-/// can no-op instead of jumping to a wrong page).
-pub fn page_from_scroll(scroll_top: f64, heights: &[f64], gap: f64) -> u32 {
-    if heights.is_empty() {
-        return 1;
-    }
-    let mut acc = 0.0;
-    for (i, &h) in heights.iter().enumerate() {
-        if scroll_top < acc + h {
-            return (i + 1) as u32;
-        }
-        acc += h + gap;
-    }
-    heights.len() as u32
+    Strip::new(heights.iter().copied(), gap).total()
 }
 
 /// 1-based page the reader is actually looking at: the page occupying the most
@@ -121,35 +100,7 @@ pub fn dominant_page(scroll_top: f64, viewport_h: f64, heights: &[f64], gap: f64
     if heights.is_empty() {
         return 1;
     }
-    if viewport_h <= 1.0 {
-        return page_from_scroll(scroll_top, heights, gap);
-    }
-    let view_top = scroll_top;
-    let view_bottom = scroll_top + viewport_h;
-    let mut acc = 0.0;
-    let mut best = 1u32;
-    let mut best_vis = -1.0;
-    for (i, &h) in heights.iter().enumerate() {
-        let top = acc;
-        let bottom = acc + h;
-        if top >= view_bottom {
-            break;
-        }
-        let vis = bottom.min(view_bottom) - top.max(view_top);
-        // Strictly greater keeps ties on the LOWER page: after a jump, page P
-        // and the pages below it can be equally visible, and the answer the
-        // reader expects is the one they jumped to.
-        if vis > best_vis {
-            best_vis = vis;
-            best = (i + 1) as u32;
-        }
-        acc = bottom + gap;
-    }
-    if best_vis <= 0.0 {
-        // Parked in a gap or past the end — fall back rather than guess.
-        return page_from_scroll(scroll_top, heights, gap);
-    }
-    best
+    Strip::new(heights.iter().copied(), gap).dominant(scroll_top, viewport_h) as u32 + 1
 }
 
 /// Scroll offset that keeps the document point currently at `anchor_screen_y`
@@ -276,47 +227,13 @@ pub fn visible_grid_rows(
     Some((first, last))
 }
 
-/// 0-based inclusive range of pages overlapping `[top, top + height]`.
-///
-/// The shared definition of "which pages does this band of the column touch",
-/// used both for what is on screen and (over a padded band) for what to keep
-/// mounted, so the two can never disagree.
-///
-/// The top edge is strict (a page ending exactly at `top` has scrolled out);
-/// the bottom edge is inclusive. `None` when nothing overlaps — the viewport
-/// is past the end of the document, or parked inside a gap between pages.
-pub fn span_overlapping(
-    top: f64,
-    height: f64,
-    heights: &[f64],
-    gap: f64,
-) -> Option<(usize, usize)> {
-    if heights.is_empty() {
-        return None;
-    }
-    let bottom = top + height.max(0.0);
-    let mut acc = 0.0;
-    let mut first = heights.len();
-    let mut last = 0usize;
-    for (i, &h) in heights.iter().enumerate() {
-        let page_top = acc;
-        let page_bottom = page_top + h;
-        if page_bottom > top && page_top <= bottom {
-            first = first.min(i);
-            last = last.max(i);
-        }
-        acc = page_bottom + gap;
-    }
-    (last >= first).then_some((first, last))
-}
-
 /// 0-based inclusive range of pages to KEEP MOUNTED.
 ///
 /// This is `visible_range`'s job done in viewport units instead of page
 /// counts. The window is everything overlapping
 /// `[scroll_top - look, scroll_top + viewport_h + look]`, where
 /// `look = budget.look_frac * viewport_h`, then trimmed to
-/// `budget.max_pages`.
+/// `budget.max_items`.
 ///
 /// Two invariants make it safe to tune the budget to anything at all:
 ///   * every page that is even partly VISIBLE is always in the result, so no
@@ -336,41 +253,15 @@ pub fn render_range(
     gap: f64,
     budget: RenderBudget,
 ) -> Option<(usize, usize)> {
-    if heights.is_empty() {
-        return None;
-    }
-    let vh = viewport_h.max(0.0);
-    let look = budget.look_frac.max(0.0) * vh;
-
-    // The padded window is just `visible_range` over a viewport grown by
-    // `look` on each side — same overlap rule, same edge semantics, one
-    // implementation. `buffer` is 0 because the padding IS the read-ahead.
-    let (first, last) = span_overlapping(scroll_top - look, vh + 2.0 * look, heights, gap)?;
-    // What is strictly on screen, and therefore must never be evicted.
-    let (vis_first, vis_last) =
-        span_overlapping(scroll_top, vh, heights, gap).unwrap_or((first, last));
-
-    // Trim to the ceiling, never evicting a visible page. Furthest-first, and
-    // above-before-below so the page the reader is scrolling toward survives
-    // longest.
-    let max_pages = budget.max_pages.max(1);
-    let (mut first, mut last) = (first, last);
-    while last - first + 1 > max_pages {
-        if first < vis_first {
-            first += 1;
-        } else if last > vis_last {
-            last -= 1;
-        } else {
-            // Everything left is visible; the reader wins over the budget.
-            break;
-        }
-    }
-    Some((first, last))
+    Strip::new(heights.iter().copied(), gap)
+        .window(scroll_top, viewport_h, budget)
+        .map(|w| (w.first, w.last))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
 
     const H: [f64; 3] = [100.0, 200.0, 100.0];
 
@@ -387,51 +278,19 @@ mod tests {
     /// (page tops 0 / 124 / 348). Covers the plain window, exact boundaries
     /// (a page ending exactly at the top edge has scrolled out), a viewport
     /// parked wholly inside a gap, and past-the-end.
-    #[test]
-    fn span_overlapping_windows() {
-        // (top, height, expected)
-        let cases: &[(f64, f64, Option<(usize, usize)>)] = &[
-            (0.0, 100.0, Some((0, 0))),
-            (124.0, 200.0, Some((1, 1))),
-            (100.0, 300.0, Some((1, 2))),
-            // A viewport 100..115 sits wholly inside the gap below page 0.
-            (100.0, 15.0, None),
-            (9999.0, 100.0, None),
-        ];
-        for &(top, h, want) in cases {
-            assert_eq!(span_overlapping(top, h, &H, 24.0), want, "top={top} h={h}");
-        }
-        assert_eq!(span_overlapping(0.0, 500.0, &[], 24.0), None);
-    }
-
-    /// The buffering `visible_range` used to provide is now `render_range`'s
+        /// The buffering `visible_range` used to provide is now `render_range`'s
     /// look-ahead. A whole-viewport look on this tiny column reaches the
     /// neighbours, and the ceiling clamps to the document.
     #[test]
     fn render_range_expands_and_clamps() {
-        let b = RenderBudget { look_frac: 1.0, max_pages: 7 };
+        let b = RenderBudget { look_frac: 1.0, max_items: 7 };
         assert_eq!(render_range(124.0, 200.0, &H, 24.0, b), Some((0, 2)));
         // No look-ahead at all == exactly what is on screen.
-        let none = RenderBudget { look_frac: 0.0, max_pages: 7 };
+        let none = RenderBudget { look_frac: 0.0, max_items: 7 };
         assert_eq!(render_range(124.0, 200.0, &H, 24.0, none), Some((1, 1)));
     }
 
-    #[test]
-    fn page_from_scroll_bounds() {
-        assert_eq!(page_from_scroll(0.0, &H, 24.0), 1);
-        assert_eq!(page_from_scroll(99.0, &H, 24.0), 1);
-        // Bottom edge of page 0: page 1 is now at the top of the scrollport.
-        assert_eq!(page_from_scroll(100.0, &H, 24.0), 2);
-        assert_eq!(page_from_scroll(124.0, &H, 24.0), 2);
-        assert_eq!(page_from_scroll(323.0, &H, 24.0), 2);
-        assert_eq!(page_from_scroll(324.0, &H, 24.0), 3);
-        // Past the end -> last page, not out of range.
-        assert_eq!(page_from_scroll(9999.0, &H, 24.0), 3);
-        // No measured heights yet -> 1 (caller no-ops instead of jumping).
-        assert_eq!(page_from_scroll(500.0, &[], 24.0), 1);
-    }
-
-    /// `visible_grid_rows` over a 3-row grid of 120px rows (the thumbnail
+        /// `visible_grid_rows` over a 3-row grid of 120px rows (the thumbnail
     /// panel's virtualization). Covers the plain window, buffer expand/clamp,
     /// both no-overlap directions, exact row boundaries (a row ending exactly
     /// at scroll_top is scrolled out) and a zero-height viewport, which still
@@ -476,6 +335,14 @@ mod tests {
 mod anchor_tests {
     use super::*;
 
+    /// Test-local shorthands for the two `Strip` queries these tests need.
+    /// Production code goes through `Strip` directly.
+    fn page_from_scroll(scroll_top: f64, heights: &[f64], gap: f64) -> u32 {
+        if heights.is_empty() {
+            return 1;
+        }
+        Strip::new(heights.iter().copied(), gap).index_at(scroll_top) as u32 + 1
+    }
     /// The spec's hand-computed case, exercising the centre-anchor arithmetic:
     /// H=[100,200], gap=24, vh=100, f=2, anchor at the viewport centre.
     ///
@@ -698,6 +565,18 @@ mod dominant_page_tests {
 mod render_range_tests {
     use super::*;
 
+    fn span_overlapping(
+        top: f64,
+        height: f64,
+        heights: &[f64],
+        gap: f64,
+    ) -> Option<(usize, usize)> {
+        Strip::new(heights.iter().copied(), gap)
+            .overlapping(top, height)
+            .map(|w| (w.first, w.last))
+    }
+
+
     const GAP: f64 = PAGE_GAP;
 
     fn uniform(n: usize, h: f64) -> Vec<f64> {
@@ -788,8 +667,8 @@ mod render_range_tests {
             let h = uniform(30, page_h);
             for budget in [
                 RenderBudget::default(),
-                RenderBudget { look_frac: 0.0, max_pages: 1 },
-                RenderBudget { look_frac: 3.0, max_pages: 2 },
+                RenderBudget { look_frac: 0.0, max_items: 1 },
+                RenderBudget { look_frac: 3.0, max_items: 2 },
             ] {
                 for step in 0..40 {
                     let st = step as f64 * page_h * 0.37;
@@ -813,8 +692,8 @@ mod render_range_tests {
     fn never_exceeds_the_ceiling_unless_visibility_demands_it() {
         let vh = 800.0;
         let h = uniform(60, 120.0); // many tiny pages: lots are visible at once
-        for max_pages in [1usize, 3, 5, 7, 12] {
-            let b = RenderBudget { look_frac: 2.0, max_pages };
+        for max_items in [1usize, 3, 5, 7, 12] {
+            let b = RenderBudget { look_frac: 2.0, max_items };
             let st = 1000.0;
             let (f, l) = render_range(st, vh, &h, GAP, b).unwrap();
             let n = l - f + 1;
@@ -822,8 +701,8 @@ mod render_range_tests {
                 .map(|(a, b)| b - a + 1)
                 .unwrap_or(0);
             assert!(
-                n <= max_pages.max(visible_n),
-                "max_pages={max_pages}: mounted {n} pages (visible {visible_n})"
+                n <= max_items.max(visible_n),
+                "max_items={max_items}: mounted {n} pages (visible {visible_n})"
             );
         }
     }
@@ -841,8 +720,8 @@ mod render_range_tests {
         // reached rather than a surprise last-page mount.
         assert_eq!(render_range(99_999.0, 800.0, &h, GAP, b), None);
         assert_eq!(span_overlapping(99_999.0, 800.0, &h, GAP), None);
-        // A zero max_pages is treated as 1 rather than producing an empty range.
-        let bad = RenderBudget { look_frac: 0.0, max_pages: 0 };
+        // A zero max_items is treated as 1 rather than producing an empty range.
+        let bad = RenderBudget { look_frac: 0.0, max_items: 0 };
         let (f, l) = render_range(1100.0, 800.0, &h, GAP, bad).unwrap();
         assert!(l >= f);
     }
@@ -853,7 +732,7 @@ mod render_range_tests {
     fn gap_parking_still_mounts_neighbours() {
         let h = [100.0, 200.0, 100.0];
         // 100..124 is the gap after page 0; a 15px viewport sits inside it.
-        let b = RenderBudget { look_frac: 1.0, max_pages: 7 };
+        let b = RenderBudget { look_frac: 1.0, max_items: 7 };
         let got = render_range(104.0, 15.0, &h, GAP, b);
         assert!(got.is_some(), "a gap position must still mount something");
         let (f, l) = got.unwrap();

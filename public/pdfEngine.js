@@ -71,7 +71,28 @@ let renderCount = 0;
 const CLEANUP_EVERY = 5;
 // Cap one page's RGBA backing store. At 5× zoom on a retina display an
 // uncapped letter page is ~48MP / 192MB; 8MP is 32MB and still sharp.
+//
+// This is the ABSOLUTE ceiling. `CANVAS_AREA_FACTOR` below is usually the
+// binding constraint, and is the one that keeps memory flat under zoom.
 const PAGE_MAX_PIXELS = 8 * 1024 * 1024;
+
+// Cap a page raster relative to the VIEWPORT rather than to the page.
+//
+// A fixed per-page pixel budget is the wrong shape for a zooming viewer: it
+// spends the same 32MB on a page whether the reader can see all of it or a
+// tenth of it, so zooming in costs more and more memory for pixels that are
+// scrolled off screen. pdf.js solves this with `capCanvasAreaFactor` (200% of
+// the viewport by default) and falls back to CSS scaling beyond it; the same
+// idea applies here.
+//
+// 2.0 means "never rasterise more than two viewports' worth of pixels for one
+// page". At 1280x900 that is ~2.3MP / 9MB, and it does not grow with zoom —
+// the CSS box keeps stretching the bitmap, exactly as it already does between
+// the zoom gesture and the crisp re-render.
+//
+// Raise it for sharper deep zoom at proportionally more memory; 1.0 is the
+// leanest setting that still covers a full screen of page.
+const CANVAS_AREA_FACTOR = 2.0;
 
 // --- helpers ---------------------------------------------------------
 const fail = (name, message) => ({ ok: false, error: { name, message } });
@@ -137,9 +158,25 @@ function releasePageSurfaces(st) {
   st.viewport = null;
 }
 
+/// Ask pdf.js to drop cached operator lists / decoded images for pages that
+/// are no longer rendering.
+///
+/// `pdf.cleanup()` returns a PROMISE that REJECTS with "startCleanup: Page N is
+/// currently rendering." whenever any page still has a live render task. A
+/// `try/catch` around the call cannot catch that — the throw happens later, on
+/// the microtask queue — so every sweep that overlapped an in-flight render
+/// surfaced as an unhandled rejection in the console (measured: 10+ per scroll
+/// through the sample document).
+///
+/// The rejection is advisory, not a failure: pdf.js simply declines to sweep
+/// this time, and the next sweep succeeds once the render settles. So we attach
+/// a no-op catch rather than papering over it with a synchronous try/catch that
+/// never fires.
 function sweepPdf() {
   if (!pdf) return;
-  try { pdf.cleanup(); } catch (_) {}
+  try {
+    Promise.resolve(pdf.cleanup()).catch(() => {});
+  } catch (_) {}
 }
 
 /// Device-pixel scale for a page raster. Retina up to 2× while the page is
@@ -148,7 +185,16 @@ function sweepPdf() {
 function pageOutputScale(cssW, cssH) {
   const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
   if (!(cssW > 0) || !(cssH > 0)) return dpr;
-  const capped = Math.sqrt(PAGE_MAX_PIXELS / (cssW * cssH));
+
+  // Viewport-relative budget: the pixels a reader can actually see at once,
+  // times CANVAS_AREA_FACTOR. Falls back to the absolute cap when the window
+  // has no size yet (headless/startup).
+  const vw = globalThis.innerWidth || 0;
+  const vh = globalThis.innerHeight || 0;
+  const viewportBudget = vw > 0 && vh > 0 ? vw * vh * CANVAS_AREA_FACTOR : Infinity;
+  const budget = Math.min(PAGE_MAX_PIXELS, viewportBudget);
+
+  const capped = Math.sqrt(budget / (cssW * cssH));
   return Math.min(dpr, Math.max(0.5, capped));
 }
 
@@ -191,7 +237,9 @@ function paintCached(dst, entry) {
   if (!dst || !src) return null;
   dst.width = src.width;
   dst.height = src.height;
-  const ctx = dst.getContext("2d");
+  // Opaque for the same reason as the page raster: a rendered page has no
+  // transparent pixels, so blending the thumbnail is wasted compositor work.
+  const ctx = dst.getContext("2d", { alpha: false });
   if (!ctx) return null;
   ctx.drawImage(src, 0, 0);
   return { width: entry.cssW, height: entry.cssH };
@@ -761,7 +809,12 @@ async function renderPageInternal(canvasId, scale, renderText) {
   const out = pageOutputScale(cssW, cssH);
   st.canvas.width = Math.max(1, Math.floor(viewport.width * out));
   st.canvas.height = Math.max(1, Math.floor(viewport.height * out));
-  const ctx = st.canvas.getContext("2d");
+  // OPAQUE CONTEXT. pdf.js paints an opaque white page background before any
+  // content, so the alpha channel is a constant 255 that nothing ever reads.
+  // Declaring that lets the compositor treat the layer as opaque: it can skip
+  // per-pixel blending against whatever is behind the page and can drop the
+  // tiles underneath it entirely, which is where the compositor memory goes.
+  const ctx = st.canvas.getContext("2d", { alpha: false });
   const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 
   const task = page.render({ canvasContext: ctx, viewport, transform });
@@ -912,7 +965,8 @@ async function renderThumb(canvasId, page, scale) {
     const off = document.createElement("canvas");
     off.width = Math.max(1, Math.floor(viewport.width * out));
     off.height = Math.max(1, Math.floor(viewport.height * out));
-    const ctx = off.getContext("2d");
+    // Opaque: a rendered page has no transparent pixels (see the page raster).
+    const ctx = off.getContext("2d", { alpha: false });
     if (!ctx) return fail("no_context", "No 2d context");
     const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 

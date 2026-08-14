@@ -51,9 +51,10 @@ serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 serde_json = "1"
 console_error_panic_hook = "0.1.7"
+virtual-list = { path = "crates/virtual-list" }
 
 [workspace]
-members = ["src-tauri"]
+members = ["src-tauri", "crates/virtual-list"]
 
 [profile.release]
 # Keep wasm small for a desktop app.

@@ -18,7 +18,7 @@ use leptos::prelude::*;
 
 use crate::components::organisms::page_canvas::PageCanvas;
 use crate::core::layout::{
-    page_top_css, render_range, total_height_css, RenderBudget, PAGE_GAP,
+    page_top_css, render_range, total_height_css, PAGE_GAP, RENDER_BUDGET,
 };
 use crate::core::state::AppState;
 
@@ -75,7 +75,7 @@ pub fn PageList(state: AppState) -> impl IntoView {
             state.viewer.container_size.get().1,
             &heights,
             PAGE_GAP,
-            RenderBudget::default(),
+            RENDER_BUDGET,
         )
     });
 
