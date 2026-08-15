@@ -64,12 +64,6 @@ const highlightsByPage = new Map();
 // Lowercased, trimmed query from the last search(); drives DOM-derived highlights.
 let searchQuery = "";
 
-// CSS filter chain the UI wants baked into every page raster ("none" = off).
-// Set by the Rust theme applier via setThemeFilter; see the note in
-// renderPageInternal for why this is baked at render time instead of being a
-// CSS filter on the live element.
-let themeFilter = "none";
-
 let renderCount = 0;
 // pdf.js keeps operator lists / decoded images per page. Once a page has
 // left the window we want those gone; every-N is a backstop for pages that
@@ -823,26 +817,6 @@ async function renderPageInternal(canvasId, scale, renderText) {
   const ctx = st.canvas.getContext("2d", { alpha: false });
   const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 
-  // THEME BAKED INTO THE RASTER, not composited every frame.
-  //
-  // The theme used to reach the page as a CSS `filter` on the <canvas>. A CSS
-  // filter on a moving layer is re-evaluated on every composited frame, and it
-  // dominates scrolling: measured on a 3s continuous scroll of the sample,
-  // dark+tint ran at 20fps (50.0ms/frame) against 60fps (16.7ms) with the
-  // filter removed. The filter is a pure per-pixel function of the raster, and
-  // the raster only changes when we re-render, so evaluating it per frame is
-  // pure waste.
-  //
-  // `ctx.filter` applies the exact same filter chain, once, while the page is
-  // being drawn. Verified pixel-identical to the CSS path (max channel
-  // difference 0 over a synthetic page with text and colour figures).
-  //
-  // `themeFilter` is owned by the UI (see setThemeFilter) because the filter
-  // string is derived from the appearance settings. When it is "none" this is
-  // a no-op and the fast path is unchanged.
-  const bake = themeFilter && themeFilter !== "none";
-  if (bake) ctx.filter = themeFilter;
-
   const task = page.render({ canvasContext: ctx, viewport, transform });
   st.renderTask = task;
   try {
@@ -1211,22 +1185,9 @@ function releaseAllSurfaces() {
 // back/forward cache, and `unload` is unreliable (and deprecated) in WebKit.
 globalThis.addEventListener("pagehide", releaseAllSurfaces);
 
-/// Set the filter chain baked into page and thumbnail rasters.
-///
-/// Returns `{ ok, changed }`. `changed:true` means the pixels currently on
-/// screen were rendered with a different filter and the caller must re-render
-/// the mounted pages for the new theme to appear.
-function setThemeFilter(filter) {
-  const next = typeof filter === "string" && filter.trim() ? filter.trim() : "none";
-  const changed = next !== themeFilter;
-  themeFilter = next;
-  return { ok: true, changed };
-}
-
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
   releaseAllSurfaces,
-  setThemeFilter,
   storageGet,
   storageSet,
   open,

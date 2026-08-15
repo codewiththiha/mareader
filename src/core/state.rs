@@ -123,16 +123,6 @@ pub struct ViewerState {
     /// Only a real zoom gesture writes this. A resize never does; that is
     /// precisely what makes the memory survive a resize.
     pub desired_scale: RwSignal<f64>,
-
-    /// Bumped whenever the theme changes the filter BAKED into page rasters.
-    ///
-    /// The page theme is applied by `ctx.filter` while the raster is drawn, not
-    /// by a CSS filter on the live canvas, because a CSS filter on a scrolling
-    /// layer is re-evaluated every composited frame (measured: 20fps against
-    /// 60fps on a continuous scroll). The trade is that changing the theme now
-    /// has to re-render what is mounted, and this counter is how the render
-    /// effect learns that it must.
-    pub theme_gen: RwSignal<u64>,
 }
 
 impl Default for ViewerState {
@@ -149,7 +139,6 @@ impl Default for ViewerState {
             zoom_animating: RwSignal::new(false),
             zoom_request: RwSignal::new(None),
             desired_scale: RwSignal::new(1.0),
-            theme_gen: RwSignal::new(0),
         }
     }
 }

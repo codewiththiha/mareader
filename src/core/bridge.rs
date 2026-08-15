@@ -41,11 +41,6 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "pageCount")]
     pub fn page_count() -> u32;
 
-    /// Set the filter chain baked into page rasters. Returns
-    /// `{ok, changed}`; `changed` means the mounted pages must be re-rendered.
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setThemeFilter")]
-    pub fn set_theme_filter(filter: &str) -> JsValue;
-
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "registerPage")]
     pub fn register_page(payload: JsValue);
 
