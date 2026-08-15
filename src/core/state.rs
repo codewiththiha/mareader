@@ -8,7 +8,7 @@ use leptos::prelude::RwSignal;
 use crate::core::document::{DocStatus, OutlineNode, PageSize};
 use crate::core::layout::ViewMode;
 use crate::core::math::FitMode;
-use crate::core::search::SearchResult;
+use crate::core::search::SearchMatch;
 use crate::core::settings::Settings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,7 +147,10 @@ impl Default for ViewerState {
 pub struct SearchState {
     pub query: RwSignal<String>,
     pub total: RwSignal<u32>,
-    pub results: RwSignal<Vec<SearchResult>>,
+    /// Every occurrence of the query, in document order — one entry per match,
+    /// so `active` steps match-by-match rather than page-by-page.
+    pub matches: RwSignal<Vec<SearchMatch>>,
+    /// Index into `matches` of the one the reader is currently on.
     pub active: RwSignal<Option<usize>>,
     pub index_built: RwSignal<bool>,
     /// Floating-search overlay visibility; read+written by shortcuts (Cmd+F / Escape).
@@ -159,7 +162,7 @@ impl Default for SearchState {
         Self {
             query: RwSignal::new(String::new()),
             total: RwSignal::new(0),
-            results: RwSignal::new(Vec::new()),
+            matches: RwSignal::new(Vec::new()),
             active: RwSignal::new(None),
             index_built: RwSignal::new(false),
             visible: RwSignal::new(false),

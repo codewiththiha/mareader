@@ -89,7 +89,7 @@ pub fn open_path(state: AppState, path: String) {
                 // overlay must not linger after opening a new document.
                 state.search.query.set(String::new());
                 state.search.total.set(0);
-                state.search.results.set(Vec::new());
+                state.search.matches.set(Vec::new());
                 state.search.active.set(None);
                 state.search.index_built.set(false);
                 state.search.visible.set(false);

@@ -4,16 +4,25 @@
 //! `main#viewer-slot` (which is `relative`); the bar positions itself at the
 //! slot's top-right, just below the toolbar.
 
+use std::time::Duration;
+
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::api::engine;
 use crate::components::atoms::icon::{Icon, IconName};
 use crate::core::state::AppState;
-use crate::effects::search_effects::{jump_to_result, run_search, search_navigate};
+use crate::effects::search_effects::{activate_match, clear_search, run_search, search_navigate};
 
 use super::search_panel::ResultList;
+
+/// How long typing must pause before the query runs.
+///
+/// Results appear while the reader types, so this is the whole latency budget:
+/// long enough that a burst of keystrokes costs one search instead of one per
+/// character, short enough to feel immediate. Matches the 180 ms the appearance
+/// controls use to coalesce slider input.
+const SEARCH_DEBOUNCE_MS: u64 = 180;
 
 /// Compact icon-button class shared by the bar's raw `<button>`s.
 const ICON_BTN: &str = "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -46,8 +55,8 @@ fn Chevron(up: bool) -> impl IntoView {
 pub fn FloatingSearch(state: AppState) -> impl IntoView {
     let last_query = RwSignal::new(String::new());
     let show_results = RwSignal::new(false);
-    // Monotonic id for the newest submitted search; guards against out-of-order
-    // completions so only the latest submit lands its jump / marker.
+    // Monotonic id for the newest search; guards against out-of-order
+    // completions so only the latest query lands its results and its jump.
     let search_gen = RwSignal::new(0u64);
     let input_ref: NodeRef<html::Input> = NodeRef::new();
     let container_ref: NodeRef<html::Div> = NodeRef::new();
@@ -90,61 +99,95 @@ pub fn FloatingSearch(state: AppState) -> impl IntoView {
         }
     });
 
-    // Run the query and land on the first result. `run_search` only marks
-    // active = Some(0) without navigating; the explicit jump keeps the viewport
-    // in sync with the highlighted first match and makes the first "next"
-    // advance instead of skipping it.
+    // --- Live search --------------------------------------------------
+    // Typing schedules a search; each keystroke cancels the pending one, so a
+    // burst costs a single query. Highlights therefore appear as the reader
+    // types, with no Enter required.
     //
-    // Empty submissions clear the stale results/highlights instead of reusing
-    // the previous query's state. `search_gen` + the query-unchanged check keep
-    // a superseded search (an older query resolving late, or the user typing
-    // mid-flight) from applying its jump or its `last_query` marker.
-    let submit = move || {
-        let q = state.search.query.get();
-        if q.trim().is_empty() {
-            engine::clear_highlights();
-            state.search.total.set(0);
-            state.search.results.set(Vec::new());
-            state.search.active.set(None);
-            last_query.set(q);
-            return;
-        }
-        search_gen.update(|g| *g += 1);
-        let started_gen = search_gen.get();
-        spawn_local(async move {
-            run_search(state).await;
-            // Only the newest submit applies; skip if a newer search was
-            // submitted or the input changed while this one was in flight.
-            if search_gen.get() == started_gen && state.search.query.get() == q {
-                // Mark as searched only when this query actually produced
-                // results, so a failed/empty search can be retried with Enter.
-                if !state.search.results.get().is_empty() {
-                    last_query.set(q);
-                }
-                let first_page = state.search.results.get().first().map(|r| r.page);
-                if let Some(p) = first_page {
-                    jump_to_result(state, p);
-                }
+    // The debounced pass deliberately does NOT scroll: moving the page under
+    // someone who is still typing is disorienting, and the hits they want are
+    // usually already on screen. It only paints. Enter (or the next/prev
+    // buttons) is what commits to a match and moves the view.
+    let debounce_timer = StoredValue::new_local(None::<TimeoutHandle>);
+    let cancel_pending = move || {
+        debounce_timer.update_value(|t| {
+            if let Some(h) = t.take() {
+                h.clear();
             }
         });
     };
 
-    // Enter = submit on a fresh/empty query, else next result; Shift+Enter =
-    // previous; Escape = close. stopPropagation on Escape keeps the global
-    // shortcut from ALSO closing the sidebar in the same keystroke (the bar is
-    // the first dismiss step).
+    // Run the current query now, cancelling anything pending. `then` runs once
+    // the results land, and only if this call is still the newest one — a
+    // slower earlier search must not steal the view from a newer query.
+    let run_now = move |then: Option<Box<dyn Fn()>>| {
+        cancel_pending();
+        let q = state.search.query.get_untracked();
+        if q.trim().is_empty() {
+            clear_search(state);
+            last_query.set(String::new());
+            return;
+        }
+        search_gen.update(|g| *g += 1);
+        let started = search_gen.get_untracked();
+        spawn_local(async move {
+            run_search(state).await;
+            if search_gen.get_untracked() != started || state.search.query.get_untracked() != q {
+                return;
+            }
+            last_query.set(q);
+            if let Some(f) = then {
+                f();
+            }
+        });
+    };
+
+    let schedule = move || {
+        cancel_pending();
+        let handle = set_timeout_with_handle(
+            move || run_now(None),
+            Duration::from_millis(SEARCH_DEBOUNCE_MS),
+        )
+        .ok();
+        debounce_timer.set_value(handle);
+    };
+
+    // A pending search must not fire into a torn-down view.
+    on_cleanup(move || cancel_pending());
+
+    let on_input = move |ev: leptos::ev::Event| {
+        state.search.query.set(event_target_value(&ev));
+        schedule();
+    };
+
+    // Enter commits: it selects a match and scrolls it into view. When the
+    // results for this query are already in hand it advances to the next match;
+    // on a query that has not run yet it searches first, then lands on the
+    // first hit (the last one, for Shift+Enter).
+    let commit = move |dir: i32| {
+        let q = state.search.query.get_untracked();
+        let fresh =
+            last_query.get_untracked() != q || state.search.matches.with_untracked(Vec::is_empty);
+        if !fresh {
+            search_navigate(state, dir);
+            return;
+        }
+        run_now(Some(Box::new(move || {
+            let len = state.search.matches.with_untracked(Vec::len);
+            if len > 0 {
+                activate_match(state, if dir < 0 { len - 1 } else { 0 });
+            }
+        })));
+    };
+
+    // Enter = next match, Shift+Enter = previous, Escape = close.
+    // stopPropagation on Escape keeps the global shortcut from ALSO closing the
+    // sidebar in the same keystroke (the bar is the first dismiss step).
     let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
         let key = ev.key();
         if key == "Enter" {
-            if ev.shift_key() {
-                search_navigate(state, -1);
-            } else if state.search.query.get().trim().is_empty()
-                || last_query.get() != state.search.query.get()
-            {
-                submit();
-            } else {
-                search_navigate(state, 1);
-            }
+            ev.prevent_default();
+            commit(if ev.shift_key() { -1 } else { 1 });
         } else if key == "Escape" {
             ev.stop_propagation();
             state.search.visible.set(false);
@@ -166,7 +209,7 @@ pub fn FloatingSearch(state: AppState) -> impl IntoView {
                     <button
                         type="button"
                         title="Search (Enter)"
-                        on:click=move |_| submit()
+                        on:click=move |_| commit(1)
                         class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-muted transition-colors hover:bg-line hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         <Icon name=IconName::Search size=16 />
@@ -177,27 +220,35 @@ pub fn FloatingSearch(state: AppState) -> impl IntoView {
                         placeholder="Search in document…"
                         class="h-9 min-w-0 flex-1 rounded-lg border border-line bg-paper px-2.5 text-sm text-ink placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         prop:value=move || state.search.query.get()
-                        on:input=move |ev| state.search.query.set(event_target_value(&ev))
+                        on:input=on_input
                         on:keydown=on_keydown
                     />
+                    // Counter. Before the reader commits to a match there is no
+                    // "current" one, but the total still tells them whether the
+                    // query hit anything — so show a bare count until then.
                     <span class="whitespace-nowrap px-1 text-xs text-muted tabular-nums">
-                        {move || match state.search.active.get() {
-                            Some(i) => format!("{}/{}", i + 1, state.search.total.get()),
-                            None => String::new(),
+                        {move || {
+                            let total = state.search.total.get();
+                            match (state.search.active.get(), total) {
+                                (_, 0) if state.search.query.get().trim().is_empty() => String::new(),
+                                (_, 0) => "0/0".to_string(),
+                                (Some(i), n) => format!("{}/{}", i + 1, n),
+                                (None, n) => format!("{n}"),
+                            }
                         }}
                     </span>
                     <button
                         type="button"
-                        title="Previous result (Shift+Enter)"
-                        on:click=move |_| search_navigate(state, -1)
+                        title="Previous match (Shift+Enter)"
+                        on:click=move |_| commit(-1)
                         class=ICON_BTN
                     >
                         <Chevron up=true />
                     </button>
                     <button
                         type="button"
-                        title="Next result (Enter)"
-                        on:click=move |_| search_navigate(state, 1)
+                        title="Next match (Enter)"
+                        on:click=move |_| commit(1)
                         class=ICON_BTN
                     >
                         <Chevron up=false />

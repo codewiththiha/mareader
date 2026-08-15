@@ -3,11 +3,10 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::api::engine;
 use crate::components::atoms::button::{Button, ButtonKind};
 use crate::components::atoms::icon::IconName;
 use crate::core::state::AppState;
-use crate::effects::search_effects::run_search;
+use crate::effects::search_effects::{clear_search, run_search};
 
 #[allow(dead_code)] // orphaned once U5 removes the sidebar Search tab (Phase 2, parallel)
 #[component]
@@ -15,10 +14,7 @@ pub fn SearchBox(state: AppState) -> impl IntoView {
     let do_search = move || spawn_local(run_search(state));
     let clear = move || {
         state.search.query.set(String::new());
-        engine::clear_highlights();
-        state.search.total.set(0);
-        state.search.results.set(Vec::new());
-        state.search.active.set(None);
+        clear_search(state);
     };
     view! {
         <div class="flex flex-col gap-2 border-b border-line p-3">
@@ -42,7 +38,7 @@ pub fn SearchBox(state: AppState) -> impl IntoView {
                 {move || {
                     let n = state.search.total.get();
                     if n > 0 {
-                        format!("{n} result(s)")
+                        format!("{n} match(es)")
                     } else {
                         String::new()
                     }

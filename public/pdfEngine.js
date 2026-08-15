@@ -63,6 +63,11 @@ const textIndex = new Map();
 const highlightsByPage = new Map();
 // Lowercased, trimmed query from the last search(); drives DOM-derived highlights.
 let searchQuery = "";
+// The one match the reader is currently sitting on: `{ page, index }`, where
+// `index` counts MATCHES (not pages) within that page, in reading order.
+// applyHighlights stamps the same counter onto every box it paints, so the
+// active match keeps its distinct styling across re-renders and remounts.
+let activeMatch = null;
 
 let renderCount = 0;
 // pdf.js keeps operator lists / decoded images per page. Once a page has
@@ -501,6 +506,7 @@ async function destroy() {
   textIndex.clear();
   highlightsByPage.clear();
   searchQuery = "";
+  activeMatch = null;
   if (loadingTask) {
     try { await loadingTask.destroy(); } catch (_) {}
     loadingTask = null;
@@ -593,8 +599,20 @@ function applyHighlights(st) {
   // the entire line for a two-letter query. A Range over just the matched
   // character offsets measures the glyphs themselves, and `getClientRects()`
   // returns one rect per line box, so a match that wraps still lands correctly.
+  // ORDINALS MUST AGREE WITH search(). Each painted box carries the index of
+  // the occurrence it belongs to, counted per page in reading order, and
+  // search() counts occurrences the same way over the same item sequence. That
+  // shared numbering is what lets the UI say "match 7 of this page is the
+  // current one" and have this function stamp the right box — across
+  // re-renders, remounts and zoom changes, with no rect matching.
+  //
+  // `ord` therefore advances for EVERY occurrence found, including ones that
+  // cannot be measured (unaddressable span, zero-size rect). Skipping the
+  // increment on an unpaintable match would slide every later box's number by
+  // one and mark the wrong match as current.
   const boxes = [];
   const qlen = searchQuery.length;
+  let ord = 0;
   for (const span of textLayerEl.querySelectorAll("span")) {
     const text = span.textContent;
     if (!text) continue;
@@ -603,9 +621,12 @@ function applyHighlights(st) {
     // The text node is what a Range can address; a span with no text child
     // (or a nested structure) is skipped rather than mismeasured.
     const node = span.firstChild;
-    if (!node || node.nodeType !== 3 || node.length < qlen) continue;
+    const addressable = node && node.nodeType === 3 && node.length >= qlen;
     // Every occurrence within the span, not just the first.
     for (let at = hay.indexOf(searchQuery); at !== -1; at = hay.indexOf(searchQuery, at + qlen)) {
+      const mine = ord;
+      ord += 1;
+      if (!addressable) continue;
       let rects;
       try {
         const range = document.createRange();
@@ -616,20 +637,62 @@ function applyHighlights(st) {
       } catch (_) {
         continue;
       }
+      // A match that wraps across lines yields several rects; they all belong
+      // to the same occurrence and so share its ordinal.
       for (const r of rects) {
         if (r.width <= 0 || r.height <= 0) continue;
-        boxes.push(r);
+        boxes.push({ r, ord: mine });
       }
     }
   }
-  for (const r of boxes) {
+  const activeOrd =
+    activeMatch && activeMatch.page === st.page ? activeMatch.index : -1;
+  for (const { r, ord: n } of boxes) {
     const d = document.createElement("div");
-    d.className = "highlight";
+    d.className = n === activeOrd ? "highlight is-active" : "highlight";
+    d.dataset.match = String(n);
     d.style.left = r.x - origin.x + "px";
     d.style.top = r.y - origin.y + "px";
     d.style.width = Math.max(1, r.width) + "px";
     d.style.height = Math.max(1, r.height) + "px";
     textLayerEl.appendChild(d);
+  }
+}
+
+/// Repaint the highlight boxes of every mounted page for the current query.
+///
+/// Search must not go through the rasteriser. applyHighlights only reads the
+/// text layer's client rects and appends absolutely-positioned divs, so this
+/// costs a measure + a few appends per mounted page (~1 ms) against the ~80 ms
+/// per page a re-render would cost. That is what makes highlight-as-you-type
+/// affordable: the old code nudged `render_scale` to force a re-render purely
+/// so highlights would be re-applied.
+///
+/// Pages that are not mounted yet get their highlights when they render, from
+/// the stored `searchQuery`.
+function refreshHighlights() {
+  for (const st of stateByCanvasId.values()) {
+    if (st.textLayerEl) applyHighlights(st);
+  }
+}
+
+/// Move the "current match" marker without re-rendering anything.
+///
+/// Stepping between matches only changes which box is emphasised, so it
+/// retags the already-painted divs of the mounted pages instead of going
+/// through a render (which costs ~80 ms/page and would make next/prev feel
+/// heavy). Pages mounted later pick the marker up in applyHighlights.
+function setActiveMatch(page, index) {
+  activeMatch =
+    Number.isFinite(page) && page > 0 && Number.isFinite(index) && index >= 0
+      ? { page, index: index | 0 }
+      : null;
+  for (const st of stateByCanvasId.values()) {
+    if (!st.textLayerEl) continue;
+    const wanted = activeMatch && activeMatch.page === st.page ? String(activeMatch.index) : null;
+    for (const d of st.textLayerEl.querySelectorAll(".highlight")) {
+      d.classList.toggle("is-active", wanted !== null && d.dataset.match === wanted);
+    }
   }
 }
 
@@ -1086,39 +1149,80 @@ async function buildSearchIndex() {
   return count;
 }
 
+/// Every occurrence of `query`, in document order, as a FLAT list.
+///
+/// One entry per occurrence rather than one per page (and rather than one per
+/// matching text item, which is what this used to return and which silently
+/// dropped the 2nd..nth hit inside a single item). Navigation steps through
+/// this list, so next/prev advances one match at a time — across matches
+/// within a page as well as across pages.
+///
+/// `index` is the occurrence's ordinal WITHIN its page. applyHighlights counts
+/// the same way over the same items, so the pair (page, index) identifies one
+/// painted box on screen without any geometry matching.
+///
+/// Rects are approximate: a text item's box is divided across its characters,
+/// which is enough to scroll a match into view. The on-page highlight boxes are
+/// measured from the real DOM spans instead (see applyHighlights).
 async function search(query) {
   if (!pdf) return fail("no_document", "No document open");
   const q = String(query || "").toLowerCase().trim();
-  if (!q) return { ok: true, query: "", total: 0, results: [] };
+  if (!q) {
+    searchQuery = "";
+    activeMatch = null;
+    highlightsByPage.clear();
+    return { ok: true, query: "", total: 0, matches: [] };
+  }
 
   searchQuery = q;
   highlightsByPage.clear();
-  const results = [];
-  let total = 0;
+  const matches = [];
+  const qlen = q.length;
 
-  for (const [page, items] of textIndex.entries()) {
+  // Pages in ascending order: `textIndex` is filled 1..numPages so its
+  // iteration order already is document order, but sorting makes that
+  // independent of how the index was built.
+  for (const page of [...textIndex.keys()].sort((a, b) => a - b)) {
+    const items = textIndex.get(page) || [];
     const pageMatches = [];
+    let ord = 0;
     for (const item of items) {
       const lower = item.str.toLowerCase();
-      const idx = lower.indexOf(q);
-      if (idx !== -1) {
-        pageMatches.push({ x: item.x, y: item.y, w: item.w, h: item.h });
-        total += 1;
+      const len = lower.length || 1;
+      for (let at = lower.indexOf(q); at !== -1; at = lower.indexOf(q, at + qlen)) {
+        // Split the item's box across its characters. Monospaced-ish
+        // approximation, only ever used to decide where to scroll.
+        const rect = {
+          x: item.x + (item.w * at) / len,
+          y: item.y,
+          w: Math.max(1, (item.w * qlen) / len),
+          h: item.h,
+        };
+        pageMatches.push(rect);
+        matches.push({
+          page,
+          index: ord,
+          text: snippetText(item.str, q, at),
+          ...rect,
+        });
+        ord += 1;
       }
     }
-    if (pageMatches.length) {
-      highlightsByPage.set(page, pageMatches);
-      const first = items.find((it) => it.str.toLowerCase().includes(q));
-      const snippet = first ? snippetText(first.str, q) : "";
-      results.push({ page, text: snippet, matches: pageMatches });
-    }
+    if (pageMatches.length) highlightsByPage.set(page, pageMatches);
   }
 
-  return { ok: true, query, total, results };
+  // A new query invalidates the old cursor; the UI selects the first match.
+  activeMatch = null;
+  // Paint the pages the reader is already looking at, so results show up as
+  // they type rather than on the next render.
+  refreshHighlights();
+  return { ok: true, query, total: matches.length, matches };
 }
 
-function snippetText(str, q) {
-  const idx = str.toLowerCase().indexOf(q);
+/// Context around the occurrence at `from` (defaults to the first one), so two
+/// hits inside the same text item get different snippets.
+function snippetText(str, q, from) {
+  const idx = from === undefined ? str.toLowerCase().indexOf(q) : from;
   const start = Math.max(0, idx - 25);
   const end = Math.min(str.length, idx + q.length + 30);
   const pre = start > 0 ? "…" : "";
@@ -1129,6 +1233,7 @@ function snippetText(str, q) {
 function clearHighlights() {
   highlightsByPage.clear();
   searchQuery = "";
+  activeMatch = null;
   for (const st of stateByCanvasId.values()) {
     if (st.host) {
       st.host.querySelectorAll(".highlight").forEach((n) => n.remove());
@@ -1206,5 +1311,6 @@ globalThis.PDFReader = {
   updatePage,
   buildSearchIndex,
   search,
+  setActiveMatch,
   clearHighlights,
 };

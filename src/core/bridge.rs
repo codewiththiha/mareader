@@ -85,6 +85,11 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub async fn search(query: &str) -> JsValue;
 
+    /// Emphasise occurrence `index` of `page` as the current match. `index < 0`
+    /// clears the marker without touching the other highlights.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setActiveMatch")]
+    pub fn set_active_match(page: u32, index: i32);
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "clearHighlights")]
     pub fn clear_highlights();
 

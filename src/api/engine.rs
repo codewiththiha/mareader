@@ -208,6 +208,11 @@ pub async fn search(query: &str) -> Result<SearchResponse, EngineError> {
     resolve::<SearchResponse>(value, "search").await
 }
 
+/// Mark occurrence `index` of `page` as the current match (`index < 0` clears).
+pub fn set_active_match(page: u32, index: i32) {
+    bridge::set_active_match(page, index);
+}
+
 pub fn clear_highlights() {
     bridge::clear_highlights();
 }
