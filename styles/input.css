@@ -425,6 +425,26 @@
   background: transparent;
 }
 
+/* DISMISSED SEARCH — the "cancelled artifact" state.
+   Closing the bar does not wipe the results: the boxes stay for one beat in a
+   neutral grey so the reader can still see where the hits were, and reopening
+   the bar restores the query. The next scroll / click / keypress removes them
+   (see effects::search_effects::dismissed_search_watch).
+
+   Grey rather than a third accent hue: this state means "no longer active", so
+   it should recede, and desaturating is what reads as inactive next to the live
+   blue and the amber current match. The current-match ring is dropped for the
+   same reason — nothing is current once the search is dismissed.
+
+   The transition applies only here, so the fade to grey is visible while
+   painting fresh live highlights stays instant. */
+.pdf-page .textLayer.search-stale .highlight,
+.pdf-page .textLayer.search-stale .highlight.is-active {
+  background: color-mix(in srgb, var(--color-muted) 26%, transparent);
+  box-shadow: none;
+  transition: background 160ms ease-out, box-shadow 160ms ease-out;
+}
+
 /* Multiply is right on the light themes (it darkens the paper under the text)
    but on the inverted dark canvases it drives the highlight toward black and
    swallows the glyphs. Screen keeps it a visible glow there. */
@@ -439,6 +459,15 @@
    track of where they are. */
 :root.dark .pdf-page .textLayer .highlight.is-active {
   background: color-mix(in srgb, var(--match-current) 46%, transparent);
+}
+
+/* And re-state the dismissed state, which the two dark rules above outrank on
+   specificity. Lifted a little because `screen` on a dark canvas needs more
+   than 26% grey to stay visible at all. */
+:root.dark .pdf-page .textLayer.search-stale .highlight,
+:root.dark .pdf-page .textLayer.search-stale .highlight.is-active {
+  background: color-mix(in srgb, var(--color-muted) 40%, transparent);
+  box-shadow: none;
 }
 
 /* ---------------------------------------------------------------------

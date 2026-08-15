@@ -100,9 +100,20 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                 <Tooltip text="Search (Cmd/Ctrl+F)".to_string()>
                     <button
                         type="button"
+                        // Marks this as search chrome: a dismissed search's
+                        // muted highlights survive a click here, because
+                        // reaching for the search button is coming BACK to the
+                        // search rather than moving on from it.
+                        data-search-chrome="true"
                         title="Search (Cmd/Ctrl+F)"
                         on:pointerdown=move |ev| ev.stop_propagation()
-                        on:click=move |_| state.search.visible.set(!state.search.visible.get())
+                        on:click=move |_| {
+                            if state.search.visible.get() {
+                                crate::effects::search_effects::dismiss_search(state);
+                            } else {
+                                crate::effects::search_effects::resume_search(state);
+                            }
+                        }
                         class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                         <Icon name=IconName::Search size=16 />

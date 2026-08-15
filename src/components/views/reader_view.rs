@@ -30,6 +30,10 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     // Keep `viewer.page` and the scroll position in sync in continuous mode
     // (status-bar counter, page jumps, mode-switch position).
     page_tracking(state.clone());
+
+    // Ends the grace period after a dismissed search: the next scroll, click or
+    // keypress drops the muted highlights and empties the query.
+    crate::effects::search_effects::dismissed_search_watch(state.clone());
     // Drag-and-drop file open: DOM prevent-default fallback + the authoritative
     // `tauri://drag-drop` subscription.
     drag_drop(state.clone());

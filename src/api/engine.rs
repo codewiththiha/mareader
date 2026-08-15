@@ -213,6 +213,11 @@ pub fn set_active_match(page: u32, index: i32) {
     bridge::set_active_match(page, index);
 }
 
+/// Mute the painted highlights (`stale`) or restore them (`live`).
+pub fn set_highlight_mode(stale: bool) {
+    bridge::set_highlight_mode(if stale { "stale" } else { "live" });
+}
+
 pub fn clear_highlights() {
     bridge::clear_highlights();
 }

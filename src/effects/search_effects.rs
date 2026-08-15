@@ -2,7 +2,11 @@
 //! and step through individual matches — scrolling each one into view rather
 //! than jumping to the top of its page. OWNED BY branch C (panels/sidebar).
 
+use std::cell::Cell;
+
 use leptos::prelude::*;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 
 use crate::api::engine;
 use crate::core::layout::{page_top_css, ViewMode, PAGE_GAP, TOOLBAR_H};
@@ -65,6 +69,60 @@ pub fn clear_search(state: AppState) {
     state.search.total.set(0);
     state.search.matches.set(Vec::new());
     state.search.active.set(None);
+    state.search.dismissed.set(false);
+}
+
+thread_local! {
+    /// Set for the remainder of the current task whenever a search is
+    /// dismissed. The gesture that dismisses (Escape, or a pointerdown outside
+    /// the bar) is also seen by the watcher below, which would otherwise
+    /// discard the trace in the very same event and make it invisible. This
+    /// makes that impossible without depending on listener registration order.
+    static JUST_DISMISSED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Close the bar but LEAVE the highlights on screen, muted.
+///
+/// Dismissing a search is rarely the end of it — the reader wants the page
+/// back, not the results gone, and wiping everything on Escape means retyping
+/// the query to see the hits again. So the boxes stay in a stale colour and the
+/// query is kept: reopening the bar (`resume_search`) restores it exactly.
+/// The first real interaction with the document ends the grace period
+/// (`discard_dismissed`).
+///
+/// Nothing to dismiss without a query, in which case this is a plain close.
+pub fn dismiss_search(state: AppState) {
+    state.search.visible.set(false);
+    if state.search.matches.with_untracked(Vec::is_empty) {
+        clear_search(state);
+        state.search.query.set(String::new());
+        return;
+    }
+    engine::set_highlight_mode(true);
+    state.search.dismissed.set(true);
+    JUST_DISMISSED.with(|g| g.set(true));
+    queue_microtask(|| JUST_DISMISSED.with(|g| g.set(false)));
+}
+
+/// Reopen the bar. A dismissed-but-not-yet-discarded search comes back intact,
+/// query and all; anything else opens fresh.
+pub fn resume_search(state: AppState) {
+    if state.search.dismissed.get_untracked() {
+        engine::set_highlight_mode(false);
+        state.search.dismissed.set(false);
+    }
+    state.search.visible.set(true);
+}
+
+/// End the grace period: the reader has moved on, so the stale highlights and
+/// the query go away. A no-op unless a dismissed search is actually pending,
+/// which is what makes it cheap enough to call from a scroll handler.
+pub fn discard_dismissed(state: AppState) {
+    if !state.search.dismissed.get_untracked() || JUST_DISMISSED.with(Cell::get) {
+        return;
+    }
+    state.search.query.set(String::new());
+    clear_search(state);
 }
 
 /// Scroll `m` into view and mark it as the current match.
@@ -128,4 +186,130 @@ pub fn search_navigate(state: AppState, dir: i32) {
         return;
     };
     activate_match(state, next);
+}
+
+/// Attribute marking the search bar and the toolbar button that opens it.
+/// Interacting with either is "coming back to the search", not "moving on".
+///
+/// An attribute rather than an id because several elements carry it, and
+/// duplicate ids are invalid.
+pub const SEARCH_CHROME_ATTR: &str = "data-search-chrome";
+
+/// Whether `node` sits inside the search chrome.
+fn in_search_chrome(node: &web_sys::Node) -> bool {
+    // `closest` already walks ancestors; a text node has to be lifted to its
+    // parent element first because only Elements implement it.
+    node.dyn_ref::<web_sys::Element>()
+        .cloned()
+        .or_else(|| node.parent_element())
+        .and_then(|el| el.closest(&format!("[{SEARCH_CHROME_ATTR}]")).ok().flatten())
+        .is_some()
+}
+
+/// Whether a keypress means "the reader moved on", ending the grace period.
+///
+/// Three kinds of key do NOT count. Escape, so a second Escape (closing the
+/// sidebar) does not also wipe the trace. Cmd/Ctrl+F, which reopens the bar.
+/// And a bare modifier: it is the first half of a chord, and Cmd/Ctrl+F arrives
+/// as TWO keydowns ("Control", then "f") — treating the modifier as an
+/// interaction wiped the trace before the reopening keystroke was ever seen.
+fn key_ends_grace(key: &str, cmd_or_ctrl: bool) -> bool {
+    let bare_modifier = matches!(key, "Control" | "Shift" | "Alt" | "Meta");
+    let reopening = cmd_or_ctrl && key.eq_ignore_ascii_case("f");
+    key != "Escape" && !bare_modifier && !reopening
+}
+
+/// Ends the grace period after the reader dismisses a search.
+///
+/// While a dismissed search is pending, the next scroll, pointerdown or keypress
+/// discards it: the muted highlights disappear and the query is emptied. Until
+/// then everything is still held, so reopening the bar resumes it intact.
+///
+/// Interactions with the search chrome do NOT count — reopening the bar is how
+/// the reader comes BACK to the search, not how they move on.
+///
+/// Each handler begins with an untracked bool read, so a scroll with no pending
+/// search costs one signal read rather than a DOM walk.
+///
+/// Must be called once from the app root (ReaderView).
+pub fn dismissed_search_watch(state: AppState) {
+    // `scroll` does not bubble from a scrolling element to the window, so it
+    // must be observed in the CAPTURE phase. Leptos's typed helper only
+    // attaches bubble-phase listeners, hence the manual closure.
+    //
+    // The Closure is !Send, so it is parked in a local StoredValue that lives
+    // as long as this owner (the same pattern as util::dom::observe_content_size)
+    // while `on_cleanup` — which requires Send + Sync — detaches by the
+    // independent JS Function handle.
+    let scroll_closure: StoredValue<Option<Closure<dyn Fn(web_sys::Event)>>, LocalStorage> =
+        StoredValue::new_local(None);
+    let closure = Closure::wrap(Box::new(move |_: web_sys::Event| {
+        discard_dismissed(state);
+    }) as Box<dyn Fn(web_sys::Event)>);
+    let js_fn: js_sys::Function = closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
+    if let Some(window) = web_sys::window() {
+        let _ = window.add_event_listener_with_callback_and_bool("scroll", &js_fn, true);
+    }
+    scroll_closure.set_value(Some(closure));
+    on_cleanup(move || {
+        if let Some(window) = web_sys::window() {
+            let _ = window.remove_event_listener_with_callback_and_bool("scroll", &js_fn, true);
+        }
+    });
+
+    let pointer_handle =
+        window_event_listener(leptos::ev::pointerdown, move |ev: leptos::ev::PointerEvent| {
+            if !state.search.dismissed.get_untracked() {
+                return;
+            }
+            let target: web_sys::Node = event_target(&ev);
+            if !in_search_chrome(&target) {
+                discard_dismissed(state);
+            }
+        });
+    on_cleanup(move || pointer_handle.remove());
+
+    // Any key that is not the reader reaching back for the search. Escape is
+    // excluded so a second Escape (closing the sidebar) does not also wipe the
+    // trace; Cmd/Ctrl+F is excluded because it reopens the bar.
+    let key_handle =
+        window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
+            if !state.search.dismissed.get_untracked() {
+                return;
+            }
+            if key_ends_grace(&ev.key(), ev.meta_key() || ev.ctrl_key()) {
+                discard_dismissed(state);
+            }
+        });
+    on_cleanup(move || key_handle.remove());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_ends_grace;
+
+    /// Reading on ends the grace period; reaching back for the search does not.
+    #[test]
+    fn only_moving_on_ends_the_grace_period() {
+        // (key, cmd_or_ctrl, ends_grace)
+        let cases: &[(&str, bool, bool)] = &[
+            // Reading / editing the document = moved on.
+            ("ArrowDown", false, true),
+            ("PageDown", false, true),
+            (" ", false, true),
+            ("a", false, true),
+            ("f", false, true), // plain f is typing, not the shortcut
+            // Coming back to the search, or not an interaction at all.
+            ("Escape", false, false),
+            ("f", true, false),
+            ("F", true, false), // Shift+Cmd+F still reopens
+            ("Control", false, false),
+            ("Meta", true, false),
+            ("Shift", false, false),
+            ("Alt", false, false),
+        ];
+        for &(key, mods, want) in cases {
+            assert_eq!(key_ends_grace(key, mods), want, "key={key:?} cmd_or_ctrl={mods}");
+        }
+    }
 }

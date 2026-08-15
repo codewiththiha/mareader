@@ -155,6 +155,13 @@ pub struct SearchState {
     pub index_built: RwSignal<bool>,
     /// Floating-search overlay visibility; read+written by shortcuts (Cmd+F / Escape).
     pub visible: RwSignal<bool>,
+    /// The bar has been dismissed but its highlights are still on screen, muted.
+    ///
+    /// This is the grace period between "the reader pressed Escape" and "the
+    /// reader moved on": the query and its matches are all still held, so
+    /// reopening the bar resumes exactly where they left off. The next scroll,
+    /// click or keypress ends it and drops everything.
+    pub dismissed: RwSignal<bool>,
 }
 
 impl Default for SearchState {
@@ -166,6 +173,7 @@ impl Default for SearchState {
             active: RwSignal::new(None),
             index_built: RwSignal::new(false),
             visible: RwSignal::new(false),
+            dismissed: RwSignal::new(false),
         }
     }
 }

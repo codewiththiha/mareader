@@ -12,7 +12,9 @@ use leptos::task::spawn_local;
 
 use crate::components::atoms::icon::{Icon, IconName};
 use crate::core::state::AppState;
-use crate::effects::search_effects::{activate_match, clear_search, run_search, search_navigate};
+use crate::effects::search_effects::{
+    activate_match, clear_search, dismiss_search, run_search, search_navigate,
+};
 
 use super::search_panel::ResultList;
 
@@ -89,7 +91,10 @@ pub fn FloatingSearch(state: AppState) -> impl IntoView {
                         .as_ref()
                         .map_or(false, |c| c.contains(Some(&target)));
                     if !contains {
-                        state.search.visible.set(false);
+                        // Leaves the muted highlights behind, like Escape.
+                        // The same pointerdown then ends the grace period
+                        // unless it landed on the search chrome.
+                        dismiss_search(state);
                     }
                 },
             );
@@ -190,7 +195,7 @@ pub fn FloatingSearch(state: AppState) -> impl IntoView {
             commit(if ev.shift_key() { -1 } else { 1 });
         } else if key == "Escape" {
             ev.stop_propagation();
-            state.search.visible.set(false);
+            dismiss_search(state);
         }
     };
 
@@ -198,6 +203,9 @@ pub fn FloatingSearch(state: AppState) -> impl IntoView {
         <Show when=move || state.search.visible.get()>
             <div
                 node_ref=container_ref
+                // Opt out of discard-on-interaction: clicks inside the bar are
+                // part of searching, not the reader moving on.
+                data-search-chrome="true"
                 // top-14 == TOOLBAR_H (48px) + the old top-2 (8px) gap. The
                 // offset parent is now the full-height content row, which
                 // starts at the window top so pages can travel under the glass
@@ -256,7 +264,7 @@ pub fn FloatingSearch(state: AppState) -> impl IntoView {
                     <button
                         type="button"
                         title="Close (Esc)"
-                        on:click=move |_| state.search.visible.set(false)
+                        on:click=move |_| dismiss_search(state)
                         class=ICON_BTN
                     >
                         <Icon name=IconName::Close size=16 />

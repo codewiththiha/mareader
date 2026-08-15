@@ -63,6 +63,11 @@ const textIndex = new Map();
 const highlightsByPage = new Map();
 // Lowercased, trimmed query from the last search(); drives DOM-derived highlights.
 let searchQuery = "";
+// "live" while the reader is searching, "stale" once they dismiss the bar. A
+// stale pass keeps the boxes on screen in a muted colour — the search is over,
+// but the reader can still see where the hits were, and reopening the bar
+// brings the query back. See setHighlightMode.
+let highlightMode = "live";
 // The one match the reader is currently sitting on: `{ page, index }`, where
 // `index` counts MATCHES (not pages) within that page, in reading order.
 // applyHighlights stamps the same counter onto every box it paints, so the
@@ -588,6 +593,9 @@ function applyHighlights(st) {
   // re-renders (doubled, slightly-offset highlight boxes).
   host.querySelectorAll(".highlight").forEach((n) => n.remove());
   if (!searchQuery || !textLayerEl) return;
+  // A page mounted while the search is dismissed must paint its boxes stale
+  // straight away, not flash them live first.
+  textLayerEl.classList.toggle("search-stale", highlightMode === "stale");
   const origin = host.getBoundingClientRect();
   // Collect first, mutate after: appending into the layer while iterating a
   // live query would force a re-layout per insertion (and could re-measure
@@ -673,6 +681,21 @@ function applyHighlights(st) {
 function refreshHighlights() {
   for (const st of stateByCanvasId.values()) {
     if (st.textLayerEl) applyHighlights(st);
+  }
+}
+
+/// Switch the painted highlights between "live" and "stale" without touching
+/// the query, the match list or the rasteriser.
+///
+/// One class toggle per mounted text layer; the colours live in CSS. This is
+/// what lets dismissing the bar leave a visible trace of the search behind
+/// instead of wiping it instantly — the reader can still see what they were
+/// looking at, and reopening restores the query.
+function setHighlightMode(mode) {
+  highlightMode = mode === "stale" ? "stale" : "live";
+  const stale = highlightMode === "stale";
+  for (const st of stateByCanvasId.values()) {
+    if (st.textLayerEl) st.textLayerEl.classList.toggle("search-stale", stale);
   }
 }
 
@@ -1175,6 +1198,7 @@ async function search(query) {
   }
 
   searchQuery = q;
+  highlightMode = "live";
   highlightsByPage.clear();
   const matches = [];
   const qlen = q.length;
@@ -1234,10 +1258,12 @@ function clearHighlights() {
   highlightsByPage.clear();
   searchQuery = "";
   activeMatch = null;
+  highlightMode = "live";
   for (const st of stateByCanvasId.values()) {
     if (st.host) {
       st.host.querySelectorAll(".highlight").forEach((n) => n.remove());
     }
+    if (st.textLayerEl) st.textLayerEl.classList.remove("search-stale");
   }
 }
 
@@ -1312,5 +1338,6 @@ globalThis.PDFReader = {
   buildSearchIndex,
   search,
   setActiveMatch,
+  setHighlightMode,
   clearHighlights,
 };

@@ -90,6 +90,10 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setActiveMatch")]
     pub fn set_active_match(page: u32, index: i32);
 
+    /// Switch the painted highlights between "live" and "stale".
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setHighlightMode")]
+    pub fn set_highlight_mode(mode: &str);
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "clearHighlights")]
     pub fn clear_highlights();
 

@@ -232,7 +232,9 @@ pub fn shortcuts(state: AppState) {
         // guard. Closes the floating search overlay first, then the sidebar.
         if key == "Escape" {
             if state.search.visible.get() {
-                state.search.visible.set(false);
+                // Closes the bar but leaves the muted highlights behind; the
+                // next interaction with the document clears them.
+                crate::effects::search_effects::dismiss_search(state);
             } else if state.sidebar.get() != SidebarMode::None {
                 state.sidebar.set(SidebarMode::None);
             }
@@ -260,7 +262,9 @@ pub fn shortcuts(state: AppState) {
                 // Cmd/Ctrl+F -> open the floating search overlay
                 "f" => {
                     ev.prevent_default();
-                    state.search.visible.set(true);
+                    // Resumes a just-dismissed search (query and all) instead
+                    // of opening an empty bar.
+                    crate::effects::search_effects::resume_search(state);
                 }
                 // Cmd/Ctrl+1 / 2 -> view mode
                 "1" => {
