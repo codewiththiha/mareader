@@ -5,11 +5,16 @@
 //! Slot wiring is the SINGLE coordinator's job — branches
 //! must not edit this file.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::Event;
+
+use crate::components::atoms::icon::{Icon, IconName};
 
 use crate::core::document::DocStatus;
 use crate::core::layout::ViewMode;
@@ -38,8 +43,10 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     // keypress drops the muted highlights and empties the query.
     crate::effects::search_effects::dismissed_search_watch(state.clone());
     // Drag-and-drop file open: DOM prevent-default fallback + the authoritative
-    // `tauri://drag-drop` subscription.
-    drag_drop(state.clone());
+    // `tauri://drag-drop` subscription. Also drives the drop-feedback overlay
+    // via `drag_active`.
+    let drag_active = RwSignal::new(false);
+    drag_drop(state.clone(), drag_active);
 
     // Hoist signal handles + owned state clones BEFORE the view! macro. Each
     // `move` closure below captures exactly one owned value, so there is no
@@ -101,6 +108,33 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                 <crate::components::organisms::status_bar::StatusBar state=state_status />
             </footer>
             <div class="noise-overlay"></div>
+            // Drop-feedback overlay: appears only while a file drag is over the
+            // window (drag_active), themed to follow the current appearance.
+            <Show when=move || drag_active.get()>
+                <DragOverlay />
+            </Show>
+        </div>
+    }
+}
+
+/// Full-screen feedback shown while a file is being dragged over the window.
+///
+/// Purely visual (`pointer-events: none`), so the window-level drop handlers
+/// keep receiving the drag. Themed entirely through the design tokens
+/// (`--color-accent`, `--color-paper`, `--color-surface`, `--color-ink`,
+/// `--color-muted`), so it follows the active base mode and tint with no extra
+/// wiring.
+#[component]
+fn DragOverlay() -> impl IntoView {
+    view! {
+        <div class="drag-overlay" role="presentation" aria-hidden="true">
+            <div class="drag-dropzone">
+                <div class="drag-dropzone-icon">
+                    <Icon name=IconName::Drop size=40 />
+                </div>
+                <p class="drag-dropzone-title">"Drop to open"</p>
+                <p class="drag-dropzone-sub">"Release your PDF to start reading"</p>
+            </div>
         </div>
     }
 }
@@ -113,18 +147,36 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
 ///      plain-browser fallback. Dragging from Finder onto the WKWebView only
 ///      fires these DOM events if Tauri forwards them; the authoritative open
 ///      comes from layer 2. Scoped to file drags so dragging text/HTML inside
-///      the app keeps working.
+///      the app keeps working. The same listeners drive `drag_active`, which
+///      shows the drop-feedback overlay.
 ///   2. A `tauri://drag-drop` subscription via `bridge::listen`. The handler
 ///      reads `payload.paths[0]` and routes it through the shared open-flow
 ///      (`open_flow::open_path`). The Closure is parked in a StoredValue:
 ///      dropping the JS function would unregister the listener.
-fn drag_drop(state: AppState) {
+fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
+    // Drag-enter/leave DEPTH counter. Window-level `dragenter`/`dragleave`
+    // fire for every child-element boundary crossed, not just the window edge,
+    // so a naive "set true on enter, false on leave" would flicker the overlay
+    // as the pointer moves over its own contents. Counting enter/leave pairs
+    // makes the overlay appear on the first file dragenter and hold until the
+    // drag genuinely leaves the window (or is dropped).
+    let depth = Rc::new(Cell::new(0u32));
+
     // Layer 1: DOM prevent-default listeners. Parked in a StoredValue so they
     // (and the handles' removal closures) live for the component lifetime.
+    let d_enter = depth.clone();
+    let d_leave = depth.clone();
+    let d_drop = depth;
+    let da_enter = drag_active;
+    let da_leave = drag_active;
+    let da_drop = drag_active;
     let _dom_handles = StoredValue::new_local(vec![
-        window_event_listener(leptos::ev::dragenter, |ev: leptos::ev::DragEvent| {
+        window_event_listener(leptos::ev::dragenter, move |ev: leptos::ev::DragEvent| {
+            let n = d_enter.get() + 1;
+            d_enter.set(n);
             if is_file_drag(&ev) {
                 ev.prevent_default();
+                da_enter.set(true);
             }
         }),
         window_event_listener(leptos::ev::dragover, |ev: leptos::ev::DragEvent| {
@@ -132,9 +184,18 @@ fn drag_drop(state: AppState) {
                 ev.prevent_default();
             }
         }),
-        window_event_listener(leptos::ev::drop, |ev: leptos::ev::DragEvent| {
+        window_event_listener(leptos::ev::dragleave, move |_ev: leptos::ev::DragEvent| {
+            let n = d_leave.get().saturating_sub(1);
+            d_leave.set(n);
+            if n == 0 {
+                da_leave.set(false);
+            }
+        }),
+        window_event_listener(leptos::ev::drop, move |ev: leptos::ev::DragEvent| {
             if is_file_drag(&ev) {
                 ev.prevent_default();
+                d_drop.set(0);
+                da_drop.set(false);
             }
         }),
     ]);

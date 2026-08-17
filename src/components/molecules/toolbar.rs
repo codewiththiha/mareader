@@ -45,21 +45,26 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
             <div class="flex min-w-0 items-center gap-1">
                 // Fixed-size controls left of the name, measured as one unit.
                 <div id="toolbar-left-pre" class="flex shrink-0 items-center gap-1">
-                <Tooltip text="Toggle sidebar".to_string()>
-                    <Button
-                        on_click=move |_| {
-                            let next = if menu_state.sidebar.get() == SidebarMode::None {
-                                SidebarMode::Thumbs
-                            } else {
-                                SidebarMode::None
-                            };
-                            menu_state.sidebar.set(next);
-                        }
-                        kind=ButtonKind::Ghost
-                        icon=IconName::Menu
-                        title="Toggle sidebar".to_string()
-                    />
-                </Tooltip>
+                // Sidebar toggle only while a document is open: the home screen
+                // (library / empty state) has no outline or thumbnails to show,
+                // so the hamburger would open an empty panel.
+                <Show when=move || menu_state.doc.status.get() == DocStatus::Ready>
+                    <Tooltip text="Toggle sidebar".to_string()>
+                        <Button
+                            on_click=move |_| {
+                                let next = if menu_state.sidebar.get() == SidebarMode::None {
+                                    SidebarMode::Thumbs
+                                } else {
+                                    SidebarMode::None
+                                };
+                                menu_state.sidebar.set(next);
+                            }
+                            kind=ButtonKind::Ghost
+                            icon=IconName::Menu
+                            title="Toggle sidebar".to_string()
+                        />
+                    </Tooltip>
+                </Show>
                 // Back to the library shelf. Only while a document is open —
                 // the shelf IS the empty state, so the button would be a no-op
                 // (and confusing) there.
