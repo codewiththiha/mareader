@@ -571,8 +571,16 @@ async function destroy() {
   searchQuery = "";
   activeMatch = null;
   if (loadingTask) {
-    try { await loadingTask.destroy(); } catch (_) {}
+    // Fire-and-forget the loading-task teardown. `loadingTask.destroy()`
+    // terminates the worker, and on a document that has been scrolled (many
+    // renders, text extractions, a search-index build in flight) it can take
+    // arbitrarily long — long enough, in WKWebView, to never resolve and hang
+    // the next open, which awaits this destroy. Drop the reference
+    // SYNCHRONOUSLY so a re-entrant destroy is a no-op, and let the worker
+    // die in the background; a fresh getDocument spawns its own worker.
+    const lt = loadingTask;
     loadingTask = null;
+    Promise.resolve(lt.destroy()).catch(() => {});
   }
   pdf = null;
   numPages = 0;

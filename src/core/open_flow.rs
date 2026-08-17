@@ -79,10 +79,17 @@ pub fn open_path(state: AppState, path: String) {
                 // A successful open dismisses any stale error toast.
                 state.toast.set(None);
 
-                // Resume: jump to the saved page (clamped to the real count —
-                // a re-edited document may have fewer pages than remembered).
+                // Resume point (clamped to the real count — a re-edited
+                // document may have fewer pages than remembered).
                 let resume = saved_page.min(num_pages.max(1));
-                state.viewer.page.set(resume);
+
+                // Fresh-open baseline: page 1, top of the column. The resume
+                // jump happens AFTER the view mounts (see below), because
+                // writing `page = resume` here — in the same batch as the
+                // `page_heights` reset and `scroll_top = 0` — races the
+                // page-tracking effects: the scroll→page effect reads scroll 0
+                // and "corrects" the page back to 1 before the jump lands.
+                state.viewer.page.set(1);
                 state.viewer.scroll_top.set(0.0);
                 state.viewer.fit.set(FitMode::Width);
                 // Heights belong to the document that was just closed; leaving
@@ -102,6 +109,16 @@ pub fn open_path(state: AppState, path: String) {
                 state.viewer.scale.set(s);
                 state.viewer.display_scale.set(s);
                 state.viewer.render_scale.set(s);
+
+                // Jump to the saved page once the view has mounted and seeded
+                // its page heights — the same `page.set()` path outline /
+                // thumbnail / search navigation use, which is proven correct.
+                if resume > 1 {
+                    let jump_state = state;
+                    request_animation_frame(move || {
+                        jump_state.viewer.page.set(resume);
+                    });
+                }
 
                 // Reset search + clear stale highlights. The floating search
                 // overlay must not linger after opening a new document.
@@ -188,11 +205,37 @@ pub fn open_path(state: AppState, path: String) {
 /// renders whenever `doc.status != Ready`). The library itself is untouched:
 /// the just-closed book keeps its saved page so reopening resumes there.
 pub fn close_document(state: AppState) {
-    // NOTE: the engine document is deliberately NOT destroyed here. `open()`
-    // tears the previous document down as its first step, so a fast
-    // "close → reopen another book" would race two destroys against the same
-    // loading task. The viewer unmounting below releases every page canvas
-    // anyway, and the next open (or app close) drops the pdf.js document.
+    // Flush the current reading position NOW, before the signals are reset.
+    // The reading-progress effect writes the library signal synchronously but
+    // debounces the localStorage save; closing (and then possibly quitting)
+    // must not lose the last position to that debounce.
+    if state.doc.status.get_untracked() == DocStatus::Ready {
+        if let Some(path) = state.doc.path.get_untracked() {
+            let page = state.viewer.page.get_untracked();
+            let mut changed = false;
+            state.library.update(|books| {
+                if let Some(b) = books.iter_mut().find(|b| b.path == path) {
+                    if b.page != page {
+                        b.page = page;
+                        changed = true;
+                    }
+                }
+            });
+            if changed {
+                save_library(&state.library.get_untracked());
+            }
+        }
+    }
+
+    // Tear the engine document down while the reader is idle on the shelf.
+    // destroy() is non-blocking (it drops the loading-task reference
+    // synchronously and lets the worker die in the background), so this can
+    // never hang, and a fast "close → reopen" is safe because the reopen's
+    // own destroy() is idempotent.
+    let _ = spawn_local(async move {
+        let _ = engine::destroy().await;
+    });
+
     state.doc.status.set(DocStatus::Idle);
     state.doc.error.set(None);
     state.doc.path.set(None);
