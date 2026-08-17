@@ -320,6 +320,59 @@ function itemRect(item, pageH) {
   };
 }
 
+/// Reorder pdf.js text items so copy/paste and drag-selection follow visual
+/// reading order, WITHOUT disturbing line / column structure.
+///
+/// pdf.js returns text items in CONTENT-STREAM (paint) order. Most producers
+/// paint in reading order, but some emit each font run (an italic/bold phrase,
+/// a list number, a caption label) as a separate show-text op AFTER the run it
+/// visually precedes. The layer then holds that run at the wrong DOM position,
+/// so:
+///   - copy/paste concatenates spans in DOM order and comes out scrambled, and
+///   - one contiguous drag selection paints as several visually disjoint
+///     islands (the highlight "flickers" across style boundaries).
+///
+/// The fix is LOCAL: bubble adjacent items that sit on the same visual line
+/// but are horizontally inverted. It only ever swaps two items that are
+/// already neighbours in the stream AND vertically aligned, so it corrects
+/// within-line inversions while leaving line order, column order (two-column
+/// layouts keep their column-major stream order) and table row order exactly
+/// as the producer laid them out. A global top-then-left sort would be WRONG
+/// here: it merges the two columns of a two-column page into one "line" and
+/// interleaves them, scrambling copy that is currently correct.
+///
+/// pdf.js already synthesises the inter-word spaces the PDF stream omits (as
+/// separate `str: " "` items positioned in the gap), so this only PERMUTES
+/// items — it never rewrites their text or transforms, which is what keeps the
+/// span `--scale-x` math and the highlight getBoundingClientRect measurement
+/// intact.
+function normalizeTextOrder(items) {
+  if (!items || items.length < 2) return items;
+  const arr = items.slice(); // pure permutation of the input
+  const top = (it) => -(it.transform?.[5] ?? 0);
+  const left = (it) => (it.transform?.[4] ?? 0);
+  const height = (it) => Math.max(it.height || 0, 1);
+
+  let swapped = true;
+  let guard = 0;
+  while (swapped && guard < 1000) {
+    swapped = false;
+    guard += 1;
+    for (let i = 0; i < arr.length - 1; i += 1) {
+      const a = arr[i];
+      const b = arr[i + 1];
+      // Same line: baselines within half a line height of each other.
+      const tol = 0.5 * Math.max(height(a), height(b));
+      if (Math.abs(top(a) - top(b)) <= tol && left(b) < left(a)) {
+        arr[i] = b;
+        arr[i + 1] = a;
+        swapped = true;
+      }
+    }
+  }
+  return arr;
+}
+
 // --- bytes -----------------------------------------------------------
 async function doFetch(src) {
   const res = await fetch(src);
@@ -943,8 +996,15 @@ async function renderPageInternal(canvasId, scale, renderText) {
     layer.className = "textLayer";
     layer.setAttribute("aria-hidden", "true");
 
+    // READING-ORDER FIX: fetch the full text content and reorder it before
+    // handing it to pdf.js's TextLayer. `streamTextContent()` streams in paint
+    // order, which cannot be reordered; `getTextContent()` collects the same
+    // items so normalizeTextOrder can permute them first (see above).
+    const textContent = await page.getTextContent();
+    textContent.items = normalizeTextOrder(textContent.items);
+
     const tl = new TextLayer({
-      textContentSource: page.streamTextContent(),
+      textContentSource: textContent,
       container: layer,
       viewport,
     });
@@ -1158,7 +1218,9 @@ async function buildSearchIndex() {
       const tc = await page.getTextContent();
       const pageH = page.getViewport({ scale: 1 }).height;
       const items = [];
-      for (const item of tc.items || []) {
+      // Same reading-order permutation the text layer uses, so snippet text,
+      // match order and what the user copies are one source of truth.
+      for (const item of normalizeTextOrder(tc.items) || []) {
         if (!item.str) continue;
         const r = itemRect(item, pageH);
         if (r.w <= 0) continue;
