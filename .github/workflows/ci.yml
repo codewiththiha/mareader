@@ -83,5 +83,11 @@ jobs:
       - name: Check wasm frontend
         run: cargo check --target wasm32-unknown-unknown
 
+      # The imperative engine (public/pdfEngine.js) is browser code; run its
+      # stub-based smoke test (pure Node stdlib, no node_modules) to catch
+      # regressions in open / render / theme-bake / scrub / destroy.
+      - name: Engine smoke test
+        run: node scripts/test-engine-smoke.mjs
+
       - name: Verify versions are in sync
         run: node scripts/check-versions.mjs

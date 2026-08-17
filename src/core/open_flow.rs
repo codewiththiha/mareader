@@ -13,15 +13,66 @@ use leptos::prelude::*;
 // be CANCELLED the moment `status` flips to `Opening` (that unmounts the card,
 // disposing its owner) — leaving the app stuck on "Opening…" forever. The
 // wasm-bindgen executor runs the future to completion regardless of owner.
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::Event;
 
 use crate::api::engine;
+use crate::core::bridge;
 use crate::core::document::DocStatus;
 use crate::core::filename::display_name;
 use crate::core::library::{self, CoverImage, RecentBook};
 use crate::core::math::{fit_scale, FitMode};
 use crate::core::state::{AppState, SidebarMode, Toast, ToastKind};
 use crate::util::storage::{save_covers, save_library};
+
+/// Wire OS-level file opening (double-click / "Open with" / default-app
+/// launch) into the shared open flow. Called once from the app root.
+///
+/// Two paths, one handoff point:
+///   * PULL — `take_pending_file` collects whatever the OS handed to the
+///     backend before the webview finished mounting (initial-launch argv on
+///     Windows/Linux, the macOS open-file event at launch). An event emitted
+///     before mount would be lost, so the command is the source of truth.
+///   * PUSH — the backend emits `pdf-open-file` for files opened while the
+///     app is already running (single-instance forward on Windows/Linux,
+///     LaunchServices on macOS). The listener just re-runs the pull: the
+///     command clears itself, so an event + a stray second pull can never
+///     open the same file twice.
+pub fn init_open_file_handling(state: AppState) {
+    let st = state.clone();
+    spawn_local(async move {
+        if let Some(path) = engine::take_pending_file().await {
+            open_path(st, path);
+        }
+    });
+
+    if !bridge::has_tauri() {
+        return;
+    }
+
+    // Park the JS closure in a StoredValue so the listener stays registered
+    // for the lifetime of the app (same pattern as the drag-drop listeners
+    // in reader_view.rs; the unlisten handle is deliberately discarded).
+    let handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
+    let cb_state = state;
+    let cb: Closure<dyn FnMut(Event)> = Closure::wrap(
+        Box::new(move |_ev: Event| {
+            let st = cb_state;
+            spawn_local(async move {
+                if let Some(path) = engine::take_pending_file().await {
+                    open_path(st, path);
+                }
+            });
+        }) as Box<dyn FnMut(Event)>,
+    );
+    let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
+    spawn_local(async move {
+        let _ = bridge::listen("pdf-open-file", f).await;
+    });
+    handle.set_value(Some(cb));
+}
 
 /// Native open-dialog flow: pick a file, then run the shared open-flow.
 ///

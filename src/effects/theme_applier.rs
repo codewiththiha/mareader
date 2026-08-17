@@ -77,6 +77,30 @@ fn apply_scrub(a: &mut Appearance, p: AppearanceScrub) {
 }
 
 thread_local! {
+    // True while an appearance slider scrub is in flight. The engine then
+    // shows RAW rasters under the live CSS filter/blend (see
+    // `engine::set_scrub_mode`) so the page re-colours every frame under the
+    // user's drag — a per-frame re-bake of full-resolution rasters cannot
+    // keep up, and the compositor's per-frame filter is exactly what the
+    // pre-baking pipeline did.
+    static SCRUBBING: Cell<bool> = const { Cell::new(false) };
+}
+
+fn enter_scrub() {
+    let was = SCRUBBING.with(|s| s.replace(true));
+    if !was {
+        crate::api::engine::set_scrub_mode(true);
+    }
+}
+
+fn leave_scrub() {
+    let was = SCRUBBING.with(|s| s.replace(false));
+    if was {
+        crate::api::engine::set_scrub_mode(false);
+    }
+}
+
+thread_local! {
     static PAINT_PENDING: Cell<Option<Appearance>> = const { Cell::new(None) };
     static PAINT_SCHEDULED: Cell<bool> = const { Cell::new(false) };
     static COMMIT_GEN: Cell<u64> = const { Cell::new(0) };
@@ -246,6 +270,9 @@ pub fn cancel_appearance_commit() {
     bump_commit_gen();
     clear_commit_timer();
     COMMIT_PAYLOAD.with(|p| p.set(None));
+    // The scrub is over even though its timer never fired; restore baked
+    // rasters at whatever the variables currently hold.
+    leave_scrub();
 }
 
 /// Apply a pending slider commit NOW, then clear the timer. Used when a
@@ -255,6 +282,9 @@ pub fn flush_appearance_commit() {
     clear_commit_timer();
     let payload = COMMIT_PAYLOAD.with(|p| p.take());
     bump_commit_gen();
+    // The scrub's own timer never fires; re-bake at the scrub's final values
+    // (already painted live) before the structural change repaints on top.
+    leave_scrub();
     if let Some((state, patch)) = payload {
         state.settings.update(|s| {
             apply_scrub(&mut s.appearance, patch);
@@ -267,6 +297,11 @@ pub fn flush_appearance_commit() {
 /// gesture pauses. Does NOT notify `settings` on the way, so PageCanvas /
 /// presets / localStorage stay quiet for the whole drag.
 pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
+    // The theme variables change every frame from here on; switch the engine
+    // to raw rasters + live CSS so the PAGE tracks the slider, not just the
+    // chrome. Idempotent for the rest of the drag.
+    enter_scrub();
+
     let mut a = state.settings.get_untracked().appearance;
     apply_scrub(&mut a, patch);
     paint_appearance(a);
@@ -280,6 +315,10 @@ pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
                 return;
             }
             COMMIT_PAYLOAD.with(|p| p.set(None));
+            // The drag has paused: re-bake the rasters at the final values
+            // (the scrub already painted them live, so the re-bake reads the
+            // same variables) and drop the live-CSS pipeline.
+            leave_scrub();
             state.settings.update(|s| {
                 apply_scrub(&mut s.appearance, patch);
                 s.touch_appearance();
@@ -312,6 +351,11 @@ pub fn theme_applier(state: AppState) {
     Effect::new(move || {
         let a = state.settings.get().appearance;
         paint_appearance_now(a);
+        // The engine bakes the theme into its rasters (pages + thumbnails);
+        // re-bake them at the freshly painted variables. A no-op while a
+        // scrub is in flight (scrub mode owns the canvases then) and before
+        // the first document opens.
+        crate::api::engine::refresh_theme();
     });
 
     Effect::new(move || {

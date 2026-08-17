@@ -17,7 +17,8 @@
         "width": 1200,
         "height": 800,
         "minWidth": 640,
-        "minHeight": 480
+        "minHeight": 480,
+        "additionalBrowserArgs": "--disable-gpu-rasterization --disable-accelerated-2d-canvas --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
       }
     ],
     "security": {
@@ -41,6 +42,15 @@
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": ["pdf"],
+        "name": "PDF Document",
+        "description": "PDF document",
+        "mimeType": "application/pdf",
+        "role": "Viewer"
+      }
+    ]
   }
 }

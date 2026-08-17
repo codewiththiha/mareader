@@ -1,8 +1,123 @@
+//! PDF Reader — Tauri backend.
+//!
+//! Besides hosting the webview this crate owns the two OS touch-points a
+//! desktop reader needs and the frontend cannot do itself:
+//!
+//!   * `read_file_bytes` — the webview asks the Rust side for a PDF's bytes
+//!     over IPC instead of `fetch()`-ing the Tauri asset protocol. On Windows
+//!     that protocol is `https://asset.localhost` (self-signed cert + DNS
+//!     resolution), and the first request after launch intermittently fails
+//!     with "Failed to fetch" — the reopen-a-PDF-on-Windows bug. Reading in
+//!     Rust sidesteps scheme, scope, CORS and certificate entirely and works
+//!     for ANY path, on every OS.
+//!
+//!   * OS file opening — double-click / "Open with" / default-app launch.
+//!     The file path arrives differently per platform, so all three routes
+//!     queue into one `PendingFile` slot:
+//!       - macOS   : `RunEvent::Opened` (LaunchServices), at launch AND while
+//!                   running (the running instance receives it).
+//!       - Windows/Linux initial launch : plain argv entry ("%1" from the
+//!                   shell association).
+//!       - Windows/Linux second launch : `tauri-plugin-single-instance`
+//!                   forwards the second process's argv to the running one
+//!                   instead of spawning a second window.
+//!     The frontend collects the slot through the `take_pending_file`
+//!     command (the authoritative handoff — an event emitted before the
+//!     webview mounted would otherwise be lost) and `pdf-open-file` is only
+//!     the wake-up ping for files that arrive while it is already mounted.
+
+use std::sync::Mutex;
+
+use tauri::{Emitter, Manager, RunEvent};
+
+/// The OS-opened PDF path the frontend has not collected yet.
+struct PendingFile(Mutex<Option<String>>);
+
+/// True for anything we should try to open as a document.
+///
+/// Also strips Windows shell quoting: `std::env::args()` on Windows does not
+/// remove the quotes Explorer puts around `%1`, so `"C:\My Docs\a.pdf"`
+/// arrives quoted and would fail the suffix test.
+fn is_pdf_path(raw: &str) -> bool {
+    let p = raw.trim().trim_matches('"');
+    p.to_lowercase().ends_with(".pdf")
+}
+
+/// Hand a PDF path to the frontend: queue it for `take_pending_file` and
+/// ping the `pdf-open-file` event in case the webview is already listening.
+fn queue_pending(app: &tauri::AppHandle, path: String) {
+    let path = path.trim().trim_matches('"').to_string();
+    if !is_pdf_path(&path) {
+        return;
+    }
+    if let Some(state) = app.try_state::<PendingFile>() {
+        if let Ok(mut guard) = state.0.lock() {
+            *guard = Some(path.clone());
+        }
+    }
+    let _ = app.emit("pdf-open-file", path);
+}
+
+/// Returns the pending OS-opened PDF path (if any) and clears it. The
+/// frontend pulls this once on mount and again whenever `pdf-open-file`
+/// pings, so a file opened at launch survives the webview not being ready
+/// and one opened mid-run never opens twice.
+#[tauri::command]
+fn take_pending_file(state: tauri::State<'_, PendingFile>) -> Option<String> {
+    state.0.lock().ok().and_then(|mut g| g.take())
+}
+
+/// Read a file's bytes for the webview. Returned as an IPC `Response` so the
+/// JS side receives an `ArrayBuffer` (no JSON round-trip for megabytes).
+/// Errors resolve as a rejected invoke, which the engine falls back from.
+#[tauri::command]
+fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    std::fs::read(&path)
+        .map(tauri::ipc::Response::new)
+        .map_err(|e| format!("could not read {path}: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .run(tauri::generate_context!())
+        // A PDF double-clicked while the app is already running must land in
+        // the EXISTING window, not open a second one (Windows/Linux).
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if let Some(path) = argv.into_iter().find(|a| is_pdf_path(a)) {
+                queue_pending(app, path);
+            }
+        }))
+        .manage(PendingFile(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![take_pending_file, read_file_bytes])
+        .build(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    app.run(|app_handle, event| match event {
+        // macOS: files opened with this app (Finder double-click, `open -a`,
+        // LaunchServices) arrive here — at launch and while running. The
+        // variant is cfg'd to Apple platforms in tauri itself.
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => {
+            for url in urls {
+                let path = url
+                    .to_file_path()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| url.to_string());
+                queue_pending(app_handle, path);
+            }
+        }
+        // Windows/Linux: the initial launch's PDF path is a plain argv entry
+        // (Explorer "Open with" / double-click under a file association).
+        RunEvent::Ready => {
+            for arg in std::env::args().skip(1) {
+                if is_pdf_path(&arg) {
+                    queue_pending(app_handle, arg);
+                    break;
+                }
+            }
+        }
+        _ => {}
+    });
 }

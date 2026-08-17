@@ -228,3 +228,35 @@ pub fn set_highlight_mode(stale: bool) {
 pub fn clear_highlights() {
     bridge::clear_highlights();
 }
+
+// --- OS file opening + theme re-bake -------------------------------------
+
+/// Collect the pending OS-opened PDF path from the backend (double-click,
+/// "Open with", default-app launch), if any. Consumes it, so a stray double
+/// wake-up can never open the same file twice. Resolves None (never errors)
+/// outside Tauri and whenever the backend has nothing queued.
+pub async fn take_pending_file() -> Option<String> {
+    if !bridge::has_tauri() {
+        return None;
+    }
+    let value = bridge::take_pending_file().await;
+    value.as_string().filter(|s| !s.is_empty())
+}
+
+/// Re-bake the theme into every raster the engine already holds (mounted
+/// pages + cached thumbnails). Called by the theme applier right after it
+/// writes the new CSS variables; pages render with the new look without a
+/// pdf.js re-render.
+pub fn refresh_theme() {
+    bridge::refresh_theme();
+}
+
+/// Enter/leave appearance-scrub mode. While a slider drag repaints the theme
+/// variables every frame, the engine shows the RAW rasters under the live
+/// CSS filter/blend (the pre-baking pipeline) so the page re-colours per
+/// frame; leaving re-bakes from the raws. The engine swaps canvas contents
+/// and the CSS class in the same task, so no frame is ever double-filtered
+/// or unfiltered.
+pub fn set_scrub_mode(on: bool) {
+    bridge::set_scrub_mode(on);
+}

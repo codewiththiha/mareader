@@ -111,6 +111,29 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = "listen")]
     pub async fn tauri_listen(event: &str, handler: js_sys::Function) -> JsValue;
+
+    // Collect the pending OS-opened PDF path (double-click / "Open with" /
+    // default-app launch) from the backend. Lives in the engine's JS layer
+    // because it wraps `__TAURI__.core.invoke` in a catch: a rejected JS
+    // promise cannot be represented in a wasm future (it unwinds as a panic),
+    // so the engine resolves null instead of ever rejecting.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "takePendingFile")]
+    pub async fn take_pending_file() -> JsValue;
+
+    // --- Engine: theme re-bake + scrub mode ---
+    // The engine bakes the theme (filter + paper blend) into every page and
+    // thumbnail raster so canvases are plain opaque textures. On an appearance
+    // change it must re-bake the rasters it already holds; the theme applier
+    // calls `refresh_theme` after writing the new CSS variables. During a
+    // slider scrub the variables change every frame, so the theme applier
+    // switches the engine into scrub mode instead: raw rasters + the live
+    // CSS pipeline, exactly like the pre-baking behaviour, for the duration
+    // of the drag.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "refreshTheme")]
+    pub fn refresh_theme();
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
+    pub fn set_scrub_mode(on: bool);
 }
 
 /// Subscribe to a Tauri event. `handler` receives the event object (a JsValue,

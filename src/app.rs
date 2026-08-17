@@ -23,6 +23,10 @@ pub fn App() -> impl IntoView {
     // fields that no longer exist.)
     shortcuts(state);
     link_nav(state);
+    // OS file opening: double-click / "Open with" / default-app launch.
+    // Pulls the pending path once (launch-time file) and subscribes to the
+    // backend's `pdf-open-file` pings (files opened while running).
+    crate::core::open_flow::init_open_file_handling(state);
 
     view! {
         <>
