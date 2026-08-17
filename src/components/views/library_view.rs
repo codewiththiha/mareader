@@ -36,92 +36,97 @@ pub fn LibraryView(state: AppState) -> impl IntoView {
     let open_state = state;
 
     view! {
-        <div class="flex h-full w-full flex-col overflow-y-auto pt-12">
-            <div class="mx-auto w-full max-w-5xl px-6 py-8">
-                // --- header ----------------------------------------------------
-                <header class="mb-8 flex items-end justify-between gap-4">
-                    <div class="min-w-0">
-                        <h1 class="text-xl font-semibold text-ink">"Your library"</h1>
-                        <p class="mt-1 text-sm text-muted">
-                            {move || {
-                                let n = books().len();
-                                if n == 0 {
-                                    "Open a PDF to start reading".to_string()
-                                } else if n == 1 {
-                                    "1 book · continue where you left off".to_string()
-                                } else {
-                                    format!("{n} books · continue where you left off")
-                                }
-                            }}
-                        </p>
-                    </div>
-                    <div class="flex shrink-0 items-center gap-2">
-                        <Show when=move || is_idle() && has_tauri fallback=|| ()>
-                            <span class="hidden text-xs text-muted sm:block">
-                                "…or drop a PDF anywhere"
-                            </span>
-                        </Show>
-                        <Button
-                            on_click=move |_| open_flow::open_dialog(open_state)
-                            kind=ButtonKind::Primary
-                            icon=IconName::Open
-                            label="Open PDF".to_string()
-                            title="Open a PDF file".to_string()
-                        />
-                    </div>
-                </header>
-
-                // --- transient states ------------------------------------------
-                <Show when=is_opening fallback=|| ()>
-                    <div class="flex items-center justify-center gap-3 py-24 text-muted">
+        <div class="flex h-full w-full flex-col">
+            // Opening: centered spinner.
+            <Show when=is_opening fallback=|| ()>
+                <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
+                    <div class="flex items-center gap-3">
                         <div class="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent"></div>
                         <p class="text-lg">"Opening…"</p>
                     </div>
-                </Show>
-                <Show when=is_error fallback=|| ()>
-                    <div class="flex items-center justify-center py-24 text-center text-muted">
-                        <p class="text-lg">
-                            {move || error.get().unwrap_or_else(|| "Could not open this PDF".to_string())}
-                        </p>
+                </div>
+            </Show>
+            // Error: centered message.
+            <Show when=is_error fallback=|| ()>
+                <div class="flex h-full w-full items-center justify-center pt-12 text-center text-muted">
+                    <p class="text-lg">
+                        {move || error.get().unwrap_or_else(|| "Could not open this PDF".to_string())}
+                    </p>
+                </div>
+            </Show>
+            // Idle: the shelf when there are books, else the plain prompt.
+            <Show when=is_idle fallback=|| ()>
+                <Show
+                    when=move || !books().is_empty()
+                    fallback=move || view! { <EmptyState state=state /> }
+                >
+                    <div class="min-h-0 flex-1 overflow-y-auto pt-12">
+                        <div class="mx-auto w-full max-w-5xl px-6 py-8">
+                            <header class="mb-8 flex items-end justify-between gap-4">
+                                <div class="min-w-0">
+                                    <h1 class="text-xl font-semibold text-ink">"Your library"</h1>
+                                    <p class="mt-1 text-sm text-muted">
+                                        {move || {
+                                            let n = books().len();
+                                            if n == 1 {
+                                                "1 book · continue where you left off".to_string()
+                                            } else {
+                                                format!("{n} books · continue where you left off")
+                                            }
+                                        }}
+                                    </p>
+                                </div>
+                                <div class="flex shrink-0 items-center gap-2">
+                                    <Show when=move || has_tauri fallback=|| ()>
+                                        <span class="hidden text-xs text-muted sm:block">
+                                            "…or drop a PDF anywhere"
+                                        </span>
+                                    </Show>
+                                    <Button
+                                        on_click=move |_| open_flow::open_dialog(open_state)
+                                        kind=ButtonKind::Primary
+                                        icon=IconName::Open
+                                        label="Open PDF".to_string()
+                                        title="Open a PDF file".to_string()
+                                    />
+                                </div>
+                            </header>
+                            <div class="library-grid">
+                                <For each=books key=|b| b.path.clone() let:book>
+                                    <BookCard state=state book=book />
+                                </For>
+                            </div>
+                        </div>
                     </div>
                 </Show>
-
-                // --- the shelf -------------------------------------------------
-                <Show when=is_idle fallback=|| ()>
-                    <Show
-                        when=move || !books().is_empty()
-                        fallback=move || view! { <EmptyShelf /> }
-                    >
-                        <div class="library-grid">
-                            <For each=books key=|b| b.path.clone() let:book>
-                                <BookCard state=state book=book />
-                            </For>
-                        </div>
-                    </Show>
-                </Show>
-            </div>
+            </Show>
         </div>
     }
 }
 
-/// The no-books prompt: a large open affordance and a drag-drop hint.
+/// The no-books prompt: the plain, centered design the app had before the
+/// library — info text above, an "Open…" button in the middle.
 #[component]
-fn EmptyShelf() -> impl IntoView {
+fn EmptyState(state: AppState) -> impl IntoView {
     let has_tauri = crate::core::bridge::has_tauri();
     view! {
-        <div class="flex flex-col items-center gap-4 py-16 text-center text-muted">
-            <div class="flex h-20 w-16 items-center justify-center rounded-lg border border-line bg-surface text-accent">
-                <Icon name=IconName::Open size=32 />
-            </div>
-            <div>
-                <p class="text-lg text-ink">"Your shelf is empty"</p>
-                <p class="mt-1 text-sm">"Open a PDF and it will appear here, ready to resume."</p>
+        <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
+            <div class="flex max-w-md flex-col items-center gap-3 text-center">
+                <p class="text-lg text-ink">"Open a PDF to start reading"</p>
                 {if has_tauri {
-                    view! { <p class="mt-2 text-xs">"You can also drop a PDF anywhere in the window."</p> }
-                        .into_any()
+                    view! {
+                        <p class="text-sm text-muted">"Or drop a PDF anywhere in the window"</p>
+                    }
+                    .into_any()
                 } else {
                     view! { <></> }.into_any()
                 }}
+                <Button
+                    on_click=move |_| open_flow::open_dialog(state)
+                    kind=ButtonKind::Primary
+                    label="Open…".to_string()
+                    title="Open a PDF file".to_string()
+                />
             </div>
         </div>
     }

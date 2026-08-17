@@ -1447,6 +1447,44 @@ function releaseAllSurfaces() {
 // back/forward cache, and `unload` is unreliable (and deprecated) in WebKit.
 globalThis.addEventListener("pagehide", releaseAllSurfaces);
 
+// --- selection clamp: a drag only ever touches glyph spans -------------
+// While the pointer crosses non-text surface (the gap under a heading, the
+// inter-page gutter, margins) WebKit resolves the focus against the nearest
+// selectable ancestor and the range re-anchors to a content extreme — the
+// "selection spread" when dragging from a header into the body. Hold the last
+// range whose both ends sat inside glyph spans and restore it whenever a
+// degenerate range appears, so the selection only changes while the pointer is
+// actually on text. The CSS scoping above already makes non-text surfaces
+// non-selectable; this is the belt-and-braces clamp on the RANGE itself.
+let selDragging = false;
+let lastGoodRange = null;
+
+document.addEventListener("mousedown", (e) => {
+  selDragging = !!(e.target.closest && e.target.closest(".textLayer"));
+});
+window.addEventListener("mouseup", () => {
+  selDragging = false;
+  lastGoodRange = null;
+});
+document.addEventListener("selectionchange", () => {
+  if (!selDragging) return;
+  const sel = document.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const inSpan = (n) => {
+    const el = n && (n.nodeType === Node.TEXT_NODE ? n.parentElement : n);
+    return !!(el && el.closest &&
+      el.closest(".textLayer > span, .textLayer .markedContent > span"));
+  };
+  if (inSpan(sel.anchorNode) && inSpan(sel.focusNode)) {
+    lastGoodRange = sel.getRangeAt(0).cloneRange();
+  } else if (lastGoodRange) {
+    // Restoring re-fires selectionchange; the restored range is "good", so
+    // the handler records it and terminates instead of looping.
+    sel.removeAllRanges();
+    sel.addRange(lastGoodRange);
+  }
+});
+
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
   releaseAllSurfaces,

@@ -7,7 +7,13 @@
 //! depending on the toolbar widget.
 
 use leptos::prelude::*;
-use leptos::task::spawn_local;
+// NOTE: the open flow spawns on the wasm-bindgen-futures executor, NOT
+// `leptos::task::spawn_local`. The latter ties the future to the reactive
+// owner it is spawned under, so an open initiated from a book-card click would
+// be CANCELLED the moment `status` flips to `Opening` (that unmounts the card,
+// disposing its owner) — leaving the app stuck on "Opening…" forever. The
+// wasm-bindgen executor runs the future to completion regardless of owner.
+use wasm_bindgen_futures::spawn_local;
 
 use crate::api::engine;
 use crate::core::document::DocStatus;

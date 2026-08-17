@@ -295,6 +295,23 @@
   animation-play-state: paused;
 }
 
+/* SELECTION SURFACE SCOPING (round 3) — the ONLY selectable things inside a
+   page are the glyph spans.
+   Round 1 made the `.textLayer` container non-selectable; the host AROUND it
+   was never covered. The `.pdf-page` host, its wrappers and the full-page
+   `<canvas>` are all still selectable surfaces, so a drag whose focus escapes
+   the glyph spans (long-press on blank paper, a drag into the inter-page gap
+   or the side padding) resolves against them — and WebKit paints a SELECTED
+   REPLACED ELEMENT as a full-box tint, which is the whole-page "wash". The
+   canvas tint uses `--color-accent`, hence it follows the theme's tint hue.
+   Scoping selectability host-wide leaves nothing for the tint to land on
+   except real glyph spans. */
+.pdf-page,
+.pdf-page * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .pdf-page .textLayer {
   position: absolute;
   inset: 0;
@@ -366,6 +383,13 @@
    box spanning the whole page. Excluded from the selection painting above so
    it can never draw a stray band over the page. */
 .pdf-page .textLayer .endOfContent::selection {
+  background: transparent;
+}
+
+/* Belt-and-braces: the <canvas> is a full-page replaced element. Even if a
+   future engine change ever lands it inside a selection range, it must never
+   paint its box as a full-page tint. */
+.pdf-page canvas::selection {
   background: transparent;
 }
 
