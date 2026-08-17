@@ -300,6 +300,28 @@
   inset: 0;
   z-index: 2;
   color: transparent;
+
+  /* SELECTION SCOPING — fixes "selection snaps to the top over blank space".
+     The layer div is a full-page selectable surface. When a drag crosses a gap
+     (inter-paragraph space, right margin, list gutter) the pointer is over no
+     glyph span, and WKWebView resolves the focus to the container's FIRST text
+     position, re-anchoring the range to the top of the page and sweeping every
+     span in its path (including the isolated list-number spans). With the
+     container non-selectable and only the glyph spans selectable, a drag over
+     blank space holds the last sane range instead of re-anchoring. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The spans ARE the document text; re-enable selection exactly there.
+   Direct children are either glyph spans or .markedContent wrappers (the
+   vendored sheet keys `.textLayer > :not(.markedContent)`), so cover both
+   shapes. `user-select` is inherited, so the container's `none` above would
+   otherwise disable the spans too. */
+.pdf-page .textLayer > span,
+.pdf-page .textLayer .markedContent > span {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Selection highlight.
@@ -340,11 +362,23 @@
 
 /* pdf.js appends an `.endOfContent` block (inset:100% 0 0) that it moves to
    `top:0` while selecting, to make drag-selection past the last line work. It
-   is not a text node, but it IS selectable, and in a `user-select` sweep it can
-   pick up a selection box spanning the whole page. Excluded from the selection
-   painting above so it can never draw a stray band over the page. */
+   is not a text node, and in a `user-select` sweep it can pick up a selection
+   box spanning the whole page. Excluded from the selection painting above so
+   it can never draw a stray band over the page. */
 .pdf-page .textLayer .endOfContent::selection {
   background: transparent;
+}
+
+/* The endOfContent block must not be a selection FOCUS either. The vendored
+   sheet already gives it `user-select:none`, but a blank-space hit can still
+   land on it and anchor the drag there; `pointer-events:none` lets that hit
+   fall straight through to the page, so the focus can never anchor on it and
+   start a whole-page sweep. The `user-select:none` is kept as belt-and-braces
+   alongside the `::selection` suppression above. */
+.pdf-page .textLayer .endOfContent {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
 }
 
 /* Snapshot overlay stacked while a scale re-render is in flight
