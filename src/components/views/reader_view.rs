@@ -144,15 +144,15 @@ fn DragOverlay() -> impl IntoView {
 /// Two layers:
 ///   1. DOM prevent-default listeners on `window` (`dragenter` / `dragover` /
 ///      `drop`) so a dropped file never navigates the webview away — the
-///      plain-browser fallback. Dragging from Finder onto the WKWebView only
-///      fires these DOM events if Tauri forwards them; the authoritative open
-///      comes from layer 2. Scoped to file drags so dragging text/HTML inside
-///      the app keeps working. The same listeners drive `drag_active`, which
-///      shows the drop-feedback overlay.
-///   2. A `tauri://drag-drop` subscription via `bridge::listen`. The handler
-///      reads `payload.paths[0]` and routes it through the shared open-flow
-///      (`open_flow::open_path`). The Closure is parked in a StoredValue:
-///      dropping the JS function would unregister the listener.
+///      plain-browser fallback (`trunk serve`). Inside Tauri a native file
+///      drag never reaches the DOM (no dragenter/dragover fire on macOS), so
+///      these are inert there and the overlay is driven by layer 2 instead.
+///   2. Tauri drag lifecycle subscriptions (`tauri://drag-enter`,
+///      `tauri://drag-leave`, `tauri://drag-drop`). These ARE the drag
+///      signals for a real file drag from Finder/Explorer: enter shows the
+///      drop-feedback overlay, leave hides it, drop opens the file (and hides
+///      it). Each Closure is parked in a StoredValue so the listener stays
+///      registered for the view's lifetime.
 fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     // Drag-enter/leave DEPTH counter. Window-level `dragenter`/`dragleave`
     // fire for every child-element boundary crossed, not just the window edge,
@@ -200,29 +200,60 @@ fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
         }),
     ]);
 
-    // Layer 2: Tauri drag-drop subscription. Only inside Tauri — the
-    // wasm-bindgen shim for `window.__TAURI__.event.listen` throws a TypeError
-    // when the global is absent (`trunk serve`), so probe first.
+    // Layer 2: Tauri drag lifecycle events. Inside Tauri a native file drag
+    // never reaches the DOM (no DOM dragenter/dragover fire on macOS — the
+    // drag is handled at the window layer), so the overlay is driven by
+    // Tauri's own events: drag-enter shows it, drag-leave hides it, and
+    // drag-drop opens the file (and hides it). Each Closure is parked so the
+    // listener stays registered for the view's lifetime.
     if !crate::core::bridge::has_tauri() {
         return;
     }
-    let handler_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
+
+    // drag-enter -> show the overlay.
+    let enter_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
+    let enter_sig = drag_active;
+    let cb_enter: Closure<dyn FnMut(Event)> = Closure::wrap(
+        Box::new(move |_ev: Event| enter_sig.set(true)) as Box<dyn FnMut(Event)>,
+    );
+    let f_enter: js_sys::Function = cb_enter.as_ref().unchecked_ref::<js_sys::Function>().clone();
+    spawn_local(async move {
+        // The unlisten handle is intentionally discarded: Tauri keeps the
+        // listener registered until that fn is called (we never do), and the
+        // view lives for the whole app window.
+        let _ = crate::core::bridge::listen("tauri://drag-enter", f_enter).await;
+    });
+    enter_handle.set_value(Some(cb_enter));
+
+    // drag-leave -> hide the overlay.
+    let leave_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
+    let leave_sig = drag_active;
+    let cb_leave: Closure<dyn FnMut(Event)> = Closure::wrap(
+        Box::new(move |_ev: Event| leave_sig.set(false)) as Box<dyn FnMut(Event)>,
+    );
+    let f_leave: js_sys::Function = cb_leave.as_ref().unchecked_ref::<js_sys::Function>().clone();
+    spawn_local(async move {
+        let _ = crate::core::bridge::listen("tauri://drag-leave", f_leave).await;
+    });
+    leave_handle.set_value(Some(cb_leave));
+
+    // drag-drop -> hide the overlay and open the file.
+    let drop_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
+    let drop_sig = drag_active;
     let st = state;
-    let cb: Closure<dyn FnMut(Event)> = Closure::wrap(
+    let cb_drop: Closure<dyn FnMut(Event)> = Closure::wrap(
         Box::new(move |ev: Event| {
+            drop_sig.set(false);
             if let Some(path) = first_drop_path(&ev) {
                 crate::core::open_flow::open_path(st, path);
             }
         }) as Box<dyn FnMut(Event)>,
     );
-    let handler: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
+    let f_drop: js_sys::Function = cb_drop.as_ref().unchecked_ref::<js_sys::Function>().clone();
     spawn_local(async move {
-        // The unlisten handle is intentionally discarded: Tauri keeps the
-        // listener registered until that fn is called (we never do), and the
-        // view lives for the whole app window.
-        let _ = crate::core::bridge::listen("tauri://drag-drop", handler).await;
+        let _ = crate::core::bridge::listen("tauri://drag-drop", f_drop).await;
     });
-    handler_handle.set_value(Some(cb));
+    drop_handle.set_value(Some(cb_drop));
 }
 
 /// True when a DOM drag event carries files (vs. dragged text/HTML).
