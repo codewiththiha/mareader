@@ -3,6 +3,7 @@ pub mod bridge;
 pub mod document;
 pub mod filename;
 pub mod layout;
+pub mod library;
 pub mod math;
 pub mod oklch;
 pub mod open_flow;

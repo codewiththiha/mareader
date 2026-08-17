@@ -11,7 +11,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
 use crate::core::bridge;
-use crate::core::document::{OpenResult, RenderResult, ThumbResult};
+use crate::core::document::{CoverResult, OpenResult, RenderResult, ThumbResult};
 use crate::core::search::SearchResponse;
 
 #[derive(Debug, Clone)]
@@ -141,6 +141,13 @@ pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> Result<Thum
 /// cached bitmap: a page that scrolls out and back must repaint instantly.
 pub fn cancel_thumb(canvas_id: &str) {
     bridge::cancel_thumb(canvas_id);
+}
+
+/// Render page 1 of the book at `path` to a small JPEG for the library
+/// shelf's book cover. Works whether or not that book is the open document.
+pub async fn cover_data_url(path: &str, max_width: f64) -> Result<CoverResult, EngineError> {
+    let value = bridge::cover_data_url(path, max_width).await;
+    resolve::<CoverResult>(value, "cover").await
 }
 
 /// Synchronous probe: is this page's thumbnail already cached at `scale`?

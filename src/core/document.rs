@@ -74,6 +74,19 @@ pub struct ThumbResult {
     pub cached: bool,
 }
 
+/// `{ok:true, dataUrl, width, height}` — engine.coverDataUrl.
+///
+/// Page 1 of the current document rendered to a small JPEG, for the library
+/// shelf's book-cover art. `width`/`height` are CSS px so the shelf can keep
+/// the cover's real proportions (portrait vs landscape).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverResult {
+    pub data_url: String,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DocStatus {

@@ -5,12 +5,14 @@ use crate::components::views::reader_view::ReaderView;
 use crate::core::state::AppState;
 use crate::effects::shortcuts::shortcuts;
 use crate::effects::link_nav::link_nav;
-use crate::util::storage::load_settings;
+use crate::util::storage::{load_covers, load_library, load_settings};
 
 #[component]
 pub fn App() -> impl IntoView {
     let state = AppState {
         settings: RwSignal::new(load_settings()),
+        library: RwSignal::new(load_library()),
+        covers: RwSignal::new(load_covers()),
         ..AppState::default()
     };
     provide_context(state.clone());

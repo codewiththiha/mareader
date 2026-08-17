@@ -14,8 +14,9 @@ use crate::components::atoms::icon::{Icon, IconName};
 use crate::components::atoms::segmented::{Segmented, SegmentedLabel};
 use crate::components::atoms::separator::Separator;
 use crate::components::atoms::tooltip::Tooltip;
+use crate::core::document::DocStatus;
 use crate::core::layout::ViewMode;
-use crate::core::open_flow::open_dialog;
+use crate::core::open_flow::{close_document, open_dialog};
 use crate::core::state::{AppState, SidebarMode};
 
 use super::appearance_menu::AppearanceMenu;
@@ -59,6 +60,19 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                         title="Toggle sidebar".to_string()
                     />
                 </Tooltip>
+                // Back to the library shelf. Only while a document is open —
+                // the shelf IS the empty state, so the button would be a no-op
+                // (and confusing) there.
+                <Show when=move || menu_state.doc.status.get() == DocStatus::Ready>
+                    <Tooltip text="Library".to_string()>
+                        <Button
+                            on_click=move |_| close_document(menu_state)
+                            kind=ButtonKind::Ghost
+                            icon=IconName::Library
+                            title="Close this book and return to the library".to_string()
+                        />
+                    </Tooltip>
+                </Show>
                 <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
                     <Button
                         on_click=move |_| open_dialog(open_state)

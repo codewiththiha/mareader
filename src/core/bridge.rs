@@ -63,6 +63,11 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderThumb")]
     pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> JsValue;
 
+    /// Render page 1 of the book at `path` to a JPEG data URL (library shelf
+    /// cover art). Resolves `{ok, dataUrl, width, height}`.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "coverDataUrl")]
+    pub async fn cover_data_url(path: &str, max_width: f64) -> JsValue;
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "cancelThumb")]
     pub fn cancel_thumb(canvas_id: &str);
 

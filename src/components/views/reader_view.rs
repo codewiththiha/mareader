@@ -16,6 +16,7 @@ use crate::core::layout::ViewMode;
 use crate::core::state::AppState;
 use crate::effects::fit::{fit_effect, zoom_system};
 use crate::effects::page_tracking::page_tracking;
+use crate::effects::reading_progress::reading_progress;
 use crate::effects::theme_applier::theme_applier;
 
 #[component]
@@ -30,6 +31,8 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     // Keep `viewer.page` and the scroll position in sync in continuous mode
     // (status-bar counter, page jumps, mode-switch position).
     page_tracking(state.clone());
+    // Persist the current book's reading position into the library.
+    reading_progress(state.clone());
 
     // Ends the grace period after a dismissed search: the next scroll, click or
     // keypress drops the muted highlights and empties the query.
@@ -70,7 +73,9 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                     <Show
                         when=is_ready
                         fallback=move || {
-                            view! { <Placeholder state=state_placeholder.clone() /> }
+                            view! {
+                                <crate::components::views::library_view::LibraryView state=state_placeholder.clone() />
+                            }
                         }
                     >
                         {move || match mode.get() {
@@ -188,64 +193,4 @@ fn first_drop_path(ev: &Event) -> Option<String> {
     arr.get(0).as_string().filter(|p| !p.is_empty())
 }
 
-#[component]
-fn Placeholder(state: AppState) -> impl IntoView {
-    let status = state.doc.status;
-    let error = state.doc.error;
-    // Drag-drop opening only works inside Tauri (the `tauri://drag-drop` event);
-    // don't advertise it in a plain browser where a drop does nothing.
-    let has_tauri = crate::core::bridge::has_tauri();
-    let is_idle = move || status.get() == DocStatus::Idle;
-    let is_opening = move || status.get() == DocStatus::Opening;
-    let text = move || match status.get() {
-        DocStatus::Idle => "Open a PDF to start reading".to_string(),
-        DocStatus::Opening => "Opening…".to_string(),
-        DocStatus::Ready => "".to_string(),
-        DocStatus::Error => error.get().unwrap_or_else(|| "Could not open this PDF".to_string()),
-    };
-    // "Open last" only makes sense before any document is loaded (Idle), and
-    // only if a previous path was persisted (drop the empty-string case).
-    let last_path = move || {
-        state
-            .settings
-            .get()
-            .last_path
-            .clone()
-            .filter(|p| !p.is_empty())
-    };
-    let open_last = move |_| {
-        if let Some(path) = last_path() {
-            crate::core::open_flow::open_path(state, path);
-        }
-    };
-    view! {
-        // pt-12 == TOOLBAR_H: the slot now spans the full window height, so
-        // without this the empty state centres against the window rather than
-        // against the space the user can actually see below the toolbar.
-        <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
-            <div class="flex max-w-md flex-col items-center gap-3 text-center">
-                <Show when=is_opening fallback=|| ()>
-                    <div class="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent"></div>
-                </Show>
-                <p class="text-lg">{text}</p>
-                <Show when=move || is_idle() && has_tauri fallback=|| ()>
-                    <p class="text-sm text-muted">"Or drop a PDF anywhere in the window"</p>
-                </Show>
-                <Show when=move || is_idle() && last_path().is_some() fallback=|| ()>
-                    <crate::components::atoms::button::Button
-                        on_click=open_last
-                        kind=crate::components::atoms::button::ButtonKind::Ghost
-                        label="Open last".to_string()
-                        title="Reopen the last PDF".to_string()
-                    />
-                </Show>
-                <crate::components::atoms::button::Button
-                    on_click=move |_| crate::core::open_flow::open_dialog(state)
-                    kind=crate::components::atoms::button::ButtonKind::Primary
-                    label="Open…".to_string()
-                    title="Open a PDF file".to_string()
-                />
-            </div>
-        </div>
-    }
-}
+

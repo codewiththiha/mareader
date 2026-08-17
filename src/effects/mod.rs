@@ -13,6 +13,7 @@ pub mod continuous_scroll;
 pub mod fit;
 pub mod link_nav;
 pub mod page_tracking;
+pub mod reading_progress;
 pub mod search_effects;
 pub mod shortcuts;
 pub mod theme_applier;

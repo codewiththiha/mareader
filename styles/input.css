@@ -1191,3 +1191,205 @@ html.theme-switching * {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
+
+/* ---------------------------------------------------------------------
+   Library bookshelf — the empty-state "recent books" shelf.
+   Each book is a closed volume: a page-1 cover, a spine gradient on the
+   left, a fore-edge of stacked pages peeking past the right, and a drop
+   shadow that lifts on hover. Colours come from the themed tokens so the
+   shelf sits correctly in light / dark / dim / tinted modes.
+   --------------------------------------------------------------------- */
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 2rem 1.5rem;
+  padding-bottom: 2rem;
+}
+
+.book {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.book:focus-visible {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+.book-cover {
+  position: relative;
+  width: 100%;
+  border-radius: 3px 7px 7px 3px;
+  background: var(--color-surface);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.18),
+    0 8px 18px -8px rgb(0 0 0 / 0.45);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  transform-origin: 50% 100%;
+}
+.book:hover .book-cover,
+.book:focus-visible .book-cover {
+  transform: translateY(-5px) rotate(-1.2deg) scale(1.02);
+  box-shadow:
+    0 2px 4px rgb(0 0 0 / 0.20),
+    0 18px 34px -12px rgb(0 0 0 / 0.55);
+}
+
+.book-cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  border-radius: 3px 7px 7px 3px;
+}
+
+/* Spine: a vertical shading down the left edge that turns the flat image
+   into a book's rounded binding. */
+.book-cover::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 9%;
+  border-radius: 3px 0 0 3px;
+  background: linear-gradient(
+    to right,
+    rgb(0 0 0 / 0.30),
+    rgb(0 0 0 / 0.10) 45%,
+    rgb(0 0 0 / 0.02) 70%,
+    transparent
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Fore-edge catch-light on the right, opposite the spine. */
+.book-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 6%;
+  border-radius: 0 7px 7px 0;
+  background: linear-gradient(to left, rgb(255 255 255 / 0.18), transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* The fore-edge itself: stacked page sheets peeking past the cover's right. */
+.book-pages {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  right: -4px;
+  width: 5px;
+  border-radius: 0 2px 2px 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--color-paper) 0 1px,
+    var(--color-line) 1px 2px
+  );
+  box-shadow: 1px 0 2px rgb(0 0 0 / 0.25);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Fallback cover when no page-1 render is cached: a themed, generated cover
+   carrying the title, so a book is never a bare rectangle. */
+.book-cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  border-radius: 3px 7px 7px 3px;
+  background:
+    radial-gradient(120% 90% at 18% 0%, color-mix(in srgb, var(--color-accent) 55%, var(--color-paper)) 0%, transparent 62%),
+    linear-gradient(160deg, color-mix(in srgb, var(--color-accent) 26%, var(--color-paper)), var(--color-paper) 72%);
+  color: var(--color-ink);
+}
+.book-cover-fallback span {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.book-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.book-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  color: var(--color-ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.book-page {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+
+/* A thin reading-progress bar under the title. */
+.book-progress {
+  display: block;
+  height: 3px;
+  width: 100%;
+  border-radius: 9999px;
+  background: var(--color-line);
+  overflow: hidden;
+}
+.book-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--color-accent);
+}
+
+/* Remove button: revealed on hover/focus, floating over the cover's corner. */
+.book-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  opacity: 0;
+  transform: scale(0.85);
+  cursor: pointer;
+  transition: opacity 0.14s ease, transform 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+.book:hover .book-remove,
+.book:focus-visible .book-remove,
+.book-remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.book-remove:hover {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  color: var(--color-ink);
+}

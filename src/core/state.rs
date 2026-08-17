@@ -7,6 +7,7 @@ use leptos::prelude::RwSignal;
 
 use crate::core::document::{DocStatus, OutlineNode, PageSize};
 use crate::core::layout::ViewMode;
+use crate::core::library::{CoverImage, RecentBook};
 use crate::core::math::FitMode;
 use crate::core::search::SearchMatch;
 use crate::core::settings::Settings;
@@ -187,6 +188,12 @@ pub struct AppState {
     pub sidebar: RwSignal<SidebarMode>,
     /// Current toast (if any), rendered by the app-root `ToastHost`.
     pub toast: RwSignal<Option<Toast>>,
+    /// The "recent books" library: recently opened documents, most-recent
+    /// first, each carrying its last-reached page. Persisted separately from
+    /// `settings` (see `core::library` for why).
+    pub library: RwSignal<Vec<RecentBook>>,
+    /// Cover art (page-1 JPEG data URLs) keyed by path. Persisted separately.
+    pub covers: RwSignal<std::collections::HashMap<String, CoverImage>>,
 }
 
 impl Default for AppState {
@@ -198,6 +205,8 @@ impl Default for AppState {
             search: SearchState::default(),
             sidebar: RwSignal::new(SidebarMode::None),
             toast: RwSignal::new(None),
+            library: RwSignal::new(Vec::new()),
+            covers: RwSignal::new(std::collections::HashMap::new()),
         }
     }
 }

@@ -21,6 +21,10 @@ const ENGINE_VERSION = "0.1.0";
 let loadingTask = null;
 let pdf = null; // PDFDocumentProxy
 let numPages = 0;
+// Path the CURRENT document was opened from (null when none). coverDataUrl
+// uses it to tell whether a requested cover can be rendered from the live
+// document or needs its own throwaway open.
+let currentPath = null;
 
 // canvasId -> { page, canvas, host, textLayerEl, renderTask, textLayer, viewport, scale }
 const stateByCanvasId = new Map();
@@ -471,6 +475,7 @@ async function open(path) {
     });
     pdf = await loadingTask.promise;
     numPages = pdf.numPages;
+    currentPath = path;
 
     let title = null;
     let author = null;
@@ -571,6 +576,7 @@ async function destroy() {
   }
   pdf = null;
   numPages = 0;
+  currentPath = null;
 }
 
 function pageCount() {
@@ -1162,12 +1168,75 @@ async function renderThumb(canvasId, page, scale) {
   }
 }
 
+/// Render page 1 of `doc` to a small JPEG and return its data URL + CSS size.
+function renderCoverFromPdf(doc, maxWidth) {
+  return doc.getPage(1).then((page) => {
+    const vp1 = page.getViewport({ scale: 1 });
+    // Cover art is display-only; cap the scale so an oversized page can't
+    // produce a huge JPEG just to sit on the shelf.
+    const scale = Math.min((maxWidth || 240) / (vp1.width || 1), 2);
+    const viewport = page.getViewport({ scale });
+
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.floor(viewport.width));
+    off.height = Math.max(1, Math.floor(viewport.height));
+    // Opaque: a rendered page has no transparent pixels (see the page raster).
+    const ctx = off.getContext("2d", { alpha: false });
+    if (!ctx) throw new Error("no_context");
+    return page
+      .render({ canvasContext: ctx, viewport })
+      .promise.then(() => {
+        try { page.cleanup(); } catch (_) {}
+        // JPEG: the cover is display-only, and a lossy format keeps the
+        // persisted data URL small enough to live comfortably in localStorage.
+        const dataUrl = off.toDataURL("image/jpeg", 0.82);
+        return { dataUrl, width: viewport.width, height: viewport.height };
+      });
+  });
+}
+
+/// Render page 1 of the book at `path` to a small JPEG, for the library shelf.
+///
+/// Uses the LIVE document when it is the one that was opened from `path`
+/// (the common case — the cover is requested right after open), otherwise
+/// opens its own throwaway document and tears it down. That second path keeps
+/// a cover request from racing a fast A→B open: without it, a late cover task
+/// for book A would render whatever document is open NOW and store B's page 1
+/// under A's path.
+async function coverDataUrl(path, maxWidth = 240) {
+  try {
+    if (!path) return fail("no_path", "No path");
+    let result;
+    if (pdf && currentPath === path) {
+      result = await renderCoverFromPdf(pdf, maxWidth);
+    } else {
+      const bytes = await fetchBytes(path);
+      const task = getDocument({
+        data: bytes,
+        cMapUrl: "/vendor/pdfjs/cmaps/",
+        cMapPacked: true,
+        disableAutoFetch: true,
+        disableStream: true,
+      });
+      try {
+        const doc = await task.promise;
+        result = await renderCoverFromPdf(doc, maxWidth);
+      } finally {
+        try { await task.destroy(); } catch (_) {}
+      }
+    }
+    return { ok: true, dataUrl: result.dataUrl, width: result.width, height: result.height };
+  } catch (e) {
+    const info = errorInfo(e);
+    return fail(info.name, info.message);
+  }
+}
+
 /// Cancel an in-flight thumbnail render (called when a cell unmounts). The
 /// cache is deliberately NOT touched: a page that scrolls out and back must
 /// still repaint instantly from its cached bitmap. The LIVE canvas is
 /// zeroed so WKWebView drops its backing store with the cell.
-function cancelThumb(canvasId) {
-  const task = thumbTasks.get(canvasId);
+function cancelThumb(canvasId) {  const task = thumbTasks.get(canvasId);
   if (task) {
     try { task.cancel(); } catch (_) {}
     thumbTasks.delete(canvasId);
@@ -1395,6 +1464,7 @@ globalThis.PDFReader = {
   cancelThumb,
   hasThumb,
   blitThumb,
+  coverDataUrl,
   stats,
   updatePage,
   buildSearchIndex,

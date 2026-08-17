@@ -37,6 +37,8 @@ pub enum IconName {
     Print,
     #[allow(dead_code)] // consumed in phase 3 (more_menu shortcuts)
     Keyboard,
+    // Back-to-library (the recent-books shelf).
+    Library,
 }
 
 fn icon_data(name: IconName) -> (&'static str, &'static str) {
@@ -66,6 +68,7 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Fullscreen => ("0 0 24 24", "<path d='M8 3H5a2 2 0 0 0-2 2v3 M16 3h3a2 2 0 0 1 2 2v3 M8 21H5a2 2 0 0 1-2-2v-3 M16 21h3a2 2 0 0 0 2-2v-3'/>"),
         IconName::Print => ("0 0 24 24", "<path d='M6 9V2h12v7'/><path d='M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2'/><path d='M6 14h12v8H6z'/>"),
         IconName::Keyboard => ("0 0 24 24", "<path d='M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/><path d='M6 10h.01 M10 10h.01 M14 10h.01 M18 10h.01 M6 14h.01 M18 14h.01 M10 14h4'/>"),
+        IconName::Library => ("0 0 24 24", "<path d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/><path d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/>"),
     }
 }
 
