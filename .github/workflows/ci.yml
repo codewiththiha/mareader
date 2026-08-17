@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check (fmt, clippy, test, versions)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The workspace's `pdf` crate links webkit2gtk-4.1 (the Tauri 2 Linux
+      # backend), so even `cargo check`/`clippy`/`test` need the native deps.
+      - name: Install Linux system dependencies (Tauri 2)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      # node is only needed to run the version-sync check (pure stdlib, no
+      # node_modules), so a frozen install is not required here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # NOTE: no `cargo fmt --check` here. The codebase is hand-formatted in a
+      # style that rustfmt >=1.9x would rewrite across ~40 files; running it
+      # would fail on pre-existing code. A one-time formatting pass can be a
+      # dedicated commit if desired.
+      #
+      # Clippy is gated with `-D warnings`, but a small, documented allow-list
+      # carries the codebase's ESTABLISHED style (e.g. `clone_on_copy` for the
+      # idiomatic Leptos `state.clone()` on a `Copy` AppState). New code is
+      # still held to `-D warnings` — the allows only whitelist what already
+      # exists.
+
+      - name: Clippy (deny warnings)
+        run: |
+          cargo clippy --all-targets -- -D warnings \
+            -A clippy::clone_on_copy \
+            -A clippy::field_reassign_with_default \
+            -A clippy::collapsible_if \
+            -A clippy::unnecessary_map_or \
+            -A clippy::redundant_closure \
+            -A clippy::let_unit_value \
+            -A clippy::match_result_ok \
+            -A clippy::type_complexity \
+            -A clippy::needless_update \
+            -A clippy::map_flatten \
+            -A clippy::manual_pattern_char_comparison \
+            -A clippy::int_plus_one \
+            -A clippy::unit_arg \
+            -A clippy::assertions_on_constants \
+            -A clippy::doc_lazy_continuation \
+            -A clippy::derivable_impls
+
+      - name: Tests
+        run: cargo test
+
+      # The frontend is Rust compiled to wasm; verify it compiles for the wasm
+      # target without a full `trunk build` (that lives in the release pipeline).
+      - name: Check wasm frontend
+        run: cargo check --target wasm32-unknown-unknown
+
+      - name: Verify versions are in sync
+        run: node scripts/check-versions.mjs

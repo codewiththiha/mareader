@@ -241,7 +241,7 @@ impl Strip {
     /// names a real item (given a non-empty strip). Returns `0` when empty.
     pub fn index_at(&self, pos: f64) -> usize {
         let len = self.len();
-        if len == 0 || !(pos > 0.0) {
+        if len == 0 || pos <= 0.0 {
             return 0;
         }
         // Last item whose start is <= pos.
@@ -355,7 +355,7 @@ impl Strip {
         if self.is_empty() {
             return 0;
         }
-        if !(viewport > 0.0) {
+        if viewport <= 0.0 {
             return self.index_at(scroll_top);
         }
         let Some(win) = self.visible(scroll_top, viewport) else {

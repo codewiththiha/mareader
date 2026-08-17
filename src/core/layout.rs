@@ -133,7 +133,7 @@ pub fn anchored_scroll(
     factor: f64,
     anchor_screen_y: f64,
 ) -> Option<f64> {
-    if heights.is_empty() || !(factor > 0.0) || !factor.is_finite() {
+    if heights.is_empty() || factor <= 0.0 || !factor.is_finite() {
         return None;
     }
     // Sitting at the very top: pin the top. Anchoring the CENTRE here would

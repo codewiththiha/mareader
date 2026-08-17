@@ -161,7 +161,7 @@ fn take_commit_echo() -> bool {
 /// This is what a "relayout" means here — pure arithmetic on already-known
 /// geometry. No render is involved, and none is waited for.
 pub fn relayout_to(state: AppState, factor: f64) {
-    if !(factor > 0.0) || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
+    if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
         return;
     }
     let heights = state.doc.page_heights.get_untracked();

@@ -1,0 +1,156 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - "build/**"
+  workflow_dispatch:
+
+jobs:
+  # Resolve the version, classify prerelease vs stable, and assemble the
+  # release name + body. One job feeding the build matrix keeps the tag
+  # naming and prerelease flag in exactly one place.
+  metadata:
+    name: Resolve version + release notes
+    runs-on: ubuntu-latest
+    outputs:
+      releaseTag: ${{ steps.meta.outputs.releaseTag }}
+      releaseName: ${{ steps.meta.outputs.releaseName }}
+      releaseBody: ${{ steps.meta.outputs.releaseBody }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - id: meta
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            TAG="$GITHUB_REF_NAME"
+            if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              PRE=false
+            elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+              PRE=true
+            else
+              echo "::error::tag '$TAG' is not a recognised semver tag (vX.Y.Z or vX.Y.Z-suffix)"
+              exit 1
+            fi
+          else
+            # build/** branch or manual dispatch: build the current version as a
+            # prerelease. The tag matches the version so tauri-action attaches
+            # artifacts to the vX.Y.Z prerelease release.
+            TAG="v${VERSION}"
+            PRE=true
+          fi
+
+          if [[ -f "release-notes/${VERSION}.md" ]]; then
+            BODY=$(cat "release-notes/${VERSION}.md")
+          else
+            BODY="Release ${VERSION}"
+          fi
+
+          {
+            echo "version=${VERSION}"
+            echo "releaseTag=${TAG}"
+            echo "releaseName=v${VERSION}"
+            echo "prerelease=${PRE}"
+            echo "releaseBody<<EOF"
+            echo "${BODY}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.label }})
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-aarch64
+            platform: macos-latest
+            args: --target aarch64-apple-darwin
+            rust_targets: wasm32-unknown-unknown
+          - label: macos-x86_64
+            platform: macos-latest
+            args: --target x86_64-apple-darwin
+            rust_targets: wasm32-unknown-unknown,x86_64-apple-darwin
+          - label: windows-x86_64
+            platform: windows-latest
+            args: --target x86_64-pc-windows-msvc
+            rust_targets: wasm32-unknown-unknown
+          - label: linux-x86_64
+            platform: ubuntu-22.04
+            args: ""
+            rust_targets: wasm32-unknown-unknown
+    runs-on: ${{ matrix.platform }}
+    # tauri-action creates the release and uploads artifacts, which needs
+    # write access to repository contents.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            patchelf \
+            rpm \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `trunk build` (Tauri's beforeBuildCommand) runs the Tailwind pre_build
+      # hook (`npx @tailwindcss/cli`), which needs node_modules present.
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Trunk bundles the Leptos frontend to wasm; tauri-cli drives the build.
+      # Both are installed from prebuilt binaries (install-action falls back to
+      # cargo-binstall). Pinned to major 2 to match the tauri 2.x dependency.
+      - name: Install Trunk and Tauri CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk,tauri-cli@2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      # Keys on the workspace root (Cargo.toml + Cargo.lock), which is where
+      # cargo resolves the shared target/ dir for all members.
+      - uses: Swatinem/rust-cache@v2
+
+      # Builds, bundles, attaches artifacts to the release, and sets the
+      # draft/prerelease flags from the metadata job. macOS is ad-hoc signed
+      # (no APPLE_* secrets configured).
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: cargo tauri
+          tagName: ${{ needs.metadata.outputs.releaseTag }}
+          releaseName: ${{ needs.metadata.outputs.releaseName }}
+          releaseBody: ${{ needs.metadata.outputs.releaseBody }}
+          prerelease: ${{ needs.metadata.outputs.prerelease }}
+          args: ${{ matrix.args }}

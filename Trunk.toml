@@ -8,10 +8,16 @@ target = "./index.html"
 ignore = ["./src-tauri", "./styles.css"]
 
 # Compile Tailwind v4 (CSS-first) before every trunk build (dev + prod).
+# Invoke the CLI's JS entry point through `node` directly rather than `npx`.
+# On Windows, npm shims are `.cmd` batch files (npx.cmd / tailwindcss.cmd),
+# which Trunk's `Command::new()` cannot spawn (it only resolves real
+# executables), so the hook failed with "program not found" on the Windows
+# release leg. `node` is a real `node.exe` on every platform, and the CLI is
+# just `dist/index.mjs`, so this is the cross-platform-safe spelling.
 [[hooks]]
 stage = "pre_build"
-command = "npx"
-command_arguments = ["@tailwindcss/cli", "-i", "styles/input.css", "-o", "styles.css", "--minify"]
+command = "node"
+command_arguments = ["./node_modules/@tailwindcss/cli/dist/index.mjs", "-i", "styles/input.css", "-o", "styles.css", "--minify"]
 
 [serve]
 port = 1420
