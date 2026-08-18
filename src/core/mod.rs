@@ -1,13 +1,6 @@
-pub mod appearance;
-pub mod bridge;
-pub mod document;
-pub mod filename;
-pub mod layout;
+//! Cross-cutting core: state, library, and the open flow.
+//! Pure domain logic lives in `pdf-core`; the engine bridge in `pdf-engine`.
+
 pub mod library;
-pub mod math;
-pub mod oklch;
 pub mod open_flow;
-pub mod presets;
-pub mod search;
-pub mod settings;
 pub mod state;

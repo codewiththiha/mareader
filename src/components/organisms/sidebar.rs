@@ -36,11 +36,12 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::components::atoms::icon::IconName;
+use pdf_viewer::components::atoms::icon::IconName;
 use crate::components::molecules::sidebar_item::SidebarItem;
-use crate::components::organisms::outline_panel::OutlinePanel;
-use crate::components::organisms::thumbnails::ThumbnailsPanel;
-use crate::core::state::{AppState, SidebarMode};
+use pdf_viewer::components::outline_panel::OutlinePanel;
+use pdf_viewer::components::thumbnails::ThumbnailsPanel;
+use crate::core::state::AppState;
+use pdf_viewer::state::SidebarMode;
 
 /// Must match the aside's `duration-300` width slide. The panel fade and
 /// the deferred canvas release both key off this so the three outros land
@@ -55,7 +56,7 @@ pub(crate) const SIDEBAR_SLIDE_MS: u64 = 300;
 /// without extra bookkeeping. Same mechanism the PDF link layer uses.
 fn request_reveal_active() {
     if let Some(win) = web_sys::window() {
-        let _ = win.dispatch_event(&web_sys::CustomEvent::new("pdfreader:reveal-active").unwrap());
+        _ = win.dispatch_event(&web_sys::CustomEvent::new("pdfreader:reveal-active").unwrap());
     }
 }
 
@@ -92,6 +93,7 @@ pub(crate) fn thumbs_should_stay_mounted(
 
 #[component]
 pub fn Sidebar(state: AppState) -> impl IntoView {
+    let viewer_state = pdf_viewer::state::ViewerState::new(state.doc, state.viewer, state.search, state.sidebar);
     // Last non-None mode, and whether a close slide is still in flight.
     // `last` is what we keep painted during the outro; `collapsing` flips
     // off SIDEBAR_SLIDE_MS after a close so the grid can unmount. A reopen
@@ -206,14 +208,14 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                         class=("invisible", move || !show_outline.get())
                         class=("is-outro", move || is_closed.get())
                     >
-                        <OutlinePanel state=state.clone() />
+                        <OutlinePanel state=viewer_state />
                     </div>
                     <div
                         class="sidebar-panel absolute inset-0 flex flex-col"
                         class=("invisible", move || !show_thumbs.get())
                         class=("is-outro", move || is_closed.get())
                     >
-                        <ThumbnailsPanel state=state.clone() live=thumbs_live />
+                        <ThumbnailsPanel state=viewer_state live=thumbs_live />
                     </div>
                 </div>
             </div>
@@ -224,7 +226,7 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::{panel_is_shown, thumbs_should_stay_mounted, SIDEBAR_SLIDE_MS};
-    use crate::core::state::SidebarMode;
+    use pdf_viewer::state::SidebarMode;
 
     #[test]
     fn the_slide_matches_the_css_duration() {

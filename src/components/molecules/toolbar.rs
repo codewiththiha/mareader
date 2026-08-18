@@ -9,25 +9,27 @@
 
 use leptos::prelude::*;
 
-use crate::components::atoms::button::{Button, ButtonKind};
-use crate::components::atoms::icon::{Icon, IconName};
-use crate::components::atoms::segmented::{Segmented, SegmentedLabel};
-use crate::components::atoms::separator::Separator;
-use crate::components::atoms::tooltip::Tooltip;
-use crate::core::document::DocStatus;
-use crate::core::layout::ViewMode;
+use pdf_viewer::components::atoms::button::{Button, ButtonKind};
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::segmented::{Segmented, SegmentedLabel};
+use pdf_viewer::components::atoms::separator::Separator;
+use pdf_viewer::components::atoms::tooltip::Tooltip;
+use pdf_engine::types::DocStatus;
+use pdf_core::layout::ViewMode;
 use crate::core::open_flow::{close_document, open_dialog};
-use crate::core::state::{AppState, SidebarMode};
+use crate::core::state::AppState;
+use pdf_viewer::state::SidebarMode;
 
 use super::appearance_menu::AppearanceMenu;
 use super::doc_title::DocTitle;
 use super::more_menu::MoreMenu;
-use super::page_nav::PageNav;
+use pdf_viewer::components::page_nav::PageNav;
 use super::zoom_controls::ZoomControls;
 
 #[component]
 pub fn Toolbar(state: AppState) -> impl IntoView {
     let mode = state.viewer.mode;
+    let viewer_state = pdf_viewer::state::ViewerState::new(state.doc, state.viewer, state.search, state.sidebar);
 
     let open_state = state;
     let menu_state = state;
@@ -104,7 +106,7 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                     id="toolbar-center"
                     class="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
                 >
-                    <PageNav state=state.clone() />
+                    <PageNav state=viewer_state />
                 </div>
             </Show>
 
@@ -128,9 +130,9 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                         on:pointerdown=move |ev| ev.stop_propagation()
                         on:click=move |_| {
                             if state.search.visible.get() {
-                                crate::effects::search_effects::dismiss_search(state);
+                                pdf_viewer::effects::search_effects::dismiss_search(viewer_state);
                             } else {
-                                crate::effects::search_effects::resume_search(state);
+                                pdf_viewer::effects::search_effects::resume_search(viewer_state);
                             }
                         }
                         class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -160,10 +162,10 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                         on_change=move |m: ViewMode| mode_state.viewer.mode.set(m)
                     />
                 </Tooltip>
-                <ZoomControls state=state.clone() />
+                <ZoomControls state=state />
                 <Separator vertical=true />
-                <AppearanceMenu state={state.clone()} />
-                <MoreMenu state={state.clone()} />
+                <AppearanceMenu state={state} />
+                <MoreMenu state={state} />
             </div>
         </div>
     }

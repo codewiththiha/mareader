@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::core::document::DocStatus;
+use pdf_engine::types::DocStatus;
 use crate::core::state::AppState;
 use crate::util::storage::save_library;
 
@@ -43,11 +43,11 @@ pub fn reading_progress(state: AppState) {
         // never dirty the list or trigger a save.
         let mut changed = false;
         state.library.update(|books| {
-            if let Some(b) = books.iter_mut().find(|b| b.path == path) {
-                if b.page != page {
-                    b.page = page;
-                    changed = true;
-                }
+            if let Some(b) = books.iter_mut().find(|b| b.path == path)
+                && b.page != page
+            {
+                b.page = page;
+                changed = true;
             }
         });
         if !changed {

@@ -14,52 +14,51 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::Event;
 
-use crate::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
 
-use crate::core::document::DocStatus;
-use crate::core::layout::ViewMode;
+use pdf_engine::types::DocStatus;
+use pdf_core::layout::ViewMode;
 use crate::core::state::AppState;
-use crate::effects::fit::{fit_effect, zoom_system};
-use crate::effects::page_tracking::page_tracking;
+use pdf_viewer::state::ViewerState;
+use pdf_viewer::effects::fit::{fit_effect, zoom_system};
+use pdf_viewer::effects::page_tracking::page_tracking;
 use crate::effects::reading_progress::reading_progress;
 use crate::effects::theme_applier::theme_applier;
 
 #[component]
 pub fn ReaderView(state: AppState) -> impl IntoView {
-    theme_applier(state.clone());
+    theme_applier(state);
+    // The viewer slice of app state, handed to the reusable viewer components
+    // and effects (all field paths match the app-level state).
+    let vs = ViewerState::new(state.doc, state.viewer, state.search, state.sidebar);
     // Fit width / fit page recompute in BOTH view modes (each view reports its
     // container size into the same signal).
-    fit_effect(state.clone());
+    fit_effect(vs);
     // Owns display_scale/render_scale during a zoom; every zoom control posts
     // to it via `request_zoom`. Must be wired alongside fit_effect.
-    zoom_system(state.clone());
+    zoom_system(vs);
     // Keep `viewer.page` and the scroll position in sync in continuous mode
     // (status-bar counter, page jumps, mode-switch position).
-    page_tracking(state.clone());
+    page_tracking(vs);
     // Persist the current book's reading position into the library.
-    reading_progress(state.clone());
+    reading_progress(state);
 
     // Ends the grace period after a dismissed search: the next scroll, click or
     // keypress drops the muted highlights and empties the query.
-    crate::effects::search_effects::dismissed_search_watch(state.clone());
+    pdf_viewer::effects::search_effects::dismissed_search_watch(vs);
     // Drag-and-drop file open: DOM prevent-default fallback + the authoritative
     // `tauri://drag-drop` subscription. Also drives the drop-feedback overlay
     // via `drag_active`.
     let drag_active = RwSignal::new(false);
-    drag_drop(state.clone(), drag_active);
+    drag_drop(state, drag_active);
 
     // Hoist signal handles + owned state clones BEFORE the view! macro. Each
     // `move` closure below captures exactly one owned value, so there is no
     // double-move of `state`.
     let status = state.doc.status;
     let mode = state.viewer.mode;
-    let state_toolbar = state.clone();
-    let state_sidebar = state.clone();
-    let state_status = state.clone();
-    let state_single = state.clone();
-    let state_cont = state.clone();
-    let state_placeholder = state.clone();
-    let state_floating = state.clone();
+    let state_toolbar = state;
+    let state_sidebar = state;
 
     let is_ready = move || status.get() == DocStatus::Ready;
 
@@ -81,17 +80,17 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                         when=is_ready
                         fallback=move || {
                             view! {
-                                <crate::components::views::library_view::LibraryView state=state_placeholder.clone() />
+                                <crate::components::views::library_view::LibraryView state=state />
                             }
                         }
                     >
                         {move || match mode.get() {
                             ViewMode::Single => view! {
-                                <crate::components::views::single_page_view::SinglePageView state=state_single.clone() />
+                                <pdf_viewer::components::single_page_view::SinglePageView state=vs />
                             }
                             .into_any(),
                             ViewMode::Continuous => view! {
-                                <crate::components::views::continuous_view::ContinuousView state=state_cont.clone() />
+                                <pdf_viewer::components::continuous_view::ContinuousView state=vs />
                             }
                             .into_any(),
                         }}
@@ -101,11 +100,11 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                     // fixed descendants). The slot now starts at the window top
                     // so pages can scroll under the glass, so the panel carries
                     // its own top-14 offset to clear the toolbar.
-                    <crate::components::organisms::floating_search::FloatingSearch state=state_floating />
+                    <pdf_viewer::components::floating_search::FloatingSearch state=vs />
                 </main>
             </div>
             <footer class="pointer-events-none absolute inset-x-0 bottom-0 z-50 mix-blend-difference">
-                <crate::components::organisms::status_bar::StatusBar state=state_status />
+                <pdf_viewer::components::status_bar::StatusBar state=vs />
             </footer>
             <div class="noise-overlay"></div>
             // Drop-feedback overlay: appears only while a file drag is over the
@@ -206,7 +205,7 @@ fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     // Tauri's own events: drag-enter shows it, drag-leave hides it, and
     // drag-drop opens the file (and hides it). Each Closure is parked so the
     // listener stays registered for the view's lifetime.
-    if !crate::core::bridge::has_tauri() {
+    if !pdf_engine::bridge::has_tauri() {
         return;
     }
 
@@ -221,7 +220,7 @@ fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
         // The unlisten handle is intentionally discarded: Tauri keeps the
         // listener registered until that fn is called (we never do), and the
         // view lives for the whole app window.
-        let _ = crate::core::bridge::listen("tauri://drag-enter", f_enter).await;
+        _ = pdf_engine::bridge::listen("tauri://drag-enter", f_enter).await;
     });
     enter_handle.set_value(Some(cb_enter));
 
@@ -233,7 +232,7 @@ fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     );
     let f_leave: js_sys::Function = cb_leave.as_ref().unchecked_ref::<js_sys::Function>().clone();
     spawn_local(async move {
-        let _ = crate::core::bridge::listen("tauri://drag-leave", f_leave).await;
+        _ = pdf_engine::bridge::listen("tauri://drag-leave", f_leave).await;
     });
     leave_handle.set_value(Some(cb_leave));
 
@@ -251,7 +250,7 @@ fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     );
     let f_drop: js_sys::Function = cb_drop.as_ref().unchecked_ref::<js_sys::Function>().clone();
     spawn_local(async move {
-        let _ = crate::core::bridge::listen("tauri://drag-drop", f_drop).await;
+        _ = pdf_engine::bridge::listen("tauri://drag-drop", f_drop).await;
     });
     drop_handle.set_value(Some(cb_drop));
 }

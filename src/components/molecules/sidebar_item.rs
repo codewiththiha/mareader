@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
 
 #[component]
 pub fn SidebarItem(

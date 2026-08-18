@@ -9,12 +9,11 @@
 
 use leptos::html;
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
-use crate::components::atoms::icon::{Icon, IconName};
-use crate::components::atoms::kbd::Kbd;
-use crate::core::bridge;
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::kbd::Kbd;
+use pdf_engine::bridge;
 use crate::core::state::AppState;
 
 /// One keyboard-shortcut reference row: label on the left, keycaps on the right.
@@ -34,7 +33,7 @@ fn ShortcutRow(label: &'static str, keys: Vec<&'static str>) -> impl IntoView {
 pub fn MoreMenu(state: AppState) -> impl IntoView {
     // AppState is kept for signature parity with the other toolbar menus (the
     // appearance menu consumes it); every item here is self-contained.
-    let _ = state;
+    _ = state;
 
     let open = RwSignal::new(false);
     let full = RwSignal::new(false);
@@ -47,27 +46,20 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
     // its wasm-bindgen shim evaluates `window.__TAURI__.window.getCurrentWindow()`,
     // which throws a TypeError when `window.__TAURI__` is absent — so the guard
     // on the returned JsValue alone would never reach the browser fallback.
-    let has_tauri = web_sys::window()
-        .map(|w| {
-            let g: js_sys::Object = w.unchecked_into();
-            js_sys::Reflect::get(&g, &JsValue::from_str("__TAURI__"))
-                .map(|v| !(v.is_undefined() || v.is_null()))
-                .unwrap_or(false)
-        })
-        .unwrap_or(false);
+    let has_tauri = pdf_engine::bridge::has_tauri();
     let toggle_fullscreen = move || {
         let next = !full.get();
         if has_tauri {
-            let win = crate::core::bridge::tauri_get_current_window();
+            let win = pdf_engine::bridge::tauri_get_current_window();
             if !(win.is_undefined() || win.is_null()) {
-                if let Ok(f) = js_sys::Reflect::get(&win, &JsValue::from_str("setFullscreen")) {
-                    if f.is_function() {
-                        let f = js_sys::Function::from(f);
-                        let args = js_sys::Array::new();
-                        args.push(&JsValue::from_bool(next));
-                        let _ = js_sys::Reflect::apply(&f, &win, &args);
-                    }
-                }
+                if let Ok(f) = js_sys::Reflect::get(&win, &JsValue::from_str("setFullscreen"))
+                                    && f.is_function()
+                                {
+                                    let f = js_sys::Function::from(f);
+                                    let args = js_sys::Array::new();
+                                    args.push(&JsValue::from_bool(next));
+                                    _ = js_sys::Reflect::apply(&f, &win, &args);
+                                }
                 full.set(next);
                 return;
             }
@@ -78,10 +70,10 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
             let entering = doc.fullscreen_element().is_none();
             if entering {
                 if let Some(el) = doc.document_element() {
-                    let _ = el.request_fullscreen();
+                    _ = el.request_fullscreen();
                 }
             } else {
-                let _ = doc.exit_fullscreen();
+                doc.exit_fullscreen();
             }
             full.set(entering);
         }
@@ -98,7 +90,7 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
                     let contains = root_ref
                         .get()
                         .as_ref()
-                        .map_or(false, |c| c.contains(Some(&target)));
+                        .is_some_and(|c| c.contains(Some(&target)));
                     if !contains {
                         open.set(false);
                     }
@@ -152,7 +144,7 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
                         type="button"
                         on:click=move |_| {
                             if let Some(w) = web_sys::window() {
-                                let _ = w.print();
+                                _ = w.print();
                             }
                         }
                         class=item_class

@@ -12,9 +12,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::atoms::button::{Button, ButtonKind};
-use crate::components::atoms::icon::{Icon, IconName};
-use crate::core::document::DocStatus;
+use pdf_viewer::components::atoms::button::{Button, ButtonKind};
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_engine::types::DocStatus;
 use crate::core::library::RecentBook;
 use crate::core::open_flow;
 use crate::core::state::AppState;
@@ -32,7 +32,7 @@ pub fn LibraryView(state: AppState) -> impl IntoView {
     let is_opening = move || status.get() == DocStatus::Opening;
     let is_error = move || status.get() == DocStatus::Error;
 
-    let has_tauri = crate::core::bridge::has_tauri();
+    let has_tauri = pdf_engine::bridge::has_tauri();
     let open_state = state;
 
     view! {
@@ -108,19 +108,14 @@ pub fn LibraryView(state: AppState) -> impl IntoView {
 /// library — info text above, an "Open…" button in the middle.
 #[component]
 fn EmptyState(state: AppState) -> impl IntoView {
-    let has_tauri = crate::core::bridge::has_tauri();
+    let has_tauri = pdf_engine::bridge::has_tauri();
     view! {
         <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
             <div class="flex max-w-md flex-col items-center gap-3 text-center">
                 <p class="text-lg text-ink">"Open a PDF to start reading"</p>
-                {if has_tauri {
-                    view! {
-                        <p class="text-sm text-muted">"Or drop a PDF anywhere in the window"</p>
-                    }
-                    .into_any()
-                } else {
-                    view! { <></> }.into_any()
-                }}
+                {has_tauri.then(|| view! {
+                    <p class="text-sm text-muted">"Or drop a PDF anywhere in the window"</p>
+                })}
                 <Button
                     on_click=move |_| open_flow::open_dialog(state)
                     kind=ButtonKind::Primary
@@ -139,7 +134,7 @@ fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
     // renders many closures that outlive this function's frame).
     let path = book.path.clone();
     let title = book.title.clone().unwrap_or_else(|| {
-        crate::core::filename::file_stem_from_path(&path).unwrap_or_else(|| path.clone())
+        pdf_core::filename::file_stem_from_path(&path).unwrap_or_else(|| path.clone())
     });
     let page = book.page;
     let num = book.num_pages;

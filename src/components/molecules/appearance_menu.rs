@@ -18,8 +18,8 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::atoms::icon::{Icon, IconName};
-use crate::components::atoms::separator::Separator;
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::separator::Separator;
 use crate::core::state::AppState;
 
 use super::appearance::base_section::BaseSection;
@@ -59,7 +59,7 @@ pub fn AppearanceMenu(state: AppState) -> impl IntoView {
                     let target: web_sys::Node = event_target(&ev);
                     let contains = container
                         .as_ref()
-                        .map_or(false, |c| c.contains(Some(&target)));
+                        .is_some_and(|c| c.contains(Some(&target)));
                     if !contains {
                         open.set(false);
                     }
@@ -93,16 +93,16 @@ pub fn AppearanceMenu(state: AppState) -> impl IntoView {
             <Show when=move || open.get()>
                 <div class="menu-popover absolute right-0 top-full z-50 mt-1 max-h-[min(70vh,32rem)] w-72 overflow-y-auto rounded-lg border border-line bg-surface p-3 shadow-lg">
                     <SectionLabel text="Presets" />
-                    <PresetSection state=state.clone() />
+                    <PresetSection state=state />
                     <div class="my-3"><Separator vertical=false /></div>
                     <SectionLabel text="Mode & colour" />
-                    <BaseSection state=state.clone() />
+                    <BaseSection state=state />
                     <div class="my-3"><Separator vertical=false /></div>
                     <SectionLabel text="Page texture" />
-                    <TextureSection state=state.clone() />
+                    <TextureSection state=state />
                     <div class="my-3"><Separator vertical=false /></div>
                     <SectionLabel text="Film grain" />
-                    <NoiseSection state=state.clone() />
+                    <NoiseSection state=state />
                 </div>
             </Show>
         </div>

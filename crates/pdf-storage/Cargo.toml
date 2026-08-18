@@ -1,0 +1,18 @@
+[package]
+name = "pdf-storage"
+version = "0.5.0"
+edition = "2024"
+description = "Key-value persistence abstraction for the PDF reader: localStorage today, SQLite behind a feature flag tomorrow."
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+web-sys = { version = "0.3", features = ["Window", "Storage"] }
+tauri-plugin-sql = { version = "2", optional = true }
+
+[features]
+default = []
+# SQLite backend (via tauri-plugin-sql). Off by default; the crate compiles
+# without it, so swapping storage is a feature-flag + one line change.
+sqlite = ["dep:tauri-plugin-sql"]

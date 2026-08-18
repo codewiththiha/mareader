@@ -145,22 +145,18 @@ pub struct Strip {
 }
 
 impl Strip {
-    /// Build a strip from explicit item sizes.
-    ///
-    /// Non-finite or negative sizes are clamped to `0.0` so a single bad
-    /// measurement cannot poison every offset after it.
+    /// Build a strip from explicit item sizes. Inputs are trusted as-is.
     pub fn new<I>(sizes: I, gap: f64) -> Self
     where
         I: IntoIterator<Item = f64>,
     {
-        let gap = sanitize(gap);
         let iter = sizes.into_iter();
         let (lower, _) = iter.size_hint();
         let mut starts = Vec::with_capacity(lower + 1);
         let mut acc = 0.0;
         for size in iter {
             starts.push(acc);
-            acc += sanitize(size) + gap;
+            acc += size + gap;
         }
         if !starts.is_empty() {
             // Total extent excludes the gap after the final item.
@@ -376,12 +372,6 @@ impl Strip {
     }
 }
 
-/// Clamp a measurement to a usable non-negative finite number.
-#[inline]
-fn sanitize(v: f64) -> f64 {
-    if v.is_finite() && v > 0.0 { v } else { 0.0 }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,16 +418,6 @@ mod tests {
         let b = Strip::new([100.0, 100.0, 100.0], 24.0);
         assert_eq!(a, b);
         assert_eq!(a.total(), 348.0);
-    }
-
-    #[test]
-    fn bad_measurements_are_clamped() {
-        let s = Strip::new([100.0, f64::NAN, -50.0, f64::INFINITY], 24.0);
-        // The bad entries become 0-sized but still occupy an index and a gap.
-        assert_eq!(s.len(), 4);
-        assert_eq!(s.offset(0), 0.0);
-        assert_eq!(s.offset(1), 124.0);
-        assert!(s.total().is_finite());
     }
 
     #[test]

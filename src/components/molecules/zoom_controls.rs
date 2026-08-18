@@ -7,13 +7,13 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::atoms::button::{Button, ButtonKind};
-use crate::components::atoms::icon::{Icon, IconName};
-use crate::components::atoms::separator::Separator;
-use crate::components::atoms::tooltip::Tooltip;
-use crate::core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
+use pdf_viewer::components::atoms::button::{Button, ButtonKind};
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::separator::Separator;
+use pdf_viewer::components::atoms::tooltip::Tooltip;
+use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
 use crate::core::state::AppState;
-use crate::effects::fit::request_zoom;
+use pdf_viewer::effects::fit::request_zoom;
 
 /// Apply a manual zoom level: exit fit mode, then hand the target to the zoom
 /// coordinator.
@@ -25,7 +25,11 @@ use crate::effects::fit::request_zoom;
 /// and re-anchors the scroll in the same frames, then renders once.
 fn apply_zoom(state: AppState, scale: f64) {
     state.viewer.fit.set(FitMode::None);
-    request_zoom(state, scale, true);
+    request_zoom(
+        pdf_viewer::state::ViewerState::new(state.doc, state.viewer, state.search, state.sidebar),
+        scale,
+        true,
+    );
 }
 
 /// The zoom a `+`/`-` step should be measured from: the target of an in-flight
@@ -44,6 +48,7 @@ fn step_base(state: AppState) -> f64 {
 
 #[component]
 pub fn ZoomControls(state: AppState) -> impl IntoView {
+    
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
@@ -59,7 +64,7 @@ pub fn ZoomControls(state: AppState) -> impl IntoView {
                     let contains = root_ref
                         .get()
                         .as_ref()
-                        .map_or(false, |c| c.contains(Some(&target)));
+                        .is_some_and(|c| c.contains(Some(&target)));
                     if !contains {
                         open.set(false);
                     }

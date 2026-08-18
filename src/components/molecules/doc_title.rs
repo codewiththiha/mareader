@@ -44,7 +44,7 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;
 
-use crate::core::filename::display_name;
+use pdf_core::filename::display_name;
 use crate::core::state::AppState;
 
 /// Horizontal padding of the toolbar row (`px-3`).
@@ -84,10 +84,10 @@ fn measure_available() -> Option<f64> {
     // Single mode only: the page nav is absolutely centered on the ROW, so its
     // left edge is (row/2 - nav/2) regardless of the flex groups around it.
     // Absent in continuous mode, where the label may run to the right group.
-    if let Some(center_w) = width_of("toolbar-center") {
-        if center_w > 0.0 {
-            end = end.min(row_w / 2.0 - center_w / 2.0 - GAP_RIGHT);
-        }
+    if let Some(center_w) = width_of("toolbar-center")
+        && center_w > 0.0
+    {
+        end = end.min(row_w / 2.0 - center_w / 2.0 - GAP_RIGHT);
     }
 
     Some((end - start).max(0.0))
@@ -114,7 +114,7 @@ pub fn DocTitle(state: AppState) -> impl IntoView {
                 // notify and re-run the class/style closures every frame the
                 // observer fires during the sidebar's 300ms width animation.
                 let prev = avail.get_untracked();
-                if prev.map_or(true, |p: f64| (p - w).abs() > 0.5) {
+                if prev.is_none_or(|p: f64| (p - w).abs() > 0.5) {
                     avail.set(Some(w));
                 }
             }
@@ -179,10 +179,10 @@ pub fn DocTitle(state: AppState) -> impl IntoView {
     let title = state.doc.title;
     let path = state.doc.path;
     Effect::new(move |_| {
-        let _ = mode.get();
-        let _ = num_pages.get();
-        let _ = title.get();
-        let _ = path.get();
+        _ = mode.get();
+        _ = num_pages.get();
+        _ = title.get();
+        _ = path.get();
         remeasure();
     });
 
@@ -197,7 +197,7 @@ pub fn DocTitle(state: AppState) -> impl IntoView {
     // truncated name is always recoverable.
     let full = move || name();
 
-    let hidden = move || avail.get().map_or(false, |w| w < MIN_LABEL_W);
+    let hidden = move || avail.get().is_some_and(|w| w < MIN_LABEL_W);
 
     view! {
         <span

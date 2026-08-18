@@ -8,9 +8,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::atoms::icon::{Icon, IconName};
-use crate::components::atoms::slider::Slider;
-use crate::core::appearance::TextureMode;
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::slider::Slider;
+use pdf_core::appearance::TextureMode;
 use crate::core::state::AppState;
 use crate::effects::theme_applier::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,

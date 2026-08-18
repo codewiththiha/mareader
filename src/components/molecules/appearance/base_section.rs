@@ -9,10 +9,10 @@
 
 use leptos::prelude::*;
 
-use crate::components::atoms::hue_picker::HuePicker;
-use crate::components::atoms::icon::{Icon, IconName};
-use crate::components::atoms::slider::Slider;
-use crate::core::appearance::BaseMode;
+use pdf_viewer::components::atoms::hue_picker::HuePicker;
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::slider::Slider;
+use pdf_core::appearance::BaseMode;
 use crate::core::state::AppState;
 use crate::effects::theme_applier::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,

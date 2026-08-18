@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
 use crate::core::state::{AppState, ToastKind};
 
 #[component]

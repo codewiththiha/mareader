@@ -18,13 +18,14 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::Event;
 
-use crate::api::engine;
-use crate::core::bridge;
-use crate::core::document::DocStatus;
-use crate::core::filename::display_name;
+use pdf_engine::api as engine;
+use pdf_engine::bridge;
+use pdf_engine::types::DocStatus;
+use pdf_core::filename::display_name;
 use crate::core::library::{self, CoverImage, RecentBook};
-use crate::core::math::{fit_scale, FitMode};
-use crate::core::state::{AppState, SidebarMode, Toast, ToastKind};
+use pdf_core::math::{fit_scale, FitMode};
+use crate::core::state::{AppState, Toast, ToastKind};
+use pdf_viewer::state::SidebarMode;
 use crate::util::storage::{save_covers, save_library};
 
 /// Wire OS-level file opening (double-click / "Open with" / default-app
@@ -41,7 +42,7 @@ use crate::util::storage::{save_covers, save_library};
 ///     command clears itself, so an event + a stray second pull can never
 ///     open the same file twice.
 pub fn init_open_file_handling(state: AppState) {
-    let st = state.clone();
+    let st = state;
     spawn_local(async move {
         if let Some(path) = engine::take_pending_file().await {
             open_path(st, path);
@@ -69,7 +70,7 @@ pub fn init_open_file_handling(state: AppState) {
     );
     let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
     spawn_local(async move {
-        let _ = bridge::listen("pdf-open-file", f).await;
+        _ = bridge::listen("pdf-open-file", f).await;
     });
     handle.set_value(Some(cb));
 }
@@ -183,8 +184,8 @@ pub fn open_path(state: AppState, path: String) {
 
                 // Fire index build in the background; result is ignored
                 // (search effects call it too when needed).
-                let _ = spawn_local(async move {
-                    let _ = engine::build_search_index().await;
+                spawn_local(async move {
+                    _ = engine::build_search_index().await;
                 });
 
                 // Persist last path (the settings-watch effect writes
@@ -218,7 +219,7 @@ pub fn open_path(state: AppState, path: String) {
                 // fallback cover on the shelf.
                 let cover_state = state;
                 let cover_path = path.clone();
-                let _ = spawn_local(async move {
+                spawn_local(async move {
                     match engine::cover_data_url(&cover_path, 240.0).await {
                         Ok(c) => {
                             cover_state.covers.update(|covers| {
@@ -260,21 +261,21 @@ pub fn close_document(state: AppState) {
     // The reading-progress effect writes the library signal synchronously but
     // debounces the localStorage save; closing (and then possibly quitting)
     // must not lose the last position to that debounce.
-    if state.doc.status.get_untracked() == DocStatus::Ready {
-        if let Some(path) = state.doc.path.get_untracked() {
-            let page = state.viewer.page.get_untracked();
-            let mut changed = false;
-            state.library.update(|books| {
-                if let Some(b) = books.iter_mut().find(|b| b.path == path) {
-                    if b.page != page {
-                        b.page = page;
-                        changed = true;
-                    }
-                }
-            });
-            if changed {
-                save_library(&state.library.get_untracked());
+    if state.doc.status.get_untracked() == DocStatus::Ready
+        && let Some(path) = state.doc.path.get_untracked()
+    {
+        let page = state.viewer.page.get_untracked();
+        let mut changed = false;
+        state.library.update(|books| {
+            if let Some(b) = books.iter_mut().find(|b| b.path == path)
+                && b.page != page
+            {
+                b.page = page;
+                changed = true;
             }
+        });
+        if changed {
+            save_library(&state.library.get_untracked());
         }
     }
 
@@ -283,8 +284,8 @@ pub fn close_document(state: AppState) {
     // synchronously and lets the worker die in the background), so this can
     // never hang, and a fast "close → reopen" is safe because the reopen's
     // own destroy() is idempotent.
-    let _ = spawn_local(async move {
-        let _ = engine::destroy().await;
+    spawn_local(async move {
+        _ = engine::destroy().await;
     });
 
     state.doc.status.set(DocStatus::Idle);

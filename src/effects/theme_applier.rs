@@ -28,8 +28,8 @@ use std::time::Duration;
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
-use crate::core::appearance::Appearance;
-use crate::core::settings::Settings;
+use pdf_core::appearance::Appearance;
+use pdf_core::settings::Settings;
 use crate::core::state::AppState;
 use crate::util::storage::save_settings;
 
@@ -89,14 +89,14 @@ thread_local! {
 fn enter_scrub() {
     let was = SCRUBBING.with(|s| s.replace(true));
     if !was {
-        crate::api::engine::set_scrub_mode(true);
+        pdf_engine::api::set_scrub_mode(true);
     }
 }
 
 fn leave_scrub() {
     let was = SCRUBBING.with(|s| s.replace(false));
     if was {
-        crate::api::engine::set_scrub_mode(false);
+        pdf_engine::api::set_scrub_mode(false);
     }
 }
 
@@ -149,11 +149,11 @@ fn kick_backdrop_surfaces() {
             continue;
         };
         let style = html.style();
-        let _ = style.set_property("-webkit-backdrop-filter", "none");
-        let _ = style.set_property("backdrop-filter", "none");
-        let _ = html.offset_height();
-        let _ = style.remove_property("-webkit-backdrop-filter");
-        let _ = style.remove_property("backdrop-filter");
+        _ = style.set_property("-webkit-backdrop-filter", "none");
+        _ = style.set_property("backdrop-filter", "none");
+        _ = html.offset_height();
+        _ = style.remove_property("-webkit-backdrop-filter");
+        _ = style.remove_property("backdrop-filter");
     }
 }
 
@@ -170,17 +170,17 @@ pub fn paint_appearance_now(a: Appearance) {
     // stale backdrop while the picker is open.
     let kick = prev_base.as_deref() != Some(a.base.as_str());
 
-    let _ = el.set_attribute("data-base", a.base.as_str());
+    _ = el.set_attribute("data-base", a.base.as_str());
     let class = el.class_list();
     if a.base.is_dark() {
-        let _ = class.add_1("dark");
+        _ = class.add_1("dark");
     } else {
-        let _ = class.remove_1("dark");
+        _ = class.remove_1("dark");
     }
     if kick {
         // Kill color transitions for this frame so toolbar buttons cannot
         // linger at a mid-mix of the old and new tokens.
-        let _ = class.add_1("theme-switching");
+        _ = class.add_1("theme-switching");
     }
 
     if let Some(style) = html_style() {
@@ -188,13 +188,13 @@ pub fn paint_appearance_now(a: Appearance) {
             "color-scheme",
             if a.base.is_dark() { "dark" } else { "light" },
         );
-        let _ = style.set_property("--canvas-filter", &a.canvas_filter());
-        let _ = style.set_property("--canvas-blend", a.canvas_blend());
+        _ = style.set_property("--canvas-filter", &a.canvas_filter());
+        _ = style.set_property("--canvas-blend", a.canvas_blend());
         for tok in UI_TOKENS {
-            let _ = style.remove_property(tok);
+            _ = style.remove_property(tok);
         }
         for (name, value) in a.ui_overrides() {
-            let _ = style.set_property(name, &value);
+            _ = style.set_property(name, &value);
         }
         let _ = style.set_property(
             "--texture-opacity",
@@ -210,7 +210,7 @@ pub fn paint_appearance_now(a: Appearance) {
         kick_backdrop_surfaces();
         request_animation_frame(move || {
             if let Some(el) = document_element() {
-                let _ = el.class_list().remove_1("theme-switching");
+                _ = el.class_list().remove_1("theme-switching");
             }
         });
     }
@@ -218,14 +218,14 @@ pub fn paint_appearance_now(a: Appearance) {
     let Some(body) = body_el() else { return };
     let class = body.class_list();
     if a.noise.is_on() {
-        let _ = class.add_1("noise-enabled");
+        _ = class.add_1("noise-enabled");
     } else {
-        let _ = class.remove_1("noise-enabled");
+        _ = class.remove_1("noise-enabled");
     }
-    if matches!(a.noise, crate::core::appearance::NoiseMode::Animated) {
-        let _ = class.add_1("noise-animated");
+    if matches!(a.noise, pdf_core::appearance::NoiseMode::Animated) {
+        _ = class.add_1("noise-animated");
     } else {
-        let _ = class.remove_1("noise-animated");
+        _ = class.remove_1("noise-animated");
     }
     let _ = body.style().set_property(
         "--noise-opacity",
@@ -355,7 +355,7 @@ pub fn theme_applier(state: AppState) {
         // re-bake them at the freshly painted variables. A no-op while a
         // scrub is in flight (scrub mode owns the canvases then) and before
         // the first document opens.
-        crate::api::engine::refresh_theme();
+        pdf_engine::api::refresh_theme();
     });
 
     Effect::new(move || {

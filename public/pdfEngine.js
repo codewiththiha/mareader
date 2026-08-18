@@ -50,7 +50,9 @@ const stateByCanvasId = new Map();
 // Stored as ImageBitmap when the browser allows it so eviction can free GPU
 // memory synchronously. Falls back to a detached canvas.
 const thumbCache = new Map();
-const THUMB_CACHE_MAX = 48;
+// 24 thumbnails is still 2 screens; 48 was ~4 screens but each entry holds
+// both a raw and a display raster, so the cap matters.
+const THUMB_CACHE_MAX = 24;
 // canvasId -> in-flight thumbnail RenderTask (cancelled by cancelThumb).
 const thumbTasks = new Map();
 // canvasId -> the cell unmounted while a render was in flight. The slow path
@@ -872,57 +874,6 @@ function itemRect(item, pageH) {
 }
 
 /// Reorder pdf.js text items so copy/paste and drag-selection follow visual
-/// reading order, WITHOUT disturbing line / column structure.
-///
-/// pdf.js returns text items in CONTENT-STREAM (paint) order. Most producers
-/// paint in reading order, but some emit each font run (an italic/bold phrase,
-/// a list number, a caption label) as a separate show-text op AFTER the run it
-/// visually precedes. The layer then holds that run at the wrong DOM position,
-/// so:
-///   - copy/paste concatenates spans in DOM order and comes out scrambled, and
-///   - one contiguous drag selection paints as several visually disjoint
-///     islands (the highlight "flickers" across style boundaries).
-///
-/// The fix is LOCAL: bubble adjacent items that sit on the same visual line
-/// but are horizontally inverted. It only ever swaps two items that are
-/// already neighbours in the stream AND vertically aligned, so it corrects
-/// within-line inversions while leaving line order, column order (two-column
-/// layouts keep their column-major stream order) and table row order exactly
-/// as the producer laid them out. A global top-then-left sort would be WRONG
-/// here: it merges the two columns of a two-column page into one "line" and
-/// interleaves them, scrambling copy that is currently correct.
-///
-/// pdf.js already synthesises the inter-word spaces the PDF stream omits (as
-/// separate `str: " "` items positioned in the gap), so this only PERMUTES
-/// items — it never rewrites their text or transforms, which is what keeps the
-/// span `--scale-x` math and the highlight getBoundingClientRect measurement
-/// intact.
-function normalizeTextOrder(items) {
-  if (!items || items.length < 2) return items;
-  const arr = items.slice(); // pure permutation of the input
-  const top = (it) => -(it.transform?.[5] ?? 0);
-  const left = (it) => (it.transform?.[4] ?? 0);
-  const height = (it) => Math.max(it.height || 0, 1);
-
-  let swapped = true;
-  let guard = 0;
-  while (swapped && guard < 1000) {
-    swapped = false;
-    guard += 1;
-    for (let i = 0; i < arr.length - 1; i += 1) {
-      const a = arr[i];
-      const b = arr[i + 1];
-      // Same line: baselines within half a line height of each other.
-      const tol = 0.5 * Math.max(height(a), height(b));
-      if (Math.abs(top(a) - top(b)) <= tol && left(b) < left(a)) {
-        arr[i] = b;
-        arr[i + 1] = a;
-        swapped = true;
-      }
-    }
-  }
-  return arr;
-}
 
 // --- bytes -----------------------------------------------------------
 async function doFetch(src) {
@@ -934,40 +885,16 @@ async function doFetch(src) {
 }
 
 async function fetchBytes(path) {
-  // http(s) URLs are always fetched directly.
+  // http(s) URLs are always fetched directly. Inside Tauri the bytes come
+  // over IPC (read_file_bytes), which bypasses scheme/scope/CORS entirely;
+  // anywhere else, plain web fetch.
   if (/^https?:\/\//i.test(path)) return doFetch(path);
-
   const tauri = globalThis.__TAURI__;
-  // WINDOWS REOPEN FIX. The asset protocol used to be the primary path, but
-  // on Windows it is `https://asset.localhost/...` — a loopback server with a
-  // self-signed certificate — and the first request after launch
-  // intermittently fails ("Failed to fetch") because WebView2 resolves
-  // `asset.localhost` through the system DNS path before the loopback rule
-  // kicks in. Reading the bytes through a Rust command (`read_file_bytes`)
-  // bypasses the scheme, scope, CORS and certificate entirely: the bytes
-  // arrive over Tauri IPC as an ArrayBuffer, on every OS, first try.
   if (tauri && tauri.core && typeof tauri.core.invoke === "function") {
     try {
-      const data = await tauri.core.invoke("read_file_bytes", { path });
-      if (data instanceof ArrayBuffer) return new Uint8Array(data);
-      if (data instanceof Uint8Array) return data;
-      if (Array.isArray(data)) return new Uint8Array(data);
-      // Anything else is a rejected-shape payload; fall through.
+      return new Uint8Array(await tauri.core.invoke("read_file_bytes", { path }));
     } catch (_) {
-      // Not a readable filesystem path (e.g. a bundled /samples/ asset in
-      // dev, or the file was deleted). Fall back below.
-    }
-  }
-  if (tauri && tauri.core && typeof tauri.core.convertFileSrc === "function") {
-    // Inside Tauri, try the asset protocol for real filesystem paths picked
-    // from the dialog. Fall back to a web fetch for bundled assets
-    // (/samples/, /vendor/) which don't exist on the filesystem at that
-    // path. Note: absolute macOS paths start with "/" just like web paths,
-    // so we cannot branch on path shape alone.
-    try {
-      return await doFetch(tauri.core.convertFileSrc(path));
-    } catch (_) {
-      // not a real file on disk -> try as a web path below
+      // Not a readable filesystem path (bundled asset in dev); fall through.
     }
   }
   return doFetch(path);
@@ -986,14 +913,7 @@ async function fetchBytes(path) {
 /// Also collapses interior newlines/tabs: a title that legitimately contains a
 /// line break would otherwise wrap and make one row twice as tall as the rest.
 function outlineTitle(raw) {
-  const s = String(raw == null ? "" : raw)
-    // Zero-width and BOM-ish characters render as nothing but are not
-    // whitespace, so `trim()` keeps them and the row still looks blank.
-    .replace(/[\u200b-\u200f\u2028\u2029\ufeff\u00ad]/g, "")
-    // Any run of real whitespace (incl. newlines/tabs) becomes one space.
-    .replace(/\s+/g, " ")
-    .trim();
-  return s.length > 0 ? s : "(untitled)";
+  return String(raw == null ? "" : raw).trim() || "(untitled)";
 }
 
 async function flattenOutline(items, depth, acc) {
@@ -1158,10 +1078,6 @@ async function destroy() {
   pdf = null;
   numPages = 0;
   currentPath = null;
-}
-
-function pageCount() {
-  return pdf ? pdf.numPages : 0;
 }
 
 function registerPage(payload) {
@@ -1626,12 +1542,7 @@ async function renderPageInternal(canvasId, scale, renderText) {
     layer.className = "textLayer";
     layer.setAttribute("aria-hidden", "true");
 
-    // READING-ORDER FIX: fetch the full text content and reorder it before
-    // handing it to pdf.js's TextLayer. `streamTextContent()` streams in paint
-    // order, which cannot be reordered; `getTextContent()` collects the same
-    // items so normalizeTextOrder can permute them first (see above).
     const textContent = await page.getTextContent();
-    textContent.items = normalizeTextOrder(textContent.items);
 
     const tl = new TextLayer({
       textContentSource: textContent,
@@ -1971,26 +1882,6 @@ function stats() {
   };
 }
 
-async function renderPages(entries, scale) {
-  const results = [];
-  for (const entry of entries) {
-    const renderText = entry.renderText !== undefined ? entry.renderText : !!entry.hostId;
-    try {
-      results.push(await renderPageInternal(entry.canvasId, scale, renderText));
-    } catch (e) {
-      const info = errorInfo(e);
-      results.push(fail(info.name, info.message));
-    }
-  }
-  return results;
-}
-
-async function updatePage(canvasId, scale) {
-  const st = stateByCanvasId.get(canvasId);
-  const renderText = !!(st && st.host && st.textLayerEl);
-  return renderPage(canvasId, scale, renderText);
-}
-
 async function buildSearchIndex() {
   if (!pdf) return 0;
   textIndex.clear();
@@ -2001,9 +1892,7 @@ async function buildSearchIndex() {
       const tc = await page.getTextContent();
       const pageH = page.getViewport({ scale: 1 }).height;
       const items = [];
-      // Same reading-order permutation the text layer uses, so snippet text,
-      // match order and what the user copies are one source of truth.
-      for (const item of normalizeTextOrder(tc.items) || []) {
+      for (const item of tc.items) {
         if (!item.str) continue;
         const r = itemRect(item, pageH);
         if (r.w <= 0) continue;
@@ -2132,20 +2021,6 @@ async function takePendingFile() {
 }
 
 // --- localStorage wrappers (used for persisted settings) -------------
-function storageGet(key) {
-  try {
-    return window.localStorage.getItem(key);
-  } catch (_) {
-    return null;
-  }
-}
-
-function storageSet(key, value) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch (_) { /* ignore */ }
-}
-
 // --- expose ----------------------------------------------------------
 /// Release every canvas backing store SYNCHRONOUSLY, for teardown.
 ///
@@ -2225,23 +2100,18 @@ document.addEventListener("selectionchange", () => {
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
   releaseAllSurfaces,
-  storageGet,
-  storageSet,
   open,
   destroy,
-  pageCount,
   registerPage,
   unregisterPage,
   cancelPage,
   renderPage,
-  renderPages,
   renderThumb,
   cancelThumb,
   hasThumb,
   blitThumb,
   coverDataUrl,
   stats,
-  updatePage,
   buildSearchIndex,
   search,
   setActiveMatch,

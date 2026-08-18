@@ -16,3 +16,7 @@ categories = ["gui", "algorithms", "no-std"]
 [features]
 default = ["std"]
 std = []
+
+[[bench]]
+name = "scaling_check"
+harness = false

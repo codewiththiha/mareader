@@ -309,41 +309,12 @@ html.appearance-scrubbing .thumb-canvas {
   animation: thumb-skeleton-pulse 1.6s ease-in-out infinite;
 }
 
-/* THUMBNAIL REVEAL FLICKER FIX.
-   The pulse is deliberately left running through the 300ms fade-out (removing
-   the class mid-fade would cancel the animation and snap the tint back to base
-   in one frame). But the pulse swings a long way: measured in sepia it moves
-   54 luminance units, min 159.7 / max 213.7, on a 1.6s cycle. A render can
-   resolve at ANY phase of that cycle, so each newly rendered cell starts its
-   reveal from a different brightness and keeps oscillating while it fades —
-   neighbouring cells in the same row resolve a few ms apart and therefore
-   shimmer against each other. That is the residual flicker on freshly rendered
-   thumbnails during virtual scrolling.
-
-   `thumb-settling` freezes the tint for the duration of the fade: the pulse is
-   PAUSED (not removed, so nothing snaps) at whatever value it currently holds,
-   and the same timer that already exists then drops both classes once the cover
-   is fully transparent. Every cell now reveals from a stable colour, so the
-   reveal is a plain monotonic fade regardless of pulse phase.
-
-   `animation-play-state: paused` keeps the computed background exactly where it
-   was — this is why it must be a separate class from the removal, and why the
-   removal still happens only after the cover is invisible. */
+/* css-comment-stripped */
 .thumb-skeleton-settling {
   animation-play-state: paused;
 }
 
-/* SELECTION SURFACE SCOPING (round 3) — the ONLY selectable things inside a
-   page are the glyph spans.
-   Round 1 made the `.textLayer` container non-selectable; the host AROUND it
-   was never covered. The `.pdf-page` host, its wrappers and the full-page
-   `<canvas>` are all still selectable surfaces, so a drag whose focus escapes
-   the glyph spans (long-press on blank paper, a drag into the inter-page gap
-   or the side padding) resolves against them — and WebKit paints a SELECTED
-   REPLACED ELEMENT as a full-box tint, which is the whole-page "wash". The
-   canvas tint uses `--color-accent`, hence it follows the theme's tint hue.
-   Scoping selectability host-wide leaves nothing for the tint to land on
-   except real glyph spans. */
+/* css-comment-stripped */
 .pdf-page,
 .pdf-page * {
   user-select: none;
@@ -610,26 +581,7 @@ html.appearance-scrubbing .thumb-canvas {
      still the default, so an untouched install looks identical. */
   opacity: var(--texture-opacity, 0.9);
 
-  /* TEXTURE ANCHORING.
-     The paper texture is part of the PAGE, not a filter over the viewport, so
-     its pattern must scale with the page exactly like the printed content does.
-     Every texture below is a repeating background whose geometry used to be
-     hard-coded in CSS px (26px rules, an 8px dot pitch, a 180px noise tile), so
-     zooming grew the page but left the pattern pitch identical: at 140% zoom the
-     host was 1.402x larger while `background-size` stayed `auto`, and the lines
-     visibly slid across the text instead of moving with it. That is what reads
-     as "the texture behaves like a filter".
-
-     `--scale-factor` is already maintained on the host by page_canvas.rs (the
-     text layer depends on it), so it is the page's own scale and is written in
-     the SAME inline style as the host's width/height — the texture therefore
-     rescales on exactly the frame the page does, with no extra plumbing and no
-     drift during a zoom animation.
-
-     `--tex-unit` is the scaled pitch every texture derives from; `--tex-line`
-     keeps hairlines from disappearing at small zoom or turning into fat bars at
-     large zoom by clamping their scaled width. background-origin/position pin
-     the pattern to the page's top-left corner so it never slides. */
+  /* css-comment-stripped */
   /* The user's pitch multiplier COMPOSES with the page scale rather than
      replacing it. The texture is part of the page (appendix 7): it must still
      zoom with the document, so the slider stretches the NATURAL pitch and the
@@ -732,17 +684,7 @@ body.noise-enabled .noise-overlay {
    only way a reader can judge colour and tint against the texture they will
    actually be reading through. */
 
-/* ANIMATED GRAIN.
-   Real film grain crawls; a static tile reads as dirt on the glass. The
-   obvious implementation — re-randomising the feTurbulence seed every frame —
-   re-rasterises a full-viewport SVG filter 60x a second, which drops frames
-   while scrolling.
-
-   Instead the tile is oversized and simply MOVED. steps(1) sampling makes it
-   jump between discrete offsets rather than sliding: a sliding grain reads as
-   a texture panning across the screen (very obviously wrong), while discrete
-   jumps read as the frame-to-frame randomness of real grain. Because it is a
-   pure transform it runs on the compositor — no repaint, no filter work. */
+/* css-comment-stripped */
 body.noise-animated .noise-overlay {
   background-image: none;
 }
