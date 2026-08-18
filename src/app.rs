@@ -4,6 +4,7 @@ use crate::components::organisms::toast::ToastHost;
 use crate::components::views::reader_view::ReaderView;
 use crate::core::state::AppState;
 use crate::effects::link_nav::link_nav;
+use crate::effects::selection_pages::selection_pages;
 use crate::util::storage::{init_storage, load_covers, load_library, load_settings};
 use pdf_core::appearance::TextureMode;
 use pdf_viewer::state::TextureSignal;
@@ -38,9 +39,11 @@ pub fn App() -> impl IntoView {
     ));
     provide_context(texture as TextureSignal);
 
-    // App-root hooks: global keyboard shortcuts + internal PDF link jumps.
+    // App-root hooks: global keyboard shortcuts + internal PDF link jumps +
+    // text-selection page-range tracking (for virtualization pinning).
     shortcuts(state);
     link_nav(state);
+    selection_pages(state);
     // OS file opening: double-click / "Open with" / default-app launch.
     // Pulls the pending path once (launch-time file) and subscribes to the
     // backend's `pdf-open-file` pings (files opened while running).

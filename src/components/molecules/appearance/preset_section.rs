@@ -64,7 +64,11 @@ fn PresetSwatch(preset: Preset, state: AppState) -> impl IntoView {
                 >
                     <span class=appearance.preview_class()>
                         // Mirrors the real page structure: an unfiltered
-                        // themed backdrop with a filtered "canvas" on top.
+                        // themed backdrop with a "canvas" on top. No inline
+                        // filter/blend — the swatch uses solid colours
+                        // (--ps-color-paper / --ps-color-ink) instead of
+                        // GPU filter layers, so it is immune to compositor
+                        // bugs during slider drags.
                         <span class="preset-canvas">
                             <span class="preset-line preset-line-a"></span>
                             <span class="preset-line preset-line-b"></span>

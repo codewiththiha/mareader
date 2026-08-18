@@ -42,7 +42,25 @@ jobs:
       # node_modules), so a frozen install is not required here.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+
+      # Install the TypeScript dev dependencies (typescript + @types/node)
+      # so the pre-build tsc step can compile the .ts sources the engine and
+      # scripts are now written in.
+      - name: Install Node dependencies
+        run: npm ci
+
+      # Type-check the TypeScript sources (public/pdfEngine.ts and
+      # scripts/*.ts). The actual .js emission happens in the Trunk pre-build
+      # hook and the `build:ts` npm script; this gate catches type errors
+      # that the smoke test would otherwise only fail on at runtime.
+      - name: Type-check TypeScript
+        run: npm run check:ts
+
+      # Emit the .js files the engine-smoke and version-sync steps below
+      # expect (public/pdfEngine.js and scripts/*.js).
+      - name: Build TypeScript
+        run: npm run build:ts
 
       # NOTE: no `cargo fmt --check` here. The codebase is hand-formatted in a
       # style that rustfmt >=1.9x would rewrite across ~40 files; running it
@@ -83,11 +101,12 @@ jobs:
       - name: Check wasm frontend
         run: cargo check --target wasm32-unknown-unknown
 
-      # The imperative engine (public/pdfEngine.js) is browser code; run its
-      # stub-based smoke test (pure Node stdlib, no node_modules) to catch
-      # regressions in open / render / theme-bake / scrub / destroy.
+      # The imperative engine (public/pdfEngine.ts) is browser code; run its
+      # stub-based smoke test (compiled to scripts/test-engine-smoke.js by
+      # the TypeScript build step above) to catch regressions in open /
+      # render / theme-bake / scrub / destroy.
       - name: Engine smoke test
-        run: node scripts/test-engine-smoke.mjs
+        run: node scripts/test-engine-smoke.js
 
       - name: Verify versions are in sync
-        run: node scripts/check-versions.mjs
+        run: node scripts/check-versions.js

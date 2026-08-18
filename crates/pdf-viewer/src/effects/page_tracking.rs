@@ -291,12 +291,13 @@ pub fn page_tracking(state: ViewerState) {
                     last_ours_b.set(top);
                     list.set_scroll_top(top as i32);
                 }
-                // Landed exactly. Deliberately do NOT clear pending here: a jump
-                // closes the sidebar in the same gesture, and the resulting
-                // resize/scale change moves the target page AFTER we land. Keeping
-                // pending armed lets us re-aim at the moving page until the layout
-                // settles. It is cleared on user takeover, mode exit, or the next
-                // jump — never on a momentary exact match.
+                // Landed: clear pending so subsequent user scrolls are never
+                // hijacked. The previous version deliberately kept pending armed
+                // (to handle a sidebar close mid-jump), but that caused
+                // scroll-lockups: whenever a newly rendered page reported its
+                // height via on_geometry, Effect 4 re-fired and snapped scrollTop
+                // back to the target, fighting the user's scroll.
+                pending_b.set(None);
             }
             None => {
                 // Wrapper not mounted yet — aim at the current height-estimate so

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Version-sync check — the cheapest insurance in the release pipeline.
 //
 // The app version lives in FOUR places in this repo (the workspace root plus
@@ -13,7 +12,8 @@
 // disagree, and (when CHECK_TAG is set, i.e. a `v*` tag push) also verifies
 // the git tag matches the version.
 //
-// ESM: package.json declares `"type": "module"`.
+// This is the TypeScript source; Trunk's pre-build hook compiles it to
+// `scripts/check-versions.mjs` (ESM) so CI can run it with plain `node`.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -21,20 +21,25 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-function readJson(rel) {
+type VersionSource = [file: string, version: string];
+
+function readJson(rel: string): unknown {
   return JSON.parse(fs.readFileSync(path.join(root, rel), "utf8"));
 }
 
-function readCargoVersion(rel) {
+function readCargoVersion(rel: string): string {
   const text = fs.readFileSync(path.join(root, rel), "utf8");
-  const m = text.match(/^version\s*=\s*"([^"]+)"/m);
-  if (!m) throw new Error(`no [package] version found in ${rel}`);
+  const m = /^version\s*=\s*"([^"]+)"/m.exec(text);
+  if (!m || !m[1]) throw new Error(`no [package] version found in ${rel}`);
   return m[1];
 }
 
-const sources = [
-  ["package.json", readJson("package.json").version],
-  ["src-tauri/tauri.conf.json", readJson("src-tauri/tauri.conf.json").version],
+const sources: VersionSource[] = [
+  ["package.json", (readJson("package.json") as { version: string }).version],
+  [
+    "src-tauri/tauri.conf.json",
+    (readJson("src-tauri/tauri.conf.json") as { version: string }).version,
+  ],
   ["Cargo.toml", readCargoVersion("Cargo.toml")],
   ["src-tauri/Cargo.toml", readCargoVersion("src-tauri/Cargo.toml")],
 ];
@@ -46,7 +51,7 @@ if (versions.size !== 1) {
   process.exit(1);
 }
 
-const version = sources[0][1];
+const version = sources[0]![1];
 console.log(`versions agree: ${version}`);
 
 const tag = process.env.CHECK_TAG;

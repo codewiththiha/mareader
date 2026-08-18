@@ -3,4 +3,5 @@
 
 pub mod link_nav;
 pub mod reading_progress;
+pub mod selection_pages;
 pub mod theme_applier;

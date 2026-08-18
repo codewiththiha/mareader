@@ -2,16 +2,7 @@
 //! and step through individual matches — scrolling each one into view rather
 //! than jumping to the top of its page. OWNED BY branch C (panels/sidebar).
 
-use std::cell::Cell;
-
 use leptos::prelude::*;
-
-type ScrollClosureSlot = leptos::prelude::StoredValue<
-    Option<wasm_bindgen::closure::Closure<dyn Fn(web_sys::Event)>>,
-    leptos::prelude::LocalStorage,
->;
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen::JsCast;
 
 use pdf_engine::api as engine;
 use pdf_core::layout::{page_top_css, ViewMode, PAGE_GAP, TOOLBAR_H};
@@ -77,57 +68,20 @@ pub fn clear_search(state: ViewerState) {
     state.search.dismissed.set(false);
 }
 
-thread_local! {
-    /// Set for the remainder of the current task whenever a search is
-    /// dismissed: the dismissing gesture (Escape / pointerdown outside) is
-    /// also seen by the watcher below, which would otherwise discard the
-    /// trace in the very same event. Cleared on a microtask so the protection
-    /// never outlives the dispatching task.
-    static JUST_DISMISSED: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Close the bar but LEAVE the highlights on screen, muted.
+/// Close the floating search bar. Highlights remain visible in the document.
 ///
-/// Dismissing a search is rarely the end of it — the reader wants the page
-/// back, not the results gone, and wiping everything on Escape means retyping
-/// the query to see the hits again. So the boxes stay in a stale colour and the
-/// query is kept: reopening the bar (`resume_search`) restores it exactly.
-/// The first real interaction with the document ends the grace period
-/// (`discard_dismissed`).
-///
-/// Nothing to dismiss without a query, in which case this is a plain close.
+/// Search highlights persist during reading and scrolling until the user
+/// explicitly clears or changes the search query. Dismissing the bar just
+/// hides the UI — the highlights, query, and matches all stay so the reader
+/// can reopen the bar (`resume_search`) and pick up where they left off.
 pub fn dismiss_search(state: ViewerState) {
     state.search.visible.set(false);
-    if state.search.matches.with_untracked(Vec::is_empty) {
-        clear_search(state);
-        state.search.query.set(String::new());
-        return;
-    }
-    engine::set_highlight_mode(true);
-    state.search.dismissed.set(true);
-    JUST_DISMISSED.with(|g| g.set(true));
-    queue_microtask(|| JUST_DISMISSED.with(|g| g.set(false)));
 }
 
-/// Reopen the bar. A dismissed-but-not-yet-discarded search comes back intact,
-/// query and all; anything else opens fresh.
+/// Reopen the search bar. The query and highlights are still intact from the
+/// last search (they were never cleared on dismiss).
 pub fn resume_search(state: ViewerState) {
-    if state.search.dismissed.get_untracked() {
-        engine::set_highlight_mode(false);
-        state.search.dismissed.set(false);
-    }
     state.search.visible.set(true);
-}
-
-/// End the grace period: the reader has moved on, so the stale highlights and
-/// the query go away. A no-op unless a dismissed search is actually pending,
-/// which is what makes it cheap enough to call from a scroll handler.
-pub fn discard_dismissed(state: ViewerState) {
-    if !state.search.dismissed.get_untracked() || JUST_DISMISSED.with(Cell::get) {
-        return;
-    }
-    state.search.query.set(String::new());
-    clear_search(state);
 }
 
 /// Scroll `m` into view and mark it as the current match.
@@ -193,100 +147,28 @@ pub fn search_navigate(state: ViewerState, dir: i32) {
     activate_match(state, next);
 }
 
-/// Attribute marking the search bar and the toolbar button that opens it.
-/// Interacting with either is "coming back to the search", not "moving on".
-///
-/// An attribute rather than an id because several elements carry it, and
-/// duplicate ids are invalid.
-pub const SEARCH_CHROME_ATTR: &str = "data-search-chrome";
-
-/// Whether `node` sits inside the search chrome.
-fn in_search_chrome(node: &web_sys::Node) -> bool {
-    // `closest` already walks ancestors; a text node has to be lifted to its
-    // parent element first because only Elements implement it.
-    node.dyn_ref::<web_sys::Element>()
-        .cloned()
-        .or_else(|| node.parent_element())
-        .and_then(|el| el.closest(&format!("[{SEARCH_CHROME_ATTR}]")).ok().flatten())
-        .is_some()
-}
-
 /// Whether a keypress means "the reader moved on", ending the grace period.
 ///
-/// Three kinds of key do NOT count. Escape, so a second Escape (closing the
-/// sidebar) does not also wipe the trace. Cmd/Ctrl+F, which reopens the bar.
-/// And a bare modifier: it is the first half of a chord, and Cmd/Ctrl+F arrives
-/// as TWO keydowns ("Control", then "f") — treating the modifier as an
-/// interaction wiped the trace before the reopening keystroke was ever seen.
+/// Kept for the test below even though `dismissed_search_watch` is now a no-op
+/// (highlights persist until explicitly cleared, not auto-wiped on keypress).
+#[allow(dead_code)]
 fn key_ends_grace(key: &str, cmd_or_ctrl: bool) -> bool {
     let bare_modifier = matches!(key, "Control" | "Shift" | "Alt" | "Meta");
     let reopening = cmd_or_ctrl && key.eq_ignore_ascii_case("f");
     key != "Escape" && !bare_modifier && !reopening
 }
 
-/// Ends the grace period after the reader dismisses a search.
+/// Watcher for search keyboard shortcuts / dismissal.
 ///
-/// While a dismissed search is pending, the next scroll, pointerdown or keypress
-/// discards it: the muted highlights disappear and the query is emptied. Until
-/// then everything is still held, so reopening the bar resumes it intact.
-///
-/// Interactions with the search chrome do NOT count — reopening the bar is how
-/// the reader comes BACK to the search, not how they move on.
-///
-/// Each handler begins with an untracked bool read, so a scroll with no pending
-/// search costs one signal read rather than a DOM walk.
-///
-/// Must be called once from the app root (ReaderView).
-pub fn dismissed_search_watch(state: ViewerState) {
-    // `scroll` does not bubble from a scrolling element to the window, so it
-    // must be observed in the CAPTURE phase. Leptos's typed helper only
-    // attaches bubble-phase listeners, hence the manual closure.
-    //
-    // The Closure is !Send, so it is parked in a local StoredValue that lives
-    // as long as this owner (the same pattern as util::dom::observe_content_size)
-    // while `on_cleanup` — which requires Send + Sync — detaches by the
-    // independent JS Function handle.
-    let scroll_closure: ScrollClosureSlot =
-        StoredValue::new_local(None);
-    let closure = Closure::wrap(Box::new(move |_: web_sys::Event| {
-        discard_dismissed(state);
-    }) as Box<dyn Fn(web_sys::Event)>);
-    let js_fn: js_sys::Function = closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
-    if let Some(window) = web_sys::window() {
-        _ = window.add_event_listener_with_callback_and_bool("scroll", &js_fn, true);
-    }
-    scroll_closure.set_value(Some(closure));
-    on_cleanup(move || {
-        if let Some(window) = web_sys::window() {
-            _ = window.remove_event_listener_with_callback_and_bool("scroll", &js_fn, true);
-        }
-    });
-
-    let pointer_handle =
-        window_event_listener(leptos::ev::pointerdown, move |ev: leptos::ev::PointerEvent| {
-            if !state.search.dismissed.get_untracked() {
-                return;
-            }
-            let target: web_sys::Node = event_target(&ev);
-            if !in_search_chrome(&target) {
-                discard_dismissed(state);
-            }
-        });
-    on_cleanup(move || pointer_handle.remove());
-
-    // Any key that is not the reader reaching back for the search. Escape is
-    // excluded so a second Escape (closing the sidebar) does not also wipe the
-    // trace; Cmd/Ctrl+F is excluded because it reopens the bar.
-    let key_handle =
-        window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
-            if !state.search.dismissed.get_untracked() {
-                return;
-            }
-            if key_ends_grace(&ev.key(), ev.meta_key() || ev.ctrl_key()) {
-                discard_dismissed(state);
-            }
-        });
-    on_cleanup(move || key_handle.remove());
+/// Left empty: search results and highlights now persist cleanly during
+/// continuous scrolling until explicitly cleared by the reader (changing the
+/// query, clearing the search, or opening a new document). The previous
+/// version attached scroll/pointerdown/keydown listeners that auto-wiped
+/// highlights the moment the reader scrolled past a dismissed search —
+/// that was the "search highlighters disappear forever on scroll" bug.
+pub fn dismissed_search_watch(_state: ViewerState) {
+    // No-op. Highlights persist until the reader explicitly clears or changes
+    // the search query (see `clear_search` and `run_search`).
 }
 
 #[cfg(test)]

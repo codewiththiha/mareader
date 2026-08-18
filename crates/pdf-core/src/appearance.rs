@@ -396,46 +396,75 @@ impl Appearance {
     /// Inline `style` for a preset thumbnail, so the swatch renders in its own
     /// look rather than the one currently applied.
     ///
-    /// Custom properties inherit, so setting the base palette + the tint
-    /// overrides on the swatch root makes everything inside it resolve against
-    /// THAT appearance. The same `--canvas-filter` / `--texture-*` variables
-    /// the real page uses are set too, which is what makes the thumbnail an
-    /// actual preview instead of an approximation drawn by separate code.
+    /// **PRIVATE NAMESPACE (`--ps-*`)**. Every variable the swatch consumes is
+    /// emitted under a `--ps-*` name that is NEVER written on `<html>`. This is
+    /// the fix for the "preset text bars vanish during a tint drag" bug:
+    /// WKWebView's custom-property invalidation is NAME-BASED, not scope-based.
+    /// `paint_appearance_now()` rewrites `--canvas-filter`, `--canvas-blend`,
+    /// the seven `--color-*` tokens, `--texture-*`, `--noise-*` on `<html>`
+    /// once per frame during a slider drag — and every declaration in the
+    /// document that consumes those NAMES gets invalidated, including the
+    /// ones inside swatches that shadow the names inline. The swatch is
+    /// repainted against a mid-rebuild backdrop (the live page canvases are
+    /// being swapped raw↔baked, `--color-paper` under the popover is moving),
+    /// and the `.preset-canvas`'s `filter` + `mix-blend-mode` layer samples a
+    /// wrong backdrop: the dark `#24303f` "text" bars get multiplied toward
+    /// the *live* paper colour and collapse into it (light preset) or screen
+    /// into the backdrop (dark preset). The three bars vanish for the whole
+    /// drag, only reappearing on hover (which forces a correct repaint).
+    ///
+    /// By renaming every consumed variable to `--ps-*`, the per-frame root
+    /// writes invalidate NOTHING inside the swatch — the swatch is simply never
+    /// repainted during the drag, so its blend can never sample a wrong
+    /// backdrop. The `contain: layout paint` on `.preset-swatch` (see
+    /// input.css) is a second isolation layer: even if a descendant did
+    /// somehow depend on a root name, the repaint would be caged to the
+    /// swatch's own subtree and couldn't sample the popover's moving backdrop.
     pub fn preview_style(&self) -> String {
         let mut out = String::new();
+
+        // 1. Base palette in --ps-* namespace (never written on <html>).
+        //    --base-paper -> --ps-paper, etc.
         for (k, v) in self.base_palette() {
-            out.push_str(&format!("{k}:{v};"));
+            let ps_name = format!("--ps-{}", k.trim_start_matches("--base-"));
+            out.push_str(&format!("{ps_name}:{v};"));
         }
-        // Aliases first, then let any tint override them.
-        for (alias, base) in [
-            ("--color-paper", "--base-paper"),
-            ("--color-ink", "--base-ink"),
-            ("--color-muted", "--base-muted"),
-            ("--color-surface", "--base-surface"),
-            ("--color-line", "--base-line"),
-            ("--color-accent", "--base-accent"),
-            ("--color-accent-soft", "--base-accent-soft"),
-        ] {
-            out.push_str(&format!("{alias}:var({base});"));
+
+        // 2. Aliases: --ps-color-* defaults to --ps-* (the base palette).
+        //    If a tint is active, step 3 overrides these with the tinted
+        //    value; otherwise the alias resolves to the base.
+        for token in ["paper", "ink", "muted", "surface", "line", "accent", "accent-soft"] {
+            out.push_str(&format!("--ps-color-{token}:var(--ps-{token});"));
         }
+
+        // 3. Tinted UI token overrides (if any) in --ps-color-* namespace.
+        //    ui_overrides() emits --color-* names; rename to --ps-color-*.
         for (k, v) in self.ui_overrides() {
-            out.push_str(&format!("{k}:{v};"));
+            let ps_name = format!("--ps-color-{}", k.trim_start_matches("--color-"));
+            out.push_str(&format!("{ps_name}:{v};"));
         }
-        out.push_str(&format!("--canvas-filter:{};", self.canvas_filter()));
-        out.push_str(&format!("--canvas-blend:{};", self.canvas_blend()));
+
+        // 4. Texture and noise scale/opacity. No --ps-filter / --ps-blend
+        //    are emitted — the .preset-canvas no longer uses CSS filter or
+        //    mix-blend-mode (those caused GPU compositor bugs on Dark/Dim/
+        //    Sepia/Green themes without Noise during slider drags). Instead,
+        //    the swatch uses solid colours: --ps-color-paper for the page
+        //    backdrop and --ps-color-ink for the "text" bars. This makes the
+        //    swatch immune to compositor layer-loss bugs because it has no
+        //    GPU compositing layers to lose.
         out.push_str(&format!(
-            "--texture-opacity:{:.3};",
+            "--ps-tex-opacity:{:.3};",
             self.texture_opacity as f64 / 100.0
         ));
         // Thumbnails are ~1/12 of a page; at the true pitch a 26px rule grid
         // would be a solid block. Scale the pitch down with the swatch so the
         // PATTERN is recognisable, which is what the thumbnail is for.
         out.push_str(&format!(
-            "--texture-scale-user:{:.3};",
+            "--ps-tex-scale:{:.3};",
             (self.texture_scale as f64 / 100.0) * 0.34
         ));
         out.push_str(&format!(
-            "--noise-opacity:{:.3};",
+            "--ps-noise-opacity:{:.3};",
             self.noise_intensity as f64 / 100.0
         ));
         // The swatch carries its own base palette, so it must carry the
@@ -443,9 +472,30 @@ impl Appearance {
         // dark preset's grain with the light rule (and vice versa), i.e.
         // invisibly. Same family split as the textures.
         out.push_str(&format!(
-            "--noise-blend:{};",
+            "--ps-noise-blend:{};",
             if self.base.is_dark() { "screen" } else { "multiply" }
         ));
+
+        // 5. Texture stroke colours and blend direction in --ps-* namespace.
+        //    These are keyed off `:root.dark` in input.css (inherited from
+        //    <html>); without the .dark class on the swatch itself, they would
+        //    inherit the LIVE theme's values. When the live theme and the
+        //    preset's base disagree (e.g. reader on dark live theme, browsing
+        //    a LIGHT preset swatch), the light preset's texture strokes would
+        //    inherit the DARK values (white strokes, screen blend) — and on a
+        //    light canvas those are near-invisible, making the "text" bars
+        //    disappear under the texture overlay.
+        if self.base.is_dark() {
+            out.push_str("--ps-texture-line:rgba(255,255,255,0.22);");
+            out.push_str("--ps-texture-strong:rgba(255,255,255,0.36);");
+            out.push_str("--ps-texture-paper:rgba(255,255,255,0.08);");
+            out.push_str("--ps-texture-blend:screen;");
+        } else {
+            out.push_str("--ps-texture-line:rgba(15,23,42,0.16);");
+            out.push_str("--ps-texture-strong:rgba(15,23,42,0.26);");
+            out.push_str("--ps-texture-paper:rgba(15,23,42,0.05);");
+            out.push_str("--ps-texture-blend:multiply;");
+        }
         out
     }
 
@@ -688,15 +738,37 @@ mod tests {
         // The whole point of a thumbnail: it must render as ITS appearance
         // while a different one is applied to the document.
         let p = tinted(BaseMode::Dark, 110, 40).preview_style();
-        assert!(p.contains("--base-paper:#131316"), "{p}");
-        assert!(p.contains("--canvas-filter:invert"), "{p}");
-        assert!(p.contains("--color-paper:oklch("), "tint must reach the swatch");
+        assert!(p.contains("--ps-paper:#131316"), "{p}");
+        assert!(p.contains("--ps-color-paper:oklch("), "tint must reach the swatch");
 
         // An untinted preview still pins the palette, or it would inherit the
         // live (possibly tinted) tokens and show the wrong colour.
         let plain = tinted(BaseMode::Light, 34, 0).preview_style();
-        assert!(plain.contains("--color-paper:var(--base-paper)"), "{plain}");
-        assert!(plain.contains("--canvas-filter:none"), "{plain}");
+        assert!(plain.contains("--ps-color-paper:var(--ps-paper)"), "{plain}");
+
+        // The swatch must consume ONLY --ps-* names — no root-mutated names
+        // (--canvas-filter, --color-*, --texture-*, --noise-*) — or WKWebView's
+        // name-based custom-property invalidation would repaint the swatch
+        // every frame during a slider drag, against a mid-rebuild backdrop,
+        // making the "text" bars vanish. Also, --ps-filter / --ps-blend are
+        // no longer emitted (the .preset-canvas uses solid colours, not CSS
+        // filter/blend) so the swatch has zero GPU compositing layers.
+        for root_mutated in [
+            "--canvas-filter:", "--canvas-blend:",
+            "--color-paper:", "--color-ink:", "--color-line:",
+            "--texture-opacity:", "--texture-scale-user:",
+            "--texture-line:", "--texture-paper:", "--texture-blend:",
+            "--noise-opacity:", "--noise-blend:",
+        ] {
+            assert!(
+                !p.contains(root_mutated),
+                "preview_style() must not emit root-mutated name {root_mutated} (would trigger name-based invalidation during drag): {p}"
+            );
+            assert!(
+                !plain.contains(root_mutated),
+                "preview_style() must not emit root-mutated name {root_mutated} (would trigger name-based invalidation during drag): {plain}"
+            );
+        }
     }
 
     #[test]
@@ -704,7 +776,7 @@ mod tests {
         // At true pitch a 26px rule grid on a ~40px swatch is a solid block.
         let a = Appearance { texture: TextureMode::Lined, texture_scale: 100, ..Default::default() };
         let s = a.preview_style();
-        let i = s.find("--texture-scale-user:").unwrap() + 21;
+        let i = s.find("--ps-tex-scale:").unwrap() + "--ps-tex-scale:".len();
         let v: f64 = s[i..].split(';').next().unwrap().parse().unwrap();
         assert!(v < 0.5, "preview pitch must be reduced, got {v}");
     }

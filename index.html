@@ -14,12 +14,14 @@
     <link data-trunk rel="copy-file" href="public/pdfEngine.js" />
     <!-- pdf.js (ESM-only in v6): must load BEFORE the engine so globalThis.pdfjsLib exists. -->
     <script type="module" src="/vendor/pdfjs/pdf.min.mjs"></script>
-    <!-- The imperative engine wrapper: sets window.PDFReader (see public/pdfEngine.js).
-         MUST execute BEFORE the Leptos wasm (the rust link below). main() calls
-         window.PDFReader.storageGet synchronously during mount — if the wasm module
-         (which top-level-awaits init) ran first, it could finish instantiating before
-         this script had executed, leaving window.PDFReader undefined and panicking the
-         mount. Ordering these first removes the race. -->
+    <!-- The imperative engine wrapper: sets window.PDFReader (see
+         public/pdfEngine.ts — Trunk's pre-build hook compiles it to
+         public/pdfEngine.js on every build). MUST execute BEFORE the Leptos
+         wasm (the rust link below). main() calls window.PDFReader.storageGet
+         synchronously during mount — if the wasm module (which top-level-
+         awaits init) ran first, it could finish instantiating before this
+         script had executed, leaving window.PDFReader undefined and
+         panicking the mount. Ordering these first removes the race. -->
     <script type="module" src="/pdfEngine.js"></script>
     <link data-trunk rel="rust" data-wasm-opt="z" />
   </head>

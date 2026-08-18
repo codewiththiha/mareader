@@ -1033,132 +1033,148 @@ html.theme-switching * {
   cursor: pointer;
 }
 
-/* --- preset thumbnails ----------------------------------------------------
+/* --- preset thumbnails (rock-solid, no filter/blend simulation hacks) -----
    A miniature page rendered in the preset's OWN look. The swatch root carries
-   that appearance as inline custom properties (Appearance::preview_style), and
-   because custom properties inherit, everything inside resolves --color-paper,
-   --canvas-filter and the --tex-* chain against THAT preset rather than the
-   applied one. The same .texture-* classes the real page uses apply here
-   unchanged, so a swatch cannot drift from what selecting it does. */
+   that appearance as inline custom properties under a private --ps-* namespace
+   (Appearance::preview_style), so the per-frame root writes during a tint drag
+   never invalidate these layers.
+
+   NO FILTER / NO MIX-BLEND-MODE. The previous version simulated a rendered PDF
+   page by giving .preset-canvas a CSS `filter: var(--ps-filter)` and
+   `mix-blend-mode: var(--ps-blend)` over a #ffffff background. On Dark/Dim/
+   Sepia/Green themes (without Noise), WebKit's compositor loses the
+   intermediate buffer for elements with both `filter` and `mix-blend-mode`
+   inside `isolation: isolate` during rapid style recalculations (slider
+   drags), rendering the "text" bars invisible. Light was immune because
+   `canvas_filter` is "none" (no GPU filter layer); Noise themes were immune
+   because `.preset-noise::after` (z-index 3, SVG background) forces a
+   persistent hardware-composited layer group.
+
+   The thumbnail is just a visual preview. The exact background and text
+   colours are already computed in --ps-color-paper and --ps-color-ink. By
+   rendering .preset-page with `background-color: var(--ps-color-paper)` and
+   .preset-line with `background-color: var(--ps-color-ink)`, we remove ALL
+   CSS filter and mix-blend-mode hacks — the swatch is impervious to GPU
+   compositing bugs because it has no GPU compositing layers to lose. */
 .preset-swatch {
   display: block;
   width: 100%;
   aspect-ratio: 3 / 4;
   border-radius: 4px;
   overflow: hidden;
-  border: 1px solid var(--color-line);
+  border: 1px solid var(--ps-line, var(--color-line, #e5e7eb));
+  position: relative;
+  box-sizing: border-box;
 }
+
 .preset-page {
   position: relative;
   display: block;
   width: 100%;
   height: 100%;
-  /* The page BACKDROP, exactly like .pdf-page: themed paper, never filtered. */
-  background-color: var(--color-paper);
+  background-color: var(--ps-color-paper, #ffffff);
 }
-/* The stand-in "canvas".
-   This mirrors the real DOM (.pdf-page > canvas) rather than approximating it,
-   because the filter belongs to the CANVAS alone. Applying it to the whole
-   swatch instead — as the first attempt did — inverted the page backdrop too,
-   so every dark preset rendered as a LIGHT rectangle: invert() of a dark
-   --color-paper is near-white. Here the inner surface is a white sheet with
-   dark ruled "glyphs", which is what a PDF page actually is, and the same
-   filter + blend the engine uses turn it into the look being previewed. */
+
+/* The stand-in "canvas": a flex column of dark "text" bars on the themed
+   paper. No filter, no blend — just solid colours from --ps-color-*. */
 .preset-canvas {
   position: absolute;
   inset: 0;
-  display: block;
-  padding: 15% 12% 0;
-  background-color: #fff;
-  filter: var(--canvas-filter, none);
-  mix-blend-mode: var(--canvas-blend, multiply);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 16% 12% 0;
+  gap: 10%;
 }
-/* Stand-in text: dark bars on the white sheet so the filter has real content
-   to act on. Deliberately a fixed near-black rather than --color-ink — this is
-   page CONTENT (black in the source PDF), not themed chrome. */
+
+/* Stand-in text: coloured bars on the paper so tint/texture have something
+   to act on. Uses --ps-color-ink (the preset's own ink colour, including
+   tint) so the bars are visible on every base — dark ink on light paper,
+   light ink on dark paper. Deliberately NOT a fixed #24303f: that was
+   invisible on dark presets after the invert filter. With the filter removed,
+   the ink colour must be theme-appropriate or dark presets would show dark-
+   on-dark. */
 .preset-line {
   display: block;
-  height: 6%;
-  margin-bottom: 9%;
+  height: 5.5%;
   border-radius: 1px;
-  background-color: #24303f;
+  background-color: var(--ps-color-ink, #1f2937);
+  opacity: 0.85;
 }
+
 .preset-line-a { width: 100%; }
-.preset-line-b { width: 84%; }
-.preset-line-c { width: 92%; }
+.preset-line-b { width: 82%; }
+.preset-line-c { width: 90%; }
 
 /* The swatch re-declares .pdf-page's texture chain locally: .preset-page is
-   not a .pdf-page, and making it one would drag in the host's shadow, flex and
-   sizing rules. z-index 2 keeps it above the stand-in canvas. */
+   not a .pdf-page, and making it one would drag in the host's shadow, flex
+   and sizing rules. z-index 2 keeps it above the stand-in canvas. All
+   variables consumed here are in the swatch's private --ps-* namespace. */
 .preset-page::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  opacity: var(--texture-opacity, 0.9);
-  --tex-scale: var(--texture-scale-user, 1);
+  opacity: var(--ps-tex-opacity, 0.9);
+  --tex-scale: var(--ps-tex-scale, 1);
   --tex-unit: calc(26px * var(--tex-scale));
   --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
   background-origin: border-box;
   background-position: 0 0;
 }
+
 .preset-page.texture-paper::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
-  background-color: var(--texture-paper);
-  background-blend-mode: var(--texture-blend, multiply);
+  background-color: var(--ps-texture-paper, rgba(15,23,42,0.05));
+  background-blend-mode: var(--ps-texture-blend, multiply);
   background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
 }
+
 .preset-page.texture-lined::before {
-  background-image: repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+  background-image: repeating-linear-gradient(to bottom, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
 }
+
 .preset-page.texture-grid::before {
   background-image:
-    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+    repeating-linear-gradient(to bottom, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
 }
+
 .preset-page.texture-dotted::before {
-  background-image: radial-gradient(var(--texture-line) calc(1px * var(--tex-scale)), transparent calc(1.5px * var(--tex-scale)));
+  background-image: radial-gradient(var(--ps-texture-line, rgba(15,23,42,0.16)) calc(1px * var(--tex-scale)), transparent calc(1.5px * var(--tex-scale)));
   background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
 }
+
 .preset-page.texture-cross::before {
   background-image:
-    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    radial-gradient(var(--texture-line) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
+    repeating-linear-gradient(to bottom, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    radial-gradient(var(--ps-texture-line, rgba(15,23,42,0.16)) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
   background-size: var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit);
 }
 
 /* Grain preview, above the texture so the stack matches the real page.
-
-   OVERSIZED ON PURPOSE. `noise-crawl` translates the tile by up to 14px, and
-   the swatch is only ~49x65px. At `inset: 0` that dragged the tile's own EDGE
-   into frame every few steps: the Cinema thumbnail showed a hard vertical seam
-   down one side and a bare, blotchy corner — it read as a rendering fault
-   rather than film grain. The full-page overlay already solved this with
-   `inset: -100%`; the swatch needs the same margin, and the parent's
-   `overflow: hidden` clips the excess. */
+   OVERSIZED ON PURPOSE (inset: -100%): noise-crawl translates the tile by
+   up to 14px, and the swatch is only ~49x65px. At inset:0 the tile's own
+   EDGE would enter frame every few steps. The parent's overflow: hidden
+   clips the excess. */
 .preset-page.preset-noise::after {
   content: "";
   position: absolute;
   inset: -100%;
   z-index: 3;
   pointer-events: none;
-  opacity: var(--noise-opacity, 0);
-  mix-blend-mode: var(--noise-blend, multiply);
-  /* A ~40px tile instead of the full 160px one. The page-sized overlay can
-     afford a large tile because it covers a whole viewport, but scaled into a
-     49px swatch the same tile shows only a handful of its blobs, which reads
-     as smudges rather than grain. A tighter pitch puts a comparable amount of
-     visible grain per unit area in the thumbnail as on the real page. */
+  opacity: var(--ps-noise-opacity, 0);
+  mix-blend-mode: var(--ps-noise-blend, multiply);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 40px 40px;
 }
-/* An animated preset must LOOK animated in its thumbnail, or the two grain
-   modes are indistinguishable in the gallery. */
+
 .preset-page.preset-noise-animated::after {
   animation: noise-crawl 0.66s steps(1) infinite;
 }
+
 @media (prefers-reduced-motion: reduce) {
   .preset-page.preset-noise-animated::after { animation: none; }
 }

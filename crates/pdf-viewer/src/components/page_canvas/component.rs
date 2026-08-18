@@ -75,6 +75,14 @@ pub fn PageCanvas(
     };
 
     let registered = Rc::new(Cell::new(false));
+    // PAINTED FLAG (Fix C). True after a successful render; false after a
+    // cancelled/error render (which leaves the canvas wiped by pdf.js's
+    // `canvas.width = ...` on render start). The no-op fast path below
+    // requires `painted == true` so a wiped canvas always re-renders even
+    // at unchanged scale — otherwise a page whose render was cancelled
+    // mid-flight during a sidebar slide (remount race) would sit blank
+    // until a scroll re-triggered the effect.
+    let painted = Rc::new(Cell::new(false));
 
     // Owned clones for the side-effect closures so the originals stay for view!.
     let cid = canvas_id.clone();
@@ -125,11 +133,11 @@ pub fn PageCanvas(
         // subscribes to what it READS during a run, so a conditional read would
         // silently drop the subscription the first time the branch was skipped.
         let anim = zoom_anim_sig.map(|z| z.get()).unwrap_or(false);
-        let s = match render_scale_sig {
+        let s_render = match render_scale_sig {
             Some(rs) => rs.get(),
             None => scale.get(),
         };
-        if s <= 0.0 {
+        if s_render <= 0.0 {
             return;
         }
         let (gw, gh, gs) = geo.get_value();
@@ -146,10 +154,51 @@ pub fn PageCanvas(
         // work whose only visible effect is a page popping in at the wrong
         // size. The thumbnail underlay below covers the gap, and the commit
         // pass (~200ms later) renders it once, correctly.
+        //
+        // FIX A (cold-cache first paint). If the page has NO bitmap yet
+        // (`!has_geo`) AND the thumbnail cache misses (`blit_thumb` returns
+        // false — e.g. the sidebar was never opened this session), the page
+        // would sit as an EMPTY TRANSPARENT CANVAS for the entire 300ms slide
+        // + 120ms commit debounce. That is why "the one in view just
+        // disappeared" and the stretch animation was invisible: the node
+        // that was supposed to stretch had no bitmap to stretch. Fix: fall
+        // through to the masked-render path below, but at the DISPLAY scale
+        // (read untracked so we don't subscribe to per-frame display_scale
+        // changes — the effect must NOT re-run every frame of the slide).
+        // `on_geometry` already ignores writes while `zoom_animating`, and
+        // `commit_scale` re-renders crisply at `render_scale` when the
+        // gesture settles. The stretch effect keeps tracking `display_scale`
+        // afterwards, so the first-paint bitmap CSS-stretches with the slide.
         if anim {
-            if !has_geo {
-                engine::blit_thumb(&cid_effect, page);
+            if has_geo {
+                return; // stretch effect owns it
             }
+            if engine::blit_thumb(&cid_effect, page) {
+                return; // cached thumbnail is fine
+            }
+            // FALLTHROUGH: first render at the DISPLAY scale so the slide
+            // has pixels. Read untracked to avoid subscribing to per-frame
+            // display_scale changes (which would re-run this effect every
+            // frame of the slide — a render storm).
+            // The `s` used below is `s_render` by default; override it for
+            // this fallthrough path.
+        }
+        // Use the display scale for the cold-cache first paint during an
+        // animation; otherwise use the render scale (the crisp target).
+        let s = if anim { scale.get_untracked() } else { s_render };
+        if s <= 0.0 {
+            return;
+        }
+        // NO-OP FAST PATH (Fix C). If the page has already been rendered at
+        // THIS scale AND the canvas still has its bitmap (`painted == true`),
+        // re-rendering would only WIPE the live canvas (pdf.js reassigns
+        // `canvas.width/height` on render start) without producing a different
+        // bitmap. Because `(gs - s).abs() <= 1e-9`, the `stretch_host(...,
+        // mask=true)` guard below is skipped too — so no `.page-snapshot`
+        // overlay is created to mask the wipe — and the user sees the canvas
+        // disappear until a scroll re-renders it. Bail out — but ONLY if
+        // `painted == true`. A wiped canvas (cancelled render) must re-render.
+        if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
             return;
         }
         let page_no = page;
@@ -160,6 +209,7 @@ pub fn PageCanvas(
         let do_register = registered.clone();
         let geo_async = geo;
         let seq_async = render_seq;
+        let painted_async = painted.clone();
 
         // This effect run owns the next generation; older completions are stale.
         let my_seq = seq_async.get_value() + 1;
@@ -202,6 +252,8 @@ pub fn PageCanvas(
                     if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
+                    // Successful render: the canvas now has a bitmap.
+                    painted_async.set(true);
                     if let Some(host) = web_sys::window()
                         .and_then(|w| w.document())
                         .and_then(|d| d.get_element_by_id(&hid))
@@ -236,6 +288,9 @@ pub fn PageCanvas(
                     // Cancelled / transient errors are logged, not fatal; never
                     // leave a stale mask behind (a cancelled render also leaves
                     // the canvas wiped, so the next scale change re-marks).
+                    // Mark the canvas as NOT painted so the no-op fast path
+                    // does not skip the re-render (Fix C).
+                    painted_async.set(false);
                     if let Some(host) = web_sys::window()
                         .and_then(|w| w.document())
                         .and_then(|d| d.get_element_by_id(&hid))

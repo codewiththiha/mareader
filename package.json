@@ -5,11 +5,17 @@
   "type": "module",
   "scripts": {
     "build:css": "tailwindcss -i styles/input.css -o styles.css --minify",
-    "watch:css": "tailwindcss -i styles/input.css -o styles.css --watch"
+    "watch:css": "tailwindcss -i styles/input.css -o styles.css --watch",
+    "build:ts": "tsc --project tsconfig.json && tsc --project tsconfig.scripts.json",
+    "watch:ts": "tsc --project tsconfig.json --watch",
+    "check:ts": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project tsconfig.scripts.json"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
+    "@types/node": "^26.2.0",
     "pdfjs-dist": "6.2.108",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "tslib": "^2.8.1",
+    "typescript": "^5.6.3"
   }
 }

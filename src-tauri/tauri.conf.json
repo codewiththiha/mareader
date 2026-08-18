@@ -4,9 +4,9 @@
   "version": "0.5.0",
   "identifier": "com.codewiththiha.pdfreader",
   "build": {
-    "beforeDevCommand": "trunk serve",
+    "beforeDevCommand": "npm run build:ts && trunk serve",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "trunk build --release",
+    "beforeBuildCommand": "npm run build:ts && trunk build --release",
     "frontendDist": "../dist"
   },
   "app": {
