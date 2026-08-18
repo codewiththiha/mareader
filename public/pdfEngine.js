@@ -315,58 +315,174 @@ function pipelineIsIdentity(pipeline) {
   return false;
 }
 
-/// One shared, permanently-attached helper canvas that applies CSS filter
-/// strings by capture: paint the raw raster into it, let its inline `filter`
-/// style do the work, and draw the RESULT into a fresh canvas.
+/// Deterministic CSS-filter baking.
 ///
-/// WHY NOT `ctx.filter`. The 2D canvas `filter` property is not reliable:
-/// Chromium silently ignores it when the canvas is software-rasterised (which
-/// the Windows WebView2 flags request), and WebKit did not support it at all
-/// before Safari 18. Both failures are SILENT — the assignment stores but the
-/// raster never applies — which is exactly how Dark mode regressed: its
-/// `invert()` never ran, the page stayed white, and only Dim kept darkening
-/// (its soft-light blend still ran). The CSS `filter` property on an element,
-/// by contrast, is the same universally-supported path the live-canvas
-/// pipeline used before baking, so capturing through it is correct on every
-/// engine, GPU or software raster alike.
-let filterHelper = null;
+/// The theme's canvas filter chains (invert / hue-rotate / saturate /
+/// brightness / sepia / contrast — the only functions
+/// `Appearance::canvas_filter` ever generates) are all AFFINE COLOUR
+/// MATRICES per the CSS Filter Effects spec. Two browser-dependent ways to
+/// run them — first `ctx.filter`, then CSS `filter` + drawImage capture —
+/// both failed silently in real engines: drawImage reads a canvas's BITMAP,
+/// and a CSS filter only affects the element's composited output, not the
+/// bitmap, so the capture drew the UNFILTERED raster. The filter never
+/// applied, Dark rendered as a light page, and Dim "worked" only because its
+/// soft-light blend alone darkens. So the chain is composed HERE into one
+/// 3x3 matrix + offset and applied pixel-exactly with the same algebra the
+/// spec defines — identical colours on every engine, GPU or software raster
+/// alike. LUT-based fixed-point application keeps a page-sized bake in the
+/// tens of milliseconds, and the blend pass below still runs through the
+/// compositor's own `globalCompositeOperation` (the exact spec math).
 
-function applyFilterCss(src, filter) {
-  if (!filterHelper) {
-    filterHelper = document.createElement("canvas");
-    // Attached so every engine rasterises it; fixed off-screen and 0-size so
-    // it never composites or costs anything between uses.
-    filterHelper.style.cssText =
-      "position:fixed;left:-100000px;top:0;width:0;height:0;pointer-events:none";
-    (document.documentElement || document.body).appendChild(filterHelper);
+/// Parse one filter function token into { m: 3x3 row-major, o: [r,g,b] }.
+/// Returns null for anything unknown — the app only generates the six
+/// functions above, and an unknown token degrades to identity rather than
+/// guessing.
+function filterTokenToMatrix(tok) {
+  const m = /^([a-z-]+)\(([^)]*)\)$/.exec(String(tok).trim());
+  if (!m) return null;
+  const name = m[1];
+  const arg = parseFloat(m[2]);
+  if (!Number.isFinite(arg)) return null;
+  switch (name) {
+    case "invert": {
+      // c' = p + (1 - 2p)·c
+      const k = 1 - 2 * arg;
+      return { m: [k, 0, 0, 0, k, 0, 0, 0, k], o: [arg, arg, arg] };
+    }
+    case "brightness":
+      return { m: [arg, 0, 0, 0, arg, 0, 0, 0, arg], o: [0, 0, 0] };
+    case "contrast": {
+      const off = 0.5 * (1 - arg);
+      return { m: [arg, 0, 0, 0, arg, 0, 0, 0, arg], o: [off, off, off] };
+    }
+    case "saturate": {
+      // Luma weights per SVG/CSS: 0.213, 0.715, 0.072.
+      const t = 1 - arg;
+      const a = 0.213 * t;
+      const b = 0.715 * t;
+      const c = 0.072 * t;
+      return {
+        m: [a + arg, b, c, a, b + arg, c, a, b, c + arg],
+        o: [0, 0, 0],
+      };
+    }
+    case "sepia": {
+      // sepia(1) matrix from the spec, interpolated by t.
+      const S = [0.393, 0.769, 0.189, 0.349, 0.686, 0.168, 0.272, 0.534, 0.131];
+      const out = [];
+      for (let i = 0; i < 9; i += 1) {
+        const ident = i === 0 || i === 4 || i === 8 ? 1 : 0;
+        out.push((1 - arg) * ident + arg * S[i]);
+      }
+      return { m: out, o: [0, 0, 0] };
+    }
+    case "hue-rotate": {
+      const th = (arg * Math.PI) / 180;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      return {
+        m: [
+          0.213 + 0.787 * c - 0.213 * s,
+          0.715 - 0.715 * c - 0.715 * s,
+          0.072 - 0.072 * c + 0.928 * s,
+          0.213 - 0.213 * c + 0.143 * s,
+          0.715 + 0.285 * c + 0.140 * s,
+          0.072 - 0.072 * c - 0.283 * s,
+          0.213 - 0.213 * c - 0.787 * s,
+          0.715 - 0.715 * c + 0.715 * s,
+          0.072 + 0.928 * c + 0.072 * s,
+        ],
+        o: [0, 0, 0],
+      };
+    }
+    default:
+      return null;
   }
-  filterHelper.width = src.width;
-  filterHelper.height = src.height;
-  filterHelper.style.filter = filter;
-  const hctx = filterHelper.getContext("2d", { alpha: false });
-  if (!hctx) {
-    filterHelper.style.filter = "none";
-    return src;
+}
+
+/// Compose a whole filter chain (space-separated function list, applied
+/// left-to-right like CSS) into one { m, o } transform: out = m·in + o.
+function composeFilter(filterString) {
+  let m = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  let o = [0, 0, 0];
+  for (const tok of String(filterString).split(/\s+/)) {
+    if (!tok) continue;
+    const op = filterTokenToMatrix(tok);
+    if (!op) continue;
+    const nm = [];
+    const no = [];
+    for (let r = 0; r < 3; r += 1) {
+      nm[r * 3] =
+        op.m[r * 3] * m[0] + op.m[r * 3 + 1] * m[3] + op.m[r * 3 + 2] * m[6];
+      nm[r * 3 + 1] =
+        op.m[r * 3] * m[1] + op.m[r * 3 + 1] * m[4] + op.m[r * 3 + 2] * m[7];
+      nm[r * 3 + 2] =
+        op.m[r * 3] * m[2] + op.m[r * 3 + 1] * m[5] + op.m[r * 3 + 2] * m[8];
+      no[r] =
+        op.m[r * 3] * o[0] + op.m[r * 3 + 1] * o[1] + op.m[r * 3 + 2] * o[2] + op.o[r];
+    }
+    m = nm;
+    o = no;
   }
-  hctx.drawImage(src, 0, 0);
+  return { m, o };
+}
+
+/// Apply the composed matrix to `src`'s pixels and return a fresh canvas.
+/// Returns `src` unchanged when the chain composes to identity. Fixed-point
+/// 16.16 LUTs (coefficient x value x 65536) turn each pixel into nine
+/// lookups and a few adds; Uint8ClampedArray assignment rounds and clamps to
+/// 0..255, exactly where CSS clamps the filter output.
+function applyFilterPixels(src, filterString) {
+  const { m, o } = composeFilter(filterString);
+  const identity =
+    m[0] === 1 && m[1] === 0 && m[2] === 0 &&
+    m[3] === 0 && m[4] === 1 && m[5] === 0 &&
+    m[6] === 0 && m[7] === 0 && m[8] === 1 &&
+    o[0] === 0 && o[1] === 0 && o[2] === 0;
+  if (identity) return src;
+
+  const w = src.width;
+  const h = src.height;
+  const sctx = src.getContext("2d");
+  let img;
+  try {
+    img = sctx && sctx.getImageData(0, 0, w, h);
+  } catch (_) {
+    return src; // unreadable backing store: keep the raw raster
+  }
+  if (!img) return src;
+
+  const SCALE = 1 << 16;
+  const luts = new Array(9);
+  for (let i = 0; i < 9; i += 1) {
+    const coef = m[i];
+    const lut = new Int32Array(256);
+    for (let v = 0; v < 256; v += 1) lut[v] = Math.round(coef * v * SCALE);
+    luts[i] = lut;
+  }
+  const o0 = Math.round(o[0] * 255 * SCALE);
+  const o1 = Math.round(o[1] * 255 * SCALE);
+  const o2 = Math.round(o[2] * 255 * SCALE);
+  const L0 = luts[0], L1 = luts[1], L2 = luts[2];
+  const L3 = luts[3], L4 = luts[4], L5 = luts[5];
+  const L6 = luts[6], L7 = luts[7], L8 = luts[8];
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i];
+    const g = d[i + 1];
+    const b = d[i + 2];
+    d[i] = (L0[r] + L1[g] + L2[b] + o0) >> 16;
+    d[i + 1] = (L3[r] + L4[g] + L5[b] + o1) >> 16;
+    d[i + 2] = (L6[r] + L7[g] + L8[b] + o2) >> 16;
+    // Alpha (d[i+3]) is untouched: the rasters are opaque.
+  }
+
   const out = document.createElement("canvas");
-  out.width = src.width;
-  out.height = src.height;
+  out.width = w;
+  out.height = h;
   const octx = out.getContext("2d", { alpha: false });
-  if (!octx) {
-    filterHelper.style.filter = "none";
-    filterHelper.width = 0;
-    filterHelper.height = 0;
-    return src;
-  }
-  // The helper's rendered image carries the filter; drawing it in captures
-  // the filtered pixels 1:1.
-  octx.drawImage(filterHelper, 0, 0);
-  // Reset for the next use AND drop the backing store (a full-page RGBA
-  // buffer must not linger between bakes).
-  filterHelper.style.filter = "none";
-  filterHelper.width = 0;
-  filterHelper.height = 0;
+  if (!octx) return src;
+  octx.putImageData(img, 0, 0);
   return out;
 }
 
@@ -383,7 +499,7 @@ function bakeRaster(src, pipeline) {
 
   let filtered = src;
   if (pipeline.filter !== "none") {
-    filtered = applyFilterCss(src, pipeline.filter);
+    filtered = applyFilterPixels(src, pipeline.filter);
   }
   if (pipeline.blend === "normal") return filtered;
 

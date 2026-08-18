@@ -6,12 +6,105 @@ import vm from "vm";
 
 const engineSrc = readFileSync(new URL("../public/pdfEngine.js", import.meta.url), "utf8");
 
-// ---------- canvas stub ----------
+// ---------- canvas stub (pixel-accurate) ----------
+// A real backing store (Uint8ClampedArray) plus the subset of the canvas 2D
+// API the engine uses: fillRect with colour parsing, drawImage with the
+// compositing blend modes (source-over / multiply / screen / soft-light),
+// getImageData / putImageData. This lets the harness assert ACTUAL PIXELS
+// for the theme bake, which is the only way the Dark-mode regression is
+// detectable (the two previous filter approaches failed silently).
 class FakeCtx {
-  constructor(canvas) { this.canvas = canvas; this.filter = "none"; this.globalCompositeOperation = "source-over"; this.fillStyle = "#000"; }
-  drawImage() {}
-  fillRect() {}
-  getImageData() { return { data: [255, 255, 255, 255] }; }
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.filter = "none";
+    this.globalCompositeOperation = "source-over";
+    this.fillStyle = "#000000";
+    this._data = new Uint8ClampedArray(0);
+  }
+  _ensure() {
+    const w = this.canvas.width || 0;
+    const h = this.canvas.height || 0;
+    const n = w * h * 4;
+    if (this._data.length !== n) {
+      const d = new Uint8ClampedArray(n);
+      d.fill(255); // fresh backing stores start opaque white in this harness
+      this._data = d;
+    }
+    return this._data;
+  }
+  parseColor(c) {
+    let m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(c).trim());
+    if (m) return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+    m = /^rgba?\(([^)]+)\)$/.exec(String(c).trim());
+    if (m) {
+      const p = m[1].split(",").map((x) => parseFloat(x));
+      return [p[0], p[1], p[2]];
+    }
+    return [0, 0, 0];
+  }
+  // Source s over backdrop b (both 0..1), per the compositing spec.
+  blend(s, b, op) {
+    switch (op) {
+      case "multiply": return s * b;
+      case "screen": return s + b - s * b;
+      case "soft-light": {
+        const D = (x) => (x <= 0.25 ? ((16 * x - 12) * x + 4) * x : Math.sqrt(x));
+        return s <= 0.5
+          ? b - (1 - 2 * s) * b * (1 - b)
+          : b + (2 * s - 1) * (D(b) - b);
+      }
+      default: return s; // source-over
+    }
+  }
+  paint(x, y, r, g, b) {
+    const w = this.canvas.width || 0;
+    const h = this.canvas.height || 0;
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    const d = this._ensure();
+    const i = (y * w + x) * 4;
+    const op = this.globalCompositeOperation;
+    d[i] = Math.round(this.blend(r / 255, d[i] / 255, op) * 255);
+    d[i + 1] = Math.round(this.blend(g / 255, d[i + 1] / 255, op) * 255);
+    d[i + 2] = Math.round(this.blend(b / 255, d[i + 2] / 255, op) * 255);
+    d[i + 3] = 255;
+  }
+  fillRect(x, y, w, h) {
+    const [r, g, b] = this.parseColor(this.fillStyle);
+    const fw = Math.min(Math.floor(w), (this.canvas.width || 0) - x);
+    const fh = Math.min(Math.floor(h), (this.canvas.height || 0) - y);
+    for (let yy = 0; yy < fh; yy += 1)
+      for (let xx = 0; xx < fw; xx += 1) this.paint(x + xx, y + yy, r, g, b);
+  }
+  drawImage(src, x, y) {
+    const sw = src && src.width;
+    const sh = src && src.height;
+    if (!sw || !sh) return;
+    let sdata = null;
+    if (src._ctx && src._ctx._data) sdata = src._ctx._ensure();
+    else if (src.data) sdata = src.data;
+    if (!sdata) return; // e.g. a stub ImageBitmap: nothing to copy
+    for (let yy = 0; yy < sh; yy += 1)
+      for (let xx = 0; xx < sw; xx += 1) {
+        const si = (yy * sw + xx) * 4;
+        this.paint(x + xx, y + yy, sdata[si], sdata[si + 1], sdata[si + 2]);
+      }
+  }
+  getImageData(x, y, w, h) {
+    const d = this._ensure();
+    const out = new Uint8ClampedArray(w * h * 4);
+    for (let yy = 0; yy < h; yy += 1) {
+      const row = (y + yy) * (this.canvas.width || 0) + x;
+      out.set(d.subarray(row * 4, (row + w) * 4), yy * w * 4);
+    }
+    return { data: out, width: w, height: h };
+  }
+  putImageData(img, x, y) {
+    const d = this._ensure();
+    for (let yy = 0; yy < img.height; yy += 1) {
+      const row = (y + yy) * (this.canvas.width || 0) + x;
+      d.set(img.data.subarray(yy * img.width * 4, (yy + 1) * img.width * 4), row * 4);
+    }
+  }
 }
 class FakeCanvas {
   constructor(tag = "canvas") {
@@ -105,7 +198,7 @@ const fakeWindow = {
       if (name === "--canvas-blend") return fakeComputed["--canvas-blend"] || "normal";
       return "";
     },
-    backgroundColor: "#ffffff",
+    backgroundColor: fakeComputed.paper || "#ffffff",
   }),
   requestAnimationFrame: (fn) => { setTimeout(fn, 0); return 1; },
   cancelAnimationFrame() {},
@@ -132,6 +225,9 @@ function fakePage(n) {
     n,
     getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale, convertToViewportPoint: (x, y) => [x, y] }),
     render: ({ canvasContext }) => {
+      // Real pdf.js paints an opaque white page before any content.
+      canvasContext.fillStyle = "#ffffff";
+      canvasContext.fillRect(0, 0, canvasContext.canvas.width, canvasContext.canvas.height);
       return { promise: Promise.resolve(), cancel() {} };
     },
     getTextContent: async () => ({ items: [] }),
@@ -186,6 +282,74 @@ vm.runInContext(engineSrc, sandbox, { filename: "pdfEngine.js" });
 const PDFReader = sandbox.PDFReader;
 if (!PDFReader) throw new Error("PDFReader not defined after eval");
 
+// Independent re-implementation of the CSS Filter Effects math, used to
+// compute the pixel the bake MUST produce. Deliberately separate from the
+// engine's own code so the assertion is a real cross-check.
+function expectedBakePixel(rgb, filter, blend, paper) {
+  let [r, g, b] = rgb.map((v) => v / 255);
+  for (const tok of filter.split(/\s+/)) {
+    const m = /^([a-z-]+)\(([^)]*)\)$/.exec(tok);
+    const a = parseFloat(m[2]);
+    const [nr, ng, nb] = [r, g, b];
+    switch (m[1]) {
+      case "invert":
+        r = a + (1 - 2 * a) * nr; g = a + (1 - 2 * a) * ng; b = a + (1 - 2 * a) * nb; break;
+      case "brightness":
+        r = a * nr; g = a * ng; b = a * nb; break;
+      case "contrast":
+        r = a * (nr - 0.5) + 0.5; g = a * (ng - 0.5) + 0.5; b = a * (nb - 0.5) + 0.5; break;
+      case "saturate": {
+        const t = 1 - a;
+        const gr = 0.213 * nr + 0.715 * ng + 0.072 * nb;
+        r = gr * t + nr * a; g = gr * t + ng * a; b = gr * t + nb * a; break;
+      }
+      case "sepia": {
+        const t = a;
+        r = (1 - t) * nr + t * (0.393 * nr + 0.769 * ng + 0.189 * nb);
+        g = (1 - t) * ng + t * (0.349 * nr + 0.686 * ng + 0.168 * nb);
+        b = (1 - t) * nb + t * (0.272 * nr + 0.534 * ng + 0.131 * nb);
+        break;
+      }
+      case "hue-rotate": {
+        const th = (a * Math.PI) / 180;
+        const c = Math.cos(th), s = Math.sin(th);
+        const M = [
+          0.213 + 0.787 * c - 0.213 * s, 0.715 - 0.715 * c - 0.715 * s, 0.072 - 0.072 * c + 0.928 * s,
+          0.213 - 0.213 * c + 0.143 * s, 0.715 + 0.285 * c + 0.140 * s, 0.072 - 0.072 * c - 0.283 * s,
+          0.213 - 0.213 * c - 0.787 * s, 0.715 - 0.715 * c + 0.715 * s, 0.072 + 0.928 * c + 0.072 * s,
+        ];
+        r = M[0] * nr + M[1] * ng + M[2] * nb;
+        g = M[3] * nr + M[4] * ng + M[5] * nb;
+        b = M[6] * nr + M[7] * ng + M[8] * nb;
+        break;
+      }
+    }
+    [r, g, b] = [r, g, b].map((v) => Math.min(1, Math.max(0, v)));
+  }
+  const D = (x) => (x <= 0.25 ? ((16 * x - 12) * x + 4) * x : Math.sqrt(x));
+  const out = [r, g, b].map((s, i) => {
+    const bb = paper[i] / 255;
+    let v;
+    if (blend === "multiply") v = s * bb;
+    else if (blend === "screen") v = s + bb - s * bb;
+    else if (blend === "soft-light") v = s <= 0.5 ? bb - (1 - 2 * s) * bb * (1 - bb) : bb + (2 * s - 1) * (D(bb) - bb);
+    else v = s;
+    return Math.round(Math.min(1, Math.max(0, v)) * 255);
+  });
+  return out;
+}
+
+function assertClose(actual, expected, label, tol = 3) {
+  for (let i = 0; i < 3; i += 1) {
+    if (Math.abs(actual[i] - expected[i]) > tol) {
+      throw new Error(
+        label + " pixel mismatch: got [" + Array.from(actual).slice(0, 3) +
+        "] expected [" + expected + "]"
+      );
+    }
+  }
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
@@ -216,20 +380,31 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (bakeCanvases !== 0) throw new Error("identity pipeline allocated bake canvases: " + bakeCanvases);
   console.log("identity fast path ok (0 bake canvases)");
 
-  // 3. switch theme to dark (filter + screen) -> refreshTheme. The dark
-  // pipeline must go through the CSS-capture filter: paper sampler + helper
-  // + filter-out + blend-out canvases across the re-bake and the next render.
+  // 3. DARK MODE REGRESSION TEST. The bake must actually invert the page:
+  // the chain is exactly what Appearance::canvas_filter generates for Dark,
+  // the paper is the dark base's --color-paper (#131316), and the live
+  // canvas pixel must equal the spec math (screen over paper) — NOT white.
   const beforeDark = created.length;
-  fakeComputed = { "--canvas-filter": "invert(0.92) hue-rotate(180deg)", "--canvas-blend": "screen" };
+  fakeComputed = {
+    "--canvas-filter": "invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02)",
+    "--canvas-blend": "screen",
+    paper: "#131316",
+  };
   await PDFReader.refreshTheme();
-  console.log("refreshTheme (dark) ok");
+  const darkExpect = expectedBakePixel([255, 255, 255], fakeComputed["--canvas-filter"], "screen", [19, 19, 22]);
+  const darkPx = elements.get("cont-0-cv")._ctx.getImageData(0, 0, 1, 1).data;
+  assertClose(darkPx, darkExpect, "dark refreshTheme bake");
+  console.log("refreshTheme (dark) ok: page pixel", Array.from(darkPx).slice(0, 3), "expected", darkExpect);
 
-  // 4. render another page while dark -> baked path.
+  // 4. render another page while dark -> the render-time bake path must
+  // produce the same pixel.
   PDFReader.registerPage({ canvasId: "cont-1-cv", hostId: "cont-1-pg", page: 2 });
   const r2 = await PDFReader.renderPage("cont-1-cv", 1.5, true);
   if (!r2.ok) throw new Error("render2 failed: " + JSON.stringify(r2));
   const darkAllocs = created.length - beforeDark;
-  if (darkAllocs < 4) throw new Error("dark bake should allocate helper+filter+blend canvases, got " + darkAllocs);
+  if (darkAllocs < 4) throw new Error("dark bake should allocate filter+blend canvases, got " + darkAllocs);
+  const darkPx2 = elements.get("cont-1-cv")._ctx.getImageData(0, 0, 1, 1).data;
+  assertClose(darkPx2, darkExpect, "dark render bake");
   console.log("render ok (dark/baked):", r2.width, "x", r2.height, `(${darkAllocs} canvases)`);
 
   // 5. scrub mode on/off
@@ -260,6 +435,41 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const t4 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
   if (!t4.ok || t4.cached !== true) throw new Error("re-baked thumb should now hit, got " + JSON.stringify(t4));
   console.log("lazy thumb re-bake ok");
+
+  // 11. DIM check: the dim chain (brightness/saturate/contrast + soft-light
+  // over #1a1c1f) must bake to the spec pixel on a freshly rendered page.
+  fakeComputed = {
+    "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)",
+    "--canvas-blend": "soft-light",
+    paper: "#1a1c1f",
+  };
+  // A theme change always flows through refreshTheme in the app (the theme
+  // applier calls it after writing the CSS variables) — it is what
+  // invalidates the pipeline cache, including the paper colour.
+  await PDFReader.refreshTheme();
+  PDFReader.registerPage({ canvasId: "cont-2-cv", hostId: "cont-2-pg", page: 3 });
+  const r3 = await PDFReader.renderPage("cont-2-cv", 1.5, true);
+  if (!r3.ok) throw new Error("render3 failed: " + JSON.stringify(r3));
+  const dimExpect = expectedBakePixel([255, 255, 255], fakeComputed["--canvas-filter"], "soft-light", [26, 28, 31]);
+  const dimPx = elements.get("cont-2-cv")._ctx.getImageData(0, 0, 1, 1).data;
+  assertClose(dimPx, dimExpect, "dim bake");
+  console.log("dim bake ok: page pixel", Array.from(dimPx).slice(0, 3), "expected", dimExpect);
+
+  // 12. A DARK PRESET WITH A TINT (the Night family) must bake too: the
+  // sepia/saturate/hue-rotate tail composes with the dark base chain.
+  fakeComputed = {
+    "--canvas-filter": "invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02) sepia(0.193) saturate(1.21) hue-rotate(76deg)",
+    "--canvas-blend": "screen",
+    paper: "#131316",
+  };
+  await PDFReader.refreshTheme();
+  PDFReader.registerPage({ canvasId: "cont-3-cv", hostId: "cont-3-pg", page: 4 });
+  const r4 = await PDFReader.renderPage("cont-3-cv", 1.5, true);
+  if (!r4.ok) throw new Error("render4 failed: " + JSON.stringify(r4));
+  const nightExpect = expectedBakePixel([255, 255, 255], fakeComputed["--canvas-filter"], "screen", [19, 19, 22]);
+  const nightPx = elements.get("cont-3-cv")._ctx.getImageData(0, 0, 1, 1).data;
+  assertClose(nightPx, nightExpect, "dark+tint bake");
+  console.log("dark+tint bake ok: page pixel", Array.from(nightPx).slice(0, 3), "expected", nightExpect);
 
   // 8. burst coalescing: fire 5 renders for the same canvas, only the last should matter
   const p1 = PDFReader.renderPage("cont-0-cv", 1.0, true);
