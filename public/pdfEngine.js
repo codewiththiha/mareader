@@ -41,16 +41,16 @@ const stateByCanvasId = new Map();
 // skeleton, no crossfade, no flicker.
 //
 // LRU-bounded: entries are re-inserted on hit (Map preserves insertion order)
-// and the oldest are dropped past THUMB_CACHE_MAX. 64 is ~6 screens of the
+// and the oldest are dropped past THUMB_CACHE_MAX. 48 is ~4 screens of the
 // 2-column grid — enough that a remount inside normal browsing is still a
-// sync blit — without pinning hundreds of bitmaps. Evicted entries are
-// released immediately (ImageBitmap.close / canvas width=0); just deleting
-// the Map key is not enough in WKWebView.
+// sync blit — while pinning a quarter fewer full bitmaps than 64. Evicted
+// entries are released immediately (ImageBitmap.close / canvas width=0);
+// just deleting the Map key is not enough in WKWebView.
 //
 // Stored as ImageBitmap when the browser allows it so eviction can free GPU
 // memory synchronously. Falls back to a detached canvas.
 const thumbCache = new Map();
-const THUMB_CACHE_MAX = 64;
+const THUMB_CACHE_MAX = 48;
 // canvasId -> in-flight thumbnail RenderTask (cancelled by cancelThumb).
 const thumbTasks = new Map();
 // canvasId -> the cell unmounted while a render was in flight. The slow path
@@ -244,7 +244,11 @@ function sweepPdf() {
 /// Cached pipeline read. Invalidated whenever the theme applier rewrites the
 /// inline style on <html> (it writes the CSS variables there on every
 /// appearance change), so renders and re-bakes always see the live theme.
-const pipelineCache = { token: null, filter: "none", blend: "normal", paperInfo: null };
+/// `gen` is a monotonically increasing stamp bumped on every invalidation;
+/// thumbnail cache entries carry the gen they were baked at, so a theme
+/// change marks every cached entry stale and they re-bake lazily on next use
+/// instead of re-baking the whole cache up front.
+const pipelineCache = { token: null, filter: "none", blend: "normal", paperInfo: null, gen: 0 };
 
 function readPipeline() {
   const root = document.documentElement;
@@ -261,6 +265,7 @@ function readPipeline() {
   pipelineCache.filter = filter;
   pipelineCache.blend = blend;
   pipelineCache.paperInfo = null;
+  pipelineCache.gen += 1;
   return pipelineCache;
 }
 
@@ -310,6 +315,61 @@ function pipelineIsIdentity(pipeline) {
   return false;
 }
 
+/// One shared, permanently-attached helper canvas that applies CSS filter
+/// strings by capture: paint the raw raster into it, let its inline `filter`
+/// style do the work, and draw the RESULT into a fresh canvas.
+///
+/// WHY NOT `ctx.filter`. The 2D canvas `filter` property is not reliable:
+/// Chromium silently ignores it when the canvas is software-rasterised (which
+/// the Windows WebView2 flags request), and WebKit did not support it at all
+/// before Safari 18. Both failures are SILENT — the assignment stores but the
+/// raster never applies — which is exactly how Dark mode regressed: its
+/// `invert()` never ran, the page stayed white, and only Dim kept darkening
+/// (its soft-light blend still ran). The CSS `filter` property on an element,
+/// by contrast, is the same universally-supported path the live-canvas
+/// pipeline used before baking, so capturing through it is correct on every
+/// engine, GPU or software raster alike.
+let filterHelper = null;
+
+function applyFilterCss(src, filter) {
+  if (!filterHelper) {
+    filterHelper = document.createElement("canvas");
+    // Attached so every engine rasterises it; fixed off-screen and 0-size so
+    // it never composites or costs anything between uses.
+    filterHelper.style.cssText =
+      "position:fixed;left:-100000px;top:0;width:0;height:0;pointer-events:none";
+    (document.documentElement || document.body).appendChild(filterHelper);
+  }
+  filterHelper.width = src.width;
+  filterHelper.height = src.height;
+  filterHelper.style.filter = filter;
+  const hctx = filterHelper.getContext("2d", { alpha: false });
+  if (!hctx) {
+    filterHelper.style.filter = "none";
+    return src;
+  }
+  hctx.drawImage(src, 0, 0);
+  const out = document.createElement("canvas");
+  out.width = src.width;
+  out.height = src.height;
+  const octx = out.getContext("2d", { alpha: false });
+  if (!octx) {
+    filterHelper.style.filter = "none";
+    filterHelper.width = 0;
+    filterHelper.height = 0;
+    return src;
+  }
+  // The helper's rendered image carries the filter; drawing it in captures
+  // the filtered pixels 1:1.
+  octx.drawImage(filterHelper, 0, 0);
+  // Reset for the next use AND drop the backing store (a full-page RGBA
+  // buffer must not linger between bakes).
+  filterHelper.style.filter = "none";
+  filterHelper.width = 0;
+  filterHelper.height = 0;
+  return out;
+}
+
 /// Bake `src` (the un-themed raster) through the theme pipeline into a fresh
 /// opaque canvas of the same pixel size. Returns `src` itself when the
 /// pipeline is identity (light, untinted — the common case: zero extra work
@@ -323,21 +383,7 @@ function bakeRaster(src, pipeline) {
 
   let filtered = src;
   if (pipeline.filter !== "none") {
-    filtered = document.createElement("canvas");
-    filtered.width = src.width;
-    filtered.height = src.height;
-    const fctx = filtered.getContext("2d", { alpha: false });
-    if (fctx) {
-      try {
-        fctx.filter = pipeline.filter;
-        fctx.drawImage(src, 0, 0);
-      } catch (_) {
-        // Filter unsupported or malformed: fall back to the unfiltered raster.
-        filtered = src;
-      }
-    } else {
-      filtered = src;
-    }
+    filtered = applyFilterCss(src, pipeline.filter);
   }
   if (pipeline.blend === "normal") return filtered;
 
@@ -345,11 +391,16 @@ function bakeRaster(src, pipeline) {
   out.width = src.width;
   out.height = src.height;
   const octx = out.getContext("2d", { alpha: false });
-  if (!octx) return filtered;
+  if (!octx) {
+    if (filtered !== src) releaseCanvas(filtered);
+    return filtered;
+  }
   octx.fillStyle = paperInfo(pipeline).color;
   octx.fillRect(0, 0, out.width, out.height);
   octx.globalCompositeOperation = pipeline.blend;
   octx.drawImage(filtered, 0, 0);
+  // The filtered intermediate lived only for this blend.
+  if (filtered !== src) releaseCanvas(filtered);
   return out;
 }
 
@@ -379,14 +430,26 @@ function releaseDisplayOnly(entry) {
   entry.display = null;
 }
 
-/// Re-bake every raster the engine already holds (mounted pages + cached
-/// thumbnails) after an appearance change. Called by the theme applier right
-/// after it writes the new CSS variables; pages re-colour in place without a
-/// pdf.js re-render storm. The page swap is synchronous (no wrong-coloured
-/// frame); thumbnails re-bake behind an await and then repaint their live
-/// cells — unless a scrub started in the meantime, in which case scrub mode
-/// owns the canvases and the repaint is skipped.
+/// Re-bake every raster the engine already holds after an appearance change.
+/// Called by the theme applier right after it writes the new CSS variables;
+/// pages re-colour in place without a pdf.js re-render storm. The page swap
+/// is synchronous (no wrong-coloured frame). The thumbnail CACHE is not
+/// re-baked wholesale — the pipeline generation stamp marks every entry
+/// stale, only the currently-mounted cells re-bake now (that is all the
+/// reader can see), and anything else re-bakes lazily on its next use. That
+/// keeps a theme switch a few blits instead of a full-cache bake storm.
 async function refreshTheme() {
+  // Called from a synchronous wasm-bindgen extern (the returned promise is
+  // discarded), so a rejection here would be an unhandled promise error.
+  // Internal failures degrade gracefully: stale entries re-bake lazily.
+  try {
+    await refreshThemeInternal();
+  } catch (e) {
+    console.warn("[pdfEngine] refreshTheme failed:", e && e.message ? e.message : e);
+  }
+}
+
+async function refreshThemeInternal() {
   if (scrubbing) return; // scrub mode shows the raw raster + live CSS
   pipelineCache.token = null; // force a fresh read of the new variables
   const pipeline = readPipeline();
@@ -402,19 +465,13 @@ async function refreshTheme() {
     }
   }
 
-  for (const entry of thumbCache.values()) {
-    if (entry.raw && entry.raw.width > 0) {
-      releaseDisplayOnly(entry);
-      const baked = bakeRaster(entry.raw, pipeline);
-      entry.display = await cacheDisplay({ display: baked });
-      if (baked === entry.raw) entry.raw = entry.display; // bitmap became the raw
-    }
-  }
-  if (scrubbing) return;
   for (const [canvasId, { page }] of thumbLive) {
     const entry = thumbCache.get(page);
     const live = el(canvasId);
-    if (entry && live) paintCached(live, entry);
+    if (!entry || !live) continue;
+    if (!(await ensureEntryCurrent(entry))) continue;
+    if (scrubbing) return; // a scrub started mid-bake; scrub mode owns the canvases
+    paintCached(live, entry);
   }
 }
 
@@ -429,6 +486,16 @@ async function refreshTheme() {
 /// class in one synchronous task — pages and thumbs never composite a
 /// double-filtered or unfiltered frame.
 async function setScrubMode(on) {
+  // Same call shape as refreshTheme (sync wasm-bindgen extern, discarded
+  // promise): never reject.
+  try {
+    await setScrubModeInternal(on);
+  } catch (e) {
+    console.warn("[pdfEngine] setScrubMode failed:", e && e.message ? e.message : e);
+  }
+}
+
+async function setScrubModeInternal(on) {
   if (scrubbing === on) return;
   scrubbing = on;
 
@@ -448,17 +515,23 @@ async function setScrubMode(on) {
     return;
   }
 
+  // The pipeline generation moves on (the scrub rewrote the variables), so
+  // every cached entry is stale by stamp; only the mounted cells re-bake
+  // now, the rest lazily on next use.
   const pipeline = readPipeline();
-  for (const entry of thumbCache.values()) {
-    if (entry.raw && entry.raw.width > 0) {
-      releaseDisplayOnly(entry);
-      const baked = bakeRaster(entry.raw, pipeline);
-      entry.display = await cacheDisplay({ display: baked });
-      if (baked === entry.raw) entry.raw = entry.display; // bitmap became the raw
-    }
+  // Phase 1 (awaits): re-bake the mounted cells' cache entries. Their live
+  // canvases still hold RAW rasters and the scrub CSS class is still on, so
+  // the screen stays consistent while this runs.
+  for (const [canvasId, { page }] of thumbLive) {
+    const entry = thumbCache.get(page);
+    if (!entry) continue;
+    await ensureEntryCurrent(entry);
+    if (scrubbing) return; // a new scrub started mid-rebake; it owns the canvases
   }
-  if (scrubbing) return; // a new scrub started mid-rebake; it owns the canvases now
-
+  // Phase 2 (synchronous settle): bake the pages, repaint the cells and drop
+  // the scrub CSS class in ONE task — no composited frame is ever
+  // double-filtered (baked rasters under the live CSS) or unfiltered (raw
+  // rasters with the class gone).
   for (const st of stateByCanvasId.values()) {
     if (st.dead || !st.canvas) continue;
     const raw = st.rawCanvas;
@@ -508,6 +581,34 @@ function thumbRaw(entry) {
   if (!entry) return null;
   if (entry.raw && entry.raw.width > 0) return entry.raw;
   return thumbSource(entry);
+}
+
+/// Make sure a cached thumbnail's display raster matches the CURRENT theme,
+/// re-baking lazily when the pipeline generation moved on since it was
+/// baked. Deduped with `entry.pending` so a remounting cell and a theme
+/// repaint never bake the same entry twice. Returns the display raster.
+async function ensureEntryCurrent(entry) {
+  if (scrubbing || entry.gen === pipelineCache.gen) {
+    return entry.display && entry.display.width > 0 ? entry.display : null;
+  }
+  if (entry.pending) return await entry.pending;
+  entry.pending = (async () => {
+    const raw = thumbRaw(entry);
+    if (!raw) return null;
+    // When the display IS the raw raster (identity themes), releasing it
+    // would close the bitmap the re-bake is about to draw from. The bake
+    // overwrites the display afterwards anyway.
+    if (entry.display !== entry.raw) releaseDisplayOnly(entry);
+    const pipeline = readPipeline();
+    const baked = bakeRaster(raw, pipeline);
+    entry.display = await cacheDisplay({ display: baked });
+    if (baked === raw) entry.raw = entry.display; // bitmap became the raw
+    entry.gen = pipelineCache.gen;
+    return entry.display;
+  })();
+  const result = await entry.pending;
+  entry.pending = null;
+  return result;
 }
 
 /// Convert a baked raster canvas into the cache's preferred display form
@@ -577,9 +678,19 @@ function paintCached(dst, entry) {
 /// mount an opaque skeleton for one frame and then crossfade it away — the
 /// per-row flicker when scrolling a virtualized grid back over pages that were
 /// already rendered once.
+///
+/// A hit whose theme generation is stale is reported as a MISS: the entry
+/// must re-bake before it can be blitted, and that bake awaits
+/// `createImageBitmap`, so mounting the cell with `loaded` already true would
+/// show a blank canvas for the bake's duration. A miss keeps the skeleton
+/// cover up until the fresh bake paints — no blank, no wrong-coloured flash.
 function hasThumb(page, scale) {
   const hit = thumbCache.get(page);
-  return !!hit && Math.abs(hit.scale - scale) < 1e-9;
+  return (
+    !!hit &&
+    Math.abs(hit.scale - scale) < 1e-9 &&
+    (scrubbing || hit.gen === pipelineCache.gen)
+  );
 }
 
 /// Paint the cached THUMBNAIL of `page` into a full-size page canvas as a
@@ -603,6 +714,12 @@ function blitThumb(canvasId, page) {
   // a baked thumbnail under the CSS filter would be double-filtered.
   const src = scrubbing ? thumbRaw(entry) : thumbSource(entry);
   if (!dst || !src) return false;
+  // A stale entry (theme changed since it was baked) is skipped rather than
+  // blitted: this call is synchronous (the Rust side calls it while building
+  // a view), the fresh bake awaits createImageBitmap, and a placeholder in
+  // the OLD theme's colours would flash worse than no placeholder at all.
+  // The real page render lands a moment later.
+  if (!scrubbing && entry.gen !== pipelineCache.gen) return false;
   // Keep the destination's own backing store if it already has one (the host
   // sizes it); otherwise adopt the thumb's aspect at a usable resolution.
   if (dst.width <= 0 || dst.height <= 0) {
@@ -1503,23 +1620,53 @@ async function renderPage(canvasId, scale, renderText) {
 /// mounted, so showing (and then crossfading out) a loading cover over it is
 /// exactly the subtle flicker this lane removes.
 async function renderThumb(canvasId, page, scale) {
+  // The fast path performs real work now (lazy theme re-bakes) and the
+  // engine contract is RESOLVE, never reject — a rejection unwinds the Rust
+  // wasm future. Catch anything that escapes the internal error handling.
+  try {
+    return await renderThumbInternal(canvasId, page, scale);
+  } catch (e) {
+    const info = errorInfo(e);
+    return fail(info.name, info.message);
+  }
+}
+
+async function renderThumbInternal(canvasId, page, scale) {
   const canvas = el(canvasId);
   if (!canvas) return fail("no_canvas", "No canvas: " + canvasId);
   if (!pdf) return fail("no_document", "No document open");
 
-  // --- fast path: cached bitmap, painted before the first composite --------
+  // --- fast path: cached bitmap --------------------------------------------
   const hit = thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) {
-    // Scrub mode blits the RAW raster (the cell canvas is filter-blended by
-    // the live CSS pipeline again); normal mode blits the baked display.
-    const size = scrubbing
-      ? blitInto(canvas, thumbRaw(hit)) && { width: hit.cssW, height: hit.cssH }
-      : paintCached(canvas, hit);
-    if (size) {
-      // Refresh LRU position.
-      cachePut(page, hit);
-      thumbLive.set(canvasId, { page });
-      return { ok: true, width: size.width, height: size.height, scale, cached: true };
+    if (scrubbing) {
+      // Scrub mode blits the RAW raster (the cell canvas is filter-blended
+      // by the live CSS pipeline again), synchronously, no bake needed.
+      if (blitInto(canvas, thumbRaw(hit))) {
+        cachePut(page, hit);
+        thumbLive.set(canvasId, { page });
+        return { ok: true, width: hit.cssW, height: hit.cssH, scale, cached: true };
+      }
+    } else if (hit.gen === pipelineCache.gen) {
+      // Current theme: blit SYNCHRONOUSLY, before the first composite — the
+      // contract `hasThumb`'s skeleton-skip depends on. No await may precede
+      // this paint or a `loaded`-already-true cell would flash blank.
+      const size = paintCached(canvas, hit);
+      if (size) {
+        cachePut(page, hit); // refresh LRU position
+        thumbLive.set(canvasId, { page });
+        return { ok: true, width: size.width, height: size.height, scale, cached: true };
+      }
+    } else if (await ensureEntryCurrent(hit)) {
+      // Stale theme: re-baked above, now painted. Reported as NOT cached so
+      // the cell's loading cover crossfades away — the cell mounted a
+      // skeleton (hasThumb answered miss) and must reveal, not snap.
+      const size = paintCached(canvas, hit);
+      if (size) {
+        cachePut(page, hit);
+        thumbLive.set(canvasId, { page });
+        return { ok: true, width: size.width, height: size.height, scale, cached: false };
+      }
     }
   }
 
@@ -1584,7 +1731,18 @@ async function renderThumb(canvasId, page, scale) {
     } else if (display !== raw) {
       display = await cacheDisplay({ display });
     }
-    const entry = { raw: rawRaster, display, cssW, cssH, scale };
+    // Stamped with the current pipeline generation. Entries baked during a
+    // scrub hold -1 (never equal to any real generation): their display is
+    // the RAW raster, and the theme may change every frame until the drag
+    // ends, so they must always re-bake on first use after the scrub.
+    const entry = {
+      raw: rawRaster,
+      display,
+      cssW,
+      cssH,
+      scale,
+      gen: scrubbing ? -1 : pipelineCache.gen,
+    };
     cachePut(page, entry);
 
     // The cell may have unmounted while the render was in flight. Still

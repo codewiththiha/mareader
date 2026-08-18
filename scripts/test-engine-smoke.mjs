@@ -203,7 +203,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // 2b. light theme with multiply over PURE WHITE = identity pipeline: a
   // render must allocate ZERO page-sized bake canvases (the default-theme
-  // fast path). Small canvases (the 1x1 paper sampler) don't count.
+  // fast path). Small canvases (the 1x1 paper sampler) don't count. The
+  // counting wrapper stays installed so later steps can assert on dark-bake
+  // allocations.
   const created = [];
   const realCreate = fakeDocument.createElement;
   fakeDocument.createElement = (tag) => { const el = realCreate(tag); created.push(el); return el; };
@@ -212,19 +214,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await PDFReader.renderPage("cont-0-cv", 1.5, true);
   const bakeCanvases = created.filter((el) => el.tagName === "CANVAS" && el.width > 10).length;
   if (bakeCanvases !== 0) throw new Error("identity pipeline allocated bake canvases: " + bakeCanvases);
-  fakeDocument.createElement = realCreate;
   console.log("identity fast path ok (0 bake canvases)");
 
-  // 3. switch theme to dark (filter + screen) -> refreshTheme
+  // 3. switch theme to dark (filter + screen) -> refreshTheme. The dark
+  // pipeline must go through the CSS-capture filter: paper sampler + helper
+  // + filter-out + blend-out canvases across the re-bake and the next render.
+  const beforeDark = created.length;
   fakeComputed = { "--canvas-filter": "invert(0.92) hue-rotate(180deg)", "--canvas-blend": "screen" };
   await PDFReader.refreshTheme();
   console.log("refreshTheme (dark) ok");
 
-  // 4. render another page while dark -> baked path
+  // 4. render another page while dark -> baked path.
   PDFReader.registerPage({ canvasId: "cont-1-cv", hostId: "cont-1-pg", page: 2 });
   const r2 = await PDFReader.renderPage("cont-1-cv", 1.5, true);
   if (!r2.ok) throw new Error("render2 failed: " + JSON.stringify(r2));
-  console.log("render ok (dark/baked):", r2.width, "x", r2.height);
+  const darkAllocs = created.length - beforeDark;
+  if (darkAllocs < 4) throw new Error("dark bake should allocate helper+filter+blend canvases, got " + darkAllocs);
+  console.log("render ok (dark/baked):", r2.width, "x", r2.height, `(${darkAllocs} canvases)`);
 
   // 5. scrub mode on/off
   await PDFReader.setScrubMode(true);
@@ -240,14 +246,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (!t2.ok || t2.cached !== true) throw new Error("thumb cache hit failed");
   console.log("thumb cache hit ok");
 
-  // 7. burst coalescing: fire 5 renders for the same canvas, only the last should matter
+  // 7. theme change marks cached thumbs STALE: unmounted entries re-bake
+  // lazily. hasThumb goes miss (so the cell keeps its skeleton), the next
+  // renderThumb lazily re-bakes (cached:false, cover crossfades), the one
+  // after blits synchronously (true). Unmount the cell first: LIVE cells are
+  // re-baked eagerly by refreshTheme itself.
+  PDFReader.cancelThumb("thumb-1");
+  fakeComputed = { "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)", "--canvas-blend": "soft-light" };
+  await PDFReader.refreshTheme();
+  if (PDFReader.hasThumb(1, 0.25)) throw new Error("theme change must mark cached thumbs stale");
+  const t3 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
+  if (!t3.ok || t3.cached !== false) throw new Error("stale thumb should re-bake (cached:false), got " + JSON.stringify(t3));
+  const t4 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
+  if (!t4.ok || t4.cached !== true) throw new Error("re-baked thumb should now hit, got " + JSON.stringify(t4));
+  console.log("lazy thumb re-bake ok");
+
+  // 8. burst coalescing: fire 5 renders for the same canvas, only the last should matter
   const p1 = PDFReader.renderPage("cont-0-cv", 1.0, true);
   const p2 = PDFReader.renderPage("cont-0-cv", 1.2, true);
   const p3 = PDFReader.renderPage("cont-0-cv", 1.4, true);
   const [a, b, c] = await Promise.all([p1, p2, p3]);
   console.log("burst coalesce:", a.ok || a.error.name, b.ok || b.error.name, c.ok || c.error.name);
 
-  // 8. unregister + destroy
+  // 9. unregister + destroy
   PDFReader.unregisterPage("cont-0-cv");
   PDFReader.unregisterPage("cont-1-cv");
   await PDFReader.destroy();
@@ -255,7 +276,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log("destroy ok, stats:", JSON.stringify(stats));
   if (stats.pages !== 0 || stats.thumbs !== 0) throw new Error("leak after destroy");
 
-  // 9. OS file handoff wrapper: never rejects, null when nothing queued.
+  // 10. OS file handoff wrapper: never rejects, null when nothing queued.
   const none = await PDFReader.takePendingFile();
   if (none !== null) throw new Error("takePendingFile should resolve null, got " + none);
   let queuedPath = null;

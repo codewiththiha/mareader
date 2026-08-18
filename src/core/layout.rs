@@ -44,18 +44,21 @@ pub const TOOLBAR_H: f64 = 48.0;
 /// the short version is that a fixed page count means a modest read-ahead when
 /// zoomed out and several screens of wasted rasters when zoomed in.
 ///
-/// TO TUNE THIS, change the two numbers in `RenderBudget::default` and nothing
-/// else.
+/// TO TUNE THIS, change the two numbers in `RenderBudget::default` and the two
+/// numbers here — they must agree.
 pub type RenderBudget = Budget;
 
-/// The project default: one screenful of read-ahead each way, at most 7 pages.
+/// The project default: HALF a screenful of read-ahead each way, at most 5
+/// pages. (Was one screenful / 7 pages; the budget was cut because the
+/// thumbnail placeholder already covers the gap while a page mounts, so a
+/// deep read-ahead only ever pays for rasters the reader is not looking at.)
 ///
-/// Zoomed out, many short pages are legitimately on screen at once and 7 is the
+/// Zoomed out, many short pages are legitimately on screen at once and 5 is the
 /// ceiling for that case; zoomed in it is never the binding constraint because
 /// `look_frac` decides first.
 pub const RENDER_BUDGET: RenderBudget = RenderBudget {
-    look_frac: 1.0,
-    max_items: 7,
+    look_frac: 0.5,
+    max_items: 5,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

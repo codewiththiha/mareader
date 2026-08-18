@@ -14,13 +14,14 @@ pub const CELL_W: f64 = 120.0;
 pub const ROW_GAP: f64 = 8.0;
 /// Extra rows rendered above/below the visible window (pre-render margin).
 ///
-/// Two, not one. With a single buffer row the row that scrolls into view is the
-/// one mounted an instant earlier, so on a fast scroll it is still mid-render
-/// when the user first sees it — the row appears, then settles. Two rows of lead
-/// time means a genuinely new row has finished (and been cached) before it
-/// reaches the viewport edge. It costs nothing on revisits: cached rows blit
-/// synchronously.
-pub const ROW_BUFFER: usize = 2;
+/// One, not two. Two rows of lead time mounts whole rows of canvases the
+/// reader has not scrolled anywhere near, and the buffer is the main knob on
+/// how many thumbnail canvases exist at once. One row is the lean setting:
+/// a row entering the viewport is already mounted (it was the buffer row an
+/// instant earlier), a genuinely new row shows its skeleton for the one
+/// render it takes, and cached rows still blit synchronously — the previous
+/// render's skeleton only ever flashes for rows that were never rendered.
+pub const ROW_BUFFER: usize = 1;
 /// CSS-px padding on the scroll container (`p-3`). Rows are inset by this and
 /// positioned from the content box, so the virtualization math stays exact.
 pub const PAD: f64 = 12.0;

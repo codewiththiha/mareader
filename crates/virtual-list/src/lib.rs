@@ -111,9 +111,9 @@ impl IntoIterator for Window {
 pub struct Budget {
     /// Read-ahead and read-behind, as a multiple of the viewport size.
     ///
-    /// `1.0` keeps one screenful mounted on each side of what is visible.
-    /// `0.0` mounts only what is strictly on screen. Negative values are
-    /// clamped to `0.0`.
+    /// `0.5` keeps half a screenful mounted on each side of what is visible;
+    /// `1.0` would be a full screenful. `0.0` mounts only what is strictly
+    /// on screen. Negative values are clamped to `0.0`.
     pub look_frac: f64,
     /// Hard ceiling on how many items may be mounted at once.
     ///
@@ -125,8 +125,8 @@ pub struct Budget {
 impl Default for Budget {
     fn default() -> Self {
         Self {
-            look_frac: 1.0,
-            max_items: 7,
+            look_frac: 0.5,
+            max_items: 5,
         }
     }
 }
