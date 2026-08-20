@@ -24,8 +24,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use leptos::html;
 use leptos::prelude::*;
-use leptos::task::spawn_local;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::Event;
@@ -36,7 +36,7 @@ use crate::state::{ViewerState, SidebarMode};
 
 use super::cell::ThumbCell;
 use super::geometry::{
-    row_count, row_height, CELL_W, GLIDE_DEBOUNCE_MS, GRACE_MS, PAD, ROW_BUFFER,
+    row_count, row_height, CELL_W, GLIDE_DEBOUNCE_MS, GRACE_MS, MIN_VIEWPORT_H, PAD, ROW_BUFFER,
 };
 
 #[component]
@@ -64,9 +64,14 @@ pub fn ThumbnailsPanel(
     let row_height = move || row_height(aspect());
     let rows = move || row_count(num_pages.get() as usize);
 
-    // Scroll window of the container (populated by the listener/observer below).
+    // Scroll window of the container. `scroll_top` is written ONLY by the
+    // `on:scroll` view attribute on the scroller below; `viewport_h` is
+    // seeded with the generous floor and tightened by the mount effect +
+    // ResizeObserver (both self-correcting). Both are TRACKED reads in the
+    // window memo — never get_untracked — so a scroll write always re-runs it.
+    let scroll_ref: NodeRef<html::Div> = NodeRef::new();
     let scroll_top = RwSignal::new(0.0);
-    let viewport_h = RwSignal::new(0.0);
+    let viewport_h = RwSignal::new(MIN_VIEWPORT_H);
 
     // Last time the USER physically scrolled/dragged the thumb panel. The
     // auto-center effect yields to it for a grace period so the grid never
@@ -140,7 +145,12 @@ pub fn ThumbnailsPanel(
         }
     });
 
-    // Visible row window [first, last], expanded by ROW_BUFFER on each side.
+    // The virtualization window. BOTH inputs are tracked reads (scroll_top and
+    // viewport_h are RwSignals, never get_untracked) so every scroll write
+    // re-runs this memo and the <For> below diffs the row window. `viewport_h`
+    // is seeded with MIN_VIEWPORT_H (not 0) so the first compute is already
+    // generous; the mount effect + ResizeObserver tighten it to the real
+    // panel height.
     let visible = Memo::new(move |_| {
         // The rows live inside the container's 12px top padding, so the window
         // is computed against the content box (`scroll_top - PAD`, clamped).
@@ -148,26 +158,41 @@ pub fn ThumbnailsPanel(
         visible_grid_rows(st, viewport_h.get(), rows(), row_height(), ROW_BUFFER)
     });
 
-    // --- scroll / size tracking ----------------------------------------------
-    // Attached once per mount (deferred to a microtask so the container node
-    // exists). The scroll listener updates the window on scroll; the
-    // ResizeObserver keeps the viewport height fresh on container resizes and
-    // reports the initial height. The JS handles are parked in StoredValues so
-    // they stay alive for the panel's lifetime, and the scroll listener is
-    // detached on cleanup.
-    let cleanup_slot: StoredValue<Option<(web_sys::Element, js_sys::Function)>> =
-        StoredValue::new(None);
-    let listener_slot: FrameHandlerSlot =
-        StoredValue::new_local(None);
+    // Self-healing measurement: re-seed the window the moment the panel
+    // becomes visible. The seed below can land before the routed layout has
+    // settled, and the ResizeObserver only fires on size CHANGES — the
+    // container's height is constant across the sidebar's open/close slide
+    // (only its width is clipped), so a stale zero would never self-correct
+    // and the grid would stay stuck at the buffer rows. Re-reading the real
+    // client height on every open guarantees a correct window.
+    Effect::new(move |_| {
+        if !live.get() {
+            return;
+        }
+        let el = container_el.get_value().or_else(|| {
+            web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.get_element_by_id("thumb-scroll"))
+        });
+        if let Some(el) = el {
+            container_el.set_value(Some(el.clone()));
+            viewport_h.set(el.client_height() as f64);
+            scroll_top.set(el.scroll_top() as f64);
+        }
+    });
+
+    // --- size tracking ------------------------------------------------------
+    // Scroll writes live on the `on:scroll` view attribute (below); this block
+    // owns the viewport-height measurement (mount seed + ResizeObserver), the
+    // user-drive listeners, and the element handle the auto-center effects
+    // read. The JS handles are parked in StoredValues so they stay alive for
+    // the panel's lifetime; the observer is disconnected on cleanup.
     let observer_handle: StoredValue<Option<web_sys::ResizeObserver>, _> =
         StoredValue::new_local(None);
     let callback_handle: ResizeHandlerSlot =
         StoredValue::new_local(None);
 
     on_cleanup(move || {
-        if let Some((el, cb)) = cleanup_slot.get_value() {
-            _ = el.remove_event_listener_with_callback("scroll", &cb);
-        }
         // Disconnect BEFORE the Closure is dropped: the browser keeps its own
         // reference to the wasm-bindgen shim, so a resize notification queued
         // during teardown would invoke a freed closure and abort the runtime
@@ -179,44 +204,38 @@ pub fn ThumbnailsPanel(
         callback_handle.try_set_value(None);
     });
 
-    // The drive tracker lives past the spawn_local (the auto-center effect
-    // reads it), so hand the listener a clone instead of moving it in.
+    // The drive tracker is also read by the auto-center effect below, so this
+    // effect takes its own clone instead of moving the panel-scoped Rc.
     let drive_owner = last_user_drive.clone();
-    spawn_local(async move {
-        if listener_slot.with_value(|l| l.is_some()) {
-            return; // already set up (component body re-run)
-        }
-        let Some(el) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("thumb-scroll"))
-        else {
-            return;
-        };
 
-        // Seed the window from the real geometry before any scroll/resize, and
-        // remember the element so document changes can reset its scrollTop.
-        scroll_top.set(el.scroll_top() as f64);
-        viewport_h.set(el.client_height() as f64);
+    // Mount-time wiring, once the scroller node exists (`scroll_ref.get()` is
+    // a tracked read, so this effect re-runs the instant the node mounts):
+    //   * seed viewport_h / scroll_top from the real geometry (guarded > 0 so
+    //     a pre-layout zero can't clobber the MIN_VIEWPORT_H floor),
+    //   * remember the element for auto-center + document-change scroll resets,
+    //   * attach the user-drive listeners (wheel / pointerdown / touchstart)
+    //     that feed the auto-center grace,
+    //   * observe the container so a real height lands even if it was 0 at
+    //     mount (self-correcting).
+    //
+    // Scroll writes themselves live on the `on:scroll` view attribute below —
+    // declaratively bound to the SAME element that has `overflow-y-auto`, so
+    // there is no wrong-element or NodeRef-timing class of bug.
+    Effect::new(move |_| {
+        let Some(div) = scroll_ref.get() else { return };
+        // NodeRef gives the HtmlDivElement; `container_el` holds an Element.
+        let el: web_sys::Element = div.clone().unchecked_into();
         container_el.set_value(Some(el.clone()));
-
-        // Scroll -> scroll_top. (clientHeight stays authoritative for the
-        // window height; it is tracked by the ResizeObserver below.)
-        let handler = {
-            let el = el.clone();
-            move |_: Event| {
-                scroll_top.set(el.scroll_top() as f64);
-            }
-        };
-        let closure = Closure::new(handler);
-        let cb: js_sys::Function = closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
-        if el.add_event_listener_with_callback("scroll", &cb).is_ok() {
-            cleanup_slot.set_value(Some((el.clone(), cb)));
-            listener_slot.set_value(Some(closure));
+        let h = el.client_height() as f64;
+        if h > 0.0 {
+            viewport_h.set(h);
         }
+        scroll_top.set(el.scroll_top() as f64);
 
-        // User-drive tracker: any wheel / pointerdown / touchstart on the panel
-        // stamps the current time so the auto-center effect stands down for a
-        // grace period (the Closure is parked in `drive_slot` to stay alive).
+        // Drive listeners: attach once.
+        if drive_slot.with_value(|d| d.is_some()) {
+            return;
+        }
         let drive = {
             let drive_last = drive_owner.clone();
             move |_: Event| {
@@ -237,7 +256,10 @@ pub fn ThumbnailsPanel(
                 if let Some(entry) = entries.first()
                     && let Some(el) = entry.target().dyn_ref::<web_sys::HtmlElement>()
                 {
-                    viewport_h.set(el.client_height() as f64);
+                    let h = el.client_height() as f64;
+                    if h > 0.0 {
+                        viewport_h.set(h);
+                    }
                 }
             }) as Box<dyn FnMut(Vec<ResizeObserverEntry>)>,
         );
@@ -459,7 +481,20 @@ pub fn ThumbnailsPanel(
     });
 
     view! {
-        <div id="thumb-scroll" class="relative flex-1 overflow-y-auto p-3">
+        // on:scroll MUST live on the SAME element that has overflow-y-auto —
+        // this div. Leptos binds view-attribute listeners at mount, so the
+        // write below is the only scroll_top writer (no window/document-level
+        // listener: inner-scroller scroll events do not bubble to window).
+        <div
+            id="thumb-scroll"
+            node_ref=scroll_ref
+            class="relative flex-1 overflow-y-auto p-3"
+            on:scroll=move |ev: web_sys::Event| {
+                let target: web_sys::Node = event_target(&ev);
+                let Some(el) = target.dyn_ref::<web_sys::HtmlElement>() else { return };
+                scroll_top.set(el.scroll_top() as f64);
+            }
+        >
             // Spacer: makes the scrollbar span the whole grid.
             <div
                 aria-hidden="true"

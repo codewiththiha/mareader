@@ -1,6 +1,6 @@
 //! The 🎨 Appearance popover: presets, base mode + tint, texture, film grain.
 //!
-//! Dismissal rules:
+//! Dismissal rules (owned by the shared window-aware `Popover`):
 //! - Outside-click and Escape close it. This also gives menu-exclusivity:
 //!   pointerdown on any other toolbar trigger lands outside this root, closing
 //!   this popover first, then the click opens the other.
@@ -11,15 +11,15 @@
 //!   impossible. Every control here is live-preview, so staying open IS the
 //!   feedback loop.
 //!
-//! The popover scrolls: with five sections it can exceed the viewport on a
-//! short window, and a menu that overflows off-screen loses its bottom
-//! controls entirely.
+//! The panel scrolls and is clamped/flipped by the Popover, so it can never
+//! overflow off-screen.
 
 use leptos::html;
 use leptos::prelude::*;
 
 use pdf_viewer::components::atoms::icon::{Icon, IconName};
 use pdf_viewer::components::atoms::separator::Separator;
+use crate::components::chrome::popover::Popover;
 use crate::core::state::AppState;
 
 use super::appearance::base_section::BaseSection;
@@ -48,38 +48,6 @@ pub fn AppearanceMenu(state: AppState) -> impl IntoView {
         }
     };
 
-    // While open: outside-click and Escape close it. Re-registered per open via
-    // an Effect (reads `open`); the previous run's cleanup removes the listeners.
-    Effect::new(move |_| {
-        if open.get() {
-            let container = root_ref.get();
-            let pointerdown = window_event_listener(
-                leptos::ev::pointerdown,
-                move |ev: leptos::ev::PointerEvent| {
-                    let target: web_sys::Node = event_target(&ev);
-                    let contains = container
-                        .as_ref()
-                        .is_some_and(|c| c.contains(Some(&target)));
-                    if !contains {
-                        open.set(false);
-                    }
-                },
-            );
-            let keydown = window_event_listener(
-                leptos::ev::keydown,
-                move |ev: leptos::ev::KeyboardEvent| {
-                    if ev.key() == "Escape" {
-                        open.set(false);
-                    }
-                },
-            );
-            on_cleanup(move || {
-                pointerdown.remove();
-                keydown.remove();
-            });
-        }
-    });
-
     view! {
         <div node_ref=root_ref class="relative inline-flex">
             <button
@@ -88,23 +56,26 @@ pub fn AppearanceMenu(state: AppState) -> impl IntoView {
                 on:click=move |_| open.set(!open.get())
                 class=trigger_class
             >
-                <Icon name=IconName::Palette size=16 />
+                <Icon name=IconName::Palette size=18 />
             </button>
-            <Show when=move || open.get()>
-                <div class="menu-popover absolute right-0 top-full z-50 mt-1 max-h-[min(70vh,32rem)] w-72 overflow-y-auto rounded-lg border border-line bg-surface p-3 shadow-lg">
-                    <SectionLabel text="Presets" />
-                    <PresetSection state=state />
-                    <div class="my-3"><Separator vertical=false /></div>
-                    <SectionLabel text="Mode & colour" />
-                    <BaseSection state=state />
-                    <div class="my-3"><Separator vertical=false /></div>
-                    <SectionLabel text="Page texture" />
-                    <TextureSection state=state />
-                    <div class="my-3"><Separator vertical=false /></div>
-                    <SectionLabel text="Film grain" />
-                    <NoiseSection state=state />
-                </div>
-            </Show>
+            <Popover
+                open=open
+                anchor=root_ref
+                width=288
+                class="max-h-[min(70vh,32rem)] overflow-y-auto p-3".to_string()
+            >
+                <SectionLabel text="Presets" />
+                <PresetSection state=state />
+                <div class="my-3"><Separator vertical=false /></div>
+                <SectionLabel text="Mode & colour" />
+                <BaseSection state=state />
+                <div class="my-3"><Separator vertical=false /></div>
+                <SectionLabel text="Page texture" />
+                <TextureSection state=state />
+                <div class="my-3"><Separator vertical=false /></div>
+                <SectionLabel text="Film grain" />
+                <NoiseSection state=state />
+            </Popover>
         </div>
     }
 }

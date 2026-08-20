@@ -761,6 +761,10 @@ body {
   height: 100%;
   margin: 0;
   overscroll-behavior: none;
+  /* The auto-hide bottom bar slides down out of view; clip it here so its
+     hidden 12px translate can never leak a phantom window scrollbar. The
+     only scrollers left are the page list, thumbnails, outline and popovers. */
+  overflow: hidden;
 }
 
 body {
@@ -1552,4 +1556,13 @@ html.theme-switching * {
   .drag-dropzone-icon {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------------------------
+   13. Auto-hide chrome — no text selection while grabbing the drag
+   regions (the always-mounted hot strips + the hover-reveal bars).
+   --------------------------------------------------------------------- */
+[data-tauri-drag-region] {
+  -webkit-user-select: none;
+  user-select: none;
 }

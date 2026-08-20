@@ -31,6 +31,10 @@ pub struct Settings {
     pub user_presets: Vec<Preset>,
     pub default_zoom: f64,
     pub last_path: Option<String>,
+    /// Pin the titlebar open (no auto-hide). Persisted; `serde(default)`
+    /// migrates pre-pin blobs to unpinned.
+    #[serde(default)]
+    pub titlebar_pinned: bool,
 
     // --- legacy fields, read once then dropped -------------------------------
     #[serde(skip_serializing, default)]
@@ -51,6 +55,7 @@ impl Default for Settings {
             user_presets: Vec::new(),
             default_zoom: 1.0,
             last_path: None,
+            titlebar_pinned: false,
             theme_id: None,
             texture: None,
             noise_enabled: None,

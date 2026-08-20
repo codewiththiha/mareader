@@ -254,3 +254,18 @@ pub fn set_scrub_mode(on: bool) {
     }
     bridge::set_scrub_mode(on);
 }
+
+// --- Window chrome ------------------------------------------------------
+
+/// Show/hide the native macOS traffic lights via the backend command. The
+/// backend is a no-op outside macOS, and outside Tauri there is nothing to
+/// invoke, so this is safe to call unconditionally (the reader-view effect
+/// drives it from the hover-reveal signal).
+pub async fn set_traffic_lights(visible: bool) {
+    if !bridge::has_tauri() {
+        return;
+    }
+    let args = js_sys::Object::new();
+    _ = js_sys::Reflect::set(&args, &JsValue::from_str("visible"), &JsValue::from_bool(visible));
+    _ = bridge::tauri_invoke("set_traffic_lights", args.into()).await;
+}

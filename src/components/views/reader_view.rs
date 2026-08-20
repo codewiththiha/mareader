@@ -1,6 +1,6 @@
-//! Top-level app view: toolbar + sidebar + viewer slot + status bar + noise
-//! overlay. The viewer slot switches on viewer.mode. The real mode match is
-//! wired during integration; until then it renders the placeholder.
+//! The `/reader` route: sidebar + viewer slot + the shared titlebar (via the
+//! chrome `TitleBarProvider`), plus the floating doc title, page pill, bottom
+//! bar and floating search. The viewer slot switches on viewer.mode.
 //!
 //! Slot wiring is the SINGLE coordinator's job — branches
 //! must not edit this file.
@@ -14,104 +14,175 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::Event;
 
+use pdf_viewer::components::atoms::button::{Button, ButtonKind};
 use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::segmented::{Segmented, SegmentedLabel};
+use pdf_viewer::components::atoms::separator::Separator;
+use pdf_viewer::components::atoms::tooltip::Tooltip;
 
 use pdf_engine::types::DocStatus;
 use pdf_core::layout::ViewMode;
+use crate::components::chrome::floating_doc_title::FloatingDocTitle;
+use crate::components::chrome::titlebar_provider::TitleBarProvider;
+use crate::components::molecules::appearance_menu::AppearanceMenu;
+use crate::components::molecules::doc_title::DocTitle;
+use crate::components::molecules::more_menu::MoreMenu;
+use crate::components::molecules::zoom_controls::ZoomControls;
+use crate::core::open_flow::{close_document, open_dialog};
 use crate::core::state::AppState;
+use crate::effects::reading_progress::reading_progress;
 use pdf_viewer::effects::fit::{fit_effect, zoom_system};
 use pdf_viewer::effects::page_tracking::page_tracking;
-use crate::effects::reading_progress::reading_progress;
-use crate::effects::theme_applier::theme_applier;
+use pdf_viewer::state::SidebarMode;
 
 #[component]
 pub fn ReaderView(state: AppState) -> impl IntoView {
-    theme_applier(state);
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
     let vs = state.viewer_state();
-    // Fit width / fit page recompute in BOTH view modes (each view reports its
-    // container size into the same signal).
     fit_effect(vs);
-    // Owns display_scale/render_scale during a zoom; every zoom control posts
-    // to it via `request_zoom`. Must be wired alongside fit_effect.
     zoom_system(vs);
-    // Keep `viewer.page` and the scroll position in sync in continuous mode
-    // (status-bar counter, page jumps, mode-switch position).
     page_tracking(vs);
-    // Persist the current book's reading position into the library.
     reading_progress(state);
-
-    // Ends the grace period after a dismissed search: the next scroll, click or
-    // keypress drops the muted highlights and empties the query.
     pdf_viewer::effects::search_effects::dismissed_search_watch(vs);
-    // Drag-and-drop file open: DOM prevent-default fallback + the authoritative
-    // `tauri://drag-drop` subscription. Also drives the drop-feedback overlay
-    // via `drag_active`.
-    let drag_active = RwSignal::new(false);
-    drag_drop(state, drag_active);
 
-    // Hoist signal handles + owned state clones BEFORE the view! macro. Each
-    // `move` closure below captures exactly one owned value, so there is no
-    // double-move of `state`.
     let status = state.doc.status;
     let mode = state.viewer.mode;
-    let state_toolbar = state;
     let state_sidebar = state;
-
     let is_ready = move || status.get() == DocStatus::Ready;
 
-    view! {
-        <div class="relative flex h-full w-full flex-col bg-paper text-ink">
-            <header
-                class="toolbar-glass absolute inset-x-0 top-0 z-50 border-b border-line/60"
+    // LEFT slot: sidebar toggle (only while the sidebar is closed — the
+    // sidebar's own chrome row owns it otherwise), Library, Open, DocTitle.
+    let left = move || {
+        view! {
+            <div class="flex min-w-0 items-center gap-1">
+                <div
+                    id="toolbar-left-pre"
+                    data-tauri-drag-region="true"
+                    class="flex shrink-0 items-center gap-1"
+                >
+                    <Show when=move || state.sidebar.get() == SidebarMode::None>
+                        <Tooltip text="Toggle sidebar".to_string()>
+                            <Button
+                                on_click=move |_| state.sidebar.set(SidebarMode::Thumbs)
+                                kind=ButtonKind::Ghost
+                                icon=IconName::Sidebar
+                                title="Toggle sidebar".to_string()
+                            />
+                        </Tooltip>
+                    </Show>
+                    <Show when=move || {
+                        matches!(
+                            state.doc.status.get(),
+                            DocStatus::Ready | DocStatus::Opening
+                        )
+                    }>
+                        <Tooltip text="Library".to_string()>
+                            <Button
+                                on_click=move |_| close_document(state)
+                                kind=ButtonKind::Ghost
+                                icon=IconName::Library
+                                title="Close this book and return to the library".to_string()
+                            />
+                        </Tooltip>
+                    </Show>
+                    <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
+                        <Button
+                            on_click=move |_| open_dialog(state)
+                            kind=ButtonKind::Toolbar
+                            icon=IconName::Open
+                            label="Open".to_string()
+                            title="Open PDF (Cmd/Ctrl+O)".to_string()
+                        />
+                    </Tooltip>
+                </div>
+                <DocTitle state=state />
+            </div>
+        }
+    };
+
+    // RIGHT slot: search, view mode, zoom, appearance, more.
+    let right = move || {
+        view! {
+            <div
+                id="toolbar-right"
+                data-tauri-drag-region="true"
+                class="flex shrink-0 items-center gap-1"
             >
-                <crate::components::molecules::toolbar::Toolbar state=state_toolbar />
-            </header>
-            // No top margin: the viewer starts at the very top so page content
-            // scrolls UNDER the translucent header, which is what gives the
-            // glass something to refract. Each view pads its own scroller by
-            // the toolbar height so the first page is not born behind the bar.
-            <div class="flex min-h-0 flex-1">
-                <crate::components::organisms::sidebar::Sidebar state=state_sidebar />
-                <main id="viewer-slot" class="relative min-w-0 flex-1">
-                    <Show
-                        when=is_ready
-                        fallback=move || {
-                            view! {
-                                <crate::components::views::library_view::LibraryView state=state />
+                <Tooltip text="Search (Cmd/Ctrl+F)".to_string()>
+                    <button
+                        type="button"
+                        data-search-chrome="true"
+                        title="Search (Cmd/Ctrl+F)"
+                        on:pointerdown=move |ev| ev.stop_propagation()
+                        on:click=move |_| {
+                            if state.search.visible.get() {
+                                pdf_viewer::effects::search_effects::dismiss_search(vs);
+                            } else {
+                                pdf_viewer::effects::search_effects::resume_search(vs);
                             }
                         }
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                        {move || match mode.get() {
-                            ViewMode::Single => view! {
-                                <pdf_viewer::components::single_page_view::SinglePageView state=vs />
-                            }
-                            .into_any(),
-                            ViewMode::Continuous => view! {
-                                <pdf_viewer::components::continuous_view::ContinuousView state=vs />
-                            }
-                            .into_any(),
-                        }}
-                    </Show>
-                    // Floating search overlay (U4): mounted at the viewer slot,
-                    // not inside the backdrop-blur header (which would trap
-                    // fixed descendants). The slot now starts at the window top
-                    // so pages can scroll under the glass, so the panel carries
-                    // its own top-14 offset to clear the toolbar.
-                    <pdf_viewer::components::floating_search::FloatingSearch state=vs />
-                </main>
+                        <Icon name=IconName::Search size=18 />
+                    </button>
+                </Tooltip>
+                <Tooltip text="View mode".to_string()>
+                    <Segmented
+                        options=vec![
+                            (
+                                ViewMode::Single,
+                                SegmentedLabel::Icon(IconName::SinglePage),
+                                "Single page view",
+                            ),
+                            (
+                                ViewMode::Continuous,
+                                SegmentedLabel::Icon(IconName::Continuous),
+                                "Continuous scroll view",
+                            ),
+                        ]
+                        value={mode.read_only()}
+                        on_change=move |m: ViewMode| state.viewer.mode.set(m)
+                    />
+                </Tooltip>
+                <ZoomControls state=state />
+                <Separator vertical=true />
+                <AppearanceMenu state=state />
+                <MoreMenu state=state />
             </div>
-            <footer class="pointer-events-none absolute inset-x-0 bottom-0 z-50 mix-blend-difference">
-                <pdf_viewer::components::status_bar::StatusBar state=vs />
-            </footer>
-            <div class="noise-overlay"></div>
-            // Drop-feedback overlay: appears only while a file drag is over the
-            // window (drag_active), themed to follow the current appearance.
-            <Show when=move || drag_active.get()>
-                <DragOverlay />
-            </Show>
-        </div>
+        }
+    };
+
+    view! {
+        <TitleBarProvider state=state left=left right=right>
+            // overflow-hidden clips the hidden BottomBar's slide-down translate
+            // so it can never leak a phantom scrollbar onto the window.
+            <div class="relative flex h-full w-full flex-col overflow-hidden bg-paper text-ink">
+                <div class="flex min-h-0 flex-1">
+                    <crate::components::organisms::sidebar::Sidebar state=state_sidebar />
+                    <main id="viewer-slot" class="relative min-w-0 flex-1 overflow-hidden">
+                        <Show when=is_ready>
+                            {move || match mode.get() {
+                                ViewMode::Single => view! {
+                                    <pdf_viewer::components::single_page_view::SinglePageView state=vs />
+                                }
+                                .into_any(),
+                                ViewMode::Continuous => view! {
+                                    <pdf_viewer::components::continuous_view::ContinuousView state=vs />
+                                }
+                                .into_any(),
+                            }}
+                        </Show>
+                        <FloatingDocTitle state=state />
+                        <crate::components::molecules::page_pill::PagePill state=state />
+                        <crate::components::molecules::bottom_bar::BottomBar state=state />
+                        // Floating search overlay (U4): mounted at the viewer
+                        // slot; its top-14 offset clears the titlebar.
+                        <pdf_viewer::components::floating_search::FloatingSearch state=vs />
+                    </main>
+                </div>
+            </div>
+        </TitleBarProvider>
     }
 }
 
@@ -123,7 +194,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
 /// `--color-muted`), so it follows the active base mode and tint with no extra
 /// wiring.
 #[component]
-fn DragOverlay() -> impl IntoView {
+pub(crate) fn DragOverlay() -> impl IntoView {
     view! {
         <div class="drag-overlay" role="presentation" aria-hidden="true">
             <div class="drag-dropzone">
@@ -151,7 +222,7 @@ fn DragOverlay() -> impl IntoView {
 ///      drop-feedback overlay, leave hides it, drop opens the file (and hides
 ///      it). Each Closure is parked in a StoredValue so the listener stays
 ///      registered for the view's lifetime.
-fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
+pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     // Drag-enter/leave DEPTH counter. Window-level `dragenter`/`dragleave`
     // fire for every child-element boundary crossed, not just the window edge,
     // so a naive "set true on enter, false on leave" would flicker the overlay
@@ -282,5 +353,3 @@ fn first_drop_path(ev: &Event) -> Option<String> {
     let arr = js_sys::Array::from(&paths);
     arr.get(0).as_string().filter(|p| !p.is_empty())
 }
-
-

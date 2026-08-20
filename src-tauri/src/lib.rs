@@ -13,12 +13,12 @@
 //!     The file path arrives differently per platform, so all three routes
 //!     queue into one `PendingFile` slot:
 //!       - macOS   : `RunEvent::Opened` (LaunchServices), at launch AND while
-//!                   running (the running instance receives it).
+//!         running (the running instance receives it).
 //!       - Windows/Linux initial launch : plain argv entry ("%1" from the
-//!                   shell association).
+//!         shell association).
 //!       - Windows/Linux second launch : `tauri-plugin-single-instance`
-//!                   forwards the second process's argv to the running one
-//!                   instead of spawning a second window.
+//!         forwards the second process's argv to the running one
+//!         instead of spawning a second window.
 //!     The frontend collects the slot through the `take_pending_file`
 //!     command (the authoritative handoff — an event emitted before the
 //!     webview mounted would otherwise be lost) and `pdf-open-file` is only
@@ -75,6 +75,53 @@ fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
         .map_err(|e| format!("could not read {path}: {e}"))
 }
 
+/// Show/hide the native macOS traffic lights.
+///
+/// `titleBarStyle: "Overlay"` lets the webview draw under the lights, but CSS
+/// cannot hide the buttons themselves — they are native NSViews owned by the
+/// window. The three buttons share one container view (the superview of the
+/// close button), so hiding that container hides all three. Driven by the
+/// frontend's hover-reveal signal so the lights fade in/out with the titlebar.
+///
+/// macOS-only: on other platforms the window has a normal caption and this is
+/// a no-op.
+#[tauri::command]
+fn set_traffic_lights(window: tauri::Window, visible: bool) {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        use objc::runtime::{Object, BOOL, NO, YES};
+        // `sel_impl` is referenced unqualified by the `sel!`/`msg_send!`
+        // expansions, so it must be imported alongside them.
+        use objc::{msg_send, sel, sel_impl};
+        // rwh 0.6: window_handle() -> WindowHandle::as_raw() gives the raw
+        // handle. (HasRawWindowHandle::raw_window_handle() is the deprecated
+        // path, and HasWindowHandle alone doesn't provide raw_window_handle.)
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        if let Ok(handle) = window.window_handle()
+            && let RawWindowHandle::AppKit(h) = handle.as_raw()
+        {
+            let ns_view = h.ns_view.as_ptr() as *mut Object;
+            let ns_window: *mut Object = msg_send![ns_view, window];
+            if !ns_window.is_null() {
+                // NSWindowCloseButton = 0; its superview hosts all three lights.
+                let btn: *mut Object = msg_send![ns_window, standardWindowButton: 0usize];
+                if !btn.is_null() {
+                    let container: *mut Object = msg_send![btn, superview];
+                    if !container.is_null() {
+                        // YES/NO (not literals): objc's BOOL is `bool` on
+                        // Apple Silicon but `i8` on x86_64, so only the
+                        // constants are portable across both.
+                        let hidden: BOOL = if visible { NO } else { YES };
+                        let _: () = msg_send![container, setHidden: hidden];
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, visible);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -88,7 +135,11 @@ pub fn run() {
             }
         }))
         .manage(PendingFile(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![take_pending_file, read_file_bytes])
+        .invoke_handler(tauri::generate_handler![
+            take_pending_file,
+            read_file_bytes,
+            set_traffic_lights
+        ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 

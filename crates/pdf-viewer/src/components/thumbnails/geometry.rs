@@ -22,6 +22,16 @@ pub const ROW_GAP: f64 = 8.0;
 /// render it takes, and cached rows still blit synchronously — the previous
 /// render's skeleton only ever flashes for rows that were never rendered.
 pub const ROW_BUFFER: usize = 1;
+/// Fallback viewport height used when the live measurement is (still) zero.
+///
+/// The panel's scroll container reports its height through a ResizeObserver,
+/// but the observer only fires on size CHANGES, and the container's height is
+/// constant across the sidebar's open/close slide (only its width is clipped
+/// by the aside) — so a measurement taken before the routed layout settled
+/// would never self-correct and the window would collapse to the two buffer
+/// rows (the "only four thumbnails" bug). This floor keeps the window generous
+/// until the re-seed effect in `thumbnails_panel.rs` writes the real height.
+pub const MIN_VIEWPORT_H: f64 = 720.0;
 /// CSS-px padding on the scroll container (`p-3`). Rows are inset by this and
 /// positioned from the content box, so the virtualization math stays exact.
 pub const PAD: f64 = 12.0;

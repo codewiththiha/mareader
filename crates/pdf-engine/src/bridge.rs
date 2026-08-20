@@ -95,6 +95,12 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = "listen")]
     pub async fn tauri_listen(event: &str, handler: js_sys::Function) -> JsValue;
 
+    // Generic Tauri IPC invoke (window.__TAURI__.core.invoke). Used to reach
+    // backend commands (e.g. the macOS traffic-light toggle); `catch` so a
+    // rejected invoke resolves as an Err instead of unwinding the wasm future.
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], js_name = invoke, catch)]
+    pub async fn tauri_invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+
     // Collect the pending OS-opened PDF path (double-click / "Open with" /
     // default-app launch) from the backend. Lives in the engine's JS layer
     // because it wraps `__TAURI__.core.invoke` in a catch: a rejected JS

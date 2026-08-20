@@ -48,7 +48,7 @@ pub fn Button(
             disabled=disabled
             class=base.to_string() + " " + kind_class + " " + state_class
         >
-            {icon.map(|name| view! { <Icon name=name size=16/> })}
+            {icon.map(|name| view! { <Icon name=name size=18/> })}
             {label.map(|l| view! { <span>{l}</span> })}
             {children.map(|c| c())}
         </button>

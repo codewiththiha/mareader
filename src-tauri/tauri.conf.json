@@ -13,7 +13,14 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "PDF Reader",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "decorations": true,
+        "trafficLightPosition": { "x": 20, "y": 25 },
+        "shadow": true,
+        "dragDropEnabled": true,
         "width": 1200,
         "height": 800,
         "minWidth": 640,

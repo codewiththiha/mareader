@@ -24,3 +24,16 @@ tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# macOS-only: hide/show the native traffic lights (titlebar-less overlay mode).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
+raw-window-handle = "0.6"
+
+# objc 0.2's sel_impl! macro expands `cfg(feature = "cargo-clippy")` into OUR
+# crate, and rustc's check-cfg lints that feature value. Declare it expected so
+# the lint stays on for everything else. (The `feature, values(..)` form is the
+# only one rustc accepts now — `cfg(cargo-clippy)` and `cfg(feature = "..")`
+# are both rejected as invalid --check-cfg arguments.)
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }
