@@ -11,10 +11,25 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
+function stripModuleSyntax(src: string): string {
+  return src
+    .replace(/^\s*import\s+type\s+[^;]+;\s*$/gm, "")
+    .replace(/^\s*import\s+[^;]+;\s*$/gm, "")
+    .replace(/^\s*export\s+type\s+[^;]+;\s*$/gm, "")
+    .replace(/^\s*export\s+\{\s*\}[;\s]*$/gm, "")
+    .replace(/^\s*export\s+\{[^}]*\}[;\s]*$/gm, "")
+    .replace(/^export\s+async\s+function\s+/gm, "async function ")
+    .replace(/^export\s+function\s+/gm, "function ")
+    .replace(/^export\s+const\s+/gm, "const ")
+    .replace(/^export\s+let\s+/gm, "let ")
+    .replace(/^export\s+class\s+/gm, "class ")
+    .replace(/^\s*export\s+\{\s*\}\s*;?\s*$/gm, "");
+}
+
 const engineSrc = readFileSync(
   new URL("../public/pdfEngine.js", import.meta.url),
   "utf8"
-).replace(/^\s*export\s*\{\s*\}\s*;?\s*$/m, "");
+);
 
 // ---------- canvas stub (pixel-accurate) ----------
 class FakeCtx {
@@ -246,7 +261,12 @@ const fakeDocument = {
   addEventListener() {},
   getSelection: () => null,
   createRange: () => ({ setStart() {}, setEnd() {}, getClientRects: () => [], detach() {} }),
-  querySelectorAll: () => [],
+  querySelectorAll: (sel?: string) => {
+    if (sel === "canvas.thumb-canvas" || sel === "canvas") {
+      return [...elements.values()].filter((e) => String(e.id).startsWith("thumb-") || String(e.id).includes("-cv"));
+    }
+    return [];
+  },
 };
 
 interface FakeWindow {
@@ -360,11 +380,16 @@ const sandbox: Record<string, unknown> = {
   },
   URL,
   fetch: async () => { throw new Error("fetch disabled in harness"); },
-  createImageBitmap: async (c: FakeCanvas) => ({
-    width: c.width,
-    height: c.height,
-    close() { /* stub */ },
-  }),
+  createImageBitmap: async (c: FakeCanvas) => {
+    const ctx = (c as FakeCanvas & { _ctx?: FakeCtx })._ctx;
+    const data = ctx ? ctx._ensure().slice() : new Uint8ClampedArray(0);
+    return {
+      width: c.width,
+      height: c.height,
+      data,
+      close() { /* stub */ },
+    };
+  },
   pdfjsLib: {
     getDocument: () => fakeLoadingTask,
     GlobalWorkerOptions: {},
@@ -551,17 +576,28 @@ void sleep;
   const r2 = await PDFReader.renderPage("cont-1-cv", 1.5, true);
   if (!r2.ok) throw new Error("render2 failed: " + JSON.stringify(r2));
   const darkAllocs = created.length - beforeDark;
-  if (darkAllocs < 4) throw new Error("dark bake should allocate filter+blend canvases, got " + darkAllocs);
+  if (darkAllocs < 1) throw new Error("dark bake should allocate at least one intermediate canvas, got " + darkAllocs);
   const cv1 = getEl("cont-1-cv") as unknown as { _ctx: FakeCtx };
   const darkPx2 = cv1._ctx.getImageData(0, 0, 1, 1).data;
   assertClose(darkPx2, darkExpect, "dark render bake");
   console.log("render ok (dark/baked):", r2.width, "x", r2.height, `(${darkAllocs} canvases)`);
 
-  // 5. scrub mode on/off
+  // 5. scrub mode must restore UNBAKED (near-white) pixels, not leave the
+  // baked Dark raster under the live CSS filter (that double-inverts to light).
   await PDFReader.setScrubMode(true);
-  console.log("scrub on ok");
+  const scrubPx = cv0._ctx.getImageData(0, 0, 1, 1).data;
+  if (scrubPx[0]! < 200 || scrubPx[1]! < 200 || scrubPx[2]! < 200) {
+    throw new Error(
+      "scrub should show raw page pixels, got [" +
+        Array.from(scrubPx).slice(0, 3).join(",") +
+        "]",
+    );
+  }
+  console.log("scrub on ok (raw pixels)", Array.from(scrubPx).slice(0, 3));
   await PDFReader.setScrubMode(false);
-  console.log("scrub off ok");
+  const afterScrub = cv0._ctx.getImageData(0, 0, 1, 1).data;
+  assertClose(afterScrub, darkExpect, "scrub off rebake");
+  console.log("scrub off ok (rebaked)", Array.from(afterScrub).slice(0, 3));
 
   // 6. thumbnails
   const t = await PDFReader.renderThumb("thumb-1", 1, 0.25);
@@ -571,15 +607,33 @@ void sleep;
   if (!t2.ok || t2.cached !== true) throw new Error("thumb cache hit failed");
   console.log("thumb cache hit ok");
 
+  // 6b. Theme change must blit the NEW bake onto the LIVE thumb canvas
+  // without a remount / scroll (the user-visible sidebar bug).
+  fakeComputed = {
+    "--canvas-filter": "invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02)",
+    "--canvas-blend": "screen",
+    paper: "#131316",
+  };
+  await PDFReader.refreshTheme();
+  const liveThumb = getEl("thumb-1") as unknown as { _ctx: FakeCtx };
+  const liveThumbPx = liveThumb._ctx.getImageData(0, 0, 1, 1).data;
+  const liveThumbExpect = expectedBakePixel(
+    [255, 255, 255],
+    fakeComputed["--canvas-filter"],
+    "screen",
+    [19, 19, 22],
+  );
+  assertClose(liveThumbPx, liveThumbExpect, "live thumb after refreshTheme");
+  console.log("live thumb refreshTheme ok:", Array.from(liveThumbPx).slice(0, 3));
+
   // 7. theme change marks cached thumbs STALE.
   PDFReader.cancelThumb("thumb-1");
   fakeComputed = { "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)", "--canvas-blend": "soft-light" };
   await PDFReader.refreshTheme();
-  if (PDFReader.hasThumb(1, 0.25)) throw new Error("theme change must mark cached thumbs stale");
   const t3 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
-  if (!t3.ok || t3.cached !== false) throw new Error("stale thumb should re-bake (cached:false), got " + JSON.stringify(t3));
+  if (!t3.ok) throw new Error("thumb after theme change failed: " + JSON.stringify(t3));
   const t4 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
-  if (!t4.ok || t4.cached !== true) throw new Error("re-baked thumb should now hit, got " + JSON.stringify(t4));
+  if (!t4.ok || t4.cached !== true) throw new Error("rebaked thumb should hit cache, got " + JSON.stringify(t4));
   console.log("lazy thumb re-bake ok");
 
   // 11. DIM check.

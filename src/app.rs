@@ -31,12 +31,7 @@ pub fn App() -> impl IntoView {
         let t = state.settings.get().appearance.texture;
         texture.set(t);
     });
-    provide_context(pdf_viewer::state::ViewerState::new(
-        state.doc,
-        state.viewer,
-        state.search,
-        state.sidebar,
-    ));
+    provide_context(state.viewer_state());
     provide_context(texture as TextureSignal);
 
     // App-root hooks: global keyboard shortcuts + internal PDF link jumps +
@@ -67,7 +62,7 @@ fn shortcuts(state: AppState) {
         move || crate::core::open_flow::open_dialog(state)
     };
     pdf_viewer::effects::shortcuts::shortcuts(
-        pdf_viewer::state::ViewerState::new(state.doc, state.viewer, state.search, state.sidebar),
+        state.viewer_state(),
         open_doc,
     );
 }

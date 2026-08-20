@@ -56,17 +56,24 @@ async fn resolve<T: DeserializeOwned>(value: JsValue, what: &str) -> Result<T, E
 /// Native open-file dialog (Tauri dialog plugin). Returns the chosen path, or
 /// `Err` on cancel / no plugin.
 pub async fn pick_pdf() -> Result<String, String> {
+    if !bridge::has_tauri() {
+        return Err(
+            "Open dialog only available in the desktop app. Drag and drop a PDF instead."
+                .to_string(),
+        );
+    }
+
     let opts = js_sys::Object::new();
-    js_sys::Reflect::set(&opts, &JsValue::from_str("multiple"), &JsValue::FALSE).unwrap();
-    js_sys::Reflect::set(&opts, &JsValue::from_str("directory"), &JsValue::FALSE).unwrap();
+    _ = js_sys::Reflect::set(&opts, &JsValue::from_str("multiple"), &JsValue::FALSE);
+    _ = js_sys::Reflect::set(&opts, &JsValue::from_str("directory"), &JsValue::FALSE);
     let filters = js_sys::Array::new();
     let filter = js_sys::Object::new();
-    js_sys::Reflect::set(&filter, &JsValue::from_str("name"), &JsValue::from_str("PDF")).unwrap();
+    _ = js_sys::Reflect::set(&filter, &JsValue::from_str("name"), &JsValue::from_str("PDF"));
     let exts = js_sys::Array::new();
     exts.push(&JsValue::from_str("pdf"));
-    js_sys::Reflect::set(&filter, &JsValue::from_str("extensions"), &exts).unwrap();
+    _ = js_sys::Reflect::set(&filter, &JsValue::from_str("extensions"), &exts);
     filters.push(&filter);
-    js_sys::Reflect::set(&opts, &JsValue::from_str("filters"), &filters).unwrap();
+    _ = js_sys::Reflect::set(&opts, &JsValue::from_str("filters"), &filters);
 
     let value = bridge::pick_file(opts.into()).await;
     match value.as_string() {
@@ -76,6 +83,12 @@ pub async fn pick_pdf() -> Result<String, String> {
 }
 
 pub async fn open(path: &str) -> Result<OpenResult, EngineError> {
+    if !bridge::has_pdf_reader() {
+        return Err(EngineError {
+            name: "no_engine".to_string(),
+            message: "PDF engine is not loaded yet. Restart the app and try again.".to_string(),
+        });
+    }
     let value = bridge::open(path).await;
     resolve::<OpenResult>(value, "open").await
 }
@@ -95,6 +108,9 @@ pub struct RegisterPagePayload {
 }
 
 pub fn register_page(page: u32, canvas_id: &str, host_id: Option<&str>) {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     let payload = RegisterPagePayload {
         page,
         canvas_id: canvas_id.to_string(),
@@ -105,10 +121,19 @@ pub fn register_page(page: u32, canvas_id: &str, host_id: Option<&str>) {
 }
 
 pub fn unregister_page(canvas_id: &str) {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::unregister_page(canvas_id);
 }
 
 pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> Result<RenderResult, EngineError> {
+    if !bridge::has_pdf_reader() {
+        return Err(EngineError {
+            name: "no_engine".to_string(),
+            message: "PDF engine is not loaded yet. Restart the app and try again.".to_string(),
+        });
+    }
     let value = bridge::render_page(canvas_id, scale, render_text).await;
     resolve::<RenderResult>(value, "render").await
 }
@@ -121,6 +146,12 @@ pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> Resu
 /// `cached: true` — the caller must then skip its loading skeleton, because the
 /// canvas is already painted on the first mounted frame.
 pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> Result<ThumbResult, EngineError> {
+    if !bridge::has_pdf_reader() {
+        return Err(EngineError {
+            name: "no_engine".to_string(),
+            message: "PDF engine is not loaded yet. Restart the app and try again.".to_string(),
+        });
+    }
     let value = bridge::render_thumb(canvas_id, page, scale).await;
     resolve::<ThumbResult>(value, "thumb").await
 }
@@ -128,6 +159,9 @@ pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> Result<Thum
 /// Cancel an in-flight thumbnail render (cell unmounted). Does NOT evict the
 /// cached bitmap: a page that scrolls out and back must repaint instantly.
 pub fn cancel_thumb(canvas_id: &str) {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::cancel_thumb(canvas_id);
 }
 
@@ -177,6 +211,9 @@ pub fn set_highlight_mode(stale: bool) {
 }
 
 pub fn clear_highlights() {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::clear_highlights();
 }
 
@@ -187,7 +224,7 @@ pub fn clear_highlights() {
 /// wake-up can never open the same file twice. Resolves None (never errors)
 /// outside Tauri and whenever the backend has nothing queued.
 pub async fn take_pending_file() -> Option<String> {
-    if !bridge::has_tauri() {
+    if !bridge::has_tauri() || !bridge::has_pdf_reader() {
         return None;
     }
     let value = bridge::take_pending_file().await;
@@ -199,6 +236,9 @@ pub async fn take_pending_file() -> Option<String> {
 /// writes the new CSS variables; pages render with the new look without a
 /// pdf.js re-render.
 pub fn refresh_theme() {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::refresh_theme();
 }
 
@@ -209,5 +249,8 @@ pub fn refresh_theme() {
 /// and the CSS class in the same task, so no frame is ever double-filtered
 /// or unfiltered.
 pub fn set_scrub_mode(on: bool) {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::set_scrub_mode(on);
 }

@@ -12,39 +12,26 @@
 //! involvement.
 
 use leptos::prelude::*;
-use wasm_bindgen::prelude::Closure;
-use wasm_bindgen::JsCast;
 
 use crate::core::state::AppState;
 
 pub fn link_nav(state: AppState) {
-    let Some(win) = web_sys::window() else { return };
-
-    let handler = Closure::<dyn FnMut(web_sys::Event)>::new(move |ev: web_sys::Event| {
-        let Some(ce) = ev.dyn_ref::<web_sys::CustomEvent>() else {
-            return;
-        };
-        let detail = ce.detail();
-        let Some(page) = js_sys::Reflect::get(&detail, &"page".into())
-            .ok()
-            .and_then(|v| v.as_f64())
-        else {
-            return;
-        };
-        // A malformed or stale destination must not scroll the reader into the
-        // void; clamp to the document rather than trusting the event.
-        let total = state.doc.num_pages.get_untracked().max(1);
-        let page = (page as u32).clamp(1, total);
-        state.viewer.page.set(page);
-    });
-
-    let _ = win.add_event_listener_with_callback(
-        "pdfreader:navigate",
-        handler.as_ref().unchecked_ref(),
+    // `window_event_listener` attaches to the current reactive owner (the app
+    // root) and removes itself on dispose — no `handler.forget()` leak.
+    let _handle = window_event_listener(
+        leptos::ev::Custom::new("pdfreader:navigate"),
+        move |ev: web_sys::CustomEvent| {
+            let detail = ev.detail();
+            let Some(page) = js_sys::Reflect::get(&detail, &"page".into())
+                .ok()
+                .and_then(|v| v.as_f64())
+            else {
+                return;
+            };
+            let total = state.doc.num_pages.get_untracked().max(1);
+            let page = (page as u32).clamp(1, total);
+            state.viewer.page.set(page);
+        },
     );
-    // The listener must outlive this call. The app root installs it once and
-    // it lives for the whole session, so leaking the closure deliberately is
-    // the correct lifetime here (the alternative, storing it in a signal, adds
-    // ceremony for something that is never removed).
-    handler.forget();
+    on_cleanup(move || _handle.remove());
 }

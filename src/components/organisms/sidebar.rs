@@ -93,7 +93,7 @@ pub(crate) fn thumbs_should_stay_mounted(
 
 #[component]
 pub fn Sidebar(state: AppState) -> impl IntoView {
-    let viewer_state = pdf_viewer::state::ViewerState::new(state.doc, state.viewer, state.search, state.sidebar);
+    let viewer_state = state.viewer_state();
     // Last non-None mode, and whether a close slide is still in flight.
     // `last` is what we keep painted during the outro; `collapsing` flips
     // off SIDEBAR_SLIDE_MS after a close so the grid can unmount. A reopen

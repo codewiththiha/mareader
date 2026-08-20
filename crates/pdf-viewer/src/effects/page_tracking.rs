@@ -160,8 +160,10 @@ pub fn page_tracking(state: ViewerState) {
     let last_ours = Rc::new(Cell::new(f64::NAN));
     // Timestamp until which a smooth jump owns the scrollport (0 = none).
     let jump_settle = Rc::new(Cell::new(0.0f64));
-    // Wakes effect 4 once the settle gate lapses.
+    // Wakes effect 4 once the settle gate lapses. A dedicated signal — not
+    // `scroll_top += 0.0` — so we never pretend the reader scrolled.
     let settle_timer: StoredValue<Option<TimeoutHandle>> = StoredValue::new(None);
+    let settle_wake = RwSignal::new(0u32);
     let pending_e3 = pending.clone();
     let last_ours_e3 = last_ours.clone();
     let jump_settle_e3 = jump_settle.clone();
@@ -234,6 +236,7 @@ pub fn page_tracking(state: ViewerState) {
         // Read deps unconditionally at the top (see module docs).
         mode.get();
         scroll_top.get();
+        settle_wake.get();
         let hs = heights.get();
         if mode.get() != ViewMode::Continuous {
             pending_b.set(None);
@@ -254,10 +257,9 @@ pub fn page_tracking(state: ViewerState) {
             if let Some(h) = settle_timer.get_value() {
                 h.clear();
             }
-            let bump = scroll_top;
             settle_timer.set_value(
                 set_timeout_with_handle(
-                    move || bump.update(|v| *v += 0.0),
+                    move || settle_wake.update(|n| *n = n.wrapping_add(1)),
                     Duration::from_millis(remain as u64 + 30),
                 )
                 .ok(),

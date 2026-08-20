@@ -12,6 +12,7 @@
 //! CONTRACT: do not change these signatures.
 
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 #[wasm_bindgen]
 extern "C" {
@@ -125,6 +126,26 @@ extern "C" {
 /// extern directly.
 pub async fn listen(event: &str, handler: js_sys::Function) -> JsValue {
     tauri_listen(event, handler).await
+}
+
+/// True when the app runs inside Tauri (`window.__TAURI__` is present).
+///
+/// Must be checked BEFORE any `window.__TAURI__.*` call: the wasm-bindgen shim
+/// evaluates the global chain directly and throws a TypeError when the global
+/// is absent (e.g. `trunk serve` in a plain browser). See more_menu.rs for the
+/// same probe.
+/// True when `window.PDFReader` exists. Must be checked before any engine
+/// call: a missing global makes the wasm-bindgen shim throw, which panics
+/// the reactive owner and freezes menus / theme / open.
+pub fn has_pdf_reader() -> bool {
+    web_sys::window()
+        .map(|w| {
+            let g: js_sys::Object = w.unchecked_into();
+            js_sys::Reflect::get(&g, &JsValue::from_str("PDFReader"))
+                .map(|v| !(v.is_undefined() || v.is_null()))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
 }
 
 /// True when the app runs inside Tauri (`window.__TAURI__` is present).

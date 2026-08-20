@@ -46,6 +46,19 @@ pub(super) fn stretch_host(
     if !mask {
         return;
     }
+    // Read-ahead pages off screen do not need a snapshot mask — it is a
+    // full-size RGBA copy nobody sees.
+    if let Some(win) = web_sys::window() {
+        let vh = win
+            .inner_height()
+            .ok()
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let rect = host_el.get_bounding_client_rect();
+        if vh > 0.0 && (rect.bottom() < 0.0 || rect.top() > vh) {
+            return;
+        }
+    }
     let Some(src) = doc
         .as_ref()
         .and_then(|d| d.get_element_by_id(canvas_id))

@@ -90,6 +90,18 @@ pub fn PageCanvas(
     let hid_effect = host_id.clone();
     on_cleanup(move || engine::unregister_page(&cid));
 
+    // Register after this view is flushed to the DOM. The render effect can
+    // otherwise call register_page before getElementById sees the canvas.
+    let cid_boot = canvas_id.clone();
+    let hid_boot = host_id.clone();
+    let registered_boot = registered.clone();
+    queue_microtask(move || {
+        if !registered_boot.get() {
+            engine::register_page(page, &cid_boot, Some(&hid_boot));
+            registered_boot.set(true);
+        }
+    });
+
     // Last successfully rendered host geometry (CSS-px width, height, scale).
     // Guard 1 (stretch-resize) reads it to size the host before a re-render
     // lands; only written on a successful render.

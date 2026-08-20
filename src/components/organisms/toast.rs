@@ -48,7 +48,7 @@ pub fn ToastHost(state: AppState) -> impl IntoView {
         // `translate(-50%, ...)` (the keyframe keeps the -50% X so the centering
         // is maintained during the entrance slide, and `both` fill holds it once
         // the animation ends).
-        <div class="pointer-events-none fixed left-1/2 top-16 z-[100] -translate-x-1/2">
+        <div class="pointer-events-none fixed inset-x-0 top-14 z-[100] flex justify-center px-4">
             {move || {
                 state.toast.get().map(|t| {
                     let (surface, icon) = match t.kind {
@@ -63,7 +63,7 @@ pub fn ToastHost(state: AppState) -> impl IntoView {
                     view! {
                         <div
                             class=format!(
-                                "toast-enter relative left-1/2 flex max-w-[min(90vw,32rem)] items-center gap-2 rounded-xl border px-4 py-2.5 text-sm shadow-xl {surface}",
+                                "toast-enter flex max-w-[min(90vw,32rem)] items-center gap-2 rounded-xl border px-4 py-2.5 text-sm shadow-xl {surface}",
                             )
                         >
                             <Icon name=icon size=16 />

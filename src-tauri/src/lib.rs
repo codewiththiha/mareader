@@ -3,13 +3,11 @@
 //! Besides hosting the webview this crate owns the two OS touch-points a
 //! desktop reader needs and the frontend cannot do itself:
 //!
-//!   * `read_file_bytes` — the webview asks the Rust side for a PDF's bytes
-//!     over IPC instead of `fetch()`-ing the Tauri asset protocol. On Windows
-//!     that protocol is `https://asset.localhost` (self-signed cert + DNS
-//!     resolution), and the first request after launch intermittently fails
-//!     with "Failed to fetch" — the reopen-a-PDF-on-Windows bug. Reading in
-//!     Rust sidesteps scheme, scope, CORS and certificate entirely and works
-//!     for ANY path, on every OS.
+//!   * `read_file_bytes` — binary IPC fallback when the asset protocol cannot
+//!     serve the file. Returned as an `ArrayBuffer` (not JSON/Base64). The
+//!     frontend first tries `convertFileSrc` + Range fetch so pdf.js can
+//!     stream; Windows `https://asset.localhost` still intermittently fails
+//!     ("Failed to fetch"), so this command remains the reliable path.
 //!
 //!   * OS file opening — double-click / "Open with" / default-app launch.
 //!     The file path arrives differently per platform, so all three routes

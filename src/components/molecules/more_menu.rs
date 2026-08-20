@@ -189,7 +189,13 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
                     </Show>
                     <div class="mt-1 flex items-center justify-between border-t border-line px-1 py-1">
                         <span class="text-xs text-muted">"PDF Reader"</span>
-                        <span class="text-xs text-muted">{format!("v{}", bridge::version())}</span>
+                        <span class="text-xs text-muted">{
+                            if bridge::has_pdf_reader() {
+                                format!("v{}", bridge::version())
+                            } else {
+                                String::new()
+                            }
+                        }</span>
                     </div>
                 </div>
             </Show>

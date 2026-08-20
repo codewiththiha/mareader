@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use leptos::html;
-use wasm_bindgen::JsCast;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -59,13 +58,8 @@ pub fn ThumbCell(
     // this cell unmounts mid-fade.
     let cover_ref: NodeRef<html::Div> = NodeRef::new();
     let pulse_timer = StoredValue::new_local(None::<TimeoutHandle>);
-    // Whether this cell is the reader's current page (drives the accent ring
-    // and the number-band highlight). Reads `viewer.page` so every cell
-    // re-evaluates as the reader turns pages in the main viewer. The number
-    // band is painted UNDER the absolute `.thumb-canvas` once a thumbnail
-    // resolves, so the current page's accent number lifts above it (relative +
-    // z-index on the band, plus a translucent pill behind the digit — see the
-    // view below) to stay visible over the loaded page.
+    // Current page drives the accent ring + badge. The badge is a z-10 overlay
+    // so it stays visible on every card, not just the active one.
     let is_current = move || state.viewer.page.get() == page;
     let cid = format!("thumb-{page}");
 
@@ -79,9 +73,7 @@ pub fn ThumbCell(
             .map(|s| if s.width > 0.0 { s.height / s.width } else { 0.75 })
             .unwrap_or(0.75)
     };
-    // Fixed card height for this cell's lifetime. Cells remount on document
-    // change (doc_key re-key), so reading aspect once here can't go stale.
-    let cell_h = CELL_W * aspect();
+    let cell_h = move || CELL_W * aspect();
 
     // Release the engine binding when this cell unmounts (scrolled out of the
     // window, document switch, or app teardown). `cancel_thumb` aborts an
@@ -133,20 +125,6 @@ pub fn ThumbCell(
                     // A newer document superseded this render.
                     if gen_async.load(Ordering::Relaxed) != gen_now {
                         return;
-                    }
-                    // Settle the number band to the real card height instead
-                    // of deleting its fixed height (which collapsed it for a
-                    // frame and made the backdrop color snap more obvious).
-                    if let Some(canvas_el) = web_sys::window()
-                        .and_then(|w| w.document())
-                        .and_then(|d| d.get_element_by_id(&cid2))
-                        && let Some(card) = canvas_el.parent_element()
-                        && let Ok(Some(num)) = card.query_selector(".thumb-num")
-                        && let Some(num_el) = num.dyn_ref::<web_sys::HtmlElement>()
-                    {
-                        let _ = num_el
-                            .style()
-                            .set_property("height", &format!("{}px", cell_h));
                     }
                     // Already-painted (cache hit): `loaded` was seeded true at
                     // build time, so this is a no-op write and NO transition
@@ -219,7 +197,7 @@ pub fn ThumbCell(
     view! {
         <button
             type="button"
-            class="flex w-full cursor-pointer flex-col items-center"
+            class="group flex w-full cursor-pointer flex-col items-center"
             // Jumping to a page does NOT close the panel: browsing thumbnails
             // is a navigation loop (jump, look, jump again), and closing the
             // sidebar on every click forces the reader to reopen it each time.
@@ -240,45 +218,12 @@ pub fn ThumbCell(
             // painted frame is already fully filtered + multiply-blended.
             <div
                 class="thumb-card relative w-[120px] rounded-md"
-                // Current page gets an accent ring; other pages the quiet line
-                // ring. Single-token conditional classes only (see the sidebar.rs
-                // classList gotcha — a space-separated token would throw).
                 class=("ring-2", is_current)
                 class=("ring-accent", is_current)
                 class=("ring-1", move || !is_current())
                 class=("ring-line", move || !is_current())
+                style:height=move || format!("{}px", cell_h())
             >
-                <div
-                    class="thumb-num flex w-full items-center justify-center"
-                    // The current page's number must read OVER the loaded
-                    // thumbnail (the absolute `.thumb-canvas` paints above an
-                    // in-flow band), so the band stacks on top of it.
-                    class=("relative", is_current)
-                    class=("z-10", is_current)
-                    style:height=format!("{}px", cell_h)
-                >
-                    <span
-                        class="text-sm font-bold"
-                        class=("text-accent", is_current)
-                        class=("text-muted", move || !is_current())
-                        // Translucent surface pill behind the accent digit so
-                        // it stays legible over the rendered page.
-                        class=("bg-surface/70", is_current)
-                        class=("rounded-full", is_current)
-                        class=("px-1.5", is_current)
-                    >{page}</span>
-                </div>
-                // `thumb-canvas-blank` until this cell has a bitmap. A canvas
-                // with no width/height attributes defaults to 300x150 — a 2:1
-                // box stretched over a ~3:4 card — and `.thumb-canvas` carries
-                // `mix-blend-mode` + the theme filter, so that empty, wrong
-                // aspect surface was still a compositing layer underneath the
-                // fading cover. In the multiply themes (sepia/green especially)
-                // it tinted the cell for the first frames of the reveal and
-                // then changed shape when the real 153x198 bitmap arrived,
-                // which is the residual flicker on newly rendered thumbs. Same
-                // invariant as the page canvas: never blend a layer that has no
-                // real pixels in it yet.
                 <canvas
                     id=cid
                     class="thumb-canvas absolute inset-0 block h-full w-full"
@@ -325,11 +270,8 @@ pub fn ThumbCell(
                 // can drop). If the render never resolves, `loaded` stays
                 // false — no fade, no timer, no removal — and the pulsing
                 // skeleton persists as the intended fallback. aria-hidden: the
-                // page number is already announced by the in-flow `.thumb-num`
-                // band (which also reads through the transparent canvas
-                // pre-resolve), so the cover's copy must not double-announce;
-                // for the current page the cover's number is also hidden
-                // visually so it can't ghost behind the z-10 accent pill.
+                // page number is announced by the permanent `.thumb-num`
+                // badge, so the cover must not carry a second copy.
                 // A cell that mounts with a CACHED bitmap gets neither the
                 // pulse animation nor the opacity transition: it is already
                 // painted, so there is nothing to cover and nothing to fade.
@@ -338,18 +280,30 @@ pub fn ThumbCell(
                 // the animated cover.
                 <div
                     node_ref=cover_ref
-                    class="thumb-skeleton absolute inset-0 flex items-center justify-center"
+                    class="thumb-skeleton absolute inset-0 flex items-center justify-center pointer-events-none"
                     aria-hidden="true"
                     class=("thumb-skeleton-loading", move || !starts_cached)
                     class=("transition-opacity", move || !starts_cached)
                     class=("duration-300", move || !starts_cached)
                     class=("opacity-100", move || !loaded.get())
                     class=("opacity-0", move || loaded.get())
+                />
+                // Permanent page badge. The skeleton used to own the only
+                // number and faded to opacity-0 once loaded (and hid it with
+                // `invisible` on the current page), so every card except the
+                // active one lost its label. This overlay stays at z-10 on
+                // every cell after the cover is gone.
+                <div
+                    class="thumb-num pointer-events-none absolute bottom-1.5 inset-x-0 z-10 flex justify-center"
+                    class=("is-current", is_current)
                 >
                     <span
-                        class="text-sm font-bold text-muted"
-                        class=("invisible", is_current)
-                    >{page}</span>
+                        class="rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums shadow-sm transition-colors"
+                        class=("bg-accent text-white", is_current)
+                        class=("bg-surface/90 text-ink border border-line/60", move || !is_current())
+                    >
+                        {page}
+                    </span>
                 </div>
             </div>
         </button>

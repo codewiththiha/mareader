@@ -18,13 +18,14 @@
 //!
 //! ```text
 //!  ┌ px-3 ┬── #toolbar-left-pre ──┬── this label ──┬ … ┬ #toolbar-center ┬ … ┬ #toolbar-right ─┬ px-3 ┐
-//!         │ hamburger + Open      │ max-width  ->  │   │ page nav (Single│   │ search/zoom/…   │
+//!         │ hamburger + Open      │ max-width  ->  │   │ page nav        │   │ search/zoom/…   │
 //! ```
 //!
-//! * **Single mode** the page nav is absolutely centered in the viewport, so
-//!   the label may only grow until it reaches the nav's left edge.
-//! * **Continuous mode** there is no centered nav, so the label may grow all
-//!   the way to the right-hand control group.
+//! * When a document is open the page nav is absolutely centered in the
+//!   viewport (Single and Continuous), so the label may only grow until it
+//!   reaches the nav's left edge.
+//! * With no document open there is no centered nav, so the label may grow
+//!   all the way to the right-hand control group.
 //! * Either way the right group is a hard stop, and everything is derived from
 //!   the live element WIDTHS, so a window resize re-measures automatically.
 //!
@@ -81,9 +82,10 @@ fn measure_available() -> Option<f64> {
     let start = ROW_PAD + pre_w + GAP_LEFT;
     let mut end = row_w - ROW_PAD - right_w - GAP_RIGHT;
 
-    // Single mode only: the page nav is absolutely centered on the ROW, so its
-    // left edge is (row/2 - nav/2) regardless of the flex groups around it.
-    // Absent in continuous mode, where the label may run to the right group.
+    // When a document is Ready the page nav is absolutely centered on the ROW,
+    // so its left edge is (row/2 - nav/2) regardless of the flex groups around
+    // it. Absent on the library/empty screen, where the label may run to the
+    // right group.
     if let Some(center_w) = width_of("toolbar-center")
         && center_w > 0.0
     {
@@ -170,16 +172,16 @@ pub fn DocTitle(state: AppState) -> impl IntoView {
     });
 
     // Reactive re-measure triggers. The centered page nav MOUNTS and UNMOUNTS
-    // with the view mode (it is not observable while absent), and its width
+    // with document Ready (it is not observable while absent), and its width
     // grows with the page count's digits ("/ 9" vs "/ 1024"); a new document
     // changes both. The name itself is included so the first real name measures
     // against the settled toolbar.
-    let mode = state.viewer.mode;
+    let status = state.doc.status;
     let num_pages = state.doc.num_pages;
     let title = state.doc.title;
     let path = state.doc.path;
     Effect::new(move |_| {
-        _ = mode.get();
+        _ = status.get();
         _ = num_pages.get();
         _ = title.get();
         _ = path.get();

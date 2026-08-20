@@ -17,15 +17,13 @@ pub const TOOLBAR_H: f64 = 48.0;
 /// when zoomed in. `look_frac` is the read-ahead each way; `max_items` the ceiling.
 pub type RenderBudget = Budget;
 
-/// The project default: half a screenful of read-ahead each way, at most 5
-/// pages. The thumbnail placeholder covers the gap while a page mounts, so a
-/// deep read-ahead only pays for rasters the reader is not looking at.
+/// Tight idle budget: ~0.15 screen of read-ahead, at most one extra page.
+/// Visible pages are never evicted (`Strip::window`). Each mounted page at
+/// 1.5× DPR plus its unbaked raw is tens of MB; 3 off-screen pages were the
+/// idle-RAM floor.
 pub const RENDER_BUDGET: RenderBudget = RenderBudget {
-    look_frac: 0.5,
-    // Reduced from 5: the thumbnail placeholder covers the gap while a page
-    // mounts, so a deep read-ahead only pays for rasters the reader is not
-    // looking at. 5 pages at 8MP is ~160 MB of canvas backing store.
-    max_items: 3,
+    look_frac: 0.15,
+    max_items: 1,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

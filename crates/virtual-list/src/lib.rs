@@ -40,11 +40,10 @@
 //! When items change size at runtime (an image finishes loading, an accordion
 //! expands, an estimated size is replaced by a measured one) [`Strip::set_size`]
 //! re-runs the suffix of the prefix-sum in `O(n)` time. For lists that mutate
-//! sizes faster than that can pay, the crate also ships [`FenwickStrip`] — a
-//! Binary-Indexed-Tree variant that does single-item updates in `O(log n)` and
-//! offset lookups in `O(log n)` via binary lifting — and [`ChunkedStrip`], a
-//! square-root-decomposition variant that keeps `O(1)` offset lookups but
-//! drops updates to `O(sqrt n)`.
+//! sizes faster than that can pay, enable the `advanced-trees` feature for
+//! `FenwickStrip` (BIT, `O(log n)` update/lookup) and `ChunkedStrip`
+//! (sqrt-decomposition, `O(1)` lookup / `O(sqrt n)` update). pdf-reader only
+//! uses [`Strip`].
 //!
 //! # Example
 //!
@@ -71,10 +70,14 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
+#[cfg(feature = "advanced-trees")]
 mod fenwick;
+#[cfg(feature = "advanced-trees")]
 mod chunked;
 
+#[cfg(feature = "advanced-trees")]
 pub use chunked::ChunkedStrip;
+#[cfg(feature = "advanced-trees")]
 pub use fenwick::FenwickStrip;
 
 /// Number of sub-pixel units per logical pixel. `2^16 = 65536` gives an exact
@@ -702,8 +705,8 @@ impl Strip {
     /// pinned to whatever the reader was looking at.
     ///
     /// For lists where item sizes change frequently enough that `O(n)` per
-    /// change is too expensive, switch to [`FenwickStrip`] (`O(log n)` per
-    /// change) or [`ChunkedStrip`] (`O(sqrt n)` per change).
+    /// change is too expensive, enable the `advanced-trees` feature and use
+    /// `FenwickStrip` (`O(log n)`) or `ChunkedStrip` (`O(sqrt n)`).
     ///
     /// Does nothing if `index` is out of range or the new size equals the old.
     pub fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
@@ -781,8 +784,8 @@ impl Strip {
 
 /// Extension trait used internally by [`Strip`] to encapsulate the
 /// "partition_point that returns the largest index whose start is <= x, capped
-/// at len-1" pattern. Implemented on `&[i64]` so [`FenwickStrip`] and
-/// [`ChunkedStrip`] can also call it without code duplication.
+/// at len-1" pattern. Implemented on `&[i64]` so the optional tree backends
+/// can also call it without code duplication.
 trait PartitionPointInclusive {
     /// Largest index `i < cap` such that `self[i] <= value`. Returns `0` when
     /// no element satisfies the predicate, never returns `cap` or beyond.
@@ -1203,6 +1206,7 @@ mod tests {
         assert_eq!(a, b);
     }
 
+    #[cfg(feature = "advanced-trees")]
     #[test]
     fn fenwick_matches_strip_for_static_layout() {
         // Inputs span both power-of-2 denominators (75.5, 300.25) and non-
@@ -1227,6 +1231,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "advanced-trees")]
     #[test]
     fn fenwick_set_size_propagates_to_later_items() {
         // Verifies that FenwickStrip::set_size updates the prefix-sum so that
@@ -1248,6 +1253,7 @@ mod tests {
         assert!((f.offset(501) - (Strip::new(sizes, 24.0).offset(501) + 100.0)).abs() < APPROX_TOL);
     }
 
+    #[cfg(feature = "advanced-trees")]
     #[test]
     fn chunked_matches_strip_for_static_layout() {
         let sizes = [100.0, 200.0, 150.0, 75.5, 300.25, 50.0, 80.0, 0.1, 0.333];
@@ -1260,6 +1266,7 @@ mod tests {
         assert!((s.total() - c.total()).abs() < 1e-9);
     }
 
+    #[cfg(feature = "advanced-trees")]
     #[test]
     fn chunked_set_size_updates_offsets() {
         let sizes = [100.0; 200];

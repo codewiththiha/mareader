@@ -128,35 +128,6 @@ fn body_el() -> Option<web_sys::HtmlElement> {
         .and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok())
 }
 
-/// Drop the frosted-header backdrop snapshot for one reflow.
-///
-/// WKWebView caches `backdrop-filter` against the pixels that were
-/// behind the toolbar. Changing `--color-surface` / `data-base` updates
-/// the PAGE immediately, but the glass layer keeps compositing the OLD
-/// dark page under the NEW light surface — the toolbar sits at a mid-mix
-/// until something (unmounting the appearance popover) rebuilds the
-/// layer. Forcing `backdrop-filter: none` through a reflow makes it
-/// re-sample the page that is actually on screen.
-fn kick_backdrop_surfaces() {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
-    for sel in [".toolbar-glass", ".floating-search-enter"] {
-        let Some(el) = doc.query_selector(sel).ok().flatten() else {
-            continue;
-        };
-        let Ok(html) = el.dyn_into::<web_sys::HtmlElement>() else {
-            continue;
-        };
-        let style = html.style();
-        _ = style.set_property("-webkit-backdrop-filter", "none");
-        _ = style.set_property("backdrop-filter", "none");
-        _ = html.offset_height();
-        _ = style.remove_property("-webkit-backdrop-filter");
-        _ = style.remove_property("backdrop-filter");
-    }
-}
-
 /// Write every appearance CSS custom property / class from `a`. Synchronous.
 /// The filter string is the same one `Appearance::canvas_filter` already
 /// produces — this does not invent a second pipeline.
@@ -207,7 +178,6 @@ pub fn paint_appearance_now(a: Appearance) {
     }
 
     if kick {
-        kick_backdrop_surfaces();
         request_animation_frame(move || {
             if let Some(el) = document_element() {
                 _ = el.class_list().remove_1("theme-switching");
@@ -293,14 +263,24 @@ pub fn flush_appearance_commit() {
     }
 }
 
+fn patch_needs_canvas_scrub(p: AppearanceScrub) -> bool {
+    // Only tint rewrites `--canvas-filter` / `--canvas-blend`. Noise and
+    // texture sliders only touch overlays; putting the engine in scrub mode
+    // would apply those CSS filters on already-baked pixels (Dark flashes
+    // to light, Dim goes darker) for no reason.
+    matches!(p, AppearanceScrub::Tint { .. })
+}
+
 /// Live-preview a slider: paint CSS this frame, write Settings once the
 /// gesture pauses. Does NOT notify `settings` on the way, so PageCanvas /
 /// presets / localStorage stay quiet for the whole drag.
 pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
     // The theme variables change every frame from here on; switch the engine
-    // to raw rasters + live CSS so the PAGE tracks the slider, not just the
-    // chrome. Idempotent for the rest of the drag.
-    enter_scrub();
+    // to raw rasters + live CSS so the PAGE tracks a tint drag. Overlay
+    // sliders (noise / texture) must not enter canvas scrub.
+    if patch_needs_canvas_scrub(patch) {
+        enter_scrub();
+    }
 
     let mut a = state.settings.get_untracked().appearance;
     apply_scrub(&mut a, patch);
@@ -318,7 +298,9 @@ pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
             // The drag has paused: re-bake the rasters at the final values
             // (the scrub already painted them live, so the re-bake reads the
             // same variables) and drop the live-CSS pipeline.
-            leave_scrub();
+            if patch_needs_canvas_scrub(patch) {
+                leave_scrub();
+            }
             state.settings.update(|s| {
                 apply_scrub(&mut s.appearance, patch);
                 s.touch_appearance();

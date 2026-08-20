@@ -272,10 +272,10 @@ pub fn ThumbnailsPanel(
     {
         let reveal_drive = last_user_drive.clone();
         Effect::new(move |_| {
-            let Some(win) = web_sys::window() else { return };
-            let handler = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new({
-                let reveal_drive = reveal_drive.clone();
-                move |_: web_sys::Event| {
+            let reveal_drive = reveal_drive.clone();
+            let handle = window_event_listener(
+                leptos::ev::Custom::new("pdfreader:reveal-active"),
+                move |_: web_sys::CustomEvent| {
                     if state.sidebar.get_untracked() != SidebarMode::Thumbs {
                         return;
                     }
@@ -302,15 +302,9 @@ pub fn ThumbnailsPanel(
                     opts.set_top(target);
                     opts.set_behavior(web_sys::ScrollBehavior::Smooth);
                     el.scroll_to_with_scroll_to_options(&opts);
-                }
-            });
-            use wasm_bindgen::JsCast;
-            let _ = win.add_event_listener_with_callback(
-                "pdfreader:reveal-active",
-                handler.as_ref().unchecked_ref(),
+                },
             );
-            // The panel is mounted for the app lifetime, so the listener is too.
-            handler.forget();
+            on_cleanup(move || handle.remove());
         });
     }
 

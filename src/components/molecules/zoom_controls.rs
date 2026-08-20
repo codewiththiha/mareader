@@ -25,11 +25,7 @@ use pdf_viewer::effects::fit::request_zoom;
 /// and re-anchors the scroll in the same frames, then renders once.
 fn apply_zoom(state: AppState, scale: f64) {
     state.viewer.fit.set(FitMode::None);
-    request_zoom(
-        pdf_viewer::state::ViewerState::new(state.doc, state.viewer, state.search, state.sidebar),
-        scale,
-        true,
-    );
+    request_zoom(state.viewer_state(), scale, true);
 }
 
 /// The zoom a `+`/`-` step should be measured from: the target of an in-flight

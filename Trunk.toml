@@ -9,11 +9,9 @@ target = "./index.html"
 #
 # IMPORTANT: every path in this list MUST exist on disk when `trunk serve`
 # starts. Trunk canonicalizes each entry at startup, and a missing path is
-# a hard error (https://github.com/trunk-rs/trunk). To guarantee the
-# tsc-emitted .js files exist before Trunk starts, tauri.conf.json's
-# `beforeDevCommand` chains `npm run build:ts` ahead of `trunk serve` —
-# so by the time Trunk's watcher runs, `public/pdfEngine.js` and
-# `scripts/*.js` are already on disk and canonicalization succeeds.
+# a hard error (https://github.com/trunk-rs/trunk). `public/pdfEngine.js`
+# and `scripts/*.js` are committed (and rewritten by pre_build hooks), so
+# `beforeDevCommand` can be just `trunk serve`.
 #
 # Trunk's watcher uses mtime to decide whether to fire a rebuild — NOT
 # file content — so even though tsc's output is byte-identical across
@@ -28,17 +26,12 @@ ignore = [
     "./scripts/test-engine-smoke.js",
 ]
 
-# Compile TypeScript sources to JavaScript BEFORE every trunk build (dev +
-# prod). The browser-loaded engine lives at public/pdfEngine.ts and is
-# emitted to public/pdfEngine.js next to it; the Node scripts in scripts/
-# are emitted alongside their .ts sources too.
-#
-# Uses `node` directly (not `npx`) for cross-platform safety — see the
-# tailwindcss hook below for the same reasoning.
+# Bundle the engine with esbuild (IIFE, no import graph). `node` runs the
+# JS API so Windows Trunk can spawn it (no npx / .cmd).
 [[hooks]]
 stage = "pre_build"
 command = "node"
-command_arguments = ["./node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]
+command_arguments = ["./scripts/bundle-engine.mjs"]
 
 [[hooks]]
 stage = "pre_build"

@@ -40,9 +40,17 @@ pub fn LibraryView(state: AppState) -> impl IntoView {
             // Opening: centered spinner.
             <Show when=is_opening fallback=|| ()>
                 <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
-                    <div class="flex items-center gap-3">
-                        <div class="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent"></div>
-                        <p class="text-lg">"Opening…"</p>
+                    <div class="flex flex-col items-center gap-4">
+                        <div class="flex items-center gap-3">
+                            <div class="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent"></div>
+                            <p class="text-lg">"Opening…"</p>
+                        </div>
+                        <Button
+                            on_click=move |_| open_flow::close_document(state)
+                            kind=ButtonKind::Ghost
+                            label="Cancel".to_string()
+                            title="Cancel and return to the library".to_string()
+                        />
                     </div>
                 </div>
             </Show>

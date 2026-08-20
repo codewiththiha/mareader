@@ -201,9 +201,9 @@ pub fn OutlinePanel(state: ViewerState) -> impl IntoView {
     // — the reader explicitly asked to be moved, so doing nothing because the
     // row is technically one pixel on screen would feel broken.
     Effect::new(move |_| {
-        let Some(win) = web_sys::window() else { return };
-        let handler = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(
-            move |_: web_sys::Event| {
+        let handle = window_event_listener(
+            leptos::ev::Custom::new("pdfreader:reveal-active"),
+            move |_: web_sys::CustomEvent| {
                 if state.sidebar.get_untracked() != SidebarMode::Outline {
                     return;
                 }
@@ -221,13 +221,7 @@ pub fn OutlinePanel(state: ViewerState) -> impl IntoView {
                 }
             },
         );
-        use wasm_bindgen::JsCast;
-        let _ = win.add_event_listener_with_callback(
-            "pdfreader:reveal-active",
-            handler.as_ref().unchecked_ref(),
-        );
-        // The panel is mounted for the app lifetime, so the listener is too.
-        handler.forget();
+        on_cleanup(move || handle.remove());
     });
 
     view! {

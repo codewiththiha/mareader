@@ -13,6 +13,7 @@
    is mostly belt-and-braces, but keeps scanning explicit. Classes must be
    static literals in .rs files — never built with format!(). */
 @source "../src";
+@source "../crates";
 
 /* --- class-based dark variant --- */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -260,6 +261,35 @@ html.appearance-scrubbing .thumb-canvas {
    fade, so the bitmap is revealed by the cover's own crossfade. */
 .thumb-canvas-blank {
   visibility: hidden;
+}
+
+/* Permanent thumbnail page badge. Lives above the fading skeleton so the
+   number stays readable after load and on every card, not just the current
+   page. Tailwind utilities on the span still theme the pill. */
+.thumb-num {
+  pointer-events: none;
+  position: absolute;
+  bottom: 0.375rem;
+  inset-inline: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+}
+.thumb-num > span {
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  color: var(--color-ink);
+  border: 1px solid color-mix(in srgb, var(--color-line) 60%, transparent);
+}
+.thumb-num.is-current > span {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: transparent;
 }
 
 /* Thumbnail render skeleton — the crossfade COVER. Sits ABOVE the fully
@@ -697,7 +727,13 @@ body.noise-animated .noise-overlay::after {
   inset: -24px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   animation: noise-crawl 0.66s steps(1) infinite;
+}
+body.noise-animated:not(.noise-idle) .noise-overlay::after {
   will-change: transform;
+}
+body.noise-animated.noise-idle .noise-overlay::after {
+  animation-play-state: paused;
+  will-change: auto;
 }
 @keyframes noise-crawl {
   0%    { transform: translate3d(0, 0, 0); }
@@ -964,11 +1000,11 @@ html.theme-switching * {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -8px);
+    transform: translateY(-8px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
   }
 }
 

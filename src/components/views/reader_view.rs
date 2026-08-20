@@ -19,7 +19,6 @@ use pdf_viewer::components::atoms::icon::{Icon, IconName};
 use pdf_engine::types::DocStatus;
 use pdf_core::layout::ViewMode;
 use crate::core::state::AppState;
-use pdf_viewer::state::ViewerState;
 use pdf_viewer::effects::fit::{fit_effect, zoom_system};
 use pdf_viewer::effects::page_tracking::page_tracking;
 use crate::effects::reading_progress::reading_progress;
@@ -30,7 +29,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     theme_applier(state);
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
-    let vs = ViewerState::new(state.doc, state.viewer, state.search, state.sidebar);
+    let vs = state.viewer_state();
     // Fit width / fit page recompute in BOTH view modes (each view reports its
     // container size into the same signal).
     fit_effect(vs);

@@ -23,5 +23,5 @@
     "removeComments": false,
     "useDefineForClassFields": true
   },
-  "include": ["public/pdfEngine.ts"]
+  "include": ["public/pdfEngine.ts", "public/engine/**/*.ts"]
 }

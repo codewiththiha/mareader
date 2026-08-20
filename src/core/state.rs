@@ -8,7 +8,7 @@ use leptos::prelude::RwSignal;
 
 use crate::core::library::{CoverImage, RecentBook};
 use pdf_core::settings::Settings;
-use pdf_viewer::state::{DocumentState, SearchState, SidebarMode, ViewerSignals};
+use pdf_viewer::state::{DocumentState, SearchState, SidebarMode, ViewerSignals, ViewerState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
@@ -37,6 +37,20 @@ pub struct AppState {
     pub library: RwSignal<Vec<RecentBook>>,
     /// Cover art (page-1 JPEG data URLs) keyed by path.
     pub covers: RwSignal<HashMap<String, CoverImage>>,
+}
+
+impl AppState {
+    /// The viewer slice of app state. Field paths match `ViewerState` exactly,
+    /// so reusable viewer components accept this without copying atoms.
+    pub fn viewer_state(self) -> ViewerState {
+        ViewerState::new(self.doc, self.viewer, self.search, self.sidebar)
+    }
+}
+
+impl From<AppState> for ViewerState {
+    fn from(state: AppState) -> Self {
+        state.viewer_state()
+    }
 }
 
 impl Default for AppState {
