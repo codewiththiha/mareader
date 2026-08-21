@@ -12,7 +12,7 @@ use std::cell::Cell;
 use pdf_core::layout::ViewMode;
 use pdf_core::math::{nearest_zoom, FitMode};
 use crate::state::{ViewerState, SidebarMode};
-use crate::effects::fit::request_zoom;
+use crate::effects::zoom::request_zoom;
 use crate::dom::page_list;
 
 /// One Arrow Up/Down tap is a reading nudge, not a page jump.

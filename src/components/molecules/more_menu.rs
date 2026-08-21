@@ -93,7 +93,7 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
             >
                 <Icon name=IconName::More size=18 />
             </button>
-            <Popover open=open anchor=root_ref width=256 class="p-1".to_string()>
+            <Popover open=open anchor=root_ref width=256 hold_titlebar=false class="p-1".to_string()>
                 <button
                     type="button"
                     on:click=move |_| toggle_fullscreen()

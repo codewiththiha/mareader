@@ -208,3 +208,32 @@ export function cancelThumb(canvasId: string): void {
   thumbLive.delete(canvasId);
   releaseCanvas(el(canvasId) as HTMLCanvasElement | null);
 }
+
+/** Render a page into the cache with no DOM canvas (idle prefetch).
+ *  A cache-hit cell mounts with `cached: true` → synchronous blit → zero
+ *  skeleton, zero waiting. So render the pages AROUND the reader into the
+ *  cache while idle; by the time the reader flings the grid to page N,
+ *  pages N±k are cache-warm and every remount is an instant synchronous blit. */
+export async function prefetchThumb(page: number, scale: number): Promise<void> {
+  if (!pdf) return;
+  const hit = thumbCache.get(page);
+  if (hit && Math.abs(hit.scale - scale) < 1e-9) return;
+  try {
+    const pg = await pdf.getPage(page);
+    const viewport = pg.getViewport({ scale });
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.floor(viewport.width));
+    off.height = Math.max(1, Math.floor(viewport.height));
+    const ctx = off.getContext("2d", { alpha: false });
+    if (!ctx) { releaseCanvas(off); return; }
+    const task = pg.render({ canvasContext: ctx, viewport });
+    await task.promise;
+    pg.cleanup();
+    const raw = off;
+    let display: MaybeCanvas = scrubbing ? raw : bakeRaster(raw, readPipeline());
+    if (display !== raw) display = await cacheDisplay({ display });
+    cachePut(page, { raw, display, cssW: Math.floor(viewport.width),
+                     cssH: Math.floor(viewport.height), scale,
+                     gen: scrubbing ? -1 : pipelineCache.gen, pending: null });
+  } catch (_) { /* prefetch is best-effort */ }
+}

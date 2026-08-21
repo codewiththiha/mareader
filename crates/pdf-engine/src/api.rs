@@ -184,6 +184,17 @@ pub fn blit_thumb(canvas_id: &str, page: u32) -> bool {
     bridge::blit_thumb(canvas_id, page)
 }
 
+/// Render a page into the thumbnail cache with no DOM canvas (idle prefetch).
+/// Best-effort: fires and forgets — the cache entry lands whenever the raster
+/// is ready. Callers use it to warm pages AROUND the reader while idle so a
+/// later grid jump mounts every cell as a synchronous cache blit.
+pub async fn prefetch_thumb(page: u32, scale: f64) {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
+    _ = bridge::prefetch_thumb(page, scale).await;
+}
+
 pub async fn build_search_index() -> Result<u32, EngineError> {
     let value = bridge::build_search_index().await;
     value

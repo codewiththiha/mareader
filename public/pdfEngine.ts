@@ -23,6 +23,7 @@ import {
   blitThumb,
   cancelThumb,
   hasThumb,
+  prefetchThumb,
   renderThumb,
 } from "./engine/thumbnails";
 import {
@@ -223,4 +224,5 @@ globalThis.PDFReader = {
   refreshTheme,
   setScrubMode,
   takePendingFile,
+  prefetchThumb,
 } satisfies PDFReaderApi;

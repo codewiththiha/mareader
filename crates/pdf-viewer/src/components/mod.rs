@@ -7,5 +7,4 @@ pub mod page_list;
 pub mod page_nav;
 pub mod search_panel;
 pub mod single_page_view;
-pub mod status_bar;
 pub mod thumbnails;

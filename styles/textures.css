@@ -1,0 +1,104 @@
+/* ---------------------------------------------------------------------
+   5. Texture modes — layered ::before BEHIND the canvas. The canvas uses
+   mix-blend-mode (multiply in light themes) so light areas let the texture
+   show through while dark text stays dark and legible.
+   --------------------------------------------------------------------- */
+/* The stroke colors live behind these vars so the three DARK themes (which get
+   the `.dark` class on <html>, see theme_applier.rs) can flip them to LIGHT
+   strokes: the canvas inverts its page to dark paper, and black strokes would
+   simply vanish against it. Light-family themes (light/sepia/green) keep the
+   subtle dark strokes via the `:root` defaults. */
+:root {
+  --texture-line: rgba(15, 23, 42, 0.16); /* lined / grid / dotted / cross strokes */
+  --texture-strong: rgba(15, 23, 42, 0.26); /* margins / header rules (reserved) */
+  --texture-paper: rgba(15, 23, 42, 0.05); /* paper-grain tint */
+  --texture-blend: multiply; /* dark grain tint over light paper */
+}
+:root.dark {
+  --texture-line: rgba(255, 255, 255, 0.22);
+  --texture-strong: rgba(255, 255, 255, 0.36);
+  --texture-paper: rgba(255, 255, 255, 0.08);
+  /* multiply of a near-white tint is an identity (it can only darken), so the
+     light grain would stay dark-on-dark and invisible; screen lightens the
+     noise into the intended subtle light grain on dark paper. */
+  --texture-blend: screen;
+}
+
+.pdf-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* z-index 1 = ABOVE the (now opaque, baked) canvas, below the text layer
+     (z-index 2). The texture used to sit BEHIND the canvas and show through
+     the canvas's multiply/screen blend; with the blend baked into the raster
+     the texture must multiply OVER the baked page instead. Both blends are
+     commutative, so the composite is the same — texture darkens/lightens
+     paper and ink exactly as before, at full sharpness. During a scrub the
+     canvas is raw + live-CSS blended again, and the scrub rule below returns
+     this layer to z-index 0 (its original place). */
+  z-index: 1;
+  pointer-events: none;
+  /* User-controlled texture strength. 0.9 was the old hard-coded value and is
+     still the default, so an untouched install looks identical. */
+  opacity: var(--texture-opacity, 0.9);
+
+  /* css-comment-stripped */
+  /* The user's pitch multiplier COMPOSES with the page scale rather than
+     replacing it. The texture is part of the page (appendix 7): it must still
+     zoom with the document, so the slider stretches the NATURAL pitch and the
+     product is what every pattern below derives from. */
+  --tex-scale: calc(var(--scale-factor, 1) * var(--texture-scale-user, 1));
+  --tex-unit: calc(26px * var(--tex-scale));
+  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  background-origin: border-box;
+  background-position: 0 0;
+}
+
+.pdf-page.texture-paper::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  /* Tint the gray fractal noise toward the theme's grain color without losing
+     the noise pattern. The blend is driven by --texture-blend: multiply in the
+     light family (dark grain tint darkens the noise on light paper) and screen
+     on the dark themes (the light tint lightens the noise into light grain on
+     dark paper) — multiply alone could never lighten, so the dark themes need
+     the screen blend to actually render the grain. */
+  background-color: var(--texture-paper);
+  background-blend-mode: var(--texture-blend, multiply);
+  /* The SVG tile is authored 180x180; scaling the background-size zooms the
+     grain with the page instead of holding a fixed screen-space pitch. */
+  background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
+}
+
+.pdf-page.texture-lined::before {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--texture-line) 0 var(--tex-line),
+    transparent var(--tex-line) var(--tex-unit)
+  );
+}
+
+.pdf-page.texture-grid::before {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+}
+
+.pdf-page.texture-dotted::before {
+  background-image: radial-gradient(
+    var(--texture-line) calc(1px * var(--tex-scale)),
+    transparent calc(1.5px * var(--tex-scale))
+  );
+  background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
+}
+
+.pdf-page.texture-cross::before {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    radial-gradient(var(--texture-line) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
+  background-size:
+    var(--tex-unit) var(--tex-unit),
+    var(--tex-unit) var(--tex-unit),
+    var(--tex-unit) var(--tex-unit);
+}
+

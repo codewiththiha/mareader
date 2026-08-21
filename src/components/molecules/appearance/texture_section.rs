@@ -12,7 +12,7 @@ use pdf_viewer::components::atoms::icon::{Icon, IconName};
 use pdf_viewer::components::atoms::slider::Slider;
 use pdf_core::appearance::TextureMode;
 use crate::core::state::AppState;
-use crate::effects::theme_applier::{
+use crate::effects::appearance_scrub::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,
 };
 

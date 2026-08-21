@@ -68,7 +68,6 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::cmp::Ordering;
 
 #[cfg(feature = "advanced-trees")]
 mod fenwick;
@@ -809,27 +808,6 @@ impl PartitionPointInclusive for [i64] {
         }
     }
 }
-
-/// Convenience: `core::cmp::max` on `f64` without the NaN footgun the stdlib
-/// `f64::max` carries. The only callers are reading-from-i64 results so NaN
-/// is impossible here; we still avoid the stdlib helper because its
-/// propagation rule changes between Rust versions.
-#[inline]
-fn fmax(a: f64, b: f64) -> f64 {
-    match a.partial_cmp(&b) {
-        Some(Ordering::Less | Ordering::Equal) => b,
-        _ => a,
-    }
-}
-
-// Keep clippy quiet: fmax is used by `dominant` in some build configurations
-// (e.g. when the `std` feature is off and the codegen inlines the comparison
-// differently). Marking it `#[allow(dead_code)]` is the safest move.
-#[allow(dead_code)]
-fn _use_fmax() {
-    let _ = fmax(0.0, 1.0);
-}
-
 
 #[cfg(test)]
 mod tests {

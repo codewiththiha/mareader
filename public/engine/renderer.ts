@@ -1,11 +1,8 @@
 // Page registration + canvas render + text/link layers.
 
 import type {
-  Annotation,
   PageState,
-  PDFPageProxy,
   RenderResult,
-  Viewport,
 } from "./types";
 import { blitInto, el, errorInfo, fail, releaseCanvas, releasePooledCanvas } from "./canvas";
 import {
@@ -14,22 +11,20 @@ import {
   readPipeline,
 } from "./theme";
 import {
-  activeMatch,
   bumpRenderCount,
   CLEANUP_EVERY,
-  highlightMode,
   pdf,
   releasePageSurfaces,
-  searchQuery,
   scrubbing,
   stateByCanvasId,
   dropRawIfIdle,
   noteActivity,
   sweepPdf,
   PAGE_MAX_PIXELS,
-  CANVAS_AREA_FACTOR,
 } from "./state";
 import { TextLayer } from "./loader";
+import { applyHighlights } from "./highlights";
+import { buildLinkLayer } from "./links";
 
 function pageFromCanvasId(canvasId: string): number {
   const sp = /^sp-(\d+)-cv$/.exec(canvasId);
@@ -137,187 +132,22 @@ export function cancelPage(canvasId: string): void {
   }
 }
 
-export function applyHighlights(st: PageState): void {
-  const { host, textLayerEl } = st;
-  if (!host) return;
-  host.querySelectorAll(".highlight").forEach((n) => n.remove());
-  if (!searchQuery || !textLayerEl) return;
-  textLayerEl.classList.toggle("search-stale", highlightMode === "stale");
-  const origin = host.getBoundingClientRect();
-  const boxes: { r: DOMRect; ord: number }[] = [];
-  const qlen = searchQuery.length;
-  let ord = 0;
-  for (const span of textLayerEl.querySelectorAll("span")) {
-    const text = span.textContent;
-    if (!text) continue;
-    const hay = text.toLowerCase();
-    if (!hay.includes(searchQuery)) continue;
-    const node = span.firstChild;
-    const textNode = node && node.nodeType === Node.TEXT_NODE ? (node as Text) : null;
-    const addressable = !!(textNode && textNode.length >= qlen);
-    for (
-      let at = hay.indexOf(searchQuery);
-      at !== -1;
-      at = hay.indexOf(searchQuery, at + qlen)
-    ) {
-      const mine = ord;
-      ord += 1;
-      if (!addressable) continue;
-      let rects: DOMRectList | undefined;
-      try {
-        if (!textNode) continue;
-        const range = document.createRange();
-        range.setStart(textNode, at);
-        range.setEnd(textNode, at + qlen);
-        rects = range.getClientRects();
-        range.detach?.();
-      } catch (_) {
-        continue;
-      }
-      if (!rects) continue;
-      for (const r of rects) {
-        if (r.width <= 0 || r.height <= 0) continue;
-        boxes.push({ r, ord: mine });
-        if (boxes.length >= 200) break;
-      }
-      if (boxes.length >= 200) break;
-    }
-    if (boxes.length >= 200) break;
-  }
-  const activeOrd =
-    activeMatch && activeMatch.page === st.page ? activeMatch.index : -1;
-  const MAX_HIGHLIGHTS_PER_PAGE = 200;
-  const painted = boxes.slice(0, MAX_HIGHLIGHTS_PER_PAGE);
-  for (const { r, ord: n } of painted) {
-    const d = document.createElement("div");
-    d.className = n === activeOrd ? "highlight is-active" : "highlight";
-    d.dataset.match = String(n);
-    d.style.left = r.x - origin.x + "px";
-    d.style.top = r.y - origin.y + "px";
-    d.style.width = Math.max(1, r.width) + "px";
-    d.style.height = Math.max(1, r.height) + "px";
-    textLayerEl.appendChild(d);
-  }
-}
-
-export function refreshHighlights(): void {
-  for (const st of stateByCanvasId.values()) {
-    if (st.textLayerEl) applyHighlights(st);
-  }
-}
-
 function pageOutputScale(cssW: number, cssH: number): number {
-  // Cap at 1.25: vectors stay sharp at reading distance; 1.5× cost ~30% more.
-  // across mounted pages + bake intermediates. Text stays sharp enough.
-  const dpr = Math.min(globalThis.devicePixelRatio || 1, 1.25);
+  // Full native DPR for crisp text; PAGE_MAX_PIXELS is the memory guardrail.
+  const dpr = globalThis.devicePixelRatio || 1;
   if (!(cssW > 0) || !(cssH > 0)) return dpr;
 
-  const vw = globalThis.innerWidth || 0;
-  const vh = globalThis.innerHeight || 0;
-  const viewportBudget = vw > 0 && vh > 0 ? vw * vh * CANVAS_AREA_FACTOR : Infinity;
-  const budget = Math.min(PAGE_MAX_PIXELS, viewportBudget);
-
-  const capped = Math.sqrt(budget / (cssW * cssH));
+  // Cap so a single canvas never exceeds PAGE_MAX_PIXELS pixels.
+  //
+  // (The old code ALSO capped against one windowful of pixels —
+  // `vw * vh * CANVAS_AREA_FACTOR` — which was the soft-text bug: a US Letter
+  // page at 100% zoom on a 2x display needs 612*2 × 792*2 ≈ 1.48M pixels,
+  // more than a 1440×900 window's 1.30M, so the render was throttled to
+  // ~1.64x and the browser upscaled it. Dropping the window term lets a
+  // single page use its full native resolution; the per-page ceiling below
+  // bounds memory.)
+  const capped = Math.sqrt(PAGE_MAX_PIXELS / (cssW * cssH));
   return Math.min(dpr, Math.max(0.5, capped));
-}
-
-async function destToPage(dest: string | unknown[] | null | undefined): Promise<number | null> {
-  if (!pdf || !dest) return null;
-  try {
-    const explicit = typeof dest === "string" ? await pdf.getDestination(dest) : dest;
-    if (!Array.isArray(explicit) || !explicit.length) return null;
-    const ref = explicit[0];
-    if (typeof ref === "object" && ref !== null) {
-      return (await pdf.getPageIndex(ref)) + 1;
-    }
-    if (Number.isInteger(ref)) return (ref as number) + 1;
-    return null;
-  } catch (_) {
-    return null;
-  }
-}
-
-function safeExternalUrl(raw: string): string | null {
-  if (typeof raw !== "string" || !raw) return null;
-  let u: URL;
-  try {
-    u = new URL(raw, globalThis.location ? globalThis.location.href : undefined);
-  } catch (_) {
-    return null;
-  }
-  return ["http:", "https:", "mailto:"].includes(u.protocol) ? u.href : null;
-}
-
-async function buildLinkLayer(
-  st: PageState,
-  viewport: Viewport,
-  page: PDFPageProxy | null
-): Promise<void> {
-  const { host } = st;
-  if (!host) return;
-
-  let annots: Annotation[] = [];
-  try {
-    const src = page || (await pdf!.getPage(st.page));
-    annots = await src.getAnnotations({ intent: "display" });
-    if (!page) {
-      try { src.cleanup(); } catch (_) { /* ignore */ }
-    }
-  } catch (_) {
-    annots = [];
-  }
-
-  const layer = document.createElement("div");
-  layer.className = "linkLayer";
-
-  for (const a of annots) {
-    if (!a || a.subtype !== "Link" || !Array.isArray(a.rect)) continue;
-
-    const url = safeExternalUrl(a.url ?? "");
-    const linkPage = url ? null : await destToPage(a.dest ?? null);
-    if (!url && !linkPage) continue;
-
-    const [x1, y1] = viewport.convertToViewportPoint(a.rect[0]!, a.rect[1]!);
-    const [x2, y2] = viewport.convertToViewportPoint(a.rect[2]!, a.rect[3]!);
-    const x = Math.min(x1, x2);
-    const y = Math.min(y1, y2);
-    const w = Math.abs(x2 - x1);
-    const h = Math.abs(y2 - y1);
-    if (!(w > 0) || !(h > 0)) continue;
-
-    const aEl = document.createElement("a");
-    aEl.className = "pdf-link";
-    aEl.style.left = x + "px";
-    aEl.style.top = y + "px";
-    aEl.style.width = w + "px";
-    aEl.style.height = h + "px";
-
-    if (url) {
-      aEl.href = url;
-      aEl.target = "_blank";
-      aEl.rel = "noopener noreferrer";
-      aEl.title = url;
-    } else {
-      aEl.href = "#";
-      aEl.title = "Go to page " + linkPage;
-      const p = linkPage!;
-      aEl.dataset.page = String(p);
-      aEl.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        globalThis.dispatchEvent(
-          new CustomEvent("pdfreader:navigate", { detail: { page: p } })
-        );
-      });
-    }
-    layer.appendChild(aEl);
-  }
-
-  const live = host.querySelector(".linkLayer");
-  if (live && live.parentNode) {
-    live.replaceWith(layer);
-  } else {
-    host.appendChild(layer);
-  }
 }
 
 export async function renderPageInternal(

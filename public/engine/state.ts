@@ -34,9 +34,9 @@ export function setCurrentPath(p: string | null): void {
 
 export const stateByCanvasId = new Map<string, PageState>();
 export const thumbCache = new Map<number, ThumbEntry>();
-/** Cap kept tight: each thumb is a pair of rasters. 8 covers the 2-column
- *  window + one buffer row without pinning a textbook's worth of bitmaps. */
-export const THUMB_CACHE_MAX = 8;
+/** Cap kept tight: each thumb is a pair of rasters. 16 keeps several
+ *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
+export const THUMB_CACHE_MAX = 16;
 export const thumbTasks = new Map<string, RenderTask>();
 export const thumbCancelled = new Set<string>();
 export const thumbLive = new Map<string, { page: number }>();
@@ -69,8 +69,14 @@ export function setScrubbing(on: boolean): void {
   scrubbing = on;
 }
 
-export const PAGE_MAX_PIXELS = 4 * 1024 * 1024;
-export const CANVAS_AREA_FACTOR = 1.0;
+/** Max pixels per canvas layer (16M ≈ 64 MB RGBA) — the ceiling, not the
+ *  target. A US-Letter page at 100% zoom on a 2x display is ~1.5M px; at
+ *  200% on 2x it's ~7.8M; on a 3x display at 100% it's ~4.4M. 16M keeps the
+ *  FULL native devicePixelRatio through ~200% zoom on any display, and only
+ *  the 3-page mounted ceiling (RENDER_BUDGET max_items: 3) bounds total GPU
+ *  memory (≤3 × 16M × 2 copies × 4B ≈ 384 MB worst case; typical usage is a
+ *  fraction of that). */
+export const PAGE_MAX_PIXELS = 16 * 1024 * 1024;
 
 const RAW_IDLE_MS = 10_000;
 const rawTimers = new WeakMap<PageState, ReturnType<typeof setTimeout>>();

@@ -46,6 +46,7 @@ use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;
 
 use pdf_core::filename::display_name;
+use pdf_viewer::state::SidebarMode;
 use crate::core::state::AppState;
 
 /// Left padding of the toolbar row (`pl-[88px]`, which reserves room for the
@@ -75,7 +76,7 @@ fn width_of(id: &str) -> Option<f64> {
 
 /// Compute the label's available width in CSS px from the toolbar's live
 /// geometry. `None` when the toolbar isn't laid out yet (measure again later).
-fn measure_available() -> Option<f64> {
+fn measure_available(sidebar_open: bool) -> Option<f64> {
     let row_w = width_of("toolbar-row")?;
     if row_w <= 0.0 {
         return None;
@@ -85,7 +86,8 @@ fn measure_available() -> Option<f64> {
     // The right-hand control group is always a hard stop.
     let right_w = width_of("toolbar-right").unwrap_or(0.0);
 
-    let start = ROW_PAD_LEFT + pre_w + GAP_LEFT;
+    let pad_left = if sidebar_open { 12.0 } else { ROW_PAD_LEFT };
+    let start = pad_left + pre_w + GAP_LEFT;
     let mut end = row_w - ROW_PAD_RIGHT - right_w - GAP_RIGHT;
 
     // When a document is Ready the page nav is absolutely centered on the ROW,
@@ -117,7 +119,8 @@ pub fn DocTitle(state: AppState) -> impl IntoView {
     // both the ResizeObserver and the reactive triggers below.
     let remeasure = move || {
         request_animation_frame(move || {
-            if let Some(w) = measure_available() {
+            let sidebar_open = state.sidebar.get_untracked() != SidebarMode::None;
+            if let Some(w) = measure_available(sidebar_open) {
                 // Only write on a real change: an idempotent write would still
                 // notify and re-run the class/style closures every frame the
                 // observer fires during the sidebar's 300ms width animation.
@@ -186,11 +189,13 @@ pub fn DocTitle(state: AppState) -> impl IntoView {
     let num_pages = state.doc.num_pages;
     let title = state.doc.title;
     let path = state.doc.path;
+    let sidebar = state.sidebar;
     Effect::new(move |_| {
         _ = status.get();
         _ = num_pages.get();
         _ = title.get();
         _ = path.get();
+        _ = sidebar.get();
         remeasure();
     });
 

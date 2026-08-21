@@ -17,13 +17,12 @@ pub const TOOLBAR_H: f64 = 48.0;
 /// when zoomed in. `look_frac` is the read-ahead each way; `max_items` the ceiling.
 pub type RenderBudget = Budget;
 
-/// Tight idle budget: ~0.15 screen of read-ahead, at most one extra page.
-/// Visible pages are never evicted (`Strip::window`). Each mounted page at
-/// 1.5× DPR plus its unbaked raw is tens of MB; 3 off-screen pages were the
-/// idle-RAM floor.
+/// Comfortable read-ahead: half a screenful each way, up to 3 mounted pages
+/// total (visible + ~1 above + ~1 below). Each mounted page at 2× DPR plus
+/// its raw is ~64MB worst case, so the ceiling is what keeps idle RAM sane.
 pub const RENDER_BUDGET: RenderBudget = RenderBudget {
-    look_frac: 0.15,
-    max_items: 1,
+    look_frac: 0.5,
+    max_items: 3,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

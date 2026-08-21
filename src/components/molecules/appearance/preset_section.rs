@@ -11,7 +11,7 @@ use leptos::prelude::*;
 use pdf_viewer::components::atoms::icon::{Icon, IconName};
 use pdf_core::presets::{group_presets, is_builtin, make_preset_id, user_group_names, Preset};
 use crate::core::state::AppState;
-use crate::effects::theme_applier::{cancel_appearance_commit, flush_appearance_commit};
+use crate::effects::appearance_scrub::{cancel_appearance_commit, flush_appearance_commit};
 
 /// One preset thumbnail: a miniature page with a couple of text-ish rules on
 /// it, so tint and texture both have something to act on.

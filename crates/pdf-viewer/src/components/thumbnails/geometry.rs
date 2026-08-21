@@ -14,14 +14,12 @@ pub const CELL_W: f64 = 120.0;
 pub const ROW_GAP: f64 = 8.0;
 /// Extra rows rendered above/below the visible window (pre-render margin).
 ///
-/// One, not two. Two rows of lead time mounts whole rows of canvases the
-/// reader has not scrolled anywhere near, and the buffer is the main knob on
-/// how many thumbnail canvases exist at once. One row is the lean setting:
-/// a row entering the viewport is already mounted (it was the buffer row an
-/// instant earlier), a genuinely new row shows its skeleton for the one
-/// render it takes, and cached rows still blit synchronously — the previous
-/// render's skeleton only ever flashes for rows that were never rendered.
-pub const ROW_BUFFER: usize = 1;
+/// Two, not one. A row entering the viewport is already mounted (it was the
+/// buffer row an instant earlier), and a genuinely new row shows its skeleton
+/// for the one render it takes; cached rows still blit synchronously. The
+/// second buffer row means rows are pre-mounted a full window ahead, so a
+/// fast grid fling meets warm rows instead of skeletons.
+pub const ROW_BUFFER: usize = 2;
 /// Fallback viewport height used when the live measurement is (still) zero.
 ///
 /// The panel's scroll container reports its height through a ResizeObserver,
@@ -41,7 +39,7 @@ pub const PAD: f64 = 12.0;
 /// write would keep re-starting the in-flight glide and churn the
 /// virtualization window; cancel-and-reschedule (debounce) yields exactly one
 /// glide, shortly after the reader pauses.
-pub const GLIDE_DEBOUNCE_MS: u64 = 150;
+pub const GLIDE_DEBOUNCE_MS: u64 = 80;
 /// User-drive grace window: while the user has interacted with the thumb grid
 /// within this many ms, auto-center defers (and re-checks) instead of yanking
 /// the panel away from the row they are browsing. A page change that lands

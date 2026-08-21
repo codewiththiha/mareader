@@ -173,6 +173,7 @@ export type PDFReaderApi = {
   refreshTheme: () => Promise<void>;
   setScrubMode: (on: boolean) => Promise<void>;
   takePendingFile: () => Promise<string | null>;
+  prefetchThumb: (page: number, scale: number) => Promise<void>;
 };
 
 export type TauriCore = {

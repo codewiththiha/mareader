@@ -7,10 +7,8 @@ use leptos::prelude::*;
 #[component]
 pub fn Tooltip(
     text: String,
-    #[prop(default = "bottom")] side: &'static str,
     children: Children,
 ) -> impl IntoView {
-    let _ = side; // reserved for future styled tooltip implementation
     view! {
         <span title=text class="inline-flex">{children()}</span>
     }

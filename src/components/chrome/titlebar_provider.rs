@@ -31,8 +31,8 @@ const HIDE_DELAY_MS: u64 = 400;
 pub struct TitleBarCtx {
     /// Effective bar visibility = pinned OR hovered.
     pub visible: Signal<bool>,
-    /// Set by an open Popover so the bar never auto-hides under a menu.
-    pub held: RwSignal<bool>,
+    /// Active holds count from open popovers in the titlebar.
+    pub held_count: RwSignal<usize>,
 }
 
 #[component]
@@ -44,9 +44,10 @@ pub fn TitleBarProvider(
 ) -> impl IntoView {
     let pinned = RwSignal::new(state.settings.get_untracked().titlebar_pinned);
     let hovered = RwSignal::new(false);
-    let held = RwSignal::new(false);
+    let held_count = RwSignal::new(0usize);
+    let is_held = Signal::derive(move || held_count.get() > 0);
     let visible = Signal::derive(move || pinned.get() || hovered.get());
-    provide_context(TitleBarCtx { visible, held });
+    provide_context(TitleBarCtx { visible, held_count });
 
     // Persist the pin.
     Effect::new(move |_| {
@@ -76,7 +77,7 @@ pub fn TitleBarProvider(
     });
     let hide_later = move || {
         // An open popover or the floating search pins the bar open.
-        if held.get() || state.search.visible.get() {
+        if is_held.get() || state.search.visible.get() {
             return;
         }
         if let Some(h) = timer.get_value() {
@@ -84,7 +85,7 @@ pub fn TitleBarProvider(
         }
         let h = set_timeout_with_handle(
             move || {
-                if !held.get() && !state.search.visible.get() {
+                if !is_held.get() && !state.search.visible.get() {
                     hovered.set(false);
                 }
             },

@@ -7,6 +7,8 @@
 //! The popover renders through the shared window-aware `Popover`, which owns
 //! outside-click/Escape dismissal, viewport clamping and the titlebar hold.
 
+use std::sync::Arc;
+
 use leptos::html;
 use leptos::prelude::*;
 
@@ -15,9 +17,10 @@ use pdf_viewer::components::atoms::icon::{Icon, IconName};
 use pdf_viewer::components::atoms::separator::Separator;
 use pdf_viewer::components::atoms::tooltip::Tooltip;
 use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
+use crate::components::chrome::adaptive_group::{OverflowRow, ToolbarEntry};
 use crate::components::chrome::popover::Popover;
 use crate::core::state::AppState;
-use pdf_viewer::effects::fit::request_zoom;
+use pdf_viewer::effects::zoom::request_zoom;
 
 /// Apply a manual zoom level: exit fit mode, then hand the target to the zoom
 /// coordinator.
@@ -27,7 +30,7 @@ use pdf_viewer::effects::fit::request_zoom;
 /// spacer height only caught up as each render resolved, so the scroll offset
 /// ended up pointing at a different page. `request_zoom` animates the layout
 /// and re-anchors the scroll in the same frames, then renders once.
-fn apply_zoom(state: AppState, scale: f64) {
+pub(crate) fn apply_zoom(state: AppState, scale: f64) {
     state.viewer.fit.set(FitMode::None);
     request_zoom(state.viewer_state(), scale, true);
 }
@@ -46,24 +49,119 @@ fn step_base(state: AppState) -> f64 {
         .unwrap_or_else(|| state.viewer.display_scale.get_untracked())
 }
 
+/// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
+pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
+    let zoom_step_inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
+        view! {
+            <div class="flex items-center gap-1">
+                <Tooltip text="Zoom out (-)".to_string()>
+                    <Button
+                        on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), -1))
+                        kind=ButtonKind::Ghost
+                        icon=IconName::ZoomOut
+                        title="Zoom out (-)".to_string()
+                    />
+                </Tooltip>
+                <Tooltip text="Zoom in (+)".to_string()>
+                    <Button
+                        on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), 1))
+                        kind=ButtonKind::Ghost
+                        icon=IconName::ZoomIn
+                        title="Zoom in (+)".to_string()
+                    />
+                </Tooltip>
+            </div>
+        }
+        .into_any()
+    });
+
+    vec![
+        // Zoom out + zoom in are one entry so they collapse together and stay
+        // on one horizontal row in both the bar and the overflow menu.
+        ToolbarEntry {
+            id: "zoom-step",
+            priority: 80,
+            keep_mounted: false,
+            inline: zoom_step_inline.clone(),
+            sizer: zoom_step_inline,
+            collapsed: Arc::new(move |_done| {
+                view! {
+                    <div class="flex w-full items-center gap-1 px-1 py-0.5">
+                        <button
+                            type="button"
+                            title="Zoom out"
+                            on:click=move |_| {
+                                apply_zoom(state, nearest_zoom(step_base(state), -1));
+                            }
+                            class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm text-ink hover:bg-line"
+                        >
+                            <Icon name=IconName::ZoomOut size=14 />
+                            <span>Out</span>
+                        </button>
+                        <span class="h-4 w-px shrink-0 bg-line"></span>
+                        <button
+                            type="button"
+                            title="Zoom in"
+                            on:click=move |_| {
+                                apply_zoom(state, nearest_zoom(step_base(state), 1));
+                            }
+                            class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm text-ink hover:bg-line"
+                        >
+                            <Icon name=IconName::ZoomIn size=14 />
+                            <span>In</span>
+                        </button>
+                    </div>
+                }
+                .into_any()
+            }),
+        },
+        // fit-width and fit-page entries live in `fit_entry` (reader_view.rs)
+        zoom_readout_entry(state),
+    ]
+}
+
+fn zoom_readout_entry(state: AppState) -> ToolbarEntry {
+    ToolbarEntry {
+        id: "zoom-readout",
+        priority: u32::MAX,
+        keep_mounted: true,
+        inline: Arc::new(move || view! { <ZoomReadout state=state /> }.into_any()),
+        sizer: Arc::new(move || {
+            view! {
+                <div class="inline-flex items-center justify-center gap-1.5 rounded-lg border h-9 px-2.5 text-sm font-medium border-line bg-surface text-ink">
+                    <span>"100%"</span>
+                    <svg
+                        class="text-muted"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <path d="m6 9 6 6 6-6"/>
+                    </svg>
+                </div>
+            }
+            .into_any()
+        }),
+        collapsed: Arc::new(move |done| {
+            view! {
+                <OverflowRow icon=IconName::ZoomIn label="Zoom" done=done on_click=move || {} />
+            }
+            .into_any()
+        }),
+    }
+}
+
+/// Percent readout + preset popover, extracted so it can be a single entry.
 #[component]
-pub fn ZoomControls(state: AppState) -> impl IntoView {
+fn ZoomReadout(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
-
-    let zoom_out_state = state;
-    let zoom_in_state = state;
-    let fit_width_state = state;
-    let fit_page_state = state;
-
     let percent = move || format!("{}%", (state.viewer.scale.get() * 100.0).round() as u32);
-
-    // When the window (or the sidebar) leaves too little room, the page is held
-    // BELOW the zoom the reader picked so it fits instead of being cropped.
-    // The readout then shows a percentage nobody chose, which looks like the
-    // app forgot the setting — so the tooltip says what is going on and what it
-    // will return to. Purely explanatory: the number itself stays honest about
-    // what is on screen.
     let zoom_title = move || {
         let shown = state.viewer.scale.get();
         let desired = state.viewer.desired_scale.get();
@@ -86,7 +184,6 @@ pub fn ZoomControls(state: AppState) -> impl IntoView {
             "Zoom".to_string()
         }
     };
-
     let trigger_class = move || {
         let base = "inline-flex items-center justify-center gap-1.5 rounded-lg border h-9 px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent border-line bg-surface text-ink hover:bg-line";
         if open.get() {
@@ -95,133 +192,86 @@ pub fn ZoomControls(state: AppState) -> impl IntoView {
             base.to_string()
         }
     };
-
     view! {
-        <div node_ref=root_ref class="flex items-center gap-1">
-            <Tooltip text="Zoom out (-)".to_string()>
-                <Button
-                    on_click=move |_| {
-                        let cur = step_base(zoom_out_state);
-                        apply_zoom(zoom_out_state, nearest_zoom(cur, -1));
-                    }
-                    kind=ButtonKind::Ghost
-                    icon=IconName::ZoomOut
-                    title="Zoom out (-)".to_string()
-                />
-            </Tooltip>
-            <Tooltip text="Zoom in (+)".to_string()>
-                <Button
-                    on_click=move |_| {
-                        let cur = step_base(zoom_in_state);
-                        apply_zoom(zoom_in_state, nearest_zoom(cur, 1));
-                    }
-                    kind=ButtonKind::Ghost
-                    icon=IconName::ZoomIn
-                    title="Zoom in (+)".to_string()
-                />
-            </Tooltip>
-            <Tooltip text="Fit width (Cmd/Ctrl+0)".to_string()>
-                <Button
-                    on_click=move |_| fit_width_state.viewer.fit.set(FitMode::Width)
-                    kind=ButtonKind::Ghost
-                    icon=IconName::FitWidth
-                    title="Fit width (Cmd/Ctrl+0)".to_string()
-                />
-            </Tooltip>
-            <Tooltip text="Fit page".to_string()>
-                <Button
-                    on_click=move |_| fit_page_state.viewer.fit.set(FitMode::Page)
-                    kind=ButtonKind::Ghost
-                    icon=IconName::FitPage
-                    title="Fit page".to_string()
-                />
-            </Tooltip>
-
-            // Percent readout + popover (replaces the old preset Select).
-            <div class="relative inline-flex">
+        <div node_ref=root_ref class="relative inline-flex">
+            <button
+                type="button"
+                data-zoom-readout="true"
+                title=zoom_title
+                on:click=move |_| open.set(!open.get())
+                class=trigger_class
+            >
+                <span>{percent}</span>
+                <svg
+                    class="text-muted"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <path d="m6 9 6 6 6-6"/>
+                </svg>
+            </button>
+            <Popover open=open anchor=root_ref width=176 class="p-1".to_string()>
                 <button
                     type="button"
-                    // Stable hook for tests and tooling. `title` is USER-FACING
-                    // copy that now changes to explain a space-constrained
-                    // zoom, so it is not an identity — anything selecting this
-                    // control must use this attribute instead.
-                    data-zoom-readout="true"
-                    title=zoom_title
-                    on:click=move |_| open.set(!open.get())
-                    class=trigger_class
+                    on:click=move |_| {
+                        state.viewer.fit.set(FitMode::Width);
+                        open.set(false);
+                    }
+                    class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
                 >
-                    <span>{percent}</span>
-                    <svg
-                        class="text-muted"
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <path d="m6 9 6 6 6-6"/>
-                    </svg>
+                    <span class="inline-flex w-4 shrink-0 justify-center text-accent">
+                        {move || (state.viewer.fit.get() == FitMode::Width).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                    </span>
+                    <span>Fit width</span>
                 </button>
-                <Popover open=open anchor=root_ref width=176 class="p-1".to_string()>
-                    <button
-                        type="button"
-                        on:click=move |_| {
-                            state.viewer.fit.set(FitMode::Width);
-                            open.set(false);
-                        }
-                        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
-                    >
-                        <span class="inline-flex w-4 shrink-0 justify-center text-accent">
-                            {move || (state.viewer.fit.get() == FitMode::Width).then(|| view! { <Icon name=IconName::Check size=14/> })}
-                        </span>
-                        <span>Fit width</span>
-                    </button>
-                    <button
-                        type="button"
-                        on:click=move |_| {
-                            state.viewer.fit.set(FitMode::Page);
-                            open.set(false);
-                        }
-                        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
-                    >
-                        <span class="inline-flex w-4 shrink-0 justify-center text-accent">
-                            {move || (state.viewer.fit.get() == FitMode::Page).then(|| view! { <Icon name=IconName::Check size=14/> })}
-                        </span>
-                        <span>Fit page</span>
-                    </button>
-                    <Separator vertical=false />
-                    <For
-                        each=move || ZOOM_STEPS.iter().copied()
-                        key=|z| z.to_bits()
-                        children=move |z| {
-                            let row_class = move || {
-                                let base = "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm";
-                                if (state.viewer.scale.get() - z).abs() < 1e-9 {
-                                    format!("{base} bg-accent-soft text-accent")
-                                } else {
-                                    format!("{base} text-ink hover:bg-line")
-                                }
-                            };
-                            view! {
-                                <button
-                                    type="button"
-                                    on:click=move |_| {
-                                        apply_zoom(state, z);
-                                        open.set(false);
-                                    }
-                                    class=row_class
-                                >
-                                    <span>{format!("{}%", (z * 100.0).round() as u32)}</span>
-                                    {move || ((state.viewer.scale.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
-                                </button>
+                <button
+                    type="button"
+                    on:click=move |_| {
+                        state.viewer.fit.set(FitMode::Page);
+                        open.set(false);
+                    }
+                    class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
+                >
+                    <span class="inline-flex w-4 shrink-0 justify-center text-accent">
+                        {move || (state.viewer.fit.get() == FitMode::Page).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                    </span>
+                    <span>Fit page</span>
+                </button>
+                <Separator vertical=false />
+                <For
+                    each=move || ZOOM_STEPS.iter().copied()
+                    key=|z| z.to_bits()
+                    children=move |z| {
+                        let row_class = move || {
+                            let base = "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm";
+                            if (state.viewer.scale.get() - z).abs() < 1e-9 {
+                                format!("{base} bg-accent-soft text-accent")
+                            } else {
+                                format!("{base} text-ink hover:bg-line")
                             }
+                        };
+                        view! {
+                            <button
+                                type="button"
+                                on:click=move |_| {
+                                    apply_zoom(state, z);
+                                    open.set(false);
+                                }
+                                class=row_class
+                            >
+                                <span>{format!("{}%", (z * 100.0).round() as u32)}</span>
+                                {move || ((state.viewer.scale.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                            </button>
                         }
-                    />
-                </Popover>
-            </div>
+                    }
+                />
+            </Popover>
         </div>
     }
 }

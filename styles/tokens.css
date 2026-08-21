@@ -1,0 +1,107 @@
+/* ---------------------------------------------------------------------
+   1. Design tokens (light defaults).
+   Emits utilities: bg-paper text-ink bg-surface text-muted border-line
+   bg-accent text-accent bg-accent-soft text-accent-soft.
+   Base modes rewrite the --base-* tokens under :root[data-base=...]; the
+   colour tint overrides --color-* inline from effects/theme_applier.rs.
+   --------------------------------------------------------------------- */
+@theme {
+  --color-paper: #ffffff;
+  --color-ink: #1f2937;
+  --color-muted: #6b7280;
+  --color-surface: #f3f4f6;
+  --color-line: #e5e7eb;
+  --color-accent: #2563eb;
+  --color-accent-soft: #dbeafe;
+}
+
+/* ---------------------------------------------------------------------
+   2. Runtime (non-utility) variables — defaults for light.
+   --------------------------------------------------------------------- */
+:root {
+  --canvas-filter: none;
+  --canvas-blend: multiply;
+  --noise-opacity: 0;
+  --app-radius: 8px;
+  /* Tint of the search match the reader is currently on. Deliberately NOT
+     derived from --color-accent: every other match already wears the accent,
+     and the current one has to be separable from them at a glance. Amber sits
+     far enough round the wheel from every built-in accent to stay distinct,
+     and it survives both blend directions (multiply on light paper, screen on
+     the inverted dark canvases). */
+  --match-current: #f59e0b;
+}
+/* Lifted and warmed for the dark canvases, where `screen` washes a mid amber
+   toward the paper colour. */
+:root.dark {
+  --match-current: #fbbf24;
+}
+
+/* NOTE: the former `--selection-text-color` is gone on purpose. It existed
+   because selection used a SOLID `--color-accent-soft` background, which hid
+   the canvas glyphs underneath, so the text layer had to paint readable glyphs
+   itself. Painting those glyphs is exactly what produced the doubled,
+   slightly-offset text on selection: the text layer's substituted font never
+   matches the PDF's embedded font metrically, so its glyphs sat a hair off the
+   canvas ones. Selection is now a TRANSLUCENT tint over transparent text (see
+   §4), so the canvas glyphs read straight through and there is only ever one
+   copy of the text on screen. */
+
+/* ---------------------------------------------------------------------
+   3. Eye-protection / reading themes — the ONLY place theme values live.
+   Each mode swaps the 7 color tokens + a canvas filter pipeline + a blend
+   mode (multiply keeps light themes paper-like; screen suits inverted canvases
+   — it leaves the near-white inverted text light over the dark page backdrop,
+   whereas multiply/soft-light would crush it back to dark and make the page
+   unreadable).
+   --------------------------------------------------------------------- */
+/* BASE PALETTES.
+   Only THREE now (light / dark / dim), and they are the STRUCTURE — the colour
+   tint is computed in Rust and pushed as inline custom properties on <html>
+   (see effects/theme_applier.rs). Sepia, Green and Night are no longer CSS
+   blocks: they are presets, i.e. points in {base, hue, strength} space, which
+   is what lets a reader dial in ANY hue instead of the six we happened to
+   hand-write.
+
+   Each base defines --base-* and then aliases --color-* to it. The tint
+   overrides --color-* inline, mixing FROM the --base-* value, so the mix
+   always starts from the untinted palette and can never be applied twice. */
+:root {
+  --base-paper: #ffffff;
+  --base-ink: #1f2937;
+  --base-muted: #6b7280;
+  --base-surface: #f3f4f6;
+  --base-line: #e5e7eb;
+  --base-accent: #2563eb;
+  --base-accent-soft: #dbeafe;
+}
+:root[data-base="dark"] {
+  --base-paper: #131316;
+  --base-ink: #e5e7eb;
+  --base-muted: #9ca3af;
+  --base-surface: #1a1a1e;
+  --base-line: #2b2b31;
+  --base-accent: #60a5fa;
+  --base-accent-soft: #1d2b3a;
+}
+/* Dim is NOT an inverted theme: it dims the page and keeps the document's own
+   colours, which is the reason to choose it over Dark. */
+:root[data-base="dim"] {
+  --base-paper: #1a1c1f;
+  --base-ink: #c3c6cb;
+  --base-muted: #8b8f96;
+  --base-surface: #202328;
+  --base-line: #2e3238;
+  --base-accent: #7a9bd4;
+  --base-accent-soft: #232b36;
+}
+:root {
+  --color-paper: var(--base-paper);
+  --color-ink: var(--base-ink);
+  --color-muted: var(--base-muted);
+  --color-surface: var(--base-surface);
+  --color-line: var(--base-line);
+  --color-accent: var(--base-accent);
+  --color-accent-soft: var(--base-accent-soft);
+}
+

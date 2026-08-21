@@ -3,7 +3,7 @@
 
 import type { SearchMatch, SearchRect, SearchResult, TextItem } from "./types";
 import { fail } from "./canvas";
-import { refreshHighlights } from "./renderer";
+import { refreshHighlights } from "./highlights";
 import {
   highlightsByPage,
   numPages,

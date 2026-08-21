@@ -67,6 +67,11 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "blitThumb")]
     pub fn blit_thumb(canvas_id: &str, page: u32) -> bool;
 
+    /// Render a page into the thumbnail cache with no DOM canvas (idle
+    /// prefetch). Best-effort; resolves after the raster lands in the cache.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "prefetchThumb")]
+    pub async fn prefetch_thumb(page: u32, scale: f64) -> JsValue;
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "buildSearchIndex")]
     pub async fn build_search_index() -> JsValue;
 

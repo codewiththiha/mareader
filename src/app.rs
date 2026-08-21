@@ -2,10 +2,12 @@ use leptos::prelude::*;
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::hooks::{use_location, use_navigate};
 
+use crate::components::molecules::drag_overlay::DragOverlay;
 use crate::components::organisms::toast::ToastHost;
 use crate::components::views::library_page::LibraryPage;
-use crate::components::views::reader_view::{drag_drop, DragOverlay, ReaderView};
+use crate::components::views::reader_view::ReaderView;
 use crate::core::state::AppState;
+use crate::effects::drag_drop::drag_drop;
 use crate::effects::link_nav::link_nav;
 use crate::effects::selection_pages::selection_pages;
 use crate::effects::theme_applier::theme_applier;
