@@ -17,6 +17,7 @@ type ResizeHandlerSlot = leptos::prelude::StoredValue<
 >;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use leptos::html;
 use leptos::prelude::*;
@@ -70,6 +71,40 @@ pub fn ThumbnailsPanel(
     let scroll_top = RwSignal::new(0.0);
     let viewport_h = RwSignal::new(MIN_VIEWPORT_H);
     let container_el = StoredValue::new_local(None::<web_sys::Element>);
+
+    // Re-poke visible cells after opening and after scroll settles. This heals
+    // a render that lost a prefetch/cache race or a stale cancellation without
+    // re-rendering cells that are already loaded or in flight.
+    let heal = RwSignal::new(0u64);
+    let heal_timer = StoredValue::new_local(None::<TimeoutHandle>);
+    Effect::new(move |_| {
+        if !live.get() {
+            if let Some(h) = heal_timer.get_value() {
+                h.clear();
+                heal_timer.set_value(None);
+            }
+            return;
+        }
+        _ = scroll_top.get();
+        if let Some(h) = heal_timer.get_value() {
+            h.clear();
+        }
+        let handle = set_timeout_with_handle(
+            move || {
+                heal_timer.set_value(None);
+                heal.update(|n| *n += 1);
+            },
+            Duration::from_millis(500),
+        )
+        .ok();
+        heal_timer.set_value(handle);
+    });
+    on_cleanup(move || {
+        if let Some(h) = heal_timer.get_value() {
+            h.clear();
+        }
+        heal_timer.set_value(None);
+    });
 
     // Auto-center machinery (glide / grace / debounce) lives in
     // `super::auto_center`; the bundle below carries the panel-lifetime
@@ -310,6 +345,7 @@ pub fn ThumbnailsPanel(
                                     page=p1
                                     generation=generation.clone()
                                     bound=bound.clone()
+                                    heal=Signal::derive(move || heal.get())
                                 />
                                 {if p2 <= n {
                                     view! {
@@ -318,6 +354,7 @@ pub fn ThumbnailsPanel(
                                             page=p2
                                             generation=generation.clone()
                                             bound=bound.clone()
+                                            heal=Signal::derive(move || heal.get())
                                         />
                                     }.into_any()
                                 } else {

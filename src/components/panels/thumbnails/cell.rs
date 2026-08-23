@@ -9,7 +9,7 @@
 // which Leptos stores in a `Send + Sync` slot - so these stay `Arc` +
 // `Mutex`/`AtomicU32`. This is single-threaded UI code, but the owner's
 // cleanup contract demands thread-safe handles; `Rc` would not compile here.
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -38,6 +38,10 @@ pub fn ThumbCell(
     /// Registry of pages whose canvases are currently engine-bound, kept so a
     /// cell can remove itself from it on unmount.
     bound: Arc<Mutex<Vec<u32>>>,
+    /// Bumped after the panel settles so a cell whose render lost a cache or
+    /// cancellation race can retry without remounting.
+    #[prop(into)]
+    heal: Signal<u64>,
 ) -> impl IntoView {
     // SYNCHRONOUS cache probe, read while the view is being built — BEFORE the
     // cell's first frame is composited. When this page's bitmap is already in
@@ -62,6 +66,13 @@ pub fn ThumbCell(
     // this cell unmounts mid-fade.
     let cover_ref: NodeRef<html::Div> = NodeRef::new();
     let pulse_timer = StoredValue::new_local(None::<TimeoutHandle>);
+    // Async work can outlive a virtualized cell. Keep a local mount guard and
+    // separate "engine painted" from `loaded`: cached cells start visually
+    // loaded but still need one render call to blit their bitmap.
+    let mounted = Arc::new(AtomicBool::new(true));
+    let in_flight = Arc::new(AtomicBool::new(false));
+    let settled = Arc::new(AtomicBool::new(false));
+    let attempts = Arc::new(AtomicU8::new(0));
     // Current page drives the accent ring + badge. The badge is a z-10 overlay
     // so it stays visible on every card, not just the active one.
     let is_current = move || state.viewer.page.get() == page;
@@ -86,7 +97,9 @@ pub fn ThumbCell(
     let cid_cleanup = cid.clone();
     let page_cleanup = page;
     let bound_cleanup = bound.clone();
+    let mounted_cleanup = mounted.clone();
     on_cleanup(move || {
+        mounted_cleanup.store(false, Ordering::Relaxed);
         engine::cancel_thumb(&cid_cleanup);
         if let Ok(mut guard) = bound_cleanup.lock() {
             guard.retain(|&p| p != page_cleanup);
@@ -97,105 +110,97 @@ pub fn ThumbCell(
         }
     });
 
-    // Render on mount through the engine's CACHED thumbnail lane.
-    //
-    // The cache is what kills the residual scroll flicker. Previously every
-    // remount (a row re-entering the virtualization window) restarted a full
-    // pdf.js render: the cell mounted an opaque skeleton, pulsed, then
-    // crossfaded to the painted canvas — visible as a brightness blip on the
-    // rows re-entering view. Now:
-    //   * `has_thumb` is probed SYNCHRONOUSLY while the view is built, so a
-    //     cached cell mounts with `loaded = true`: no opaque cover, no pulse,
-    //     no crossfade — there is nothing to flicker.
-    //   * `render_thumb` blits the cached bitmap before it ever suspends, so
-    //     the canvas is painted in the same task the cell mounts in.
-    // Only genuinely NEW pages take the slow path and show the skeleton once.
+    // Render on mount and after a settle sweep. A prefetch may populate the
+    // cache after `starts_cached` was sampled; every successful engine reply
+    // therefore reveals the cover, cached or fresh.
     let cid_render = cid.clone();
     let doc_gen = generation.clone();
     let bound_render = bound.clone();
-    Effect::new(move || {
-        let gen_now = doc_gen.load(Ordering::Relaxed);
-        let cid2 = cid_render.clone();
-        let gen_async = doc_gen.clone();
-        let bound_async = bound_render.clone();
-        spawn_local(async move {
-            if let Ok(mut guard) = bound_async.lock()
-                && !guard.contains(&page)
+    let try_render = {
+        let mounted = mounted.clone();
+        let in_flight = in_flight.clone();
+        let settled = settled.clone();
+        let attempts = attempts.clone();
+        move || {
+            if settled.load(Ordering::Relaxed)
+                || in_flight.load(Ordering::Relaxed)
+                || attempts.load(Ordering::Relaxed) >= 3
+                || !mounted.load(Ordering::Relaxed)
             {
-                guard.push(page);
+                return;
             }
-            match engine::render_thumb(&cid2, page, THUMB_SCALE).await {
-                Ok(r) => {
-                    // A newer document superseded this render.
-                    if gen_async.load(Ordering::Relaxed) != gen_now {
-                        return;
-                    }
-                    // Already-painted (cache hit): `loaded` was seeded true at
-                    // build time, so this is a no-op write and NO transition
-                    // runs. Only a fresh render actually flips it.
-                    if r.cached {
-                        return;
-                    }
-                    loaded.set(true);
-                    // FREEZE the pulse for the duration of the fade. The pulse
-                    // swings a long way (measured in sepia: 54 luminance units
-                    // over its 1.6s cycle) and a render can resolve at ANY
-                    // phase of it, so without this each cell begins its reveal
-                    // from a different brightness AND keeps oscillating while
-                    // it fades. Row-mates resolve a few ms apart, so they
-                    // shimmer against each other — the residual flicker on
-                    // freshly rendered thumbnails during virtual scrolling.
-                    //
-                    // Pausing (not removing) is what keeps this safe: the
-                    // computed background stays exactly where the animation
-                    // left it, so nothing snaps. The class is only REMOVED
-                    // below, once the cover is fully transparent.
-                    if let Some(el) = cover_ref.get() {
-                        _ = el.class_list().add_1("thumb-skeleton-settling");
-                    }
-                    // Deterministic two-phase stop: the pulse stays live (now
-                    // paused) through the fade — resolve never cancels a
-                    // running animation — and ~PULSE_STOP_MS later, once the
-                    // fade has run its full duration, the cover is fully
-                    // transparent, so removing the classes snaps only an
-                    // invisible background. A timer (not `transitionend`) so
-                    // the removal can't be lost to event-delivery edge cases
-                    // (WebKit <13.1 fires only `webkitTransitionEnd`, a
-                    // bubbled descendant opacity transition could remove the
-                    // class mid-fade, and a throttled renderer may never
-                    // dispatch the event). The handle is parked so on_cleanup
-                    // cancels it if the cell unmounts mid-fade. If the render
-                    // errors, `loaded` stays false and the pulsing skeleton
-                    // persists as the intended fallback.
-                    if let Ok(h) = set_timeout_with_handle(
-                        move || {
+            attempts.fetch_add(1, Ordering::Relaxed);
+            in_flight.store(true, Ordering::Relaxed);
+            let gen_now = doc_gen.load(Ordering::Relaxed);
+            let cid2 = cid_render.clone();
+            let gen_async = doc_gen.clone();
+            let bound_async = bound_render.clone();
+            let mounted_async = mounted.clone();
+            let in_flight_async = in_flight.clone();
+            let settled_async = settled.clone();
+            spawn_local(async move {
+                if let Ok(mut guard) = bound_async.lock()
+                    && !guard.contains(&page)
+                {
+                    guard.push(page);
+                }
+                let result = engine::render_thumb(&cid2, page, THUMB_SCALE).await;
+                in_flight_async.store(false, Ordering::Relaxed);
+                if !mounted_async.load(Ordering::Relaxed)
+                    || gen_async.load(Ordering::Relaxed) != gen_now
+                {
+                    return;
+                }
+                match result {
+                    Ok(_) => {
+                        // A concurrent prefetch can turn this request into a
+                        // cache hit after mount. The engine has painted either
+                        // way, so cached must not leave the cover opaque.
+                        settled_async.store(true, Ordering::Relaxed);
+                        if !loaded.get_untracked() {
+                            loaded.set(true);
                             if let Some(el) = cover_ref.get() {
-                                let _ =
-                                    el.class_list().remove_1("thumb-skeleton-loading");
-                                let _ =
-                                    el.class_list().remove_1("thumb-skeleton-settling");
+                                _ = el.class_list().add_1("thumb-skeleton-settling");
                             }
-                        },
-                        Duration::from_millis(PULSE_STOP_MS),
-                    ) {
-                        if let Some(prev) = pulse_timer.get_value() {
-                            prev.clear();
+                            if let Ok(h) = set_timeout_with_handle(
+                                move || {
+                                    if let Some(el) = cover_ref.get() {
+                                        let _ = el.class_list().remove_1("thumb-skeleton-loading");
+                                        let _ = el.class_list().remove_1("thumb-skeleton-settling");
+                                    }
+                                },
+                                Duration::from_millis(PULSE_STOP_MS),
+                            ) {
+                                if let Some(prev) = pulse_timer.get_value() {
+                                    prev.clear();
+                                }
+                                pulse_timer.set_value(Some(h));
+                            }
                         }
-                        pulse_timer.set_value(Some(h));
+                    }
+                    Err(e) => {
+                        // A cache probe can have seeded `loaded` before a stale
+                        // cancellation prevents the actual canvas blit. Put the
+                        // cover back in that case; the next sweep retries it.
+                        if loaded.get_untracked() {
+                            loaded.set(false);
+                        }
+                        // A stale cancellation against a recycled canvas id is
+                        // retried by the next heal sweep. Keep genuine errors
+                        // visible without turning cancellation into noise.
+                        if e.name != "cancelled" {
+                            web_sys::console::warn_1(
+                                &format!("[thumbnails] render page {page}: {e}").into(),
+                            );
+                        }
                     }
                 }
-                Err(e) => {
-                    // Cancellations are the normal eviction path (unmount
-                    // aborts an in-flight render while scrolling); the skeleton
-                    // is the intended fallback, so only genuine failures log.
-                    if e.name != "cancelled" {
-                        web_sys::console::warn_1(
-                            &format!("[thumbnails] render page {page}: {e}").into(),
-                        );
-                    }
-                }
-            }
-        });
+            });
+        }
+    };
+    Effect::new(move |_| {
+        _ = heal.get();
+        try_render();
     });
 
     view! {
