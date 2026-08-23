@@ -43,9 +43,19 @@ function isWebServedPath(path: string): boolean {
   return false;
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  message: string,
+  onTimeout?: () => void,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => {
+      try {
+        onTimeout?.();
+      } catch (_) {
+        /* best-effort abort */
+      }
       reject(Object.assign(new Error(message), { name: "TimeoutError" }));
     }, ms);
     p.then(
@@ -182,6 +192,14 @@ async function openFromUrl(url: string): Promise<PDFDocumentProxy> {
     task.promise,
     8000,
     "Timed out opening this PDF (pdf.js worker failed to initialize)",
+    () => {
+      try {
+        void task.destroy();
+      } catch (_) {
+        /* ignore */
+      }
+      setLoadingTask(null);
+    },
   );
 }
 
@@ -198,6 +216,14 @@ async function openFromBytes(bytes: Uint8Array): Promise<PDFDocumentProxy> {
     task.promise,
     8000,
     "Timed out opening this PDF (pdf.js worker failed to initialize)",
+    () => {
+      try {
+        void task.destroy();
+      } catch (_) {
+        /* ignore */
+      }
+      setLoadingTask(null);
+    },
   );
 }
 

@@ -1,0 +1,230 @@
+/* =====================================================================
+   Appearance system additions: the hue picker strip, the preset
+   thumbnails, and the clickable link layer.
+   ===================================================================== */
+
+/* =====================================================================
+   10. Appearance system additions (task 11): hue picker, preset
+   thumbnails, and the clickable link layer.
+   ===================================================================== */
+
+/* --- hue strip ------------------------------------------------------------
+   The track paints the actual hue circle so the control previews its own
+   output. Authored in sRGB/HSL, NOT oklch: the tint is applied with
+   `hue-rotate()`, which works in sRGB, and the two spaces disagree badly —
+   oklch hue 34 is pink where sRGB 34 is the warm tan sepia wants. Matching the
+   space is what makes the swatch you click the colour you get. */
+.hue-strip {
+  background-image: linear-gradient(
+    to right,
+    hsl(0 60% 55%), hsl(60 60% 55%), hsl(120 60% 55%),
+    hsl(180 60% 55%), hsl(240 60% 55%), hsl(300 60% 55%), hsl(360 60% 55%)
+  );
+}
+.hue-strip::-webkit-slider-thumb {
+  appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+  cursor: pointer;
+}
+.hue-strip::-moz-range-thumb {
+  height: 14px;
+  width: 14px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+  cursor: pointer;
+}
+
+/* --- preset thumbnails (rock-solid, no filter/blend simulation hacks) -----
+   A miniature page rendered in the preset's OWN look. The swatch root carries
+   that appearance as inline custom properties under a private --ps-* namespace
+   (Appearance::preview_style), so the per-frame root writes during a tint drag
+   never invalidate these layers.
+
+   NO FILTER / NO MIX-BLEND-MODE. The previous version simulated a rendered PDF
+   page by giving .preset-canvas a CSS `filter: var(--ps-filter)` and
+   `mix-blend-mode: var(--ps-blend)` over a #ffffff background. On Dark/Dim/
+   Sepia/Green themes (without Noise), WebKit's compositor loses the
+   intermediate buffer for elements with both `filter` and `mix-blend-mode`
+   inside `isolation: isolate` during rapid style recalculations (slider
+   drags), rendering the "text" bars invisible. Light was immune because
+   `canvas_filter` is "none" (no GPU filter layer); Noise themes were immune
+   because `.preset-noise::after` (z-index 3, SVG background) forces a
+   persistent hardware-composited layer group.
+
+   The thumbnail is just a visual preview. The exact background and text
+   colours are already computed in --ps-color-paper and --ps-color-ink. By
+   rendering .preset-page with `background-color: var(--ps-color-paper)` and
+   .preset-line with `background-color: var(--ps-color-ink)`, we remove ALL
+   CSS filter and mix-blend-mode hacks — the swatch is impervious to GPU
+   compositing bugs because it has no GPU compositing layers to lose. */
+.preset-swatch {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--ps-line, var(--color-line, #e5e7eb));
+  position: relative;
+  box-sizing: border-box;
+}
+
+.preset-page {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-color: var(--ps-color-paper, #ffffff);
+}
+
+/* The stand-in "canvas": a flex column of dark "text" bars on the themed
+   paper. No filter, no blend — just solid colours from --ps-color-*. */
+.preset-canvas {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 16% 12% 0;
+  gap: 10%;
+}
+
+/* Stand-in text: coloured bars on the paper so tint/texture have something
+   to act on. Uses --ps-color-ink (the preset's own ink colour, including
+   tint) so the bars are visible on every base — dark ink on light paper,
+   light ink on dark paper. Deliberately NOT a fixed #24303f: that was
+   invisible on dark presets after the invert filter. With the filter removed,
+   the ink colour must be theme-appropriate or dark presets would show dark-
+   on-dark. */
+.preset-line {
+  display: block;
+  height: 5.5%;
+  border-radius: 1px;
+  background-color: var(--ps-color-ink, #1f2937);
+  opacity: 0.85;
+}
+
+.preset-line-a { width: 100%; }
+.preset-line-b { width: 82%; }
+.preset-line-c { width: 90%; }
+
+/* The swatch re-declares .pdf-page's texture chain locally: .preset-page is
+   not a .pdf-page, and making it one would drag in the host's shadow, flex
+   and sizing rules. z-index 2 keeps it above the stand-in canvas. All
+   variables consumed here are in the swatch's private --ps-* namespace. */
+.preset-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: var(--ps-tex-opacity, 0.9);
+  --tex-scale: var(--ps-tex-scale, 1);
+  --tex-unit: calc(26px * var(--tex-scale));
+  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  background-origin: border-box;
+  background-position: 0 0;
+}
+
+.preset-page.texture-paper::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  background-color: var(--ps-texture-paper, rgba(15,23,42,0.05));
+  background-blend-mode: var(--ps-texture-blend, multiply);
+  background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
+}
+
+.preset-page.texture-lined::before {
+  background-image: repeating-linear-gradient(to bottom, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+}
+
+.preset-page.texture-grid::before {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+}
+
+.preset-page.texture-dotted::before {
+  background-image: radial-gradient(var(--ps-texture-line, rgba(15,23,42,0.16)) calc(1px * var(--tex-scale)), transparent calc(1.5px * var(--tex-scale)));
+  background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
+}
+
+.preset-page.texture-cross::before {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    radial-gradient(var(--ps-texture-line, rgba(15,23,42,0.16)) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
+  background-size: var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit);
+}
+
+/* Grain preview, above the texture so the stack matches the real page.
+   OVERSIZED ON PURPOSE (inset: -100%): noise-crawl translates the tile by
+   up to 14px, and the swatch is only ~49x65px. At inset:0 the tile's own
+   EDGE would enter frame every few steps. The parent's overflow: hidden
+   clips the excess. */
+.preset-page.preset-noise::after {
+  content: "";
+  position: absolute;
+  inset: -100%;
+  z-index: 3;
+  pointer-events: none;
+  opacity: var(--ps-noise-opacity, 0);
+  mix-blend-mode: var(--ps-noise-blend, multiply);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 40px 40px;
+}
+
+.preset-page.preset-noise-animated::after {
+  animation: noise-crawl 0.66s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preset-page.preset-noise-animated::after { animation: none; }
+}
+
+/* --- link layer -----------------------------------------------------------
+   Clickable annotation targets over the page.
+
+   Sits ABOVE the text layer (z-index 3 vs 2). The text layer covers the whole
+   page with transparent spans, so a link underneath it would never receive a
+   click; putting links on top and giving only the ANCHORS pointer-events means
+   text selection still works everywhere except the few pixels that are a link
+   — the same trade-off every PDF viewer makes.
+
+   Neither blended nor filtered: the affordance is UI, not page content, so it
+   must stay legible whatever the tint or base mode is doing to the canvas. */
+.pdf-page .linkLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.pdf-page .linkLayer .pdf-link {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 2px;
+  /* Invisible until hovered. A PDF's own link styling (usually coloured text
+     or an underline) is already painted into the canvas, so a permanent box on
+     top would double it up on every well-made document. */
+  background-color: transparent;
+  outline: 1px solid transparent;
+  transition: background-color 120ms ease, outline-color 120ms ease;
+}
+.pdf-page .linkLayer .pdf-link:hover {
+  background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  outline-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+/* Keyboard users get the affordance permanently while focused — links are
+   reachable by Tab and an invisible focus target is a dead end. */
+.pdf-page .linkLayer .pdf-link:focus-visible {
+  background-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+

@@ -36,9 +36,6 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "unregisterPage")]
     pub fn unregister_page(canvas_id: &str);
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "cancelPage")]
-    pub fn cancel_page(canvas_id: &str);
-
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPage")]
     pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> JsValue;
 
@@ -94,6 +91,8 @@ extern "C" {
     // Tauri v2 window handle (used by MoreMenu fullscreen, phase 3) and event
     // listener (used by ReaderView drag-drop, phase 5). js_name mapping is load-bearing.
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "window"], js_name = "getCurrentWindow")]
+    // Called from the app crate (MoreMenu fullscreen) via the crate-root
+    // re-export; nothing inside this crate calls it, hence the allow.
     #[allow(dead_code)]
     pub fn tauri_get_current_window() -> JsValue;
 

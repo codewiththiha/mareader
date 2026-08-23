@@ -1,0 +1,87 @@
+/* =====================================================================
+   App shell: document/body defaults, reader scrollbars, the drag
+   regions, and the adaptive-toolbar measurement twin.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   7. App shell defaults.
+   --------------------------------------------------------------------- */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+  /* The auto-hide bottom bar slides down out of view; clip it here so its
+     hidden 12px translate can never leak a phantom window scrollbar. The
+     only scrollers left are the page list, thumbnails, outline and popovers. */
+  overflow: hidden;
+}
+
+body {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Thin scrollbars for the reader chrome. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------
+   13. Auto-hide chrome — no text selection while grabbing the drag
+   regions (the always-mounted hot strips + the hover-reveal bars).
+   --------------------------------------------------------------------- */
+[data-tauri-drag-region] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* --- sidebar aside containment -----------------------------------------
+   Scope layout recalculation to the aside itself. Without this, every
+   frame of the 300ms width transition reflows the viewer, the toolbar
+   and the bottom bar as well (the aside is a flex sibling of the
+   flex-1 viewer, so each width tween invalidates the whole row).
+   `layout style` (NOT `content`): paint containment would create a new
+   clipping context — the panels inside are position:absolute; inset:0
+   and rely on the aside's overflow:hidden clip, and paint containment
+   can subtly change how that clip interacts with the backdrop-filter
+   toolbar above. `layout style` scopes layout without touching paint. */
+.sidebar-aside {
+  contain: layout style;
+}
+
+/* --- adaptive toolbar measurement twin -------------------------------
+   visibility:hidden (NOT display:none) so children keep layout width. */
+.tb-sizer {
+  position: absolute;
+  top: 0;
+  left: -10000px;            /* off-screen so it cannot steal bar width */
+  display: flex;
+  gap: 0.25rem;              /* must match gap-1 on #toolbar-right */
+  visibility: hidden;
+  pointer-events: none;
+}
+.tb-sizer > * { flex-shrink: 0; }

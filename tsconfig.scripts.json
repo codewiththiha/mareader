@@ -22,5 +22,5 @@
     "removeComments": false,
     "useDefineForClassFields": true
   },
-  "include": ["scripts/check-versions.ts", "scripts/test-engine-smoke.ts"]
+  "include": ["scripts/**/*.ts"]
 }

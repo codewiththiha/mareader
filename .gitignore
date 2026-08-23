@@ -24,3 +24,6 @@
 /.script/
 CONTRACTS.md
 contracts.md
+bun.lock
+.st.txt
+.claude-shell-test.txt

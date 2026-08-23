@@ -3,7 +3,7 @@
    Emits utilities: bg-paper text-ink bg-surface text-muted border-line
    bg-accent text-accent bg-accent-soft text-accent-soft.
    Base modes rewrite the --base-* tokens under :root[data-base=...]; the
-   colour tint overrides --color-* inline from effects/theme_applier.rs.
+   colour tint overrides --color-* inline from effects/theme.rs.
    --------------------------------------------------------------------- */
 @theme {
   --color-paper: #ffffff;
@@ -58,7 +58,7 @@
 /* BASE PALETTES.
    Only THREE now (light / dark / dim), and they are the STRUCTURE — the colour
    tint is computed in Rust and pushed as inline custom properties on <html>
-   (see effects/theme_applier.rs). Sepia, Green and Night are no longer CSS
+   (see effects/theme.rs). Sepia, Green and Night are no longer CSS
    blocks: they are presets, i.e. points in {base, hue, strength} space, which
    is what lets a reader dial in ANY hue instead of the six we happened to
    hand-write.

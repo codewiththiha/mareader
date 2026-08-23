@@ -97,6 +97,27 @@ export function blitInto(
   return true;
 }
 
+
+export type RasterThemeTag = "canvas-raw" | "thumb-raw";
+
+/** Paint a raw raster and mark that exact visible canvas for live theming. */
+export function showRaw(dst: HTMLCanvasElement | null, raw: Raster | null, tag: RasterThemeTag): boolean {
+  const shown = blitInto(dst, raw);
+  if (shown) dst!.classList.add(tag);
+  return shown;
+}
+
+/** Paint a baked raster and clear the raw marker in the same synchronous turn. */
+export function showBaked(
+  dst: HTMLCanvasElement | null,
+  baked: Raster | null,
+  tag: RasterThemeTag,
+): boolean {
+  const shown = blitInto(dst, baked);
+  if (shown) dst!.classList.remove(tag);
+  return shown;
+}
+
 export function el(id: string): HTMLElement | null {
   if (typeof id !== "string" || !id) return null;
   return document.getElementById(id);

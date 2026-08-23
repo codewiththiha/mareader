@@ -4,7 +4,7 @@
    show through while dark text stays dark and legible.
    --------------------------------------------------------------------- */
 /* The stroke colors live behind these vars so the three DARK themes (which get
-   the `.dark` class on <html>, see theme_applier.rs) can flip them to LIGHT
+   the `.dark` class on <html>, see effects/theme.rs) can flip them to LIGHT
    strokes: the canvas inverts its page to dark paper, and black strokes would
    simply vanish against it. Light-family themes (light/sepia/green) keep the
    subtle dark strokes via the `:root` defaults. */

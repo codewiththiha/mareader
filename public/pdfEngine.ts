@@ -13,7 +13,6 @@ import { disposeScratch, releaseCanvas } from "./engine/canvas";
 import { coverDataUrl, open, takePendingFile } from "./engine/loader";
 import {
   cancelPage,
-  preparePagesForScrub,
   registerPage,
   renderPage,
   rerenderLivePages,
@@ -33,12 +32,9 @@ import {
   setActiveMatch,
   setHighlightMode,
 } from "./engine/search";
-import {
-  rebakeTheme,
-  applyScrubMode,
-  invalidatePipeline,
-  paintAllVisibleThumbs,
-} from "./engine/theme";
+import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
+import { invalidatePipeline } from "./engine/theme/pipeline";
+import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import { installSelectionTracker } from "./engine/selection";
 import {
   ENGINE_VERSION,
@@ -59,7 +55,7 @@ import {
   highlightsByPage,
   setSearchQuery,
   setActiveMatchValue,
-  setScrubbing,
+  themeScrubActive,
 } from "./engine/state";
 
 declare global {
@@ -118,8 +114,28 @@ async function destroy(): Promise<void> {
 
 (globalThis as unknown as { __pdfDestroy?: () => Promise<void> }).__pdfDestroy = destroy;
 
-async function refreshTheme(): Promise<void> {
+// Rust invokes these APIs fire-and-forget. Keep one promise chain so a pause
+// in a tint drag cannot interleave `scrub off → bake` with a new `scrub on`.
+// A failed mutation is reported but deliberately swallowed so it never poisons
+// the queue and blocks every later appearance change.
+let themeChain: Promise<void> = Promise.resolve();
+
+function enqueueTheme(work: () => Promise<void>): Promise<void> {
+  themeChain = themeChain
+    .then(work, work)
+    .catch((e: unknown) => {
+      const msg = (e as { message?: string })?.message ?? e;
+      console.warn("[pdfEngine] theme mutation failed:", msg);
+    });
+  return themeChain;
+}
+
+async function refreshThemeInternal(): Promise<void> {
   invalidatePipeline();
+  // A slider commit arrives while scrub owns raw, individually tagged
+  // canvases. Exit performs the single final bake, so do not enqueue a second
+  // rebake (or page rerender) against that same pipeline here.
+  if (themeScrubActive) return;
   await rebakeTheme();
   // Pages without a distinct raw must re-render from pdf.js (never
   // double-filter). Thumbs were already refreshed in rebakeTheme.
@@ -145,14 +161,12 @@ async function refreshTheme(): Promise<void> {
   paintAllVisibleThumbs();
 }
 
-async function setScrubMode(on: boolean): Promise<void> {
-  if (on) {
-    // Produce unbaked raws BEFORE the CSS filter class goes on, otherwise
-    // the first drag frame double-filters the baked Dark/Dim raster.
-    setScrubbing(true);
-    await preparePagesForScrub();
-  }
-  await applyScrubMode(on);
+function refreshTheme(): Promise<void> {
+  return enqueueTheme(refreshThemeInternal);
+}
+
+function setScrubMode(on: boolean): Promise<void> {
+  return enqueueTheme(() => setScrubModeInternal(on));
 }
 
 function stats(): Stats {

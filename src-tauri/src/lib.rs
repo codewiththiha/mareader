@@ -141,7 +141,10 @@ pub fn run() {
             set_traffic_lights
         ])
         .build(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            eprintln!("error while running tauri application: {e}");
+            std::process::exit(1);
+        });
 
     app.run(|app_handle, event| match event {
         // macOS: files opened with this app (Finder double-click, `open -a`,

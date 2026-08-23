@@ -51,6 +51,7 @@ pub fn page_intrinsic(
     (w.max(1.0), h.max(1.0))
 }
 
+
 /// Scale that fits a page (base CSS-px size `page_w` x `page_h`) into a
 /// container of `container_w` x `container_h`, leaving `padding` px of air.
 /// `FitMode::None` should never call this — it returns the caller's current scale.

@@ -37,10 +37,10 @@ function snippetText(str: string, q: string, from: number | undefined): string {
   return pre + str.slice(start, end) + post;
 }
 
-/** No-op: search() streams pages itself. Kept so Rust's existing call still resolves. */
-export async function buildSearchIndex(): Promise<number> {
+/** No-op: search() streams pages itself. Same `{ok, count}` envelope as the rest. */
+export async function buildSearchIndex(): Promise<{ ok: true; count: number }> {
   textIndex.clear();
-  return 0;
+  return { ok: true, count: 0 };
 }
 
 export async function search(query: string): Promise<SearchResult> {

@@ -1,8 +1,10 @@
 mod app;
 mod components;
-mod core;
 mod effects;
-mod util;
+mod features;
+mod services;
+mod state;
+mod storage;
 
 use app::*;
 use leptos::prelude::*;

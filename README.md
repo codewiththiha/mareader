@@ -277,11 +277,11 @@ stays visible.
 |  Tauri v2 shell (Rust)                                       |
 |  native window, file dialog, asset protocol, fullscreen      |
 +-------------------------------------------------------------+
-|  Leptos 0.7 interface (Rust, compiled to WebAssembly)        |
-|  atoms / molecules / organisms / views, reactive signals     |
+|  Leptos 0.8 interface (Rust, compiled to WebAssembly)        |
+|  features / components / state / effects, reactive signals   |
 +-------------------------------------------------------------+
 |  Typed bridge (wasm-bindgen)                                 |
-|  snake_case Rust mapped to camelCase engine calls            |
+|  pdf-engine: snake_case Rust mapped to camelCase engine      |
 +-------------------------------------------------------------+
 |  window.PDFReader engine (JavaScript, public/pdfEngine.js)   |
 |  render queue, thumbnail cache, text layer, search index     |
@@ -290,9 +290,42 @@ stays visible.
 +-------------------------------------------------------------+
 ```
 
-Components follow atomic design. Pure logic lives in `src/core` with no WebAssembly dependencies,
-so the zoom maths, layout maths, filename rules, colour conversion, search index arithmetic and
-settings migration are all unit-testable on the host.
+Pure logic lives in the `pdf-core` crate with no WebAssembly dependencies, so the zoom maths,
+layout maths, filename rules, colour conversion, search index arithmetic and settings
+migration are all unit-testable on the host. `virtual-list` is the generic windowing-math
+library under the viewer.
+
+### Project layout
+
+```
+src/
+  app/                   application root: bootstrap, routed shell, route glue
+  components/            the component system, by what each piece is used for
+    shared/              generic UI: button, icon, slider, segmented, tooltip,
+                         kbd, hue picker, popover, adaptive toolbar, option/menu rows
+    chrome/              title bar + floating document title
+    menus/               appearance menu (presets/base/texture/noise) and more menu
+    overlays/            toast host and drag-drop feedback
+    reader/              reader-only controls: page indicator, bottom controls, zoom
+    sidebar/             sidebar coordinator + header, book info, panel switcher
+    pdf/                 PDF-document UI: page canvas, page list, single/continuous
+                         views, page navigation, floating search, outline, thumbnails
+  features/              routes: library (page + shelf) and reader
+  state/                 reactive app state: app, viewer, library, open flow
+  effects/               cross-cutting reactive systems (appearance, fit/zoom,
+                         page tracking, search, shortcuts, theme, ...)
+  storage/               persistence: PdfStorage trait + localStorage backend
+crates/
+  pdf-core/              pure PDF/domain math (no wasm, no DOM, host-testable)
+  pdf-engine/            the wasm-bindgen bridge to pdf.js and Tauri
+  virtual-list/          generic virtualization algorithms (fenwick, chunked)
+public/
+  pdfEngine.js           the imperative engine wrapper
+  vendor/pdfjs/          vendored pdf.js build, worker, viewer CSS and cmaps
+  samples/               sample documents
+src-tauri/               native shell, capabilities, icons, bundle configuration
+styles/input.css         Tailwind v4 entry point and the full design system
+```
 
 ### Project layout
 

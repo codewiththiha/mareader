@@ -4,18 +4,15 @@ import type {
   PageState,
   RenderResult,
 } from "./types";
-import { blitInto, el, errorInfo, fail, releaseCanvas, releasePooledCanvas } from "./canvas";
-import {
-  bakeRaster,
-  pipelineIsIdentity,
-  readPipeline,
-} from "./theme";
+import { el, errorInfo, fail, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
+import { bakeRaster } from "./theme/bake";
+import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
 import {
   bumpRenderCount,
   CLEANUP_EVERY,
   pdf,
   releasePageSurfaces,
-  scrubbing,
+  themeScrubActive,
   stateByCanvasId,
   dropRawIfIdle,
   noteActivity,
@@ -178,8 +175,8 @@ export async function renderPageInternal(
   const pxW = Math.max(1, Math.floor(viewport.width * out));
   const pxH = Math.max(1, Math.floor(viewport.height * out));
 
-  const pipeline = scrubbing ? null : readPipeline();
-  const needsBake = !scrubbing && pipeline ? !pipelineIsIdentity(pipeline) : false;
+  const pipeline = themeScrubActive ? null : readPipeline();
+  const needsBake = !themeScrubActive && pipeline ? !pipelineIsIdentity(pipeline) : false;
   const target = needsBake ? document.createElement("canvas") : st.canvas;
   target.width = pxW;
   target.height = pxH;
@@ -217,17 +214,19 @@ export async function renderPageInternal(
     // invert twice (flash to light) and Dim apply twice (go darker).
     const baked = bakeRaster(target, pipeline);
     if (baked !== st.canvas) {
-      blitInto(st.canvas, baked);
+      showBaked(st.canvas, baked, "canvas-raw");
       if (baked !== target) releasePooledCanvas(baked);
     }
     if (st.rawCanvas && st.rawCanvas !== st.canvas && st.rawCanvas !== target) {
       releaseCanvas(st.rawCanvas);
     }
     st.rawCanvas = target;
+    st.canvas.classList.remove("canvas-raw");
     dropRawIfIdle(st);
   } else {
-    // Identity / already-scrubbing: the live canvas IS the raw.
+    // Identity / already scrubbing: the live canvas IS the raw.
     st.rawCanvas = st.canvas;
+    st.canvas.classList.toggle("canvas-raw", themeScrubActive);
   }
 
   if (renderText && st.host && st.textLayerEl) {

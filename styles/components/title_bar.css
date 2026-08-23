@@ -1,0 +1,114 @@
+/* =====================================================================
+   Titlebar glass: the frosted overlay bar, the sidebar panel outro,
+   the one-frame glass rebuild on base-mode swaps, and the status bar.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   8. Toolbar glass — frosted overlay bar.
+
+   The `<header>` in features/reader/page.rs carries backdrop-blur + a theme-tinted
+   translucent bg (the "milky glass") and is absolutely stacked over the
+   viewer, so content scrolls underneath it, blurred.
+
+   AUTO-INVERTING GLYPHS, AND WHY THEY ARE NOW OPT-IN.
+   Icons and labels used to be pure-white + mix-blend-difference across the
+   board, so they inverted against whatever scrolled beneath the glass. That
+   works for near-black or near-white ink, where difference lands far from the
+   backdrop. It FAILS for mid-grey: `--color-muted` (#6b7280) differenced
+   against the light glass resolves to a near-white, and the "/ 12" total in
+   the page navigator rendered at a measured luminance spread of 7/255 —
+   invisible — while the "1" input beside it (which has its own opaque
+   background, so it never blended) stayed properly dark.
+
+   Difference-blending is therefore no longer applied to text by default. Two
+   things actually need it, and they are marked explicitly:
+
+     .glass-invert  — opt IN. For glyphs that genuinely sit over scrolling
+                      page content with no background of their own.
+
+   Everything else keeps its normal themed colour. That is not a downgrade:
+   the header is `bg-surface/60` over the page, and every themed token is
+   already chosen for contrast against surface. The tint keeps each token's
+   OWN lightness (see core/oklch.rs), so that contrast survives any hue.
+   --------------------------------------------------------------------- */
+/* THE GLASS ITSELF.
+   Previously the header carried Tailwind's `bg-surface/60 backdrop-blur-xl`
+   and still read as a flat light or flat dark bar, never as glass.
+
+   ROOT CAUSE: NOTHING WAS EVER BEHIND IT. The header is absolutely positioned
+   and therefore out of flow, but the content row below it carried `mt-12` —
+   exactly the header's own height (toolbar-row is h-12). The viewer began on
+   the first pixel after the bar ended, so no page content ever passed beneath
+   it. `backdrop-filter` had only the flat `bg-paper` fill to sample, and
+   blurring a solid colour returns that same solid colour. The translucency was
+   real the whole time; there was simply nothing behind it to see. The margin
+   is gone now (features/reader/page.rs) and each view pads its own scroller instead, so
+   pages genuinely travel under the bar.
+
+   Owning the background here (rather than via `bg-surface/60`) keeps the
+   blur radius, the saturation boost and the alpha as one coherent unit that a
+   utility class cannot half-override, and gives the no-backdrop-filter
+   fallback below something to attach to. A tint still tints the glass, because
+   the mix reads whatever `--color-surface` is live.
+
+   The saturate() is what sells it as glass rather than as fog: blurring alone
+   averages colour toward grey, and pushing saturation back up keeps the page
+   tint readable through the bar. */
+.toolbar-glass {
+  background-color: color-mix(in oklab, var(--color-surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Progressive enhancement: where backdrop-filter is unavailable the bar must
+   still be legible, so it falls back to a near-opaque surface. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .toolbar-glass {
+    background-color: color-mix(in oklab, var(--color-surface) 96%, transparent);
+  }
+}
+
+.toolbar-glass .glass-invert,
+.toolbar-glass .glass-invert svg {
+  color: #fff;
+  mix-blend-mode: difference;
+}
+
+/* Sidebar panel outro — same 300ms ease-in-out as the aside width slide.
+   The rail labels (Thumbs / Outline) outro by being clipped as the aside
+   shrinks. The grid/list used to go `visibility:hidden` on the first frame
+   of that slide, so the thumbs popped off while the labels slid away.
+   `.is-outro` is toggled for the whole close, so the fade lands with the
+   clip and with the labels. */
+.sidebar-panel {
+  transition: opacity 300ms ease-in-out;
+}
+.sidebar-panel.is-outro {
+  opacity: 0;
+}
+/* Sidebar panel intro — mirrors .is-outro. The wrapper is transparent while
+   the opening gate is active; removing the class fades mounted content in. */
+.sidebar-panel.is-intro {
+  opacity: 0;
+}
+
+/* Rebuild the glass ONLY on the one frame a base mode swaps. Dropping the
+   filter destroys WKWebView's cached backdrop layer; re-adding it next frame
+   re-samples the NEW page colours. Menus stay frosted the whole time. */
+html.theme-switching .toolbar-glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: var(--color-surface);
+}
+
+/* One-frame mute of color transitions so a base/preset swap cannot leave
+   a button interpolated between the old and new tokens. Toggled from
+   effects/theme.rs around paint_appearance_now. */
+html.theme-switching,
+html.theme-switching * {
+  transition: none !important;
+}
+
+/* The status bar keeps the auto-inverting treatment: it floats directly over
+   the page with no background at all, so the backdrop really is arbitrary. */
+

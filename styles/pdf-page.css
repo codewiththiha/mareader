@@ -17,9 +17,9 @@
      the renderer: every scroll-mounted page, every sidebar-slide frame and
      every zoom frame re-rasterised it. Colours are byte-identical, and the
      render scale / DPR budget is untouched, so text stays exactly as sharp.
-     Only during an appearance slider scrub does the live CSS pipeline return
-     (`html.appearance-scrubbing`), so the page still re-colours per frame
-     under the user's drag.
+     During an appearance slider scrub, only canvases holding raw pixels get
+     the live CSS pipeline via their `.canvas-raw` / `.thumb-raw` tag. The
+     tag travels with each raster, so a baked canvas is never double-filtered.
 
      `contain: content` (layout + paint) keeps page-internal repaints — text
      layer swaps, highlight boxes — from invalidating anything outside the
@@ -55,25 +55,18 @@
      holds one opaque texture per page and nothing else. */
 }
 
-/* APPEARANCE SCRUB — the one window where the classic live-CSS pipeline is
-   re-enabled. While a slider drag (tint hue/strength) repaints the theme
-   variables every frame, the engine shows the RAW rasters (see
-   pdfEngine.js setScrubMode) and these rules re-apply the filter/blend the
-   compositor used to run — so the page re-colours live under the drag,
-   pixel-identical to the old behaviour, with zero per-frame raster work.
-   The moment the gesture pauses, the baked rasters come back and these
-   rules stop matching. The texture layer returns to z-index 0 (behind the
-   blending canvas) for the same duration. */
-html.appearance-scrubbing .pdf-page canvas {
+/* APPEARANCE SCRUB — raw rasters carry a tag as they are painted, and only
+   that tag enables the live filter/blend. This structural invariant makes a
+   raw canvas themed and a baked canvas unfiltered regardless of asynchronous
+   thumbnail/page work. The html class below is intentionally cosmetic: it
+   only puts the texture behind an actively blending raw page. */
+.pdf-page canvas.canvas-raw,
+.thumb-canvas.thumb-raw {
   filter: var(--canvas-filter, none);
   mix-blend-mode: var(--canvas-blend, multiply);
 }
 html.appearance-scrubbing .pdf-page::before {
   z-index: 0;
-}
-html.appearance-scrubbing .thumb-canvas {
-  filter: var(--canvas-filter, none);
-  mix-blend-mode: var(--canvas-blend, multiply);
 }
 
 /* Thumbnail card backdrop — ONE permanent themed backdrop shared by the

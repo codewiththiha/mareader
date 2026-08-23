@@ -64,9 +64,9 @@ export function bumpRenderCount(): number {
   return renderCount;
 }
 
-export let scrubbing = false;
-export function setScrubbing(on: boolean): void {
-  scrubbing = on;
+export let themeScrubActive = false;
+export function setThemeScrubActive(on: boolean): void {
+  themeScrubActive = on;
 }
 
 /** Max pixels per canvas layer (16M ≈ 64 MB RGBA) — the ceiling, not the
@@ -154,7 +154,7 @@ export function dropRawIfIdle(st: PageState): void {
   rawTimers.set(
     st,
     setTimeout(() => {
-      if (st.dead || scrubbing) return;
+      if (st.dead || themeScrubActive) return;
       if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
       st.rawCanvas = null;
     }, RAW_IDLE_MS),

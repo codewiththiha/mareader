@@ -1,21 +1,20 @@
 // LRU thumbnail cache + blit / render.
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
-import { blitInto, el, errorInfo, fail, releaseCanvas } from "./canvas";
+import { el, errorInfo, fail, releaseCanvas, showBaked, showRaw } from "./canvas";
+import { bakeRaster } from "./theme/bake";
+import { readPipeline, pipelineCache } from "./theme/pipeline";
 import {
-  bakeRaster,
   cacheDisplay,
   ensureEntryCurrent,
   paintCached,
-  pipelineCache,
-  readPipeline,
   thumbRaw,
   thumbSource,
-} from "./theme";
+} from "./theme/thumbnails";
 import {
   pdf,
   releaseThumbEntry,
-  scrubbing,
+  themeScrubActive,
   THUMB_CACHE_MAX,
   thumbCache,
   thumbCancelled,
@@ -44,7 +43,7 @@ export function hasThumb(page: number, scale: number): boolean {
   return (
     !!hit &&
     Math.abs(hit.scale - scale) < 1e-9 &&
-    (scrubbing || hit.gen === pipelineCache.gen || !!hit.raw)
+    (themeScrubActive || hit.gen === pipelineCache.gen || !!hit.raw)
   );
 }
 
@@ -52,20 +51,12 @@ export function blitThumb(canvasId: string, page: number): boolean {
   const dst = el(canvasId) as HTMLCanvasElement | null;
   const entry = thumbCache.get(page);
   if (!dst || !entry) return false;
-  const src = scrubbing ? thumbRaw(entry) : thumbSource(entry);
+  const raw = themeScrubActive ? thumbRaw(entry) : null;
+  const src = raw ?? thumbSource(entry);
   if (!src) return false;
-  if (dst.width <= 0 || dst.height <= 0) {
-    dst.width = (src as ImageBitmap).width;
-    dst.height = (src as ImageBitmap).height;
-  }
-  const ctx = dst.getContext("2d");
-  if (!ctx) return false;
-  try {
-    ctx.drawImage(src as CanvasImageSource, 0, 0, dst.width, dst.height);
-    return true;
-  } catch (_) {
-    return false;
-  }
+  return raw
+    ? showRaw(dst, raw, "thumb-raw")
+    : showBaked(dst, src, "thumb-raw");
 }
 
 export async function renderThumb(
@@ -92,8 +83,8 @@ async function renderThumbInternal(
 
   const hit = thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) {
-    if (scrubbing) {
-      if (blitInto(canvas, thumbRaw(hit))) {
+    if (themeScrubActive) {
+      if (showRaw(canvas, thumbRaw(hit), "thumb-raw")) {
         cachePut(page, hit);
         thumbLive.set(canvasId, { page });
         return { ok: true, width: hit.cssW, height: hit.cssH, scale, cached: true };
@@ -158,7 +149,7 @@ async function renderThumbInternal(
     // createImageBitmap used to zero the only unthemed copy, so a theme
     // change could not update visible thumbs until a full pdf.js re-render.
     const raw = off;
-    let display: MaybeCanvas = scrubbing ? raw : bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = themeScrubActive ? raw : bakeRaster(raw, readPipeline());
     if (display === raw) {
       if (typeof createImageBitmap === "function") {
         try {
@@ -176,7 +167,7 @@ async function renderThumbInternal(
       cssW,
       cssH,
       scale,
-      gen: scrubbing ? -1 : pipelineCache.gen,
+      gen: themeScrubActive ? -1 : pipelineCache.gen,
       pending: null,
     };
     cachePut(page, entry);
@@ -230,10 +221,10 @@ export async function prefetchThumb(page: number, scale: number): Promise<void> 
     await task.promise;
     pg.cleanup();
     const raw = off;
-    let display: MaybeCanvas = scrubbing ? raw : bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = themeScrubActive ? raw : bakeRaster(raw, readPipeline());
     if (display !== raw) display = await cacheDisplay({ display });
     cachePut(page, { raw, display, cssW: Math.floor(viewport.width),
                      cssH: Math.floor(viewport.height), scale,
-                     gen: scrubbing ? -1 : pipelineCache.gen, pending: null });
+                     gen: themeScrubActive ? -1 : pipelineCache.gen, pending: null });
   } catch (_) { /* prefetch is best-effort */ }
 }
