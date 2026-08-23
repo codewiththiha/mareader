@@ -178,17 +178,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             <SidebarThumbs
                                 state=vs
                                 sidebar=state.ui.sidebar
-                                // Hold the cells back while the open slide is
-                                // still animating: mounting 20–30 ThumbCells
-                                // (each a pdf.js rasterisation) mid-slide is
-                                // what made the first toggle lag. Once the
-                                // 300ms window ends (paint.opening clears),
-                                // the <For> mounts the window onto a settled
-                                // layout. On later opens the thumb cache is
-                                // warm, so the gate is harmless there too.
-                                live=Signal::derive(move || {
-                                    paint.thumbs_live.get() && !paint.opening.get()
-                                })
+                                // Cells mount with the aside. Cached thumbs
+                                // blit during the slide; cold cells retain their
+                                // skeleton until their capped render completes.
+                                live=Signal::derive(move || paint.thumbs_live.get())
                                 shown=paint.show_thumbs
                                 outro=paint.is_closed
                                 intro=paint.intro

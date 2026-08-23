@@ -86,8 +86,8 @@
 .sidebar-panel.is-outro {
   opacity: 0;
 }
-/* Sidebar panel intro — mirrors .is-outro. The wrapper is transparent while
-   the opening gate is active; removing the class fades mounted content in. */
+/* Sidebar panel intro — a two-frame paint marker. Cells mount immediately;
+   removing this class starts their opacity transition alongside the aside. */
 .sidebar-panel.is-intro {
   opacity: 0;
 }

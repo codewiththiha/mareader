@@ -11,6 +11,29 @@ import {
   thumbRaw,
   thumbSource,
 } from "./theme/thumbnails";
+// A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
+// raster work, not clicks: queued jobs are invalidated on unmount and cached
+// paths still paint immediately.
+const THUMB_RENDER_LIMIT = 3;
+let thumbActive = 0;
+const thumbQueue: Array<() => void> = [];
+const thumbGeneration = new Map<string, number>();
+
+function nextThumbGeneration(canvasId: string): number {
+  const next = (thumbGeneration.get(canvasId) ?? 0) + 1;
+  thumbGeneration.set(canvasId, next);
+  return next;
+}
+
+function pumpThumbQueue(): void {
+  while (thumbActive < THUMB_RENDER_LIMIT && thumbQueue.length > 0) {
+    const next = thumbQueue.shift();
+    if (!next) return;
+    thumbActive += 1;
+    next();
+  }
+}
+
 import {
   pdf,
   releaseThumbEntry,
@@ -64,12 +87,47 @@ export async function renderThumb(
   page: number,
   scale: number
 ): Promise<ThumbResult> {
-  try {
-    return await renderThumbInternal(canvasId, page, scale);
-  } catch (e) {
-    const info = errorInfo(e);
-    return fail(info.name, info.message);
+  // A new mount supersedes any queued request for the same recycled canvas id.
+  const generation = nextThumbGeneration(canvasId);
+  thumbCancelled.delete(canvasId);
+
+  // Cache hits are synchronous blits or a small display refresh; they do not
+  // create pdf.js raster work and should never wait behind cold renders.
+  if (hasThumb(page, scale)) {
+    try {
+      return await renderThumbInternal(canvasId, page, scale);
+    } catch (e) {
+      const info = errorInfo(e);
+      return fail(info.name, info.message);
+    }
   }
+
+  return await new Promise<ThumbResult>((resolve) => {
+    thumbQueue.push(() => {
+      const finish = () => {
+        thumbActive -= 1;
+        pumpThumbQueue();
+      };
+      // The cell disappeared, or a newer mount re-used this id, before the
+      // job reached the front of the queue. Drop it without touching pdf.js.
+      if (
+        thumbCancelled.has(canvasId)
+        || thumbGeneration.get(canvasId) !== generation
+      ) {
+        resolve(fail("cancelled", "Thumbnail render cancelled"));
+        finish();
+        return;
+      }
+      renderThumbInternal(canvasId, page, scale)
+        .then(resolve)
+        .catch((e: unknown) => {
+          const info = errorInfo(e);
+          resolve(fail(info.name, info.message));
+        })
+        .finally(finish);
+    });
+    pumpThumbQueue();
+  });
 }
 
 async function renderThumbInternal(
@@ -190,6 +248,8 @@ async function renderThumbInternal(
 }
 
 export function cancelThumb(canvasId: string): void {
+  // Invalidate a queued job as well as cancelling an active pdf.js task.
+  nextThumbGeneration(canvasId);
   const task = thumbTasks.get(canvasId);
   if (task) {
     try { task.cancel(); } catch (_) { /* ignore */ }
