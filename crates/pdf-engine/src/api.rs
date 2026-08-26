@@ -285,3 +285,24 @@ pub async fn set_traffic_lights(visible: bool) {
     _ = js_sys::Reflect::set(&args, &JsValue::from_str("visible"), &JsValue::from_bool(visible));
     _ = bridge::tauri_invoke("set_traffic_lights", args.into()).await;
 }
+
+// --- AI word explanation --------------------------------------------------
+
+/// Fire-and-forget start of an `explain_word` run on the backend. Nothing
+/// comes back here: the backend streams its chunks over the
+/// `ai-stream-chunk` event, which the frontend AI service listens to.
+/// Outside Tauri (`trunk serve`) there is nothing to invoke, so this is a
+/// silent no-op; a genuine invoke failure surfaces as `Err` for the caller
+/// to log.
+pub async fn explain_word(word: &str, context: &str) -> Result<(), String> {
+    if !bridge::has_tauri() {
+        return Ok(());
+    }
+    let args = js_sys::Object::new();
+    _ = js_sys::Reflect::set(&args, &JsValue::from_str("word"), &JsValue::from_str(word));
+    _ = js_sys::Reflect::set(&args, &JsValue::from_str("context"), &JsValue::from_str(context));
+    bridge::tauri_invoke("explain_word", args.into())
+        .await
+        .map(|_| ())
+        .map_err(|e| e.as_string().unwrap_or_else(|| "unknown invoke error".to_string()))
+}

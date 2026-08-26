@@ -24,11 +24,27 @@ tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+dotenvy = "0.15"      # Loads the .env file (FM_BRIDGE_BIN) before Tauri boots
+futures = "0.3"       # Handles fm-bridge's async streams
+async-stream = "0.3"  # Wraps the AI output chunks into a stream
+tokio = { version = "1", features = ["time"] } # Drives the mock provider's simulated delays
 
 # macOS-only: hide/show the native traffic lights (titlebar-less overlay mode).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"
 raw-window-handle = "0.6"
+
+# Apple Intelligence lives in the Tauri backend (WASM cannot spawn the Swift
+# helper process). Optional + target-gated so Windows, Linux and Intel Macs
+# never compile it; enabling the `ai` feature is a no-op there.
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+fm-bridge = { git = "https://github.com/codewiththiha/fm-bridge.git", optional = true }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+# Activates the Apple Intelligence provider on Apple Silicon Macs.
+ai = ["dep:fm-bridge"]
 
 # objc 0.2's sel_impl! macro expands `cfg(feature = "cargo-clippy")` into OUR
 # crate, and rustc's check-cfg lints that feature value. Declare it expected so

@@ -14,10 +14,18 @@ use std::fmt;
 use wasm_bindgen::JsValue;
 
 use crate::state::library::{sanitize as sanitize_library, CoverImage, RecentBook};
+use pdf_core::gloss::GlossMark;
 use pdf_core::settings::{sanitize, Settings, SETTINGS_KEY};
 
 pub const LIBRARY_KEY: &str = "pdfreader.library.v1";
 pub const COVERS_KEY: &str = "pdfreader.covers.v1";
+/// Gloss highlights, keyed by document path.
+///
+/// Versioned like the rest: the rects are page-space CSS px, so they are
+/// stable across zoom and sessions but NOT across a change in how a page is
+/// laid out. If page rendering metrics ever change, bump this to `v2` rather
+/// than letting old marks drift onto the wrong words.
+pub const GLOSS_KEY: &str = "pdfreader.gloss.v1";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization
 /// error). The UI should never crash on these — but they must not vanish.
@@ -129,4 +137,32 @@ pub fn save_covers(covers: &HashMap<String, CoverImage>) -> Result<(), StorageEr
         detail: format!("serialize failed: {e}"),
     })?;
     set(COVERS_KEY, &json)
+}
+
+/// Load every document's gloss highlights (path -> marks).
+pub fn load_gloss() -> HashMap<String, Vec<GlossMark>> {
+    get(GLOSS_KEY)
+        .map(|raw| parse("gloss", &raw))
+        .unwrap_or_default()
+}
+
+pub fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError> {
+    let json = serde_json::to_string(all).map_err(|e| StorageError {
+        op: "save_gloss",
+        detail: format!("serialize failed: {e}"),
+    })?;
+    set(GLOSS_KEY, &json)
+}
+
+/// Replace one document's marks and write the whole map back.
+///
+/// Read-modify-write rather than keeping the map in memory: marks change only
+/// when the reader explains a word (a human-paced action), and re-reading
+/// keeps a second window's marks from being clobbered.
+pub fn persist_gloss(path: &str, marks: &[GlossMark]) {
+    let mut all = load_gloss();
+    all.insert(path.to_string(), marks.to_vec());
+    if let Err(e) = save_gloss(&all) {
+        e.report();
+    }
 }

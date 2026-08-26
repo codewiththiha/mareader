@@ -1,14 +1,16 @@
 //! The application's component system, organized by what a component is
 //! used for:
 //!
+//!   * `ai`         — AI-assisted reading (selection-anchored menu,
+//!     explanation popover)
 //!   * `primitives` — generic UI (button, icon, popover, …); must never
 //!     know what a PDF reader is
-//!   * `chrome`     — reusable structural application chrome (title bar,
-//!     adaptive toolbar, document titles)
-//!   * `menus`      — menu features (appearance, more)
+//!   * `app_shell` — reusable structural application shell (title bar,
+//!     adaptive toolbar, traffic lights, document titles)
+//!   * `menus`      — menu features (appearance_menu, app_menu)
 //!   * `overlays`   — transient UI (toast, drag feedback)
-//!   * `reader_controls` — reader-only controls (zoom, page indicator, …)
-//!   * `panels`     — the app sidebar (composition shell + panel hosts)
+//!   * `viewer_controls` — reader-only controls (zoom, page indicator, …)
+//!   * `sidebar`     — the app sidebar (composition shell + panel hosts)
 //!   * `document`   — UI whose purpose is displaying PDF documents
 //!   * `search`     — search presentation shared by reader surfaces
 //!
@@ -32,12 +34,15 @@
 //! * A Leptos `.set()` always notifies, even when the value is unchanged.
 //!   Guard writes that run in a loop or animation frame.
 
-mod conditional_class;
-pub mod chrome;
+pub mod ai;
+pub mod app_shell;
 pub mod document;
 pub mod menus;
 pub mod overlays;
-pub mod panels;
+pub mod sidebar;
 pub mod primitives;
-pub mod reader_controls;
+pub mod viewer_controls;
 pub mod search;
+
+
+

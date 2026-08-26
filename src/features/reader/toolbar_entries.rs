@@ -7,9 +7,9 @@ use leptos::prelude::*;
 
 use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
-use crate::components::chrome::adaptive_toolbar::ToolbarItem;
-use crate::components::menus::appearance::appearance_entry;
-use crate::components::reader_controls::zoom_controls::zoom_entries;
+use crate::components::app_shell::adaptive_toolbar::ToolbarItem;
+use crate::components::menus::appearance_menu::appearance_entry;
+use crate::components::viewer_controls::zoom_controls::zoom_entries;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::segmented::{SegmentOption, Segmented, SegmentedLabel};

@@ -1,4 +1,4 @@
-//! App menus, all built on the window-aware `Popover`.
+//! App menus, built on the floating-system primitives (MenuPopover wrapper).
 
-pub mod appearance;
-pub mod more_menu;
+pub mod app_menu;
+pub mod appearance_menu;

@@ -9,5 +9,5 @@ pub mod reader;
 pub mod ui;
 
 pub use app::{AppState, Toast};
-pub use reader::{ReaderState, TextureSignal};
+pub use reader::{NO_DOCUMENT, ReaderState, TextureSignal};
 pub use ui::SidebarMode;

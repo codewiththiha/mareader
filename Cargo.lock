@@ -173,6 +173,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-stream"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "async-task"
 version = "4.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -943,6 +965,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenvy"
+version = "0.15.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
+
+[[package]]
 name = "dpi"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1154,6 +1182,19 @@ checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
+]
+
+[[package]]
+name = "fm-bridge"
+version = "0.1.0"
+source = "git+https://github.com/codewiththiha/fm-bridge.git#4192a83bbb243c577011ab94a4b6e453ec5fc177"
+dependencies = [
+ "async-stream",
+ "futures-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -2900,6 +2941,10 @@ checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 name = "pdf"
 version = "0.5.0"
 dependencies = [
+ "async-stream",
+ "dotenvy",
+ "fm-bridge",
+ "futures",
  "objc",
  "raw-window-handle",
  "serde",
@@ -2909,6 +2954,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tokio",
 ]
 
 [[package]]
@@ -2947,6 +2993,7 @@ dependencies = [
  "serde-wasm-bindgen",
  "serde_json",
  "virtual-list",
+ "virtual-list-leptos",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -4638,6 +4685,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "windows-sys 0.61.2",
 ]
@@ -5038,7 +5086,18 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "virtual-list"
+version = "0.2.0"
+
+[[package]]
+name = "virtual-list-leptos"
 version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "leptos",
+ "virtual-list",
+ "wasm-bindgen",
+ "web-sys",
+]
 
 [[package]]
 name = "vswhom"

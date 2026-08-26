@@ -17,9 +17,11 @@
 use leptos::prelude::*;
 
 use crate::components::document::PageCanvas;
+use crate::components::document::page_canvas::component::GlossOverlayProps;
 use crate::state::TextureSignal;
 use crate::state::ReaderState;
-use crate::components::document::dom_helpers::{observe_content_size, SINGLE_PAGE_CONTAINER_ID};
+use crate::components::primitives::hooks::dom::SINGLE_PAGE_CONTAINER_ID;
+use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
 
 #[component]
 pub fn SinglePageView(state: ReaderState) -> impl IntoView {
@@ -85,6 +87,7 @@ pub fn SinglePageView(state: ReaderState) -> impl IntoView {
                                     canvas_id=format!("sp-{page}-cv")
                                     host_id=format!("sp-{page}-pg")
                                     render_text=true
+                                    gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
                                 />
                             </div>
                         }

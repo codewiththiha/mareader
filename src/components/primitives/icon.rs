@@ -38,6 +38,8 @@ pub enum IconName {
     Library,
     // Drag-and-drop feedback overlay.
     Drop,
+    /// Counter-clockwise arrow — the undo affordance on toasts.
+    Undo,
 }
 
 fn icon_data(name: IconName) -> (&'static str, &'static str) {
@@ -73,6 +75,10 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Drop => ("0 0 24 24", "<path d='M12 3v11'/><path d='m7 11 5 5 5-5'/><path d='M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2'/>"),
         IconName::ChevronUp => ("0 0 24 24", "<path d='m18 15-6-6-6 6'/>"),
         IconName::ChevronDown => ("0 0 24 24", "<path d='m6 9 6 6 6-6'/>"),
+        IconName::Undo => (
+            "0 0 24 24",
+            "<path d='M9 14 4 9l5-5'/><path d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/>",
+        ),
     }
 }
 

@@ -5,10 +5,11 @@
 use std::sync::Arc;
 
 use leptos::prelude::*;
+use virtual_list_leptos::Virtualizer;
 
-use pdf_core::search::SearchMatch;
 use crate::effects::reader::search::activate_match;
 use crate::state::ReaderState;
+use pdf_core::search::SearchMatch;
 
 /// Page + snippet for one list row. Built when `matches` changes, not
 /// when the active index ticks.
@@ -50,7 +51,11 @@ fn result_key(row: &ResultRowView) -> String {
 
 /// One result row: page badge + snippet, with the current match highlighted.
 #[component]
-fn ResultRow(state: ReaderState, row: ResultRowView) -> impl IntoView {
+fn ResultRow(
+    state: ReaderState,
+    virtualizer: StoredValue<Virtualizer, LocalStorage>,
+    row: ResultRowView,
+) -> impl IntoView {
     let index = row.index;
     let page = row.page;
     let snippet_text = row.snippet;
@@ -59,7 +64,7 @@ fn ResultRow(state: ReaderState, row: ResultRowView) -> impl IntoView {
     let is_active = move || state.search.active.get() == Some(index);
     // Selecting a row scrolls that MATCH into view (not its page top) and moves
     // the current-match marker onto it.
-    let on_click = move |_| activate_match(state, index);
+    let on_click = move |_| virtualizer.with_value(|v| activate_match(state, v, index));
     view! {
         <button
             type="button"
@@ -85,7 +90,10 @@ fn ResultRow(state: ReaderState, row: ResultRowView) -> impl IntoView {
 /// sidebar SearchPanel and the floating-search results dropdown so the list
 /// markup lives in exactly one place.
 #[component]
-pub fn ResultList(state: ReaderState) -> impl IntoView {
+pub fn ResultList(
+    state: ReaderState,
+    virtualizer: StoredValue<Virtualizer, LocalStorage>,
+) -> impl IntoView {
     // Only rebuild when the match set changes — not when the highlight moves.
     let rows = Memo::new(move |_| state.search.matches.with(|m| display_rows(m)));
 
@@ -98,18 +106,12 @@ pub fn ResultList(state: ReaderState) -> impl IntoView {
                 }
                 .into_any()
             } else {
-                let each_rows = rows.clone();
-                let key_rows = rows.clone();
                 view! {
                     <For
-                        each=move || 0..each_rows.len()
-                        key=move |i| {
-                            key_rows.get(*i).map(result_key).unwrap_or_default()
-                        }
-                        children=move |i| {
-                            rows.get(i).cloned().map(|row| {
-                                view! { <ResultRow state=state row=row /> }
-                            })
+                        each=move || rows.as_ref().clone()
+                        key=|row: &ResultRowView| result_key(row)
+                        children=move |row: ResultRowView| {
+                            view! { <ResultRow state=state virtualizer=virtualizer row=row /> }
                         }
                     />
                 }
@@ -139,10 +141,7 @@ mod tests {
     #[test]
     fn display_rows_project_page_ordinal_and_truncated_snippet() {
         let long = "a".repeat(100);
-        let rows = display_rows(&[
-            m(3, 0, "short"),
-            m(3, 1, &long),
-        ]);
+        let rows = display_rows(&[m(3, 0, "short"), m(3, 1, &long)]);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].index, 0);
         assert_eq!(rows[0].page, 3);

@@ -1,10 +1,12 @@
-//! Reader-level reactive state: the document, the viewer signals and the
-//! search state. Pure UI chrome (sidebar, toast) lives in `state/ui` +
-//! `state/app`; pure domain logic in `pdf-core`.
+//! Reader-level reactive state: the document, the viewer signals, the
+//! search state and the AI text-selection state. Pure UI chrome (sidebar,
+//! toast) lives in `state/ui` + `state/app`; pure domain logic in `pdf-core`.
 
-use leptos::prelude::{Memo, RwSignal, Set};
+use leptos::prelude::{Get, GetUntracked, Memo, RwSignal, Set};
+use serde::Deserialize;
 
 use pdf_core::appearance::TextureMode;
+use pdf_core::gloss::{GlossMark, PageAnchor};
 use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
 use pdf_core::search::SearchMatch;
@@ -44,6 +46,54 @@ impl DocumentState {
         self.outline.set(Vec::new());
         self.page1_size.set(None);
         self.metrics.reset();
+    }
+
+    /// Height-over-width aspect of page 1 (tracked read: subscribes the
+    /// caller to `page1_size`). Every fixed-geometry surface that sizes
+    /// itself against the first sheet — the thumbnail grid's row height,
+    /// the auto-center target — goes through here, so the fallback policy
+    /// lives in exactly one place.
+    pub fn page1_aspect(&self) -> f64 {
+        page_aspect(self.page1_size.get())
+    }
+
+    /// Same, read untracked — for rAF/scroll callbacks that must not
+    /// subscribe to geometry.
+    pub fn page1_aspect_untracked(&self) -> f64 {
+        page_aspect(self.page1_size.get_untracked())
+    }
+
+    /// The document's human-facing name (tracked read: subscribes the
+    /// caller to title and path): its usable title, else the file stem,
+    /// else "No document". The three surfaces that show the name — the
+    /// toolbar title, the sidebar's document card, the floating label —
+    /// used to each hand-roll this with three different fallbacks; the
+    /// policy lives here now.
+    pub fn display_name(&self) -> String {
+        pdf_core::filename::display_name(
+            self.title.get().as_deref(),
+            self.path.get().as_deref(),
+        )
+        .unwrap_or_else(|| NO_DOCUMENT.to_string())
+    }
+}
+
+/// Aspect used while page 1 is unmeasured or degenerate: a 3:4 portrait,
+/// the default every fixed-geometry surface historically fell back to.
+pub const DEFAULT_PAGE_ASPECT: f64 = 0.75;
+
+/// Name shown when a document has neither a usable title nor a path (the
+/// reader shell with nothing open).
+pub const NO_DOCUMENT: &str = "No document";
+
+/// Height-over-width aspect of a page size, falling back to
+/// [`DEFAULT_PAGE_ASPECT`] when the size is missing or its width is not
+/// positive (a zero-width sheet has no meaningful aspect, and dividing by
+/// it would poison every height derived from it).
+pub fn page_aspect(size: Option<PageSize>) -> f64 {
+    match size {
+        Some(s) if s.width > 0.0 => s.height / s.width,
+        _ => DEFAULT_PAGE_ASPECT,
     }
 }
 
@@ -213,22 +263,113 @@ impl Default for SearchState {
     }
 }
 
+/// Bounding rectangle of the selected text, in viewport CSS pixels — the
+/// "warp window" the AI selection menu anchors to.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct SelectionRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Everything the AI feature needs about the current text selection, as
+/// dispatched by the engine's `pdfreader:selection-detail` event.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SelectionDetail {
+    /// The exact text the user highlighted.
+    pub text: String,
+    /// Surrounding sentence (~120 chars from the same text layer) so the
+    /// model can disambiguate the word.
+    pub context: String,
+    /// Tight bounding box around the selection (the "warp window").
+    pub rect: SelectionRect,
+}
+
+/// Reactive state for the AI text-selection feature: what is selected and
+/// whether the explanation popover is open.
+#[derive(Clone, Copy)]
+pub struct AiSelectionState {
+    /// The current selection details, or `None` if nothing is selected.
+    pub detail: RwSignal<Option<SelectionDetail>>,
+    /// The selection's origin in page space, so the Info pill can follow
+    /// scroll and die when it leaves the viewport.
+    pub anchor: RwSignal<Option<PageAnchor>>,
+    /// Whether the "Info" popover is currently open.
+    pub popover_open: RwSignal<bool>,
+}
+
+impl Default for AiSelectionState {
+    fn default() -> Self {
+        Self {
+            detail: RwSignal::new(None),
+            anchor: RwSignal::new(None),
+            popover_open: RwSignal::new(false),
+        }
+    }
+}
+
+impl AiSelectionState {
+    /// Clear selection detail, page anchor and the open flag. Called on
+    /// document close so a card left open on PDF A cannot poison PDF B
+    /// (a stale `popover_open = true` would hide the Info button and make
+    /// the next open a no-op).
+    pub fn reset(&self) {
+        self.detail.set(None);
+        self.anchor.set(None);
+        self.popover_open.set(false);
+    }
+}
+
+/// The persisted gloss highlights of the OPEN document.
+///
+/// One flat list rather than a per-page map: a document has a handful of
+/// marks, every page host filters the list itself, and a `Vec` is what both
+/// localStorage and the `<For>` in the mark layer want.
+#[derive(Clone, Copy, Default)]
+pub struct GlossState {
+    pub marks: RwSignal<Vec<GlossMark>>,
+    /// Gloss multi-select mode (long-press initiated on a mark).
+    pub selection_active: RwSignal<bool>,
+    /// Ids of the marks currently selected while in multi-select mode.
+    pub selected_marks: RwSignal<std::collections::HashSet<String>>,
+    /// id of the mark whose "processing" highlighter animation is live, if any.
+    ///
+    /// Lives here, not in the popover, because the animation is painted by the
+    /// in-page mark layer: while the model is working there is NO surface at
+    /// all, so the stroke itself has to carry the thinking state.
+    pub processing_id: RwSignal<Option<String>>,
+}
+
 /// The reader's slice of app state: everything the PDF components and the
 /// reader effects read/write. Sidebar/UI chrome is deliberately NOT here —
 /// it is app chrome state, passed in explicitly where the reader needs it.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct ReaderState {
     pub document: DocumentState,
     pub viewer: ViewerSignals,
     pub search: SearchState,
+    pub ai_selection: AiSelectionState,
+    pub gloss: GlossState,
 }
 
-impl Default for ReaderState {
-    fn default() -> Self {
-        Self {
-            document: DocumentState::default(),
-            viewer: ViewerSignals::default(),
-            search: SearchState::default(),
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_aspect_passes_through_measured_sizes() {
+        // US Letter at scale 1: 792/612 ≈ 1.294.
+        assert!((page_aspect(Some(PageSize { width: 612.0, height: 792.0 })) - 792.0 / 612.0).abs() < 1e-12);
+        // A landscape sheet inverts below 1.
+        assert!(page_aspect(Some(PageSize { width: 1000.0, height: 500.0 })) < 1.0);
+    }
+
+    #[test]
+    fn page_aspect_falls_back_to_portrait_when_unmeasured_or_degenerate() {
+        assert_eq!(page_aspect(None), DEFAULT_PAGE_ASPECT);
+        assert_eq!(page_aspect(Some(PageSize { width: 0.0, height: 792.0 })), DEFAULT_PAGE_ASPECT);
+        // A negative width is just as degenerate: never divide by it.
+        assert_eq!(page_aspect(Some(PageSize { width: -612.0, height: 792.0 })), DEFAULT_PAGE_ASPECT);
     }
 }

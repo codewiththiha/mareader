@@ -82,9 +82,7 @@ pub fn open_dialog(state: AppState) {
                 if msg != "Open cancelled" {
                     state.reader.document.error.set(Some(msg.clone()));
                     state.reader.document.status.set(DocStatus::Error);
-                    state.ui.toast.set(Some(Toast {
-                        message: format!("Could not open PDF: {}", msg),
-                    }));
+                    state.ui.toast.set(Some(Toast::new(format!("Could not open PDF: {}", msg))));
                 }
             }
         }
@@ -139,6 +137,16 @@ pub fn open_path(state: AppState, path: String) {
                 // A successful open dismisses any stale error toast.
                 state.ui.toast.set(None);
 
+                // Gloss highlights for THIS document. Loaded here rather than
+                // lazily by the mark layer so the very first page mount already
+                // paints them (they are page-space rects, not DOM state).
+                state.reader.gloss.marks.set(
+                    crate::storage::load_gloss().remove(&path).unwrap_or_default(),
+                );
+                state.reader.gloss.processing_id.set(None);
+                state.reader.gloss.selection_active.set(false);
+                state.reader.gloss.selected_marks.set(std::collections::HashSet::new());
+
                 // Resume point (clamped to the real count — a re-edited
                 // document may have fewer pages than remembered).
                 let resume = saved_page.min(num_pages.max(1));
@@ -154,8 +162,8 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.viewer.fit.set(FitMode::Width);
                 // Heights belong to the document that was just closed; leaving
                 // them would have the zoom coordinator anchor against a stale
-                // column on the first gesture. PageList re-seeds them from
-                // `page_sizes` (intrinsic heights) at the current scale.
+                // column on the first gesture. ReaderPage re-seeds them from
+                // the intrinsic page sizes at the current scale.
                 state.reader.document.metrics.css_heights.set(Vec::new());
                 let (cw, ch) = state.reader.viewer.container_size.get();
                 let s =
@@ -271,9 +279,7 @@ pub fn open_path(state: AppState, path: String) {
             Err(e) => {
                 state.reader.document.error.set(Some(e.message.clone()));
                 state.reader.document.status.set(DocStatus::Error);
-                state.ui.toast.set(Some(Toast {
-                    message: format!("Could not open PDF: {}", e.message),
-                }));
+                state.ui.toast.set(Some(Toast::new(format!("Could not open PDF: {}", e.message))));
             }
         }
     });

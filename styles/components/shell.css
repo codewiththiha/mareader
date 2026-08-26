@@ -80,8 +80,60 @@ body {
   top: 0;
   left: -10000px;            /* off-screen so it cannot steal bar width */
   display: flex;
-  gap: 0.25rem;              /* must match gap-1 on #toolbar-right */
+  gap: 0.25rem;              /* must match gap-1 on #toolbar-trailing */
   visibility: hidden;
   pointer-events: none;
 }
 .tb-sizer > * { flex-shrink: 0; }
+
+/* --- stable floating surface classes ---------------------------------
+   The shared visual contract for menu/popover/context-menu/action-bar
+   surfaces: rounded, hairline border, surface fill, floating elevation.
+   Components compose these with their own layout utilities so every
+   floating surface reuses one look. */
+.surface-popover {
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+  padding: 0.25rem;
+}
+
+/* --- stable component classes ------------------------------------------
+   The shared layout/fit contract for the visual primitives. Rules live in
+   `@layer components` so per-instance Tailwind utilities (sizes, colours,
+   tone states) keep winning; the classes only guarantee the common fit and
+   give tests/overrides a stable hook. Values mirror the utilities the
+   primitives emit, so adding these classes changes nothing visually. */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;              /* gap-1.5 */
+    border-radius: 0.5rem;      /* rounded-lg */
+    border-width: 1px;
+    border-style: solid;
+    font-weight: 500;           /* font-medium */
+    transition-property: color, background-color, border-color;
+    transition-duration: 150ms;
+    white-space: nowrap;
+  }
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;      /* rounded-lg */
+  }
+  .menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.5rem;                /* gap-2 */
+  }
+  .surface-toast {
+    border-radius: 0.75rem;     /* rounded-xl */
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+  }
+}

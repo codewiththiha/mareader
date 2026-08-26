@@ -3,241 +3,128 @@
 //! A scroll container (`#page-list`) holding:
 //!  - an in-flow spacer whose height equals the full document height, so the
 //!    scrollbar spans the whole column,
-//!  - a keyed `<For>` over the mounted page window (what is on screen plus a
-//!    `RenderBudget` read-ahead, measured in screenfuls so it means the same
-//!    thing at every zoom). Each page is an absolutely-positioned wrapper
-//!    centered in the column, containing a shared foundation
-//!    `PageCanvas`. Evicted pages are
-//!    unmounted by `<For>` (their `on_cleanup` unregisters them with the
-//!    engine, which zeros the canvas backing store — WKWebView will not
-//!    release it on DOM removal alone); entering pages render via
-//!    PageCanvas's own `scale` effect.
+//!  - a keyed `<For>` over the mounted page window, driven by the shared
+//!    virtualizer: visible pages plus a screenful-based read-ahead, unioned
+//!    with the pinned page range.
+//!
+//! Each page is an absolutely-positioned wrapper centered in the column,
+//! containing a shared foundation `PageCanvas`. Evicted pages are unmounted by
+//! `<For>`; entering pages render via `PageCanvas`'s own scale effect.
+//!
+//! Heights flow two ways:
+//!  - estimates: each page is seeded from its own intrinsic size at the current
+//!    scale,
+//!  - measurements: `on_geometry` reports the rendered height into
+//!    `css_heights` AND into the virtualizer, which applies it in its next
+//!    batched flush with scroll anchoring.
 
+use leptos::html;
 use leptos::prelude::*;
+use virtual_list_leptos::{Align, ScrollMode, VirtualItem, Virtualizer};
+use wasm_bindgen::JsCast;
 
 use crate::components::document::PageCanvas;
-use crate::state::TextureSignal;
-use pdf_core::layout::{DocumentLayout, RENDER_BUDGET};
-use crate::state::ReaderState;
+use crate::components::document::page_canvas::component::GlossOverlayProps;
+use crate::state::{ReaderState, TextureSignal};
 
 #[component]
 pub fn PageList(
     state: ReaderState,
-    /// The cached column layout for the CURRENT page heights, built once by
-    /// the reader page and shared by every scroll/render/zoom query.
-    layout: Memo<DocumentLayout>,
+    /// The virtualizer driving the window, spacer, and scroll anchoring.
+    virtualizer: Virtualizer,
 ) -> impl IntoView {
-    // The texture signal is app-provided context; the view resolves it once
-    // and hands it to every PageCanvas as an explicit prop.
-    let texture = use_context::<TextureSignal>()
-        .expect("TextureSignal must be provided by app bootstrap");
-    // Seed every page's height from its OWN intrinsic size, at the scale in
-    // force when the document is first laid out.
-    //
-    // Seeding all pages from page 1 (as this once did) is only correct for a
-    // uniform document. In a mixed-size PDF every page that had not yet
-    // rendered carried page 1's height until `on_geometry` corrected it, so
-    // the document's total height — and every page offset below the viewport
-    // — changed as pages were measured. Zooming out pulls a batch of
-    // never-measured pages into view at once; correcting them all shifts the
-    // content under the scroll anchor, and the reader lands on a different
-    // page than the one they left.
-    //
-    // Seeds ONLY when the vector does not match the document, i.e. on open or
-    // document change. It must not re-seed on scale changes: the zoom
-    // coordinator rescales this same vector frame by frame and re-anchors
-    // scroll against it, so a competing write mid-gesture would fight the
-    // anchor and reintroduce the very drift this fixes.
-    Effect::new(move || {
-        let n = state.document.num_pages.get() as usize;
-        let scale = state.viewer.zoom.render.get();
-        // Borrow-only guard: this effect also re-runs per zoom commit
-        // (render_scale is tracked), and cloning every page size on each
-        // commit just to hit the early return is pure waste.
-        let empty = state.document.metrics.intrinsic.with(|sizes| sizes.is_empty());
-        let fallback = state.document.page1_size.get().map(|s| s.height).unwrap_or(0.0);
-        if n == 0 || scale <= 0.0 || (empty && fallback <= 0.0) {
-            return;
-        }
-        state.document.metrics.css_heights.update(|v| {
-            if v.len() == n {
-                return; // already laid out for this document
+    let texture =
+        use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
+
+    let v = virtualizer;
+    let list_ref: NodeRef<html::Div> = NodeRef::new();
+    {
+        let v = v.clone();
+        Effect::new(move |_| {
+            let Some(div) = list_ref.get() else {
+                return;
+            };
+            let el: web_sys::Element = div.clone().unchecked_into();
+            v.bind_container(el);
+            // Re-seed the viewport + window so `items()` is non-empty right
+            // away. The virtualizer is created once in ReaderPage and its
+            // container binding goes stale whenever this view unmounts (a
+            // single → continuous switch): without re-measuring, the window
+            // would not re-seed and nothing would render.
+            v.remeasure_container();
+
+            let page = state.viewer.page.get_untracked();
+            if page > 0 {
+                v.scroll_to_index((page - 1) as usize, Align::Start, ScrollMode::Instant);
             }
-            *v = state.document.metrics.intrinsic.with(|sizes| {
-                (0..n)
-                    .map(|i| {
-                        sizes
-                            .get(i)
-                            .map(|s| s.height)
-                            .filter(|h| *h > 0.0)
-                            .unwrap_or(fallback)
-                            * scale
-                    })
-                    .collect()
-            });
         });
-    });
+    }
 
-    // Mounted page window [first, last] (0-based, inclusive). `None` => no
-    // pages to render yet.
-    //
-    // The read-ahead is measured in SCREENFULS, not pages (see RenderBudget),
-    // so it means the same thing at 50% and at 500%. That is what keeps a
-    // zoomed-in reader from holding six multi-megabyte off-screen rasters
-    // they cannot reach for many seconds of scrolling.
-    //
-    // SELECTION PINNING. The window is extended to include every page the
-    // reader currently has selected text on. Without this, scrolling would
-    // evict the page the selection started on — orphaning the selection's DOM
-    // nodes (the `<For>` unmounts `PageCanvas`, whose `on_cleanup` calls
-    // `unregisterPage`, which zeros the canvas and removes the `.textLayer`
-    // the selection was anchored to). The browser's copy command then reads a
-    // stale/empty selection. Pinning the selected pages keeps them — and
-    // their text layers — mounted so the selection's DOM nodes stay valid
-    // and copy of multi-page selections works through any scroll.
-    let window_hint = StoredValue::new(0usize);
-    let visible = Memo::new(move |_| {
-        let scroll_top = state.viewer.scroll_top.get();
-        let vh = state.viewer.container_size.get().1;
-        let mut hint = window_hint.get_value();
-        let mut range = layout.with(|l| l.window_hinted(scroll_top, vh, RENDER_BUDGET, &mut hint));
-        window_hint.set_value(hint);
-        // INVARIANT — pin the dominant page during a layout animation. During
-        // sidebar slide, `scroll_top` is re-anchored by `relayout_to()` AND
-        // clamped back by the browser's own scroll clamp (the spacer height
-        // is applied one Leptos pass later), so for one or two frames
-        // `scroll_top + viewport` can fall inside a gap or past the shrunken
-        // extent, `render_range` returns a window that no longer contains
-        // the dominant page, and `<For>` unmounts it — the page under the
-        // reader's eyes vanishes mid-slide, killing the stretch animation
-        // (the node that was supposed to stretch no longer exists, and its
-        // replacement has no bitmap). Pinning the dominant page for the
-        // duration of any layout animation keeps the SAME DOM node alive
-        // through the whole slide so the stretch effect visibly rescales it.
-        if state.viewer.zoom_animating.get() {
-            let dom = layout.with(|l| {
-                if l.total() > 0.0 {
-                    Some(l.dominant(scroll_top, vh) as usize)
-                } else {
-                    None
-                }
-            });
-            if let Some(dom) = dom {
-                let dom = dom.saturating_sub(1); // 1-based → 0-based
-                range = match range {
-                    Some((f, l)) => Some((f.min(dom), l.max(dom))),
-                    None => Some((dom, dom)),
-                };
-            }
-        }
-        // Extend to include the reader's current text-selection page range.
-        if let Some((sel_first, sel_last)) = state.viewer.selected_pages.get() {
-            // 1-based → 0-based.
-            let sel_first = (sel_first.saturating_sub(1)) as usize;
-            let sel_last = (sel_last.saturating_sub(1)) as usize;
-            match &mut range {
-                Some((first, last)) => {
-                    if sel_first < *first {
-                        *first = sel_first;
-                    }
-                    if sel_last > *last {
-                        *last = sel_last;
-                    }
-                }
-                None => {
-                    // No visible pages yet, but the selection needs pages
-                    // mounted — open a window just for them.
-                    range = Some((sel_first, sel_last));
-                }
-            }
-        }
-        range
-    });
-
-    // The scale the layout is DRAWN at. During a zoom this moves every frame
-    // and the canvases CSS-stretch to follow it; `render_scale` (what the
-    // bitmaps were rasterised at) is read by PageCanvas itself and only changes
-    // once, when the gesture settles.
     let display_scale = state.viewer.zoom.display.read_only();
-
-    // Store the real rendered height back into page_heights (0-based index).
-    let on_geometry = Callback::new(move |(p, _w, h): (u32, f64, f64)| {
-        // While a zoom animation is running the coordinator owns page_heights:
-        // it rescales the whole vector per frame. A render that resolves
-        // mid-flight would write ONE page's height at the old scale into that
-        // vector, shifting every page below it and yanking the scroll — the
-        // teleport bug in miniature. The post-settle render reports the true
-        // height a moment later, so nothing is lost by skipping here.
+    let virtualizer_handle = StoredValue::new_local(v.clone());
+    let on_geometry = Callback::new(move |(page, _width, height): (u32, f64, f64)| {
         if state.viewer.zoom_animating.get_untracked() {
             return;
         }
-        let idx = p.saturating_sub(1) as usize;
-        state.document.metrics.css_heights.update(|v| {
-            while v.len() <= idx {
-                v.push(0.0);
+        let index = page.saturating_sub(1) as usize;
+        state.document.metrics.css_heights.update(|heights| {
+            while heights.len() <= index {
+                heights.push(0.0);
             }
-            v[idx] = h;
+            heights[index] = height;
         });
+        virtualizer_handle.with_value(|virtualizer| virtualizer.report_size(index, height));
     });
 
+    let items = v.items();
+    let total_size = v.total_size();
+
     view! {
-        <div id="page-list" class="h-full w-full overflow-y-auto outline-none" tabindex="0">
-        // Inner column, offset by the toolbar height so the first page starts
-        // below the glass header while the scrollport itself still runs the
-        // full height of the window — that is what lets pages travel UNDER the
-        // bar and give the backdrop-filter something to refract.
-        //
-        // The offset is a margin on this wrapper, NOT padding on the scroller,
-        // and this wrapper (not #page-list) is the positioned ancestor. Both
-        // details are load-bearing for the scroll maths:
-        //   * pages are absolutely positioned against THIS box, so `offsetTop`
-        //     still equals `page_top_css(i)` exactly, as effect 4 assumes;
-        //   * a page's top in scroll coordinates becomes `48 + page_top_css(i)`,
-        //     and landing it just under a 48px bar needs
-        //     `scrollTop = page_top_css(i)` — precisely what navigation_sync and
-        //     the search effects already write. No offset arithmetic anywhere.
-        <div class="relative mt-12">
-            // Spacer: makes the scrollbar span the whole column.
-            <div
-                aria-hidden="true"
-                style:height=move || {
-                    let total = layout.with(|l| l.total());
-                    format!("{total}px")
-                }
-            ></div>
-            <For
-                each=move || {
-                    visible
-                        .get()
-                        .map(|(first, last)| (first..=last).collect::<Vec<usize>>())
-                        .unwrap_or_default()
-                }
-                key=|i: &usize| *i
-                children=move |i: usize| {
-                    let style = move || {
-                        let top = layout.with(|l| l.page_top(i));
-                        format!(
-                            "position:absolute;top:{top}px;left:0;right:0;display:flex;justify-content:center"
-                        )
-                    };
-                    view! {
-                        <div id=format!("cont-{i}-wrap") style=style>
-                            <PageCanvas
-                                page={(i + 1) as u32}
-                                scale=display_scale
-                                render_scale=state.viewer.zoom.render
-                                zoom_animating=state.viewer.zoom_animating
-                                texture=texture
-                                canvas_id=format!("cont-{i}-cv")
-                                host_id=format!("cont-{i}-pg")
-                                render_text=true
-                                on_geometry=on_geometry
-                            />
-                        </div>
+        <div
+            id="page-list"
+            node_ref=list_ref
+            class="h-full w-full overflow-y-auto outline-none"
+            tabindex="0"
+        >
+            // Inner column, offset by the toolbar height so the first page
+            // starts below the glass header while the scrollport itself still
+            // runs the full height of the window.
+            <div class="relative mt-12">
+                <div
+                    aria-hidden="true"
+                    style:height=move || format!("{}px", total_size.get())
+                ></div>
+                <For
+                    each=move || items.get()
+                    key=|item: &VirtualItem| item.index
+                    children=move |item: VirtualItem| {
+                        let index = item.index;
+                        let top = virtualizer_handle.with_value(|virtualizer| virtualizer.item_top(index));
+                        let style = move || {
+                            format!(
+                                "position:absolute;top:{}px;left:0;right:0;display:flex;justify-content:center",
+                                top.get()
+                            )
+                        };
+                        view! {
+                            <div id=format!("cont-{index}-wrap") style=style>
+                                <PageCanvas
+                                    page={(index + 1) as u32}
+                                    scale=display_scale
+                                    render_scale=state.viewer.zoom.render
+                                    zoom_animating=state.viewer.zoom_animating
+                                    texture=texture
+                                    canvas_id=format!("cont-{index}-cv")
+                                    host_id=format!("cont-{index}-pg")
+                                    render_text=true
+                                    on_geometry=on_geometry
+                                    gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
+                                />
+                            </div>
+                        }
                     }
-                }
-            />
-        </div>
+                />
+            </div>
         </div>
     }
 }

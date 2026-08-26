@@ -1,0 +1,40 @@
+[package]
+name = "virtual-list-leptos"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Reactive virtual scrolling for Leptos: windowing, measurement, anchoring, and scroll-to built on the virtual-list geometry kernel."
+documentation = "https://docs.rs/virtual-list-leptos"
+readme = "README.md"
+repository = "https://github.com/codewiththiha/pdf-reader"
+license = "MIT"
+keywords = ["virtualization", "scrolling", "leptos", "list", "grid"]
+categories = ["gui", "wasm"]
+
+[dependencies]
+virtual-list = { path = "../virtual-list" }
+leptos = { version = "0.8", features = ["csr"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Element",
+  "HtmlElement",
+  "EventTarget",
+  "Event",
+  "ResizeObserver",
+  "ResizeObserverEntry",
+  "DomRectReadOnly",
+  "ScrollBehavior",
+  "ScrollToOptions",
+] }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+rust_2018_idioms = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"

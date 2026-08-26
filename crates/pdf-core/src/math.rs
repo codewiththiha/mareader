@@ -247,3 +247,44 @@ mod tests {
         }
     }
 }
+
+/// Hermite smoothstep: 0 below `edge0`, 1 above `edge1`, smooth between.
+///
+/// Pure easing math, not gloss-specific — it lived in `gloss` only because
+/// that was its first consumer (the card content's opacity/interactivity
+/// fade as the morph progresses). Any UI fade that must start and end with
+/// zero derivative belongs here.
+pub fn smoothstep(t: f64, edge0: f64, edge1: f64) -> f64 {
+    let x = ((t - edge0) / (edge1 - edge0).max(0.0001)).clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+#[cfg(test)]
+mod smoothstep_tests {
+    use super::smoothstep;
+
+    #[test]
+    fn is_clamped_at_both_edges_and_smooth_between() {
+        assert!((smoothstep(-1.0, 0.0, 1.0)).abs() < 1e-9);
+        assert!((smoothstep(0.0, 0.0, 1.0)).abs() < 1e-9);
+        assert!((smoothstep(1.0, 0.0, 1.0) - 1.0).abs() < 1e-9);
+        assert!((smoothstep(2.0, 0.0, 1.0) - 1.0).abs() < 1e-9);
+        // The midpoint of a smoothstep is exactly 0.5.
+        assert!((smoothstep(0.5, 0.0, 1.0) - 0.5).abs() < 1e-9);
+        // Monotonic across the ramp.
+        let mut last = -1.0;
+        for i in 0..=20 {
+            let t = i as f64 / 20.0;
+            let s = smoothstep(t, 0.0, 1.0);
+            assert!(s >= last, "non-monotonic at {t}: {s} < {last}");
+            last = s;
+        }
+    }
+
+    #[test]
+    fn a_degenerate_or_inverted_edge_pair_still_terminates() {
+        // edge1 == edge0: the tiny epsilon denominator must not blow up or
+        // produce NaN; the result is clamped to one end.
+        assert!(smoothstep(5.0, 5.0, 5.0).is_finite());
+    }
+}

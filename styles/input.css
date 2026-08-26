@@ -30,5 +30,7 @@
 @import "./components/shell.css";       /* app shell, scrollbars, drag regions, toolbar measurement twin */
 @import "./components/title_bar.css";    /* toolbar glass, sidebar outro, status bar */
 @import "./components/animations.css";  /* search/popover/page-turn/toast entrances, reduced motion */
+@import "./components/ai.css";         /* AI blur-fade, shimmer, Info-menu entrance */
+@import "./components/gloss.css";      /* word-card morph surface + highlighter stroke */
 @import "./components/appearance.css";  /* hue strip, preset thumbnails, link layer */
 @import "./library.css";     /* bookshelf + drag overlay */

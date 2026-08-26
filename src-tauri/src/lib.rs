@@ -28,6 +28,9 @@ use std::sync::Mutex;
 
 use tauri::{Emitter, Manager, RunEvent};
 
+mod ai;
+mod commands;
+
 /// The OS-opened PDF path the frontend has not collected yet.
 struct PendingFile(Mutex<Option<String>>);
 
@@ -138,7 +141,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             take_pending_file,
             read_file_bytes,
-            set_traffic_lights
+            set_traffic_lights,
+            commands::ai::explain_word
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| {

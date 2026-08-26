@@ -23,6 +23,28 @@
   --canvas-blend: multiply;
   --noise-opacity: 0;
   --app-radius: 8px;
+
+  /* Z-index scale — the ONE layering decision for floating UI. Components
+     embed these as `z-[var(--z-…)]` utilities (primitives/floating/types.rs
+     has the matching constants). Never reach for a raw `z-[60]` again:
+     layer intent is written here, not at the call site.
+     content 0 · controls 30 · bars 40 · popover 50 · selection bar 60 ·
+     context menu 70 · AI selection 80 · drag overlay 90 · toast 100 */
+  --z-content: 0;
+  --z-controls: 30;
+  --z-bar: 40;
+  --z-popover: 50;
+  --z-selection-bar: 60;
+  --z-context-menu: 70;
+  --z-ai-selection: 80;
+  --z-drag-overlay: 90;
+  --z-toast: 100;
+
+  /* Elevation for floating surfaces (menus, context menus, action bars).
+     The gloss menus alias theirs to this one value. */
+  --shadow-float:
+    0 0 0 1px var(--color-line),
+    0 8px 24px rgb(0 0 0 / 0.30);
   /* Tint of the search match the reader is currently on. Deliberately NOT
      derived from --color-accent: every other match already wears the accent,
      and the current one has to be separable from them at a glance. Amber sits

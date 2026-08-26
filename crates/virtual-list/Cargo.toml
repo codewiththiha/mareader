@@ -1,6 +1,6 @@
 [package]
 name = "virtual-list"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Windowing math for virtualized scrolling lists of variably-sized items: which items to mount, where to put them, and which one the reader is looking at."
@@ -24,3 +24,13 @@ advanced-trees = []
 name = "scaling_check"
 harness = false
 required-features = ["advanced-trees"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+rust_2018_idioms = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"

@@ -5,55 +5,160 @@
 //! Slot wiring is the SINGLE coordinator's job — branches
 //! must not edit this file.
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 use leptos::html;
 use leptos::prelude::*;
+use virtual_list::Viewport;
+use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 
-
-use pdf_engine::types::DocStatus;
-use pdf_core::layout::{DocumentLayout, PAGE_GAP, ViewMode};
-use crate::components::chrome::adaptive_toolbar::AdaptiveToolbar;
+use super::toolbar_entries::reader_toolbar_entries;
+use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
+use crate::components::app_shell::adaptive_toolbar::AdaptiveToolbar;
+use crate::components::app_shell::app_title_bar::AppTitleBar;
+use crate::components::app_shell::document_title::DocumentTitle;
+use crate::components::app_shell::floating_document_title::FloatingDocumentTitle;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::tooltip::Tooltip;
-use crate::components::panels::book_info::BookInfo;
-use crate::components::panels::outline_host::SidebarOutline;
-use crate::components::panels::panel_switcher::PanelSwitcher;
-use crate::components::panels::sidebar_header::SidebarHeader;
-use crate::components::panels::Sidebar;
-use crate::components::panels::sidebar_shell::{
-    request_reveal_active, sidebar_paint, SidebarChromeCtx,
-};
-use crate::components::panels::thumbnail_host::SidebarThumbs;
-use crate::components::chrome::document_title::FloatingDocumentTitle;
-use crate::components::chrome::app_title_bar::AppTitleBar;
-use crate::components::chrome::document_title::DocumentTitle;
-use crate::components::reader_controls::page_indicator::PageIndicator;
-use crate::components::reader_controls::bottom_bar::ReaderBottomBar;
-use crate::services::document::{close_document, open_dialog};
-use crate::state::AppState;
-use crate::effects::reader::reading_progress::reading_progress;
+use crate::components::sidebar::Sidebar;
+use crate::components::sidebar::document_info::BookInfo;
+use crate::components::sidebar::header::SidebarHeader;
+use crate::components::sidebar::outline_view::SidebarOutline;
+use crate::components::sidebar::shell::{SidebarChromeCtx, request_reveal_active, sidebar_paint};
+use crate::components::sidebar::switcher::PanelSwitcher;
+use crate::components::sidebar::thumbnails_view::SidebarThumbs;
+use crate::components::viewer_controls::bottom_bar::ReaderBottomBar;
+use crate::components::viewer_controls::page_indicator::PageIndicator;
 use crate::effects::reader::fit_mode::fit_effect;
 use crate::effects::reader::navigation_sync::navigation_sync;
+use crate::effects::reader::reading_progress::reading_progress;
 use crate::effects::reader::zoom::zoom_system;
+use crate::services::document::{close_document, open_dialog};
+use crate::state::AppState;
 use crate::state::SidebarMode;
-use super::toolbar_entries::reader_toolbar_entries;
+use pdf_core::layout::{PAGE_GAP, RENDER_BUDGET, ViewMode};
+use pdf_engine::types::DocStatus;
 
 #[component]
 pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
     let vs = state.reader;
-    // One cached column layout for the session. Borrow the heights so a
-    // zoom frame doesn't clone the whole vector just to rebuild prefix sums.
-    let layout = Memo::new(move |_| {
-        vs.document
+
+    // Keep `css_heights` fully seeded from intrinsic sizes: it is the shared
+    // measurement store backing the virtualizer and zoom-rescale path, not a
+    // second layout model.
+    Effect::new(move || {
+        let count = vs.document.num_pages.get() as usize;
+        let scale = vs.viewer.zoom.render.get();
+        let empty_intrinsic = vs.document.metrics.intrinsic.with(|sizes| sizes.is_empty());
+        let fallback = vs
+            .document
+            .page1_size
+            .get()
+            .map(|size| size.height)
+            .unwrap_or(0.0);
+        if count == 0 || scale <= 0.0 || (empty_intrinsic && fallback <= 0.0) {
+            return;
+        }
+        vs.document.metrics.css_heights.update(|heights| {
+            if heights.len() == count {
+                return;
+            }
+            *heights = vs.document.metrics.intrinsic.with(|sizes| {
+                (0..count)
+                    .map(|index| {
+                        sizes
+                            .get(index)
+                            .map(|size| size.height)
+                            .filter(|height| *height > 0.0)
+                            .unwrap_or(fallback)
+                            * scale
+                    })
+                    .collect()
+            });
+        });
+    });
+
+    let count = Signal::derive(move || vs.document.num_pages.get() as usize);
+    let estimate = move |index: usize| {
+        let measured = vs
+            .document
             .metrics
             .css_heights
-            .with(|heights| DocumentLayout::new(heights, PAGE_GAP))
+            .with_untracked(|heights| heights.get(index).copied());
+        if let Some(height) = measured.filter(|height| *height > 0.0) {
+            return height;
+        }
+        let intrinsic = vs
+            .document
+            .metrics
+            .intrinsic
+            .with_untracked(|sizes| sizes.get(index).map(|size| size.height))
+            .filter(|height| *height > 0.0);
+        let fallback = vs
+            .document
+            .page1_size
+            .get_untracked()
+            .map(|size| size.height)
+            .unwrap_or(0.0);
+        intrinsic.unwrap_or(fallback) * vs.viewer.zoom.render.get_untracked()
+    };
+    let epoch = Signal::derive(move || {
+        let count = vs.document.num_pages.get() as usize;
+        let mut hasher = DefaultHasher::new();
+        count.hash(&mut hasher);
+        vs.document.metrics.intrinsic.with(|sizes| {
+            sizes.len().hash(&mut hasher);
+            for size in sizes {
+                size.width.to_bits().hash(&mut hasher);
+                size.height.to_bits().hash(&mut hasher);
+            }
+        });
+        hasher.finish()
     });
-    fit_effect(vs, state.ui.sidebar, layout);
-    zoom_system(vs, layout);
-    navigation_sync(vs, layout);
+    let pinned_sig: RwSignal<Option<(usize, usize)>> = RwSignal::new(None);
+    let initial_vh = {
+        let (_, height) = vs.viewer.container_size.get_untracked();
+        if height > 1.0 { height } else { 800.0 }
+    };
+    let virtualizer = use_virtualizer(
+        VirtualizerOptions::list(count, estimate)
+            .gap(PAGE_GAP)
+            .budget(RENDER_BUDGET)
+            .initial(Viewport::main_only(initial_vh), 0.0)
+            .pinned(pinned_sig.into())
+            .epoch(epoch),
+    );
+
+    {
+        let v = virtualizer.clone();
+        Effect::new(move |_| {
+            let mut pin = None;
+            if vs.viewer.zoom_animating.get() {
+                let dominant = v.dominant().get();
+                pin = Some((dominant, dominant));
+            }
+            if let Some((first, last)) = vs.viewer.selected_pages.get() {
+                let selected = (
+                    first.saturating_sub(1) as usize,
+                    last.saturating_sub(1) as usize,
+                );
+                pin = Some(match pin {
+                    Some((a, b)) => (a.min(selected.0), b.max(selected.1)),
+                    None => selected,
+                });
+            }
+            pinned_sig.set(pin);
+        });
+    }
+
+    fit_effect(vs, state.ui.sidebar, virtualizer.clone());
+    zoom_system(vs, virtualizer.clone());
+    navigation_sync(vs, virtualizer.clone());
+    let virtualizer_view = StoredValue::new_local(virtualizer.clone());
     reading_progress(state);
 
     let status = state.reader.document.status;
@@ -91,7 +196,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         view! {
             <div class="flex min-w-0 items-center gap-1">
                 <div
-                    id="toolbar-left-pre"
+                    id=TOOLBAR_LEADING_ID
                     data-tauri-drag-region="true"
                     class="flex shrink-0 items-center gap-1"
                 >
@@ -140,12 +245,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     // RIGHT slot: view-mode, fit, zoom, appearance — collision-aware overflow.
     let right = move || {
-        let entries = reader_toolbar_entries(
-            state,
-            appearance_open,
-            collapsed_ids,
-            overflow_ref,
-        );
+        let entries = reader_toolbar_entries(state, appearance_open, collapsed_ids, overflow_ref);
         view! {
             <AdaptiveToolbar
                 ready=toolbar_ready
@@ -196,7 +296,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             />
                         }
                     />
-                    <main id="viewer-slot" class="relative min-w-0 flex-1 overflow-hidden">
+                    <main id=VIEWER_SLOT_ID class="relative min-w-0 flex-1 overflow-hidden">
                         <Show when=is_ready>
                             {move || match mode.get() {
                                 ViewMode::Single => view! {
@@ -204,7 +304,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 }
                                 .into_any(),
                                 ViewMode::Continuous => view! {
-                                    <crate::components::document::ContinuousView state=vs layout=layout />
+                                    <crate::components::document::ContinuousView
+                                        state=vs
+                                        virtualizer=virtualizer_view.get_value()
+                                    />
                                 }
                                 .into_any(),
                             }}
@@ -214,12 +317,21 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         // positioned by the page; the indicator itself is
                         // reusable UI with no knowledge of AppState.
                         <Show when=is_ready>
-                            <div class="pointer-events-none absolute bottom-3 right-3 z-30">
-                                <PageIndicator current=state.reader.viewer.page total=state.reader.document.num_pages />
+                            <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", crate::components::primitives::floating::types::z::CONTROLS)>
+                                <PageIndicator
+                                    current=state.reader.viewer.page
+                                    total=state.reader.document.num_pages
+                                    hidden=Signal::derive(move || state.reader.gloss.selection_active.get())
+                                />
                             </div>
                         </Show>
-                        <ReaderBottomBar reader=vs layout=layout />
-                        <crate::components::search::floating_search::FloatingSearch state=vs />
+                        <ReaderBottomBar reader=vs virtualizer=virtualizer_view />
+                        <crate::components::search::floating_search::FloatingSearch
+                            state=vs
+                            virtualizer=virtualizer_view
+                        />
+                        <crate::components::ai::selection_menu::SelectionMenu state=state />
+                        <crate::components::ai::gloss::gloss_ai_popover::GlossAiPopover state=state />
                     </main>
                 </div>
             </div>

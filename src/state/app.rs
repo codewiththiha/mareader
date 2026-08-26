@@ -2,6 +2,8 @@
 //! chrome. Deliberately four groups — a flat grab-bag of signals grows
 //! unbounded; these four are the app's real domains.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use leptos::prelude::RwSignal;
 
 use crate::state::library::LibraryState;
@@ -9,9 +11,24 @@ use crate::state::ui::SidebarMode;
 use crate::state::reader::ReaderState;
 use pdf_core::settings::Settings;
 
+/// Monotonic toast ids: the host's equality guard needs a per-toast identity
+/// so a stale auto-dismiss timer never wipes a newer toast.
+static TOAST_ID: AtomicU64 = AtomicU64::new(1);
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Toast {
+    pub id: u64,
     pub message: String,
+}
+
+impl Toast {
+    /// A fresh error surface (the only toast producers today).
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            id: TOAST_ID.fetch_add(1, Ordering::Relaxed),
+            message: message.into(),
+        }
+    }
 }
 
 /// UI chrome state: the sidebar and the toast surface.

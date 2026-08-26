@@ -1,8 +1,8 @@
-// Scaling check: compare the three virtual-list backends for offset lookups,
-// window queries, and dynamic size updates.
-//
-// Run with: `cargo bench -p virtual-list` (or `cargo run --bench scaling_check
-// -p virtual-list --release`).
+//! Scaling check: compare the three virtual-list backends for offset lookups,
+//! window queries, and dynamic size updates.
+//!
+//! Run with: `cargo bench -p virtual-list --features advanced-trees` (or `cargo run --bench scaling_check
+//! -p virtual-list --release --features advanced-trees`).
 use std::hint::black_box;
 use std::time::Instant;
 use virtual_list::{Budget, ChunkedStrip, FenwickStrip, Strip};
@@ -85,36 +85,39 @@ fn main() {
         let win_stripped = strip.window(strip.total() / 2.0, 900.0, Budget::default());
         let t = Instant::now();
         for _ in 0..1_000 {
-            let _ = black_box(
-                strip.window(black_box(strip.total() / 2.0), 900.0, Budget::default()),
-            );
+            let _ =
+                black_box(strip.window(black_box(strip.total() / 2.0), 900.0, Budget::default()));
         }
         let win_strip_t = t.elapsed();
 
         let t = Instant::now();
         for _ in 0..1_000 {
-            let _ = black_box(
-                fen.window(black_box(fen.total() / 2.0), 900.0, Budget::default()),
-            );
+            let _ = black_box(fen.window(black_box(fen.total() / 2.0), 900.0, Budget::default()));
         }
         let win_fen_t = t.elapsed();
 
         let t = Instant::now();
         for _ in 0..1_000 {
-            let _ = black_box(
-                chu.window(black_box(chu.total() / 2.0), 900.0, Budget::default()),
-            );
+            let _ = black_box(chu.window(black_box(chu.total() / 2.0), 900.0, Budget::default()));
         }
         let win_chu_t = t.elapsed();
 
         println!();
-        println!("n={n:5}  position-all (linear {lin:>10.2?} vs prefix {pre:>10.2?})  speedup {:>6.1}x",
-                 lin.as_secs_f64() / pre.as_secs_f64().max(1e-12));
-        println!("        index_at sweep: hinted {hinted:>10.2?}  unhinted {unhinted:>10.2?}  speedup {:>5.1}x",
-                 unhinted.as_secs_f64() / hinted.as_secs_f64().max(1e-12));
-        println!("        set_size x{n_updates}:  Fenwick {fen_t:>10.2?}  Chunked {chu_t:>10.2?}  Strip {strp_t:>10.2?}",
-                 n_updates = indices.len());
-        println!("        window x1000:           Strip {win_strip_t:>10.2?}  Fenwick {win_fen_t:>10.2?}  Chunked {win_chu_t:>10.2?}  ({win_stripped:?})",
-                 win_stripped = win_stripped.map(|w| (w.first, w.last)));
+        println!(
+            "n={n:5}  position-all (linear {lin:>10.2?} vs prefix {pre:>10.2?})  speedup {:>6.1}x",
+            lin.as_secs_f64() / pre.as_secs_f64().max(1e-12)
+        );
+        println!(
+            "        index_at sweep: hinted {hinted:>10.2?}  unhinted {unhinted:>10.2?}  speedup {:>5.1}x",
+            unhinted.as_secs_f64() / hinted.as_secs_f64().max(1e-12)
+        );
+        println!(
+            "        set_size x{n_updates}:  Fenwick {fen_t:>10.2?}  Chunked {chu_t:>10.2?}  Strip {strp_t:>10.2?}",
+            n_updates = indices.len()
+        );
+        println!(
+            "        window x1000:           Strip {win_strip_t:>10.2?}  Fenwick {win_fen_t:>10.2?}  Chunked {win_chu_t:>10.2?}  ({win_stripped:?})",
+            win_stripped = win_stripped.map(|w| (w.first, w.last))
+        );
     }
 }

@@ -34,6 +34,35 @@ use pdf_engine::api as engine;
 use pdf_core::appearance::TextureMode;
 use leptos::prelude::Signal;
 
+/// The gloss overlay inputs a page host renders when the document carries
+/// highlights: the persisted marks, the id of the mark currently waiting on
+/// the model (so its stroke can wear the processing animation), and the
+/// shared multi-select state. Passed as ONE optional prop so the four inputs
+/// cannot arrive half-configured.
+pub struct GlossOverlayProps {
+    /// The document's persisted gloss marks.
+    pub marks: Signal<Vec<pdf_core::gloss::GlossMark>>,
+    /// Id of the gloss mark currently waiting on the model.
+    pub processing: Signal<Option<String>>,
+    /// Shared gloss multi-select mode.
+    pub selecting: RwSignal<bool>,
+    /// Shared ids selected in gloss multi-select mode.
+    pub selected: RwSignal<std::collections::HashSet<String>>,
+}
+
+impl GlossOverlayProps {
+    /// The reader's shared gloss state as a page host's overlay inputs —
+    /// the only construction the reader's two page views need.
+    pub fn from_gloss(gloss: crate::state::reader::GlossState) -> Self {
+        Self {
+            marks: gloss.marks.read_only().into(),
+            processing: gloss.processing_id.read_only().into(),
+            selecting: gloss.selection_active,
+            selected: gloss.selected_marks,
+        }
+    }
+}
+
 #[component]
 pub fn PageCanvas(
     /// 1-based page number this host renders.
@@ -62,6 +91,12 @@ pub fn PageCanvas(
     /// The page texture mode (from the app shell, derived from settings).
     #[prop(into)]
     texture: Signal<TextureMode>,
+    /// The gloss overlay: persisted marks, the processing id, and the shared
+    /// multi-select state. `None` (the default) renders no layer at all, so
+    /// this host stays usable outside the reader — one optional prop instead
+    /// of four that only make sense together.
+    #[prop(optional)]
+    gloss_overlay: Option<GlossOverlayProps>,
 ) -> impl IntoView {
     // Texture is a prop, not context: this component is reusable without an
     // ambient provider. A Memo so only a real texture change rebuilds the
@@ -189,10 +224,20 @@ pub fn PageCanvas(
             if engine::blit_thumb(&cid_effect, page) {
                 return; // cached thumbnail is fine
             }
-            // FALLTHROUGH: first render at the DISPLAY scale so the slide
+            // A sidebar slide (fit-driven) is NOT a zoom gesture: the page's
+            // display scale is still moving and the commit pass renders once
+            // at the settled scale ~480ms later. Rendering here would produce
+            // a bitmap at a scale that is already obsolete — 2–3 wasted
+            // full-size RGBA bitmaps per toggle. Only a REAL zoom gesture
+            // (which owns the layout) gets a live first render at the display
+            // scale; the thumbnail underlay covers the gap for the slide.
+            if !crate::effects::reader::zoom::gesture_owns_layout() {
+                return;
+            }
+            // FALLTHROUGH: first render at the DISPLAY scale so the gesture
             // has pixels. Read untracked to avoid subscribing to per-frame
             // display_scale changes (which would re-run this effect every
-            // frame of the slide — a render storm).
+            // frame of the zoom — a render storm).
             // The `s` used below is `s_render` by default; override it for
             // this fallthrough path.
         }
@@ -330,6 +375,22 @@ pub fn PageCanvas(
             // and position (immediately after the canvas) in sync with
             // `renderPageInternal` in public/pdfEngine.js.
             <div class="textLayer" aria-hidden="true"></div>
+            // Persisted gloss highlights. Rendered by Leptos INSIDE the host,
+            // so every remount repaints them from the page-space rects — the
+            // reason a mark survives scrolling, zooming and reopening the book.
+            {gloss_overlay
+                .map(|gloss| {
+                    view! {
+                        <crate::components::ai::gloss::mark_layer::GlossMarkLayer
+                            page=page
+                            marks=gloss.marks
+                            scale=scale
+                            processing=gloss.processing
+                            selecting=gloss.selecting
+                            selected=gloss.selected
+                        />
+                    }
+                })}
         </div>
     }
 }

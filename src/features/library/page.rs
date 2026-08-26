@@ -4,13 +4,14 @@
 
 use leptos::prelude::*;
 
+use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, TOOLBAR_TRAILING_ID};
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::tooltip::Tooltip;
-use crate::components::chrome::app_title_bar::AppTitleBar;
-use crate::components::menus::appearance::AppearanceMenu;
-use crate::components::chrome::document_title::DocumentTitle;
-use crate::components::menus::more_menu::MoreMenu;
+use crate::components::app_shell::app_title_bar::AppTitleBar;
+use crate::components::menus::appearance_menu::AppearanceMenu;
+use crate::components::app_shell::document_title::DocumentTitle;
+use crate::components::menus::app_menu::MoreMenu;
 use crate::state::AppState;
 use crate::features::library::LibraryShelf;
 
@@ -20,7 +21,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
         view! {
             <div class="flex min-w-0 items-center gap-1">
                 <div
-                    id="toolbar-left-pre"
+                    id=TOOLBAR_LEADING_ID
                     data-tauri-drag-region="true"
                     class="flex shrink-0 items-center gap-1"
                 >
@@ -42,7 +43,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     let right = move || {
         view! {
             <div
-                id="toolbar-right"
+                id=TOOLBAR_TRAILING_ID
                 data-tauri-drag-region="true"
                 class="flex shrink-0 items-center gap-1"
             >

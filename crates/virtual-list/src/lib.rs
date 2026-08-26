@@ -1,25 +1,50 @@
 //! Windowing math for virtualized scrolling lists of variably-sized items.
 //!
-//! A [`Strip`] is a column of items laid out one after another with a fixed gap
-//! between them. It answers the four questions a virtualized list asks every
-//! frame:
+//! At the core sits [`Strip`], a prefix-sum layout engine for one scrolling
+//! column of items separated by a fixed gap. Given the size of each item, it
+//! answers the four questions a virtualized surface asks every frame:
 //!
 //! - [`Strip::offset`] — where does item `i` start?
-//! - [`Strip::total`] — how tall is the whole column?
-//! - [`Strip::window`] — which items should be mounted right now?
+//! - [`Strip::total`] — how large is the whole content extent?
+//! - [`Strip::window`] — which items should stay mounted right now?
 //! - [`Strip::dominant`] — which item is the reader actually looking at?
 //!
-//! Everything is `f64` in a unit of your choosing (CSS px, points, logical
-//! pixels). There is no DOM and no framework here: feed it sizes, get back
-//! indices and offsets.
+//! The crate is pure arithmetic: no DOM, no framework, `no_std`-compatible (`std` enabled by default).
+//! Everything is `f64` in whatever unit your app already uses.
+//!
+//! # Layout layer
+//!
+//! Above [`Strip`], the crate exposes one shared geometry contract for higher
+//! level virtualized surfaces:
+//!
+//! - [`Layout`] — common queries for item count, offsets, windowing, and
+//!   dominant-item selection;
+//! - [`ListLayout`] — a variably-sized list backed by [`Strip`];
+//! - [`GridLayout`] — a uniform multi-column grid that windows by row while
+//!   still answering per-item offsets.
+//!
+//! This lets a framework adapter hold one layout handle while the app chooses
+//! whether the surface is a list or a grid.
+//!
+//! # Anchoring
+//!
+//! The [`anchor`] helpers keep the reader's place stable when geometry changes:
+//!
+//! - [`correct`] adjusts scroll after one measured item changes size;
+//! - [`pin_at`] records the content point under a viewport anchor;
+//! - [`rescale_anchor`] reapplies that anchor after a uniform rescale.
+//!
+//! The math stays pure, so adapters can use it from browser, desktop, or test
+//! code without any runtime coupling.
 //!
 //! # Performance
 //!
 //! The obvious implementation walks the size array to find an item's offset,
 //! which is `O(n)` per query and `O(n²)` for a list that positions every
-//! mounted item each frame. [`Strip`] stores a prefix-sum table instead, making
-//! [`Strip::offset`] `O(1)` and every positional query an `O(log n)` binary
-//! search. Building the table is `O(n)`, done once when the sizes change.
+//! mounted item each frame. [`Strip`] stores a prefix-sum table instead,
+//! making [`Strip::offset`] `O(1)` and every positional query an `O(log n)`
+//! binary search. Building the table is `O(n)`, done once when the sizes
+//! change.
 //!
 //! Internally the prefix-sum is held as `i64` in sub-pixel units (factor
 //! [`SUBPIXEL_FACTOR`], 1/65536 px). This gives three wins over the equivalent
@@ -27,23 +52,19 @@
 //!
 //! - `partition_point` runs over integers, which branch-predict better and
 //!   avoid NaN edge cases;
-//! - sums cannot drift over long lists — `i64` is exact up to ~280 billion
-//!   sub-pixels, i.e. ~4.2 million CSS pixels of total extent;
-//! - the storage footprint is identical (`8 * (n + 1)` bytes) and there is no
-//!   conversion cost beyond the API boundary.
+//! - sums cannot drift over long lists;
+//! - the storage footprint is identical (`8 * (n + 1)` bytes).
 //!
 //! For typical continuous scrolling the index is the same as the last frame's,
 //! or one step away. [`Strip::index_at_hinted`] takes a `&mut usize` hint and
 //! checks the neighbour first, falling back to a galloping search for big
-//! jumps (scrollbar drag). That makes smooth scrolling **amortized `O(1)`**.
+//! jumps (scrollbar drag). That makes smooth scrolling amortized `O(1)`.
 //!
-//! When items change size at runtime (an image finishes loading, an accordion
-//! expands, an estimated size is replaced by a measured one) [`Strip::set_size`]
-//! re-runs the suffix of the prefix-sum in `O(n)` time. For lists that mutate
-//! sizes faster than that can pay, enable the `advanced-trees` feature for
-//! `FenwickStrip` (BIT, `O(log n)` update/lookup) and `ChunkedStrip`
-//! (sqrt-decomposition, `O(1)` lookup / `O(sqrt n)` update). pdf-reader only
-//! uses [`Strip`].
+//! When items change size at runtime, [`Strip::set_size`] re-runs the suffix of
+//! the prefix-sum in `O(n)` time. For surfaces that resize items far more
+//! often, enable the `advanced-trees` feature for [`FenwickStrip`] (BIT,
+//! `O(log n)` update and lookup) and [`ChunkedStrip`] (square-root
+//! decomposition with `O(1)` lookup and sublinear updates).
 //!
 //! # Example
 //!
@@ -56,9 +77,10 @@
 //! assert_eq!(strip.offset(2), 348.0);
 //! assert_eq!(strip.total(), 448.0);
 //!
-//! // What is on screen in a 150-tall viewport parked at the top?
 //! let win = strip.visible(0.0, 150.0).unwrap();
 //! assert_eq!((win.first, win.last), (0, 1));
+//!
+//! let _budget = Budget::screenfuls(0.5, 5);
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -67,17 +89,18 @@
 
 extern crate alloc;
 
-mod strip;
+pub mod anchor;
+pub mod backend;
+mod layout;
 mod units;
+mod window;
 
+pub use anchor::{AnchorPolicy, correct, pin_at, rescale_anchor};
+pub use backend::{Strip, StripBackend, UniformStrip};
 #[cfg(feature = "advanced-trees")]
-mod chunked;
+pub use backend::ChunkedStrip;
 #[cfg(feature = "advanced-trees")]
-mod fenwick;
-
-pub use strip::{Budget, Strip, Window};
-#[cfg(feature = "advanced-trees")]
-pub use chunked::ChunkedStrip;
-#[cfg(feature = "advanced-trees")]
-pub use fenwick::FenwickStrip;
-pub use units::{from_sub, to_sub, SUBPIXEL_BITS, SUBPIXEL_FACTOR};
+pub use backend::FenwickStrip;
+pub use layout::{GridColumns, GridLayout, GridSpec, Layout, LayoutKind, ListLayout};
+pub use units::{SUBPIXEL_BITS, SUBPIXEL_FACTOR, from_sub, to_sub};
+pub use window::{Align, Budget, Overscan, Viewport, Window};

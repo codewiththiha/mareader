@@ -22,8 +22,16 @@
 
 # Local-only tooling
 /.script/
+/.env
 CONTRACTS.md
 contracts.md
 bun.lock
 .st.txt
 .claude-shell-test.txt
+
+# Local web build output (wasm-bindgen webgen + assembled static root)
+/webgen/
+/webroot/
+
+# Local e2e entry page (served via webroot; intentionally not versioned)
+/e2e-index.html

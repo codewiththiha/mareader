@@ -8,7 +8,7 @@ use wasm_bindgen::JsCast;
 use std::cell::Cell;
 
 use pdf_core::layout::ViewMode;
-use crate::components::document::dom_helpers::page_list;
+use crate::components::primitives::hooks::dom::page_list;
 use crate::state::ReaderState;
 
 use super::is_chrome_scroll_target;

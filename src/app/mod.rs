@@ -12,6 +12,7 @@ use leptos_router::components::Router;
 use crate::components::overlays::toast::ToastHost;
 use crate::effects::reader::link_navigation::link_navigation;
 use crate::effects::reader::page_selection::page_selection;
+use crate::effects::reader::text_selection::text_selection;
 use crate::effects::app::theme::apply_theme;
 use crate::state::AppState;
 use bootstrap::{create_app_state, provide_app_contexts};
@@ -24,11 +25,17 @@ pub fn App() -> impl IntoView {
     provide_app_contexts(state);
 
     // App-root hooks: theme (both pages), global keyboard shortcuts, internal
-    // PDF link jumps, and text-selection page-range tracking.
+    // PDF link jumps, and text-selection tracking (page-range pinning for
+    // virtualization, plus the AI selection detail).
     apply_theme(state);
     shortcuts(state);
     link_navigation(state);
     page_selection(state);
+    text_selection(state);
+    // ONE Tauri AI-chunk listener for the app's life; re-broadcasts as a
+    // window event so the gloss popover never stacks/drops handlers across
+    // document switches.
+    crate::services::ai::install_ai_chunk_bridge();
     // OS file opening: double-click / "Open with" / default-app launch.
     crate::services::document::init_open_file_handling(state);
 

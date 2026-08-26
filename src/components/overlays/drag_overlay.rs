@@ -12,7 +12,7 @@ use crate::components::primitives::icon::{Icon, IconName};
 #[component]
 pub fn DragOverlay() -> impl IntoView {
     view! {
-        <div class="drag-overlay" role="presentation" aria-hidden="true">
+        <div class=format!("drag-overlay {}", crate::components::primitives::floating::types::z::DRAG_OVERLAY) role="presentation" aria-hidden="true">
             <div class="drag-dropzone">
                 <div class="drag-dropzone-icon">
                     <Icon name=IconName::Drop size=40 />
