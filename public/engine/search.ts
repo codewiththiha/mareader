@@ -8,9 +8,7 @@ import {
   highlightsByPage,
   numPages,
   pdf,
-  searchQuery,
   setActiveMatchValue,
-  setHighlightModeValue,
   setSearchQuery,
   stateByCanvasId,
   textIndex,
@@ -54,7 +52,6 @@ export async function search(query: string): Promise<SearchResult> {
   }
 
   setSearchQuery(q);
-  setHighlightModeValue("live");
   highlightsByPage.clear();
   const matches: SearchMatch[] = [];
   const qlen = q.length;
@@ -110,14 +107,6 @@ export async function search(query: string): Promise<SearchResult> {
   return { ok: true, query, total: matches.length, matches };
 }
 
-export function setHighlightMode(mode: "live" | "stale"): void {
-  setHighlightModeValue(mode === "stale" ? "stale" : "live");
-  const stale = mode === "stale";
-  for (const st of stateByCanvasId.values()) {
-    if (st.textLayerEl) st.textLayerEl.classList.toggle("search-stale", stale);
-  }
-}
-
 export function setActiveMatch(page: number, index: number): void {
   const next =
     Number.isFinite(page) && page > 0 && Number.isFinite(index) && index >= 0
@@ -137,12 +126,10 @@ export function clearHighlights(): void {
   highlightsByPage.clear();
   setSearchQuery("");
   setActiveMatchValue(null);
-  setHighlightModeValue("live");
   for (const st of stateByCanvasId.values()) {
     if (st.host) {
       st.host.querySelectorAll(".highlight").forEach((n) => n.remove());
     }
-    if (st.textLayerEl) st.textLayerEl.classList.remove("search-stale");
   }
 }
 

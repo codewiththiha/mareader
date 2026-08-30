@@ -192,12 +192,20 @@ export function getEl(id) {
 }
 const docEl = (() => {
     let _style = null;
+    // Inline custom properties written by the engine (e.g. --pdf-paper).
+    // Recorded, not ignored: the render test asserts on them.
+    const props = new Map();
     const el = {
         id: "documentElement",
         width: 0,
         height: 0,
         className: "",
-        style: { getAttribute: () => _style, setProperty() { } },
+        style: {
+            getAttribute: () => _style,
+            setProperty: (name, value) => { props.set(name, value); },
+            removeProperty: (name) => { props.delete(name); },
+            getPropertyValue: (name) => props.get(name) ?? "",
+        },
         classList: { add() { }, remove() { }, toggle() { }, contains() { return false; } },
         getAttribute() { return _style; },
         setAttribute(k, v) { if (k === "style")
@@ -231,11 +239,18 @@ export let fakeComputed = {
     "--canvas-filter": "none",
     "--canvas-blend": "normal",
 };
+/** The store behind the harness localStorage stub. */
+export const fakeLocalStorage = new Map();
 export const fakeWindow = {
     devicePixelRatio: 2,
     innerWidth: 1280,
     innerHeight: 800,
-    localStorage: { getItem: () => null, setItem() { } },
+    // Real-enough storage: the engine's per-document paper cache
+    // (pdfreader.blend-paper.v2) reads and writes through globalThis.localStorage.
+    localStorage: {
+        getItem: (k) => fakeLocalStorage.get(k) ?? null,
+        setItem: (k, v) => { fakeLocalStorage.set(k, v); },
+    },
     addEventListener() { },
     dispatchEvent() { return true; },
     getComputedStyle: (_el) => ({
@@ -264,6 +279,17 @@ export const fakeWindow = {
     },
 };
 // ---------- pdf.js stub ----------
+// Per-page paint colours, defaulting to paper white. The blend-scope test
+// paints distinct pages so detection, the document scan and the continuous
+// interpolation have something to tell apart; every other scenario sees the
+// same all-white book it always did.
+const fakePageColors = new Map();
+export function setFakePageColors(colors) {
+    fakePageColors.clear();
+    for (const [page, color] of Object.entries(colors)) {
+        fakePageColors.set(Number(page), color);
+    }
+}
 function fakePage(n) {
     return {
         n,
@@ -273,7 +299,7 @@ function fakePage(n) {
             convertToViewportPoint: (x, y) => [x, y],
         }),
         render: ({ canvasContext }) => {
-            canvasContext.fillStyle = "#ffffff";
+            canvasContext.fillStyle = fakePageColors.get(n) ?? "#ffffff";
             canvasContext.fillRect(0, 0, canvasContext.canvas.width, canvasContext.canvas.height);
             return { promise: Promise.resolve(), cancel() { } };
         },
@@ -284,7 +310,14 @@ function fakePage(n) {
 }
 const fakePdf = {
     numPages: 5,
-    getPage: async (n) => fakePage(n),
+    // Range-strict like the real pdf.js: an out-of-range page rejects, which
+    // the paper sampler must swallow into a frameless {ok:true} skip.
+    getPage: async (n) => {
+        if (n < 1 || n > fakePdf.numPages) {
+            throw new Error("page out of range: " + n);
+        }
+        return fakePage(n);
+    },
     getMetadata: async () => ({ info: { Title: "Test", Author: null } }),
     getOutline: async () => [],
     getPageIndex: async () => 0,
@@ -300,6 +333,7 @@ const sandbox = {
     globalThis: {},
     document: fakeDocument,
     window: fakeWindow,
+    localStorage: fakeWindow.localStorage,
     requestAnimationFrame: fakeWindow.requestAnimationFrame,
     cancelAnimationFrame: fakeWindow.cancelAnimationFrame,
     setTimeout,

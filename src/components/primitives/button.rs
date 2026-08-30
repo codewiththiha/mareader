@@ -55,7 +55,7 @@ pub fn Button(
 ) -> impl IntoView {
     let base = "btn inline-flex items-center justify-center gap-1.5 rounded-lg border font-medium \
                 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
-                disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap";
+                disabled:cursor-not-allowed disabled:opacity-45 whitespace-nowrap";
     let size_class = if compact {
         "h-8 px-2 text-xs"
     } else {

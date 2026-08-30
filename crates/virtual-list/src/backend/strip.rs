@@ -567,10 +567,6 @@ impl Strip {
     /// caller can feed to [`Strip::scroll_anchor_delta`] to keep the viewport
     /// pinned to whatever the reader was looking at.
     ///
-    /// For lists where item sizes change frequently enough that `O(n)` per
-    /// change is too expensive, enable the `advanced-trees` feature and use
-    /// `FenwickStrip` (`O(log n)`) or `ChunkedStrip` (`O(sqrt n)`).
-    ///
     /// Does nothing if `index` is out of range or the new size equals the old.
     pub fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
         let len = self.len();
@@ -713,8 +709,6 @@ impl super::StripBackend for Strip {
 mod tests {
     use super::*;
     use crate::units::{SUBPIXEL_FACTOR, from_sub, to_sub};
-    #[cfg(feature = "advanced-trees")]
-    use crate::{ChunkedStrip, FenwickStrip};
 
     /// Tolerance used everywhere we compare an `i64`-derived `f64` (returned
     /// by [`Strip::offset`] / [`Strip::size`] / [`Strip::total`]) against an
@@ -1103,64 +1097,7 @@ mod tests {
         assert_eq!(a, b);
     }
 
-    #[cfg(feature = "advanced-trees")]
-    #[test]
-    fn fenwick_matches_strip_for_static_layout() {
-        let sizes = [100.0, 200.0, 150.0, 75.5, 300.25, 50.0, 80.0, 0.1, 0.333];
-        let s = Strip::new(sizes, 11.0);
-        let f = FenwickStrip::new(sizes, 11.0);
-        assert_eq!(s.len(), f.len());
-        for i in 0..sizes.len() {
-            assert!((s.offset(i) - f.offset(i)).abs() < 1e-9, "offset {i}");
-            assert!((s.size(i) - f.size(i)).abs() < 1e-9, "size {i}");
-        }
-        assert!((s.total() - f.total()).abs() < 1e-9);
-        for pos in [0.0, 50.0, 100.0, 311.0, 1_000.0] {
-            assert_eq!(s.index_at(pos), f.index_at(pos), "index_at {pos}");
-        }
-        for top in [0.0, 100.0, 200.0, 500.0] {
-            assert_eq!(
-                s.overlapping(top, 200.0),
-                f.overlapping(top, 200.0),
-                "overlap {top}"
-            );
-        }
-    }
 
-    #[cfg(feature = "advanced-trees")]
-    #[test]
-    fn fenwick_set_size_propagates_to_later_items() {
-        let sizes = [100.0; 1000];
-        let mut f = FenwickStrip::new(sizes, 24.0);
-        let delta = f.set_size(500, 200.0);
-        assert_eq!(delta, 100.0);
-        assert_eq!(f.size(500), 200.0);
-        assert_eq!(f.size(0), 100.0);
-        assert!((f.total() - (100.0 * 1000.0 + 24.0 * 999.0 + 100.0)).abs() < APPROX_TOL);
-        assert!((f.offset(501) - (Strip::new(sizes, 24.0).offset(501) + 100.0)).abs() < APPROX_TOL);
-    }
 
-    #[cfg(feature = "advanced-trees")]
-    #[test]
-    fn chunked_matches_strip_for_static_layout() {
-        let sizes = [100.0, 200.0, 150.0, 75.5, 300.25, 50.0, 80.0, 0.1, 0.333];
-        let s = Strip::new(sizes, 11.0);
-        let c = ChunkedStrip::new_with_chunk(sizes, 11.0, 4);
-        assert_eq!(s.len(), c.len());
-        for i in 0..sizes.len() {
-            assert!((s.offset(i) - c.offset(i)).abs() < 1e-9, "offset {i}");
-        }
-        assert!((s.total() - c.total()).abs() < 1e-9);
-    }
 
-    #[cfg(feature = "advanced-trees")]
-    #[test]
-    fn chunked_set_size_updates_offsets() {
-        let sizes = [100.0; 200];
-        let mut c = ChunkedStrip::new_with_chunk(sizes, 24.0, 16);
-        let delta = c.set_size(50, 200.0);
-        assert_eq!(delta, 100.0);
-        assert_eq!(c.size(50), 200.0);
-        assert!((c.offset(51) - (Strip::new(sizes, 24.0).offset(51) + 100.0)).abs() < APPROX_TOL);
-    }
 }

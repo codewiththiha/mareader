@@ -1,45 +1,45 @@
 /* =====================================================================
    AI Feature: content styling for the word card.
-   The warp-window container, rainbow processing glow, streaming/done and
-   error state styles, and their reduced-motion override have been REMOVED —
-   the card is now a spring-driven Gloss surface (see gloss.css) whose
-   processing beat is the accent bloom, not a rainbow. What remains here is
-   reused inside that surface: the blur-fade reveal, the Info-pill entrance,
-   the word/POS/synonym/usage/section styling, and the loading shimmer.
+   The card is a plain panel on the app's tokens: neutral surface fill,
+   standard floating elevation, dictionary-style header (word + part of
+   speech), small quiet section labels. What lives here is only what sits
+   INSIDE that shell: the entrance reveal, the word/POS/synonym/usage
+   section styling, and the loading shimmer.
    ===================================================================== */
 
 /* ---------------------------------------------------------------------
-   5. Blur-fade text reveal.
+   5. Text reveal.
 
-   Each text block that arrives from the AI stream gets this class. It
-   transitions from blurred/transparent/slightly-shifted to full clarity
-   — like a photograph developing, NOT a typewriter.
+   Each section that arrives from the AI stream gets this class. The
+   animation is opacity + a two-pixel rise ONLY: both properties composite
+   on the GPU, so the reveal stays smooth while the card's spring is
+   writing its geometry every frame. (It used to animate a blur filter,
+   which re-rasterises the text on every frame — the jitter.)
 
-   Applied once per element via `both` fill: new nodes mounted later
-   (Leptos re-renders) replay it automatically.
+   Applied once per element via `both` fill. The sections render from
+   SIGNALS, so a streamed snapshot patches text in place instead of
+   remounting the tree — the entrance plays once, on mount, never per
+   chunk.
    --------------------------------------------------------------------- */
 .ai-text-reveal {
-  animation: ai-blur-fade-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ai-rise-in 0.3s cubic-bezier(0.25, 1, 0.35, 1) both;
 }
 
-@keyframes ai-blur-fade-in {
+@keyframes ai-rise-in {
   from {
-    filter: blur(8px);
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
-    filter: blur(0px);
     opacity: 1;
     transform: translateY(0);
   }
 }
 
 /* Staggered delays so the sections cascade rather than appearing at once. */
-.ai-reveal-delay-1 { animation-delay: 0.05s; }
-.ai-reveal-delay-2 { animation-delay: 0.15s; }
-.ai-reveal-delay-3 { animation-delay: 0.25s; }
-.ai-reveal-delay-4 { animation-delay: 0.35s; }
+.ai-reveal-delay-1 { animation-delay: 0.02s; }
+.ai-reveal-delay-2 { animation-delay: 0.07s; }
+.ai-reveal-delay-3 { animation-delay: 0.12s; }
 
 /* ---------------------------------------------------------------------
    6. Selection menu entrance — the "Info" pill floats up from below the
@@ -64,74 +64,54 @@
    7. Card content sections.
    --------------------------------------------------------------------- */
 
-/* The selected word displayed prominently at the top. */
-.ai-word-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--color-ink);
-  line-height: 1.3;
-  word-break: break-word;
+/* Part of speech, printed beside the word in the header the way a
+   dictionary prints it. */
+.ai-pos {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--color-muted);
 }
 
-/* Part-of-speech badge. */
-.ai-pos-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  border-radius: 9999px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
-}
-
-/* Synonym chips. */
+/* Synonym chips: quiet, borderless pills that only speak on hover. */
 .ai-synonym-chip {
   display: inline-flex;
   align-items: center;
-  padding: 2px 10px;
+  padding: 1px 9px;
   border-radius: 9999px;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: var(--color-ink);
-  background: var(--color-line);
-  border: 1px solid color-mix(in srgb, var(--color-line) 80%, var(--color-muted));
+  background: color-mix(in srgb, var(--color-line) 60%, transparent);
   transition: background 0.15s ease;
 }
 .ai-synonym-chip:hover {
-  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-line));
+  background: color-mix(in srgb, var(--color-line) 100%, transparent);
 }
 
-/* Usage example sentences. */
+/* Usage example sentences, hung off a neutral hairline. */
 .ai-usage-item {
   position: relative;
-  padding-left: 12px;
-  font-size: 0.82rem;
-  line-height: 1.5;
+  padding-left: 11px;
+  font-size: 0.8rem;
+  line-height: 1.45;
   color: var(--color-muted);
 }
 .ai-usage-item::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
+  top: 3px;
+  bottom: 3px;
   width: 2px;
   border-radius: 1px;
-  background: var(--color-accent);
-  opacity: 0.5;
+  background: var(--color-line);
 }
 
-/* Section labels inside the card. */
+/* Section labels inside the card: small, quiet, sentence case. */
 .ai-section-label {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+  font-weight: 500;
   color: var(--color-muted);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 /* ---------------------------------------------------------------------

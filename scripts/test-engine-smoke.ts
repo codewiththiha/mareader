@@ -11,6 +11,7 @@
   await (await import("./engine-smoke/render.js")).run();
   await (await import("./engine-smoke/theme.js")).run();
   await (await import("./engine-smoke/thumbnail.js")).run();
+  await (await import("./engine-smoke/blend.js")).run();
   await (await import("./engine-smoke/teardown.js")).run();
   console.log("ALL ENGINE TESTS PASSED");
 })().catch((e: unknown) => {

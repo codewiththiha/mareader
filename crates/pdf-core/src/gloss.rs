@@ -87,9 +87,15 @@ pub const MAX_GLOSS_CHARS: usize = 60;
 pub const MAX_GLOSS_HINT_CHARS: usize = MAX_GLOSS_CHARS * 2;
 
 /// Whether `text` can be looked up as a word.
+///
+/// A dictionary look-up is a single token, not a phrase: the edges are
+/// trimmed, then the token must be non-empty, within the length cap, and free
+/// of ANY whitespace — an interior space means the reader selected several
+/// words (e.g. "quick brown"), which is not a word to explain. (Surrounding
+/// spaces the user grabbed by accident trim away and still count.)
 pub fn is_glossable(text: &str) -> bool {
     let t = text.trim();
-    !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS
+    !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS && !t.chars().any(char::is_whitespace)
 }
 
 /// Whether `text` stays inside the menu's visible range. Callers use
@@ -114,8 +120,10 @@ pub const MIN_CARD_H: f64 = 140.0;
 pub const MAX_CARD_H_FRAC: f64 = 0.8;
 
 /// Gap-aware, side-aware card placement: the card goes on whichever side of
-/// the anchor has more free space (never covering the stroke), is centered
-/// vertically on the mark, and clamped into the viewport margin. Shrinks the
+/// the anchor has more free space (never covering the stroke), sits a little
+/// BELOW the mark's midline (`y_bias` — dead-centre reads as pasted onto the
+/// line; a hand's-width below reads as attached to it, the way a footnote
+/// hangs off its word), and clamped into the viewport margin. Shrinks the
 /// card when the viewport is too small to host it at the requested size.
 ///
 /// Pure: unit-testable on the host via `cargo test -p pdf-core gloss`.
@@ -129,6 +137,7 @@ pub fn place_card(
     radius: f64,
     gap: f64,
     margin: f64,
+    y_bias: f64,
 ) -> GlossBox {
     let w = size_w.min((view_w - margin * 2.0).max(MIN_CARD_W));
     // Guard against min > max panics on degenerate viewports.
@@ -140,19 +149,17 @@ pub fn place_card(
         anchor.x - gap - w
     };
     let x = x.clamp(margin, (view_w - w - margin).max(margin));
-    let y = (anchor.y + anchor.h * 0.5 - h * 0.5).clamp(margin, (view_h - h - margin).max(margin));
+    let y = (anchor.y + anchor.h * 0.5 - h * 0.5 + y_bias)
+        .clamp(margin, (view_h - h - margin).max(margin));
     GlossBox { x, y, w, h, r: radius }
 }
 
-/// Spring stiffness and damping for the morph. Stiffness 210 / damping 26 is
-/// mildly underdamped (critical ≈ 29 at mass 1): a confident pop with one small
-/// settle, matching the reference's feel.
-///
-/// The generic 1-D spring and the field-wise steer live in
-/// [`crate::floating`] (the primitive motion layer); `GlossBox` converts into
-/// `FloatBox` at this boundary so the domain type stays the single source of
-/// truth for persisted marks while the mechanics stay reusable.
-pub use crate::floating::{FloatBox, SPRING_DAMPING, SPRING_STIFFNESS};
+/// The gloss box's escape hatch into the primitive motion layer: `GlossBox`
+/// converts into [`FloatBox`] at this boundary so the domain type stays the
+/// single source of truth for persisted marks while the spring mechanics
+/// (including the stiffness/damping constants) stay reusable in
+/// [`crate::floating`].
+pub use crate::floating::FloatBox;
 
 impl From<GlossBox> for FloatBox {
     fn from(b: GlossBox) -> Self {
@@ -198,6 +205,11 @@ mod tests {
         assert!(!is_glossable(&"a".repeat(MAX_GLOSS_CHARS + 1)));
         // Character count, not byte count: 60 emoji pass the gate.
         assert!(is_glossable(&"🙂".repeat(MAX_GLOSS_CHARS)));
+        // Interior whitespace is a phrase, not a word — rejected.
+        assert!(!is_glossable("quick brown"));
+        assert!(!is_glossable("  quick brown  "));
+        assert!(!is_glossable("note\ttab"));
+        assert!(!is_glossable("line\nbreak"));
     }
 
     #[test]
@@ -242,7 +254,7 @@ mod tests {
     fn place_card_prefers_the_roomier_side() {
         // Anchor near the left edge: plenty of room on the right.
         let anchor = GlossBox { x: 100.0, y: 400.0, w: 60.0, h: 16.0, r: 0.0 };
-        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 18.0, 16.0, 12.0);
+        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 0.0);
         assert!((card.x - (anchor.x + anchor.w + 16.0)).abs() < 1e-9);
     }
 
@@ -250,7 +262,7 @@ mod tests {
     fn place_card_flips_left_when_the_right_edge_is_closer() {
         // space_right = 1920 - 1860 = 60 < anchor.x = 1800 → left side.
         let anchor = GlossBox { x: 1800.0, y: 400.0, w: 60.0, h: 16.0, r: 0.0 };
-        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 18.0, 16.0, 12.0);
+        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 0.0);
         assert!((card.x - (anchor.x - 16.0 - card.w)).abs() < 1e-9);
     }
 
@@ -258,7 +270,7 @@ mod tests {
     fn place_card_stays_inside_the_viewport_margin_and_shrinks_to_fit() {
         // Tiny viewport, oversized request: everything clamps inboard.
         let anchor = GlossBox { x: 0.0, y: 0.0, w: 40.0, h: 12.0, r: 0.0 };
-        let card = place_card(anchor, 800.0, 2000.0, 500.0, 400.0, 18.0, 16.0, 12.0);
+        let card = place_card(anchor, 800.0, 2000.0, 500.0, 400.0, 12.0, 16.0, 12.0, 0.0);
         assert!(card.x >= 12.0 - 1e-9);
         assert!(card.y >= 12.0 - 1e-9);
         assert!(card.x + card.w <= 500.0 - 12.0 + 1e-6);
@@ -269,12 +281,20 @@ mod tests {
     }
 
     #[test]
-    fn place_card_centers_vertically_on_the_anchor() {
+    fn place_card_hangs_below_the_anchor_midline() {
+        // Dead-centre read as pasted onto the line; the bias drops the card a
+        // touch so it hangs off the word like a footnote. The clamp still owns
+        // the last word near the edges.
         let anchor = GlossBox { x: 400.0, y: 500.0, w: 80.0, h: 20.0, r: 0.0 };
-        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 18.0, 16.0, 12.0);
+        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 12.0);
         let anchor_mid = anchor.y + anchor.h * 0.5;
         let card_mid = card.y + card.h * 0.5;
-        assert!((anchor_mid - card_mid).abs() < 1e-9);
+        assert!((card_mid - anchor_mid - 12.0).abs() < 1e-9);
+        // …and a bias that would push the card out the bottom stops at the
+        // viewport margin instead of leaving the screen.
+        let low = GlossBox { x: 400.0, y: 1000.0, w: 80.0, h: 20.0, r: 0.0 };
+        let card = place_card(low, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 12.0);
+        assert!(card.y + card.h <= 1080.0 - 12.0 + 1e-9);
     }
 
     #[test]

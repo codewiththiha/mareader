@@ -5,4 +5,3 @@ pub mod anchor;
 pub mod gloss;
 pub mod selection_menu;
 pub mod types;
-pub mod word_info;

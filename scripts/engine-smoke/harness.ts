@@ -217,12 +217,20 @@ export function getEl(id: string): ReturnType<typeof makeElement> {
 
 const docEl: FakeCanvas & { id: string; width: number; height: number } = (() => {
   let _style: string | null = null;
+  // Inline custom properties written by the engine (e.g. --pdf-paper).
+  // Recorded, not ignored: the render test asserts on them.
+  const props = new Map<string, string>();
   const el: FakeCanvas & { id: string; width: number; height: number } = {
     id: "documentElement",
     width: 0,
     height: 0,
     className: "",
-    style: { getAttribute: () => _style, setProperty() {} },
+    style: {
+      getAttribute: () => _style,
+      setProperty: (name: string, value: string) => { props.set(name, value); },
+      removeProperty: (name: string) => { props.delete(name); },
+      getPropertyValue: (name: string) => props.get(name) ?? "",
+    },
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     getAttribute() { return _style; },
     setAttribute(k: string, v: string) { if (k === "style") _style = v; },
@@ -257,7 +265,7 @@ interface FakeWindow {
   devicePixelRatio: number;
   innerWidth: number;
   innerHeight: number;
-  localStorage: { getItem(): string | null; setItem(): void };
+  localStorage: { getItem(k: string): string | null; setItem(k: string, v: string): void };
   addEventListener(): void;
   dispatchEvent(): boolean;
   getComputedStyle: (el: { _style?: string }) => {
@@ -279,11 +287,19 @@ export let fakeComputed: { "--canvas-filter": string; "--canvas-blend": string; 
   "--canvas-blend": "normal",
 };
 
+/** The store behind the harness localStorage stub. */
+export const fakeLocalStorage = new Map<string, string>();
+
 export const fakeWindow: FakeWindow = {
   devicePixelRatio: 2,
   innerWidth: 1280,
   innerHeight: 800,
-  localStorage: { getItem: () => null, setItem() {} },
+  // Real-enough storage: the engine's per-document paper cache
+  // (pdfreader.blend-paper.v2) reads and writes through globalThis.localStorage.
+  localStorage: {
+    getItem: (k: string) => fakeLocalStorage.get(k) ?? null,
+    setItem: (k: string, v: string) => { fakeLocalStorage.set(k, v); },
+  },
   addEventListener() {},
   dispatchEvent() { return true; },
   getComputedStyle: (_el) => ({
@@ -309,6 +325,18 @@ export const fakeWindow: FakeWindow = {
 };
 
 // ---------- pdf.js stub ----------
+// Per-page paint colours, defaulting to paper white. The blend-scope test
+// paints distinct pages so detection, the document scan and the continuous
+// interpolation have something to tell apart; every other scenario sees the
+// same all-white book it always did.
+const fakePageColors = new Map<number, string>();
+export function setFakePageColors(colors: Record<number, string>): void {
+  fakePageColors.clear();
+  for (const [page, color] of Object.entries(colors)) {
+    fakePageColors.set(Number(page), color);
+  }
+}
+
 function fakePage(n: number) {
   return {
     n,
@@ -318,7 +346,7 @@ function fakePage(n: number) {
       convertToViewportPoint: (x: number, y: number): [number, number] => [x, y],
     }),
     render: ({ canvasContext }: { canvasContext: FakeCtx }) => {
-      canvasContext.fillStyle = "#ffffff";
+      canvasContext.fillStyle = fakePageColors.get(n) ?? "#ffffff";
       canvasContext.fillRect(0, 0, canvasContext.canvas.width, canvasContext.canvas.height);
       return { promise: Promise.resolve(), cancel() {} };
     },
@@ -330,7 +358,14 @@ function fakePage(n: number) {
 
 const fakePdf = {
   numPages: 5,
-  getPage: async (n: number) => fakePage(n),
+  // Range-strict like the real pdf.js: an out-of-range page rejects, which
+  // the paper sampler must swallow into a frameless {ok:true} skip.
+  getPage: async (n: number) => {
+    if (n < 1 || n > fakePdf.numPages) {
+      throw new Error("page out of range: " + n);
+    }
+    return fakePage(n);
+  },
   getMetadata: async () => ({ info: { Title: "Test", Author: null } }),
   getOutline: async () => [],
   getPageIndex: async () => 0,
@@ -347,6 +382,7 @@ const sandbox: Record<string, unknown> = {
   globalThis: {} as Record<string, unknown>,
   document: fakeDocument,
   window: fakeWindow,
+  localStorage: fakeWindow.localStorage,
   requestAnimationFrame: fakeWindow.requestAnimationFrame,
   cancelAnimationFrame: fakeWindow.cancelAnimationFrame,
   setTimeout,
@@ -407,6 +443,7 @@ interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thum
 
 interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;
+  resolveOutline(): Promise<EngineResult<{ outline: unknown[] }>>;
   registerPage(p: { canvasId: string; hostId: string; page: number }): void;
   renderPage(canvasId: string, scale: number, renderText: boolean): Promise<EngineResult<RenderPayload>>;
   renderThumb(canvasId: string, page: number, scale: number): Promise<EngineResult<ThumbPayload>>;
@@ -414,6 +451,28 @@ interface PDFReaderHandle {
   hasThumb(page: number, scale: number): boolean;
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
+  setPaper(hex: string, persist: boolean, area: "whole" | "edges"): void;
+  setPaperActive(on: boolean): void;
+  persistPaper(hex: string, area: "whole" | "edges"): void;
+  takePaperFrame(canvasId: string): {
+    ok: true;
+    page: number;
+    width: number;
+    height: number;
+    data: Uint8ClampedArray;
+  } | null;
+  samplePaperPage(page: number): Promise<{
+    ok: true;
+    page?: number;
+    width?: number;
+    height?: number;
+    data?: Uint8ClampedArray;
+  }>;
+  getCachedPaper(path: string): {
+    ok: true;
+    hex: string | null;
+    area: "whole" | "edges" | null;
+  };
   unregisterPage(canvasId: string): void;
   destroy(): Promise<void>;
   stats(): StatsPayload;

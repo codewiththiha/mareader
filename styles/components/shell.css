@@ -73,19 +73,6 @@ body {
   contain: layout style;
 }
 
-/* --- adaptive toolbar measurement twin -------------------------------
-   visibility:hidden (NOT display:none) so children keep layout width. */
-.tb-sizer {
-  position: absolute;
-  top: 0;
-  left: -10000px;            /* off-screen so it cannot steal bar width */
-  display: flex;
-  gap: 0.25rem;              /* must match gap-1 on #toolbar-trailing */
-  visibility: hidden;
-  pointer-events: none;
-}
-.tb-sizer > * { flex-shrink: 0; }
-
 /* --- stable floating surface classes ---------------------------------
    The shared visual contract for menu/popover/context-menu/action-bar
    surfaces: rounded, hairline border, surface fill, floating elevation.
@@ -131,9 +118,79 @@ body {
     align-items: center;
     gap: 0.5rem;                /* gap-2 */
   }
+  /* --- toast anchor ------------------------------------------------------
+     The ONE centering mechanism for every toast host: the app-root error host
+     and the gloss undo toast both use it, so they cannot drift apart in
+     placement. Fixed, full-width, flex-centered, and lifted 4rem because the
+     reader's auto-hide bottom bar is h-10 (2.5rem) at `bottom-0`.
+
+     Centering is deliberately flexbox, NOT `left: 50%` plus a half-width
+     transform. Tailwind v4 writes `translate-x-*` to the `translate` property
+     while an entrance keyframe animates `transform` — both apply, so a toast
+     that centered itself with `-translate-x-1/2` *and* a `translateX(-50%)`
+     keyframe sat a full half-width left of centre. With no transform in the
+     geometry there is nothing to double-count, and the reduced-motion nets
+     that strip the entrance cannot move the panel either. */
+  .toast-anchor {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 4rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding-inline: 1rem;         /* px-4, so a long message never touches an edge */
+  }
   .surface-toast {
     border-radius: 0.75rem;     /* rounded-xl */
     border: 1px solid var(--color-line);
     background: var(--color-surface);
   }
 }
+
+
+/* Overlay scrollbars: hide native bars on tagged scrollports. */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.reader-bg {
+  /* Anchors the ::after blend paper layer below to THIS element; without a
+     positioning context the absolutely positioned pseudo resolves against
+     whichever ancestor happens to be positioned. The z-index makes us a
+     stacking context, so the z-index:-1 blend layer stays contained here:
+     above our own background, below the pages (whose own texture layers now
+     paint the gutter). */
+  position: relative;
+  z-index: 0;
+  background-color: var(--color-paper); /* the blend backdrop for ::after */
+}
+/* BLEND PAPER — the backdrop must equal the CANVAS background, and that is
+   the PDF's own paper run through the theme pipeline, not any app colour.
+   The engine publishes the document's most-used raster colour as
+   --pdf-paper; we paint it raw and apply the exact same filter + blend the
+   raw canvases use, over the same app-paper backdrop they blend against.
+   Same inputs, same pipeline ⇒ identical composite at any slider position,
+   same frame. Deliberately NO transition — a tint scrub must repaint it in
+   lockstep with the canvases.
+
+   The backdrop carries NO texture: each page's own ::before overhangs the
+   page box and paints the surrounding gutter (see textures.css, BLEND BLEED),
+   so page and gutter are literally the same layer — same pitch, same phase,
+   at every zoom and scroll — instead of a separate backdrop lattice that
+   could never stay phase-locked to the pages. */
+.reader-bg.blend::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1; /* above our own bg (the blend backdrop), below texture + pages */
+  pointer-events: none;
+  background-color: var(--pdf-paper, var(--color-paper));
+  filter: var(--canvas-filter, none);
+  mix-blend-mode: var(--canvas-blend, multiply);
+}
+.reader-bg.blend .paginated-scroller { background-color: transparent; }
+

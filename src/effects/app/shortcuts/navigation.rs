@@ -1,6 +1,6 @@
 //! Page navigation and the continuous-scroll hold engine: arrows turn pages
-//! in single mode and glide the scrollport in continuous mode; PageUp/Down
-//! and Space page the column.
+//! in single/dual mode and glide the scrollport in continuous/horizontal mode;
+//! PageUp/Down and Space page the column.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -8,7 +8,7 @@ use wasm_bindgen::JsCast;
 use std::cell::Cell;
 
 use pdf_core::layout::ViewMode;
-use crate::components::primitives::hooks::dom::page_list;
+use crate::components::primitives::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
 
 use super::is_chrome_scroll_target;
@@ -45,28 +45,54 @@ thread_local! {
     static HOLD_DOWN_AT: Cell<f64> = const { Cell::new(0.0) };
     static HOLD_LAST: Cell<f64> = const { Cell::new(0.0) };
     static HOLD_RAF: Cell<bool> = const { Cell::new(false) };
+    /// 1 = vertical (#page-list), 2 = horizontal (#h-page-list).
+    static HOLD_AXIS: Cell<u8> = const { Cell::new(1) };
+}
+
+fn spread_start(state: ReaderState) -> u32 {
+    let p = state.viewer.page.get().max(1);
+    ((p - 1) / 2) * 2 + 1
+}
+
+fn last_spread_start(state: ReaderState) -> u32 {
+    let n = state.document.num_pages.get();
+    if n == 0 {
+        1
+    } else {
+        ((n - 1) / 2) * 2 + 1
+    }
 }
 
 fn page_prev(state: ReaderState) {
-    let p = state.viewer.page.get();
-    if p > 1 {
-        state.viewer.page.set(p - 1);
+    if state.viewer.mode.get() == ViewMode::Spread {
+        state
+            .viewer
+            .page
+            .set(spread_start(state).saturating_sub(2).max(1));
+    } else if state.viewer.page.get() > 1 {
+        state.viewer.page.set(state.viewer.page.get() - 1);
     }
 }
 
 fn page_next(state: ReaderState) {
-    let p = state.viewer.page.get();
     let n = state.document.num_pages.get();
-    if n > 0 && p < n {
-        state.viewer.page.set(p + 1);
+    if state.viewer.mode.get() == ViewMode::Spread {
+        state
+            .viewer
+            .page
+            .set((spread_start(state) + 2).min(last_spread_start(state)));
+    } else if n > 0 && state.viewer.page.get() < n {
+        state.viewer.page.set(state.viewer.page.get() + 1);
     }
 }
 
-/// Keep keyboard focus on `#page-list` itself (not a text-layer span
-/// the virtualizer is about to unmount). `preventScroll` so focusing
+/// Keep keyboard focus on the active scroll strip itself (not a text-layer
+/// span the virtualizer is about to unmount). `preventScroll` so focusing
 /// does not fight the scroll we are about to apply.
-fn focus_page_list() {
-    let Some(list) = page_list() else { return };
+fn focus_scroll_list(horizontal: bool) {
+    let Some(list) = (if horizontal { h_page_list() } else { page_list() }) else {
+        return;
+    };
     let Some(html) = list.dyn_ref::<web_sys::HtmlElement>() else {
         return;
     };
@@ -75,22 +101,7 @@ fn focus_page_list() {
     _ = html.focus_with_options(&opts);
 }
 
-/// Scroll `#page-list` by `dy` CSS px, clamped to the scrollable extent.
-///
-/// Arrow keys in continuous mode used to rely on the BROWSER scrolling
-/// whatever had focus. Focus was almost always a text-layer span on the
-/// page the reader had clicked. Virtualization unmounts that page a few
-/// screens later, the focused node is removed, key-repeat dies, and the
-/// next press lands on `<body>` which is not the scroll container — the
-/// arrows "stop working" until the reader clicks the page again.
-/// Owning the keys on `window` means they keep working regardless of
-/// which node currently has focus.
-///
-/// A tap uses the same nearby-smooth path page jumps use (`ScrollBehavior
-/// ::Smooth`) so one press glides instead of teleporting. A hold is a
-/// rAF glide (see `begin_line_hold`) — assigning `scrollTop` on every
-/// key-repeat was the chunky feel the reader lost.
-fn scroll_reader(dy: f64, smooth: bool) {
+fn scroll_reader_y(dy: f64, smooth: bool) {
     let Some(list) = page_list() else { return };
     let max = (list.scroll_height() as f64 - list.client_height() as f64).max(0.0);
     let next = (list.scroll_top() as f64 + dy).clamp(0.0, max);
@@ -107,25 +118,59 @@ fn scroll_reader(dy: f64, smooth: bool) {
     list.scroll_to_with_scroll_to_options(&opts);
 }
 
-fn scroll_reader_line(dir: f64, smooth: bool) {
-    let Some(list) = page_list() else { return };
-    scroll_reader(dir * line_scroll_px(list.client_height() as f64), smooth);
+fn scroll_reader_x(dx: f64, smooth: bool) {
+    let Some(list) = h_page_list() else { return };
+    let max = (list.scroll_width() as f64 - list.client_width() as f64).max(0.0);
+    let next = (list.scroll_left() as f64 + dx).clamp(0.0, max);
+    if (next - list.scroll_left() as f64).abs() < 0.5 {
+        return;
+    }
+    let opts = web_sys::ScrollToOptions::new();
+    opts.set_left(next);
+    opts.set_behavior(if smooth {
+        web_sys::ScrollBehavior::Smooth
+    } else {
+        web_sys::ScrollBehavior::Instant
+    });
+    list.scroll_to_with_scroll_to_options(&opts);
 }
 
-fn scroll_reader_page(dir: f64, smooth: bool) {
+fn scroll_reader_line_y(dir: f64, smooth: bool) {
     let Some(list) = page_list() else { return };
-    scroll_reader(dir * page_scroll_px(list.client_height() as f64), smooth);
+    scroll_reader_y(dir * line_scroll_px(list.client_height() as f64), smooth);
 }
 
-fn begin_line_hold(dir: f64) {
+fn scroll_reader_page_y(dir: f64, smooth: bool) {
+    let Some(list) = page_list() else { return };
+    scroll_reader_y(dir * page_scroll_px(list.client_height() as f64), smooth);
+}
+
+fn scroll_reader_line_x(dir: f64, smooth: bool) {
+    let Some(list) = h_page_list() else { return };
+    scroll_reader_x(dir * line_scroll_px(list.client_width() as f64), smooth);
+}
+
+fn scroll_reader_page_x(dir: f64, smooth: bool) {
+    let Some(list) = h_page_list() else { return };
+    scroll_reader_x(dir * page_scroll_px(list.client_width() as f64), smooth);
+}
+
+fn begin_line_hold(dir: f64, horizontal: bool, glide: bool) {
     HOLD_DIR.with(|d| d.set(dir));
+    HOLD_AXIS.with(|a| a.set(if horizontal { 2 } else { 1 }));
     let now = js_sys::Date::now();
     HOLD_DOWN_AT.with(|t| t.set(now));
     HOLD_LAST.with(|t| t.set(now));
-    // Tap = one smooth nudge. If the key is still down after HOLD_DELAY
-    // the rAF loop takes over as a continuous glide.
-    focus_page_list();
-    scroll_reader_line(dir, true);
+    // A tap is one smooth nudge — an ANIMATION, so `glide` (the reader's
+    // scroll switch) decides whether it eases or lands. The hold that follows
+    // is not: the rAF loop below IS the scrolling, frames and all, and it runs
+    // whether or not the tap glided.
+    focus_scroll_list(horizontal);
+    if horizontal {
+        scroll_reader_line_x(dir, glide);
+    } else {
+        scroll_reader_line_y(dir, glide);
+    }
     if HOLD_RAF.with(|r| r.get()) {
         return;
     }
@@ -160,63 +205,95 @@ fn hold_tick() {
     let down_at = HOLD_DOWN_AT.with(|t| t.get());
     if now - down_at >= HOLD_DELAY_MS {
         let dt = ((now - last) / 1000.0).clamp(0.0, 0.05);
-        scroll_reader(dir * HOLD_PX_PER_SEC * dt, false);
+        let delta = dir * HOLD_PX_PER_SEC * dt;
+        if HOLD_AXIS.with(|a| a.get()) == 2 {
+            scroll_reader_x(delta, false);
+        } else {
+            scroll_reader_y(delta, false);
+        }
     }
     request_animation_frame(hold_tick);
 }
 
-/// The plain-key navigation arms: arrows (page turn in single mode, scroll
-/// hold in continuous), PageUp/Down and Space.
+fn is_paginated(mode: ViewMode) -> bool {
+    mode.is_paginated()
+}
+
+/// The plain-key navigation arms: arrows (page turn in single/dual mode,
+/// scroll hold in continuous/horizontal), PageUp/Down and Space.
 pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::KeyboardEvent) {
+    let mode = state.viewer.mode.get();
+    // Whether this keypress may GLIDE anywhere. Untracked: the switch that
+    // turns the glide off must not be what triggers one, and a keypress reads
+    // the world as it is the moment it lands.
+    let glide = state.viewer.motion.get_untracked().scroll_glide;
     match ev.key().as_str() {
         "ArrowLeft" => {
             ev.prevent_default();
-            page_prev(state);
+            if mode == ViewMode::ScrollHorizontal {
+                if !is_chrome_scroll_target(ev) && !ev.repeat() {
+                    begin_line_hold(-1.0, true, glide);
+                }
+            } else {
+                page_prev(state);
+            }
         }
         "ArrowRight" => {
             ev.prevent_default();
-            page_next(state);
+            if mode == ViewMode::ScrollHorizontal {
+                if !is_chrome_scroll_target(ev) && !ev.repeat() {
+                    begin_line_hold(1.0, true, glide);
+                }
+            } else {
+                page_next(state);
+            }
         }
-        // Single-page: up/down turn the page. Continuous: WE scroll
-        // `#page-list` ourselves — see `scroll_reader`. `repeat` is
+        // Single/Dual: up/down turn the page. Continuous: WE scroll
+        // `#page-list` ourselves — see `scroll_reader_y`. `repeat` is
         // ignored: the rAF hold loop is what keeps a held key gliding,
         // so the browser's discrete key-repeat cannot chunk the motion.
         "ArrowUp" => {
-            if state.viewer.mode.get() == ViewMode::Single {
+            if is_paginated(mode) {
                 ev.prevent_default();
                 page_prev(state);
-            } else if !is_chrome_scroll_target(ev) {
+            } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 if !ev.repeat() {
-                    begin_line_hold(-1.0);
+                    begin_line_hold(-1.0, false, glide);
                 }
             }
         }
         "ArrowDown" => {
-            if state.viewer.mode.get() == ViewMode::Single {
+            if is_paginated(mode) {
                 ev.prevent_default();
                 page_next(state);
-            } else if !is_chrome_scroll_target(ev) {
+            } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 if !ev.repeat() {
-                    begin_line_hold(1.0);
+                    begin_line_hold(1.0, false, glide);
                 }
             }
         }
         "PageUp" => {
-            if state.viewer.mode.get() == ViewMode::Continuous && !is_chrome_scroll_target(ev)
-            {
+            if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
-                focus_page_list();
-                scroll_reader_page(-1.0, !ev.repeat());
+                focus_scroll_list(false);
+                scroll_reader_page_y(-1.0, glide && !ev.repeat());
+            } else if mode == ViewMode::ScrollHorizontal && !is_chrome_scroll_target(ev) {
+                ev.prevent_default();
+                focus_scroll_list(true);
+                scroll_reader_page_x(-1.0, glide && !ev.repeat());
             }
         }
         "PageDown" => {
-            if state.viewer.mode.get() == ViewMode::Continuous && !is_chrome_scroll_target(ev)
-            {
+            if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
-                focus_page_list();
-                scroll_reader_page(1.0, !ev.repeat());
+                focus_scroll_list(false);
+                scroll_reader_page_y(1.0, glide && !ev.repeat());
+            } else if mode == ViewMode::ScrollHorizontal && !is_chrome_scroll_target(ev) {
+                ev.prevent_default();
+                focus_scroll_list(true);
+                scroll_reader_page_x(1.0, glide && !ev.repeat());
             }
         }
         " " => {
@@ -224,13 +301,18 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
                 .target()
                 .and_then(|t| t.dyn_into::<web_sys::HtmlButtonElement>().ok())
                 .is_some();
-            if !on_button
-                && state.viewer.mode.get() == ViewMode::Continuous
-                && !is_chrome_scroll_target(ev)
-            {
-                ev.prevent_default();
-                focus_page_list();
-                scroll_reader_page(if ev.shift_key() { -1.0 } else { 1.0 }, !ev.repeat());
+            if !on_button && !is_chrome_scroll_target(ev) {
+                if mode == ViewMode::ScrollVertical {
+                    ev.prevent_default();
+                    focus_scroll_list(false);
+                    let dir = if ev.shift_key() { -1.0 } else { 1.0 };
+                    scroll_reader_page_y(dir, glide && !ev.repeat());
+                } else if mode == ViewMode::ScrollHorizontal {
+                    ev.prevent_default();
+                    focus_scroll_list(true);
+                    let dir = if ev.shift_key() { -1.0 } else { 1.0 };
+                    scroll_reader_page_x(dir, glide && !ev.repeat());
+                }
             }
         }
         _ => {}
@@ -240,8 +322,8 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
 /// Ends the rAF glide on keyup; the entry dispatcher wires this.
 pub(super) fn end_hold_for(key: &str) {
     match key {
-        "ArrowUp" => end_line_hold(-1.0),
-        "ArrowDown" => end_line_hold(1.0),
+        "ArrowUp" | "ArrowLeft" => end_line_hold(-1.0),
+        "ArrowDown" | "ArrowRight" => end_line_hold(1.0),
         _ => {}
     }
 }

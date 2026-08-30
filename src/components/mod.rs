@@ -5,12 +5,12 @@
 //!     explanation popover)
 //!   * `primitives` — generic UI (button, icon, popover, …); must never
 //!     know what a PDF reader is
-//!   * `app_shell` — reusable structural application shell (title bar,
-//!     adaptive toolbar, traffic lights, document titles)
+//!   * `shell` — the unified application shell (the ShellController that
+//!     owns layout truth, the titlebar family, the sidebar rail family)
 //!   * `menus`      — menu features (appearance_menu, app_menu)
+//!   * `settings`   — the reader settings modal: one module per tab
 //!   * `overlays`   — transient UI (toast, drag feedback)
 //!   * `viewer_controls` — reader-only controls (zoom, page indicator, …)
-//!   * `sidebar`     — the app sidebar (composition shell + panel hosts)
 //!   * `document`   — UI whose purpose is displaying PDF documents
 //!   * `search`     — search presentation shared by reader surfaces
 //!
@@ -35,14 +35,14 @@
 //!   Guard writes that run in a loop or animation frame.
 
 pub mod ai;
-pub mod app_shell;
 pub mod document;
 pub mod menus;
 pub mod overlays;
-pub mod sidebar;
+pub mod shell;
 pub mod primitives;
 pub mod viewer_controls;
 pub mod search;
+pub mod settings;
 
 
 

@@ -13,7 +13,9 @@ use crate::components::overlays::toast::ToastHost;
 use crate::effects::reader::link_navigation::link_navigation;
 use crate::effects::reader::page_selection::page_selection;
 use crate::effects::reader::text_selection::text_selection;
+use crate::effects::app::motion::publish_motion;
 use crate::effects::app::theme::apply_theme;
+use crate::effects::reader::blend_backdrop::paper_settings;
 use crate::state::AppState;
 use bootstrap::{create_app_state, provide_app_contexts};
 use shell::AppShell;
@@ -24,10 +26,17 @@ pub fn App() -> impl IntoView {
     provide_context(state);
     provide_app_contexts(state);
 
-    // App-root hooks: theme (both pages), global keyboard shortcuts, internal
-    // PDF link jumps, and text-selection tracking (page-range pinning for
+    // App-root hooks: theme (both pages), motion prefs, global keyboard
+    // shortcuts, internal PDF link jumps, and text-selection tracking (page-range pinning for
     // virtualization, plus the AI selection detail).
     apply_theme(state);
+    // The paper session's settings must land before the FIRST document opens:
+    // the open flow asks the engine's colour cache under the reader's real
+    // blend/detection settings, and that is earlier than any reader mounts.
+    paper_settings(state);
+    // Motion prefs, for the reader's own pipeline and for the CSS the app
+    // does not model (the master's reach).
+    publish_motion(state);
     shortcuts(state);
     link_navigation(state);
     page_selection(state);

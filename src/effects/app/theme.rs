@@ -80,6 +80,10 @@ pub fn paint_appearance_now(a: Appearance) {
     let kick = prev_base.as_deref() != Some(a.base.as_str());
 
     _ = el.set_attribute("data-base", a.base.as_str());
+    // Publish the texture too: in blend mode the backdrop bleeds the same
+    // paper texture past the page body (styles/components/shell.css), and
+    // the CSS keys off this attribute.
+    let _ = el.set_attribute("data-texture", a.texture.as_str());
     let class = el.class_list();
     if a.base.is_dark() {
         _ = class.add_1("dark");
@@ -145,6 +149,10 @@ pub fn apply_theme(state: AppState) {
     // One effect, one paint: hue / texture / grain all live on Appearance,
     // and the live-preview path writes the same properties, so splitting
     // them into three effects just tripled the work on every settings write.
+    // The blend backdrop needs nothing from here: it is pure CSS over the
+    // same variables this effect paints (--canvas-filter / --canvas-blend)
+    // plus --pdf-paper, which the engine publishes on the first render of
+    // each document.
     Effect::new(move || {
         let a = state.settings.with(|s| s.appearance);
         paint_appearance_now(a);
@@ -153,6 +161,27 @@ pub fn apply_theme(state: AppState) {
         // scrub is in flight (scrub mode owns the canvases then) and before
         // the first document opens.
         pdf_engine::api::refresh_theme();
+    });
+
+    Effect::new(move || {
+        let (color, custom, opacity) = state.settings.with(|st| {
+            (st.gloss_color, st.gloss_custom.clone(), st.gloss_opacity)
+        });
+        let Some(el) = document_element() else {
+            return;
+        };
+        let Some(style) = el.dyn_into::<web_sys::HtmlElement>().ok().map(|h| h.style()) else {
+            return;
+        };
+        match color.resolve(&custom) {
+            Some(hex) => {
+                let _ = style.set_property("--gloss-color", &hex);
+            }
+            None => {
+                let _ = style.remove_property("--gloss-color");
+            }
+        }
+        let _ = style.set_property("--gloss-opacity", &format!("{:.2}", opacity));
     });
 
     Effect::new(move || {

@@ -64,8 +64,6 @@ Three storage backends are available:
 | Backend        | Lookup   | Update    | Use when |
 | -------------- | -------- | --------- | -------- |
 | `Strip`        | `O(1)`   | `O(n)`    | Static or rarely-resized lists |
-| `FenwickStrip` | `O(log n)` | `O(log n)` | Highly dynamic lists (`advanced-trees`) |
-| `ChunkedStrip` | `O(1)`   | sublinear | Large lists needing fast lookups plus frequent updates (`advanced-trees`) |
 
 ## Example
 

@@ -3,19 +3,20 @@
 //!
 //! Contract:
 //!  - ids are Rust-chosen unique strings; the engine resolves elements by id.
-//!  - renders (page, scale) via engine.renderPage / updatePage; reports the
-//!    rendered CSS-px size through `on_geometry`.
+//!  - renders (page, scale) via engine.renderPage; reports the rendered
+//!    CSS-px size through `on_geometry`.
 //!  - registers on first render, unregisters (cancels) when disposed.
 //!
-//! TWO EFFECTS, deliberately separated (see `effects::fit`):
+//! TWO EFFECTS, deliberately separated (see the zoom controller):
 //!
 //!   * the STRETCH effect follows the `scale` prop — which callers wire to
-//!     `viewer.zoom.display`. It only ever resizes the host so the bitmap we
-//!     already have CSS-stretches to the new layout size. It runs every frame
-//!     of a zoom and never triggers a render.
-//!   * the RENDER effect follows `viewer.zoom.render` and is suspended while
-//!     `viewer.zoom_animating` is true. It produces the one crisp rasterisation
-//!     at the end of a gesture.
+//!     `viewer.zoom.display`, the live VISUAL scale. It only ever resizes the
+//!     host so the bitmap we already have CSS-stretches to the new size. It
+//!     runs every frame of a zoom and never triggers a render; the crisp
+//!     rasterisation is a separate effect on the committed scale.
+//!   * the RENDER effect follows `viewer.zoom.committed` and is suspended
+//!     while a zoom transition is in flight (the `zoom_animating` prop). It
+//!     produces the one crisp rasterisation at the end of a gesture.
 //!
 //! Keeping these in ONE effect was the ghost/double-image bug: a scale change
 //! resized the host and kicked off a render in the same run, so every
@@ -75,8 +76,10 @@ pub fn PageCanvas(
     host_id: String,
     /// Whether to build a text layer for selection + search highlights.
     render_text: bool,
-    /// Extra classes (e.g. absolute positioning in the continuous layout).
-    #[prop(default = String::new())]
+    /// Extra classes (e.g. absolute positioning in the continuous layout, or
+    /// the cross-axis `mx-auto`/`my-auto` that centres a page and degrades to
+    /// start-alignment on overflow).
+    #[prop(default = String::new(), into)]
     class: String,
     /// Called with (page, width, height) CSS px after each successful render.
     #[prop(optional)]
@@ -88,6 +91,21 @@ pub fn PageCanvas(
     /// True while a zoom/layout animation is in flight (renders suspended).
     #[prop(into)]
     zoom_animating: Signal<bool>,
+    /// True while this page is a RETAINED ZOMBIE — freshly evicted from the
+    /// virtualization window and briefly kept mounted as a visual bridge.
+    /// A zombie keeps its DOM and its last bitmap; it must not start a new
+    /// rasterisation for the few frames it has left, so the render effect
+    /// stands down entirely. Absent for hosts outside a virtualized strip.
+    #[prop(optional)]
+    dormant: Option<Signal<bool, LocalStorage>>,
+    /// True while a real zoom *gesture* owns the layout. Distinct from
+    /// `zoom_animating`, which is also held by every resize-driven animation — a
+    /// fit slide, or a window drag carrying a hand-picked zoom — for the whole
+    /// burst of container sizes. Those follow the window; they are not a
+    /// gesture, and rendering at their mid-burst display scale would only
+    /// produce a bitmap that the next frame has already superseded.
+    #[prop(into)]
+    gesture_owns: Signal<bool>,
     /// The page texture mode (from the app shell, derived from settings).
     #[prop(into)]
     texture: Signal<TextureMode>,
@@ -102,6 +120,9 @@ pub fn PageCanvas(
     // ambient provider. A Memo so only a real texture change rebuilds the
     // host class.
     let texture = Memo::new(move |_| texture.get());
+    // Nothing transient rides the host class: the page's inline size is never
+    // off the table for the flex engine, so there is no guard tag to toggle and
+    // the memo stays keyed on the one input that changes it.
     let host_class = move || {
         let t = texture.get();
         let base = if t == TextureMode::None {
@@ -185,6 +206,13 @@ pub fn PageCanvas(
         // silently drop the subscription the first time the branch was skipped.
         let anim = zoom_animating.get();
         let s_render = render_scale.get();
+        // A zombie never starts a new render: its bitmap stays (the stretch
+        // effect resized the host at the commit), and the page unmounts when
+        // its retention grace expires. Rendering here would rasterise a page
+        // that is on its way out.
+        if dormant.as_ref().is_some_and(|d| d.get()) {
+            return;
+        }
         if s_render <= 0.0 {
             return;
         }
@@ -201,21 +229,21 @@ pub fn PageCanvas(
         // Measured on one sidebar toggle, that was 3 of 11 renders — wasted
         // work whose only visible effect is a page popping in at the wrong
         // size. The thumbnail underlay below covers the gap, and the commit
-        // pass (~200ms later) renders it once, correctly.
+        // pass (~120ms later) renders it once, correctly.
         //
         // COLD-CACHE FIRST PAINT. If the page has NO bitmap yet
         // (`!has_geo`) AND the thumbnail cache misses (`blit_thumb` returns
         // false — e.g. the sidebar was never opened this session), the page
-        // would sit as an EMPTY TRANSPARENT CANVAS for the entire 300ms slide
-        // + 120ms commit debounce. That is why "the one in view just
+        // would sit as an EMPTY TRANSPARENT CANVAS for the whole slide
+        // + the transaction's commit. That is why "the one in view just
         // disappeared" and the stretch animation was invisible: the node
         // that was supposed to stretch had no bitmap to stretch. Fix: fall
         // through to the masked-render path below, but at the DISPLAY scale
         // (read untracked so we don't subscribe to per-frame display_scale
         // changes — the effect must NOT re-run every frame of the slide).
-        // `on_geometry` already ignores writes while `zoom_animating`, and
-        // `commit_scale` re-renders crisply at `render_scale` when the
-        // gesture settles. The stretch effect keeps tracking `display_scale`
+        // `on_geometry` already ignores writes while a zoom transition is
+        // in flight, and the transaction's commit re-renders crisply at the
+        // committed scale when the gesture settles. The stretch effect keeps tracking `display_scale`
         // afterwards, so the first-paint bitmap CSS-stretches with the slide.
         if anim {
             if has_geo {
@@ -231,7 +259,13 @@ pub fn PageCanvas(
             // full-size RGBA bitmaps per toggle. Only a REAL zoom gesture
             // (which owns the layout) gets a live first render at the display
             // scale; the thumbnail underlay covers the gap for the slide.
-            if !crate::effects::reader::zoom::gesture_owns_layout() {
+            //
+            // But a mode flip starts a fit animation at the same time the new
+            // view's pages mount. If an UN-PAINTED page bails here and the
+            // commit lands on an unchanged scale, nothing ever re-triggers
+            // this effect and the page stays blank until you leave and come
+            // back. Gate only pages that already have pixels.
+            if !gesture_owns.get_untracked() && painted.get() {
                 return;
             }
             // FALLTHROUGH: first render at the DISPLAY scale so the gesture
@@ -312,6 +346,11 @@ pub fn PageCanvas(
                     }
                     // Successful render: the canvas now has a bitmap.
                     painted_async.set(true);
+                    // The engine stashed this render's raw frame (the one
+                    // pipeline moment the page's own paper is unbaked); hand
+                    // it to the paper session — every colour decision it
+                    // feeds lives in the pdf-paper crate.
+                    pdf_engine::paper::live_frame(&cid);
                     if let Some(host) = web_sys::window()
                         .and_then(|w| w.document())
                         .and_then(|d| d.get_element_by_id(&hid))

@@ -197,6 +197,18 @@ impl Appearance {
         self.tint_strength > 0
     }
 
+    /// The exact hex the UI accent currently has (tinted or base).
+    pub fn accent_hex(&self) -> String {
+        self.ui_overrides()
+            .into_iter()
+            .find(|(k, _)| *k == "--color-accent")
+            .map(|(_, v)| v)
+            .unwrap_or_else(|| match self.base {
+                BaseMode::Light => "#2563eb".into(),
+                BaseMode::Dark => "#60a5fa".into(),
+                BaseMode::Dim => "#7a9bd4".into(),
+            })
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -222,5 +234,20 @@ mod tests {
         let mut small = Appearance { texture_scale: 1, ..Default::default() };
         small.sanitize();
         assert_eq!(small.texture_scale, 25, "texture must stay legible");
+    }
+
+    #[test]
+    fn accent_hex_fallback_and_tint() {
+        let mut a = Appearance::default();
+        assert_eq!(a.accent_hex(), "#2563eb");
+        a.base = BaseMode::Dark;
+        assert_eq!(a.accent_hex(), "#60a5fa");
+        a.base = BaseMode::Dim;
+        assert_eq!(a.accent_hex(), "#7a9bd4");
+
+        // When tinted, overrides provide --color-accent
+        a.tint_hue = 104;
+        a.tint_strength = 50;
+        assert!(a.accent_hex().starts_with("oklch("));
     }
 }

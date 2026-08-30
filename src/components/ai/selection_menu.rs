@@ -119,8 +119,13 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                             .map(|pa| GlossMark {
                                 id: format!("g{}-{}", pa.page, js_sys::Date::now() as u64),
                                 page: pa.page,
-                                word: sel.text.clone(),
-                                context: sel.context.clone(),
+                                // Only a single word passes the `is_glossable`
+                                // gate this click is behind, so trimming the
+                                // edges yields the canonical token — the card
+                                // header and the persisted mark never carry a
+                                // stray surrounding space.
+                                word: sel.text.trim().to_string(),
+                                context: sel.context.trim().to_string(),
                                 rect: pa.rect,
                             })
                             .or_else(|| {

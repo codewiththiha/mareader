@@ -1,0 +1,12 @@
+[package]
+name = "pdf-paper"
+version = "0.5.0"
+edition = "2024"
+description = "Pure page-paper colour logic for the blend backdrop: mode/area config, whole-page and edge-strip detection, per-page palettes with ladder interpolation, and scan planning. No wasm, no DOM, no leptos — unit-testable on the host."
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

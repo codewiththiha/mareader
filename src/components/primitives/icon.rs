@@ -22,7 +22,12 @@ pub enum IconName {
     Close,
     Check,
     SinglePage,
+    DualPage,
     Continuous,
+    HScroll,
+    /// The 3-dash menu trigger (Readest-style).
+    Dashes,
+    AutoScroll,
     Sidebar,
     /// Filled rail — used on the close-sidebar button so it reads as "on".
     SidebarOpen,
@@ -31,7 +36,6 @@ pub enum IconName {
     Palette,
     More,
     Fullscreen,
-    Print,
     Keyboard,
     Pin,
     // Back-to-library (the recent-books shelf).
@@ -40,6 +44,11 @@ pub enum IconName {
     Drop,
     /// Counter-clockwise arrow — the undo affordance on toasts.
     Undo,
+    Settings,
+    Layout,
+    /// The settings tab for motion: a rail that eases, a page that follows.
+    Motion,
+    Minus,
 }
 
 fn icon_data(name: IconName) -> (&'static str, &'static str) {
@@ -62,13 +71,17 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Close => ("0 0 24 24", "<path d='M18 6 6 18M6 6l12 12'/>"),
         IconName::Check => ("0 0 24 24", "<path d='M20 6 9 17l-5-5'/>"),
         IconName::SinglePage => ("0 0 24 24", "<rect x='4' y='3' width='16' height='18' rx='2'/><path d='M4 9h16'/>"),
+        IconName::DualPage => ("0 0 24 24", "<rect x='3' y='4' width='8.5' height='16' rx='1.5'/><rect x='12.5' y='4' width='8.5' height='16' rx='1.5'/>"),
         IconName::Continuous => ("0 0 24 24", "<rect x='4' y='3' width='16' height='4' rx='1'/><rect x='4' y='10' width='16' height='4' rx='1'/><rect x='4' y='17' width='16' height='4' rx='1'/>"),
+        IconName::HScroll => ("0 0 24 24", "<rect x='2.5' y='6' width='5.5' height='12' rx='1'/><rect x='9.25' y='6' width='5.5' height='12' rx='1'/><rect x='16' y='6' width='5.5' height='12' rx='1'/>"),
+        IconName::Dashes => ("0 0 24 24", "<path d='M4 7h16'/><path d='M4 12h16'/><path d='M4 17h16'/>"),
+        IconName::AutoScroll => ("0 0 24 24", "<path d='M12 5v14'/><path d='m6 13 6 6 6-6'/>"),
         IconName::Sidebar => ("0 0 24 24", "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='M9 4v16'/>"),
         IconName::SidebarOpen => ("0 0 24 24", "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='M9 4v16'/><path d='M4.5 5.5H9v13H4.5z' fill='currentColor' stroke='none'/>"),
         IconName::Palette => ("0 0 24 24", "<path d='M12 22a10 10 0 1 1 10-10c0 2-1.5 3-3 3h-2a2 2 0 0 0-2 2c0 1 .5 1.5 1 2s-1 3-4 3z'/>"),
+        IconName::Motion => ("0 0 24 24", "<path d='M2 12h3l2.5 6 4-13L14 17l1.5-5H22'/>"),
         IconName::More => ("0 0 24 24", "<circle cx='5' cy='12' r='1.5'/><circle cx='12' cy='12' r='1.5'/><circle cx='19' cy='12' r='1.5'/>"),
         IconName::Fullscreen => ("0 0 24 24", "<path d='M8 3H5a2 2 0 0 0-2 2v3 M16 3h3a2 2 0 0 1 2 2v3 M8 21H5a2 2 0 0 1-2-2v-3 M16 21h3a2 2 0 0 0 2-2v-3'/>"),
-        IconName::Print => ("0 0 24 24", "<path d='M6 9V2h12v7'/><path d='M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2'/><path d='M6 14h12v8H6z'/>"),
         IconName::Keyboard => ("0 0 24 24", "<path d='M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/><path d='M6 10h.01 M10 10h.01 M14 10h.01 M18 10h.01 M6 14h.01 M18 14h.01 M10 14h4'/>"),
         IconName::Pin => ("0 0 24 24", "<path d='M12 17v5'/><path d='M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z'/>"),
         IconName::Library => ("0 0 24 24", "<path d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/><path d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/>"),
@@ -79,6 +92,15 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
             "0 0 24 24",
             "<path d='M9 14 4 9l5-5'/><path d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/>",
         ),
+        IconName::Settings => (
+            "0 0 24 24",
+            "<path d='M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z'/><circle cx='12' cy='12' r='3'/>",
+        ),
+        IconName::Layout => (
+            "0 0 24 24",
+            "<rect width='18' height='7' x='3' y='3' rx='1'/><rect width='9' height='7' x='3' y='14' rx='1'/><rect width='5' height='7' x='16' y='14' rx='1'/>",
+        ),
+        IconName::Minus => ("0 0 24 24", "<path d='M5 12h14'/>"),
     }
 }
 

@@ -102,3 +102,44 @@
     var(--tex-unit) var(--tex-unit);
 }
 
+
+/* ---------------------------------------------------------------------
+   BLEND BLEED — in blend mode the backdrop carries NO texture of its own;
+   each page's texture layer overhangs the page box and paints the surround
+   itself. Same layer ⇒ same pitch and phase on every page, at every zoom
+   and scroll position. The overhang is one viewport per side (more than
+   any gutter); `main#viewer-slot`'s overflow-hidden clips the rest. Only
+   the axes that face the BACKDROP bleed; an axis that faces a neighbour
+   page would double-expose that neighbour's edge. The `background-position`
+   shift re-anchors the tile origin back to the page edge, so the on-page
+   pattern is identical to `inset: 0`.
+--------------------------------------------------------------------- */
+/* Continuous vertical: gutters left/right, neighbours above/below. */
+.reader-bg.blend .pdf-page[id^="cont-"]::before {
+  left: -100vw;
+  right: -100vw;
+  background-position: 100vw 0;
+}
+/* Horizontal strip: bands above/below, neighbours left/right. */
+.reader-bg.blend .pdf-page[id^="hp-"]::before {
+  top: -100vh;
+  bottom: -100vh;
+  background-position: 0 100vh;
+}
+/* Single page: backdrop on every side. */
+.reader-bg.blend .pdf-page[id^="sp-"]::before {
+  inset: -100vh -100vw;
+  background-position: 100vw 100vh;
+}
+/* Spread: bands above/below always; outer sides bleed (the first page's
+   inner bleed hides under its partner, which paints later). */
+.reader-bg.blend .pdf-page[id^="dp-"]::before {
+  top: -100vh;
+  bottom: -100vh;
+  right: -100vw;
+  background-position: 0 100vh;
+}
+.reader-bg.blend .pdf-page[id^="dp-"]:first-child::before {
+  left: -100vw;
+  background-position: 100vw 100vh;
+}

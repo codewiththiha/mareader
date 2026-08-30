@@ -69,10 +69,7 @@ fn next_item_mounts_before_the_reader_arrives() {
     let page_bottom = layout.offset(idx) + h[idx];
     let near = page_bottom - vh - 10.0;
     let (f, l) = window(near, vh, &h, GAP, budget).unwrap();
-    assert!(
-        l >= idx + 1,
-        "next item should be mounted early, got {f}..={l}"
-    );
+    assert!(l > idx, "next item should be mounted early, got {f}..={l}");
 
     let (vf, vl) = span_overlapping(near, vh, &h, GAP).unwrap();
     assert_eq!((vf, vl), (idx, idx), "next item must not be on screen yet");

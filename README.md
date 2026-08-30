@@ -15,6 +15,7 @@ optional paper textures and film grain, all persisted between sessions.
 - [Features](#features)
   - [Document viewing](#document-viewing)
   - [Zoom and fit](#zoom-and-fit)
+  - [Motion](#motion)
   - [Navigation](#navigation)
   - [Search](#search)
   - [Appearance system](#appearance-system)
@@ -87,12 +88,65 @@ through and text is never doubled.
 - Zoom in and out step through the presets; repeated presses chain from the in-flight target, so
   a fast double press advances two steps rather than being swallowed.
 - Fit width and fit page, recomputed on window resize and sidebar toggle.
+- Turning to a page of a different size never touches the zoom while Settings → Layout → Auto
+  Resize is off: the scale, the scroll position and the measured layout all stay exactly where
+  the reader left them, and a page too wide for the window overflows and scrolls instead. Turn
+  the switch on and each page re-fits itself to the window as it comes into view.
 - Shrink to fit: when the window is too narrow for the chosen zoom, the page shrinks to the space
   available and remembers the zoom to grow back to once space returns.
-- Zoom is an anchored layout animation. The existing bitmap is stretched to the target size
-  immediately and one crisp render is issued at the end, rather than re-rendering every frame.
-- Fit recomputation is debounced so scrolling a mixed-size book does not trigger a zoom on every
-  row.
+- Every zoom — a button step, a preset, a fit, a window constraint — runs through one transition
+  pipeline. The layout is what animates: the virtualized strips are rescaled every frame and the
+  engine holds the document point under the middle of your window exactly where it was, working
+  gap-aware because page heights scale and the space between pages does not. Pages stretch the
+  bitmap they already hold while the scale moves, the crisp re-render happens once at the settled
+  scale, and recently evicted pages linger a moment as zombies so the surface never pops.
+- The sidebar slides its width over 300ms and the page rides the slide: every frame of it reports
+  a new container width, and the layout follows each one, so the column narrows with the rail
+  instead of snapping when a debounced refit finally lands. The crisp re-render is what waits — it
+  is issued once the width has been quiet — and the page host never lets flex-shrink resize it, so
+  there is no frame of squished paper either way.
+- The same follow covers a window drag, with or without a fit: a hand-picked zoom shrinks to stay
+  out of the way as the window narrows and grows back to exactly the zoom you chose when the room
+  comes back, because the ceiling is computed from the remembered zoom rather than from the last
+  frame's scale.
+- Zooming a horizontal strip keeps its vertical position: the strip is always at least as tall as
+  the tallest page, so the overflow — and with it the scroll position — shrinks and grows with the
+  zoom instead of resetting.
+- Zooming in at 500 percent, or out at 25 percent, does nothing at all rather than wrapping to the
+  other end of the preset ladder — and it leaves the active fit mode alone, so leaning on a button
+  that has nothing left to do cannot quietly take you out of fit width.
+- The reader keeps written motion principles (see ARCHITECTURE.md): no entrance animations on
+  document content, no per-frame virtualizer work, one bounded zombie bridge across commits.
+
+### Motion
+
+Every motion the reader *interpolates* is a switch, and the master for all of them sits in
+Settings → Layout. What a switch turns off is the interpolation, never the change: the end frame
+still arrives, in the frame the change is asked for. That is what makes freezing the reader safe —
+a disabled animation loses nothing, it just skips the frames in between. The converse also holds,
+and is why some resizes have no switch: a motion that is the only way to stay correct is not
+decorative, so it is not offered.
+
+- **Animations** (the master, in the Layout tab) collapses everything, including the
+  micro-transitions that have no switch of their own: menu pops, toasts, the theme cross-fade,
+  hover fades. It is the reader's own `prefers-reduced-motion`, and while it is off the Animations
+  tab is not shown at all, because there is nothing left there for it to offer. The other
+  switches keep their saved values through it, so turning the master back on returns exactly the
+  set of motions you had chosen.
+- **Sidebar slide** — the rail tweens its width over 300ms. Off, it appears at its new width, and
+  the panel it was holding open is released in the same frame instead of waiting out a slide. The
+  page follows the rail either way, and that is what keeps a frozen slide to one step.
+- **Canvas follows the window** — the page re-fits on every frame of a window drag. Off, it takes
+  the new space in one step once the drag has stopped, and a page too wide for the window overflows
+  and scrolls for as long as it is being shown. A rail slide is deliberately not gated here: the
+  page has to follow the rail, because the alternative is a page sitting outside the space it was
+  given. Dragging a window is different — one relayout per drag frame is a real cost, and nothing
+  is wrong in the meantime — so it is the burst that is offered up.
+- **Zoom in / out** — a zoom eases to its target over the profile's duration. Off, every zoom
+  (button step, preset, fit, window constraint) lands on the first frame.
+- **Scroll to page** — a jump to a page, a search hit or a keyboard page turn glides the column
+  over. Off, it lands there. The continuous scroll under a *held* arrow is not gated: that is the
+  scrolling itself, not a decoration on top of it.
 
 ### Navigation
 
@@ -148,14 +202,15 @@ instead of sliding across it.
 
 ### Presets
 
-Eight presets ship with the application, in two groups:
+Five presets ship with the application, in one group:
 
-- **Basic:** Light, Dark, Dim, each with no tint.
 - **Classic:** Sepia, Green, Night, Parchment, Cinema, each a specific point in the appearance
   space.
 
 Sepia, Green and Night were previously hard-coded themes and are now reproduced exactly as tints,
-which is what allows the appearance model to be the only mechanism.
+which is what allows the appearance model to be the only mechanism. The plain bases (Light, Dark,
+Dim) are deliberately not presets: the Mode & colour section's buttons are the one home for that
+choice, so the gallery holds only looks the buttons cannot express.
 
 Users can save the current appearance as a named preset and organise presets into named groups.
 As soon as any slider is nudged, the active preset selection clears and the menu reports "Custom"
@@ -184,7 +239,7 @@ there is no feedback loop between the label and the layout.
 
 - Glass toolbar with sidebar toggle, open button, document title, centred page navigation, zoom
   popover, view-mode switch, search and an overflow menu.
-- Overflow menu with fullscreen, print and a keyboard shortcut reference.
+- Overflow menu with fullscreen and a keyboard shortcut reference.
 - Animated sidebar with an outline and thumbnails rail. Panels stay mounted while the sidebar is
   collapsed, so thumbnails survive a toggle without re-rendering.
 - Status bar showing the current page position, rendered as a click-through overlay.
@@ -195,7 +250,9 @@ there is no feedback loop between the label and the layout.
 ### Persistence
 
 Settings are stored in local storage under `pdfreader.settings.v1` and cover appearance, the
-active preset, user presets, default zoom and the last opened path.
+active preset, user presets, default zoom, the layout and motion switches, and the last opened
+path. A group added later simply defaults: a document opened by an older build keeps the behaviour
+it had, because every new switch defaults to what the app used to do.
 
 The appearance model changed shape during development, from six fixed themes to base mode plus
 computed tint plus presets, but the storage key was deliberately not bumped. A new key would have
@@ -208,7 +265,9 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 ### Accessibility and motion
 
 - `prefers-reduced-motion` is honoured: page-turn animations, the animated grain and general
-  transitions are disabled or reduced to a negligible duration.
+  transitions are disabled or reduced to a negligible duration. Settings → Layout → Animations
+  applies the same collapse on request, and Settings → Animations then narrows it per motion (see
+  [Motion](#motion)).
 - Interactive controls carry `aria-label`, `aria-pressed`, `aria-current` and `aria-disabled`
   as appropriate, and icon-only segments carry a title so they are labelled for screen readers
   and on hover.
@@ -299,67 +358,57 @@ library under the viewer.
 
 ```
 src/
-  app/                   application root: bootstrap, routed shell, route glue
-  components/            the component system, by what each piece is used for
-    shared/              generic UI: button, icon, slider, segmented, tooltip,
-                         kbd, hue picker, popover, adaptive toolbar, option/menu rows
-    chrome/              title bar + floating document title
-    menus/               appearance menu (presets/base/texture/noise) and more menu
-    overlays/            toast host and drag-drop feedback
-    reader/              reader-only controls: page indicator, bottom controls, zoom
-    sidebar/             sidebar coordinator + header, book info, panel switcher
-    pdf/                 PDF-document UI: page canvas, page list, single/continuous
-                         views, page navigation, floating search, outline, thumbnails
-  features/              routes: library (page + shelf) and reader
-  state/                 reactive app state: app, viewer, library, open flow
-  effects/               cross-cutting reactive systems (appearance, fit/zoom,
-                         page tracking, search, shortcuts, theme, ...)
-  storage/               persistence: PdfStorage trait + localStorage backend
-crates/
-  pdf-core/              pure PDF/domain math (no wasm, no DOM, host-testable)
-  pdf-engine/            the wasm-bindgen bridge to pdf.js and Tauri
-  virtual-list/          generic virtualization algorithms (fenwick, chunked)
-public/
-  pdfEngine.js           the imperative engine wrapper
-  vendor/pdfjs/          vendored pdf.js build, worker, viewer CSS and cmaps
-  samples/               sample documents
-src-tauri/               native shell, capabilities, icons, bundle configuration
-styles/input.css         Tailwind v4 entry point and the full design system
-```
-
-### Project layout
-
-```
-src/
-  api/engine.rs         typed async wrappers over the engine bridge
-  core/                 pure logic, no wasm dependencies
-    appearance.rs       base mode, tint, texture, noise, and the CSS maths
-    bridge.rs           wasm-bindgen extern declarations
-    document.rs         document and outline types
-    filename.rs         display-name derivation rules
-    layout.rs           page offsets, column height, view mode
-    math.rs             zoom presets, clamping, fit calculations
-    oklch.rs            sRGB to OKLCH conversion
-    open_flow.rs        the open-document sequence
-    presets.rs          built-in and user presets
-    search.rs           search result types and index arithmetic
-    settings.rs         persisted schema and migration
-    state.rs            the reactive application state tree
+  main.rs                 mount entry point
+  app/                    bootstrap, routes, the shell that hosts the sidebar
   components/
-    atoms/              button, icon, slider, segmented, tooltip, kbd, hue picker
-    molecules/          toolbar, page nav, zoom controls, appearance and more menus
-    organisms/          sidebar, outline, thumbnails, search, toast, status bar
-    views/              single page, continuous, reader shell
-  effects/              cross-cutting reactive systems
-    continuous_scroll.rs, fit.rs, link_nav.rs, page_tracking.rs,
-    search_effects.rs, shortcuts.rs, theme_applier.rs
-  util/                 DOM helpers and storage access
+    primitives/           button, icon, switch, tooltip, popover, floating
+                          positioning, motion and interaction hooks
+    shell/                the unified application shell: the ShellController
+                          (one source of truth for layout), the titlebar
+                          family, the sidebar rail family
+    menus/                app menu, appearance menu, reader menu
+    settings/             the settings modal and its tabs (layout, theme,
+                          animations)
+    document/             page canvas, page strip, the viewer and its scroll
+                          shells (continuous, single, two-page)
+    viewer_controls/      bottom bar, overlay scrollbar, page indicator,
+                          page navigation
+    search/               floating search bar and result list
+    ai/                   selection menu, word card, gloss popover
+    overlays/             drag-and-drop feedback, toast host
+  effects/
+    app/                  window title, shortcuts, persistence wiring
+    reader/               fit and zoom follow, page tracking
+    appearance.rs         the appearance-to-CSS bridge
+  features/
+    library/              the shelf: book cards, empty state, sorting
+    reader/               the reader page and its two virtualizers
+  state/                  the reactive state tree: app, reader, library, ui
+  services/               the document open pipeline, the AI chunk bridge
+  storage/                loads and saves over localStorage (settings,
+                          library, covers, gloss marks)
+  viewer/                 engine selection and the zoom coordinator
+crates/
+  pdf-core/               pure PDF domain math: the settings schema, the zoom
+                          ladder, fit, layout, filename rules, search index
+  pdf-engine/             wasm-bindgen bridge to the imperative engine
+  pdf-paper/              the blend backdrop's colour brain: mode/area config,
+                          dominant-colour detection (whole page or edge
+                          margins), the per-page palette, scan planning
+  virtual-list/           generic windowing math: the prefix-sum strip,
+                          windows, budgets, anchor correction
+  virtual-list-leptos/    the Leptos adapter: virtualizer, rows, retention
 public/
-  pdfEngine.js          the imperative engine wrapper
-  vendor/pdfjs/         vendored pdf.js build, worker, viewer CSS and cmaps
-  samples/              sample documents
-src-tauri/              native shell, capabilities, icons, bundle configuration
-styles/input.css        Tailwind v4 entry point and the full design system
+  pdfEngine.ts            the imperative engine wrapper (bundled to .js)
+  engine/                 the engine modules the wrapper imports
+  vendor/pdfjs/           vendored pdf.js build, worker, viewer CSS, cmaps
+  samples/                sample documents used by the README and the smoke test
+src-tauri/                native shell, AI providers, capabilities, icons
+styles/
+  input.css               Tailwind v4 entry point assembling the design system
+  components/             shell, title bar, animations, ai, gloss, appearance
+scripts/                  engine bundling, version sync, engine smoke test
+tests/                    source-level tests (e.g. the conditional-class lint)
 ```
 
 ### Engine API
@@ -371,22 +420,20 @@ so the Rust side reads `ok` first and then deserializes.
 | Function | Purpose |
 |----------|---------|
 | `version` | Engine version string |
-| `open` | Load a document, return page count and intrinsic page sizes |
+| `open` | Load a document, return page count and intrinsic page sizes (the outline is NOT resolved here — that is `resolveOutline`'s job, so opens stay fast on chapter-heavy books) |
+| `resolveOutline` | Flatten the open document's chapter tree after the reader is up |
 | `destroy` | Tear down the current document |
-| `pageCount` | Page count as the engine sees it |
 | `registerPage` / `unregisterPage` | Bind and release a canvas for a page |
 | `cancelPage` | Cancel an in-flight page render |
-| `renderPage` / `renderPages` | Render one page or a batch |
+| `renderPage` | Render one page |
 | `renderThumb` / `cancelThumb` | Thumbnail rendering on a separate, cheaper path |
 | `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |
-| `updatePage` | Re-render an existing page at a new scale |
 | `buildSearchIndex` / `search` / `clearHighlights` | Full-text search lifecycle |
 | `stats` | Internal counters, used to assert memory is actually released |
-| `storageGet` / `storageSet` | Local storage access |
 
 Load order in `index.html` is deliberate. pdf.js is ESM-only in version 6 and must execute before
 the engine so `globalThis.pdfjsLib` exists, and the engine must execute before the WebAssembly
-module because the application reads persisted settings synchronously during mount.
+module because the app reaches for `window.PDFReader` as soon as its first components mount.
 
 ### State model
 

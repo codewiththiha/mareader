@@ -1,25 +1,27 @@
 /* =====================================================================
-   Gloss word-card: the in-page highlighter stroke (persisted mark + the
-   "thinking" drift/sweep/halo) and the surface that springs open from it
-   and morphs back down onto it. A port of the Gloss reference's visual
-   layer, with the Marginalia highlighter look for the mark itself.
+   Gloss word-card: the in-page highlighter stroke (the persisted mark and
+   its "thinking" pulse) and the surface that springs open from it and
+   morphs back down onto it.
 
    Position / size / radius are written PER FRAME by the spring effect in
    Rust, so the geometry properties deliberately carry NO transition — a
    transition here would fight the rAF loop and double-motion the card.
 
-   Every colour is an existing theme token; --color-accent is whatever the
-   active appearance tint is, so the stroke/chip/morph follow the reader's
-   chosen hue automatically. Nothing here touches tokens.css or pdf-page.css.
+   The look is deliberately quiet. The mark is ONE flat translucent pass of
+   the reader's chosen gloss colour (a real highlighter does not gradient),
+   and every state — resting, thinking, pressed, selected — is a static
+   on/off paint change, NEVER an animation or transition. The stroke is a
+   `mix-blend-mode` element over the page canvas; animating it re-composites
+   the canvas each frame, which is the page shake. Every colour is mixed
+   from the user's gloss colour (or the live accent), so the stroke suits
+   any tint, on any text.
    ===================================================================== */
 
 :root {
-  /* Aliased to the shared floating elevation token: one value, one source. */
+  /* One elevation for every floating surface — the card is a panel like the
+     menus, not a special object with its own heavier shadow. */
   --gloss-shadow-menu: var(--shadow-float);
-  --gloss-shadow-card:
-    0 0 0 1px var(--color-line),
-    0 16px 40px rgb(0 0 0 / 0.42);
-  --gloss-sweep: color-mix(in oklab, var(--color-accent) 45%, white);
+  --gloss-shadow-card: var(--shadow-float);
 }
 
 /* ---------------------------------------------------------------------
@@ -40,12 +42,6 @@
 .gloss-surface[data-phase="compact"] { z-index: var(--z-controls); }
 .gloss-surface[data-phase="expanded"] { z-index: var(--z-popover); }
 
-/* Usage-example lines inside the card (kept from the reference). */
-.gloss-quote {
-  border-left: 1px solid var(--color-line);
-  padding-left: 12px;
-}
-
 /* The card scrolls but must never show a scrollbar — it is a floating
    surface, not a pane, and a gutter would break the morph's silhouette. */
 .gloss-surface [data-gloss-scroll] {
@@ -57,14 +53,9 @@
 /* ---------------------------------------------------------------------
 Persisted gloss highlighter — one exact-fit stroke per mark in the
 glossLayer (same trade-off as the link layer: above the text layer,
-pointer-events only on the strokes). Two layers per mark, like a real
-highlighter pass:
-  the box   = a translucent multi-stop accent gradient, small radius,
-              canvas glyphs read straight through it;
-  ::before  = the halo, a blurred bleed of ink past the stroke;
-  ::after   = the light sweep, only alive while processing.
-Every colour is mixed from --color-accent, so the stroke suits whatever
-tint the reader chose, on any text.
+pointer-events only on the strokes). One layer per mark: a flat
+translucent pass of the gloss colour, exact-fit, small radius, canvas
+glyphs reading straight through it.
 --------------------------------------------------------------------- */
 .pdf-page .glossLayer {
   position: absolute;
@@ -74,118 +65,77 @@ tint the reader chose, on any text.
 }
 .pdf-page .glossLayer .gloss-mark {
   position: absolute;
-  z-index: 0;                 /* stacking context: keeps the halo inside */
+  z-index: 0;
   pointer-events: auto;
   cursor: pointer;
   border-radius: 3px;         /* exact-fit stroke, not a pill */
   overflow: hidden;
-  background-image: linear-gradient(
-    100deg,
-    color-mix(in oklab, var(--color-accent) 34%, transparent),
-    color-mix(in oklab, var(--color-accent) 28%, transparent) 40%,
-    color-mix(in oklab, var(--color-accent) 24%, transparent) 70%,
-    color-mix(in oklab, var(--color-accent) 34%, transparent)
+  background: color-mix(
+    in oklab,
+    var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 80%),
+    transparent
   );
-  background-size: 300% 100%;
   mix-blend-mode: multiply;
-  transition: box-shadow 150ms ease;
-  animation: gloss-breathe 4.2s ease-in-out infinite;
+  /* The stroke is a `mix-blend-mode` element sitting over the page canvas
+     (an opaque composited texture). ANIMATING it in any form — a pulse, a
+     fade, a box-shadow tween — forces the compositor to re-composite the
+     canvas under it on every frame, which reads as the page shivering. So
+     the stroke NEVER transitions or animates, in any state: every state
+     (hover, processing, pressing, selected, dimmed) is a plain on/off paint
+     change, applied once and then static. */
 }
 .pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
 :root.dark .pdf-page .glossLayer .gloss-mark { mix-blend-mode: screen; }
 .pdf-page .glossLayer .gloss-mark:hover,
 .pdf-page .glossLayer .gloss-mark:focus-visible {
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 40%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 40%, transparent);
   outline: none;
 }
-/* Halo — the soft bleed around the stroke (the screenshot look). */
-.pdf-page .glossLayer .gloss-mark::before {
-  content: "";
-  position: absolute;
-  inset: -9px;
-  z-index: -1;
-  border-radius: 12px;
-  background: radial-gradient(
-    closest-side,
-    color-mix(in oklab, var(--color-accent) 50%, transparent),
-    color-mix(in oklab, var(--color-accent) 20%, transparent) 55%,
-    transparent 75%
-  );
-  filter: blur(6px);
-  opacity: 0.8;
-  pointer-events: none;
-}
-/* Sweep band — parked off-stroke until processing runs it across. */
-.pdf-page .glossLayer .gloss-mark::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(100deg, transparent 32%, var(--gloss-sweep) 50%, transparent 68%);
-  background-size: 260% 100%;
-  background-position: 130% 0;
-  opacity: 0;
-  pointer-events: none;
-}
-/* Processing: the stroke thinks. Gradient drifts, the sweep runs across,
-the halo pulses. This is the ONLY processing UI — the surface stays
-unmounted until the first chunk lands. */
+/* Processing: the stroke is being consulted — one static, quiet emphasis
+   (a thin ring), never a pulse. A pulse re-blends the stroke against the
+   canvas each frame = the shake. The card itself opens on the first chunk,
+   so this state is fleeting anyway. */
 .pdf-page .glossLayer .gloss-mark-processing,
 :root.dark .pdf-page .glossLayer .gloss-mark-processing {
-  animation:
-    gloss-breathe 4.2s ease-in-out infinite,
-    gloss-drift 2.6s linear infinite;
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 68%, transparent);
 }
-.pdf-page .glossLayer .gloss-mark-processing::after {
-  opacity: 1;
-  animation: gloss-sweep 1.5s linear infinite;
-}
-.pdf-page .glossLayer .gloss-mark-processing::before {
-  animation: gloss-halo-pulse 1.3s ease-in-out infinite alternate;
-}
-@keyframes gloss-drift { from { background-position: 0% 0; } to { background-position: -200% 0; } }
-@keyframes gloss-sweep { from { background-position: 130% 0; } to { background-position: -130% 0; } }
-@keyframes gloss-halo-pulse { from { opacity: 0.5; } to { opacity: 1; } }
-@keyframes gloss-breathe { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.7; } }
 
 /* ---------------------------------------------------------------------
    Multi-select mode (long-press initiated). No checkboxes: selection is
-   pure colour. Unselected marks dim and get a one-shot invitation pulse;
-   selected marks read as inked-in — solid accent pass, accent ring, soft
-   glow — with a 140 ms pop the moment they toggle. `pressing` is the
-   instant feedback while the long-press is still counting.
+   pure colour. Unselected marks dim; selected marks read as inked-in — a
+   solid accent pass, one hairline ring and a soft glow.
+
+   EVERY state change below is a STATIC on/off paint change with NO
+   transition. These are `mix-blend-mode` strokes over the page canvas; any
+   transition (or animation) re-composites the canvas each frame while it
+   runs, which is the page shake. A single instant change recomposites once
+   and settles — that is stable.
+
+   `pressing` is the instant feedback while the long-press is still
+   counting: a quiet dim of the same tint — no brightness flicker, no
+   inflate-then-deflate.
 --------------------------------------------------------------------- */
 .pdf-page .glossLayer .gloss-mark-pressing {
-    filter: brightness(1.18);
+    opacity: 0.8;
 }
 
 .pdf-page .glossLayer-selecting .gloss-mark:not(.gloss-mark-selected) {
-    opacity: 0.68;
-    animation: gloss-select-hint 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity: 0.6;
+}
+.pdf-page .glossLayer-selecting .gloss-mark:not(.gloss-mark-selected):hover {
+    opacity: 0.92;
 }
 
-/* Defined AFTER the processing rules so it wins the animation tie. */
+/* Defined AFTER the processing rules so it wins the tie (processing keeps
+   its ring). */
 .pdf-page .glossLayer .gloss-mark-selected,
 :root.dark .pdf-page .glossLayer .gloss-mark-selected {
-    background-image: none;
-    background-color: color-mix(in oklab, var(--color-accent) 58%, transparent);
+    background: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 62%, transparent);
     box-shadow:
-        0 0 0 1.5px color-mix(in oklab, var(--color-accent) 75%, transparent),
-        0 0 12px color-mix(in oklab, var(--color-accent) 35%, transparent);
+        0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 78%, transparent),
+        0 0 3px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 45%, transparent),
+        0 0 14px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 28%, transparent);
     opacity: 1;
-    animation: gloss-select-pop 140ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes gloss-select-hint {
-    0%   { transform: scale(1); }
-    50%  { transform: scale(1.06); }
-    100% { transform: scale(1); }
-}
-
-@keyframes gloss-select-pop {
-    0%   { transform: scale(1); }
-    40%  { transform: scale(1.14); }
-    100% { transform: scale(1); }
 }
 
 /* Right-click menu, selection bar and undo toast entrances. */
@@ -205,21 +155,19 @@ unmounted until the first chunk lands. */
     animation: gloss-bar-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* translateX(-50%) is baked in: the toast centers via `left: 50%` and the
-   keyframe owns the transform for its whole (fill-both) lifetime. */
+/* The wrapper centers with `.toast-anchor` (flex), so the entrance only has
+   to lift the panel: no `translateX(-50%)` to double-count against the
+   utility that used to sit on this element, and nothing to re-center when the
+   reduced-motion nets below drop the animation outright. */
 @keyframes gloss-toast-in {
-    from { opacity: 0; transform: translateX(-50%) translateY(8px); }
-    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 .gloss-undo-toast {
-    /* Reduced motion disables the centering keyframe, so center in the base. */
-    transform: translateX(-50%);
     animation: gloss-toast-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .pdf-page .glossLayer-selecting .gloss-mark,
-    .pdf-page .glossLayer .gloss-mark-selected,
     .gloss-context-menu,
     .gloss-select-bar,
     .gloss-undo-toast {

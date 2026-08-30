@@ -1,6 +1,6 @@
 //! Previous/next + page-number input.
 //! Prev/Next clamp viewer.page to 1..=num_pages; the editable readout parses on
-//! commit and clamps the same way.
+//! commit and clamps the same way. In Dual mode the buttons step whole spreads.
 //!
 //! The "– / –" empty branch is a safety net: this control is only mounted
 //! from ReaderBottomBar on a Ready document, but the readout still has to
@@ -12,11 +12,26 @@ use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::tooltip::Tooltip;
 use crate::state::ReaderState;
+use pdf_core::layout::ViewMode;
+
+fn spread_start(page: u32) -> u32 {
+    let p = page.max(1);
+    ((p - 1) / 2) * 2 + 1
+}
+
+fn last_spread_start(n: u32) -> u32 {
+    if n == 0 {
+        1
+    } else {
+        ((n - 1) / 2) * 2 + 1
+    }
+}
 
 #[component]
 pub fn PageNavigation(state: ReaderState) -> impl IntoView {
     let num_pages = state.document.num_pages;
     let page = state.viewer.page;
+    let mode = state.viewer.mode;
 
     // Editable readout. A local signal holds the text so typing never fights the
     // reactive `page` signal; the effect resyncs it when page/numpages change.
@@ -45,7 +60,14 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
     let next_disabled = move || {
         let n = num_pages.get();
         let p = page.get();
-        n == 0 || p >= n
+        if n == 0 {
+            return true;
+        }
+        if mode.get() == ViewMode::Spread {
+            spread_start(p) >= last_spread_start(n)
+        } else {
+            p >= n
+        }
     };
 
     view! {
@@ -56,9 +78,16 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                     title="Previous page (ArrowLeft)"
                     disabled=Signal::derive(prev_disabled)
                     on_click=move || {
-                        let p = prev_state.viewer.page.get();
-                        if p > 1 {
-                            prev_state.viewer.page.set(p - 1);
+                        if prev_state.viewer.mode.get() == ViewMode::Spread {
+                            let next = spread_start(prev_state.viewer.page.get())
+                                .saturating_sub(2)
+                                .max(1);
+                            prev_state.viewer.page.set(next);
+                        } else {
+                            let p = prev_state.viewer.page.get();
+                            if p > 1 {
+                                prev_state.viewer.page.set(p - 1);
+                            }
                         }
                     }
                 />
@@ -76,7 +105,13 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                     match v.trim().parse::<u32>() {
                         Ok(n) => {
                             let max = commit_state.document.num_pages.get().max(1);
-                            commit_state.viewer.page.set(n.clamp(1, max));
+                            let clamped = n.clamp(1, max);
+                            if commit_state.viewer.mode.get() == ViewMode::Spread {
+                                // Snap typed input onto the spread that contains it.
+                                commit_state.viewer.page.set(spread_start(clamped));
+                            } else {
+                                commit_state.viewer.page.set(clamped);
+                            }
                         }
                         // Invalid input: snap the readout back to the current page.
                         Err(_) => {
@@ -107,10 +142,16 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                     title="Next page (ArrowRight)"
                     disabled=Signal::derive(next_disabled)
                     on_click=move || {
-                        let p = next_state.viewer.page.get();
                         let n = next_state.document.num_pages.get();
-                        if n > 0 && p < n {
-                            next_state.viewer.page.set(p + 1);
+                        if next_state.viewer.mode.get() == ViewMode::Spread {
+                            let next = (spread_start(next_state.viewer.page.get()) + 2)
+                                .min(last_spread_start(n));
+                            next_state.viewer.page.set(next);
+                        } else {
+                            let p = next_state.viewer.page.get();
+                            if n > 0 && p < n {
+                                next_state.viewer.page.set(p + 1);
+                            }
                         }
                     }
                 />

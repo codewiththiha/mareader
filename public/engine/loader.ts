@@ -1,6 +1,8 @@
 // Document loading. Local files are read via Tauri IPC (bytes). Web-served
 // samples use fetch. Open returns as soon as page 1 is known so the reader
-// is never stuck on "Opening…".
+// is never stuck on "Opening…" — the chapter tree resolves separately
+// (`resolveOutline`), because flattening it costs one worker round trip per
+// destination and must not hold the first paint hostage.
 
 import type {
   CoverResult,
@@ -9,9 +11,9 @@ import type {
   PDFDocumentProxy,
 } from "./types";
 import { errorInfo, fail, releaseCanvas } from "./canvas";
+import { resetPaperForDocument } from "./paper";
 import {
   currentPath,
-  loadingTask,
   numPages,
   pdf,
   setCurrentPath,
@@ -296,30 +298,22 @@ export async function open(path: string): Promise<OpenResult> {
     setPdf(doc);
     setNumPages(doc.numPages);
     setCurrentPath(path);
+    // A new document means a fresh paper-detection budget and palette
+    // (engine/paper.ts) — plus, when the cache remembers this book, its
+    // colours published right away. Runs after setCurrentPath so the cache
+    // can key on the path.
+    resetPaperForDocument();
 
-    let title: string | null = null;
-    let author: string | null = null;
-    try {
-      const meta = await doc.getMetadata();
-      title = (meta && meta.info && meta.info.Title) || null;
-      author = (meta && meta.info && meta.info.Author) || null;
-    } catch (_) {
-      /* exotic docs */
-    }
+    // Metadata and page 1 are independent worker round trips — asking for
+    // them together is one hop off every document open. Metadata failures are
+    // swallowed (exotic docs); page 1 failing IS an open failure.
+    const [meta, page1] = await Promise.all([
+      doc.getMetadata().catch(() => null),
+      doc.getPage(1),
+    ]);
+    const title: string | null = (meta && meta.info && meta.info.Title) || null;
+    const author: string | null = (meta && meta.info && meta.info.Author) || null;
 
-    let outline: { title: string; page: number; depth: number }[] = [];
-    try {
-      // Race the timer against getOutline() AND flattenOutline(). Awaiting
-      // getOutline() first meant a hung outline never started the 4s timeout.
-      const outlinePromise = doc.getOutline().then((items) =>
-        flattenOutline(items, 0, []),
-      );
-      outline = await withTimeout(outlinePromise, 4000, "outline timeout");
-    } catch (_) {
-      outline = [];
-    }
-
-    const page1 = await doc.getPage(1);
     const vp = page1.getViewport({ scale: 1 });
     try { page1.cleanup(); } catch (_) { /* ignore */ }
 
@@ -337,7 +331,8 @@ export async function open(path: string): Promise<OpenResult> {
       numPages,
       title,
       author,
-      outline,
+      // The outline is deliberately NOT resolved here — see resolveOutline.
+      outline: [],
       page1Size: { width: vp.width, height: vp.height },
       pageHeights,
       pageWidths,
@@ -359,6 +354,29 @@ export async function open(path: string): Promise<OpenResult> {
     }
     const info = errorInfo(e);
     return fail(info.name, info.message);
+  }
+}
+
+/** The open document's flattened chapter tree. Each entry's destination is
+ * resolved through the pdf.js worker (`getPageIndex`), so a textbook-sized
+ * outline costs a round trip per chapter — call this AFTER the reader is
+ * up, never in front of `open`. Races the 4s timeout; an empty tree on
+ * failure keeps the caller's fallback path ("no chapters"). */
+export async function resolveOutline(): Promise<{
+  ok: true;
+  outline: { title: string; page: number; depth: number }[];
+}> {
+  if (!pdf) return { ok: true, outline: [] };
+  try {
+    // Race the timer against getOutline() AND flattenOutline(). Awaiting
+    // getOutline() first meant a hung outline never started the 4s timeout.
+    const outlinePromise = pdf.getOutline().then((items) =>
+      flattenOutline(items, 0, []),
+    );
+    const outline = await withTimeout(outlinePromise, 4000, "outline timeout");
+    return { ok: true, outline };
+  } catch (_) {
+    return { ok: true, outline: [] };
   }
 }
 
@@ -427,4 +445,3 @@ export async function takePendingFile(): Promise<string | null> {
   }
 }
 
-export { loadingTask };

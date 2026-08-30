@@ -5,6 +5,17 @@ export async function run() {
     if (!opened.ok)
         throw new Error("open failed: " + JSON.stringify(opened));
     console.log("open ok:", opened.numPages, "pages");
+    // The chapter tree is no longer open's to resolve — it arrives on its own
+    // call once the reader is up (flattening it is a worker round trip per
+    // destination, which used to hold every open hostage).
+    if (opened.outline.length !== 0) {
+        throw new Error("open must not resolve the outline, got " + opened.outline.length);
+    }
+    const outline = await PDFReader.resolveOutline();
+    if (!outline.ok || outline.outline.length !== 0) {
+        throw new Error("resolveOutline failed: " + JSON.stringify(outline));
+    }
+    console.log("resolveOutline ok");
     // 10. OS file handoff wrapper
     const none = await PDFReader.takePendingFile();
     if (none !== null)

@@ -3,7 +3,6 @@
 import type { PageState } from "./types";
 import {
   activeMatch,
-  highlightMode,
   searchQuery,
   stateByCanvasId,
 } from "./state";
@@ -13,7 +12,6 @@ export function applyHighlights(st: PageState): void {
   if (!host) return;
   host.querySelectorAll(".highlight").forEach((n) => n.remove());
   if (!searchQuery || !textLayerEl) return;
-  textLayerEl.classList.toggle("search-stale", highlightMode === "stale");
   const origin = host.getBoundingClientRect();
   const boxes: { r: DOMRect; ord: number }[] = [];
   const qlen = searchQuery.length;

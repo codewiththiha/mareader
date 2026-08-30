@@ -5,6 +5,7 @@ import type {
   RenderResult,
 } from "./types";
 import { el, errorInfo, fail, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
+import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
 import {
@@ -207,6 +208,12 @@ export async function renderPageInternal(
     releasePageSurfaces(st);
     return fail("cancelled", "Render cancelled");
   }
+
+  // `target` still holds raw pixels here (bakeRaster runs below): the one
+  // point in the pipeline where the document's own paper is intact. Park a
+  // ≤96×96 frame for the Rust paper session to drain after the render —
+  // every colour decision downstream lives in the pdf-paper crate.
+  stashPaperFrame(canvasId, st.page, target);
 
   if (needsBake && pipeline) {
     // Keep the unbaked `target` on the page. Slider scrub restores it and

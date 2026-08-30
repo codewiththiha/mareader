@@ -47,7 +47,7 @@ pub struct OpenResult {
     pub page_widths: Vec<f64>,
 }
 
-/// `{ok:true, width, height, scale}` — engine.renderPage / renderPages / updatePage.
+/// `{ok:true, width, height, scale}` — engine.renderPage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderResult {
@@ -94,4 +94,18 @@ pub enum DocStatus {
     Opening,
     Ready,
     Error,
+}
+
+/// `{ok:true, page, width, height, data}` — the raw page frame the paper
+/// pipeline runs on: the raster downscaled to a ≤96px long edge, `data`
+/// its RGBA pixels (`width * height * 4`). Produced by `takePaperFrame`
+/// (a live render's stash) and `samplePaperPage` (an offscreen sample).
+///
+/// The pixels travel as a typed array rather than JSON, so this shape is
+/// parsed by hand in `api::parse_frame`, not through serde.
+pub struct PaperFrame {
+    pub page: u32,
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>,
 }

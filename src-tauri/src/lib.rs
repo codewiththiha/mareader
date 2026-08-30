@@ -19,6 +19,7 @@
 //!       - Windows/Linux second launch : `tauri-plugin-single-instance`
 //!         forwards the second process's argv to the running one
 //!         instead of spawning a second window.
+//!
 //!     The frontend collects the slot through the `take_pending_file`
 //!     command (the authoritative handoff — an event emitted before the
 //!     webview mounted would otherwise be lost) and `pdf-open-file` is only
@@ -91,32 +92,32 @@ fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
 #[tauri::command]
 fn set_traffic_lights(window: tauri::Window, visible: bool) {
     #[cfg(target_os = "macos")]
-    unsafe {
-        use objc::runtime::{Object, BOOL, NO, YES};
-        // `sel_impl` is referenced unqualified by the `sel!`/`msg_send!`
-        // expansions, so it must be imported alongside them.
-        use objc::{msg_send, sel, sel_impl};
+    {
+        use objc2_app_kit::{NSView, NSWindowButton};
         // rwh 0.6: window_handle() -> WindowHandle::as_raw() gives the raw
         // handle. (HasRawWindowHandle::raw_window_handle() is the deprecated
         // path, and HasWindowHandle alone doesn't provide raw_window_handle.)
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
         if let Ok(handle) = window.window_handle()
             && let RawWindowHandle::AppKit(h) = handle.as_raw()
         {
-            let ns_view = h.ns_view.as_ptr() as *mut Object;
-            let ns_window: *mut Object = msg_send![ns_view, window];
-            if !ns_window.is_null() {
-                // NSWindowCloseButton = 0; its superview hosts all three lights.
-                let btn: *mut Object = msg_send![ns_window, standardWindowButton: 0usize];
-                if !btn.is_null() {
-                    let container: *mut Object = msg_send![btn, superview];
-                    if !container.is_null() {
-                        // YES/NO (not literals): objc's BOOL is `bool` on
-                        // Apple Silicon but `i8` on x86_64, so only the
-                        // constants are portable across both.
-                        let hidden: BOOL = if visible { NO } else { YES };
-                        let _: () = msg_send![container, setHidden: hidden];
-                    }
+            // SAFETY: the handle lends us a pointer to the window's own
+            // content view, which is alive for as long as the window is; we
+            // only ever read through the borrow.
+            let view = unsafe { &*h.ns_view.as_ptr().cast::<NSView>() };
+
+            // NSWindowCloseButton; its superview hosts all three lights.
+            if let Some(ns_window) = view.window()
+                && let Some(button) = ns_window.standardWindowButton(NSWindowButton::CloseButton)
+            {
+                // SAFETY: `superview` hands back an unretained pointer, but
+                // the container is owned by the window's view hierarchy and
+                // outlives this command alongside the window itself.
+                if let Some(container) = unsafe { button.superview() } {
+                    // objc2 encodes BOOL per-architecture itself, so a plain
+                    // bool is portable across Apple Silicon and Intel here.
+                    container.setHidden(!visible);
                 }
             }
         }

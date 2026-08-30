@@ -27,6 +27,12 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub async fn open(path: &str) -> JsValue;
 
+    // The chapter tree, resolved AFTER open: flattening it means one worker
+    // round trip per outline destination, so open() returns without it and
+    // the shell asks for it separately once the reader is already up.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "resolveOutline")]
+    pub async fn resolve_outline() -> JsValue;
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub async fn destroy() -> JsValue;
 
@@ -80,10 +86,6 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setActiveMatch")]
     pub fn set_active_match(page: u32, index: i32);
 
-    /// Switch the painted highlights between "live" and "stale".
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setHighlightMode")]
-    pub fn set_highlight_mode(mode: &str);
-
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "clearHighlights")]
     pub fn clear_highlights();
 
@@ -91,9 +93,6 @@ extern "C" {
     // Tauri v2 window handle (used by MoreMenu fullscreen, phase 3) and event
     // listener (used by ReaderView drag-drop, phase 5). js_name mapping is load-bearing.
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "window"], js_name = "getCurrentWindow")]
-    // Called from the app crate (MoreMenu fullscreen) via the crate-root
-    // re-export; nothing inside this crate calls it, hence the allow.
-    #[allow(dead_code)]
     pub fn tauri_get_current_window() -> JsValue;
 
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = "listen")]
@@ -127,6 +126,62 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
+
+    // --- Engine: paper pipeline (the `pdf-paper` crate's eyes) ---
+    // The engine owns the CANVASES; the crate (via this crate's `paper`
+    // session) owns every colour decision. Five calls carry the whole
+    // contract, all in the established Rust→engine direction:
+    //
+    // * `setPaper` publishes (or, with "", clears) `--pdf-paper`; `persist`
+    //   also writes the per-document cache under `area` — the engine owns
+    //   localStorage.
+    // * `persistPaper` writes the per-document cache WITHOUT publishing —
+    //   the session's close path, banking an interrupted scan's answer
+    //   while the backdrop itself is being cleared.
+    // * `takePaperFrame` drains the raw frame a live render stashed at the
+    //   one pipeline moment the page's own paper is still unbaked.
+    // * `samplePaperPage` renders `page` offscreen at a tiny scale and
+    //   resolves its frame — the fixed-mode scan and the continuous
+    //   look-ahead both sample through it.
+    // * `getCachedPaper` reads the per-document cache so a reopened book
+    //   repaints with zero sampling work.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPaper")]
+    pub fn set_paper(hex: &str, persist: bool, area: &str);
+
+    /// The session's blend switch: while off, the engine skips stashing a
+    /// ≤96px downscale + readback per live render entirely (the session
+    /// would ignore every frame).
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPaperActive")]
+    pub fn set_paper_active(on: bool);
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "persistPaper")]
+    pub fn persist_paper(hex: &str, area: &str);
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "takePaperFrame")]
+    pub fn take_paper_frame(canvas_id: &str) -> JsValue;
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "samplePaperPage")]
+    pub async fn sample_paper_page(page: u32) -> JsValue;
+
+    /// The cached fixed-mode colour for `path`, if the engine remembers one.
+    ///
+    /// SYNC on purpose, and the pairing is load-bearing: the TS side is a
+    /// synchronous localStorage read that returns a plain object, never a
+    /// Promise. An `async` extern raw-casts whatever comes back to a
+    /// `Promise` and polls it with `.then` — on a plain object that is a
+    /// TypeError, which unwinds as a panic inside whatever Rust future
+    /// awaited it (it once silently killed the whole open flow, pinning the
+    /// app on "Opening…"). Async externs pair ONLY with TS functions that
+    /// actually return Promises; everything else stays sync on both sides.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "getCachedPaper")]
+    pub fn get_cached_paper(path: &str) -> JsValue;
+
+    /// Release rasters/caches the engine no longer needs (advisory
+    /// `pdf.cleanup`). Fired when reading work ends: zoom commit, mode flip,
+    /// scroll idle — so memory drops immediately instead of waiting for the
+    /// engine's own 30s idle sweep.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweep")]
+    pub fn sweep();
 }
 
 /// Subscribe to a Tauri event. `handler` receives the event object (a JsValue,
@@ -138,16 +193,18 @@ pub async fn listen(event: &str, handler: js_sys::Function) -> JsValue {
     tauri_listen(event, handler).await
 }
 
-/// True when the app runs inside Tauri (`window.__TAURI__` is present).
-///
-/// Must be checked BEFORE any `window.__TAURI__.*` call: the wasm-bindgen shim
-/// evaluates the global chain directly and throws a TypeError when the global
-/// is absent (e.g. `trunk serve` in a plain browser). See more_menu.rs for the
-/// same probe.
 /// True when `window.PDFReader` exists. Must be checked before any engine
 /// call: a missing global makes the wasm-bindgen shim throw, which panics
 /// the reactive owner and freezes menus / theme / open.
+///
+/// The non-wasm short-circuit keeps the check callable from host `cargo
+/// test` (the paper session's tests drive code paths that reach this
+/// guard); on the host there is no engine, so `false` is also the truthful
+/// answer.
 pub fn has_pdf_reader() -> bool {
+    if !cfg!(target_arch = "wasm32") {
+        return false;
+    }
     web_sys::window()
         .map(|w| {
             let g: js_sys::Object = w.unchecked_into();
@@ -163,8 +220,12 @@ pub fn has_pdf_reader() -> bool {
 /// Must be checked BEFORE any `window.__TAURI__.*` call: the wasm-bindgen shim
 /// evaluates the global chain directly and throws a TypeError when the global
 /// is absent (e.g. `trunk serve` in a plain browser). See more_menu.rs for the
-/// same probe.
+/// same probe. Non-wasm short-circuits to `false` for the same host-test
+/// reason as [`has_pdf_reader`].
 pub fn has_tauri() -> bool {
+    if !cfg!(target_arch = "wasm32") {
+        return false;
+    }
     web_sys::window()
         .map(|w| {
             let g: js_sys::Object = w.unchecked_into();

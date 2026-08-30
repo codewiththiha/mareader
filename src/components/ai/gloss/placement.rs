@@ -10,16 +10,30 @@ use crate::components::primitives::floating::types::{clamp_point_to_viewport, Po
 
 /// Preferred card width before viewport clamping.
 pub const CARD_WIDTH: f64 = 360.0;
-/// Card corner radius — the spring morphs the chip's pill into this.
-pub const CARD_RADIUS: f64 = 18.0;
+/// Card corner radius — the spring morphs the chip's pill into this. A
+/// standard card radius rather than an oversized one: the card is a panel,
+/// not a bubble.
+pub const CARD_RADIUS: f64 = 12.0;
 /// Gap between the highlighter stroke and the card's near edge.
 pub const CARD_GAP: f64 = 16.0;
+/// Floor for the card's expanded content height. While the twin has not been
+/// measured yet `content_height` reads `0.0`, which would size the card's
+/// target to the anchor box (a flash of collapsed card on first open). The
+/// floor is the shimmer's resting height, so a not-yet-measured card opens at
+/// about the size the loading state occupies rather than at nothing.
+pub const MIN_CARD_CONTENT_H: f64 = 120.0;
 /// Viewport margin the expanded card must stay inside.
 pub const CARD_MARGIN: f64 = 12.0;
+/// How far the card's midline sits BELOW the word's midline. Dead-centre on
+/// the line reads as pasted over it; a touch lower reads as attached to the
+/// word and hanging off it, the way a footnote hangs off its referent. The
+/// earlier 12 px felt closer to centred on the highlighted text; a larger
+/// drop makes the card visibly hang BELOW the word rather than straddle it.
+pub const CARD_Y_BIAS: f64 = 30.0;
 
 /// Side-aware placement: the card goes on whichever side of the highlight has
-/// more free space, never covering the stroke, vertically centered on the
-/// mark and clamped into the viewport margin.
+/// more free space, never covering the stroke, hanging a touch below the
+/// mark's midline and clamped into the viewport margin.
 pub fn expanded_target(
     anchor: Signal<Option<GlossBox>>,
     content_height: RwSignal<f64>,
@@ -29,8 +43,10 @@ pub fn expanded_target(
         let a = anchor.get()?;
         let (vw, vh) = viewport.get();
         // Measured height is the full scroll column (header + separator +
-        // body + paddings) — no chrome guess. See the measure twin.
-        let h = content_height.get();
+        // body + paddings) — no chrome guess. See the measure twin. Floor it so
+        // a not-yet-measured card targets the shimmer's height instead of
+        // collapsing onto the anchor box.
+        let h = content_height.get().max(MIN_CARD_CONTENT_H);
         Some(place_card(
             a,
             CARD_WIDTH,
@@ -40,6 +56,7 @@ pub fn expanded_target(
             CARD_RADIUS,
             CARD_GAP,
             CARD_MARGIN,
+            CARD_Y_BIAS,
         ))
     })
 }

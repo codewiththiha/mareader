@@ -1,124 +1,19 @@
 /* =====================================================================
-   Entrance animations: floating search, popovers, page turns, toasts,
-   and the global reduced-motion safety net.
+   Motion rules.
+
+   The reader has a written set of motion principles (see
+   ARCHITECTURE.md); the short version: document content does not do
+   entrance animations. Page turns, popovers, the floating search and
+   toasts appear instantly; layout chrome (the sidebar width, overlays)
+   may keep short STRUCTURAL CSS transitions, and zooms scale one
+   continuous surface linearly (see src/viewer/zoom).
+
+   What remains here is the global reduced-motion safety net, the identical
+   collapse the reader's own master switch asks for, and the two transitions
+   the sidebar owns — the rail's width tween and the panel outro's fade —
+   which both nets remove outright rather than merely shorten.
    ===================================================================== */
 
-/* ---------------------------------------------------------------------
-   9. Floating search entrance — slide-down + fade-in (U4).
-   --------------------------------------------------------------------- */
-@keyframes search-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.floating-search-enter {
-  animation: search-in 180ms ease-out;
-}
-
-/* ---------------------------------------------------------------------
-   10. Popover entrance — menu-popover (zoom / appearance / more).
-   Only these two properties on the new block so the existing
-   `.menu-popover svg/span` color + mix-blend resets are undisturbed.
-   --------------------------------------------------------------------- */
-@keyframes popoverIn {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.menu-popover {
-  animation: popoverIn 140ms ease-out;
-  transform-origin: top right;
-}
-
-/* ---------------------------------------------------------------------
-   11. Page-turn entrance (U8) — single-page view.
-   The wrapper around PageCanvas is remounted per page via a keyed <For>
-   (a plain reactive block would patch the node in place and the animation
-   would not restart), so the fresh node replays the animation on every page
-   change. "right" = moved forward (enters from the right), "left" = went
-   back (enters from the left). Subtle on purpose: 220ms, 24px, fade + slide.
-   --------------------------------------------------------------------- */
-@keyframes page-enter-right {
-  from {
-    opacity: 0;
-    transform: translateX(24px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes page-enter-left {
-  from {
-    opacity: 0;
-    transform: translateX(-24px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.page-enter-right {
-  animation: page-enter-right 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.page-enter-left {
-  animation: page-enter-left 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .page-enter-right,
-  .page-enter-left {
-    animation: none;
-  }
-}
-
-/* ---------------------------------------------------------------------
-   12. Toast entrance (U10) — app-root toast host.
-   The toast node is remounted per value (the host renders `toast.get().map`),
-   so each new toast replays the animation. The X translate stays -50%
-   because the toast is centered by `left-1/2`: dropping it would make the
-   toast jump sideways at animation start/end. `both` fill keeps the final
-   `translate(-50%, 0)` after the animation ends, so the centering persists
-   once the entrance completes.
-   --------------------------------------------------------------------- */
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.toast-enter {
-  animation: toast-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-/* ---------------------------------------------------------------------
-   13. Global reduced-motion safety net (U10).
-   Users who prefer reduced motion get effectively instant animations
-   everywhere (0.01ms still runs the keyframe, so opacity/transform end
-   states still apply — an animation that only fades/slides in is fine, just
-   instant). This supersedes U8's per-animation guard above (which remains,
-   untouched, for the page-turn rules specifically).
-   --------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -128,4 +23,57 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  /* The rail and its panels, by name. Shortening is not the same as removing
+     here: a width that is still animatable is a width the flex engine keeps
+     negotiating while the page is laid out, and laying the page out is what
+     the follow does on every frame of a slide. This net has to say it out
+     loud because no Rust switch is involved — `prefers-reduced-motion` does
+     not turn the reader's own "Sidebar Animation" off, so `no-slide` below
+     is not applied for it and the aside would otherwise still be tweening. */
+  .sidebar-aside,
+  .sidebar-panel {
+    transition: none;
+  }
+}
+
+/* Settings → Layout → Animations off. The same collapse, on request: the
+   reader has no switch per micro-transition (menu pops, toasts, the theme
+   cross-fade, hover fades), so the master addresses all of them at once. The
+   motions the reader DOES model — the rail's slide, the canvas following a
+   window drag, a zoom's tween, a glide between pages — are gated in Rust off
+   `state::reader::Motion`, which has already applied this same switch; this
+   rule is what makes the master honest for the rest. */
+html.animations-off,
+html.animations-off *,
+html.animations-off *::before,
+html.animations-off *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* …and the same naming as the net above, so the rail does not depend on the
+   projection having reached this element first. The master is a promise that
+   nothing interpolates; a `transition` still declared on the aside is that
+   promise held by one Rust write instead of two. */
+html.animations-off .sidebar-aside,
+html.animations-off .sidebar-panel {
+  transition: none;
+}
+
+/* Settings → Animations → "Sidebar Animation" off, which is the only rule
+   here a switch owns directly. Two classes deep, so it outranks the aside's
+   own `.transition-[width]` utility without `!important`, and it touches
+   nothing inside the aside — `contain: layout style` and the
+   `overflow-hidden` clip both keep working, which is what makes a frozen
+   rail behave like a rail that was never transitioned rather than a hidden
+   one. (The floating wrapper's fade is frozen by the same switch in Rust,
+   which swaps its class list for the transition-less shape.) The class also
+   means the close hold is released on the same frame instead of waiting a
+   motion out, which is the part CSS cannot do and why the class exists at
+   all. */
+.sidebar-aside.no-slide {
+  transition: none;
 }

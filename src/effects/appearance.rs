@@ -138,12 +138,13 @@ pub fn flush_appearance_commit() {
             apply_scrub(&mut s.appearance, patch);
             s.touch_appearance();
         });
-        if patch_needs_canvas_scrub(patch) {
-            leave_scrub();
-        }
-    } else {
-        leave_scrub();
     }
+    // A flush ends the gesture whatever it was scrubbing. Gating this on
+    // `patch_needs_canvas_scrub` left the engine in scrub mode when a tint
+    // drag was superseded by a texture drag before the flush, which pins
+    // every page's raw canvas in memory. `leave_scrub` is a no-op when no
+    // scrub is active, so calling it unconditionally is safe.
+    leave_scrub();
 }
 
 fn patch_needs_canvas_scrub(p: AppearanceScrub) -> bool {
@@ -163,11 +164,26 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
     // sliders (noise / texture) must not enter canvas scrub.
     if patch_needs_canvas_scrub(patch) {
         enter_scrub();
+    } else {
+        // Moving from a tint scrub straight onto a non-canvas slider
+        // (texture / noise) still ENDS the canvas scrub. Without this the
+        // tint's own commit timer is invalidated by `bump_commit_gen`
+        // below, returns early, and never calls `leave_scrub` — while the
+        // texture timer never calls it either. The engine's
+        // `themeScrubActive` then stays true forever, `dropRawIfIdle`
+        // bails on every page, and each one holds BOTH its raw and its
+        // baked canvas for the rest of the session (the ~900MB plateau).
+        leave_scrub();
     }
 
     let mut a = settings.get_untracked().appearance;
     apply_scrub(&mut a, patch);
     paint_appearance(a);
+    // The page re-colours under the drag through the live CSS pipeline.
+    // refresh_theme keeps the engine's pipeline cache honest for the rebake
+    // (a no-op while scrub owns the canvases); the blend backdrop follows in
+    // the same frame on its own, being pure CSS over the same variables.
+    pdf_engine::api::refresh_theme();
 
     let commit_gen = bump_commit_gen();
     COMMIT_PAYLOAD.with(|p| p.set(Some((settings, patch))));

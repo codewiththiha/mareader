@@ -29,4 +29,8 @@ pub(crate) fn provide_app_contexts(state: AppState) {
     });
     provide_context(state.reader);
     provide_context(texture);
+    // One overlay-lane registry for the whole app: menus and modals arbitrate
+    // through it, and portaled surfaces resolve it like any other descendant
+    // of the root.
+    provide_context(crate::components::primitives::overlay::lanes::OverlayBoard::default());
 }

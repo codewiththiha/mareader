@@ -9,5 +9,6 @@ license = "MIT"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 virtual-list = { path = "../virtual-list" }
+pdf-paper = { path = "../pdf-paper" }
 
 [dev-dependencies]

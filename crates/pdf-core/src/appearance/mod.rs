@@ -10,4 +10,3 @@ mod preview;
 mod tint;
 
 pub use model::{Appearance, BaseMode, NoiseMode, TextureMode};
-pub use tint::ui_hue_oklch;

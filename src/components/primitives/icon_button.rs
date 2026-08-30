@@ -54,7 +54,7 @@ pub fn IconButton(
             format!(
                 "{box_class} border border-transparent bg-transparent transition-colors hover:bg-line \
                  focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
-                 disabled:pointer-events-none disabled:opacity-50"
+                 disabled:cursor-not-allowed disabled:opacity-45"
             ),
             pressed_sig,
         )
@@ -62,7 +62,7 @@ pub fn IconButton(
     let base_plain = format!(
         "{box_class} border border-transparent bg-transparent transition-colors hover:bg-line \
          focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
-         disabled:pointer-events-none disabled:opacity-50"
+         disabled:cursor-not-allowed disabled:opacity-45"
     );
 
     view! {

@@ -105,6 +105,20 @@ export type PipelineCache = {
 export type PaperInfo = { color: string; rgb: [number, number, number] };
 export type FilterMatrix = { m: number[]; o: number[] };
 
+/** A raw page frame for the paper pipeline: the raster downscaled to a
+ * ≤96px long edge, with its RGBA pixels. */
+export type PaperFrame = {
+  page: number;
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+};
+
+/** Which pixels of a page the paper detector trusts — the engine side of
+ * the reader's `layout.blend_area` setting, persisted alongside each cached
+ * colour so a cache found under one area is not reused under the other. */
+export type PaperArea = "whole" | "edges";
+
 export type SearchRect = { x: number; y: number; w: number; h: number };
 export type TextIndexEntry = { str: string; x: number; y: number; w: number; h: number };
 export type SearchMatch = SearchRect & { page: number; index: number; text: string };
@@ -118,10 +132,16 @@ export type OpenResult = Result<{
   numPages: number;
   title: string | null;
   author: string | null;
+  /** Deliberately empty: the chapter tree resolves via `resolveOutline`
+   * after the reader is up (flattening it blocks on one worker round trip
+   * per destination, and must not hold `open` hostage). */
   outline: { title: string; page: number; depth: number }[];
   page1Size: { width: number; height: number };
   pageHeights: number[];
   pageWidths: number[];
+}>;
+export type OutlineResult = Result<{
+  outline: { title: string; page: number; depth: number }[];
 }>;
 export type RenderResult = Result<{ width: number; height: number; scale: number }>;
 export type ThumbResult = Result<{ width: number; height: number; scale: number; cached: boolean }>;
@@ -140,8 +160,8 @@ export type SearchResult = Result<{
 
 export type PDFReaderApi = {
   version: () => string;
-  releaseAllSurfaces: () => void;
   open: (path: string) => Promise<OpenResult>;
+  resolveOutline: () => Promise<OutlineResult>;
   destroy: () => Promise<void>;
   registerPage: (payload: {
     canvasId: string;
@@ -168,17 +188,27 @@ export type PDFReaderApi = {
   buildSearchIndex: () => Promise<Result<{ count: number }>>;
   search: (query: string) => Promise<SearchResult>;
   setActiveMatch: (page: number, index: number) => void;
-  setHighlightMode: (mode: "live" | "stale") => void;
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
   setScrubMode: (on: boolean) => Promise<void>;
+  setPaper: (hex: string, persist: boolean, area: PaperArea) => void;
+  /** The Rust paper session's blend switch — gates stashPaperFrame so idle
+   * renders cost nothing on the paper pipeline. */
+  setPaperActive: (on: boolean) => void;
+  /** Bank a fixed colour for the current document WITHOUT publishing it —
+   * the Rust paper session's close path (an interrupted scan's answer). */
+  persistPaper: (hex: string, area: PaperArea) => void;
+  takePaperFrame: (canvasId: string) => (PaperFrame & { ok: true }) | null;
+  samplePaperPage: (page: number) => Promise<
+    | (PaperFrame & { ok: true })
+    | { ok: true }
+  >;
+  getCachedPaper: (path: string) => {
+    ok: true;
+    hex: string | null;
+    area: PaperArea | null;
+  };
+  sweep: () => void;
   takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;
-};
-
-export type TauriCore = {
-  core: {
-    invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    convertFileSrc: (p: string) => string;
-  };
 };

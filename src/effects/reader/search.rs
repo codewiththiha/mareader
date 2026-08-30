@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use crate::components::primitives::hooks::dom::page_list;
+use crate::components::primitives::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
 use pdf_core::layout::{TOOLBAR_H, ViewMode};
 use pdf_core::search::{SearchMatch, scroll_to_reveal};
@@ -71,15 +71,46 @@ pub fn resume_search(state: ReaderState) {
 pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) {
     engine::set_active_match(m.page, m.index as i32);
 
-    if state.viewer.mode.get_untracked() == ViewMode::Single {
+    let mode = state.viewer.mode.get_untracked();
+    // Dual is paginated like Single: setting the page shows the spread that
+    // contains the match.
+    if mode == ViewMode::Single || mode == ViewMode::Spread {
         state.viewer.page.set(m.page);
+        return;
+    }
+
+    if mode == ViewMode::ScrollHorizontal {
+        let Some(list) = h_page_list() else {
+            return;
+        };
+        let scale = state.viewer.zoom.display.get_untracked();
+        let before: f64 = state.document.metrics.intrinsic.with_untracked(|sizes| {
+            sizes
+                .iter()
+                .take((m.page - 1) as usize)
+                .map(|s| s.width)
+                .sum::<f64>()
+        });
+        let left = TOOLBAR_H + before * scale + m.x * scale;
+        let right = left + (m.w * scale).max(1.0);
+        if let Some(next) = scroll_to_reveal(
+            left,
+            right,
+            list.scroll_left() as f64,
+            list.client_width() as f64,
+            0.0,
+            0.0,
+            48.0,
+        ) {
+            list.set_scroll_left(next as i32);
+        }
         return;
     }
 
     let Some(list) = page_list() else {
         return;
     };
-    let scale = state.viewer.zoom.render.get_untracked();
+    let scale = state.viewer.zoom.display.get_untracked();
     let page_top = virtualizer.offset_of(m.page.saturating_sub(1) as usize);
 
     let top = TOOLBAR_H + page_top + m.y * scale;

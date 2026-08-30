@@ -29,17 +29,32 @@ pub const MENU_EXIT_FRAC: f64 = 1.0;
 /// fraction of the viewport height (or leaves the top edge).
 pub const CARD_EXIT_FRAC: f64 = 0.8;
 
-pub fn host_id_for(page: u32, single: bool) -> String {
-    if single {
-        format!("sp-{page}-pg")
-    } else {
-        format!("cont-{}-pg", page.saturating_sub(1))
+pub fn host_id_for_mode(page: u32, mode: ViewMode) -> String {
+    match mode {
+        ViewMode::Single => format!("sp-{page}-pg"),
+        ViewMode::Spread => format!("dp-{page}-pg"),
+        ViewMode::ScrollHorizontal => format!("hp-{page}-pg"),
+        ViewMode::ScrollVertical => format!("cont-{}-pg", page.saturating_sub(1)),
     }
 }
 
 fn page_from_host_id(id: &str) -> Option<u32> {
     if let Some(page) = id
         .strip_prefix("sp-")
+        .and_then(|rest| rest.strip_suffix("-pg"))
+        .and_then(|n| n.parse::<u32>().ok())
+    {
+        return Some(page);
+    }
+    if let Some(page) = id
+        .strip_prefix("dp-")
+        .and_then(|rest| rest.strip_suffix("-pg"))
+        .and_then(|n| n.parse::<u32>().ok())
+    {
+        return Some(page);
+    }
+    if let Some(page) = id
+        .strip_prefix("hp-")
         .and_then(|rest| rest.strip_suffix("-pg"))
         .and_then(|n| n.parse::<u32>().ok())
     {
@@ -54,11 +69,11 @@ fn page_from_host_id(id: &str) -> Option<u32> {
 /// Live viewport-space box for a page anchor. `None` when the scale is invalid
 /// or the host page is not mounted (virtualized away) — which by itself counts
 /// as "the anchor left the page".
-pub fn screen_box(anchor: &PageAnchor, scale: f64, single: bool) -> Option<GlossBox> {
+pub fn screen_box(anchor: &PageAnchor, scale: f64, mode: ViewMode) -> Option<GlossBox> {
     if scale <= 0.0 {
         return None;
     }
-    let hr = by_id(&host_id_for(anchor.page, single))?.get_bounding_client_rect();
+    let hr = by_id(&host_id_for_mode(anchor.page, mode))?.get_bounding_client_rect();
     let h = anchor.rect.h * scale;
     Some(GlossBox {
         x: hr.left() + anchor.rect.x * scale,
@@ -173,8 +188,9 @@ pub fn watch_page_anchor(
     let refresh = Callback::new(move |_| {
         let a = anchor.get_untracked();
         let s = scale.get_untracked();
-        let single = mode.get_untracked() == ViewMode::Single;
-        let b = a.as_ref().and_then(|a| screen_box(a, s, single));
+        let b = a
+            .as_ref()
+            .and_then(|a| screen_box(a, s, mode.get_untracked()));
         if screen.get_untracked() != b {
             screen.set(b);
         }
@@ -222,6 +238,12 @@ mod tests {
     fn parses_single_page_host_ids() {
         assert_eq!(page_from_host_id("sp-1-pg"), Some(1));
         assert_eq!(page_from_host_id("sp-27-pg"), Some(27));
+    }
+
+    #[test]
+    fn parses_dual_and_horizontal_host_ids() {
+        assert_eq!(page_from_host_id("dp-3-pg"), Some(3));
+        assert_eq!(page_from_host_id("hp-12-pg"), Some(12));
     }
 
     #[test]

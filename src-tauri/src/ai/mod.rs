@@ -10,9 +10,9 @@
 //!   * Everything else (Windows, Linux, Intel Macs, or `ai` disabled) → a
 //!     mock provider streaming canned data, so the UI stays testable.
 
-// Prompt text is shared across providers, but the only provider consuming it
-// today compiles solely on Apple Silicon builds.
-#[allow(dead_code)]
+// Only the Apple Silicon provider consumes the prompt text, so it is gated with
+// it: on every other target the prompts module is not compiled at all.
+#[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]
 pub mod prompts;
 
 pub mod schema;
@@ -26,11 +26,8 @@ pub mod mock;
 #[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]
 pub mod apple;
 
-// One stable import path for commands (and the frontend-facing types later).
-// WordInfo itself travels inside AiChunk, hence the allow for now.
-#[allow(unused_imports)]
-pub use schema::WordInfo;
-#[allow(unused_imports)]
+// The frontend-facing surface: the chunk stream and its error vocabulary.
+// `WordInfo` reaches commands inside an `AiChunk`, so it is not re-exported.
 pub use traits::{AiChunk, AiError, AiErrorKind, AiProvider};
 
 #[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]

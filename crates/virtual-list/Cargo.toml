@@ -16,14 +16,6 @@ categories = ["gui", "algorithms", "no-std"]
 [features]
 default = ["std"]
 std = []
-# FenwickStrip + ChunkedStrip. pdf-reader only uses Strip; keep the extra
-# backends off the default compile to cut ~800 lines from the wasm graph.
-advanced-trees = []
-
-[[bench]]
-name = "scaling_check"
-harness = false
-required-features = ["advanced-trees"]
 
 [lints.rust]
 unsafe_code = "forbid"

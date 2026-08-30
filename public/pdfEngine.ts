@@ -10,7 +10,7 @@ export {};
 
 import type { PDFReaderApi, Stats } from "./engine/types";
 import { disposeScratch, releaseCanvas } from "./engine/canvas";
-import { coverDataUrl, open, takePendingFile } from "./engine/loader";
+import { coverDataUrl, open, resolveOutline, takePendingFile } from "./engine/loader";
 import {
   cancelPage,
   registerPage,
@@ -25,16 +25,19 @@ import {
   prefetchThumb,
   renderThumb,
 } from "./engine/thumbnails";
-import {
-  buildSearchIndex,
-  clearHighlights,
-  search,
-  setActiveMatch,
-  setHighlightMode,
-} from "./engine/search";
+import { buildSearchIndex, clearHighlights, search, setActiveMatch } from "./engine/search";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
+import {
+  getCachedPaper,
+  persistPaper,
+  resetPaperForDocument,
+  samplePaperPage,
+  setPaper,
+  setPaperActive,
+  takePaperFrame,
+} from "./engine/paper";
 import { installSelectionTracker } from "./engine/selection";
 import {
   ENGINE_VERSION,
@@ -55,6 +58,7 @@ import {
   highlightsByPage,
   setSearchQuery,
   setActiveMatchValue,
+  sweepPdf,
   themeScrubActive,
 } from "./engine/state";
 
@@ -109,6 +113,7 @@ async function destroy(): Promise<void> {
   setPdf(null);
   setNumPages(0);
   setCurrentPath(null);
+  resetPaperForDocument();
   disposeScratch();
 }
 
@@ -217,8 +222,8 @@ installSelectionTracker();
 
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
-  releaseAllSurfaces,
   open,
+  resolveOutline,
   destroy,
   registerPage,
   unregisterPage,
@@ -233,10 +238,18 @@ globalThis.PDFReader = {
   buildSearchIndex,
   search,
   setActiveMatch,
-  setHighlightMode,
   clearHighlights,
   refreshTheme,
   setScrubMode,
+  setPaper,
+  setPaperActive,
+  persistPaper,
+  takePaperFrame,
+  samplePaperPage,
+  getCachedPaper,
+  sweep: () => {
+    sweepPdf();
+  },
   takePendingFile,
   prefetchThumb,
 } satisfies PDFReaderApi;

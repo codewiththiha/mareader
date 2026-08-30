@@ -78,6 +78,12 @@ pub struct VirtualizerOptions {
     pub initial_offset: f64,
     /// Scroll-idle debounce (`is_scrolling` reset), milliseconds.
     pub scroll_end_delay_ms: u32,
+    /// Grace period an evicted item stays rendered after a window change,
+    /// milliseconds. `0` disables zombie retention (the default: items
+    /// unmount the moment they leave the window).
+    pub retention_grace_ms: u32,
+    /// Hard ceiling on simultaneously retained (zombie) items.
+    pub retention_max: usize,
     /// Change-detection epsilon for measurements and viewport writes.
     pub measure_epsilon: f64,
     /// Max re-aims for an in-flight `scroll_to_index`.
@@ -106,6 +112,8 @@ impl VirtualizerOptions {
             initial_viewport: Viewport::main_only(0.0),
             initial_offset: 0.0,
             scroll_end_delay_ms: 150,
+            retention_grace_ms: 0,
+            retention_max: 12,
             measure_epsilon: 0.5,
             max_scroll_retries: 3,
         }
@@ -178,9 +186,14 @@ impl VirtualizerOptions {
         self
     }
 
-    /// Scroll-idle debounce, milliseconds.
-    pub fn scroll_end_delay(mut self, ms: u32) -> Self {
-        self.scroll_end_delay_ms = ms;
+    /// Zombie retention: how long an evicted item stays rendered after the
+    /// window moves past it (`grace_ms`), and how many such items may be
+    /// retained at once. `grace_ms == 0` disables retention. The grace can
+    /// be temporarily raised later (a zoom holds items across its geometry
+    /// commit) with [`Virtualizer::set_retention_grace`](crate::Virtualizer::set_retention_grace).
+    pub fn retention(mut self, grace_ms: u32, max_retained: usize) -> Self {
+        self.retention_grace_ms = grace_ms;
+        self.retention_max = max_retained;
         self
     }
 

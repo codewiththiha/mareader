@@ -248,7 +248,6 @@
     color-mix(in srgb, var(--color-accent) 30%, transparent),
     transparent 70%
   );
-  animation: drag-glow 2.4s ease-in-out infinite;
 }
 
 .drag-dropzone-icon {
@@ -260,7 +259,6 @@
   border-radius: 9999px;
   background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
   color: var(--color-accent);
-  animation: drag-float 1.8s ease-in-out infinite;
 }
 
 .drag-dropzone-title {
@@ -279,20 +277,9 @@
   to   { opacity: 1; }
 }
 
-@keyframes drag-float {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-7px); }
-}
-
-@keyframes drag-glow {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50%      { opacity: 1;   transform: scale(1.08); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .drag-dropzone::before,
   .drag-dropzone-icon {
-    animation: none;
   }
 }
 

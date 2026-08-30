@@ -55,12 +55,11 @@ body.noise-animated .noise-overlay::after {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   animation: noise-crawl 0.66s steps(1) infinite;
 }
-body.noise-animated:not(.noise-idle) .noise-overlay::after {
+/* `will-change` unconditionally: nothing ever pauses the crawl from Rust, so
+   a rule gated on an "idle" class the app does not own is a second, unreachable
+   state machine. Pausing grain is the master switch's job (`animations-off`). */
+body.noise-animated .noise-overlay::after {
   will-change: transform;
-}
-body.noise-animated.noise-idle .noise-overlay::after {
-  animation-play-state: paused;
-  will-change: auto;
 }
 @keyframes noise-crawl {
   0%    { transform: translate3d(0, 0, 0); }

@@ -44,27 +44,14 @@ fn preset(id: &str, name: &str, group: &str, appearance: Appearance) -> Preset {
 
 /// The presets that ship with the app.
 ///
-/// The first three are the plain bases (no tint) — these are what the old
-/// Light/Dark/Dim themes were. The next three reproduce the retired Sepia,
-/// Green and Night themes as tints, which is the compatibility guarantee that
-/// lets those CSS blocks be deleted.
+/// The plain bases (Light / Dark / Dim) are deliberately NOT presets: the
+/// Mode & colour section's three buttons are the one home for that choice,
+/// and a second copy of it as swatches was a row that did nothing the
+/// buttons below it didn't. The tinted classics remain presets — Sepia,
+/// Green and Night reproduce the retired hard-coded themes, which is the
+/// compatibility guarantee that lets those CSS blocks stay deleted.
 pub fn builtin_presets() -> Vec<Preset> {
     vec![
-        preset("light", "Light", "Basic", Appearance {
-            base: BaseMode::Light,
-            tint_strength: 0,
-            ..Default::default()
-        }),
-        preset("dark", "Dark", "Basic", Appearance {
-            base: BaseMode::Dark,
-            tint_strength: 0,
-            ..Default::default()
-        }),
-        preset("dim", "Dim", "Basic", Appearance {
-            base: BaseMode::Dim,
-            tint_strength: 0,
-            ..Default::default()
-        }),
         // --- the retired themes, reconstructed -------------------------------
         // Sepia was `sepia(0.35) contrast(0.95) saturate(0.9)` on light paper:
         // a warm brown at sepia()'s own hue, so no rotation and a mid strength.
@@ -198,9 +185,11 @@ mod tests {
         for id in ["sepia", "green", "night"] {
             assert!(is_builtin(id), "missing reconstructed theme {id}");
         }
-        // And the plain bases are still reachable as presets too.
+        // And the plain bases are the Mode section's buttons now, not
+        // presets — a stale "light"/"dark"/"dim" selection must read as
+        // custom rather than dangling off a preset that no longer exists.
         for id in ["light", "dark", "dim"] {
-            assert!(is_builtin(id), "missing base preset {id}");
+            assert!(!is_builtin(id), "{id} is a mode button, not a preset");
         }
     }
 
@@ -222,16 +211,6 @@ mod tests {
         assert_eq!(night.appearance.base, BaseMode::Dark);
         assert!(night.appearance.has_tint(), "Night is dark WITH a green cast");
         assert!(night.appearance.canvas_filter().contains("invert"));
-    }
-
-    #[test]
-    fn the_plain_bases_carry_no_tint() {
-        for id in ["light", "dark", "dim"] {
-            let p = find(id);
-            assert!(!p.appearance.has_tint(), "{id} must be untinted");
-            assert_eq!(p.appearance.texture, TextureMode::None);
-            assert_eq!(p.appearance.noise, NoiseMode::Off);
-        }
     }
 
     #[test]

@@ -11,8 +11,8 @@
 //! `::selection` tint is cleared when the gloss takes over, and the morphing
 //! surface unmounts once it has settled back onto this box, so nothing ever
 //! stacks on top of it. It is also the whole "thinking" UI — while the model
-//! is working the stroke wears `gloss-mark-processing` (drift + sweep + pulsing
-//! halo) and no surface exists at all.
+//! is working the stroke wears `gloss-mark-processing` (a slow opacity
+//! pulse) and no surface exists at all.
 //!
 //! Interaction surface:
 //! * **Click** re-opens the card (toggle-to-close lives in the controller's

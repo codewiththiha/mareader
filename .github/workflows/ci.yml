@@ -67,11 +67,14 @@ jobs:
       # would fail on pre-existing code. A one-time formatting pass can be a
       # dedicated commit if desired.
       #
-      # Clippy is gated with `-D warnings`, but a small, documented allow-list
-      # carries the codebase's ESTABLISHED style (e.g. `clone_on_copy` for the
-      # idiomatic Leptos `state.clone()` on a `Copy` AppState). New code is
-      # still held to `-D warnings` — the allows only whitelist what already
-      # exists.
+      # Clippy is gated with `-D warnings`. The allow-list below is the complete
+      # set of lints this workspace trips today — re-derived by running the step
+      # with every `-A` removed, on the host and on the wasm frontend — and it
+      # carries ESTABLISHED style rather than new sloppiness (e.g.
+      # `clone_on_copy` for the idiomatic Leptos `state.clone()` on a `Copy`
+      # AppState). It is deliberately short: a lint that stops firing should be
+      # dropped from here, not left as a permanent exemption.
+      # New code is still held to `-D warnings`.
 
       - name: Clippy (deny warnings)
         run: |
@@ -79,22 +82,22 @@ jobs:
             -A clippy::clone_on_copy \
             -A clippy::field_reassign_with_default \
             -A clippy::collapsible_if \
-            -A clippy::unnecessary_map_or \
             -A clippy::redundant_closure \
-            -A clippy::let_unit_value \
-            -A clippy::match_result_ok \
             -A clippy::type_complexity \
-            -A clippy::needless_update \
-            -A clippy::map_flatten \
-            -A clippy::manual_pattern_char_comparison \
-            -A clippy::int_plus_one \
-            -A clippy::unit_arg \
-            -A clippy::assertions_on_constants \
-            -A clippy::doc_lazy_continuation \
-            -A clippy::derivable_impls
+            -A clippy::assertions_on_constants
 
+      # --workspace, not a bare `cargo test`: the manifest root is also the
+      # `pdf-reader` package, so a bare run tests only the app and silently
+      # skips every member crate — pdf-core (the zoom ladder and fit maths),
+      # virtual-list and virtual-list-leptos (the geometry kernel and its
+      # anchor arithmetic). Those hold the invariants the reader depends on.
+      #
+      # `pdf` (the Tauri shell) is excluded: `tauri::generate_context!`
+      # resolves `frontendDist` at compile time and panics when `../dist`
+      # does not exist, and the frontend is only built by the release
+      # pipeline. It has no unit tests of its own.
       - name: Tests
-        run: cargo test
+        run: cargo test --workspace --exclude pdf
 
       # The frontend is Rust compiled to wasm; verify it compiles for the wasm
       # target without a full `trunk build` (that lives in the release pipeline).
@@ -110,3 +113,39 @@ jobs:
 
       - name: Verify versions are in sync
         run: node scripts/check-versions.js
+
+  # The Linux job above cannot see `set_traffic_lights`: it is
+  # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
+  # feature set that feeds it) would otherwise first surface when a release
+  # tag builds the macOS legs. Check the shell crate natively on an Apple
+  # runner to keep that gap closed.
+  macos-check:
+    name: Check (macOS-only shell code)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Keys on the workspace root, same as the Linux job.
+      - uses: Swatinem/rust-cache@v2
+
+      # `tauri::generate_context!` resolves `frontendDist` (../dist) at compile
+      # time and panics when it is missing; the frontend itself is built by the
+      # release pipeline, so a stub is enough to get past it here.
+      - name: Stub the frontend dist
+        run: |
+          mkdir -p dist
+          printf '<!doctype html><title>PDF Reader</title>' > dist/index.html
+
+      - name: Clippy (deny warnings)
+        run: |
+          cargo clippy -p pdf --all-targets -- -D warnings \
+            -A clippy::clone_on_copy \
+            -A clippy::field_reassign_with_default \
+            -A clippy::collapsible_if \
+            -A clippy::redundant_closure \
+            -A clippy::type_complexity \
+            -A clippy::assertions_on_constants

@@ -536,19 +536,26 @@ impl VirtualizerCore {
         let Some(window) = self.range else {
             return Vec::new();
         };
-        (window.first..=window.last)
-            .map(|index| VirtualItem {
-                index,
-                start: self.layout.offset(index) + self.padding_start,
-                size: self.layout.size(index),
-                cross_start: self.layout.cross_offset(index),
-                cross_size: self.layout.cross_size(index),
-                row: match &self.layout {
-                    LayoutKind::Grid(grid) => grid.row_of(index),
-                    LayoutKind::List(_) => index,
-                },
-            })
-            .collect()
+        (window.first..=window.last).map(|index| self.item_at(index)).collect()
+    }
+
+    /// One item's render contract, window-independent: valid for any index
+    /// in the layout (the layout models every item; only MOUNTING is
+    /// windowed). The adapter uses this to keep freshly evicted items
+    /// rendered at their laid-out position for a short grace period.
+    pub fn item_at(&self, index: usize) -> VirtualItem {
+        VirtualItem {
+            index,
+            start: self.layout.offset(index) + self.padding_start,
+            size: self.layout.size(index),
+            cross_start: self.layout.cross_offset(index),
+            cross_size: self.layout.cross_size(index),
+            row: match &self.layout {
+                LayoutKind::Grid(grid) => grid.row_of(index),
+                LayoutKind::List(_) => index,
+            },
+            state: crate::render::VirtualItemState::Active,
+        }
     }
 
     /// The mounted rows.

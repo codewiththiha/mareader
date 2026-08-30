@@ -101,7 +101,6 @@ function composeFilter(filterString: string): FilterMatrix {
   }
   return { m, o };
 }
-let filterLuts: Int32Array[] | null = null;
 function applyFilterPixels(
   src: HTMLCanvasElement,
   filterString: string

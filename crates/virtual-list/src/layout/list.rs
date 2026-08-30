@@ -44,15 +44,6 @@ impl<B: StripBackend> ListLayout<B> {
         Self::new(core::iter::repeat_n(size, count), gap)
     }
 
-    /// Build a layout backed by an existing backend instance.
-    pub fn with_backend(backend: B, gap: f64) -> Self {
-        Self {
-            backend,
-            gap,
-            sticky: Vec::new(),
-        }
-    }
-
     /// Build from a **per-item** estimate, to be refined later with
     /// [`set_size`](Self::set_size) as real sizes are measured.
     ///
@@ -83,14 +74,6 @@ impl<B: StripBackend> ListLayout<B> {
         self.gap
     }
 
-    /// Direct access to the backing backend (backends, benches, tests).
-    /// Only available when the backend is the default [`Strip`].
-    pub fn strip(&self) -> Option<&Strip>
-    where
-        B: AsRef<Strip>,
-    {
-        None // Not implemented for non-Strip backends; kept for backward compat.
-    }
 }
 
 impl<B: StripBackend> Layout for ListLayout<B> {

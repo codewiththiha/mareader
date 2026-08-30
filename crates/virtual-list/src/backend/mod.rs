@@ -2,7 +2,8 @@
 //! engine provides (`offset_sub`, `size_sub`, `total_sub`, `index_at_sub`,
 //! `set_size_sub`). All windowing logic (`overlapping`, `visible`, `window`,
 //! `dominant`, `window_with_sticky`) is written once against this trait,
-//! so adding a new backend only requires implementing the primitives.
+//! so a new backend — a tree, a chunked column, whatever a surface needs —
+//! only has to implement the primitives.
 //!
 //! The math stays in `i64` sub-pixels (`to_sub` / `from_sub`) so boundary
 //! behavior is bit-for-bit identical across backends.
@@ -241,15 +242,7 @@ pub fn window_with_sticky<B: StripBackend + ?Sized>(
 }
 
 pub mod strip;
-#[cfg(feature = "advanced-trees")]
-pub mod fenwick;
-#[cfg(feature = "advanced-trees")]
-pub mod chunked;
 pub mod uniform;
 
 pub use strip::Strip;
-#[cfg(feature = "advanced-trees")]
-pub use fenwick::FenwickStrip;
-#[cfg(feature = "advanced-trees")]
-pub use chunked::ChunkedStrip;
 pub use uniform::UniformStrip;

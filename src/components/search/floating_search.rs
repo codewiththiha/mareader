@@ -142,7 +142,7 @@ pub fn FloatingSearch(
                 node_ref=container_ref
                 data-search-chrome="true"
                 class=format!(
-                    "floating-search-enter absolute right-4 top-14 {BAR} w-[min(560px,90vw)] \
+                    "absolute right-4 top-14 {BAR} w-[min(560px,90vw)] \
                      rounded-xl border border-line bg-surface/90 shadow-xl backdrop-blur-md"
                 )
             >

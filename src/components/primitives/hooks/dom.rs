@@ -20,6 +20,12 @@ pub const PAGE_LIST_ID: &str = "page-list";
 /// Id of the single-page view's container.
 pub const SINGLE_PAGE_CONTAINER_ID: &str = "single-page-container";
 
+/// Id of the horizontal strip's scroll container.
+pub const H_PAGE_LIST_ID: &str = "h-page-list";
+
+/// Id of the dual-page (spread) view's container.
+pub const DUAL_PAGE_CONTAINER_ID: &str = "dual-page-container";
+
 /// Id of the toolbar's row (the flex container the title measures inside).
 pub const TOOLBAR_ROW_ID: &str = "toolbar-row";
 
@@ -71,6 +77,11 @@ pub fn by_id_warn(id: &'static str) -> Option<web_sys::Element> {
 /// The continuous viewer's scroll container, if it is mounted.
 pub fn page_list() -> Option<web_sys::Element> {
     by_id(PAGE_LIST_ID)
+}
+
+/// The horizontal strip's scroll container, if it is mounted.
+pub fn h_page_list() -> Option<web_sys::Element> {
+    by_id(H_PAGE_LIST_ID)
 }
 
 /// Scroll `el`'s scroll parent so `el` is comfortably visible, but ONLY if it

@@ -20,7 +20,7 @@
 //!   re-opens the card through the same spring.
 //! * **There is exactly one highlighter at a time.** The native `::selection`
 //!   tint is cleared the moment the gloss takes over; while the model works
-//!   there is NO surface at all (the in-page stroke thinks via drift/sweep/halo);
+//!   there is NO surface at all (the in-page stroke pulses);
 //!   and after the outro the surface unmounts once it has settled onto the
 //!   stroke, so a chip can never sit on top of the mark it came from.
 //! * **Every close is an outro, not a cut.** Origin-exit, Escape and outside
@@ -86,12 +86,20 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let expanded_sig = Signal::derive(move || card.expanded.get().unwrap_or_default());
     let progress_sig = Signal::derive(move || card.progress.get());
     let word_sig = Signal::derive(move || ctrl.content.word.get());
+    // The header's part of speech rides the same signal the sections patch
+    // through, so a snapshot that fills the POS lands in both places in one
+    // frame.
+    let pos_sig = Signal::derive(move || {
+        ctrl.content.word_info.get().map(|i| i.pos).unwrap_or_default()
+    });
+    let density_sig = Signal::derive(move || state.settings.with(|s| s.gloss_density));
 
     view! {
         <GlossMeasureTwin
             node_ref=card.measure_ref
             word=word_sig
             word_info=ctrl.content.word_info
+            density=density_sig
         />
 
         <Show when=move || ctrl.geometry.surface_visible.get() && ctrl.content.phase.get() != AiPhase::Idle>
@@ -101,11 +109,14 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                 expanded=expanded_sig
                 progress=progress_sig
                 word=word_sig
+                pos=pos_sig
+                density=density_sig
                 on_drag_start=drag.on_drag_start
             >
                 <GlossSurfaceContent
                     phase=ctrl.content.phase
                     word_info=ctrl.content.word_info
+                    density=density_sig
                     error=ctrl.content.error
                     retry=ctrl.commands.retry
                 />

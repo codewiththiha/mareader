@@ -46,6 +46,16 @@ impl Debouncer {
 
 /// A debounced one-shot: typing bursts / resize storms cost one fire.
 pub fn use_debounce(duration: Duration, on_fire: impl Fn() + 'static) -> Debouncer {
+    use_debounce_for(move || duration, on_fire)
+}
+
+/// The duration-getter flavour of [`use_debounce`]: the wait is read at every
+/// trigger, so one debouncer can land different fires at different delays
+/// (the shell controller's close hold is one timer that waits out a slide or
+/// a fade depending on the rail's layout). The getter runs synchronously
+/// inside whatever context calls `trigger` — read signals UNTRACKED in it if
+/// the caller must not gain a dependency.
+pub fn use_debounce_for(duration: impl Fn() -> Duration + 'static, on_fire: impl Fn() + 'static) -> Debouncer {
     let on_fire = Rc::new(on_fire);
     let handle = StoredValue::new_local(None::<TimeoutHandle>);
     let alive = StoredValue::new_local(true);
@@ -61,7 +71,7 @@ pub fn use_debounce(duration: Duration, on_fire: impl Fn() + 'static) -> Debounc
                 if alive.get_value() {
                     f();
                 }
-            }, duration)
+            }, duration())
             .ok();
             handle.set_value(h);
         }

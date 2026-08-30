@@ -6,7 +6,7 @@
 //! * Escape / outside-press dismissal comes from [`super::dismiss`];
 //! * the open/close transition is reported through `on_open_change` rather
 //!   than the popover reaching into app chrome itself (the app-shell
-//!   [`crate::components::app_shell::toolbar_popover::ToolbarPopover`] owns
+//!   [`crate::components::shell::titlebar::toolbar_popover::ToolbarPopover`] owns
 //!   the titlebar-hold behaviour).
 //!
 //! Width is a prop so each menu can size itself. `position: fixed` escapes
@@ -28,10 +28,6 @@ pub fn Popover(
     open: RwSignal<bool>,
     /// NodeRef of the trigger wrapper the panel anchors to.
     anchor: NodeRef<html::Div>,
-    /// Used when `anchor` is hidden (zero-size), e.g. a collapsed toolbar
-    /// control re-anchored at the overflow "…" button.
-    #[prop(optional)]
-    fallback_anchor: NodeRef<html::Div>,
     /// Desired panel width in CSS px (custom per menu).
     #[prop(default = 256)]
     width: u32,
@@ -64,14 +60,9 @@ pub fn Popover(
     // Window-aware placement: right-aligned to the trigger, clamped into the
     // viewport, flipped ABOVE the trigger when there is no room below.
     let place = move || {
-        let primary = anchor.get();
-        let fallback = fallback_anchor.get();
-        let a = match (primary, fallback) {
-            (Some(p), Some(f)) if p.get_bounding_client_rect().width() < 1.0 => f,
-            (Some(p), _) => p,
-            (None, Some(f)) => f,
-            (None, None) => return,
-        };
+        // The trigger wrapper is the only anchor: a popover whose trigger is
+        // not mounted has nothing to be placed against.
+        let Some(a) = anchor.get() else { return };
         let Some(win) = web_sys::window() else {
             return;
         };
@@ -144,7 +135,7 @@ pub fn Popover(
         },
         {
             move |target| {
-                node_within_any(target, &[anchor, fallback_anchor, panel_ref])
+                node_within_any(target, &[anchor, panel_ref])
             }
         },
     );

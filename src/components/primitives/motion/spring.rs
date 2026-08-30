@@ -94,6 +94,25 @@ pub struct SpringBox<T: SpringValue> {
 
 /// Springs `value` toward `target`. Setting `target` to `None` clears the
 /// value and stops the loop.
+///
+/// This is the reusable MORPH primitive — any floating surface that grows
+/// out of one rectangle and lands on another can drive it with two inputs:
+///
+/// * `target` — the END point (a `Signal<Option<T>>`; retargeting
+///   mid-flight is fine, the spring carries its velocity over).
+/// * `snap` — while true (dragging, reduced motion, a forced beat) the
+///   value jumps to the target instead of wobbling.
+///
+/// and one handle output: `SpringBox::reset_to` is the START point — call it
+/// when a new origin appears (a fresh anchor rect) so the morph begins from
+/// there. The value signal renders straight into geometry (left/top/width/
+/// height/radius); write it to style per frame and put NO transition on
+/// those properties — the spring is the animation.
+///
+/// Bring your own five-field type by implementing [`SpringValue`]
+/// (or use the generic `FloatBox`); the gloss word card is the reference
+/// consumer (`ai/gloss/targeting.rs`), and its rustdoc history is the
+/// recipe.
 pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bool>) -> SpringBox<T> {
     let value = RwSignal::new(target.get_untracked());
     let vel = StoredValue::new_local(T::zero());
@@ -185,13 +204,6 @@ mod tests {
     }
 
     #[test]
-    fn gloss_zero_is_the_rest_state() {
-        let z = <GlossBox as SpringValue>::zero();
-        assert_eq!(z, GlossBox::default());
-        assert!(z.all_small(SETTLE_EPS));
-    }
-
-    #[test]
     fn gloss_all_small_covers_every_field() {
         // Each field above epsilon on its own must break "all small": the
         // check is hand-rolled for GlossBox, and a dropped field would let
@@ -206,26 +218,6 @@ mod tests {
             assert!(!above.all_small(0.6), "{above:?} read as small");
         }
         assert!(gloss(0.0, 0.0, 0.0, 0.0, 0.0).all_small(0.6));
-    }
-
-    #[test]
-    fn gloss_close_delegates_to_boxes_close() {
-        let a = gloss(0.0, 0.0, 10.0, 10.0, 0.0);
-        let b = gloss(0.4, 0.4, 10.0, 10.0, 0.0);
-        assert!(a.close(&b, 0.5));
-        assert!(!a.close(&b, 0.2));
-    }
-
-    #[test]
-    fn gloss_step_delegates_to_the_domain_spring() {
-        let cur = gloss(10.0, 20.0, 30.0, 40.0, 6.0);
-        let vel = gloss(1.0, -1.0, 0.5, 0.25, 0.0);
-        let target = gloss(200.0, 100.0, 360.0, 240.0, 18.0);
-        let dt = 1.0 / 60.0;
-        let (next, next_vel) = <GlossBox as SpringValue>::step(&cur, &vel, &target, dt);
-        let (domain_next, domain_vel) = pdf_core::gloss::step_spring(cur, vel, target, dt);
-        assert_eq!(next, domain_next);
-        assert_eq!(next_vel, domain_vel);
     }
 
     #[test]

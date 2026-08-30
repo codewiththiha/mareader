@@ -201,7 +201,7 @@ impl Appearance {
 #[cfg(test)]
 mod tests {
     use crate::appearance::{Appearance, BaseMode};
-    use crate::appearance::ui_hue_oklch;
+    use super::ui_hue_oklch;
     fn tinted(base: BaseMode, hue: u16, strength: u8) -> Appearance {
         Appearance { base, tint_hue: hue, tint_strength: strength, ..Default::default() }
     }
@@ -390,7 +390,7 @@ mod tests {
             })
             .unwrap();
         // sRGB 34deg (a warm tan) sits near 60deg on the OKLCH circle, NOT 34.
-        let want = crate::appearance::ui_hue_oklch(34.0);
+        let want = ui_hue_oklch(34.0);
         assert!((h - want).abs() < 1.0, "paper hue {h} should be {want}");
         assert!(h > 40.0, "a warm tan must not be emitted as OKLCH 34 (pink)");
     }

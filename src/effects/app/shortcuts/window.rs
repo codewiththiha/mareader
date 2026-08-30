@@ -38,7 +38,7 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
         }
         "2" => {
             ev.prevent_default();
-            state.viewer.mode.set(ViewMode::Continuous);
+            state.viewer.mode.set(ViewMode::ScrollVertical);
         }
         _ => {}
     }

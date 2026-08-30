@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GlossPhase {
     /// Exact-fit stroke hugging the selected word. No surface is mounted in
-    /// this phase: the in-page highlighter's drift/sweep/halo is the whole
+    /// this phase: the in-page highlighter's thinking pulse is the whole
     /// waiting UI.
     #[default]
     Processing,
@@ -30,8 +30,9 @@ pub enum AiPhase {
     /// The AI request has been sent; waiting for the first token. Only the
     /// highlighter stroke's processing animation is on screen.
     Processing,
-    /// Tokens are arriving. The card is open and text is streaming in with
-    /// blur-fade.
+    /// Tokens are arriving. The card is open and text is streaming in; each
+    /// snapshot PATCHES the sections in place (a fade-in runs once, on
+    /// mount, never per chunk).
     Streaming,
     /// All data received. Final state.
     Done,

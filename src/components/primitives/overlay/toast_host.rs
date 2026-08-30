@@ -56,12 +56,17 @@ pub fn use_toast_slot(
     });
 }
 
-/// Single-slot toast host, centered near the top of the viewport
-/// (click-through wrapper; each toast is interactive).
+/// Single-slot toast host, bottom-center of the viewport (click-through
+/// wrapper; each toast is interactive).
+///
+/// All the centering lives in the shared `.toast-anchor` class — see
+/// `styles/components/shell.css` for why that is a flex wrapper rather than
+/// `left-1/2` plus a transform. The gloss undo toast uses the same anchor, so
+/// the app's two toast hosts cannot drift apart in either placement or offset.
 #[component]
 pub fn ToastHost(toasts: Signal<Option<ToastData>>) -> impl IntoView {
     view! {
-        <div class=format!("pointer-events-none fixed inset-x-0 top-14 {TOAST} flex flex-col items-center gap-2 px-4")>
+        <div class=format!("toast-anchor pointer-events-none {TOAST}")>
             {move || {
                 toasts.get().map(|t| view! { <super::toast::ToastPanel toast=t /> })
             }}

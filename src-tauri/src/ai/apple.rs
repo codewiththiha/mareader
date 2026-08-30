@@ -76,6 +76,35 @@ fn map_err(e: BridgeError) -> AiError {
     }
 }
 
+/// Fold whatever fields a (partial) snapshot already contains into the
+/// running answer. Later chunks only overwrite a field once it has real
+/// content, so a chunk that echoes an empty array never wipes the synonyms
+/// that arrived earlier.
+fn merge_partial(acc: &mut WordInfo, val: &serde_json::Value) {
+    if let Some(s) = val.get("pos").and_then(|v| v.as_str()) {
+        if !s.trim().is_empty() {
+            acc.pos = s.to_string();
+        }
+    }
+    if let Some(s) = val.get("meaning").and_then(|v| v.as_str()) {
+        if !s.trim().is_empty() {
+            acc.meaning = s.to_string();
+        }
+    }
+    if let Some(a) = val.get("synonyms").and_then(|v| v.as_array()) {
+        let items: Vec<String> = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        if !items.is_empty() {
+            acc.synonyms = items;
+        }
+    }
+    if let Some(a) = val.get("usages").and_then(|v| v.as_array()) {
+        let items: Vec<String> = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        if !items.is_empty() {
+            acc.usages = items;
+        }
+    }
+}
+
 /// Bounded user-facing summary for the escape-hatch variant.
 fn short(e: &BridgeError) -> String {
     const MAX: usize = 80;
@@ -108,18 +137,30 @@ impl AiProvider for AppleAiProvider {
 
         Box::pin(stream! {
             let mut stream = Box::pin(bridge.stream(request));
-            // Early snapshots are partial objects and routinely fail to
-            // parse — that is normal. The FINAL structured payload must
-            // parse, though: if the stream ends without one usable value
-            // the UI would otherwise show an empty card with no recourse.
+            // The UI wants a card to open the MOMENT the first real content
+            // arrives, not a run later. Structured streaming hands us the
+            // object as it is written, so the early snapshots are partial —
+            // a field or two, nothing that parses as a whole `WordInfo`.
+            // Instead of dropping those until the object happens to be
+            // complete (which deferred the card until the model was nearly
+            // finished), we accumulate the partial fields and surface the
+            // running answer on the FIRST chunk that carries a `meaning`,
+            // then re-publish it as each later chunk fills in more. The
+            // frontend patches the sections in place, so the card streams.
+            let mut acc = WordInfo::default();
+            // The FINAL structured payload must still carry real content: if
+            // the stream ends before a `meaning` ever landed, that is a
+            // shape failure — the UI would otherwise show an empty card
+            // with no recourse.
             let mut saw_usable = false;
 
             while let Some(event) = stream.next().await {
                 match event {
                     Ok(StreamEvent::Snapshot(val)) | Ok(StreamEvent::Structured(val)) => {
-                        if let Ok(info) = serde_json::from_value::<WordInfo>(val) {
+                        merge_partial(&mut acc, &val);
+                        if !acc.meaning.trim().is_empty() {
                             saw_usable = true;
-                            yield AiChunk::Snapshot(info);
+                            yield AiChunk::Snapshot(acc.clone());
                         }
                     }
                     Ok(StreamEvent::Done(_)) => {

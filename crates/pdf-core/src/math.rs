@@ -8,7 +8,8 @@ pub const ZOOM_STEPS: &[f64] = &[
     0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0,
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FitMode {
     None,
     Width,
@@ -18,39 +19,6 @@ pub enum FitMode {
 pub fn clamp_scale(s: f64) -> f64 {
     s.clamp(MIN_SCALE, MAX_SCALE)
 }
-
-/// Intrinsic (scale-1) size of page `page` (1-based) from the parallel
-/// width/height columns the engine returns on open.
-///
-/// Fit and shrink-to-fit must use the page under the reader's eyes, not
-/// page 1. A landscape plate in an otherwise-portrait book is cropped if
-/// the ceiling is computed from the letter pages around it; a portrait
-/// page after a plate would stay over-shrunk the other way.
-///
-/// Missing / non-positive entries fall back to `fallback_w` / `fallback_h`
-/// (typically page 1), so an older engine that only reported heights still
-/// produces a usable size.
-pub fn page_intrinsic(
-    page: u32,
-    widths: &[f64],
-    heights: &[f64],
-    fallback_w: f64,
-    fallback_h: f64,
-) -> (f64, f64) {
-    let i = page.saturating_sub(1) as usize;
-    let w = widths
-        .get(i)
-        .copied()
-        .filter(|w| *w > 0.0)
-        .unwrap_or(fallback_w);
-    let h = heights
-        .get(i)
-        .copied()
-        .filter(|h| *h > 0.0)
-        .unwrap_or(fallback_h);
-    (w.max(1.0), h.max(1.0))
-}
-
 
 /// Scale that fits a page (base CSS-px size `page_w` x `page_h`) into a
 /// container of `container_w` x `container_h`, leaving `padding` px of air.
@@ -91,37 +59,36 @@ pub fn constrained_scale(desired: f64, fit_w: f64) -> f64 {
     clamp_scale(desired.min(fit_w))
 }
 
-/// Whether `available` is enough to show `desired` without cropping.
+/// One step along the preset ladder. `dir > 0` zooms in, `dir < 0` zooms out.
 ///
-/// Used to decide whether the page is currently being held below the reader's
-/// chosen zoom, which the zoom readout needs in order to explain itself.
-pub fn is_space_constrained(desired: f64, fit_w: f64) -> bool {
-    desired.is_finite() && fit_w.is_finite() && fit_w > 0.0 && desired > fit_w + 1e-9
-}
-
-/// Next/previous zoom preset. `dir > 0` zooms in, `dir < 0` zooms out.
+/// The step is taken from the preset CLOSEST to `current`, then clamped into
+/// the ladder — so a reader already at the top or bottom stays put instead of
+/// wrapping to the other end or falling off the array. A non-preset scale
+/// (a fit width of 137%, say) therefore rounds onto the ladder first and
+/// steps from there, which is what makes repeated presses feel even.
 pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
-    if dir > 0 {
-        ZOOM_STEPS
-            .iter()
-            .copied()
-            .find(|&z| z > current + 1e-9)
-            .unwrap_or(*ZOOM_STEPS.last().unwrap())
-    } else if dir < 0 {
-        ZOOM_STEPS
-            .iter()
-            .rev()
-            .copied()
-            .find(|&z| z < current - 1e-9)
-            .unwrap_or(ZOOM_STEPS[0])
-    } else {
-        clamp_scale(current)
+    if dir == 0 {
+        return clamp_scale(current);
     }
+    let mut closest_idx = 0usize;
+    let mut min_diff = f64::MAX;
+    for (i, &step) in ZOOM_STEPS.iter().enumerate() {
+        let diff = (step - current).abs();
+        if diff < min_diff {
+            min_diff = diff;
+            closest_idx = i;
+        }
+    }
+    let last = (ZOOM_STEPS.len() - 1) as i32;
+    let target_idx = (closest_idx as i32 + dir).clamp(0, last) as usize;
+    ZOOM_STEPS[target_idx]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{constrained_scale, is_space_constrained};
+    use super::{
+        clamp_scale, constrained_scale, fit_scale, nearest_zoom, FitMode, MAX_SCALE, MIN_SCALE,
+    };
 
     #[test]
     fn a_page_that_fits_is_left_completely_alone() {
@@ -184,31 +151,12 @@ mod tests {
     }
 
     #[test]
-    fn constrained_is_reported_only_when_the_page_is_actually_being_held_back() {
-        assert!(is_space_constrained(2.0, 1.0));
-        assert!(!is_space_constrained(1.0, 2.0));
-        // Equal is not constrained — it fits.
-        assert!(!is_space_constrained(1.5, 1.5));
-        // Garbage geometry is never reported as constrained.
-        assert!(!is_space_constrained(2.0, 0.0));
-        assert!(!is_space_constrained(2.0, f64::NAN));
-    }
-
-    use super::*;
-
-    #[test]
     fn fit_uses_the_page_under_the_eyes_not_page_one() {
-        // Portrait letter, then a landscape plate twice as wide.
-        let widths = [612.0, 1224.0, 612.0];
-        let heights = [792.0, 792.0, 792.0];
-        assert_eq!(page_intrinsic(1, &widths, &heights, 1.0, 1.0), (612.0, 792.0));
-        assert_eq!(page_intrinsic(2, &widths, &heights, 1.0, 1.0), (1224.0, 792.0));
-        // Same container: the plate must fit at half the scale of the letter.
+        // Portrait letter, then a landscape plate twice as wide: the same
+        // container must fit the plate at half the letter's scale.
         let letter = fit_scale(FitMode::Width, 600.0, 800.0, 612.0, 792.0, 0.0, 1.0);
         let plate = fit_scale(FitMode::Width, 600.0, 800.0, 1224.0, 792.0, 0.0, 1.0);
         assert!((letter - 2.0 * plate).abs() < 1e-9, "letter {letter} plate {plate}");
-        // A missing column falls back rather than inventing a zero-width page.
-        assert_eq!(page_intrinsic(9, &[], &[], 612.0, 792.0), (612.0, 792.0));
     }
 
     /// Fit modes: width uses the container width, page takes the smaller of the
@@ -240,11 +188,28 @@ mod tests {
             (1.0, -1, 0.9),
             (0.1, -1, 0.25),
             (99.0, 1, 5.0),
-            // A non-preset current value steps to the nearest adjacent preset.
-            (1.2, 1, 1.25),
+            // A non-preset current value rounds onto the ladder first, then
+            // steps: 1.2 is closest to 1.25, so zooming in lands on 1.5.
+            (1.2, 1, 1.5),
+            (1.2, -1, 1.0),
         ] {
             assert!((nearest_zoom(from, dir) - want).abs() < 1e-9, "{from} dir {dir}");
         }
+    }
+
+    /// Pressing zoom-in at the maximum (or zoom-out at the minimum) must be
+    /// a no-op, not a wrap to the other end of the ladder.
+    #[test]
+    fn stepping_at_the_ends_of_the_ladder_stays_put() {
+        assert_eq!(nearest_zoom(MAX_SCALE, 1), MAX_SCALE);
+        assert_eq!(nearest_zoom(MIN_SCALE, -1), MIN_SCALE);
+        // Repeated presses at the ceiling cannot walk off the array either.
+        assert_eq!(nearest_zoom(nearest_zoom(MAX_SCALE, 1), 1), MAX_SCALE);
+        assert_eq!(nearest_zoom(nearest_zoom(MIN_SCALE, -1), -1), MIN_SCALE);
+        // And a garbage scale lands somewhere sane rather than poisoning the
+        // ladder for every later step.
+        assert!(nearest_zoom(f64::NAN, 1).is_finite());
+        assert_eq!(nearest_zoom(1.0, 0), 1.0);
     }
 }
 

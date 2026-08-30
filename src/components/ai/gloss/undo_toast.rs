@@ -7,8 +7,11 @@
 //!
 //! Auto-dismiss rides the host's id-guarded `use_toast_slot` (the toast id
 //! IS the batch generation): a second removal replaces the batch, and the
-//! first one's timer can never clear it. Position stays domain policy — this
-//! toast sits at the bottom center, above the selection bar's corner.
+//! first one's timer can never clear it. Position is the app's shared
+//! `.toast-anchor` — the same bottom-center wrapper the app-root host uses,
+//! clear of the reader's auto-hide bottom bar — because a toast that centers
+//! itself with a transform can be pulled off-axis by anything else that writes
+//! one (see the note in `styles/components/shell.css`).
 
 use leptos::prelude::*;
 
@@ -76,10 +79,8 @@ pub fn GlossUndoToast(
     view! {
         {move || {
             toast.get().map(|toast| view! {
-                // Bottom-center, clear of the selection bar's corner.
                 <div
-                    class="gloss-undo-toast fixed bottom-5 left-1/2 z-[var(--z-toast)] \
-                           -translate-x-1/2"
+                    class="gloss-undo-toast toast-anchor z-[var(--z-toast)]"
                     role="status"
                 >
                     <ToastPanel toast=toast />

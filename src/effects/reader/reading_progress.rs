@@ -18,7 +18,7 @@ use crate::storage::save_library;
 /// continuous scroll writes once instead of once per row boundary.
 const SAVE_MS: u64 = 400;
 
-/// Must be called once from the app root (ReaderPage), alongside `fit_effect`.
+/// Must be called once from the app root (ReaderPage), alongside the zoom sources.
 pub fn reading_progress(state: AppState) {
     // Debounce timer handle, parked so it can never fire against a torn-down
     // app, and re-armed on each update.
@@ -37,6 +37,12 @@ pub fn reading_progress(state: AppState) {
         let Some(path) = path else {
             return;
         };
+        // Never record an invalid position: a page of 0 (or one past the
+        // document) is a transient that escaped the syncs, and persisting it
+        // would make the next open resume there.
+        if page == 0 || page > state.reader.document.num_pages.get_untracked() {
+            return;
+        }
 
         // No-op write guard: only touch the library when the page actually
         // moved, so the page-tracking syncs (which can re-write an equal page)

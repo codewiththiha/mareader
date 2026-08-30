@@ -10,7 +10,7 @@
    translucent bg (the "milky glass") and is absolutely stacked over the
    viewer, so content scrolls underneath it, blurred.
 
-   AUTO-INVERTING GLYPHS, AND WHY THEY ARE NOW OPT-IN.
+   AUTO-INVERTING GLYPHS, AND WHY THEY ARE OPT-IN.
    Icons and labels used to be pure-white + mix-blend-difference across the
    board, so they inverted against whatever scrolled beneath the glass. That
    works for near-black or near-white ink, where difference lands far from the
@@ -20,16 +20,13 @@
    invisible — while the "1" input beside it (which has its own opaque
    background, so it never blended) stayed properly dark.
 
-   Difference-blending is therefore no longer applied to text by default. Two
-   things actually need it, and they are marked explicitly:
-
-     .glass-invert  — opt IN. For glyphs that genuinely sit over scrolling
-                      page content with no background of their own.
-
-   Everything else keeps its normal themed colour. That is not a downgrade:
-   the header is `bg-surface/60` over the page, and every themed token is
-   already chosen for contrast against surface. The tint keeps each token's
-   OWN lightness (see core/oklch.rs), so that contrast survives any hue.
+   Difference-blending is therefore applied ONLY where a glyph genuinely sits
+   over scrolling page content with no background of its own — those call
+   sites carry Tailwind's mix-blend-difference directly. Everything else
+   keeps its normal themed colour. That is not a downgrade: the header is
+   `bg-surface/60` over the page, and every themed token is already chosen
+   for contrast against surface. The tint keeps each token's OWN lightness
+   (see core/oklch.rs), so that contrast survives any hue.
    --------------------------------------------------------------------- */
 /* THE GLASS ITSELF.
    Previously the header carried Tailwind's `bg-surface/60 backdrop-blur-xl`
@@ -66,12 +63,6 @@
   .toolbar-glass {
     background-color: color-mix(in oklab, var(--color-surface) 96%, transparent);
   }
-}
-
-.toolbar-glass .glass-invert,
-.toolbar-glass .glass-invert svg {
-  color: #fff;
-  mix-blend-mode: difference;
 }
 
 /* Sidebar panel outro — same 300ms ease-in-out as the aside width slide.

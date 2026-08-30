@@ -26,6 +26,8 @@
 //! * [`undo_toast`]     — the "Removed n highlights — Undo" toast.
 //! * [`gloss_surface`]  — the morphing surface component (composing the
 //!   primitive `FloatingCard` with the gloss phase styling).
+//! * [`word_info`]      — the card's body: the AI answer sections at the
+//!   chosen density (also rendered headless by the measure twin).
 //! * [`gloss_ai_popover`] — wiring + view (the composition root).
 //!
 //! Generic mechanics (viewport, reduced motion, spring, drag, long press,
@@ -45,3 +47,4 @@ pub mod selection_bar;
 pub mod selection_mode;
 pub mod targeting;
 pub mod undo_toast;
+pub mod word_info;

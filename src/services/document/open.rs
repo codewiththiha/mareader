@@ -18,8 +18,9 @@ use web_sys::Event;
 use pdf_engine::api as engine;
 use pdf_engine::types::{DocStatus, PageSize};
 use pdf_core::filename::display_name;
+use pdf_core::layout::TOOLBAR_H;
 use crate::state::library::{self, CoverImage, RecentBook};
-use pdf_core::math::{fit_scale, FitMode};
+use pdf_core::math::fit_scale;
 use crate::state::{AppState, Toast};
 use crate::storage::{save_covers, save_library};
 
@@ -113,6 +114,13 @@ pub fn open_path(state: AppState, path: String) {
                 let name = display_name(open.title.as_deref(), Some(&path));
                 // Document state.
                 state.reader.document.num_pages.set(num_pages);
+                // The paper session resets for the new book and asks the
+                // engine's per-document cache for its colour — synchronously,
+                // while the status is still `Opening` and nothing is mounted,
+                // so a cache hit repaints the blend backdrop with the intended
+                // colour in the reader's very first frame (zero sampling
+                // work) instead of flashing the theme paper first.
+                pdf_engine::paper::document_open(&path, num_pages);
                 // Intrinsic per-page sizes, packed as one `PageSize` each.
                 let n = num_pages as usize;
                 let intrinsic: Vec<PageSize> = if open.page_widths.len() == n
@@ -129,13 +137,14 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.document.metrics.intrinsic.set(intrinsic);
                 state.reader.document.title.set(open.title);
                 state.reader.document.author.set(open.author);
-                state.reader.document.outline.set(open.outline);
+                // The previous book's chapters must not linger while the new
+                // tree resolves (a mid-read open never passes through
+                // close_document's reset). The engine's `open` no longer
+                // resolves the outline at all — see the task below.
+                state.reader.document.outline.set(Vec::new());
+                state.reader.document.outline_pending.set(true);
                 state.reader.document.page1_size.set(Some(page1.clone()));
                 state.reader.document.path.set(Some(path.clone()));
-                state.reader.document.error.set(None);
-                state.reader.document.status.set(DocStatus::Ready);
-                // A successful open dismisses any stale error toast.
-                state.ui.toast.set(None);
 
                 // Gloss highlights for THIS document. Loaded here rather than
                 // lazily by the mark layer so the very first page mount already
@@ -147,9 +156,10 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.gloss.selection_active.set(false);
                 state.reader.gloss.selected_marks.set(std::collections::HashSet::new());
 
-                // Resume point (clamped to the real count — a re-edited
-                // document may have fewer pages than remembered).
-                let resume = saved_page.min(num_pages.max(1));
+                // Resume point (clamped to the real count AND at least page 1 —
+                // a re-edited document may have fewer pages than remembered, and
+                // a stale/transient saved 0 must never resume before the book).
+                let resume = saved_page.clamp(1, num_pages.max(1));
 
                 // Fresh-open baseline: page 1, top of the column. The resume
                 // jump happens AFTER the view mounts (see below), because
@@ -157,9 +167,21 @@ pub fn open_path(state: AppState, path: String) {
                 // `page_heights` reset and `scroll_top = 0` — races the
                 // page-tracking effects: the scroll→page effect reads scroll 0
                 // and "corrects" the page back to 1 before the jump lands.
+                //
+                // ALL of this lands BEFORE `status = Ready` flips the route
+                // to the reader: the mount-time container-bind scroll reads
+                // `viewer.page`, and a stale `page = 42` from the document
+                // that was open a drag-and-drop ago would jump the new book's
+                // strip to its page 42 for the frames between the flip and
+                // this correction. Baseline first, mount second.
                 state.reader.viewer.page.set(1);
                 state.reader.viewer.scroll_top.set(0.0);
-                state.reader.viewer.fit.set(FitMode::Width);
+                // The startup fit mode is a user setting (Fit Page / Fit Width),
+                // not a hard-coded fit-width. `sanitize` has already replaced a
+                // persisted `None` with the default, so this is always a real
+                // fit mode here.
+                let startup_fit = state.settings.with(|s| s.layout.default_fit);
+                state.reader.viewer.fit.set(startup_fit);
                 // Heights belong to the document that was just closed; leaving
                 // them would have the zoom coordinator anchor against a stale
                 // column on the first gesture. ReaderPage re-seeds them from
@@ -167,16 +189,21 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.document.metrics.css_heights.set(Vec::new());
                 let (cw, ch) = state.reader.viewer.container_size.get();
                 let s =
-                    fit_scale(FitMode::Width, cw, ch, page1.width, page1.height, 48.0, 1.0);
-                // Direct writes are correct HERE and nowhere else: this is the
-                // initial scale for a brand-new document, so there is no layout
-                // to animate from and nothing to anchor to. All three scales
-                // must start in agreement.
-                state.reader.viewer.zoom_animating.set(false);
-                state.reader.viewer.zoom.request.set(None);
-                state.reader.viewer.zoom.scale.set(s);
-                state.reader.viewer.zoom.display.set(s);
-                state.reader.viewer.zoom.render.set(s);
+                    fit_scale(startup_fit, cw, ch, page1.width, page1.height, TOOLBAR_H, 1.0);
+                // Seeding the zoom state is correct HERE and nowhere else:
+                // this is the initial scale for a brand-new document, so
+                // there is no layout to animate from and nothing to anchor
+                // to. All three scales start in agreement, with no
+                // transition in flight.
+                state.reader.viewer.zoom.initialize(s);
+
+                // The book is ready: flip the route LAST, after every signal
+                // the fresh mount reads (page, heights, scale) is already in
+                // its new-document state.
+                state.reader.document.error.set(None);
+                state.reader.document.status.set(DocStatus::Ready);
+                // A successful open dismisses any stale error toast.
+                state.ui.toast.set(None);
 
                 // Jump to the saved page once the view has mounted and seeded
                 // its page heights — the same `page.set()` path outline /
@@ -192,6 +219,37 @@ pub fn open_path(state: AppState, path: String) {
                 // overlay must not linger after opening a new document.
                 state.reader.search.reset();
                 engine::clear_highlights();
+
+                // The outline lands when it lands. Flattening a chapter tree
+                // resolves every destination through the pdf.js worker — a
+                // per-entry round trip that textbook outlines pay in seconds —
+                // and none of it is needed to paint the first page. Resolving
+                // it here keeps `open` fast and the reader mounts the moment
+                // page 1 is known; the outline panel shows a resolving state
+                // (outline_pending) and fills when the tree is back.
+                // Path-guarded so a fast close-and-reopen can never hang one
+                // book's chapters on another.
+                {
+                    let outline_state = state;
+                    let outline_path = path.clone();
+                    spawn_local(async move {
+                        let nodes = engine::outline().await.unwrap_or_default();
+                        if outline_state
+                            .reader
+                            .document
+                            .path
+                            .get_untracked()
+                            .as_deref()
+                            == Some(outline_path.as_str())
+                        {
+                            outline_state.reader.document.outline.set(nodes);
+                        }
+                        // The pending flag clears even when the book changed
+                        // under the lookup: a pending state that outlives its
+                        // document would pin the panel on "resolving".
+                        outline_state.reader.document.outline_pending.set(false);
+                    });
+                }
 
                 // Fire index build in the background; result is ignored
                 // (search effects call it too when needed).
@@ -229,51 +287,67 @@ pub fn open_path(state: AppState, path: String) {
                     }
                 }
 
-                // Generate the shelf cover (page-1 JPEG) in the background. It
-                // is fire-and-forget: a failed render just leaves the stylised
-                // fallback cover on the shelf.
-                let cover_state = state;
-                let cover_path = path.clone();
-                spawn_local(async move {
-                    match engine::cover_data_url(&cover_path, 240.0).await {
-                        Ok(c) => {
-                            cover_state.library.covers.update(|covers| {
-                                covers.insert(
-                                    cover_path,
-                                    CoverImage {
-                                        data_url: c.data_url,
-                                        width: c.width,
-                                        height: c.height,
-                                    },
-                                );
-                            });
-                            if let Err(e) = save_covers(&cover_state.library.covers.get_untracked()) {
-                                e.report();
+                // Generate the shelf cover (page-1 JPEG) only when the shelf
+                // doesn't already have one for this book: regenerating on
+                // every open re-rendered page 1 through the worker — against
+                // the reader's own first paint — and re-encoded + re-saved the
+                // whole cover store on the main thread, right when the reader
+                // was fighting for both. A failed render just leaves the
+                // stylised fallback cover on the shelf.
+                if !state.library.covers.get_untracked().contains_key(&path) {
+                    let cover_state = state;
+                    let cover_path = path.clone();
+                    spawn_local(async move {
+                        match engine::cover_data_url(&cover_path, 240.0).await {
+                            Ok(c) => {
+                                cover_state.library.covers.update(|covers| {
+                                    covers.insert(
+                                        cover_path,
+                                        CoverImage {
+                                            data_url: c.data_url,
+                                            width: c.width,
+                                            height: c.height,
+                                        },
+                                    );
+                                });
+                                if let Err(e) =
+                                    save_covers(&cover_state.library.covers.get_untracked())
+                                {
+                                    e.report();
+                                }
                             }
+                            Err(_) => { /* stylised fallback cover */ }
                         }
-                        Err(_) => { /* stylised fallback cover */ }
-                    }
-                });
+                    });
+                }
 
                 // Pre-warm the thumbnail cache so the FIRST sidebar open is
                 // all cache blits instead of 20+ concurrent pdf.js renders
                 // fighting the width animation (same call the auto-center
-                // idle prefetch uses). Deferred ~600ms so the reader has
-                // settled first (fit_effect, first paint, cover render);
-                // sequential awaits keep the engine queue from bursting.
+                // idle prefetch uses). Deferred well past the reader's own
+                // first paints — the resume jump's renders can still be
+                // landing a second in on big books, and the warm-up's 16
+                // offscreen renders must not queue in front of them.
+                // Sequential awaits keep the engine queue from bursting.
                 // 0.25 mirrors THUMB_SCALE (panels/thumbnails/geometry.rs).
-                let warm_state = state;
+                // The page count is read HERE, not in the fire. This timer is
+                // deliberately unowned — the warm-up belongs to the document
+                // that was just opened, not to whichever component happens to
+                // be alive in a moment — so the one thing the fire must not do is
+                // reach into the reader's signal graph: a document closed
+                // inside that window would leave it reading an arena that is
+                // gone. `prefetch_thumb` is an engine call and answers for
+                // whatever is open when it lands, which is all a warm-up is.
+                let pages = state.reader.document.num_pages.get_untracked().min(16);
                 _ = set_timeout_with_handle(
                     move || {
                         spawn_local(async move {
-                            let n = warm_state.reader.document.num_pages.get_untracked();
-                            let pages = n.min(16); // first two grid rows + buffer
                             for p in 1..=pages {
                                 engine::prefetch_thumb(p, 0.25).await;
                             }
                         });
                     },
-                    std::time::Duration::from_millis(600),
+                    std::time::Duration::from_millis(1500),
                 );
             }
             Err(e) => {

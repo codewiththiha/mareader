@@ -30,8 +30,27 @@ async-stream = "0.3"  # Wraps the AI output chunks into a stream
 tokio = { version = "1", features = ["time"] } # Drives the mock provider's simulated delays
 
 # macOS-only: hide/show the native traffic lights (titlebar-less overlay mode).
+#
+# `objc2-app-kit` is the maintained Objective-C binding; the `objc` 0.2 crate it
+# replaces has been frozen since 2019. Its `sel_impl!` macro also expanded a
+# `cfg(feature = "cargo-clippy")` into *this* crate, which is why the manifest
+# used to carry an `unexpected_cfgs` exemption — objc2 has no such leak, so the
+# lint runs clean again. Tauri already pulls objc2-app-kit in, so this adds
+# nothing to the dependency graph.
+#
+# The feature set is exactly what `set_traffic_lights` reaches, mirroring how
+# tauri itself declares it: NSView/NSWindow for the walk from the webview's view
+# to its window, NSButton+NSControl because that is `standardWindowButton:`'s
+# return type chain, NSResponder because NSView/NSButton are declared under it.
 [target.'cfg(target_os = "macos")'.dependencies]
-objc = "0.2"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSButton",
+  "NSControl",
+  "NSResponder",
+  "NSView",
+  "NSWindow",
+] }
 raw-window-handle = "0.6"
 
 # Apple Intelligence lives in the Tauri backend (WASM cannot spawn the Swift
@@ -45,11 +64,3 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 # Activates the Apple Intelligence provider on Apple Silicon Macs.
 ai = ["dep:fm-bridge"]
-
-# objc 0.2's sel_impl! macro expands `cfg(feature = "cargo-clippy")` into OUR
-# crate, and rustc's check-cfg lints that feature value. Declare it expected so
-# the lint stays on for everything else. (The `feature, values(..)` form is the
-# only one rustc accepts now — `cfg(cargo-clippy)` and `cfg(feature = "..")`
-# are both rejected as invalid --check-cfg arguments.)
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }

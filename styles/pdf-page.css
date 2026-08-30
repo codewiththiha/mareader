@@ -33,7 +33,13 @@
      shrinks the width while the inline height stays put, and the page visibly
      squishes (a letter page went from a 0.77 aspect to 0.58) before snapping
      back. The inline size is the source of truth for page geometry; never let
-     layout renegotiate it. */
+     layout renegotiate it.
+
+     There is no reflow exception, and none is needed: the layout follows the
+     container on every frame of a slide or a drag (see `follow_watcher`), so
+     the host is never wider than the space it has to fit in for long enough to
+     be renegotiated — and when a hand-picked zoom DOES overflow the window,
+     overflowing is the point: the page scrolls rather than squishing. */
   flex-shrink: 0;
   contain: content;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 8px 24px -6px rgb(0 0 0 / 0.22);
@@ -43,6 +49,27 @@
   --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
   --scale-round-x: 1px;
   --scale-round-y: 1px;
+}
+
+/* BLEND UNCLIP — only in blend mode does the page's own texture layer bleed
+   past the page box and paint the gutter (see the BLEND BLEED block in
+   textures.css). The base rule above clips descendants with overflow:hidden
+   and paint containment; blend mode lifts both so the ::before can overhang.
+   Scoped to `.reader-bg.blend` on purpose: in every other mode the page
+   stays fully clipped exactly as before, so nothing about normal rendering
+   changes. Safe because nothing else escapes the page rect when the clip
+   lifts: the canvas is exact-size, the vendored .textLayer self-clips
+   (inset:0; overflow:clip), and the link/gloss layers are inset:0.
+   `z-index:0` makes each page its own stacking context, so a later page's
+   opaque canvas always paints above an earlier page's stray bleed. */
+.reader-bg.blend .pdf-page {
+  overflow: visible;
+  contain: layout style;
+  z-index: 0;
+}
+
+.no-page-shadow .pdf-page {
+  box-shadow: none;
 }
 
 .pdf-page canvas {
@@ -388,26 +415,6 @@ html.appearance-scrubbing .pdf-page::before {
   background: transparent;
 }
 
-/* DISMISSED SEARCH — the "cancelled artifact" state.
-   Closing the bar does not wipe the results: the boxes stay for one beat in a
-   neutral grey so the reader can still see where the hits were, and reopening
-   the bar restores the query. The next scroll / click / keypress removes them
-   (see effects::search_effects::dismissed_search_watch).
-
-   Grey rather than a third accent hue: this state means "no longer active", so
-   it should recede, and desaturating is what reads as inactive next to the live
-   blue and the amber current match. The current-match ring is dropped for the
-   same reason — nothing is current once the search is dismissed.
-
-   The transition applies only here, so the fade to grey is visible while
-   painting fresh live highlights stays instant. */
-.pdf-page .textLayer.search-stale .highlight,
-.pdf-page .textLayer.search-stale .highlight.is-active {
-  background: color-mix(in srgb, var(--color-muted) 26%, transparent);
-  box-shadow: none;
-  transition: background 160ms ease-out, box-shadow 160ms ease-out;
-}
-
 /* Multiply is right on the light themes (it darkens the paper under the text)
    but on the inverted dark canvases it drives the highlight toward black and
    swallows the glyphs. Screen keeps it a visible glow there. */
@@ -422,14 +429,5 @@ html.appearance-scrubbing .pdf-page::before {
    track of where they are. */
 :root.dark .pdf-page .textLayer .highlight.is-active {
   background: color-mix(in srgb, var(--match-current) 46%, transparent);
-}
-
-/* And re-state the dismissed state, which the two dark rules above outrank on
-   specificity. Lifted a little because `screen` on a dark canvas needs more
-   than 26% grey to stay visible at all. */
-:root.dark .pdf-page .textLayer.search-stale .highlight,
-:root.dark .pdf-page .textLayer.search-stale .highlight.is-active {
-  background: color-mix(in srgb, var(--color-muted) 40%, transparent);
-  box-shadow: none;
 }
 

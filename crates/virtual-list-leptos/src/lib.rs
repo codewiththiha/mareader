@@ -50,16 +50,16 @@
 #![warn(missing_docs)]
 
 pub mod core;
-mod measure;
 mod observe;
 mod options;
 mod render;
+pub mod retention;
 mod surface;
 mod virtualizer;
 
 pub use crate::core::{CoreConfig, Flush, Step, VirtualizerCore};
 pub use crate::options::{Axis, LayoutShape, ScrollMode, VirtualizerOptions};
-pub use crate::render::{Positioning, VirtualItem, VirtualRow};
+pub use crate::render::{Positioning, VirtualItem, VirtualItemState, VirtualRow};
 pub use crate::surface::{DomSurface, ScrollSurface, TestSurface};
 pub use crate::virtualizer::{Virtualizer, use_virtualizer};
 pub use virtual_list::{Align, Budget, GridColumns, GridSpec, Overscan, Viewport, Window};

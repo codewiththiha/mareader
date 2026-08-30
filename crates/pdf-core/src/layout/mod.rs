@@ -22,7 +22,50 @@ pub const TOOLBAR_H: f64 = 48.0;
 pub const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    Vertical,
+    Horizontal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
+    /// One page at a time. Paginated.
     Single,
-    Continuous,
+    /// Two pages side by side, no gap (a "spread"). Paginated.
+    Spread,
+    #[default]
+    /// All pages in one vertical strip; wheel/keys scroll vertically.
+    ScrollVertical,
+    /// All pages in one horizontal strip; wheel/keys scroll horizontally.
+    ScrollHorizontal,
+}
+
+impl ViewMode {
+    pub fn all() -> [ViewMode; 4] {
+        [
+            ViewMode::Single,
+            ViewMode::Spread,
+            ViewMode::ScrollVertical,
+            ViewMode::ScrollHorizontal,
+        ]
+    }
+
+    /// Auto-scroll only makes sense on the two scrolling modes.
+    pub fn can_scroll(self) -> bool {
+        matches!(self, ViewMode::ScrollVertical | ViewMode::ScrollHorizontal)
+    }
+
+    pub fn is_paginated(self) -> bool {
+        matches!(self, ViewMode::Single | ViewMode::Spread)
+    }
+
+    /// The scroll axis for the scrolling modes. The paginated modes have
+    /// neither a strip nor a main axis, so they return `None`.
+    pub fn axis(self) -> Option<Axis> {
+        match self {
+            ViewMode::ScrollVertical => Some(Axis::Vertical),
+            ViewMode::ScrollHorizontal => Some(Axis::Horizontal),
+            _ => None,
+        }
+    }
 }

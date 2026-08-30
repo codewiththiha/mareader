@@ -77,6 +77,15 @@ fn is_topmost(id: u64) -> bool {
     DISMISS_STACK.with(|s| s.borrow().last() == Some(&id))
 }
 
+/// Whether any dismissable surface (a dropdown, a card, a context menu) is
+/// currently open. Windows that are themselves dismissable-but-not-stacked —
+/// the settings modal, which listens for Escape on its own — read this to
+/// defer to the layer above them: one press of Escape peels one layer, the
+/// dropdown first and the modal only once nothing sits on top of it.
+pub fn has_open_dismissable() -> bool {
+    DISMISS_STACK.with(|s| !s.borrow().is_empty())
+}
+
 fn push_stack(id: u64) {
     DISMISS_STACK.with(|s| {
         let mut s = s.borrow_mut();

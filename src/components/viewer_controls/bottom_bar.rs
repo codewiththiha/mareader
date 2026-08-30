@@ -1,35 +1,30 @@
 //! Auto-hide bottom bar: the displaced PageNavigation (prev/next + page input)
-//! and, in continuous mode, a scroll scrubber. Mirrors the top bar's
-//! hover-reveal pattern so mouse readers keep page navigation without any
-//! persistent bottom chrome.
+//! plus a unified, page-based progress slider.
 //!
-//! The scrubber is the shared [`RangeInput`] because its max is reactive: it
-//! tracks the live virtualized document extent. `navigation_sync` already syncs
-//! DOM scroll ↔ `viewer.page`, so the scrubber and the page pill stay
-//! consistent for free.
+//! The scrubber is a [`RangeInput`] mapped straight onto `viewer.page`
+//! (`1..=num_pages`) rather than a scroll offset. Because a page number is
+//! layout-agnostic it behaves identically in Single, Dual, Continuous and
+//! Horizontal modes: there is no dependency on the active scroll axis, and no
+//! reactive DOM scroll-offset reads to keep in sync. `navigation_sync` already
+//! turns a `viewer.page` write into the matching scroll / `scroll_to_index`
+//! jump (and the dominant-item tracker does the reverse), so dragging the
+//! thumb and stepping with the PageNavigation stay consistent for free.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
-use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use crate::components::primitives::floating::types::z::BAR;
 use crate::components::primitives::form::range_input::RangeInput;
 use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
 use crate::components::viewer_controls::page_navigation::PageNavigation;
 use crate::state::ReaderState;
-use pdf_core::layout::ViewMode;
 
 /// Pointer must be off the bar this long before it hides.
 const BOTTOM_HIDE_DELAY_MS: u64 = 400;
 
 #[component]
-pub fn ReaderBottomBar(
-    reader: ReaderState,
-    /// The continuous reader's virtualizer, used for slider extent and scroll writes.
-    virtualizer: StoredValue<Virtualizer, LocalStorage>,
-) -> impl IntoView {
-    let total_size = virtualizer.with_value(|v| v.total_size());
+pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
     let hover = use_hover_visibility(Duration::from_millis(BOTTOM_HIDE_DELAY_MS), || false);
     let visible = hover.visible;
     let show_strip = hover.show.clone();
@@ -56,23 +51,17 @@ pub fn ReaderBottomBar(
             class=("pointer-events-none", move || !visible.get())
         >
             <PageNavigation state=reader />
-            <Show when=move || reader.viewer.mode.get() == ViewMode::Continuous>
-                <RangeInput
-                    value=Signal::derive(move || reader.viewer.scroll_top.get())
-                    min=Signal::derive(|| 0.0)
-                    max=Signal::derive(move || {
-                        let total = total_size.get();
-                        let (_, vh) = reader.viewer.container_size.get();
-                        (total - vh).max(0.0)
-                    })
-                    step=Signal::derive(|| 1.0)
-                    on_input=move |offset| {
-                        virtualizer.with_value(|v| v.scroll_to_offset(offset, ScrollMode::Instant));
-                    }
-                    aria_label="Page position"
-                    class="h-2 w-full cursor-pointer appearance-none rounded-full bg-line accent-accent"
-                />
-            </Show>
+            <RangeInput
+                value=Signal::derive(move || reader.viewer.page.get() as f64)
+                min=Signal::derive(|| 1.0)
+                max=Signal::derive(move || (reader.document.num_pages.get() as f64).max(1.0))
+                step=Signal::derive(|| 1.0)
+                on_input=move |page| {
+                    reader.viewer.page.set(page.round() as u32);
+                }
+                aria_label="Page position"
+                class="h-2 w-full cursor-pointer appearance-none rounded-full bg-line accent-accent"
+            />
         </div>
     }
 }

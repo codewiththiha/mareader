@@ -40,7 +40,7 @@ fn is_chrome_scroll_target(ev: &leptos::ev::KeyboardEvent) -> bool {
         "#thumb-scroll",
         "aside",
         ".menu-popover",
-        ".floating-search-enter",
+        "[data-search-chrome]",
     ] {
         if el.closest(sel).ok().flatten().is_some() {
             return true;
@@ -84,6 +84,7 @@ pub fn shortcuts(
             return;
         }
 
+        crate::effects::reader::auto_scroll::handle_auto_scroll_shortcut(state, &ev);
         handle_zoom_shortcut(state, &ev);
         handle_navigation_shortcut(state, &ev);
     });

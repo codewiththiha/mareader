@@ -61,10 +61,10 @@
 //! jumps (scrollbar drag). That makes smooth scrolling amortized `O(1)`.
 //!
 //! When items change size at runtime, [`Strip::set_size`] re-runs the suffix of
-//! the prefix-sum in `O(n)` time. For surfaces that resize items far more
-//! often, enable the `advanced-trees` feature for [`FenwickStrip`] (BIT,
-//! `O(log n)` update and lookup) and [`ChunkedStrip`] (square-root
-//! decomposition with `O(1)` lookup and sublinear updates).
+//! the prefix-sum in `O(n)` time. A surface that resizes items far more often
+//! than this one does can supply its own tree by implementing
+//! [`StripBackend`]; the windowing above is written against the trait, not
+//! against `Strip`.
 //!
 //! # Example
 //!
@@ -97,10 +97,6 @@ mod window;
 
 pub use anchor::{AnchorPolicy, correct, pin_at, rescale_anchor};
 pub use backend::{Strip, StripBackend, UniformStrip};
-#[cfg(feature = "advanced-trees")]
-pub use backend::ChunkedStrip;
-#[cfg(feature = "advanced-trees")]
-pub use backend::FenwickStrip;
 pub use layout::{GridColumns, GridLayout, GridSpec, Layout, LayoutKind, ListLayout};
 pub use units::{SUBPIXEL_BITS, SUBPIXEL_FACTOR, from_sub, to_sub};
 pub use window::{Align, Budget, Overscan, Viewport, Window};

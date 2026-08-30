@@ -44,14 +44,18 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
     });
 
     // A press inside the surface is the card's own interaction; anywhere else
-    // collapses an expanded card (compact chips stay put).
+    // collapses an expanded card (compact chips stay put). A press on the
+    // mark stroke is the SAME request as the card (it is what reopens it), so
+    // it is excluded too: without this it fired the outside-collapse on
+    // pointerdown and then REOPENED on the follow-up click — the card would
+    // fold and immediately pop back rather than toggle closed.
     use_dismiss(
         ctrl.geometry.surface_visible.into(),
         ctrl.commands.collapse_to_mark,
         DismissPolicy {
             escape: false,
             outside: Some(DismissTrigger::PointerDown),
-            exclude_selectors: vec![".gloss-surface"],
+            exclude_selectors: vec![".gloss-surface", ".gloss-mark"],
             enabled: None,
             topmost_only: false,
         },
@@ -162,7 +166,11 @@ pub fn use_page_flip_collapse(state: AppState, ctrl: GlossController) {
 /// highlight behind.
 pub fn use_zoom_reset(state: AppState, ctrl: GlossController) {
     Effect::new(move |_| {
-        if !state.reader.viewer.zoom_animating.get() {
+        // TRACKED: this must re-run when a transaction opens. The untracked
+        // form left the effect with no reactive dependency at all — it ran
+        // once at mount, found no zoom, and never fired again, so the card
+        // never actually closed on a zoom.
+        if !state.reader.viewer.zooming().get() {
             return;
         }
         if state.reader.ai_selection.popover_open.get_untracked() {

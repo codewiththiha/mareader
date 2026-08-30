@@ -8,9 +8,18 @@ export async function run() {
     if (!r1.ok)
         throw new Error("render failed: " + JSON.stringify(r1));
     console.log("render ok (identity):", r1.width, "x", r1.height);
+    // Paper pipeline: the render must have stashed its raw frame for the Rust
+    // paper session to drain (the engine no longer decides colours itself).
+    // The fake page is pure white, so the frame's first pixel is white.
+    const frame = PDFReader.takePaperFrame("cont-0-cv");
+    if (!frame || !frame.data || frame.data[0] !== 255 || frame.data[1] !== 255 || frame.data[2] !== 255) {
+        throw new Error("render did not stash a white raw paper frame: " + JSON.stringify(frame && { page: frame.page, width: frame.width, px: frame.data[0] }));
+    }
+    console.log("paper frame ok: raw white frame stashed for the session");
     // 2b. light theme with multiply over PURE WHITE = identity pipeline: a
     // render must allocate ZERO page-sized bake canvases (the default-theme
-    // fast path). Small canvases (the 1x1 paper sampler) don't count.
+    // fast path). The paper frame's downscale scratch is created once (above)
+    // and reused, so it allocates nothing here either.
     trackCreatedCanvases();
     setFakeComputed({ "--canvas-filter": "none", "--canvas-blend": "multiply" });
     PDFReader.registerPage({ canvasId: "cont-0-cv", hostId: "cont-0-pg", page: 1 });

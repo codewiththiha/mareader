@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use fm_bridge::{Schema, SchemaProperty};
 
 /// The exact data structure we want the AI to return.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WordInfo {
     pub pos: String,       // Part of Speech (e.g., "noun", "verb")
     pub meaning: String,   // Simplified explanation

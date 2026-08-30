@@ -45,13 +45,36 @@ impl AiProvider for MockAiProvider {
                 return;
             }
 
-            // Simulate AI "thinking" delay so you can test the stroke's
-            // processing animation (drift/sweep/halo).
-            tokio::time::sleep(Duration::from_millis(800)).await;
+            // A short "thinking" beat so the stroke's processing pulse is
+            // still visible, then stream the answer out bit by bit the way
+            // the real provider does: the card opens on the FIRST content
+            // chunk (the meaning), and the rest patches in as it lands —
+            // the exercise for growing / streaming, not a single late pop.
+            tokio::time::sleep(Duration::from_millis(320)).await;
+
+            let meaning = format!("(Mock) A simulated, simplified meaning for the word '{}'.", word);
 
             yield AiChunk::Snapshot(WordInfo {
                 pos: "noun".to_string(),
-                meaning: format!("(Mock) A simulated, simplified meaning for the word '{}'.", word),
+                meaning: meaning.clone(),
+                synonyms: Vec::new(),
+                usages: Vec::new(),
+            });
+
+            tokio::time::sleep(Duration::from_millis(180)).await;
+
+            yield AiChunk::Snapshot(WordInfo {
+                pos: "noun".to_string(),
+                meaning: meaning.clone(),
+                synonyms: vec!["mock-synonym-1".to_string(), "mock-synonym-2".to_string()],
+                usages: Vec::new(),
+            });
+
+            tokio::time::sleep(Duration::from_millis(180)).await;
+
+            yield AiChunk::Snapshot(WordInfo {
+                pos: "noun".to_string(),
+                meaning: meaning.clone(),
                 synonyms: vec!["mock-synonym-1".to_string(), "mock-synonym-2".to_string()],
                 usages: vec![
                     format!("This is the first mock example using the word {}.", word),
@@ -59,8 +82,8 @@ impl AiProvider for MockAiProvider {
                 ],
             });
 
-            // Simulate streaming delay
-            tokio::time::sleep(Duration::from_millis(400)).await;
+            // A short settle before calling it done.
+            tokio::time::sleep(Duration::from_millis(120)).await;
 
             yield AiChunk::Done;
         })
