@@ -32,7 +32,7 @@ fn parse_selection_detail(detail: &JsValue) -> Option<SelectionDetail> {
 
 pub fn text_selection(state: AppState) {
     let _handle = window_event_listener(
-        leptos::ev::Custom::new("pdfreader:selection-detail"),
+        leptos::ev::Custom::new(crate::events::SELECTION_DETAIL_EVENT),
         move |ev: web_sys::CustomEvent| {
             let detail = ev.detail();
             match parse_selection_detail(&detail) {

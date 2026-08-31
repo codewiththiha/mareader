@@ -1,5 +1,9 @@
 # Architecture
 
+> Scope note: this document covers the virtualization and motion design — the parts of the
+> reader with the most subtle invariants. For the feature tour, build setup and the crate
+> map, see the README.
+
 This repo now splits virtual scrolling into three layers.
 
 ## 1. `virtual-list`: pure geometry

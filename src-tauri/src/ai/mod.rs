@@ -36,7 +36,7 @@ pub fn create_provider() -> Box<dyn AiProvider> {
         Ok(provider) => Box::new(provider),
         Err(e) => {
             eprintln!("Failed to init Apple AI, falling back to Mock: {}", e);
-            Box::new(mock::MockAiProvider::new().unwrap())
+            Box::new(mock::MockAiProvider::new())
         }
     }
 }
@@ -44,5 +44,5 @@ pub fn create_provider() -> Box<dyn AiProvider> {
 // Windows, Linux, Intel Macs, or the `ai` feature disabled.
 #[cfg(not(all(feature = "ai", target_os = "macos", target_arch = "aarch64")))]
 pub fn create_provider() -> Box<dyn AiProvider> {
-    Box::new(mock::MockAiProvider::new().unwrap())
+    Box::new(mock::MockAiProvider::new())
 }

@@ -69,11 +69,30 @@ fn take_pending_file(state: tauri::State<'_, PendingFile>) -> Option<String> {
     state.0.lock().ok().and_then(|mut g| g.take())
 }
 
+/// The gate `read_file_bytes` applies before touching the filesystem. The
+/// command is exposed to the webview, which parses untrusted PDFs; requiring
+/// an absolute path with a `.pdf` suffix keeps it from being a general
+/// file-read primitive while every real open path (dialog, drag-drop, OS
+/// "open with") already hands over exactly that.
+fn ensure_readable_pdf(path: &str) -> Result<(), String> {
+    let looks_absolute = path.starts_with('/')          // POSIX
+        || path.starts_with("\\\\")                      // Windows UNC share
+        || path.as_bytes().get(1) == Some(&b':');       // Windows drive letter
+    if !looks_absolute {
+        return Err(format!("refusing to read a non-absolute path: {path}"));
+    }
+    if !path.to_lowercase().ends_with(".pdf") {
+        return Err(format!("refusing to read a non-PDF file: {path}"));
+    }
+    Ok(())
+}
+
 /// Read a file's bytes for the webview. Returned as an IPC `Response` so the
 /// JS side receives an `ArrayBuffer` (no JSON round-trip for megabytes).
 /// Errors resolve as a rejected invoke, which the engine falls back from.
 #[tauri::command]
 fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    ensure_readable_pdf(&path)?;
     std::fs::read(&path)
         .map(tauri::ipc::Response::new)
         .map_err(|e| format!("could not read {path}: {e}"))
@@ -129,7 +148,6 @@ fn set_traffic_lights(window: tauri::Window, visible: bool) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         // A PDF double-clicked while the app is already running must land in
         // the EXISTING window, not open a second one (Windows/Linux).
@@ -177,4 +195,31 @@ pub fn run() {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_readable_pdf;
+
+    #[test]
+    fn real_open_paths_pass_the_gate() {
+        ensure_readable_pdf("/Users/thiha/Documents/paper.pdf").unwrap();
+        ensure_readable_pdf("C:\\Users\\thiha\\Desktop\\report.PDF").unwrap();
+        ensure_readable_pdf("\\\\NAS\\books\\scan.pdf").unwrap();
+    }
+
+    #[test]
+    fn everything_that_is_not_a_pdf_is_refused() {
+        // The exfiltration class: arbitrary readable files without a .pdf suffix.
+        assert!(ensure_readable_pdf("/home/thiha/.ssh/id_rsa").is_err());
+        assert!(ensure_readable_pdf("/etc/passwd").is_err());
+        assert!(ensure_readable_pdf("").is_err());
+    }
+
+    #[test]
+    fn relative_paths_are_refused() {
+        assert!(ensure_readable_pdf("sample.pdf").is_err());
+        assert!(ensure_readable_pdf("../notes.pdf").is_err());
+        assert!(ensure_readable_pdf("./report.pdf").is_err());
+    }
 }

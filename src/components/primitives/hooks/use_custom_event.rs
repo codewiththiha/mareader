@@ -1,31 +1,15 @@
 //! Typed window `CustomEvent` plumbing: dispatch a serializable payload and
-//! listen for it parsed back into the same type. This is the app's one
-//! cross-cutting message mechanism (gloss open / context, chunk events,
-//! reveal-active, link jumps) so every variant stops re-implementing the
-//! `serde_wasm_bindgen` round-trip.
+//! listen for it parsed back into the same type. The dispatcher and the name
+//! table live in `crate::events` (layer-neutral, so services can use them
+//! too); this module keeps the reactive listener half.
 
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
 
-/// Dispatch a typed CustomEvent on `window` with `payload` as its detail.
-pub fn dispatch_typed_event<T: Serialize>(name: &str, payload: &T) {
-    let Some(win) = web_sys::window() else {
-        return;
-    };
-    let Ok(detail) = serde_wasm_bindgen::to_value(payload) else {
-        return;
-    };
-    let init = web_sys::CustomEventInit::new();
-    init.set_detail(&detail);
-    if let Ok(ev) = web_sys::CustomEvent::new_with_event_init_dict(name, &init) {
-        let _ = win.dispatch_event(&ev);
-    }
-}
+pub use crate::events::dispatch_typed_event;
 
-/// Dispatch a payload-less CustomEvent on `window` (one-shot gestures like
-/// "reveal the active row").
 /// Listen for a typed window CustomEvent, parsing `detail` into `T` and
 /// forwarding to `on_event`. The listener is owned by the current reactive
 /// owner; malformed payloads are dropped rather than panicking.

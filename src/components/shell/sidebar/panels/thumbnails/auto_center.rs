@@ -250,7 +250,7 @@ impl AutoCenter {
             let reveal_drive = reveal_drive.clone();
             let v = v.clone();
             let handle = window_event_listener(
-                leptos::ev::Custom::new("pdfreader:reveal-active"),
+                leptos::ev::Custom::new(crate::events::REVEAL_ACTIVE_EVENT),
                 move |_: web_sys::CustomEvent| {
                     if sidebar.get_untracked() != SidebarMode::Thumbs {
                         return;

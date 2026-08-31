@@ -1,6 +1,7 @@
 mod app;
 mod components;
 mod effects;
+mod events;
 mod features;
 mod services;
 mod state;

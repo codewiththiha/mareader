@@ -16,6 +16,7 @@
 /public/pdfEngine.js
 /public/engine/*.js
 /scripts/*.js
+/scripts/engine-smoke/*.js
 
 # Node
 /node_modules/

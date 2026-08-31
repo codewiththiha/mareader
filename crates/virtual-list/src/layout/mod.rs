@@ -1,5 +1,5 @@
 //! The [`Layout`] contract: one geometry engine behind any virtualized
-//! surface — plain lists, grids, sticky columns — plus the [`LayoutKind`]
+//! surface — plain lists and uniform grids — plus the [`LayoutKind`]
 //! facade that lets the framework adapter hold either without `dyn` dispatch.
 //!
 //! # Coordinate model

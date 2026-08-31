@@ -3,3 +3,6 @@
 
 pub mod ai;
 pub mod document;
+pub mod tauri_listen;
+
+pub use tauri_listen::tauri_listen;

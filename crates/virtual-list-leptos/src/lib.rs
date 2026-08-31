@@ -3,7 +3,7 @@
 //!
 //! The crate splits in two halves:
 //!
-//! - [`core::VirtualizerCore`] — a **pure state machine**: windowing,
+//! - [`engine::VirtualizerCore`] — a **pure state machine**: windowing,
 //!   measurement flushes, scroll anchoring, and scroll-to with retry. No
 //!   signals, no DOM, fully unit-tested on the host.
 //! - [`use_virtualizer`] — the Leptos wiring: rAF-coalesced scroll handling,
@@ -49,7 +49,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-pub mod core;
+pub mod engine;
 mod observe;
 mod options;
 mod render;
@@ -57,9 +57,9 @@ pub mod retention;
 mod surface;
 mod virtualizer;
 
-pub use crate::core::{CoreConfig, Flush, Step, VirtualizerCore};
+pub use crate::engine::{CoreConfig, Flush, Step, VirtualizerCore};
 pub use crate::options::{Axis, LayoutShape, ScrollMode, VirtualizerOptions};
-pub use crate::render::{Positioning, VirtualItem, VirtualItemState, VirtualRow};
-pub use crate::surface::{DomSurface, ScrollSurface, TestSurface};
+pub use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
+pub use crate::surface::{DomSurface, ScrollSurface};
 pub use crate::virtualizer::{Virtualizer, use_virtualizer};
-pub use virtual_list::{Align, Budget, GridColumns, GridSpec, Overscan, Viewport, Window};
+pub use virtual_list::Align;

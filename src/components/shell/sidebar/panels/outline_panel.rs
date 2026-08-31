@@ -214,7 +214,7 @@ pub fn OutlinePanel(
     // — the reader explicitly asked to be moved, so doing nothing because the
     // row is technically one pixel on screen would feel broken.
     Effect::new(move |_| {
-        use_window_event("pdfreader:reveal-active", move |_: web_sys::Event| {
+        use_window_event(crate::events::REVEAL_ACTIVE_EVENT, move |_: web_sys::Event| {
             if sidebar.get_untracked() != SidebarMode::Outline {
                 return;
             }

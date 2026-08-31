@@ -11,8 +11,10 @@
 //! `::selection` tint is cleared when the gloss takes over, and the morphing
 //! surface unmounts once it has settled back onto this box, so nothing ever
 //! stacks on top of it. It is also the whole "thinking" UI — while the model
-//! is working the stroke wears `gloss-mark-processing` (a slow opacity
-//! pulse) and no surface exists at all.
+//! is working the stroke wears `gloss-mark-processing` (a quiet ring) and a
+//! non-blended `gloss-mark-pulse` overlay laps a faint light round the
+//! stroke's inner edge; no surface exists at all until the first chunk
+//! lands.
 //!
 //! Interaction surface:
 //! * **Click** re-opens the card (toggle-to-close lives in the controller's
@@ -37,16 +39,15 @@
 use std::collections::HashSet;
 
 use leptos::prelude::*;
-use pdf_core::gloss::GlossMark;
+use pdf_core::gloss::{GlossBox, GlossMark};
 
 use crate::components::ai::gloss::selection_mode::{
     dispatch_gloss_context, toggle_selected, LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
 };
-use crate::components::primitives::hooks::use_custom_event::dispatch_typed_event;
 use crate::components::primitives::interactions::long_press::{use_long_press, LongPressOptions};
 
-/// Name of the "a persisted mark was clicked" event.
-pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
+pub use crate::events::GLOSS_OPEN_EVENT;
+use crate::events::dispatch_typed_event;
 
 /// Exact-fit stroke radius. Shared with `ai::anchor::screen_box` so the
 /// morphing surface settles onto EXACTLY the box the stroke occupies — one
@@ -82,19 +83,12 @@ pub fn GlossMarkLayer(
                 children=move |m: GlossMark| {
                     let rect = m.rect;
                     // Exact-fit stroke: the stored union rect itself, no padding.
-                    let style = move || {
-                        let s = scale.get();
-                        format!(
-                            "left:{}px;top:{}px;width:{}px;height:{}px",
-                            rect.x * s,
-                            rect.y * s,
-                            rect.w * s,
-                            rect.h * s,
-                        )
-                    };
+                    let style = move || stroke_pos_style(rect, scale.get());
                     let is_processing = {
                         let id = m.id.clone();
-                        move || processing.get().as_deref() == Some(id.as_str())
+                        Signal::derive(move || {
+                            processing.get().as_deref() == Some(id.as_str())
+                        })
                     };
                     let is_selected = {
                         let id = m.id.clone();
@@ -127,7 +121,7 @@ pub fn GlossMarkLayer(
                         <button
                             type="button"
                             class="gloss-mark"
-                            class=("gloss-mark-processing", is_processing)
+                            class=("gloss-mark-processing", move || is_processing.get())
                             class=("gloss-mark-selected", is_selected)
                             class=("gloss-mark-pressing", move || lp.pressing.get())
                             title=m.word.clone()
@@ -180,6 +174,25 @@ pub fn GlossMarkLayer(
                                 );
                             }
                         />
+                        // The animated half of the processing feedback: a
+                        // sibling overlay that is NOT mix-blended, so the
+                        // light lapping its inner edge composites over the
+                        // static canvas like the card's and toast's do —
+                        // animating the blended stroke itself would re-blend
+                        // the canvas every frame (the page shake, see
+                        // gloss.css). Mounted only while this stroke is the
+                        // one waiting on the model.
+                        {move || {
+                            is_processing.get().then(|| {
+                                view! {
+                                    <span
+                                        class="gloss-mark-pulse"
+                                        aria-hidden="true"
+                                        style=move || stroke_pos_style(rect, scale.get())
+                                    />
+                                }
+                            })
+                        }}
                     }
                 }
             />
@@ -193,4 +206,17 @@ pub fn GlossMarkLayer(
 /// `popover_open = true` that races against `detail` being cleared.
 pub fn request_gloss_open(mark: &GlossMark) {
     dispatch_typed_event(GLOSS_OPEN_EVENT, mark);
+}
+
+/// Screen-space position of a stroke at the current display scale. Shared
+/// verbatim by the stroke button and the processing pulse overlay so the
+/// animated ring can never drift from the stroke it emphasises.
+fn stroke_pos_style(rect: GlossBox, s: f64) -> String {
+    format!(
+        "left:{}px;top:{}px;width:{}px;height:{}px",
+        rect.x * s,
+        rect.y * s,
+        rect.w * s,
+        rect.h * s,
+    )
 }

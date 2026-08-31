@@ -299,7 +299,7 @@ pub use crate::types::PaperFrame;
 /// Drain the raw frame a live render of `canvas_id` stashed at the one
 /// pipeline moment the page's own paper is still unbaked. `None` when the
 /// canvas has nothing stashed (no render yet, or already drained).
-pub fn take_paper_frame(canvas_id: &str) -> Option<PaperFrame> {
+pub(crate) fn take_paper_frame(canvas_id: &str) -> Option<PaperFrame> {
     if !guard_pdf_reader() {
         return None;
     }
@@ -309,7 +309,7 @@ pub fn take_paper_frame(canvas_id: &str) -> Option<PaperFrame> {
 /// Render `page` offscreen at a tiny scale and return its frame — the fixed
 /// scan's samples and the continuous look-ahead both come through here.
 /// `Ok(None)` when the engine has no answer for the page (render failed).
-pub async fn sample_paper_page(page: u32) -> Result<Option<PaperFrame>, EngineError> {
+pub(crate) async fn sample_paper_page(page: u32) -> Result<Option<PaperFrame>, EngineError> {
     if !guard_pdf_reader() {
         return Ok(None);
     }
@@ -332,7 +332,7 @@ pub struct CachedPaper {
 /// Synchronous end to end — the TS side is a plain localStorage read — so
 /// the open flow can consult it BEFORE the reader view mounts without an
 /// await, and a hit repaints the backdrop in the reader's very first frame.
-pub fn cached_paper(path: &str, area: PaperArea) -> Result<Option<CachedPaper>, EngineError> {
+pub(crate) fn cached_paper(path: &str, area: PaperArea) -> Result<Option<CachedPaper>, EngineError> {
     if !guard_pdf_reader() {
         return Ok(None);
     }
@@ -350,7 +350,7 @@ pub fn cached_paper(path: &str, area: PaperArea) -> Result<Option<CachedPaper>, 
 /// Publish (or, with `None`, clear) `--pdf-paper`. `persist` also writes the
 /// per-document cache under `area` — call it exactly once per resolved book
 /// colour.
-pub fn set_paper(hex: Option<&str>, persist: bool, area: PaperArea) {
+pub(crate) fn set_paper(hex: Option<&str>, persist: bool, area: PaperArea) {
     if !guard_pdf_reader() {
         return;
     }
@@ -364,7 +364,7 @@ pub fn set_paper(hex: Option<&str>, persist: bool, area: PaperArea) {
 /// blend mode is off, the renderer skips the per-render ≤96px downscale +
 /// readback that `stashPaperFrame` exists to pay. Called by `paper::configure`
 /// on every settings change — the engine-side flag is idempotent.
-pub fn set_paper_active(on: bool) {
+pub(crate) fn set_paper_active(on: bool) {
     if guard_pdf_reader() {
         bridge::set_paper_active(on);
     }
@@ -374,7 +374,7 @@ pub fn set_paper_active(on: bool) {
 /// publishing it — the paper session's close path, when the backdrop is
 /// being cleared but an interrupted scan's answer is still worth
 /// remembering for the next open.
-pub fn persist_paper(hex: &str, area: PaperArea) {
+pub(crate) fn persist_paper(hex: &str, area: PaperArea) {
     if !guard_pdf_reader() {
         return;
     }

@@ -10,16 +10,13 @@
 //!      `tauri://drag-leave`, `tauri://drag-drop`). These ARE the drag
 //!      signals for a real file drag from Finder/Explorer: enter shows the
 //!      drop-feedback overlay, leave hides it, drop opens the file (and hides
-//!      it). Each Closure is parked in a StoredValue so the listener stays
-//!      registered for the view's lifetime.
+//!      it). Subscriptions go through `services::tauri_listen`, which parks
+//!      each closure so the listener stays registered for the view's lifetime.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use leptos::task::spawn_local;
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen::JsCast;
 use web_sys::Event;
 
 use crate::state::AppState;
@@ -75,56 +72,24 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     // never reaches the DOM (no DOM dragenter/dragover fire on macOS — the
     // drag is handled at the window layer), so the overlay is driven by
     // Tauri's own events: drag-enter shows it, drag-leave hides it, and
-    // drag-drop opens the file (and hides it). Each Closure is parked so the
-    // listener stays registered for the view's lifetime.
+    // drag-drop opens the file (and hides it); `tauri_listen` parks each
+    // closure so the listener stays registered for the view's lifetime.
     if !pdf_engine::has_tauri() {
         return;
     }
 
-    // drag-enter -> show the overlay.
-    let enter_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
-    let enter_sig = drag_active;
-    let cb_enter: Closure<dyn FnMut(Event)> = Closure::wrap(
-        Box::new(move |_ev: Event| enter_sig.set(true)) as Box<dyn FnMut(Event)>,
-    );
-    let f_enter: js_sys::Function = cb_enter.as_ref().unchecked_ref::<js_sys::Function>().clone();
-    spawn_local(async move {
-        // The unlisten handle is intentionally discarded: Tauri keeps the
-        // listener registered until that fn is called (we never do), and the
-        // view lives for the whole app window.
-        _ = pdf_engine::listen("tauri://drag-enter", f_enter).await;
-    });
-    enter_handle.set_value(Some(cb_enter));
-
-    // drag-leave -> hide the overlay.
-    let leave_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
-    let leave_sig = drag_active;
-    let cb_leave: Closure<dyn FnMut(Event)> = Closure::wrap(
-        Box::new(move |_ev: Event| leave_sig.set(false)) as Box<dyn FnMut(Event)>,
-    );
-    let f_leave: js_sys::Function = cb_leave.as_ref().unchecked_ref::<js_sys::Function>().clone();
-    spawn_local(async move {
-        _ = pdf_engine::listen("tauri://drag-leave", f_leave).await;
-    });
-    leave_handle.set_value(Some(cb_leave));
-
+    // drag-enter -> show the overlay; drag-leave -> hide it;
     // drag-drop -> hide the overlay and open the file.
-    let drop_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
+    crate::services::tauri_listen("tauri://drag-enter", move |_ev: Event| drag_active.set(true));
+    crate::services::tauri_listen("tauri://drag-leave", move |_ev: Event| drag_active.set(false));
     let drop_sig = drag_active;
     let st = state;
-    let cb_drop: Closure<dyn FnMut(Event)> = Closure::wrap(
-        Box::new(move |ev: Event| {
-            drop_sig.set(false);
-            if let Some(path) = first_drop_path(&ev) {
-                crate::services::document::open_path(st, path);
-            }
-        }) as Box<dyn FnMut(Event)>,
-    );
-    let f_drop: js_sys::Function = cb_drop.as_ref().unchecked_ref::<js_sys::Function>().clone();
-    spawn_local(async move {
-        _ = pdf_engine::listen("tauri://drag-drop", f_drop).await;
+    crate::services::tauri_listen("tauri://drag-drop", move |ev: Event| {
+        drop_sig.set(false);
+        if let Some(path) = first_drop_path(&ev) {
+            crate::services::document::open_path(st, path);
+        }
     });
-    drop_handle.set_value(Some(cb_drop));
 }
 
 /// True when a DOM drag event carries files (vs. dragged text/HTML).

@@ -25,8 +25,7 @@ use crate::components::primitives::floating::dismiss::{use_dismiss, DismissPolic
 use crate::components::primitives::hooks::use_custom_event::{dispatch_typed_event, use_typed_event};
 use crate::state::AppState;
 
-/// Name of the "right-clicked a mark" event (marks.rs → popover).
-pub const GLOSS_CONTEXT_EVENT: &str = "pdfreader:gloss-context";
+pub use crate::events::GLOSS_CONTEXT_EVENT;
 
 /// How long a press must hold before it becomes a selection gesture.
 pub const LONG_PRESS_MS: i32 = 450;

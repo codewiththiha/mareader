@@ -27,6 +27,14 @@ pub fn use_ai_chunks(state: AppState, ctrl: GlossController) {
                     if let Some(m) = ctrl.open.mark.get_untracked() {
                         ctrl.cache.insert(m.id.clone(), info.clone());
                     }
+                    // Land the content — and with it the measure twin's
+                    // height — BEFORE the surface is told to expand, the
+                    // same order serve_cached uses. Writing it after the
+                    // expand leaves one frame where the visible card holds
+                    // the full text against a stale small height; the
+                    // transient overflow mounts a scrollbar, re-wraps the
+                    // text, and the card settles permanently short.
+                    ctrl.content.word_info.set(Some(info));
                     processing_id.set(None);
                     if ctrl.content.phase.get_untracked() == AiPhase::Processing {
                         ctrl.content.phase.set(AiPhase::Streaming);
@@ -35,7 +43,6 @@ pub fn use_ai_chunks(state: AppState, ctrl: GlossController) {
                             ctrl.geometry.surface_visible.set(true);
                         }
                     }
-                    ctrl.content.word_info.set(Some(info));
                 }
                 AiChunkEvent::Done => ctrl.content.phase.set(AiPhase::Done),
                 AiChunkEvent::Error(err) => {

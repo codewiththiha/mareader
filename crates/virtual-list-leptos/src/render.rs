@@ -1,17 +1,5 @@
 //! The render contract: what the adapter hands to the view layer.
 
-/// How mounted items are positioned.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Positioning {
-    /// One spacer of [`total_size`](crate::Virtualizer::total_size); items are
-    /// absolutely positioned at `item.start`. Best for canvas/raster cells.
-    #[default]
-    Absolute,
-    /// A `(before, after)` spacer pair from [`padding`](crate::Virtualizer::padding);
-    /// items stay in normal flow.
-    Padding,
-}
-
 /// The lifecycle state of one rendered item.
 ///
 /// Items normally render because they sit inside the active mount window.

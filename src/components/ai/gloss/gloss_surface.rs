@@ -141,6 +141,7 @@ pub fn GlossSurface(
             role=role
             aria_label=aria_label
             class="gloss-surface"
+            hide_scrollbar=true
         >
             <GlossBody word=word_h pos=pos_h density=density_h>
                 {children()}

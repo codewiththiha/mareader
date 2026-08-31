@@ -5,6 +5,11 @@ use alloc::vec::Vec;
 use crate::units::{from_sub, to_sub};
 use crate::window::{Budget, Window};
 
+// The windowing/geometry math lives ONCE, in the `StripBackend` impl below
+// and the generic free functions in `super`. The inherent methods on `Strip`
+// are the documented f64 API; each delegates, none re-implements.
+use super::StripBackend;
+
 /// A column of variably-sized items separated by a fixed gap.
 ///
 /// Construct one with [`Strip::new`] (explicit sizes) or [`Strip::uniform`]
@@ -120,12 +125,7 @@ impl Strip {
 
     /// Average item extent — resolves [`crate::Overscan::Items`] budgets.
     pub fn mean_size(&self) -> f64 {
-        let len = self.len();
-        if len == 0 {
-            0.0
-        } else {
-            self.total() / len as f64
-        }
+        StripBackend::mean_size(self)
     }
 
     /// Index of the item whose span contains `pos`.
@@ -146,23 +146,7 @@ impl Strip {
     /// amortized `O(1)` when the position is the same as or adjacent to the
     /// previous frame.
     pub fn index_at(&self, pos: f64) -> usize {
-        let len = self.len();
-        if len == 0 || pos <= 0.0 {
-            return 0;
-        }
-        let p = to_sub(pos);
-        // Last item whose start is <= pos.
-        let idx = self.starts[..len]
-            .partition_point(|&s| s <= p)
-            .saturating_sub(1);
-        // If pos is at or past that item's end (i.e. in the gap below it, or
-        // exactly on its bottom edge), the next item now leads — except at the
-        // very end of the strip, which has no next item to report.
-        if self.starts[idx].saturating_add(self.size_sub(idx)) <= p && idx + 1 < len {
-            idx + 1
-        } else {
-            idx
-        }
+        StripBackend::index_at(self, pos)
     }
 
     /// [`Strip::index_at`] with a **hint** — the previous frame's result, which
@@ -297,29 +281,7 @@ impl Strip {
     /// lower bound is half-open. Returns `None` for an empty strip, a span with
     /// no extent, or when the span lies entirely within a gap.
     pub fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
-        let len = self.len();
-        if len == 0 {
-            return None;
-        }
-        let extent = extent.max(0.0);
-        if extent == 0.0 {
-            return None;
-        }
-        let bottom_sub = to_sub(top + extent);
-
-        // First candidate: the item containing `top`, which may end before it.
-        let mut first = self.index_at(top);
-        if self.starts[first].saturating_add(self.size_sub(first)) <= to_sub(top) {
-            first += 1;
-        }
-        if first >= len || self.starts[first] >= bottom_sub {
-            return None;
-        }
-        // Last item whose start is strictly below the bottom edge.
-        let last = self.starts[..len]
-            .partition_point(|&s| s < bottom_sub)
-            .saturating_sub(1);
-        (last >= first).then_some(Window { first, last })
+        super::overlapping(self, top, extent)
     }
 
     /// [`Strip::overlapping`] with a **hint** — see [`Strip::index_at_hinted`].
@@ -352,7 +314,7 @@ impl Strip {
     /// Shorthand for [`overlapping`](Self::overlapping) with the raw viewport.
     #[inline]
     pub fn visible(&self, scroll_top: f64, viewport: f64) -> Option<Window> {
-        self.overlapping(scroll_top, viewport)
+        super::visible(self, scroll_top, viewport)
     }
 
     /// Inclusive range of items to keep mounted.
@@ -370,7 +332,7 @@ impl Strip {
     ///   to keep the item below, so the next item the reader reaches is the
     ///   last one evicted.
     pub fn window(&self, scroll_top: f64, viewport: f64, budget: Budget) -> Option<Window> {
-        self.window_with_sticky(scroll_top, viewport, budget, &[])
+        crate::backend::window(self, scroll_top, viewport, budget)
     }
 
     /// [`Strip::window`] using a hinted overlap search (amortized O(1) when
@@ -415,104 +377,6 @@ impl Strip {
         Some(Window { first, last })
     }
 
-    /// [`Strip::window`] with **sticky items** — indices that "pin" to the
-    /// top of the viewport (CSS `position: sticky` semantics) and push the
-    /// items below them downwards.
-    ///
-    /// A sticky item `i` is **pinned** when its natural start has scrolled to
-    /// or past the top of the viewport (`starts[i] <= scroll_top`). Among the
-    /// pinned stickies, the one with the **largest index** wins (mirroring how
-    /// section headers stack: the most recent one displaces the previous).
-    /// That pinned item visually occupies the first `size(pinned)` pixels of
-    /// the scrollport; items below it effectively scroll underneath.
-    ///
-    /// This function returns the **logical** window (the items that should be
-    /// mounted, including the pinned sticky itself). The rendering layer is
-    /// responsible for the visual offset of the pinned item.
-    ///
-    /// If no sticky item is pinned, the result is identical to
-    /// [`Strip::window`]. Empty `sticky_indices` is equivalent to calling
-    /// [`Strip::window`].
-    pub fn window_with_sticky(
-        &self,
-        scroll_top: f64,
-        viewport: f64,
-        budget: Budget,
-        sticky_indices: &[usize],
-    ) -> Option<Window> {
-        if self.is_empty() {
-            return None;
-        }
-        let vh = viewport.max(0.0);
-
-        // Find the pinned sticky: largest index `i` in `sticky_indices` with
-        // `starts[i] <= scroll_top`. That is the most-recent header that has
-        // scrolled past the top edge — the one currently pinned.
-        let pinned: Option<usize> = sticky_indices
-            .iter()
-            .copied()
-            .filter(|&i| i < self.len())
-            .filter(|&i| self.starts[i] <= to_sub(scroll_top))
-            .max();
-
-        if vh == 0.0 {
-            return (scroll_top < self.total()).then(|| {
-                let point = Window {
-                    first: self.index_at(scroll_top),
-                    last: self.index_at(scroll_top),
-                };
-                match pinned {
-                    Some(index) => point.union(Window {
-                        first: index,
-                        last: index,
-                    }),
-                    None => point,
-                }
-            });
-        }
-
-        let pinned_size: f64 = match pinned {
-            Some(i) => self.size(i),
-            None => 0.0,
-        };
-
-        // Items below the pinned band see a viewport whose top is shifted down
-        // by `pinned_size` and whose height is shrunk by `pinned_size`.
-        let effective_top = scroll_top + pinned_size;
-        let effective_vh = (vh - pinned_size).max(0.0);
-        let look = budget.overscan.padding(effective_vh, self.mean_size());
-
-        let padded = self.overlapping(effective_top - look, effective_vh + 2.0 * look)?;
-        // What is strictly on screen must survive any trim.
-        let vis = self.visible(effective_top, effective_vh).unwrap_or(padded);
-
-        let max = budget.max_items.max(1);
-        let Window {
-            mut first,
-            mut last,
-        } = padded;
-        // The pinned sticky itself must always be in the window.
-        if let Some(pinned_i) = pinned {
-            if first > pinned_i {
-                first = pinned_i;
-            }
-            if last < pinned_i {
-                last = pinned_i;
-            }
-        }
-        while last - first + 1 > max {
-            if first < vis.first && Some(first) != pinned {
-                first += 1;
-            } else if last > vis.last {
-                last -= 1;
-            } else {
-                // Everything left is visible; the reader wins over the budget.
-                break;
-            }
-        }
-        Some(Window { first, last })
-    }
-
     /// Index of the item occupying the most of the viewport.
     ///
     /// # Why not just "the item at the top edge"?
@@ -532,27 +396,7 @@ impl Strip {
     /// Ties go to the lower index. Falls back to [`index_at`](Self::index_at)
     /// when the viewport has no extent.
     pub fn dominant(&self, scroll_top: f64, viewport: f64) -> usize {
-        if self.is_empty() {
-            return 0;
-        }
-        if viewport <= 0.0 {
-            return self.index_at(scroll_top);
-        }
-        let Some(win) = self.visible(scroll_top, viewport) else {
-            return self.index_at(scroll_top);
-        };
-        let bottom = scroll_top + viewport;
-        let mut best = win.first;
-        let mut best_cover = -1.0;
-        for i in win.iter() {
-            let top = from_sub(self.starts[i]);
-            let cover = (top + self.size(i)).min(bottom) - top.max(scroll_top);
-            if cover > best_cover {
-                best_cover = cover;
-                best = i;
-            }
-        }
-        best
+        super::dominant(self, scroll_top, viewport)
     }
 
     /// Change the size of a single item in `O(n)` time. Useful when an item
@@ -569,21 +413,7 @@ impl Strip {
     ///
     /// Does nothing if `index` is out of range or the new size equals the old.
     pub fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
-        let len = self.len();
-        if index >= len {
-            return 0.0;
-        }
-        let old_size_sub = self.size_sub(index);
-        let new_size_sub = to_sub(new_size);
-        if new_size_sub == old_size_sub {
-            return 0.0;
-        }
-        let delta = new_size_sub.saturating_sub(old_size_sub);
-        // Shift every subsequent item's start by `delta`.
-        for i in (index + 1)..=len {
-            self.starts[i] = self.starts[i].saturating_add(delta);
-        }
-        from_sub(delta)
+        StripBackend::set_size(self, index, new_size)
     }
 
     /// Compute the new `scroll_top` to keep item `anchor_index` visually pinned
@@ -620,23 +450,6 @@ impl Strip {
         }
     }
 
-    // ---- internal helpers ------------------------------------------------
-
-    /// Size of item `index` in sub-pixels. No bounds check beyond a length
-    /// comparison; the caller is `&self` so the indices it derives are trusted.
-    #[inline]
-    fn size_sub(&self, index: usize) -> i64 {
-        let len = self.len();
-        if index >= len {
-            return 0;
-        }
-        let end = if index + 1 == len {
-            self.starts[len]
-        } else {
-            self.starts[index + 1].saturating_sub(self.gap)
-        };
-        end.saturating_sub(self.starts[index]).max(0)
-    }
 }
 
 impl super::StripBackend for Strip {
@@ -717,8 +530,8 @@ mod tests {
     ///
     /// The internal prefix-sum is held as `i64` in 1/65536 sub-pixel units, so
     /// a value with a non-power-of-2 denominator (e.g. `0.1`, `0.333`) is
-    /// rounded to the nearest `1/65536` on the way in and back out. That
-    /// introduces a worst-case round-trip error of `1/SUBPIXEL_FACTOR ≈
+    /// truncated to the nearest `1/65536` on the way in and back out. That
+    /// introduces a worst-case round-trip error of just over `1/SUBPIXEL_FACTOR ≈
     /// 1.53e-5`. `1e-3` is well above the precision floor and well below any
     /// real arithmetic bug (e.g. a missing `+ gap` term would be off by ~24).
     const APPROX_TOL: f64 = 1e-3;
@@ -1078,26 +891,5 @@ mod tests {
         assert_eq!(s.total(), 10.0 * 250.0 + 9.0 * 16.0);
     }
 
-    #[test]
-    fn window_with_sticky_picks_correct_pin() {
-        let sizes = [50.0, 100.0, 100.0, 100.0, 50.0, 100.0, 100.0, 100.0];
-        let s = Strip::new(sizes, 0.0);
-        let win = s.window_with_sticky(s.offset(1), 300.0, Budget::screenfuls(0.0, 50), &[0, 4]);
-        let win = win.unwrap();
-        assert!(win.contains(0));
-        assert!(win.contains(1));
-    }
-
-    #[test]
-    fn window_with_sticky_no_overlap_matches_window() {
-        let s = Strip::uniform(20, 100.0, 0.0);
-        let budget = Budget::default();
-        let a = s.window(450.0, 300.0, budget);
-        let b = s.window_with_sticky(450.0, 300.0, budget, &[5, 10]);
-        assert_eq!(a, b);
-    }
-
-
-
-
 }
+

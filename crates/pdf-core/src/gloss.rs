@@ -80,11 +80,11 @@ impl GlossMark {
 /// Longest selection still treated as a word lookup (chars, not bytes).
 /// This feature is a dictionary: a word or a short phrase. Beyond this, the
 /// single-POS / single-meaning `WordInfo` shape stops making sense.
-pub const MAX_GLOSS_CHARS: usize = 60;
+const MAX_GLOSS_CHARS: usize = 60;
 
 /// Soft edge of the length gate: selections up to twice [`MAX_GLOSS_CHARS`]
 /// still earn a (muted, explaining) Info pill; past this the menu hides.
-pub const MAX_GLOSS_HINT_CHARS: usize = MAX_GLOSS_CHARS * 2;
+const MAX_GLOSS_HINT_CHARS: usize = MAX_GLOSS_CHARS * 2;
 
 /// Whether `text` can be looked up as a word.
 ///

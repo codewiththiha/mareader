@@ -69,7 +69,6 @@ use leptos::prelude::*;
 
 use crate::components::primitives::hooks::use_timeout::use_debounce_for;
 use crate::state::{AppState, SidebarMode};
-use crate::storage::save_settings;
 use pdf_core::settings::Settings;
 
 /// How the rail relates to the page it serves.
@@ -449,13 +448,12 @@ impl ShellController {
         self.sidebar_mode.set(SidebarMode::None);
     }
 
-    /// Pin the title bar and persist the choice (both routes share this).
+    /// Pin the title bar. Persistence goes through the debounced settings
+    /// effect like every other settings write — a direct save here would
+    /// double-write and race ahead of the debounce.
     pub fn set_titlebar_pinned(&self, pinned: bool) {
         self.titlebar_pinned.set(pinned);
         self.settings.update(|s| s.titlebar_pinned = pinned);
-        if let Err(e) = save_settings(&self.settings.with(|s| s.clone())) {
-            e.report();
-        }
     }
 }
 

@@ -34,8 +34,9 @@ pub const MAX_SCAN_PAGES: u32 = 1000;
 
 /// Edge-strip bounds, in sampled-raster pixels (rasters are downscaled to a
 /// ≤96px long edge before detection, so 10px is a real margin's worth).
-pub const MIN_EDGE_WIDTH: u32 = 2;
-pub const MAX_EDGE_WIDTH: u32 = 32;
+/// Crate-internal: `sanitize` is the only consumer.
+const MIN_EDGE_WIDTH: u32 = 2;
+const MAX_EDGE_WIDTH: u32 = 32;
 
 /// The default edge-strip thickness: a thin slice of each side, wide enough
 /// that the margin's flat colour survives the downscale.

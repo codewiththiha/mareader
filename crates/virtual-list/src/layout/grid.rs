@@ -25,6 +25,7 @@
 //! `i / columns`, column `i % columns`; its scroll-axis offset is its row's
 //! offset and its cross offset is `col * (cell_width + gap_cross)`.
 
+use crate::units::{from_sub, to_sub};
 use crate::{Budget, Strip, Viewport, Window};
 
 use super::Layout;
@@ -105,7 +106,7 @@ impl GridLayout {
     /// `cell_width = (cross - (cols - 1) * gap_cross) / cols`.
     pub fn resolve(spec: GridSpec, items: usize, row_pitch: f64, cross_extent: f64) -> Self {
         let columns = spec.columns_at(cross_extent);
-        let row_pitch = crate::from_sub(crate::to_sub(row_pitch));
+        let row_pitch = from_sub(to_sub(row_pitch));
         let rows_len = items.div_ceil(columns);
         let cell_width = if cross_extent > 0.0 {
             ((cross_extent - (columns - 1) as f64 * spec.gap_cross) / columns as f64).max(0.0)

@@ -24,10 +24,7 @@ pub fn SpreadLayout(
     view! {
         <PageShell state=state scroller_id=DUAL_PAGE_CONTAINER_ID progress_visible=progress_visible>
             <For
-                each=move || std::iter::once({
-                    let p = state.viewer.page.get().max(1);
-                    (p - 1) / 2
-                })
+                each=move || std::iter::once(pdf_core::layout::spread_index(state.viewer.page.get()))
                 key=|s: &u32| *s
                 children=move |spread: u32| {
                     let n = state.document.num_pages.get();

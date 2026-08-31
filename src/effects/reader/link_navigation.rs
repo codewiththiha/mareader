@@ -19,7 +19,7 @@ pub fn link_navigation(state: AppState) {
     // `window_event_listener` attaches to the current reactive owner (the app
     // root) and removes itself on dispose — no `handler.forget()` leak.
     let _handle = window_event_listener(
-        leptos::ev::Custom::new("pdfreader:navigate"),
+        leptos::ev::Custom::new(crate::events::NAVIGATE_EVENT),
         move |ev: web_sys::CustomEvent| {
             let detail = ev.detail();
             let Some(page) = js_sys::Reflect::get(&detail, &"page".into())

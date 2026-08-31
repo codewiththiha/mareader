@@ -8,19 +8,13 @@
 //! listens on the window, so document switches never stack dead Tauri
 //! handlers or drop the live one.
 
-use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsValue;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::closure::Closure;
-use web_sys::Event;
 
 use crate::components::ai::types::{AiError, WordInfo};
 
-/// Window event the app-lifetime bridge re-broadcasts every AI chunk on.
-/// The gloss popover listens for this (not for the Tauri event directly).
-pub const AI_CHUNK_EVENT: &str = "pdfreader:ai-chunk";
+pub use crate::events::AI_CHUNK_EVENT;
 
 /// The wire format of one `ai-stream-chunk` payload. Mirrors `AiChunk` in
 /// `src-tauri/src/ai/traits.rs` (same `type`/`data` tagging) — keep in sync.
@@ -54,10 +48,9 @@ pub fn invoke_explain_word(word: String, context: String) {
 /// listener would stack handlers whose closures die with the owner,
 /// poisoning the dispatch chain on later document switches.
 ///
-/// Must be called from inside the app reactive owner (e.g. `App`): the
-/// `StoredValue` that parks the JS Closure lives in that owner, so dropping
-/// the local Copy handle is fine — disposal only happens when the app
-/// unmounts.
+/// Must be called from inside the app reactive owner (e.g. `App`):
+/// `tauri_listen` parks the JS closure in that owner, so the listener lives
+/// exactly as long as the app does.
 ///
 /// Outside Tauri (`trunk serve` in a plain browser) this is a no-op: there is
 /// no `window.__TAURI__`, and the wasm-bindgen shim for `__TAURI__.event.listen`
@@ -72,9 +65,7 @@ pub fn install_ai_chunk_bridge() {
         return;
     }
 
-    let handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
-
-    let cb: Closure<dyn FnMut(Event)> = Closure::wrap(Box::new(move |ev: Event| {
+    crate::services::tauri_listen("ai-stream-chunk", move |ev: web_sys::Event| {
         // Tauri event object; the AiChunk payload is under `.payload`.
         let value: &JsValue = ev.as_ref();
         let payload = js_sys::Reflect::get(value, &"payload".into()).unwrap_or(JsValue::UNDEFINED);
@@ -87,27 +78,8 @@ pub fn install_ai_chunk_bridge() {
             }
         };
 
-        let Some(win) = web_sys::window() else {
-            return;
-        };
-        let Ok(detail) = serde_wasm_bindgen::to_value(&chunk) else {
-            return;
-        };
-        let init = web_sys::CustomEventInit::new();
-        init.set_detail(&detail);
-        if let Ok(ev) = web_sys::CustomEvent::new_with_event_init_dict(AI_CHUNK_EVENT, &init) {
-            let _ = win.dispatch_event(&ev);
-        }
-    }) as Box<dyn FnMut(Event)>);
-
-    let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
-    spawn_local(async move {
-        // The unlisten handle is deliberately discarded — this listener lives
-        // for the app's lifetime (same pattern as drag_drop.rs).
-        _ = pdf_engine::listen("ai-stream-chunk", f).await;
+        crate::events::dispatch_typed_event(AI_CHUNK_EVENT, &chunk);
     });
-
-    handle.set_value(Some(cb));
 }
 
 #[cfg(test)]

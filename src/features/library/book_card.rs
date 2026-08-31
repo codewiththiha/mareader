@@ -7,6 +7,7 @@ use leptos::prelude::*;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::services::document;
 use crate::state::library::RecentBook;
+use crate::state::reader::DEFAULT_PAGE_ASPECT;
 use crate::state::AppState;
 
 /// One book on the shelf.
@@ -44,10 +45,10 @@ pub(crate) fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
                     if c.width > 0.0 && c.height > 0.0 {
                         (c.width / c.height).clamp(0.55, 1.8)
                     } else {
-                        0.75
+                        DEFAULT_PAGE_ASPECT
                     }
                 })
-                .unwrap_or(0.75)
+                .unwrap_or(DEFAULT_PAGE_ASPECT)
         })
     };
 

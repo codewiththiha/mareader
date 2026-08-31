@@ -5,8 +5,6 @@ use std::rc::Rc;
 use leptos::prelude::*;
 use virtual_list::{Budget, GridSpec, Viewport};
 
-use crate::render::Positioning;
-
 /// Which scroll axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Axis {
@@ -68,15 +66,12 @@ pub struct VirtualizerOptions {
     pub epoch: Option<Signal<u64>>,
     /// Reactive extra indices that must stay mounted.
     pub pinned: Option<Signal<Option<(usize, usize)>>>,
-    /// Sticky item indices (list layouts only).
-    pub sticky: Vec<usize>,
-    /// Render contract.
-    pub positioning: Positioning,
     /// Viewport used before the first ResizeObserver report.
     pub initial_viewport: Viewport,
     /// Initial scroll position (content coordinates).
     pub initial_offset: f64,
-    /// Scroll-idle debounce (`is_scrolling` reset), milliseconds.
+    /// Scroll-idle debounce, milliseconds. After this much quiet, a scroll
+    /// burst is considered finished.
     pub scroll_end_delay_ms: u32,
     /// Grace period an evicted item stays rendered after a window change,
     /// milliseconds. `0` disables zombie retention (the default: items
@@ -107,8 +102,6 @@ impl VirtualizerOptions {
             padding_end: 0.0,
             epoch: None,
             pinned: None,
-            sticky: Vec::new(),
-            positioning: Positioning::default(),
             initial_viewport: Viewport::main_only(0.0),
             initial_offset: 0.0,
             scroll_end_delay_ms: 150,
@@ -164,18 +157,6 @@ impl VirtualizerOptions {
     /// Reactive pinned indices.
     pub fn pinned(mut self, pinned: Signal<Option<(usize, usize)>>) -> Self {
         self.pinned = Some(pinned);
-        self
-    }
-
-    /// Sticky indices.
-    pub fn sticky(mut self, sticky: Vec<usize>) -> Self {
-        self.sticky = sticky;
-        self
-    }
-
-    /// Render contract.
-    pub fn positioning(mut self, positioning: Positioning) -> Self {
-        self.positioning = positioning;
         self
     }
 

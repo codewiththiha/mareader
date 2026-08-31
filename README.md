@@ -45,7 +45,8 @@ optional paper textures and film grain, all persisted between sessions.
 
 ## Highlights
 
-- Two reading modes: single page and virtualized continuous scroll.
+- Four view modes: single page, two-page spread, and virtualized continuous scroll in
+  vertical and horizontal orientations, with a unified zoom pipeline across all of them.
 - Continuous appearance model with three base modes plus a hue and strength tint, replacing
   hard-coded themes.
 - Five paper textures with adjustable opacity and scale, plus static or animated film grain.
@@ -54,9 +55,12 @@ optional paper textures and film grain, all persisted between sessions.
 - Document outline (table of contents) with automatic highlighting of the active section.
 - Virtualized thumbnail grid backed by an LRU bitmap cache.
 - Clickable internal links that navigate the reader, and external links that open in the browser.
+- Word glossing: select a word (or long-press a saved mark) for a dictionary-style card —
+  Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- 85 unit tests covering the pure logic layer.
+- Roughly 300 Rust unit tests across the workspace, plus a stub-vm smoke suite for the
+  TypeScript engine layer.
 
 ---
 
@@ -476,11 +480,13 @@ Run the desktop application with hot reload:
 cargo tauri dev
 ```
 
-This starts Trunk on port 1420 and opens the native window. Tailwind is compiled by a Trunk
-pre-build hook, so stylesheet changes rebuild automatically. To run the interface in a plain
-browser instead, without the native shell:
+This generates the TypeScript engine bundle, starts Trunk on port 1420 and opens the native
+window. Tailwind is compiled by a Trunk pre-build hook, so stylesheet changes rebuild
+automatically. To run the interface in a plain browser instead, without the native shell,
+generate the engine bundle once and serve:
 
 ```bash
+npm run build:ts
 trunk serve
 ```
 
@@ -498,12 +504,20 @@ configuration targets all available formats and ships icons for macOS, Windows a
 ### Tests
 
 ```bash
-cargo test
+cargo test --workspace --exclude pdf
 ```
 
-85 unit tests cover the pure layer: zoom and fit maths, page layout, filename derivation, colour
-conversion, appearance CSS generation, presets, settings migration, search index arithmetic,
-outline activation and thumbnail geometry.
+The manifest root is also the `pdf-reader` app package, so a bare `cargo test` would test
+only the app and silently skip every member crate. The `pdf` shell crate is excluded because
+`tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
+and unit-tested natively on the macOS CI job instead.
+
+Around 300 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+filename derivation, colour conversion, appearance CSS generation, presets, settings
+migration, search index arithmetic, outline activation, thumbnail geometry, and the
+virtual-list windowing invariants. On top of that, the TypeScript engine layer has its own
+stub-vm smoke suite (`node scripts/test-engine-smoke.js` in CI) covering open, render,
+theme baking, scrub mode, thumbnails and teardown.
 
 ---
 
@@ -517,8 +531,9 @@ outline activation and thumbnail geometry.
 | `styles/input.css` | Tailwind v4 entry point and the complete design system |
 | `.taurignore` | Paths excluded from the Tauri file watcher |
 
-The asset protocol is scoped to the home, desktop and documents directories, which is what allows
-the engine to read a chosen file while keeping the rest of the filesystem out of reach.
+The asset protocol is scoped to the home, desktop, documents and downloads directories, which
+is what allows the engine to read a chosen file while keeping the rest of the filesystem out
+of reach.
 
 The default window is 1200 by 800, with a floor of 640 by 480.
 
@@ -528,9 +543,9 @@ The default window is 1200 by 800, with a floor of 640 by 480.
 
 | Layer | Technology |
 |-------|------------|
-| Desktop shell | Tauri v2 with the dialog and opener plugins |
-| Interface | Leptos 0.7, client-side rendered |
-| Language | Rust 2021, compiled to WebAssembly |
+| Desktop shell | Tauri v2 with the dialog and single-instance plugins |
+| Interface | Leptos 0.8, client-side rendered |
+| Language | Rust 2024, compiled to WebAssembly |
 | Bundler | Trunk |
 | Styling | Tailwind CSS v4, CSS-first configuration |
 | PDF rendering | pdf.js 6.2.108, vendored locally |

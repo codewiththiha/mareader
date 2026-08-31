@@ -12,20 +12,7 @@ use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::tooltip::Tooltip;
 use crate::state::ReaderState;
-use pdf_core::layout::ViewMode;
-
-fn spread_start(page: u32) -> u32 {
-    let p = page.max(1);
-    ((p - 1) / 2) * 2 + 1
-}
-
-fn last_spread_start(n: u32) -> u32 {
-    if n == 0 {
-        1
-    } else {
-        ((n - 1) / 2) * 2 + 1
-    }
-}
+use pdf_core::layout::{ViewMode, last_spread_start, spread_start, spread_step_next, spread_step_prev};
 
 #[component]
 pub fn PageNavigation(state: ReaderState) -> impl IntoView {
@@ -79,9 +66,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                     disabled=Signal::derive(prev_disabled)
                     on_click=move || {
                         if prev_state.viewer.mode.get() == ViewMode::Spread {
-                            let next = spread_start(prev_state.viewer.page.get())
-                                .saturating_sub(2)
-                                .max(1);
+                            let next = spread_step_prev(prev_state.viewer.page.get());
                             prev_state.viewer.page.set(next);
                         } else {
                             let p = prev_state.viewer.page.get();
@@ -144,8 +129,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                     on_click=move || {
                         let n = next_state.document.num_pages.get();
                         if next_state.viewer.mode.get() == ViewMode::Spread {
-                            let next = (spread_start(next_state.viewer.page.get()) + 2)
-                                .min(last_spread_start(n));
+                            let next = spread_step_next(n, next_state.viewer.page.get());
                             next_state.viewer.page.set(next);
                         } else {
                             let p = next_state.viewer.page.get();

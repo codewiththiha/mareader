@@ -47,7 +47,7 @@ pub(crate) const SETTLED_EPSILON: f64 = 0.0005;
 
 /// How (and whether) a zoom animates.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ZoomAnimationConfig {
+pub(crate) struct ZoomAnimationConfig {
     /// Whether zooms tween at all; `false` lands on the first frame.
     pub enabled: bool,
     /// Tween duration in milliseconds.
@@ -56,7 +56,7 @@ pub struct ZoomAnimationConfig {
 
 /// How evicted virtual items are bridged across a window change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ZoomRetentionConfig {
+pub(crate) struct ZoomRetentionConfig {
     /// Grace period items evicted by a zoom commit keep their DOM, in
     /// milliseconds. Should outlive the tween itself.
     pub grace_ms: u32,

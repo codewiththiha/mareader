@@ -80,9 +80,11 @@ glyphs reading straight through it.
      (an opaque composited texture). ANIMATING it in any form — a pulse, a
      fade, a box-shadow tween — forces the compositor to re-composite the
      canvas under it on every frame, which reads as the page shivering. So
-     the stroke NEVER transitions or animates, in any state: every state
-     (hover, processing, pressing, selected, dimmed) is a plain on/off paint
-     change, applied once and then static. */
+     the stroke itself NEVER transitions or animates, in any state: every
+     state (hover, processing, pressing, selected, dimmed) is a plain on/off
+     paint change, applied once and then static. Animated processing
+     feedback lives on a sibling overlay instead — see `gloss-mark-pulse`
+     below. */
 }
 .pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
 :root.dark .pdf-page .glossLayer .gloss-mark { mix-blend-mode: screen; }
@@ -91,13 +93,101 @@ glyphs reading straight through it.
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 40%, transparent);
   outline: none;
 }
-/* Processing: the stroke is being consulted — one static, quiet emphasis
-   (a thin ring), never a pulse. A pulse re-blends the stroke against the
-   canvas each frame = the shake. The card itself opens on the first chunk,
-   so this state is fleeting anyway. */
+/* Processing: the stroke is being consulted. Two halves:
+
+   • A quiet static ring painted ON the stroke itself. That part must stay
+     static — a pulse on the blended stroke re-blends the canvas each frame
+     = the shake.
+   • A faint light lapping the stroke's INNER edge, on `.gloss-mark-pulse`,
+     a sibling overlay in the layer that is NOT mix-blended, so its motion
+     composites over the static canvas exactly like the card's and toast's
+     animations do. The overlay is the same rect as the stroke, so a ring
+     band at the overlay's own edge IS the mark's inner edge. mark_layer
+     mounts it only while this stroke waits on the model; the card itself
+     opens on the first chunk, so the state is fleeting.
+
+   Why an edge and not a glow: this overlay used to breathe an outer
+   box-shadow, and the ring it re-painted was the very ring the static
+   state already wears. On dim paper the only thing moving was a 30%-alpha
+   bloom OUTSIDE the word, so a processing mark read exactly like a resting
+   one. The light now sits on the edge of the highlight itself, where there
+   is no static twin to be mistaken for.
+
+   Deliberately barely-there: low opacity, one soft comet, no bloom. */
 .pdf-page .glossLayer .gloss-mark-processing,
 :root.dark .pdf-page .glossLayer .gloss-mark-processing {
   box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 68%, transparent);
+}
+
+/* The whole effect IS the mask, so it is gated on having one: without
+   mask-composite an unmasked rotating conic gradient would paint a full
+   wash over the word instead of a 2px rim. On an engine without it the
+   overlay stays an empty, invisible element and the static ring above is
+   the whole cue — which is also what both motion nets below reduce to. */
+@supports ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .pdf-page .glossLayer .gloss-mark-pulse {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    border-radius: 3px;       /* same exact-fit shape as the stroke */
+    overflow: hidden;
+    /* Ring mask: the whole box minus its content box, i.e. the padding
+       band. `padding` is what sets the band's thickness, and 2px reads as
+       a rim of light rather than as a second stroke. xor and exclude are
+       the same composite, prefixed and standard, so WebKit and everyone
+       else both get the ring. */
+    padding: 2px;
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0) border-box;
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0) border-box;
+    mask-composite: exclude;
+    /* The comet's ceiling, one notch under half strength: it should be
+       caught in the corner of the eye, never watched on purpose. */
+    opacity: 0.55;
+  }
+
+  .pdf-page .glossLayer .gloss-mark-pulse::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    /* A SQUARE, and a generous one. A conic gradient is radial about its
+       centre, so this box has exactly one job: still cover the ring at
+       every angle of the spin. A side >= the overlay's diagonal does that
+       for any word rect; a box sized in percentages of both axes is a
+       RECTANGLE, which falls short of the corners on the diagonal frames
+       and blinks the comet out once per lap. */
+    width: 300%;
+    aspect-ratio: 1;
+    /* One soft comet — dark for most of the turn, brightening to a peak
+       and fading out again — so what laps the rim reads as light with a
+       tail rather than as a hard edge going round. The gloss colour is
+       lifted toward white because this is light falling on the paper, not
+       more ink. */
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 250deg,
+      color-mix(in oklab, var(--gloss-color, var(--color-accent)) 55%, white) 305deg,
+      transparent 360deg
+    );
+    transform: translate(-50%, -50%) rotate(0deg);
+    will-change: transform;
+    /* Slow enough to read as unhurried, quick enough that a two-second
+       wait still shows the reader several laps. Transform only, on an
+       unblended element: the compositor runs it without a repaint and
+       without ever re-blending the canvas under the stroke. */
+    animation: gloss-edge-sweep 1.8s linear infinite;
+  }
+}
+
+@keyframes gloss-edge-sweep {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
 /* ---------------------------------------------------------------------
@@ -173,4 +263,22 @@ glyphs reading straight through it.
     .gloss-undo-toast {
         animation: none;
     }
+    /* The comet is motion for its own sake — nothing in the reader depends
+       on it — so both nets take the overlay out entirely rather than
+       freezing it. A frozen comet is a static arc of light parked on one
+       corner of the word, which reads as a smudge rather than as a
+       thinking mark; the static ring on the stroke is the whole cue, as
+       before. (The global net in animations.css shortens animations to
+       0.01ms instead of removing them, which for an infinite lap is
+       exactly that one settled frame — hence `display`, not `animation`.) */
+    .pdf-page .glossLayer .gloss-mark-pulse {
+        display: none;
+    }
+}
+
+/* The same for the reader's own master switch (Settings → Layout →
+   Animations), for the same reason: a promise that nothing interpolates
+   has to mean the comet does not sit still on the rim either. */
+html.animations-off .pdf-page .glossLayer .gloss-mark-pulse {
+    display: none;
 }

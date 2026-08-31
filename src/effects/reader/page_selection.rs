@@ -38,7 +38,7 @@ fn parse_selection(detail: &JsValue) -> Option<(u32, u32)> {
 
 pub fn page_selection(state: AppState) {
     let _handle = window_event_listener(
-        leptos::ev::Custom::new("pdfreader:selection-pages"),
+        leptos::ev::Custom::new(crate::events::SELECTION_PAGES_EVENT),
         move |ev: web_sys::CustomEvent| {
             let detail = ev.detail();
             match parse_selection(&detail) {

@@ -22,8 +22,8 @@ pub const FAIL_WORD: &str = "__fail";
 pub struct MockAiProvider;
 
 impl MockAiProvider {
-    pub fn new() -> Result<Self, String> {
-        Ok(Self)
+    pub fn new() -> Self {
+        Self
     }
 }
 

@@ -13,9 +13,9 @@ pub const CARD_WIDTH: f64 = 360.0;
 /// Card corner radius — the spring morphs the chip's pill into this. A
 /// standard card radius rather than an oversized one: the card is a panel,
 /// not a bubble.
-pub const CARD_RADIUS: f64 = 12.0;
+const CARD_RADIUS: f64 = 12.0;
 /// Gap between the highlighter stroke and the card's near edge.
-pub const CARD_GAP: f64 = 16.0;
+const CARD_GAP: f64 = 16.0;
 /// Floor for the card's expanded content height. While the twin has not been
 /// measured yet `content_height` reads `0.0`, which would size the card's
 /// target to the anchor box (a flash of collapsed card on first open). The
@@ -29,7 +29,7 @@ pub const CARD_MARGIN: f64 = 12.0;
 /// word and hanging off it, the way a footnote hangs off its referent. The
 /// earlier 12 px felt closer to centred on the highlighted text; a larger
 /// drop makes the card visibly hang BELOW the word rather than straddle it.
-pub const CARD_Y_BIAS: f64 = 30.0;
+const CARD_Y_BIAS: f64 = 30.0;
 
 /// Side-aware placement: the card goes on whichever side of the highlight has
 /// more free space, never covering the stroke, hanging a touch below the

@@ -7,6 +7,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Same-branch pushes cancel the previous run; release tags keep their runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     name: Check (fmt, clippy, test, versions)
@@ -14,23 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The workspace's `pdf` crate links webkit2gtk-4.1 (the Tauri 2 Linux
-      # backend), so even `cargo check`/`clippy`/`test` need the native deps.
-      - name: Install Linux system dependencies (Tauri 2)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libxdo-dev \
-            build-essential \
-            curl \
-            wget \
-            file
-
+      # No system packages are installed here on purpose: nothing in this job
+      # compiles the `pdf` Tauri shell (clippy and tests exclude it, the wasm
+      # check targets the pure-Rust frontend), so webkit2gtk & co. would be
+      # dead weight. The shell is compiled natively by the macOS job below and
+      # fully built by the release pipeline.
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -76,9 +69,14 @@ jobs:
       # dropped from here, not left as a permanent exemption.
       # New code is still held to `-D warnings`.
 
+      # `--workspace`, like the test step below: a bare `cargo clippy` selects
+      # only the root package, which would silently leave pdf-core (the zoom
+      # ladder and fit maths), pdf-engine, pdf-paper, and both virtual-list
+      # crates out of the lint. `pdf` is excluded here and linted natively on
+      # the macOS job, which is also where its tests run.
       - name: Clippy (deny warnings)
         run: |
-          cargo clippy --all-targets -- -D warnings \
+          cargo clippy --workspace --all-targets --exclude pdf -- -D warnings \
             -A clippy::clone_on_copy \
             -A clippy::field_reassign_with_default \
             -A clippy::collapsible_if \
@@ -149,3 +147,8 @@ jobs:
             -A clippy::redundant_closure \
             -A clippy::type_complexity \
             -A clippy::assertions_on_constants
+
+      # The AiChunk wire-contract tests live in this crate; without this step
+      # they compile nowhere and run nowhere.
+      - name: Tests (shell crate)
+        run: cargo test -p pdf

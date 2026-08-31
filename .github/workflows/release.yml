@@ -8,6 +8,12 @@ on:
       - "build/**"
   workflow_dispatch:
 
+# Serialize release runs, but never cancel one mid-flight — a killed release
+# leaves a tag pointing at a half-published set of artifacts.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # Resolve the version, classify prerelease vs stable, and assemble the
   # release name + body. One job feeding the build matrix keeps the tag
@@ -41,6 +47,12 @@ jobs:
               echo "::error::tag '$TAG' is not a recognised semver tag (vX.Y.Z or vX.Y.Z-suffix)"
               exit 1
             fi
+            # A tag that disagrees with the bundled version would publish
+            # artifacts stamped vX.Y.Z under a different release tag.
+            if [[ "$TAG" != "v${VERSION}" ]]; then
+              echo "::error::tag '$TAG' does not match the app version '${VERSION}' — bump the version (or move the tag) so they agree"
+              exit 1
+            fi
           else
             # build/** branch or manual dispatch: build the current version as a
             # prerelease. The tag matches the version so tauri-action attaches
@@ -50,7 +62,14 @@ jobs:
           fi
 
           if [[ -f "release-notes/${VERSION}.md" ]]; then
-            BODY=$(cat "release-notes/${VERSION}.md")
+            # Strip the notes' front-matter block (a leading --- delimited
+            # header); it is authoring metadata, not release-body content.
+            # Files without front matter pass through untouched.
+            BODY=$(awk '
+              /^---$/ && NR == 1 { fm = 1; next }
+              fm == 1 && /^---$/ { fm = 2; next }
+              fm != 1 { print }
+            ' "release-notes/${VERSION}.md")
           else
             BODY="Release ${VERSION}"
           fi

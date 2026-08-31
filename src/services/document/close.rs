@@ -57,10 +57,7 @@ pub fn close_document(state: AppState) {
     state.reader.search.reset();
     // The marks stay on disk under this path; only the in-memory copy goes,
     // so the next open of this book paints them again.
-    state.reader.gloss.marks.set(Vec::new());
-    state.reader.gloss.processing_id.set(None);
-    state.reader.gloss.selection_active.set(false);
-    state.reader.gloss.selected_marks.set(std::collections::HashSet::new());
+    state.reader.gloss.reset();
     // Drop any in-flight AI selection/card so a stale popover_open cannot
     // hide the Info button or swallow the first open on the next document.
     state.reader.ai_selection.reset();

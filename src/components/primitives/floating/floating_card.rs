@@ -50,6 +50,12 @@ pub fn FloatingCard(
     /// Extra classes for the scroll area (padding etc.).
     #[prop(optional)]
     scroll_class: Option<&'static str>,
+    /// Hide the inner scroller's native scrollbar. Floating surfaces must
+    /// not show a gutter — and a layout-consuming scrollbar would narrow
+    /// the content column, making the real content taller than the
+    /// scrollbar-less measure twin, leaving the card permanently short.
+    #[prop(default = false)]
+    hide_scrollbar: bool,
     children: Children,
 ) -> impl IntoView {
     let surface_style_extra = surface_style;
@@ -101,6 +107,7 @@ pub fn FloatingCard(
                 {drag_handle.map(|h| h())}
                 <div
                     class=format!("flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain {scroll_class}")
+                    data-gloss-scroll=hide_scrollbar.then_some("")
                 >
                     {children()}
                 </div>

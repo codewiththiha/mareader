@@ -1,6 +1,6 @@
 //! The reactive adapter: [`use_virtualizer`] wires the pure
-//! [`crate::core::VirtualizerCore`] to Leptos signals, the scroll container,
-//! and two `ResizeObserver`s — applying the engine's [`crate::core::Step`]s
+//! [`crate::engine::VirtualizerCore`] to Leptos signals, the scroll container,
+//! and two `ResizeObserver`s — applying the engine's [`crate::engine::Step`]s
 //! with write-if-changed guards so nothing downstream re-renders unless the
 //! mounted window actually changed.
 
@@ -15,10 +15,10 @@ use web_sys::{Event, ResizeObserver, ResizeObserverEntry};
 
 use virtual_list::{Align, Viewport, Window};
 
-use crate::core::{CoreConfig, Step, VirtualizerCore, build_layout};
+use crate::engine::{CoreConfig, Step, VirtualizerCore, build_layout};
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
-use crate::render::{Positioning, VirtualItem, VirtualItemState, VirtualRow};
+use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 use crate::retention::{prune_retained, retain_evicted};
 use crate::surface::{DomSurface, ScrollSurface};
 
@@ -35,7 +35,6 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         budget: options.budget,
         shape: options.shape,
         gap: options.gap,
-        sticky: options.sticky.clone(),
         padding_start: options.padding_start,
         padding_end: options.padding_end,
         viewport: options.initial_viewport,
@@ -49,7 +48,6 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         &*options.estimate_size,
         options.initial_viewport.cross,
         options.gap,
-        &options.sticky,
     );
     let core = VirtualizerCore::new(layout, config);
     let initial_range = core.range();
@@ -67,7 +65,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         viewport: RwSignal::new(options.initial_viewport),
         range: RwSignal::new(initial_range),
         layout_version: RwSignal::new(0),
-        is_scrolling: RwSignal::new(false),
+
         last_epoch: Cell::new(initial_epoch),
         options,
         core: RefCell::new(core),
@@ -86,10 +84,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         items_signal: OnceCell::new(),
         rows_signal: OnceCell::new(),
         total_signal: OnceCell::new(),
-        padding_signal: OnceCell::new(),
-        range_signal: OnceCell::new(),
         dominant_signal: OnceCell::new(),
-        scrolling_signal: OnceCell::new(),
     });
 
     {
@@ -150,10 +145,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     let _ = virtualizer.items();
     let _ = virtualizer.rows();
     let _ = virtualizer.total_size();
-    let _ = virtualizer.padding();
-    let _ = virtualizer.range();
     let _ = virtualizer.dominant();
-    let _ = virtualizer.is_scrolling();
 
     virtualizer
 }
@@ -168,7 +160,6 @@ pub(crate) struct VirtualizerInner {
     pub viewport: RwSignal<Viewport>,
     pub range: RwSignal<Option<Window>>,
     pub layout_version: RwSignal<u64>,
-    pub is_scrolling: RwSignal<bool>,
     pub last_epoch: Cell<u64>,
 
     pub pending_scroll: Rc<Cell<Option<f64>>>,
@@ -203,10 +194,7 @@ pub(crate) struct VirtualizerInner {
     pub items_signal: OnceCell<Signal<Vec<VirtualItem>, LocalStorage>>,
     pub rows_signal: OnceCell<Signal<Vec<VirtualRow>, LocalStorage>>,
     pub total_signal: OnceCell<Signal<f64, LocalStorage>>,
-    pub padding_signal: OnceCell<Signal<(f64, f64), LocalStorage>>,
-    pub range_signal: OnceCell<Signal<Option<Window>, LocalStorage>>,
     pub dominant_signal: OnceCell<Signal<usize, LocalStorage>>,
-    pub scrolling_signal: OnceCell<Signal<bool, LocalStorage>>,
 }
 
 impl VirtualizerInner {
@@ -322,9 +310,6 @@ impl VirtualizerInner {
         if let Some(top) = step.scroll_write {
             self.surface.set_scroll(top, false);
         }
-        if !self.is_scrolling.get_untracked() {
-            self.is_scrolling.set(true);
-        }
         self.arm_scroll_end();
     }
 
@@ -365,7 +350,6 @@ impl VirtualizerInner {
         let delay = Duration::from_millis(self.options.scroll_end_delay_ms as u64);
         if let Ok(handle) = set_timeout_with_handle(
             move || {
-                inner.is_scrolling.set(false);
                 let callbacks: Vec<_> = inner.idle_cbs.borrow().iter().cloned().collect();
                 for callback in callbacks {
                     callback();
@@ -574,31 +558,6 @@ impl Virtualizer {
         })
     }
 
-    /// `(before, after)` spacer heights for [`Positioning::Padding`].
-    pub fn padding(&self) -> Signal<(f64, f64), LocalStorage> {
-        *self.inner.padding_signal.get_or_init(|| {
-            let inner = self.inner.clone();
-            Signal::derive_local(move || {
-                let _ = inner.range.get();
-                let _ = inner.layout_version.get();
-                inner.core.borrow().padding()
-            })
-        })
-    }
-
-    /// The configured positioning mode.
-    pub fn positioning(&self) -> Positioning {
-        self.inner.options.positioning
-    }
-
-    /// Reactive mount window.
-    pub fn range(&self) -> Signal<Option<Window>, LocalStorage> {
-        *self.inner.range_signal.get_or_init(|| {
-            let inner = self.inner.clone();
-            Signal::derive_local(move || inner.range.get())
-        })
-    }
-
     /// Reactive dominant item.
     pub fn dominant(&self) -> Signal<usize, LocalStorage> {
         *self.inner.dominant_signal.get_or_init(|| {
@@ -608,14 +567,6 @@ impl Virtualizer {
                 let _ = inner.layout_version.get();
                 inner.core.borrow().dominant()
             })
-        })
-    }
-
-    /// Whether the container is scrolling.
-    pub fn is_scrolling(&self) -> Signal<bool, LocalStorage> {
-        *self.inner.scrolling_signal.get_or_init(|| {
-            let inner = self.inner.clone();
-            Signal::derive_local(move || inner.is_scrolling.get())
         })
     }
 
@@ -696,11 +647,6 @@ impl Virtualizer {
         if let Some(step) = step {
             self.inner.apply_local(step);
         }
-    }
-
-    /// Abandon an in-flight scroll-to.
-    pub fn cancel_scroll(&self) {
-        self.inner.core.borrow_mut().cancel_scroll();
     }
 
     /// Report a size directly.

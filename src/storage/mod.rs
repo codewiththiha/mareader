@@ -17,15 +17,15 @@ use crate::state::library::{sanitize as sanitize_library, CoverImage, RecentBook
 use pdf_core::gloss::GlossMark;
 use pdf_core::settings::{sanitize, Settings, SETTINGS_KEY};
 
-pub const LIBRARY_KEY: &str = "pdfreader.library.v1";
-pub const COVERS_KEY: &str = "pdfreader.covers.v1";
+const LIBRARY_KEY: &str = "pdfreader.library.v1";
+const COVERS_KEY: &str = "pdfreader.covers.v1";
 /// Gloss highlights, keyed by document path.
 ///
 /// Versioned like the rest: the rects are page-space CSS px, so they are
 /// stable across zoom and sessions but NOT across a change in how a page is
 /// laid out. If page rendering metrics ever change, bump this to `v2` rather
 /// than letting old marks drift onto the wrong words.
-pub const GLOSS_KEY: &str = "pdfreader.gloss.v1";
+const GLOSS_KEY: &str = "pdfreader.gloss.v1";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization
 /// error). The UI should never crash on these — but they must not vanish.
@@ -146,7 +146,7 @@ pub fn load_gloss() -> HashMap<String, Vec<GlossMark>> {
         .unwrap_or_default()
 }
 
-pub fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError> {
+fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError> {
     let json = serde_json::to_string(all).map_err(|e| StorageError {
         op: "save_gloss",
         detail: format!("serialize failed: {e}"),

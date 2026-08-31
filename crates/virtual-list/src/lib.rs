@@ -47,7 +47,7 @@
 //! change.
 //!
 //! Internally the prefix-sum is held as `i64` in sub-pixel units (factor
-//! [`SUBPIXEL_FACTOR`], 1/65536 px). This gives three wins over the equivalent
+//! `SUBPIXEL_FACTOR`, 1/65536 px). This gives three wins over the equivalent
 //! `Vec<f64>`:
 //!
 //! - `partition_point` runs over integers, which branch-predict better and
@@ -96,7 +96,6 @@ mod units;
 mod window;
 
 pub use anchor::{AnchorPolicy, correct, pin_at, rescale_anchor};
-pub use backend::{Strip, StripBackend, UniformStrip};
+pub use backend::{Strip, StripBackend};
 pub use layout::{GridColumns, GridLayout, GridSpec, Layout, LayoutKind, ListLayout};
-pub use units::{SUBPIXEL_BITS, SUBPIXEL_FACTOR, from_sub, to_sub};
 pub use window::{Align, Budget, Overscan, Viewport, Window};

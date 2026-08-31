@@ -96,7 +96,7 @@ pub const NO_DOCUMENT: &str = "No document";
 /// [`DEFAULT_PAGE_ASPECT`] when the size is missing or its width is not
 /// positive (a zero-width sheet has no meaningful aspect, and dividing by
 /// it would poison every height derived from it).
-pub fn page_aspect(size: Option<PageSize>) -> f64 {
+pub(crate) fn page_aspect(size: Option<PageSize>) -> f64 {
     match size {
         Some(s) if s.width > 0.0 => s.height / s.width,
         _ => DEFAULT_PAGE_ASPECT,
@@ -552,6 +552,19 @@ pub struct GlossState {
     /// in-page mark layer: while the model is working there is NO surface at
     /// all, so the stroke itself has to carry the thinking state.
     pub processing_id: RwSignal<Option<String>>,
+}
+
+impl GlossState {
+    /// Clear every field to its resting state. Runs on document close and as
+    /// the first step of an open, so a field added to the struct cannot be
+    /// silently forgotten by either path — the same invariant the other
+    /// slices enforce with their own `reset` methods.
+    pub fn reset(&self) {
+        self.marks.set(Vec::new());
+        self.selection_active.set(false);
+        self.selected_marks.set(std::collections::HashSet::new());
+        self.processing_id.set(None);
+    }
 }
 
 /// The reader's slice of app state: everything the PDF components and the

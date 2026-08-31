@@ -1,9 +1,9 @@
 //! Shared backend trait: `StripBackend` defines the primitives every geometry
 //! engine provides (`offset_sub`, `size_sub`, `total_sub`, `index_at_sub`,
 //! `set_size_sub`). All windowing logic (`overlapping`, `visible`, `window`,
-//! `dominant`, `window_with_sticky`) is written once against this trait,
-//! so a new backend — a tree, a chunked column, whatever a surface needs —
-//! only has to implement the primitives.
+//! `dominant`) is written once against this trait, so a new backend — a
+//! tree, a chunked column, whatever a surface needs — only has to implement
+//! the primitives.
 //!
 //! The math stays in `i64` sub-pixels (`to_sub` / `from_sub`) so boundary
 //! behavior is bit-for-bit identical across backends.
@@ -167,74 +167,33 @@ pub fn window<B: StripBackend + ?Sized>(
     viewport: f64,
     budget: Budget,
 ) -> Option<Window> {
-    window_with_sticky(b, scroll_top, viewport, budget, &[])
-}
-
-/// Shared `window_with_sticky` — sticky items pin to the viewport top.
-/// This is the exact same algorithm used by `Strip::window_with_sticky`.
-pub fn window_with_sticky<B: StripBackend + ?Sized>(
-    b: &B,
-    scroll_top: f64,
-    viewport: f64,
-    budget: Budget,
-    sticky_indices: &[usize],
-) -> Option<Window> {
     if b.is_empty() {
         return None;
     }
     let vh = viewport.max(0.0);
 
-    // Find pinned sticky: largest index in sticky_indices with offset <= scroll_top.
-    let pinned: Option<usize> = sticky_indices
-        .iter()
-        .copied()
-        .filter(|&i| i < b.len())
-        .filter(|&i| b.offset_sub(i) <= to_sub(scroll_top))
-        .max();
-
     if vh == 0.0 {
-        return (scroll_top < b.total()).then(|| {
-            let point = Window {
-                first: b.index_at(scroll_top),
-                last: b.index_at(scroll_top),
-            };
-            match pinned {
-                Some(index) => point.union(Window {
-                    first: index,
-                    last: index,
-                }),
-                None => point,
-            }
+        return (scroll_top < b.total()).then(|| Window {
+            first: b.index_at(scroll_top),
+            last: b.index_at(scroll_top),
         });
     }
 
-    let pinned_size = pinned.map(|i| b.size(i)).unwrap_or(0.0);
-    let effective_top = scroll_top + pinned_size;
-    let effective_vh = (vh - pinned_size).max(0.0);
-    let look = budget.overscan.padding(effective_vh, b.mean_size());
-
-    let padded = overlapping(b, effective_top - look, effective_vh + 2.0 * look)?;
-    let vis = visible(b, effective_top, effective_vh).unwrap_or(padded);
+    let look = budget.overscan.padding(vh, b.mean_size());
+    let padded = overlapping(b, scroll_top - look, vh + 2.0 * look)?;
+    // What is strictly on screen must survive any trim.
+    let vis = visible(b, scroll_top, vh).unwrap_or(padded);
 
     let max = budget.max_items.max(1);
     let mut first = padded.first;
     let mut last = padded.last;
-
-    // The pinned sticky itself must always be included.
-    if let Some(pinned_i) = pinned {
-        if first > pinned_i {
-            first = pinned_i;
-        }
-        if last < pinned_i {
-            last = pinned_i;
-        }
-    }
     while last - first + 1 > max {
-        if first < vis.first && Some(first) != pinned {
+        if first < vis.first {
             first += 1;
         } else if last > vis.last {
             last -= 1;
         } else {
+            // Everything left is visible; the reader wins over the budget.
             break;
         }
     }
@@ -242,7 +201,5 @@ pub fn window_with_sticky<B: StripBackend + ?Sized>(
 }
 
 pub mod strip;
-pub mod uniform;
 
 pub use strip::Strip;
-pub use uniform::UniformStrip;

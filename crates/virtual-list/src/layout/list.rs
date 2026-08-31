@@ -1,30 +1,25 @@
 //! A single column of variably-sized items: the [`Strip`] backend behind the
-//! [`Layout`] contract, plus sticky-header support and per-item estimates.
-
-use alloc::vec::Vec;
+//! [`Layout`] contract, plus per-item estimates.
 
 use crate::{Budget, Strip, StripBackend, Viewport, Window};
 
 use super::Layout;
 
 /// A column (or row, for horizontal axes) of variably-sized items with a
-/// fixed gap between them, optionally with sticky items.
+/// fixed gap between them.
 ///
-/// Backed by a [`StripBackend`] (default [`Strip`]); enabling
-/// `advanced-trees` lets callers substitute [`FenwickStrip`] or
-/// [`ChunkedStrip`] via `ListLayout::<FenwickStrip>`.
+/// Backed by a [`StripBackend`] (default [`Strip`]). The windowing is written
+/// once against the trait (see [`crate::backend`]), so a custom backend can
+/// be substituted without touching this layer.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ListLayout<B: StripBackend = Strip> {
     pub(crate) backend: B,
     pub(crate) gap: f64,
-    sticky: Vec<usize>,
 }
 
 impl<B: StripBackend> ListLayout<B> {
     /// Build from explicit item sizes.
     /// Note: for the default `Strip` backend, this rebuilds the prefix-sum.
-    /// Other backends must provide their own construction path (`Strip::new`,
-    /// `FenwickStrip::new`, etc.) — use `ListLayout::with_backend`.
     pub fn new(sizes: impl IntoIterator<Item = f64>, gap: f64) -> Self
     where
         B: From<Strip>,
@@ -32,7 +27,6 @@ impl<B: StripBackend> ListLayout<B> {
         Self {
             backend: B::from(Strip::new(sizes, gap)),
             gap,
-            sticky: Vec::new(),
         }
     }
 
@@ -58,14 +52,6 @@ impl<B: StripBackend> ListLayout<B> {
         B: From<Strip>,
     {
         Self::new((0..count).map(estimate), gap)
-    }
-
-    /// Mark items as sticky (`position: sticky` semantics): once their
-    /// natural start scrolls past the viewport top, the most recent one
-    /// pins to the top and is always included in the window.
-    pub fn with_sticky(mut self, indices: impl IntoIterator<Item = usize>) -> Self {
-        self.sticky = indices.into_iter().collect();
-        self
     }
 
     /// The gap between adjacent items.
@@ -123,13 +109,7 @@ impl<B: StripBackend> Layout for ListLayout<B> {
     }
 
     fn window(&self, scroll: f64, viewport: Viewport, budget: Budget) -> Option<Window> {
-        crate::backend::window_with_sticky(
-            &self.backend,
-            scroll,
-            viewport.main,
-            budget,
-            &self.sticky,
-        )
+        crate::backend::window(&self.backend, scroll, viewport.main, budget)
     }
 
     fn window_hinted(
@@ -139,17 +119,7 @@ impl<B: StripBackend> Layout for ListLayout<B> {
         budget: Budget,
         _hint: &mut usize,
     ) -> Option<Window> {
-        if self.sticky.is_empty() {
-            crate::backend::window(&self.backend, scroll, viewport.main, budget)
-        } else {
-            crate::backend::window_with_sticky(
-                &self.backend,
-                scroll,
-                viewport.main,
-                budget,
-                &self.sticky,
-            )
-        }
+        crate::backend::window(&self.backend, scroll, viewport.main, budget)
     }
 
     #[inline]
@@ -181,17 +151,6 @@ mod tests {
         assert_eq!(l.offset(2), 400.0);
         assert_eq!(l.offset(3), 600.0);
         assert_eq!(l.total(), 700.0);
-    }
-
-    #[test]
-    fn sticky_matches_strip_window_with_sticky() {
-        let sizes = [50.0, 100.0, 100.0, 100.0, 50.0, 100.0, 100.0, 100.0];
-        let l: ListLayout = ListLayout::new(sizes, 0.0).with_sticky([0, 4]);
-        let budget = Budget::screenfuls(0.0, 50);
-        let win = l
-            .window(l.offset(1), Viewport::main_only(300.0), budget)
-            .unwrap();
-        assert!(win.contains(0) && win.contains(1));
     }
 
     #[test]

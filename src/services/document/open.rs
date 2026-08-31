@@ -10,10 +10,7 @@ use leptos::prelude::*;
 // be CANCELLED the moment `status` flips to `Opening` (that unmounts the card,
 // disposing its owner) — leaving the app stuck on "Opening…" forever. The
 // wasm-bindgen executor runs the future to completion regardless of owner.
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::Event;
 
 use pdf_engine::api as engine;
 use pdf_engine::types::{DocStatus, PageSize};
@@ -49,26 +46,17 @@ pub fn init_open_file_handling(state: AppState) {
         return;
     }
 
-    // Park the JS closure in a StoredValue so the listener stays registered
-    // for the lifetime of the app (same pattern as the drag-drop listeners in
-    // effects/drag_drop.rs; the unlisten handle is deliberately discarded).
-    let handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
+    // PUSH — the listener just re-runs the pull (the command clears itself,
+    // so an event + a stray second pull can never open the same file twice).
     let cb_state = state;
-    let cb: Closure<dyn FnMut(Event)> = Closure::wrap(
-        Box::new(move |_ev: Event| {
-            let st = cb_state;
-            spawn_local(async move {
-                if let Some(path) = engine::take_pending_file().await {
-                    open_path(st, path);
-                }
-            });
-        }) as Box<dyn FnMut(Event)>,
-    );
-    let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
-    spawn_local(async move {
-        _ = pdf_engine::listen("pdf-open-file", f).await;
+    crate::services::tauri_listen("pdf-open-file", move |_ev: web_sys::Event| {
+        let st = cb_state;
+        spawn_local(async move {
+            if let Some(path) = engine::take_pending_file().await {
+                open_path(st, path);
+            }
+        });
     });
-    handle.set_value(Some(cb));
 }
 
 /// Native open-dialog flow: pick a file, then run the shared open-flow.
@@ -149,12 +137,12 @@ pub fn open_path(state: AppState, path: String) {
                 // Gloss highlights for THIS document. Loaded here rather than
                 // lazily by the mark layer so the very first page mount already
                 // paints them (they are page-space rects, not DOM state).
+                // `reset` first so a field added to `GlossState` cannot be
+                // missed here; the loaded marks then overwrite the empty list.
+                state.reader.gloss.reset();
                 state.reader.gloss.marks.set(
                     crate::storage::load_gloss().remove(&path).unwrap_or_default(),
                 );
-                state.reader.gloss.processing_id.set(None);
-                state.reader.gloss.selection_active.set(false);
-                state.reader.gloss.selected_marks.set(std::collections::HashSet::new());
 
                 // Resume point (clamped to the real count AND at least page 1 —
                 // a re-edited document may have fewer pages than remembered, and

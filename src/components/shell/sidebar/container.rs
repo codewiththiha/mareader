@@ -55,11 +55,7 @@ pub(crate) const SIDEBAR_ASIDE_SELECTOR: &str = "aside.sidebar-aside";
 /// by both panels and could not distinguish "asked twice" from "asked once"
 /// without extra bookkeeping. Same mechanism the PDF link layer uses.
 pub(crate) fn request_reveal_active() {
-    let Some(win) = web_sys::window() else { return };
-    let Ok(event) = web_sys::CustomEvent::new("pdfreader:reveal-active") else {
-        return;
-    };
-    _ = win.dispatch_event(&event);
+    crate::events::dispatch_event(crate::events::REVEAL_ACTIVE_EVENT);
 }
 
 #[component]

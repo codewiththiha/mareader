@@ -7,7 +7,7 @@ use wasm_bindgen::JsCast;
 
 use std::cell::Cell;
 
-use pdf_core::layout::ViewMode;
+use pdf_core::layout::{ViewMode, spread_step_next, spread_step_prev};
 use crate::components::primitives::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
 
@@ -49,26 +49,12 @@ thread_local! {
     static HOLD_AXIS: Cell<u8> = const { Cell::new(1) };
 }
 
-fn spread_start(state: ReaderState) -> u32 {
-    let p = state.viewer.page.get().max(1);
-    ((p - 1) / 2) * 2 + 1
-}
-
-fn last_spread_start(state: ReaderState) -> u32 {
-    let n = state.document.num_pages.get();
-    if n == 0 {
-        1
-    } else {
-        ((n - 1) / 2) * 2 + 1
-    }
-}
-
 fn page_prev(state: ReaderState) {
     if state.viewer.mode.get() == ViewMode::Spread {
         state
             .viewer
             .page
-            .set(spread_start(state).saturating_sub(2).max(1));
+            .set(spread_step_prev(state.viewer.page.get()));
     } else if state.viewer.page.get() > 1 {
         state.viewer.page.set(state.viewer.page.get() - 1);
     }
@@ -80,7 +66,7 @@ fn page_next(state: ReaderState) {
         state
             .viewer
             .page
-            .set((spread_start(state) + 2).min(last_spread_start(state)));
+            .set(spread_step_next(n, state.viewer.page.get()));
     } else if n > 0 && state.viewer.page.get() < n {
         state.viewer.page.set(state.viewer.page.get() + 1);
     }
@@ -101,15 +87,38 @@ fn focus_scroll_list(horizontal: bool) {
     _ = html.focus_with_options(&opts);
 }
 
-fn scroll_reader_y(dy: f64, smooth: bool) {
-    let Some(list) = page_list() else { return };
-    let max = (list.scroll_height() as f64 - list.client_height() as f64).max(0.0);
-    let next = (list.scroll_top() as f64 + dy).clamp(0.0, max);
-    if (next - list.scroll_top() as f64).abs() < 0.5 {
+/// Scroll one of the reader's strips by `delta` along its main axis, clamped
+/// to the scrollable range and skipped entirely when the clamp eats the step
+/// (a boundary hold must not fight the elastic edge). The y/x twins differ
+/// only in element and axis properties, so one helper serves both.
+fn scroll_reader_axis(horizontal: bool, delta: f64, smooth: bool) {
+    let Some(list) = (if horizontal { h_page_list() } else { page_list() }) else {
+        return;
+    };
+    let (current, extent, client) = if horizontal {
+        (
+            list.scroll_left() as f64,
+            list.scroll_width() as f64,
+            list.client_width() as f64,
+        )
+    } else {
+        (
+            list.scroll_top() as f64,
+            list.scroll_height() as f64,
+            list.client_height() as f64,
+        )
+    };
+    let max = (extent - client).max(0.0);
+    let next = (current + delta).clamp(0.0, max);
+    if (next - current).abs() < 0.5 {
         return;
     }
     let opts = web_sys::ScrollToOptions::new();
-    opts.set_top(next);
+    if horizontal {
+        opts.set_left(next);
+    } else {
+        opts.set_top(next);
+    }
     opts.set_behavior(if smooth {
         web_sys::ScrollBehavior::Smooth
     } else {
@@ -118,21 +127,12 @@ fn scroll_reader_y(dy: f64, smooth: bool) {
     list.scroll_to_with_scroll_to_options(&opts);
 }
 
+fn scroll_reader_y(dy: f64, smooth: bool) {
+    scroll_reader_axis(false, dy, smooth);
+}
+
 fn scroll_reader_x(dx: f64, smooth: bool) {
-    let Some(list) = h_page_list() else { return };
-    let max = (list.scroll_width() as f64 - list.client_width() as f64).max(0.0);
-    let next = (list.scroll_left() as f64 + dx).clamp(0.0, max);
-    if (next - list.scroll_left() as f64).abs() < 0.5 {
-        return;
-    }
-    let opts = web_sys::ScrollToOptions::new();
-    opts.set_left(next);
-    opts.set_behavior(if smooth {
-        web_sys::ScrollBehavior::Smooth
-    } else {
-        web_sys::ScrollBehavior::Instant
-    });
-    list.scroll_to_with_scroll_to_options(&opts);
+    scroll_reader_axis(true, dx, smooth);
 }
 
 fn scroll_reader_line_y(dir: f64, smooth: bool) {
@@ -215,10 +215,6 @@ fn hold_tick() {
     request_animation_frame(hold_tick);
 }
 
-fn is_paginated(mode: ViewMode) -> bool {
-    mode.is_paginated()
-}
-
 /// The plain-key navigation arms: arrows (page turn in single/dual mode,
 /// scroll hold in continuous/horizontal), PageUp/Down and Space.
 pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::KeyboardEvent) {
@@ -253,7 +249,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
         // ignored: the rAF hold loop is what keeps a held key gliding,
         // so the browser's discrete key-repeat cannot chunk the motion.
         "ArrowUp" => {
-            if is_paginated(mode) {
+            if mode.is_paginated() {
                 ev.prevent_default();
                 page_prev(state);
             } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
@@ -264,7 +260,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
             }
         }
         "ArrowDown" => {
-            if is_paginated(mode) {
+            if mode.is_paginated() {
                 ev.prevent_default();
                 page_next(state);
             } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {

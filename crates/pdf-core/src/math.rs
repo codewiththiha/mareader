@@ -46,19 +46,6 @@ pub fn fit_scale(
     }
 }
 
-/// The scale a manually-zoomed page should be shown at, given the space
-/// actually available: a hand-zoomed page shrinks to fit when the window
-/// narrows (never silently crops), and grows back to exactly what the reader
-/// chose when the space returns. `desired` is the reader's choice (a zoom
-/// gesture only); the result is `min(desired, fit_w)`, recomputed from
-/// `desired` each time so shrinking is lossless and never drifts.
-pub fn constrained_scale(desired: f64, fit_w: f64) -> f64 {
-    if !desired.is_finite() || !fit_w.is_finite() || fit_w <= 0.0 {
-        return clamp_scale(desired);
-    }
-    clamp_scale(desired.min(fit_w))
-}
-
 /// One step along the preset ladder. `dir > 0` zooms in, `dir < 0` zooms out.
 ///
 /// The step is taken from the preset CLOSEST to `current`, then clamped into
@@ -86,69 +73,7 @@ pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        clamp_scale, constrained_scale, fit_scale, nearest_zoom, FitMode, MAX_SCALE, MIN_SCALE,
-    };
-
-    #[test]
-    fn a_page_that_fits_is_left_completely_alone() {
-        // The common case: plenty of room, so the reader's zoom is honoured.
-        assert_eq!(constrained_scale(1.0, 2.0), 1.0);
-        assert_eq!(constrained_scale(0.5, 2.0), 0.5);
-        // Exactly fitting is still fitting.
-        assert_eq!(constrained_scale(1.5, 1.5), 1.5);
-    }
-
-    #[test]
-    fn a_page_too_big_for_the_space_shrinks_to_fit() {
-        // THE BUG THIS FIXES: this used to stay at 2.0 and get cropped.
-        assert_eq!(constrained_scale(2.0, 0.8), 0.8);
-    }
-
-    #[test]
-    fn shrinking_never_pushes_a_zoomed_out_reader_back_up() {
-        // Someone at 50% in a huge window must stay at 50%; this constraint
-        // only ever removes scale, it is not a fit mode.
-        assert_eq!(constrained_scale(0.5, 3.0), 0.5);
-    }
-
-    #[test]
-    fn the_original_zoom_is_recovered_exactly_when_the_space_returns() {
-        // The whole point of keeping `desired` separate: no drift, no matter
-        // how many intermediate widths the window passed through.
-        let desired = 2.5;
-        let mut seen = Vec::new();
-        for fit_w in [2.0, 1.2, 0.6, 0.9, 1.8, 4.0] {
-            seen.push(constrained_scale(desired, fit_w));
-        }
-        assert_eq!(seen, vec![2.0, 1.2, 0.6, 0.9, 1.8, 2.5]);
-        // Back to exactly what the reader chose, not 2.4999 or 2.5001.
-        assert_eq!(*seen.last().unwrap(), desired);
-    }
-
-    #[test]
-    fn the_result_never_exceeds_what_the_reader_asked_for() {
-        // Growing back must STOP at `desired`, however much room appears.
-        for fit_w in [1.0, 5.0, 50.0] {
-            assert!(constrained_scale(1.25, fit_w) <= 1.25);
-        }
-    }
-
-    #[test]
-    fn the_clamp_still_applies_at_the_extremes() {
-        assert_eq!(constrained_scale(999.0, 999.0), super::MAX_SCALE);
-        assert_eq!(constrained_scale(0.0001, 0.0001), super::MIN_SCALE);
-    }
-
-    #[test]
-    fn a_useless_container_measurement_is_ignored_rather_than_collapsing_the_page() {
-        // A zero/NaN width arrives during mount and while the sidebar animates.
-        // Treating it as "fits nothing" would slam the page to MIN_SCALE.
-        assert_eq!(constrained_scale(1.0, 0.0), 1.0);
-        assert_eq!(constrained_scale(1.0, -3.0), 1.0);
-        assert_eq!(constrained_scale(1.0, f64::NAN), 1.0);
-        assert_eq!(constrained_scale(1.0, f64::INFINITY), 1.0);
-    }
+    use super::{clamp_scale, fit_scale, nearest_zoom, FitMode, MAX_SCALE, MIN_SCALE};
 
     #[test]
     fn fit_uses_the_page_under_the_eyes_not_page_one() {

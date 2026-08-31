@@ -27,8 +27,8 @@ mod palette;
 
 pub use color::{lerp, Rgb};
 pub use config::{
-    PaperArea, PaperConfig, PaperMode, DEFAULT_EDGE_WIDTH, DEFAULT_SCAN_PAGES, MAX_EDGE_WIDTH,
-    MAX_SCAN_PAGES, MIN_EDGE_WIDTH, MIN_SCAN_PAGES,
+    PaperArea, PaperConfig, PaperMode, DEFAULT_EDGE_WIDTH, DEFAULT_SCAN_PAGES, MAX_SCAN_PAGES,
+    MIN_SCAN_PAGES,
 };
 pub use detect::{PaperDetector, PAPER_SHARE};
 pub use palette::PagePalette;

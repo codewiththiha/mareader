@@ -55,8 +55,10 @@ pub fn retain_evicted(
         })
         .collect();
     if evicted.len() > max_retained {
-        // Keep the newest evictions (closest to the window) — they are the
-        // ones still near the viewport.
+        // Bound the set by keeping the upper end of the (ascending) eviction
+        // list — the items just below the new window. For a one-sided scroll
+        // these are the ones closest to the viewport; on a two-sided shrink
+        // the lower stragglers are dropped first.
         let drop = evicted.len() - max_retained;
         evicted.drain(0..drop);
     }

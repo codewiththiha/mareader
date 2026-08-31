@@ -9,9 +9,10 @@ target = "./index.html"
 #
 # IMPORTANT: every path in this list MUST exist on disk when `trunk serve`
 # starts. Trunk canonicalizes each entry at startup, and a missing path is
-# a hard error (https://github.com/trunk-rs/trunk). `public/pdfEngine.js`
-# and `scripts/*.js` are committed (and rewritten by pre_build hooks), so
-# `beforeDevCommand` can be just `trunk serve`.
+# a hard error (https://github.com/trunk-rs/trunk). The generated .js files
+# are gitignored, which is why `beforeDevCommand` runs `npm run build:ts`
+# first — on a fresh clone nothing would otherwise exist for the watcher to
+# canonicalize.
 #
 # Trunk's watcher uses mtime to decide whether to fire a rebuild — NOT
 # file content — so even though tsc's output is byte-identical across
