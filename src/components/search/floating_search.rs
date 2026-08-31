@@ -92,7 +92,7 @@ pub fn FloatingSearch(
     };
 
     let debounce = use_debounce(Duration::from_millis(SEARCH_DEBOUNCE_MS), {
-        let fire = fire_search.clone();
+        let fire = fire_search;
         move || fire(None)
     });
     let schedule = move || debounce.trigger();
@@ -104,7 +104,7 @@ pub fn FloatingSearch(
     };
 
     let commit = {
-        let fire = fire_search.clone();
+        let fire = fire_search;
         move |dir: i32| {
             let q = state.search.query.get_untracked();
             let fresh = last_query.get_untracked() != q

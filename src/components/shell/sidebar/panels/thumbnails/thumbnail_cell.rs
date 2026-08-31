@@ -99,13 +99,12 @@ pub fn ThumbCell(
         // alone — every close/open cycle would otherwise leak a batch of
         // IOSurfaces until GC gets around to it. Zero the backing store so
         // the panel's close costs a constant, never growth.
-        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-            if let Some(el) = doc.get_element_by_id(&cid_cleanup) {
-                if let Some(cv) = el.dyn_ref::<web_sys::HtmlCanvasElement>() {
-                    cv.set_width(0);
-                    cv.set_height(0);
-                }
-            }
+        if let Some(doc) = web_sys::window().and_then(|w| w.document())
+            && let Some(el) = doc.get_element_by_id(&cid_cleanup)
+            && let Some(cv) = el.dyn_ref::<web_sys::HtmlCanvasElement>()
+        {
+            cv.set_width(0);
+            cv.set_height(0);
         }
         if let Ok(mut guard) = bound_cleanup.lock() {
             guard.retain(|&p| p != page_cleanup);

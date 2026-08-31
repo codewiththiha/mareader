@@ -599,8 +599,10 @@ mod tests {
         assert!(m.sidebar_slide && m.canvas_resize && m.zoom && m.scroll_glide);
 
         // With the master off, no detail can bring an animation back.
-        let mut frozen = AnimationSettings::default();
-        frozen.enabled = false;
+        let frozen = AnimationSettings {
+            enabled: false,
+            ..AnimationSettings::default()
+        };
         assert!(frozen.zoom && frozen.sidebar_slide);
         let m = Motion::from_prefs(&frozen);
         assert!(!m.sidebar_slide);
@@ -613,8 +615,10 @@ mod tests {
     fn a_detail_switch_moves_exactly_one_motion() {
         // The tab offers one switch per motion, so each has to own precisely
         // the one it names — and the master has to stay out of their way.
-        let mut p = AnimationSettings::default();
-        p.zoom = false;
+        let p = AnimationSettings {
+            zoom: false,
+            ..AnimationSettings::default()
+        };
         let m = Motion::from_prefs(&p);
         assert!(!m.zoom);
         assert!(m.sidebar_slide && m.canvas_resize);

@@ -604,12 +604,14 @@ mod tests {
 
     #[test]
     fn user_presets_cannot_shadow_builtins_or_be_nameless() {
-        let mut s = Settings::default();
-        s.user_presets = vec![
-            Preset { id: "sepia".into(), name: "Mine".into(), group: String::new(), appearance: Appearance::default() },
-            Preset { id: "ok".into(), name: "  ".into(), group: String::new(), appearance: Appearance::default() },
-            Preset { id: "good".into(), name: "Good".into(), group: "G".into(), appearance: Appearance::default() },
-        ];
+        let mut s = Settings {
+            user_presets: vec![
+                Preset { id: "sepia".into(), name: "Mine".into(), group: String::new(), appearance: Appearance::default() },
+                Preset { id: "ok".into(), name: "  ".into(), group: String::new(), appearance: Appearance::default() },
+                Preset { id: "good".into(), name: "Good".into(), group: "G".into(), appearance: Appearance::default() },
+            ],
+            ..Settings::default()
+        };
         sanitize(&mut s);
         let ids: Vec<String> = s.user_presets.iter().map(|p| p.id.clone()).collect();
         assert_eq!(ids, vec!["good".to_string()]);
@@ -622,16 +624,20 @@ mod tests {
         // (the look itself lives in `appearance` and survives untouched)
         // rather than leave the menu highlighting a swatch that no longer
         // exists.
-        let mut s = Settings::default();
-        s.active_preset = Some("light".to_string());
+        let mut s = Settings {
+            active_preset: Some("light".to_string()),
+            ..Settings::default()
+        };
         sanitize(&mut s);
         assert_eq!(s.active_preset, None);
     }
 
     #[test]
     fn a_deleted_active_preset_does_not_dangle() {
-        let mut s = Settings::default();
-        s.active_preset = Some("gone".to_string());
+        let mut s = Settings {
+            active_preset: Some("gone".to_string()),
+            ..Settings::default()
+        };
         sanitize(&mut s);
         assert_eq!(s.active_preset, None);
     }
@@ -695,8 +701,10 @@ mod tests {
         let s: LayoutSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.blend_scope, PaperMode::Fixed);
 
-        let mut s = LayoutSettings::default();
-        s.blend_scope = PaperMode::Continuous;
+        let s = LayoutSettings {
+            blend_scope: PaperMode::Continuous,
+            ..LayoutSettings::default()
+        };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"blend_scope\":\"continuous\""), "{json}");
         let back: LayoutSettings = serde_json::from_str(&json).unwrap();
@@ -712,9 +720,11 @@ mod tests {
 
     #[test]
     fn the_area_and_scan_budget_round_trip_and_clamp() {
-        let mut s = LayoutSettings::default();
-        s.blend_area = PaperArea::Edges;
-        s.blend_scan_pages = 250;
+        let mut s = LayoutSettings {
+            blend_area: PaperArea::Edges,
+            blend_scan_pages: 250,
+            ..LayoutSettings::default()
+        };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"blend_area\":\"edges\""), "{json}");
         assert!(json.contains("\"blend_scan_pages\":250"), "{json}");

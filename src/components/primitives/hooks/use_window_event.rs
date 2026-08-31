@@ -29,10 +29,10 @@ pub fn use_window_event(event: &'static str, handler: impl Fn(web_sys::Event) + 
     let f_store = StoredValue::new_local(Some(f));
     let event_owned = event.to_string();
     on_cleanup(move || {
-        if let Some(f) = f_store.try_get_value().flatten() {
-            if let Some(win) = web_sys::window() {
-                let _ = win.remove_event_listener_with_callback(&event_owned, &f);
-            }
+        if let Some(f) = f_store.try_get_value().flatten()
+            && let Some(win) = web_sys::window()
+        {
+            let _ = win.remove_event_listener_with_callback(&event_owned, &f);
         }
         let _ = cb_store.try_set_value(None);
     });
@@ -56,10 +56,10 @@ pub fn add_window_capture_listener(event: &str, handler: impl FnMut(web_sys::Eve
     let f_store = StoredValue::new_local(Some(f));
     let event_owned = event.to_string();
     on_cleanup(move || {
-        if let Some(f) = f_store.try_get_value().flatten() {
-            if let Some(win) = web_sys::window() {
-                let _ = win.remove_event_listener_with_callback_and_bool(&event_owned, &f, true);
-            }
+        if let Some(f) = f_store.try_get_value().flatten()
+            && let Some(win) = web_sys::window()
+        {
+            let _ = win.remove_event_listener_with_callback_and_bool(&event_owned, &f, true);
         }
         let _ = cb_store.try_set_value(None);
     });

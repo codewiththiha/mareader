@@ -104,9 +104,6 @@ pub fn GlossSurface(
         _ => String::new(),
     });
 
-    let word_h = word.clone();
-    let pos_h = pos.clone();
-    let density_h = density.clone();
     let drag_handle: leptos::children::Children = Box::new(move || {
         // Drag handle — only live when expanded (guarded in the callback).
         view! {
@@ -143,7 +140,7 @@ pub fn GlossSurface(
             class="gloss-surface"
             hide_scrollbar=true
         >
-            <GlossBody word=word_h pos=pos_h density=density_h>
+            <GlossBody word=word pos=pos density=density>
                 {children()}
             </GlossBody>
         </FloatingCard>

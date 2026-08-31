@@ -43,19 +43,24 @@ pub struct LongPressHandlers {
     pub swallow_context: Rc<dyn Fn() -> bool>,
 }
 
+/// A pending hold timer: the JS timeout handle plus the wasm-shim closure it
+/// keeps alive. Parked in a `StoredValue` so a re-run or cleanup cannot free
+/// the closure while the timeout is still queued.
+type PendingTimer = Option<(i32, Closure<dyn FnMut()>)>;
+
 /// Stop an in-flight press: the finger lifted, drifted past slop, or the
 /// gesture already completed. Clears the pending timer (harmless if it
 /// already fired) and drops the parked closure.
 fn cancel_press(
     press_active: StoredValue<bool, LocalStorage>,
-    timer: StoredValue<Option<(i32, Closure<dyn FnMut()>)>, LocalStorage>,
+    timer: StoredValue<PendingTimer, LocalStorage>,
 ) {
     press_active.set_value(false);
     timer.with_value(|t| {
-        if let Some((handle, _)) = t {
-            if let Some(win) = web_sys::window() {
-                win.clear_timeout_with_handle(*handle);
-            }
+        if let Some((handle, _)) = t
+            && let Some(win) = web_sys::window()
+        {
+            win.clear_timeout_with_handle(*handle);
         }
     });
     timer.set_value(None);
@@ -81,7 +86,7 @@ pub fn use_long_press(options: LongPressOptions) -> LongPressHandlers {
 
     let press_active = StoredValue::new_local(false);
     let press_start = StoredValue::new_local(None::<(i32, i32)>);
-    let timer = StoredValue::new_local(None::<(i32, Closure<dyn FnMut()>)>);
+    let timer: StoredValue<PendingTimer, LocalStorage> = StoredValue::new_local(None);
     let suppress_click = StoredValue::new_local(false);
     let suppress_context = StoredValue::new_local(false);
     let pressing = RwSignal::new(false);

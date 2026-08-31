@@ -47,7 +47,6 @@ pub fn ScrollShell(
     let list_ref: NodeRef<html::Div> = NodeRef::new();
     {
         let v = virtualizer.clone();
-        let list_ref = list_ref.clone();
         // The listener is retained by JS (leaked into a Function), so the
         // element it is attached to is remembered so it can be detached on
         // re-bind or unmount.
@@ -118,7 +117,7 @@ pub fn ScrollShell(
                 horizontal=axis == Axis::Horizontal
             />
             <Show when=move || progress_visible.get()>
-                <ProgressStrip fraction=Signal::derive(move || progress()) />
+                <ProgressStrip fraction=Signal::derive(progress) />
             </Show>
         </div>
     }

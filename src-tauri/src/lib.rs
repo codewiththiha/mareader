@@ -52,11 +52,10 @@ fn queue_pending(app: &tauri::AppHandle, path: String) {
     if !is_pdf_path(&path) {
         return;
     }
-    if let Some(state) = app.try_state::<PendingFile>() {
-        if let Ok(mut guard) = state.0.lock() {
+    if let Some(state) = app.try_state::<PendingFile>()
+        && let Ok(mut guard) = state.0.lock() {
             *guard = Some(path.clone());
         }
-    }
     let _ = app.emit("pdf-open-file", path);
 }
 

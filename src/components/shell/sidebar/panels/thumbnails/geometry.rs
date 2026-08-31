@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn grid_geometry_holds() {
-        assert!(2.0 * CELL_W + GAP_CROSS <= 288.0 - 2.0 * PAD);
+        const { assert!(2.0 * CELL_W + GAP_CROSS <= 288.0 - 2.0 * PAD); }
         assert!(row_height(842.0 / 595.0) > row_height(612.0 / 792.0));
         assert_eq!(row_height(1.0), CELL_W + ROW_GAP);
     }

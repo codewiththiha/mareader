@@ -41,7 +41,6 @@ pub(super) fn on_mode_change(
             defer.set(true);
             let page = state.viewer.page.get_untracked();
             let v = virtualizer.clone();
-            let defer = defer.clone();
             request_animation_frame(move || {
                 // Fresh container: recalibrate the viewport before anchoring,
                 // otherwise the window is computed against stale geometry.
@@ -60,7 +59,6 @@ pub(super) fn on_mode_change(
             defer.set(true);
             let page = state.viewer.page.get_untracked();
             let v = h_virtualizer.clone();
-            let defer = defer.clone();
             request_animation_frame(move || {
                 v.remeasure_container();
                 if page > 0 {

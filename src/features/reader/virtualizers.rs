@@ -152,8 +152,8 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     // pinned until the 30s idle timer. Sweep the moment scrolling settles
     // instead — both virtualizers, registered once (the views rebind the
     // SAME shared virtualizer on every mode flip).
-    virtualizer.on_scroll_idle(|| pdf_engine::api::sweep());
-    h_virtualizer.on_scroll_idle(|| pdf_engine::api::sweep());
+    virtualizer.on_scroll_idle(pdf_engine::api::sweep);
+    h_virtualizer.on_scroll_idle(pdf_engine::api::sweep);
 
     {
         let v = virtualizer.clone();

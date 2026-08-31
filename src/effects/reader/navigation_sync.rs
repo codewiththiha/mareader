@@ -166,11 +166,11 @@ pub fn navigation_sync(
 
     // The mode-restore flag is shared with on_mode_change, which raises it
     // during a mode flip and lowers it once the restored scroll has landed.
-    on_mode_change(state, virtualizer.clone(), h_virtualizer.clone(), nav.defer.clone());
+    on_mode_change(state, virtualizer.clone(), h_virtualizer.clone(), nav.defer);
 
     {
         let suppress = nav.suppress.clone();
-        let defer = nav.defer.clone();
+        let defer = nav.defer;
         let page = state.viewer.page;
         let v = virtualizer.clone();
         let gate = gate.clone();
@@ -222,7 +222,6 @@ pub fn navigation_sync(
         let suppress = nav.suppress.clone();
         let page = state.viewer.page;
         let v = virtualizer.clone();
-        let zooming = zooming.clone();
         let gate = gate.clone();
         Effect::new(move |_| {
             if mode.get() != ViewMode::ScrollVertical {
@@ -274,7 +273,7 @@ pub fn navigation_sync(
     {
         // dominant page follows the horizontal strip
         let (suppress, page, v) = (nav.suppress.clone(), state.viewer.page, h_virtualizer.clone());
-        let defer = nav.defer.clone();
+        let defer = nav.defer;
         let h_gate = h_gate.clone();
         Effect::new(move |_| {
             if mode.get() != ViewMode::ScrollHorizontal {
@@ -307,7 +306,6 @@ pub fn navigation_sync(
     {
         // page changes drive the horizontal strip
         let (suppress, page, v) = (nav.suppress.clone(), state.viewer.page, h_virtualizer.clone());
-        let zooming = zooming.clone();
         let h_gate = h_gate.clone();
         Effect::new(move |_| {
             if mode.get() != ViewMode::ScrollHorizontal {

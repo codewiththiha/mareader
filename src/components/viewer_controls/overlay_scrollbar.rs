@@ -77,23 +77,23 @@ pub fn OverlayScrollbar(
                     progress_s.set((pos / (total - client).max(1.0)).clamp(0.0, 1.0));
                 }
                 shown_s.set(true);
-                if let Some(prev) = hide_s.get() {
-                    if let Some(w) = web_sys::window() {
-                        w.clear_timeout_with_handle(prev);
-                    }
+                if let Some(prev) = hide_s.get()
+                    && let Some(w) = web_sys::window()
+                {
+                    w.clear_timeout_with_handle(prev);
                 }
                 let shown_hide = shown_s;
                 let slot = hide_s.clone();
                 let tcb = Closure::once_into_js(move || {
                     shown_hide.set(false);
                 });
-                if let Some(w) = web_sys::window() {
-                    if let Ok(h) = w.set_timeout_with_callback_and_timeout_and_arguments_0(
+                if let Some(w) = web_sys::window()
+                    && let Ok(h) = w.set_timeout_with_callback_and_timeout_and_arguments_0(
                         tcb.as_ref().unchecked_ref(),
                         1000,
-                    ) {
-                        slot.set(Some(h));
-                    }
+                    )
+                {
+                    slot.set(Some(h));
                 }
             }) as Box<dyn FnMut(web_sys::Event)>);
 
@@ -134,10 +134,10 @@ pub fn OverlayScrollbar(
                         el.scroll_top()
                     };
                     drag.set(Some((axis_pos(&ev), pos)));
-                    if let Some(t) = ev.current_target() {
-                        if let Ok(el) = t.dyn_into::<web_sys::Element>() {
-                            let _ = el.set_pointer_capture(ev.pointer_id());
-                        }
+                    if let Some(t) = ev.current_target()
+                        && let Ok(el) = t.dyn_into::<web_sys::Element>()
+                    {
+                        let _ = el.set_pointer_capture(ev.pointer_id());
                     }
                     shown.set(true);
                 }

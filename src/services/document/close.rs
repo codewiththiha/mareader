@@ -36,10 +36,10 @@ pub fn close_document(state: AppState) {
                 changed = true;
             }
         });
-        if changed {
-            if let Err(e) = save_library(&state.library.books.get_untracked()) {
-                e.report();
-            }
+        if changed
+            && let Err(e) = save_library(&state.library.books.get_untracked())
+        {
+            e.report();
         }
     }
 

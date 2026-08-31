@@ -92,7 +92,6 @@ pub fn PageStrip(
     // drift during the exact frames it needed to stay still.)
     let on_geometry = match axis {
         Axis::Vertical => {
-            let handle = handle.clone();
             Callback::new(move |(page, _w, height): (u32, f64, f64)| {
                 if state.viewer.zooming_now() {
                     return;
@@ -109,7 +108,6 @@ pub fn PageStrip(
             })
         }
         Axis::Horizontal => {
-            let handle = handle.clone();
             Callback::new(move |(_page, w, _h): (u32, f64, f64)| {
                 if state.viewer.zooming_now() {
                     return;
@@ -127,8 +125,7 @@ pub fn PageStrip(
         <div id=scroller_id node_ref=list_ref class=scroller_class tabindex="0">
             {match axis {
                 Axis::Vertical => {
-                    let handle = handle.clone();
-                    let each_items = items.clone();
+                    let each_items = items;
                     view! {
                         <div
                             class="relative"
@@ -142,7 +139,7 @@ pub fn PageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let top = handle.with_value(|v| v.item_top(index));
-                                    let dormant = dormant_signal(items.clone(), index);
+                                    let dormant = dormant_signal(items, index);
                                     let style = move || format!(
                                         "position:absolute;top:{}px;left:0;right:0;display:flex;padding-inline:{}px",
                                         top.get(), state.viewer.page_margin.get()
@@ -172,8 +169,7 @@ pub fn PageStrip(
                     }.into_any()
                 }
                 Axis::Horizontal => {
-                    let handle = handle.clone();
-                    let each_items = items.clone();
+                    let each_items = items;
                     view! {
                         <div
                             class="relative"
@@ -192,7 +188,7 @@ pub fn PageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let left = handle.with_value(|v| v.item_top(index));
-                                    let dormant = dormant_signal(items.clone(), index);
+                                    let dormant = dormant_signal(items, index);
                                     // top:0 — the strip owns the full window height and
                                     // the auto-hiding title bar overlays it, like Spread.
                                     let style = move || format!(

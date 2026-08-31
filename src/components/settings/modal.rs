@@ -46,17 +46,17 @@ pub fn SettingsModal(
             return;
         }
         let h = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
-            if let Ok(kev) = ev.dyn_into::<web_sys::KeyboardEvent>() {
-                if kev.key() == "Escape" {
-                    // A dropdown (or any dismissable surface) opened inside
-                    // the modal owns this press: its own handler peels it,
-                    // and closing the modal underneath it in the same
-                    // keydown would take both layers down at once.
-                    if crate::components::primitives::floating::dismiss::has_open_dismissable() {
-                        return;
-                    }
-                    open.set(false);
+            if let Ok(kev) = ev.dyn_into::<web_sys::KeyboardEvent>()
+                && kev.key() == "Escape"
+            {
+                // A dropdown (or any dismissable surface) opened inside
+                // the modal owns this press: its own handler peels it,
+                // and closing the modal underneath it in the same
+                // keydown would take both layers down at once.
+                if crate::components::primitives::floating::dismiss::has_open_dismissable() {
+                    return;
                 }
+                open.set(false);
             }
         });
         on_cleanup(move || h.remove());
