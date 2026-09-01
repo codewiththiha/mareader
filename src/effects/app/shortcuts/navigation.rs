@@ -1,6 +1,11 @@
 //! Page navigation and the continuous-scroll hold engine: arrows turn pages
 //! in single/dual mode and glide the scrollport in continuous/horizontal mode;
 //! PageUp/Down and Space page the column.
+//!
+//! What a key MEANS is not decided here — that is [`super::keymap`], which is
+//! pure and covered by tests. This file is the doing: the scroll helpers, the
+//! rAF hold engine behind a held arrow, and the small bridge that reads an
+//! event into the keymap's inputs and performs its answer.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -12,6 +17,7 @@ use crate::components::primitives::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
 
 use super::is_chrome_scroll_target;
+use super::keymap::{self, NavAction};
 
 /// One Arrow Up/Down tap is a reading nudge, not a page jump.
 ///
@@ -217,101 +223,50 @@ fn hold_tick() {
 
 /// The plain-key navigation arms: arrows (page turn in single/dual mode,
 /// scroll hold in continuous/horizontal), PageUp/Down and Space.
+///
+/// The DECISION lives in [`keymap::resolve`], which is pure and tested; this
+/// reads the event into its inputs and performs the answer.
 pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::KeyboardEvent) {
-    let mode = state.viewer.mode.get();
+    let key = ev.key();
+    let outcome = keymap::resolve(keymap::NavKey {
+        key: key.as_str(),
+        shift: ev.shift_key(),
+        repeat: ev.repeat(),
+        mode: state.viewer.mode.get(),
+        in_chrome: is_chrome_scroll_target(ev),
+        on_button: ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::HtmlButtonElement>().ok())
+            .is_some(),
+    });
+
+    if outcome.prevent_default {
+        ev.prevent_default();
+    }
+    let Some(action) = outcome.action else {
+        return;
+    };
     // Whether this keypress may GLIDE anywhere. Untracked: the switch that
     // turns the glide off must not be what triggers one, and a keypress reads
     // the world as it is the moment it lands.
     let glide = state.viewer.motion.get_untracked().scroll_glide;
-    match ev.key().as_str() {
-        "ArrowLeft" => {
-            ev.prevent_default();
-            if mode == ViewMode::ScrollHorizontal {
-                if !is_chrome_scroll_target(ev) && !ev.repeat() {
-                    begin_line_hold(-1.0, true, glide);
-                }
+    match action {
+        NavAction::PagePrev => page_prev(state),
+        NavAction::PageNext => page_next(state),
+        NavAction::HoldLine { dir, horizontal } => {
+            begin_line_hold(dir as f64, horizontal, glide)
+        }
+        NavAction::PageStep { dir, horizontal } => {
+            focus_scroll_list(horizontal);
+            // A repeat is the browser hammering the key; easing each one
+            // would queue a stack of overlapping smooth scrolls.
+            let smooth = glide && !ev.repeat();
+            if horizontal {
+                scroll_reader_page_x(dir as f64, smooth);
             } else {
-                page_prev(state);
+                scroll_reader_page_y(dir as f64, smooth);
             }
         }
-        "ArrowRight" => {
-            ev.prevent_default();
-            if mode == ViewMode::ScrollHorizontal {
-                if !is_chrome_scroll_target(ev) && !ev.repeat() {
-                    begin_line_hold(1.0, true, glide);
-                }
-            } else {
-                page_next(state);
-            }
-        }
-        // Single/Dual: up/down turn the page. Continuous: WE scroll
-        // `#page-list` ourselves — see `scroll_reader_y`. `repeat` is
-        // ignored: the rAF hold loop is what keeps a held key gliding,
-        // so the browser's discrete key-repeat cannot chunk the motion.
-        "ArrowUp" => {
-            if mode.is_paginated() {
-                ev.prevent_default();
-                page_prev(state);
-            } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
-                ev.prevent_default();
-                if !ev.repeat() {
-                    begin_line_hold(-1.0, false, glide);
-                }
-            }
-        }
-        "ArrowDown" => {
-            if mode.is_paginated() {
-                ev.prevent_default();
-                page_next(state);
-            } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
-                ev.prevent_default();
-                if !ev.repeat() {
-                    begin_line_hold(1.0, false, glide);
-                }
-            }
-        }
-        "PageUp" => {
-            if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
-                ev.prevent_default();
-                focus_scroll_list(false);
-                scroll_reader_page_y(-1.0, glide && !ev.repeat());
-            } else if mode == ViewMode::ScrollHorizontal && !is_chrome_scroll_target(ev) {
-                ev.prevent_default();
-                focus_scroll_list(true);
-                scroll_reader_page_x(-1.0, glide && !ev.repeat());
-            }
-        }
-        "PageDown" => {
-            if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
-                ev.prevent_default();
-                focus_scroll_list(false);
-                scroll_reader_page_y(1.0, glide && !ev.repeat());
-            } else if mode == ViewMode::ScrollHorizontal && !is_chrome_scroll_target(ev) {
-                ev.prevent_default();
-                focus_scroll_list(true);
-                scroll_reader_page_x(1.0, glide && !ev.repeat());
-            }
-        }
-        " " => {
-            let on_button = ev
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::HtmlButtonElement>().ok())
-                .is_some();
-            if !on_button && !is_chrome_scroll_target(ev) {
-                if mode == ViewMode::ScrollVertical {
-                    ev.prevent_default();
-                    focus_scroll_list(false);
-                    let dir = if ev.shift_key() { -1.0 } else { 1.0 };
-                    scroll_reader_page_y(dir, glide && !ev.repeat());
-                } else if mode == ViewMode::ScrollHorizontal {
-                    ev.prevent_default();
-                    focus_scroll_list(true);
-                    let dir = if ev.shift_key() { -1.0 } else { 1.0 };
-                    scroll_reader_page_x(dir, glide && !ev.repeat());
-                }
-            }
-        }
-        _ => {}
     }
 }
 

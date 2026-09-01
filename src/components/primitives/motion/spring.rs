@@ -16,8 +16,29 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 use pdf_core::gloss::GlossBox;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 
 use crate::components::primitives::floating::types::FloatBox;
+
+fn cancel_raf(id: Option<i32>) {
+    if let Some(id) = id
+        && let Some(w) = web_sys::window()
+    {
+        let _ = w.cancel_animation_frame(id);
+    }
+}
+
+fn schedule_raf(raf_id: StoredValue<Option<i32>, LocalStorage>, f: impl FnOnce() + 'static) {
+    cancel_raf(raf_id.try_get_value().flatten());
+    let Some(w) = web_sys::window() else {
+        return;
+    };
+    let cb = Closure::once_into_js(f);
+    if let Ok(id) = w.request_animation_frame(cb.as_ref().unchecked_ref()) {
+        raf_id.set_value(Some(id));
+    }
+}
 
 type StepSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
@@ -120,6 +141,8 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
     // The owner-scoped holder for the current step closure, so it outlives the
     // rAF callbacks between Effect re-runs (same shape as zoom.rs's anim_slot).
     let anim_slot = StoredValue::new_local(None::<StepSlot>);
+    let raf_id = StoredValue::new_local(None::<i32>);
+    on_cleanup(move || cancel_raf(raf_id.try_get_value().flatten()));
 
     let reset_to = Callback::new(move |b: T| {
         value.set(Some(b));
@@ -134,6 +157,8 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
             value.set(None);
             vel.set_value(T::zero());
             last_ms.set_value(f64::NAN);
+            cancel_raf(raf_id.try_get_value().flatten());
+            raf_id.set_value(None);
             return;
         }
 
@@ -183,13 +208,13 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
 
             // Re-arm: upgrade our weak slot to the strong closure and queue it.
             if let Some(next) = weak.upgrade().and_then(|s| s.borrow().clone()) {
-                request_animation_frame(move || next());
+                schedule_raf(raf_id, move || next());
             }
         });
 
         *slot.borrow_mut() = Some(step.clone());
         anim_slot.set_value(Some(slot));
-        request_animation_frame(move || step());
+        schedule_raf(raf_id, move || step());
     });
 
     SpringBox { value, reset_to }

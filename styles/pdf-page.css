@@ -9,17 +9,15 @@
   background-color: var(--color-paper);
   overflow: hidden;
 
-  /* THEME BAKING (pdfEngine.js). The canvas no longer carries the theme as
-     live CSS (filter + mix-blend-mode over the paper backdrop) — the engine
-     bakes the SAME pipeline into the raster once per render, so each page is
-     ONE opaque compositor texture instead of texture + filter intermediate +
-     blend group. That stack is what made the webview's GPU process outgrow
-     the renderer: every scroll-mounted page, every sidebar-slide frame and
-     every zoom frame re-rasterised it. Colours are byte-identical, and the
-     render scale / DPR budget is untouched, so text stays exactly as sharp.
-     During an appearance slider scrub, only canvases holding raw pixels get
-     the live CSS pipeline via their `.canvas-raw` / `.thumb-raw` tag. The
-     tag travels with each raster, so a baked canvas is never double-filtered.
+  /* THEME PIPELINE (pdfEngine.js), chosen by the reader in Settings ▸ Theme ▸
+     Rendering. LIVE keeps the raw canvas under the compositor's filter +
+     mix-blend-mode, so the page and the document backdrop share one
+     floating-point pass — the seamless look — at the cost of one filter
+     intermediate per mounted canvas; the reader's bounded virtualization
+     window keeps that cost predictable. BAKED burns the same pipeline into one
+     opaque texture per render instead, and the `.canvas-raw` / `.thumb-raw`
+     tags then appear only while an appearance scrub temporarily exposes raw
+     pixels.
 
      `contain: content` (layout + paint) keeps page-internal repaints — text
      layer swaps, highlight boxes — from invalidating anything outside the
@@ -77,9 +75,10 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  /* Filter + blend are BAKED into the raster by the engine (see above).
-     Keeping them off the live canvas is the GPU-memory fix: the compositor
-     holds one opaque texture per page and nothing else. */
+  /* Live mode keeps filter + blend on this raw canvas so the page and
+     backdrop stay in the same compositor pass. In baked mode this stays
+     unfiltered for the baked display, and `.canvas-raw` below opts into the
+     live path only for the duration of a scrub. */
 }
 
 /* APPEARANCE SCRUB — raw rasters carry a tag as they are painted, and only
@@ -342,6 +341,23 @@ html.appearance-scrubbing .pdf-page::before {
    position/size/filter/blend; this only keeps it click-through. */
 .pdf-page canvas.page-snapshot {
   pointer-events: none;
+}
+
+/* LIVE-MODE SNAPSHOT THEMING.
+   The snapshot is a raw `drawImage` pixel copy of the live canvas, so in LIVE
+   mode — where the theme is nothing but the compositor's filter + blend on
+   `canvas.canvas-raw` — it captures the UN-themed pixels. The flicker fix
+   below hides the live canvas for as long as the snapshot is mounted, so
+   those raw white pixels are what the reader sees for the whole re-render:
+   a white flash across the page on every zoom commit.
+   Keying off `.canvas-raw` (the tag that means "this canvas is themed by
+   CSS") hands the snapshot the same filter and blend, so it composites
+   exactly like the canvas it copied. Baked canvases carry no such tag, the
+   `:has()` stays false, and the baked snapshot is left unfiltered — correct,
+   since its pixels are already themed and filtering them would double up. */
+.pdf-page:has(canvas.canvas-raw) canvas.page-snapshot {
+  filter: var(--canvas-filter, none);
+  mix-blend-mode: var(--canvas-blend, multiply);
 }
 
 /* END-OF-ZOOM FLICKER FIX.

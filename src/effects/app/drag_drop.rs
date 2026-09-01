@@ -38,7 +38,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     let da_enter = drag_active;
     let da_leave = drag_active;
     let da_drop = drag_active;
-    let _dom_handles = StoredValue::new_local(vec![
+    let dom_handles = StoredValue::new_local(vec![
         window_event_listener(leptos::ev::dragenter, move |ev: leptos::ev::DragEvent| {
             let n = d_enter.get() + 1;
             d_enter.set(n);
@@ -67,6 +67,17 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
             }
         }),
     ]);
+    // Leptos' window listener handles do NOT unregister when dropped — the
+    // handle has to be called. Parking them without this cleanup left four
+    // window listeners (and their closures) behind for every owner that ever
+    // installed them.
+    on_cleanup(move || {
+        if let Some(handles) = dom_handles.try_update_value(std::mem::take) {
+            for handle in handles {
+                handle.remove();
+            }
+        }
+    });
 
     // Layer 2: Tauri drag lifecycle events. Inside Tauri a native file drag
     // never reaches the DOM (no DOM dragenter/dragover fire on macOS — the

@@ -53,8 +53,10 @@ impl BaseMode {
     }
 
 
-    pub fn all() -> [BaseMode; 3] {
-        [Self::Light, Self::Dark, Self::Dim]
+    pub const ALL: &'static [BaseMode] = &[Self::Light, Self::Dark, Self::Dim];
+
+    pub fn all() -> &'static [BaseMode] {
+        Self::ALL
     }
 
 }
@@ -94,15 +96,17 @@ impl TextureMode {
         }
     }
 
-    pub fn all() -> [TextureMode; 6] {
-        [
-            Self::None,
-            Self::Paper,
-            Self::Lined,
-            Self::Grid,
-            Self::Dotted,
-            Self::Cross,
-        ]
+    pub const ALL: &'static [TextureMode] = &[
+        Self::None,
+        Self::Paper,
+        Self::Lined,
+        Self::Grid,
+        Self::Dotted,
+        Self::Cross,
+    ];
+
+    pub fn all() -> &'static [TextureMode] {
+        Self::ALL
     }
 }
 
@@ -197,17 +201,18 @@ impl Appearance {
         self.tint_strength > 0
     }
 
-    /// The exact hex the UI accent currently has (tinted or base).
+    /// The exact hex (or oklch literal) the UI accent currently has.
+    /// Computed directly so a theme tick does not allocate the seven-token
+    /// override vector just to pick one key.
     pub fn accent_hex(&self) -> String {
-        self.ui_overrides()
-            .into_iter()
-            .find(|(k, _)| *k == "--color-accent")
-            .map(|(_, v)| v)
-            .unwrap_or_else(|| match self.base {
-                BaseMode::Light => "#2563eb".into(),
-                BaseMode::Dark => "#60a5fa".into(),
-                BaseMode::Dim => "#7a9bd4".into(),
-            })
+        if let Some(value) = self.tinted_accent() {
+            return value;
+        }
+        match self.base {
+            BaseMode::Light => "#2563eb".into(),
+            BaseMode::Dark => "#60a5fa".into(),
+            BaseMode::Dim => "#7a9bd4".into(),
+        }
     }
 }
 #[cfg(test)]

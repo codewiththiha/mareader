@@ -3,6 +3,8 @@
 //! surface is its only consumer — the measure twin renders it headless to
 //! predict the card's height.
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
 use pdf_core::settings::GlossDensity;
 
@@ -31,12 +33,12 @@ fn section_classes(density: GlossDensity) -> (&'static str, &'static str, &'stat
 /// in place; the reveal animation plays once, on mount.
 #[component]
 pub fn WordInfoSections(
-    #[prop(into)] info: Signal<Option<WordInfo>>,
+    #[prop(into)] info: Signal<Option<Arc<WordInfo>>>,
     #[prop(into)] density: Signal<GlossDensity>,
 ) -> impl IntoView {
-    let meaning = Memo::new(move |_| info.get().map(|i| i.meaning).unwrap_or_default());
-    let synonyms = Memo::new(move |_| info.get().map(|i| i.synonyms).unwrap_or_default());
-    let usages = Memo::new(move |_| info.get().map(|i| i.usages).unwrap_or_default());
+    let meaning = Memo::new(move |_| info.get().map(|i| i.meaning.clone()).unwrap_or_default());
+    let synonyms = Memo::new(move |_| info.get().map(|i| i.synonyms.clone()).unwrap_or_default());
+    let usages = Memo::new(move |_| info.get().map(|i| i.usages.clone()).unwrap_or_default());
     let has_synonyms = Signal::derive(move || !synonyms.get().is_empty());
     let has_usages = Signal::derive(move || !usages.get().is_empty());
     let classes = Signal::derive(move || section_classes(density.get()));

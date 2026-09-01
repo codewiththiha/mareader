@@ -10,10 +10,11 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 use wasm_bindgen::JsValue;
 
-use crate::state::library::{sanitize as sanitize_library, CoverImage, RecentBook};
+use crate::state::library::{sanitize as sanitize_library, CoverImage, CoverMap, RecentBook};
 use pdf_core::gloss::GlossMark;
 use pdf_core::settings::{sanitize, Settings, SETTINGS_KEY};
 
@@ -125,14 +126,27 @@ pub fn save_library(recent: &[RecentBook]) -> Result<(), StorageError> {
 }
 
 /// Load the cover-art map (path -> page-1 JPEG data URL).
-pub fn load_covers() -> HashMap<String, CoverImage> {
-    get(COVERS_KEY)
+pub fn load_covers() -> CoverMap {
+    let stored: HashMap<String, CoverImage> = get(COVERS_KEY)
         .map(|raw| parse("covers", &raw))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    stored
+        .into_iter()
+        .map(|(path, cover)| (path, Arc::new(cover)))
+        .collect()
 }
 
-pub fn save_covers(covers: &HashMap<String, CoverImage>) -> Result<(), StorageError> {
-    let json = serde_json::to_string(covers).map_err(|e| StorageError {
+/// Save the cover-art map.
+///
+/// Serialized through a map of BORROWED covers: the images are the largest
+/// thing the app persists, and going through an owned `HashMap` to hand serde
+/// something it recognises would copy every data URL for no reason.
+pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
+    let borrowed: HashMap<&str, &CoverImage> = covers
+        .iter()
+        .map(|(path, cover)| (path.as_str(), cover.as_ref()))
+        .collect();
+    let json = serde_json::to_string(&borrowed).map_err(|e| StorageError {
         op: "save_covers",
         detail: format!("serialize failed: {e}"),
     })?;

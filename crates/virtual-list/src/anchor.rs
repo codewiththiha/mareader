@@ -15,6 +15,11 @@ pub enum AnchorPolicy {
     /// Keep the point `frac` (0..=1) of the way down `item` fixed. A resize
     /// of the anchor item itself shifts the scroll by `delta * frac`, so a
     /// point mid-item stays mid-item.
+    ///
+    /// The `0..=1` bound is enforced by the consumers ([`correct`] and
+    /// [`pin_at`] clamp it), so the policy stays plain data; the debug
+    /// asserts below make a caller passing an out-of-range fraction fail
+    /// loudly in debug builds instead of silently reading as an edge-anchor.
     Fractional {
         /// The anchor item.
         item: usize,
@@ -45,6 +50,10 @@ pub fn correct(scroll_top: f64, policy: AnchorPolicy, changed: usize, delta: f64
             if changed < item {
                 scroll_top + delta
             } else if changed == item {
+                debug_assert!(
+                    (0.0..=1.0).contains(&frac),
+                    "Fractional anchor frac must be 0..=1, got {frac}"
+                );
                 scroll_top + delta * frac.clamp(0.0, 1.0)
             } else {
                 scroll_top
@@ -65,6 +74,10 @@ pub fn pin_at<L: Layout + ?Sized>(
     if layout.is_empty() {
         return (0, 0.0);
     }
+    debug_assert!(
+        (0.0..=1.0).contains(&frac),
+        "pin_at frac must be 0..=1, got {frac}"
+    );
     let target = scroll_top + viewport.max(0.0) * frac.clamp(0.0, 1.0);
     let item = layout.index_at(target).min(layout.item_count() - 1);
     (item, target - layout.offset(item))

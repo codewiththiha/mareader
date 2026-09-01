@@ -18,6 +18,8 @@
 //! Dismiss is not a button on the card: Escape / outside-tap / origin-exit are
 //! owned by the popover's window listeners.
 
+use std::sync::Arc;
+
 use leptos::{html, prelude::*};
 
 use pdf_core::gloss::GlossBox;
@@ -212,13 +214,13 @@ pub fn GlossMeasureTwin(
     /// NodeRef of the twin; handed to the content-measure hook.
     node_ref: NodeRef<html::Div>,
     #[prop(into)] word: Signal<String>,
-    #[prop(into)] word_info: Signal<Option<WordInfo>>,
+    #[prop(into)] word_info: Signal<Option<Arc<WordInfo>>>,
     #[prop(into)] density: Signal<GlossDensity>,
 ) -> impl IntoView {
     // The header's POS line is derived here exactly as the surface derives
     // it, so a streaming snapshot that fills the POS in mid-answer moves
     // both headers in the same frame.
-    let pos = Signal::derive(move || word_info.get().map(|i| i.pos).unwrap_or_default());
+    let pos = Signal::derive(move || word_info.get().map(|i| i.pos.clone()).unwrap_or_default());
     view! {
         <div
             node_ref=node_ref
@@ -251,7 +253,7 @@ pub fn GlossMeasureTwin(
 #[component]
 pub fn GlossSurfaceContent(
     #[prop(into)] phase: Signal<AiPhase>,
-    #[prop(into)] word_info: Signal<Option<WordInfo>>,
+    #[prop(into)] word_info: Signal<Option<Arc<WordInfo>>>,
     #[prop(into)] density: Signal<GlossDensity>,
     #[prop(into)] error: Signal<Option<AiError>>,
     /// Retry the current mark after a retryable failure.

@@ -2897,7 +2897,10 @@ dependencies = [
  "dotenvy",
  "fm-bridge",
  "futures",
+ "objc2",
  "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-foundation",
  "raw-window-handle",
  "serde",
  "serde_json",
@@ -2922,6 +2925,7 @@ dependencies = [
 name = "pdf-engine"
 version = "0.5.0"
 dependencies = [
+ "futures",
  "js-sys",
  "pdf-core",
  "pdf-paper",

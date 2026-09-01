@@ -42,6 +42,7 @@ tokio = { version = "1", features = ["time"] } # Drives the mock provider's simu
 # to its window, NSButton+NSControl because that is `standardWindowButton:`'s
 # return type chain, NSResponder because NSView/NSButton are declared under it.
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "std",
   "NSButton",
@@ -50,6 +51,8 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSView",
   "NSWindow",
 ] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
 raw-window-handle = "0.6"
 
 # Apple Intelligence lives in the Tauri backend (WASM cannot spawn the Swift

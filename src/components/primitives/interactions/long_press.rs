@@ -180,6 +180,8 @@ pub fn use_long_press(options: LongPressOptions) -> LongPressHandlers {
         }
     });
 
+    on_cleanup(move || cancel_press(press_active, timer));
+
     LongPressHandlers {
         on_pointerdown,
         on_pointermove,

@@ -1,6 +1,6 @@
 // The paper pipeline's EYES. Every colour decision — detection, the fixed
 // scan, the per-page palette, the scroll interpolation — lives in the
-// `pdf-paper` crate behind the Rust paper session; this module only moves
+// `--pdf-paper` crate behind the Rust paper session; this module only moves
 // pixels across the boundary:
 //
 // * `stashPaperFrame` — the renderer parks each live raster's raw frame at
@@ -21,7 +21,7 @@
 // at all while blend mode is off, which is the common case: the session
 // gates the stash from the Rust side (setPaperActive).
 
-import { currentPath, pdf, setDetectedPaper } from "./state";
+import { session } from "./state";
 import type { PaperArea, PaperFrame } from "./types";
 import { releaseCanvas } from "./canvas";
 
@@ -162,11 +162,11 @@ export function takePaperFrame(
  * fired exactly once per resolved book colour. */
 export function setPaper(hex: string, persist: boolean, area: PaperArea): void {
   if (!hex) {
-    setDetectedPaper(null);
+    session.setDetectedPaper(null);
     return;
   }
-  setDetectedPaper(hex);
-  if (persist && currentPath) writeCache(currentPath, hex, area);
+  session.setDetectedPaper(hex);
+  if (persist && session.currentPath) writeCache(session.currentPath, hex, area);
 }
 
 /** Remember `hex` as this book's fixed colour under `area` WITHOUT
@@ -174,7 +174,7 @@ export function setPaper(hex: string, persist: boolean, area: PaperArea): void {
  * cleared but an interrupted scan's answer is still worth banking for the
  * next open. */
 export function persistPaper(hex: string, area: PaperArea): void {
-  if (hex && currentPath) writeCache(currentPath, hex, area);
+  if (hex && session.currentPath) writeCache(session.currentPath, hex, area);
 }
 
 /** The cached fixed colour for `path`, and the detection area it was found
@@ -199,7 +199,7 @@ export async function samplePaperPage(page: number): Promise<
   | { ok: true; page: number; width: number; height: number; data: Uint8ClampedArray }
   | { ok: true }
 > {
-  const doc = pdf;
+  const doc = session.pdf;
   if (!doc || page < 1) return { ok: true };
   try {
     const p = await doc.getPage(page);

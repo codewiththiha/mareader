@@ -16,25 +16,42 @@ use crate::components::ai::types::{AiError, WordInfo};
 
 pub use crate::events::AI_CHUNK_EVENT;
 
-/// The wire format of one `ai-stream-chunk` payload. Mirrors `AiChunk` in
+/// One chunk of an explanation. Mirrors `AiChunk` in
 /// `src-tauri/src/ai/traits.rs` (same `type`/`data` tagging) — keep in sync.
-///
-/// `Serialize` lets the bridge park the same shape on a window CustomEvent
-/// detail so per-mount UI can subscribe without touching Tauri again.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
-pub enum AiChunkEvent {
+pub enum AiChunk {
     Snapshot(WordInfo),
     Done,
     /// A typed failure; see [`AiError`] for the cause/retry contract.
     Error(AiError),
 }
 
-/// Starts an `explain_word` run on the backend. The streamed results arrive
-/// as `ai-stream-chunk` events, re-broadcast by [`install_ai_chunk_bridge`].
-pub fn invoke_explain_word(word: String, context: String) {
+/// The wire format of one `ai-stream-chunk` payload: a chunk plus the id of
+/// the run that produced it. Mirrors `AiStreamEvent` in
+/// `src-tauri/src/ai/traits.rs` — keep in sync.
+///
+/// The run id is what makes concurrent glosses safe. Runs are never cancelled
+/// backend-side, so a reader who glosses a second word while the first is
+/// still thinking has two runs emitting on one event name; without the id the
+/// abandoned run's answer would be rendered against — and cached under — the
+/// word that is on screen now.
+///
+/// `Serialize` lets the bridge park the same shape on a window CustomEvent
+/// detail so per-mount UI can subscribe without touching Tauri again.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiChunkEvent {
+    /// The id passed to [`invoke_explain_word`], echoed by the backend.
+    pub run: String,
+    pub chunk: AiChunk,
+}
+
+/// Starts an `explain_word` run on the backend, tagged with `run`. The
+/// streamed results arrive as `ai-stream-chunk` events carrying that same id,
+/// re-broadcast by [`install_ai_chunk_bridge`].
+pub fn invoke_explain_word(word: String, context: String, run: String) {
     spawn_local(async move {
-        if let Err(e) = pdf_engine::api::explain_word(&word, &context).await {
+        if let Err(e) = pdf_engine::api::explain_word(&word, &context, &run).await {
             web_sys::console::warn_1(&format!("[ai] explain_word invoke failed: {e}").into());
         }
     });
@@ -92,27 +109,27 @@ mod tests {
     // enum mirror above is wire-compatible.
     #[test]
     fn chunk_wire_shapes_parse() {
-        let snapshot: AiChunkEvent = serde_json::from_str(
+        let snapshot: AiChunk = serde_json::from_str(
             r#"{"type":"Snapshot","data":{"pos":"noun","meaning":"lasting briefly","synonyms":["fleeting"],"usages":["ephemeral beauty"]}}"#,
         )
         .unwrap();
         match snapshot {
-            AiChunkEvent::Snapshot(info) => {
+            AiChunk::Snapshot(info) => {
                 assert_eq!(info.pos, "noun");
                 assert_eq!(info.synonyms, vec!["fleeting"]);
             }
             other => panic!("expected Snapshot, got {other:?}"),
         }
 
-        let done: AiChunkEvent = serde_json::from_str(r#"{"type":"Done"}"#).unwrap();
-        assert!(matches!(done, AiChunkEvent::Done));
+        let done: AiChunk = serde_json::from_str(r#"{"type":"Done"}"#).unwrap();
+        assert!(matches!(done, AiChunk::Done));
 
-        let error: AiChunkEvent = serde_json::from_str(
+        let error: AiChunk = serde_json::from_str(
             r#"{"type":"Error","data":{"kind":"model_not_ready","message":"the on-device model is still downloading","retryable":true}}"#,
         )
         .unwrap();
         match error {
-            AiChunkEvent::Error(err) => {
+            AiChunk::Error(err) => {
                 assert_eq!(err.kind, AiErrorKind::ModelNotReady);
                 assert!(err.retryable);
             }
@@ -120,16 +137,32 @@ mod tests {
         }
 
         // The escape-hatch variant carries its summary inline.
-        let other: AiChunkEvent = serde_json::from_str(
+        let other: AiChunk = serde_json::from_str(
             r#"{"type":"Error","data":{"kind":{"other":"helper crashed"},"message":"helper crashed","retryable":false}}"#,
         )
         .unwrap();
         match other {
-            AiChunkEvent::Error(err) => {
+            AiChunk::Error(err) => {
                 assert_eq!(err.kind, AiErrorKind::Other("helper crashed".into()));
                 assert!(!err.retryable);
             }
             other => panic!("expected Error(Other), got {other:?}"),
+        }
+    }
+
+    /// The envelope the backend actually emits: the chunk nested under
+    /// `chunk`, the run id beside it. If this drifts, every chunk is dropped
+    /// by the listener's run gate and the card never opens.
+    #[test]
+    fn the_envelope_carries_the_run_id() {
+        let event: AiChunkEvent = serde_json::from_str(
+            r#"{"run":"g3-1712#4","chunk":{"type":"Snapshot","data":{"pos":"adj","meaning":"short-lived","synonyms":[],"usages":[]}}}"#,
+        )
+        .unwrap();
+        assert_eq!(event.run, "g3-1712#4");
+        match event.chunk {
+            AiChunk::Snapshot(info) => assert_eq!(info.meaning, "short-lived"),
+            other => panic!("expected Snapshot, got {other:?}"),
         }
     }
 }

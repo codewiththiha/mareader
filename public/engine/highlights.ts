@@ -1,33 +1,29 @@
 // Search-match highlight painting, split out of renderer.ts.
 
 import type { PageState } from "./types";
-import {
-  activeMatch,
-  searchQuery,
-  stateByCanvasId,
-} from "./state";
+import { session } from "./state";
 
 export function applyHighlights(st: PageState): void {
   const { host, textLayerEl } = st;
   if (!host) return;
   host.querySelectorAll(".highlight").forEach((n) => n.remove());
-  if (!searchQuery || !textLayerEl) return;
+  if (!session.searchQuery || !textLayerEl) return;
   const origin = host.getBoundingClientRect();
   const boxes: { r: DOMRect; ord: number }[] = [];
-  const qlen = searchQuery.length;
+  const qlen = session.searchQuery.length;
   let ord = 0;
   for (const span of textLayerEl.querySelectorAll("span")) {
     const text = span.textContent;
     if (!text) continue;
     const hay = text.toLowerCase();
-    if (!hay.includes(searchQuery)) continue;
+    if (!hay.includes(session.searchQuery)) continue;
     const node = span.firstChild;
     const textNode = node && node.nodeType === Node.TEXT_NODE ? (node as Text) : null;
     const addressable = !!(textNode && textNode.length >= qlen);
     for (
-      let at = hay.indexOf(searchQuery);
+      let at = hay.indexOf(session.searchQuery);
       at !== -1;
-      at = hay.indexOf(searchQuery, at + qlen)
+      at = hay.indexOf(session.searchQuery, at + qlen)
     ) {
       const mine = ord;
       ord += 1;
@@ -54,7 +50,7 @@ export function applyHighlights(st: PageState): void {
     if (boxes.length >= 200) break;
   }
   const activeOrd =
-    activeMatch && activeMatch.page === st.page ? activeMatch.index : -1;
+    session.activeMatch && session.activeMatch.page === st.page ? session.activeMatch.index : -1;
   const MAX_HIGHLIGHTS_PER_PAGE = 200;
   const painted = boxes.slice(0, MAX_HIGHLIGHTS_PER_PAGE);
   for (const { r, ord: n } of painted) {
@@ -70,7 +66,7 @@ export function applyHighlights(st: PageState): void {
 }
 
 export function refreshHighlights(): void {
-  for (const st of stateByCanvasId.values()) {
+  for (const st of session.stateByCanvasId.values()) {
     if (st.textLayerEl) applyHighlights(st);
   }
 }

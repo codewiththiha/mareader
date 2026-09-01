@@ -24,6 +24,13 @@ const POOL_MAX = 6;
 
 export function acquirePooledCanvas(w: number, h: number): HTMLCanvasElement {
   let c = canvasPool.pop();
+  // Guard against retaining an oversized texture: the pool caps COUNT, not
+  // pixels, and a returned 4K backing store is exactly the memory this pool
+  // exists to reuse — not to pin for a 48px thumbnail bake.
+  if (c && c.width * c.height > 2 * Math.max(1, Math.floor(w)) * Math.max(1, Math.floor(h))) {
+    releaseCanvas(c);
+    c = undefined;
+  }
   if (!c) c = document.createElement("canvas");
   c.width = Math.max(1, Math.floor(w));
   c.height = Math.max(1, Math.floor(h));
@@ -43,6 +50,17 @@ export function releasePooledCanvas(c: HTMLCanvasElement | null | undefined): vo
 
 let scratch: HTMLCanvasElement | null = null;
 let scratchInUse = false;
+
+// The scratch is a single free/held tri-state, and it is safe as such by
+// construction: `acquireScratch` hands out the scratch to ONE caller (the
+// flag flips), every concurrent caller gets a POOLED canvas, and
+// `releaseScratch(owned)` only frees the scratch when the caller actually
+// owns it — so a second caller releasing its pooled canvas can never free
+// the scratch out from under the first. (A refcount would not change that:
+// the pooled fallback never touches the flag.)
+//
+// Concurrent bakes do happen: live pages re-bake on theme change via
+// rerenderLivePages (runLimited(2)), and thumbnail bakes run alongside.
 
 /** Borrow the shared bake scratchpad. Concurrent callers get a pooled canvas. */
 export function acquireScratch(w: number, h: number): HTMLCanvasElement {

@@ -3,12 +3,18 @@
 //! state transitions. Listening here — not on Tauri directly — means
 //! unmount cleans up a plain window listener and never stacks/drops dead
 //! Tauri handlers across document switches.
+//!
+//! Every event carries the id of the run that produced it, and only the run
+//! the card is currently waiting on is allowed to write to it — see
+//! [`GlossOpen::begin_run`](crate::components::ai::gloss::controller::GlossOpen::begin_run).
+
+use std::sync::Arc;
 
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::types::{AiPhase, GlossPhase};
-use crate::services::ai::{AiChunkEvent, AI_CHUNK_EVENT};
+use crate::services::ai::{AiChunk, AiChunkEvent, AI_CHUNK_EVENT};
 use crate::state::AppState;
 
 pub fn use_ai_chunks(state: AppState, ctrl: GlossController) {
@@ -19,13 +25,24 @@ pub fn use_ai_chunks(state: AppState, ctrl: GlossController) {
     let handle = window_event_listener(
         leptos::ev::Custom::new(AI_CHUNK_EVENT),
         move |ev: web_sys::CustomEvent| {
-            let Ok(chunk) = serde_wasm_bindgen::from_value::<AiChunkEvent>(ev.detail()) else {
+            let Ok(event) = serde_wasm_bindgen::from_value::<AiChunkEvent>(ev.detail()) else {
                 return;
             };
-            match chunk {
-                AiChunkEvent::Snapshot(info) => {
+            // Only the run this card is waiting on may write to it. Runs are
+            // never cancelled backend-side, so gloss a second word while the
+            // first is still thinking and both stream onto this one listener;
+            // without the gate the abandoned answer lands on — and is cached
+            // under — whichever mark happens to be open when it arrives.
+            if !ctrl.open.accepts(&event.run) {
+                return;
+            }
+            match event.chunk {
+                AiChunk::Snapshot(info) => {
+                    // Bound the answer here, at the door: everything
+                    // downstream holds this exact value for the session.
+                    let info = Arc::new(info.clamped());
                     if let Some(m) = ctrl.open.mark.get_untracked() {
-                        ctrl.cache.insert(m.id.clone(), info.clone());
+                        ctrl.cache.insert(m.id, Arc::clone(&info));
                     }
                     // Land the content — and with it the measure twin's
                     // height — BEFORE the surface is told to expand, the
@@ -44,8 +61,12 @@ pub fn use_ai_chunks(state: AppState, ctrl: GlossController) {
                         }
                     }
                 }
-                AiChunkEvent::Done => ctrl.content.phase.set(AiPhase::Done),
-                AiChunkEvent::Error(err) => {
+                AiChunk::Done => {
+                    ctrl.content.phase.set(AiPhase::Done);
+                    ctrl.open.end_run();
+                }
+                AiChunk::Error(err) => {
+                    ctrl.open.end_run();
                     // A failed run must not leave a stale partial snapshot
                     // behind: re-opening this mark has to re-request, not
                     // recall the fragment as if it were the finished answer.

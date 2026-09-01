@@ -10,7 +10,7 @@ import {
 
 export async function run(): Promise<void> {
   // 2. register + render a page (identity pipeline first)
-  PDFReader.registerPage({ canvasId: "cont-0-cv", hostId: "cont-0-pg", page: 1 });
+  PDFReader.registerPage(1, "cont-0-cv", "cont-0-pg");
   const page0 = getEl("cont-0-pg");
   (page0 as unknown as { querySelector: () => { classList: { toggle(): void } } }).querySelector = () => ({ classList: { toggle() {} } });
   const r1 = await PDFReader.renderPage("cont-0-cv", 1.5, true);
@@ -32,7 +32,7 @@ export async function run(): Promise<void> {
   // and reused, so it allocates nothing here either.
   trackCreatedCanvases();
   setFakeComputed({ "--canvas-filter": "none", "--canvas-blend": "multiply" });
-  PDFReader.registerPage({ canvasId: "cont-0-cv", hostId: "cont-0-pg", page: 1 });
+  PDFReader.registerPage(1, "cont-0-cv", "cont-0-pg");
   await PDFReader.renderPage("cont-0-cv", 1.5, true);
   const bakeCanvases = created.filter((el) => el.tagName === "CANVAS" && el.width > 10).length;
   if (bakeCanvases !== 0) throw new Error("identity pipeline allocated bake canvases: " + bakeCanvases);

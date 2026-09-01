@@ -171,16 +171,14 @@ pub fn use_dismiss(
             };
             match trigger {
                 DismissTrigger::PointerDown => {
-                    let handle = window_event_listener_untyped("pointerdown", handler);
+                    use_window_event("pointerdown", handler);
                     on_cleanup(move || {
-                        handle.remove();
                         pop_stack(id);
                     });
                 }
                 DismissTrigger::Click => {
-                    let handle = window_event_listener_untyped("click", handler);
+                    use_window_event("click", handler);
                     on_cleanup(move || {
-                        handle.remove();
                         pop_stack(id);
                     });
                 }

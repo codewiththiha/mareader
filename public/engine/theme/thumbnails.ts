@@ -13,7 +13,7 @@ import {
   showBaked,
   showRaw,
 } from "../canvas";
-import { themeScrubActive, thumbCache, thumbLive } from "../state";
+import { session } from "../state";
 import { bakeRaster, rasterToCanvas } from "./bake";
 import { pipelineCache, readPipeline } from "./pipeline";
 
@@ -72,7 +72,7 @@ async function snapshotRaster(src: HTMLCanvasElement): Promise<MaybeCanvas> {
   return clone;
 }
 export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas> {
-  if (themeScrubActive) {
+  if (session.themeScrubActive) {
     return rasterWidth(entry.display) > 0 ? entry.display : null;
   }
   if (entry.gen === pipelineCache.gen && rasterWidth(entry.display) > 0) {
@@ -93,7 +93,7 @@ export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas
       blitInto(work, src);
       owned = true;
     }
-    const baked = bakeRaster(work, pipeline);
+    const baked = await bakeRaster(work, pipeline);
     let newDisplay: MaybeCanvas;
     if (baked === work) {
       newDisplay = await snapshotRaster(work);
@@ -115,9 +115,9 @@ export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas
 }
 export function paintAllVisibleThumbs(): void {
   const seen = new Set<string>();
-  for (const [canvasId, { page }] of thumbLive) {
+  for (const [canvasId, { page }] of session.thumbLive) {
     seen.add(canvasId);
-    const entry = thumbCache.get(page);
+    const entry = session.thumbCache.get(page);
     const live = el(canvasId) as HTMLCanvasElement | null;
     if (entry && live) paintCached(live, entry);
   }
@@ -129,10 +129,10 @@ export function paintAllVisibleThumbs(): void {
       const m = /^thumb-(\d+)$/.exec(live.id);
       if (!m || !m[1]) continue;
       const page = parseInt(m[1], 10);
-      const entry = thumbCache.get(page);
+      const entry = session.thumbCache.get(page);
       if (!entry) continue;
       paintCached(live, entry);
-      thumbLive.set(live.id, { page });
+      session.thumbLive.set(live.id, { page });
     }
   } catch (_) {
     /* no document */
@@ -142,7 +142,7 @@ export function paintCached(
   dst: HTMLCanvasElement | null,
   entry: ThumbEntry | null
 ): { width: number; height: number } | null {
-  const raw = themeScrubActive ? thumbRaw(entry) : null;
+  const raw = session.themeScrubActive ? thumbRaw(entry) : null;
   const src = raw ?? thumbSource(entry);
   if (!dst || !src) return null;
   // Raster + tag are swapped by one synchronous primitive. Missing cache

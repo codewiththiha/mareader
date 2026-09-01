@@ -72,10 +72,18 @@ pub(crate) fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
         state.library.covers.update(|covers| {
             covers.remove(&remove_path);
         });
-        if let Err(e) = crate::storage::save_library(&state.library.books.get_untracked()) {
+        if let Err(e) = state
+            .library
+            .books
+            .with_untracked(|books| crate::storage::save_library(books))
+        {
             e.report();
         }
-        if let Err(e) = crate::storage::save_covers(&state.library.covers.get_untracked()) {
+        if let Err(e) = state
+            .library
+            .covers
+            .with_untracked(crate::storage::save_covers)
+        {
             e.report();
         }
     };
@@ -104,7 +112,7 @@ pub(crate) fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
                     .with(|covers| covers.get(&alt_path).cloned())
                 {
                     Some(c) => view! {
-                        <img class="book-cover-img" src=c.data_url alt=alt_title.clone() loading="lazy" />
+                        <img class="book-cover-img" src=c.data_url.clone() alt=alt_title.clone() loading="lazy" />
                     }
                         .into_any(),
                     None => view! {

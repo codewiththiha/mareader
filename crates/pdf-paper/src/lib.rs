@@ -30,5 +30,5 @@ pub use config::{
     PaperArea, PaperConfig, PaperMode, DEFAULT_EDGE_WIDTH, DEFAULT_SCAN_PAGES, MAX_SCAN_PAGES,
     MIN_SCAN_PAGES,
 };
-pub use detect::{PaperDetector, PAPER_SHARE};
+pub use detect::{with_sample_buf, PaperDetector, PAPER_SHARE};
 pub use palette::PagePalette;

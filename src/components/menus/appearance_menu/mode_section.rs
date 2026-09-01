@@ -44,7 +44,8 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
     view! {
         <div class="grid grid-cols-3 gap-1">
             {BaseMode::all()
-                .into_iter()
+                .iter()
+                .copied()
                 .map(|b| {
                     let selected = Signal::derive(move || current_base() == b);
                     view! {

@@ -29,21 +29,33 @@ pub fn Viewer(
     let h_virtualizer_view = StoredValue::new_local(h_virtualizer);
     let mode = state.viewer.mode;
     view! {
-        {move || match mode.get() {
-            ViewMode::Single => view! {
-                <SingleLayout state=state progress_visible=progress_visible />
-            }.into_any(),
-            ViewMode::Spread => view! {
-                <SpreadLayout state=state progress_visible=progress_visible />
-            }.into_any(),
-            ViewMode::ScrollVertical => view! {
-                <ScrollVerticalLayout state=state virtualizer=virtualizer_view.get_value() progress_visible=progress_visible />
+        {move || {
+            match mode.get() {
+                ViewMode::Single => view! {
+                    <SingleLayout state=state progress_visible=progress_visible />
+                }
+                .into_any(),
+                ViewMode::Spread => view! {
+                    <SpreadLayout state=state progress_visible=progress_visible />
+                }
+                .into_any(),
+                ViewMode::ScrollVertical => view! {
+                    <ScrollVerticalLayout
+                        state=state
+                        virtualizer=virtualizer_view.get_value()
+                        progress_visible=progress_visible
+                    />
+                }
+                .into_any(),
+                ViewMode::ScrollHorizontal => view! {
+                    <ScrollHorizontalLayout
+                        state=state
+                        virtualizer=h_virtualizer_view.get_value()
+                        progress_visible=progress_visible
+                    />
+                }
+                .into_any(),
             }
-            .into_any(),
-            ViewMode::ScrollHorizontal => view! {
-                <ScrollHorizontalLayout state=state virtualizer=h_virtualizer_view.get_value() progress_visible=progress_visible />
-            }
-            .into_any(),
         }}
     }
 }

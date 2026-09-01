@@ -8,9 +8,11 @@ import {
   fakeComputed,
   setFakeComputed,
   getEl,
+  isLivePipelineActive,
 } from "./harness.js";
 
 export async function run(): Promise<void> {
+  const livePipeline = isLivePipelineActive();
   // 6. thumbnails
   const t = await PDFReader.renderThumb("thumb-1", 1, 0.25);
   if (!t.ok) throw new Error("thumb failed: " + JSON.stringify(t));
@@ -27,7 +29,10 @@ export async function run(): Promise<void> {
     paper: "#131316",
   });
   await PDFReader.refreshTheme();
-  const liveThumb = getEl("thumb-1") as unknown as { _ctx: FakeCtx };
+  const liveThumb = getEl("thumb-1") as unknown as {
+    _ctx: FakeCtx;
+    classList: { contains: (name: string) => boolean };
+  };
   const liveThumbPx = liveThumb._ctx.getImageData(0, 0, 1, 1).data;
   const liveThumbExpect = expectedBakePixel(
     [255, 255, 255],
@@ -35,8 +40,18 @@ export async function run(): Promise<void> {
     "screen",
     [19, 19, 22],
   );
-  assertClose(liveThumbPx, liveThumbExpect, "live thumb after refreshTheme");
-  console.log("live thumb refreshTheme ok:", Array.from(liveThumbPx).slice(0, 3));
+  if (livePipeline) {
+    if (liveThumbPx[0] !== 255 || liveThumbPx[1] !== 255 || liveThumbPx[2] !== 255) {
+      throw new Error("live thumb should retain raw pixels, got " + Array.from(liveThumbPx).slice(0, 3));
+    }
+    if (!liveThumb.classList.contains("thumb-raw")) {
+      throw new Error("live thumb should retain the thumb-raw marker");
+    }
+    console.log("live thumb refreshTheme ok: raw pixels remain under CSS pipeline");
+  } else {
+    assertClose(liveThumbPx, liveThumbExpect, "live thumb after refreshTheme");
+    console.log("live thumb refreshTheme ok:", Array.from(liveThumbPx).slice(0, 3));
+  }
 
   // 7. theme change marks cached thumbs STALE.
   PDFReader.cancelThumb("thumb-1");
@@ -45,7 +60,11 @@ export async function run(): Promise<void> {
   const t3 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
   if (!t3.ok) throw new Error("thumb after theme change failed: " + JSON.stringify(t3));
   const t4 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
-  if (!t4.ok || t4.cached !== true) throw new Error("rebaked thumb should hit cache, got " + JSON.stringify(t4));
-  console.log("lazy thumb re-bake ok");
+  if (!t4.ok || t4.cached !== true) throw new Error("thumb cache hit after theme change failed, got " + JSON.stringify(t4));
+  if (livePipeline) {
+    console.log("live thumb cache refresh ok: theme change kept the raw cache path");
+  } else {
+    console.log("lazy thumb re-bake ok");
+  }
 
 }

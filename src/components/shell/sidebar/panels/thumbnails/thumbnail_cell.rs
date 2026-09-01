@@ -5,11 +5,13 @@
 //! cancellation on unmount) and is the only place that talks to the engine's
 //! thumbnail lane. The panel above it only decides WHICH cells exist.
 
-// The registry + generation guard are shared with `on_cleanup` callbacks,
-// which Leptos stores in a `Send + Sync` slot - so these stay `Arc` +
-// `Mutex`/`AtomicU32`. This is single-threaded UI code, but the owner's
-// cleanup contract demands thread-safe handles; `Rc` would not compile here.
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
+// The registry, generation guard, and render slot are shared with
+// `on_cleanup` callbacks and the spawned render task, which Leptos stores in
+// a `Send + Sync` slot — so these stay `Arc` + `Mutex`/atomics. This is
+// single-threaded UI code, but the owner's cleanup contract demands
+// thread-safe handles; `Rc` would not compile here.
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,9 +21,82 @@ use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
 
 use pdf_engine::api as engine;
+use crate::components::primitives::hooks::use_timeout::use_timeout_slot;
 use crate::state::ReaderState;
 
 use super::geometry::{CELL_W, PULSE_STOP_MS, THUMB_SCALE};
+
+/// Registry of pages whose canvases are currently engine-bound. A `HashSet`
+/// keeps the per-cell mount/unmount bookkeeping O(1); `Arc<Mutex>` because
+/// the handles cross into `Send + Sync` `on_cleanup` slots (see the note at
+/// the top of this file).
+pub type ThumbRegistry = Arc<Mutex<HashSet<u32>>>;
+
+/// The render lifecycle of one cell, as a pure state machine: the DOM side
+/// (canvas blit, cover crossfade, pulse timer) reacts to the transitions,
+/// while the machine itself stays free of web types so its rules are
+/// unit-testable in the native test runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ThumbRenderState {
+    /// Mounted, and no render has completed yet. A failed render returns
+    /// here, and the next heal sweep retries it while attempts remain.
+    Pending,
+    /// A `render_thumb` is in flight; no second render may start.
+    Rendering,
+    /// The engine painted this page; the cell never renders again.
+    Settled,
+    /// Unmounted (scrolled out, document switch, teardown): terminal.
+    Unmounted,
+}
+
+/// How many times a cell may (re)start a render before it gives up and the
+/// pulsing skeleton persists as the fallback.
+const MAX_RENDER_ATTEMPTS: u8 = 3;
+
+impl ThumbRenderState {
+    /// A render may only start from `Pending`, and only while attempts
+    /// remain: `Rendering` blocks a concurrent render, `Settled` is a
+    /// terminal success, and `Unmounted` is terminal for everything.
+    fn may_start(self, attempts: u8) -> bool {
+        self == Self::Pending && attempts < MAX_RENDER_ATTEMPTS
+    }
+
+    fn start(self) -> Self {
+        Self::Rendering
+    }
+
+    /// A successful paint is final; the cover crossfade runs, then stops.
+    fn paint(self) -> Self {
+        Self::Settled
+    }
+
+    /// A failed paint goes back to `Pending`; the next heal sweep retries it
+    /// while attempts remain.
+    fn fail(self) -> Self {
+        Self::Pending
+    }
+
+    /// Unmounting wins over every other state, including a render still in
+    /// flight when the cell leaves the window.
+    fn unmount(self) -> Self {
+        Self::Unmounted
+    }
+
+    /// Atomic storage: the cell keeps the machine in one `AtomicU8` so the
+    /// render task and the cleanup callback share it without a lock.
+    fn as_u8(self) -> u8 {
+        self as u8
+    }
+
+    fn from_u8(value: u8) -> Self {
+        match value {
+            0 => Self::Pending,
+            1 => Self::Rendering,
+            2 => Self::Settled,
+            _ => Self::Unmounted,
+        }
+    }
+}
 
 /// One thumbnail cell: a fully-opaque, fully-blended `.thumb-canvas` under a
 /// themed `.thumb-skeleton` cover that fades out once the engine render
@@ -38,11 +113,15 @@ pub fn ThumbCell(
     generation: Arc<AtomicU32>,
     /// Registry of pages whose canvases are currently engine-bound, kept so a
     /// cell can remove itself from it on unmount.
-    bound: Arc<Mutex<Vec<u32>>>,
-    /// Bumped after the panel settles so a cell whose render lost a cache or
-    /// cancellation race can retry without remounting.
+    bound: ThumbRegistry,
+    /// Bumped when the panel's heal sweep runs, so a cell whose render lost a
+    /// cache or cancellation race can retry without remounting.
     #[prop(into)]
     heal: Signal<u64>,
+    /// Panel-wide staleness flag: this cell sets it when its render fails so
+    /// the panel schedules a heal sweep. The sweep — not the scroll stream —
+    /// is what drives healing.
+    needs_heal: RwSignal<bool>,
 ) -> impl IntoView {
     // SYNCHRONOUS cache probe, read while the view is being built — BEFORE the
     // cell's first frame is composited. When this page's bitmap is already in
@@ -61,18 +140,18 @@ pub fn ThumbCell(
     // A cached cell now has no cover state to animate at all.
     let starts_cached = engine::has_thumb(page, THUMB_SCALE);
     let loaded = RwSignal::new(starts_cached);
-    // Two-phase skeleton-stop state: a NodeRef onto the cover (the timer
-    // removes the pulse class from the real DOM node) and the timer handle,
-    // parked in a StoredValue so on_cleanup can cancel a pending removal if
-    // this cell unmounts mid-fade.
+    // A NodeRef onto the cover (the timer removes the pulse class from the
+    // real DOM node). The pending removal is parked in a scope-owned timer
+    // slot, so on_cleanup cancels it and the timer can never fire on a
+    // detached cover.
     let cover_ref: NodeRef<html::Div> = NodeRef::new();
-    let pulse_timer = StoredValue::new_local(None::<TimeoutHandle>);
-    // Async work can outlive a virtualized cell. Keep a local mount guard and
-    // separate "engine painted" from `loaded`: cached cells start visually
-    // loaded but still need one render call to blit their bitmap.
-    let mounted = Arc::new(AtomicBool::new(true));
-    let in_flight = Arc::new(AtomicBool::new(false));
-    let settled = Arc::new(AtomicBool::new(false));
+    let pulse_timer = use_timeout_slot();
+    // Async work can outlive a virtualized cell: the render slot and attempt
+    // counter are the machine's state, shared between the spawned render task
+    // and the cleanup callback. They keep "engine painted" separate from
+    // `loaded` — cached cells start visually loaded but still need one render
+    // call to blit their bitmap.
+    let render = Arc::new(AtomicU8::new(ThumbRenderState::Pending.as_u8()));
     let attempts = Arc::new(AtomicU8::new(0));
     // Current page drives the accent ring + badge. The badge is a z-10 overlay
     // so it stays visible on every card, not just the active one.
@@ -91,9 +170,14 @@ pub fn ThumbCell(
     let cid_cleanup = cid.clone();
     let page_cleanup = page;
     let bound_cleanup = bound.clone();
-    let mounted_cleanup = mounted.clone();
+    let render_cleanup = render.clone();
     on_cleanup(move || {
-        mounted_cleanup.store(false, Ordering::Relaxed);
+        // Terminal for the machine: the in-flight task (if any) sees
+        // `Unmounted` when it next wakes and drops its result. Routed
+        // through the transition (not a raw store) so every state change
+        // flows through the machine.
+        let current = ThumbRenderState::from_u8(render_cleanup.load(Ordering::Relaxed));
+        render_cleanup.store(current.unmount().as_u8(), Ordering::Relaxed);
         engine::cancel_thumb(&cid_cleanup);
         // WKWebView does not release a canvas backing store on DOM removal
         // alone — every close/open cycle would otherwise leak a batch of
@@ -105,53 +189,51 @@ pub fn ThumbCell(
         {
             cv.set_width(0);
             cv.set_height(0);
+            // Symmetry with the engine's `releaseCanvas`: it zeroes the
+            // dimensions AND clears the context, so do both here.
+            if let Ok(Some(ctx)) = cv.get_context("2d")
+                && let Some(ctx2d) = ctx.dyn_ref::<web_sys::CanvasRenderingContext2d>()
+            {
+                ctx2d.clear_rect(0.0, 0.0, 0.0, 0.0);
+            }
         }
         if let Ok(mut guard) = bound_cleanup.lock() {
-            guard.retain(|&p| p != page_cleanup);
-        }
-        // Cancel a pending pulse-removal so it can't fire on a detached node.
-        if let Some(h) = pulse_timer.get_value() {
-            h.clear();
+            guard.remove(&page_cleanup);
         }
     });
 
-    // Render on mount and after a settle sweep. A prefetch may populate the
+    // Render on mount and after a heal sweep. A prefetch may populate the
     // cache after `starts_cached` was sampled; every successful engine reply
     // therefore reveals the cover, cached or fresh.
     let cid_render = cid.clone();
     let doc_gen = generation.clone();
     let bound_render = bound.clone();
     let try_render = {
-        let mounted = mounted.clone();
-        let in_flight = in_flight.clone();
-        let settled = settled.clone();
+        let render = render.clone();
         let attempts = attempts.clone();
         move || {
-            if settled.load(Ordering::Relaxed)
-                || in_flight.load(Ordering::Relaxed)
-                || attempts.load(Ordering::Relaxed) >= 3
-                || !mounted.load(Ordering::Relaxed)
-            {
+            let slot = ThumbRenderState::from_u8(render.load(Ordering::Relaxed));
+            if !slot.may_start(attempts.load(Ordering::Relaxed)) {
                 return;
             }
             attempts.fetch_add(1, Ordering::Relaxed);
-            in_flight.store(true, Ordering::Relaxed);
+            render.store(slot.start().as_u8(), Ordering::Relaxed);
             let gen_now = doc_gen.load(Ordering::Relaxed);
             let cid2 = cid_render.clone();
             let gen_async = doc_gen.clone();
             let bound_async = bound_render.clone();
-            let mounted_async = mounted.clone();
-            let in_flight_async = in_flight.clone();
-            let settled_async = settled.clone();
+            let render_async = render.clone();
             spawn_local(async move {
-                if let Ok(mut guard) = bound_async.lock()
-                    && !guard.contains(&page)
-                {
-                    guard.push(page);
+                if let Ok(mut guard) = bound_async.lock() {
+                    guard.insert(page);
                 }
                 let result = engine::render_thumb(&cid2, page, THUMB_SCALE).await;
-                in_flight_async.store(false, Ordering::Relaxed);
-                if !mounted_async.load(Ordering::Relaxed)
+                // The cell may have unmounted (or the document changed) while
+                // the render was in flight: `Unmounted` is terminal, and the
+                // generation double-guard keeps a stale paint out of a fresh
+                // document's canvas.
+                let slot_now = ThumbRenderState::from_u8(render_async.load(Ordering::Relaxed));
+                if slot_now == ThumbRenderState::Unmounted
                     || gen_async.load(Ordering::Relaxed) != gen_now
                 {
                     return;
@@ -161,14 +243,23 @@ pub fn ThumbCell(
                         // A concurrent prefetch can turn this request into a
                         // cache hit after mount. The engine has painted either
                         // way, so cached must not leave the cover opaque.
-                        settled_async.store(true, Ordering::Relaxed);
+                        render_async.store(slot_now.paint().as_u8(), Ordering::Relaxed);
                         if !loaded.get_untracked() {
                             loaded.set(true);
                             if let Some(el) = cover_ref.get() {
                                 _ = el.class_list().add_1("thumb-skeleton-settling");
                             }
+                            let render_pulse = render_async.clone();
                             if let Ok(h) = set_timeout_with_handle(
                                 move || {
+                                    // The scope cleanup clears the handle, but
+                                    // the guard keeps even a leaked timer from
+                                    // touching a detached cover.
+                                    if render_pulse.load(Ordering::Relaxed)
+                                        == ThumbRenderState::Unmounted.as_u8()
+                                    {
+                                        return;
+                                    }
                                     if let Some(el) = cover_ref.get() {
                                         let _ = el.class_list().remove_1("thumb-skeleton-loading");
                                         let _ = el.class_list().remove_1("thumb-skeleton-settling");
@@ -190,6 +281,7 @@ pub fn ThumbCell(
                         if loaded.get_untracked() {
                             loaded.set(false);
                         }
+                        render_async.store(slot_now.fail().as_u8(), Ordering::Relaxed);
                         // A stale cancellation against a recycled canvas id is
                         // retried by the next heal sweep. Keep genuine errors
                         // visible without turning cancellation into noise.
@@ -198,6 +290,9 @@ pub fn ThumbCell(
                                 &format!("[thumbnails] render page {page}: {e}").into(),
                             );
                         }
+                        // Tell the panel a cell is stale so it schedules a
+                        // sweep — nothing else should trigger one.
+                        needs_heal.set(true);
                     }
                 }
             });
@@ -266,8 +361,8 @@ pub fn ThumbCell(
                 // is darker than --color-surface, so the old "lighter line-mix"
                 // 50% keyframe produced a tint LIGHTER than the base --thumb-bg,
                 // and during the 300ms opacity fade-out that lighter tint was
-                // partially visible over the multiply-blended canvas (which
-                // is DARKER — multiply darkens a white page toward the
+                // partially visible over the multiply-blended canvas (which is
+                // DARKER — multiply darkens a white page toward the
                 // backdrop tint), spiking the visible color brighter mid-fade
                 // before settling to the canvas result — the "high brightness
                 // then fall back to normal" flicker the user observed on
@@ -325,5 +420,45 @@ pub fn ThumbCell(
                 </div>
             </div>
         </button>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_pending_cells_with_attempts_left_may_start() {
+        assert!(ThumbRenderState::Pending.may_start(0));
+        assert!(ThumbRenderState::Pending.may_start(2));
+        assert!(!ThumbRenderState::Pending.may_start(MAX_RENDER_ATTEMPTS));
+        // A render already in flight blocks a second one...
+        assert!(!ThumbRenderState::Rendering.may_start(0));
+        // ...and a painted or unmounted cell never renders again.
+        assert!(!ThumbRenderState::Settled.may_start(0));
+        assert!(!ThumbRenderState::Unmounted.may_start(0));
+    }
+
+    #[test]
+    fn a_paint_is_final_a_failure_retries_and_unmount_is_terminal() {
+        assert_eq!(ThumbRenderState::Pending.start(), ThumbRenderState::Rendering);
+        assert_eq!(ThumbRenderState::Rendering.paint(), ThumbRenderState::Settled);
+        assert_eq!(ThumbRenderState::Rendering.fail(), ThumbRenderState::Pending);
+        // Unmounting wins over every state and is terminal.
+        assert_eq!(ThumbRenderState::Pending.unmount(), ThumbRenderState::Unmounted);
+        assert_eq!(ThumbRenderState::Rendering.unmount(), ThumbRenderState::Unmounted);
+        assert_eq!(ThumbRenderState::Unmounted.unmount(), ThumbRenderState::Unmounted);
+    }
+
+    #[test]
+    fn the_slot_round_trips_through_its_atomic_encoding() {
+        for slot in [
+            ThumbRenderState::Pending,
+            ThumbRenderState::Rendering,
+            ThumbRenderState::Settled,
+            ThumbRenderState::Unmounted,
+        ] {
+            assert_eq!(ThumbRenderState::from_u8(slot.as_u8()), slot);
+        }
     }
 }

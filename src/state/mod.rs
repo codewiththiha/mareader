@@ -8,6 +8,6 @@ pub mod library;
 pub mod reader;
 pub mod ui;
 
-pub use app::{AppState, Toast};
+pub use app::{AppearanceSignal, AppState, Toast};
 pub use reader::{NO_DOCUMENT, ReaderState, TextureSignal};
 pub use ui::SidebarMode;

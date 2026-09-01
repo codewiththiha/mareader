@@ -53,3 +53,73 @@ if (versions.size !== 1) {
 
 const version = sources[0]![1];
 console.log(`versions agree: ${version}`);
+
+// ---------------------------------------------------------------------------
+// Engine facade vs. Rust bridge contract
+// ---------------------------------------------------------------------------
+// crates/pdf-engine/src/bridge.rs is the sole place `window.PDFReader.*` is
+// declared. A rename on either side fails at RUNTIME with no build error
+// (the wasm shim just gets `undefined`), so this step cross-checks the
+// compiled facade (public/pdfEngine.js, produced by the build:ts step above)
+// against every extern the bridge declares under the PDFReader namespace.
+const bridgePath = path.join(root, "crates/pdf-engine/src/bridge.rs");
+const facadePath = path.join(root, "public/pdfEngine.js");
+
+function bridgePdfReaderNames(bridgeSrc: string): string[] {
+  // Only `extern "C"` declarations: `listen`/`has_pdf_reader` are plain pub
+  // fns and must not be counted as window.PDFReader surface. The attribute
+  // comes on its own line before the fn, so carry it until the fn it
+  // decorates, then consume it (an unused attribute would misattribute the
+  // NEXT fn).
+  const names: string[] = [];
+  const lines = bridgeSrc.split(/\r?\n/);
+  let inExtern = false;
+  let attr: { pdfreader: boolean; jsName: string | null } | null = null;
+  for (const line of lines) {
+    if (line.includes('extern "C"')) {
+      inExtern = true;
+      continue;
+    }
+    if (inExtern && /^\s*}\s*$/.test(line)) {
+      inExtern = false;
+      attr = null;
+      continue;
+    }
+    if (!inExtern) continue;
+    const am = /#\[wasm_bindgen\(([^)]*)\)\]/.exec(line);
+    if (am) {
+      const a = am[1]!;
+      attr = {
+        pdfreader: a.includes('js_namespace = ["window", "PDFReader"]'),
+        jsName: (/js_name\s*=\s*"(\w+)"/.exec(a) ?? [])[1] ?? null,
+      };
+      continue;
+    }
+    const fm = /pub\s+(?:async\s+)?fn\s+(\w+)/.exec(line);
+    if (fm && attr) {
+      if (attr.pdfreader) names.push(attr.jsName ?? fm[1]!);
+      attr = null;
+      continue;
+    }
+  }
+  return names;
+}
+
+if (fs.existsSync(facadePath)) {
+  const bridgeSrc = fs.readFileSync(bridgePath, "utf8");
+  const facadeSrc = fs.readFileSync(facadePath, "utf8");
+  const missing: string[] = [];
+  for (const name of bridgePdfReaderNames(bridgeSrc)) {
+    // The facade is a shorthand object literal; the LAST property can carry
+    // no trailing comma, so accept `,`, `:` or the closing `}`.
+    const re = new RegExp(`\\b${name}\\s*[,:}]`);
+    if (!re.test(facadeSrc)) missing.push(name);
+  }
+  if (missing.length > 0) {
+    console.error(`::error::PDFReader facade is missing bridge bindings: ${missing.join(", ")}`);
+    process.exit(1);
+  }
+  console.log(`engine facade matches the Rust bridge (${bridgePdfReaderNames(bridgeSrc).length} bindings)`);
+} else {
+  console.log("public/pdfEngine.js not built yet — facade check skipped");
+}

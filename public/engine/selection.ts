@@ -162,10 +162,18 @@ export function installSelectionTracker(): void {
   window.addEventListener("mouseup", () => {
     selDragging = false;
     dispatchSelectionPages();
+    // The detail pass the drag coalesced: run it once, debounced, exactly
+    // like a keyboard selection's.
+    if (detailDebounce) clearTimeout(detailDebounce);
+    detailDebounce = setTimeout(dispatchSelectionDetail, 120);
   });
 
   document.addEventListener("selectionchange", () => {
     dispatchSelectionPages();
+    // While a drag is in progress, selectionchange fires per mouse move and
+    // getClientRects() is a layout read. Coalesce the detail pass onto the
+    // drag's end (mouseup) and only debounce here for keyboard selection.
+    if (selDragging) return;
     if (detailDebounce) clearTimeout(detailDebounce);
     detailDebounce = setTimeout(dispatchSelectionDetail, 120);
   });

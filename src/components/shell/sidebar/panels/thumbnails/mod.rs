@@ -5,7 +5,8 @@
 //!   * `thumbnail_cell` — one thumbnail: its engine render, cache fast-path and
 //!     reveal animation.
 //!   * `auto_center` — the glide / grace / debounce machinery that follows the
-//!     reader's page (and the reveal-active listener).
+//!     reader's page (and the reveal-active listener): `math` holds the pure
+//!     timing rules, `wiring` the effect installation.
 //!   * `thumbnails_panel` — the scroll container: virtualization window and
 //!     document-change invalidation; wires in the auto-center effects.
 

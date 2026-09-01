@@ -8,6 +8,7 @@
 pub mod dom;
 pub mod use_content_size;
 pub mod use_custom_event;
+pub mod use_raf;
 pub mod use_resize_observer;
 pub mod use_timeout;
 pub mod use_viewport;

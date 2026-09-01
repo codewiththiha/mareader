@@ -49,6 +49,29 @@ pub fn use_debounce(duration: Duration, on_fire: impl Fn() + 'static) -> Debounc
     use_debounce_for(move || duration, on_fire)
 }
 
+/// A single pending-timer slot owned by the current reactive scope.
+///
+/// The thumbnail cell's pulse-stop timer and the outline panel's reveal
+/// retry each parked their `TimeoutHandle` in a `StoredValue<Option<…>>` and
+/// re-implemented the same cleanup dance: clear the pending fire and drop
+/// the slot so a timer can never fire on a detached node. This hands back
+/// the slot with that cleanup already registered on the current owner.
+///
+/// Call it from a component body, not from an effect: an effect's owner
+/// scope is disposed after each run, which would clear the slot out from
+/// under a timer the component still owns.
+pub fn use_timeout_slot() -> StoredValue<Option<TimeoutHandle>, LocalStorage> {
+    let handle = StoredValue::new_local(None::<TimeoutHandle>);
+    let cleanup = handle;
+    on_cleanup(move || {
+        if let Some(h) = cleanup.try_get_value().flatten() {
+            h.clear();
+        }
+        let _ = cleanup.try_set_value(None);
+    });
+    handle
+}
+
 /// The duration-getter flavour of [`use_debounce`]: the wait is read at every
 /// trigger, so one debouncer can land different fires at different delays
 /// (the shell controller's close hold is one timer that waits out a slide or

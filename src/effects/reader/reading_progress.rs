@@ -5,6 +5,11 @@
 //! `RecentBook.page` in the library up to date — so the next open of that book
 //! resumes where the reader left off. Persistence is debounced so a fast
 //! scroll through continuous mode is one localStorage write, not one per row.
+//!
+//! It stands down for the whole of a zoom transaction. The page counter is not
+//! trustworthy while one is open — navigation_sync's dominant arm is standing
+//! down and a held jump has not been replayed — and this is the one effect
+//! that writes that untrustworthy value somewhere permanent.
 
 use std::time::Duration;
 
@@ -20,6 +25,8 @@ const SAVE_MS: u64 = 400;
 
 /// Must be called once from the app root (ReaderPage), alongside the zoom sources.
 pub fn reading_progress(state: AppState) {
+    // Derived once, not per run: the effect below re-runs on every page turn.
+    let zooming = state.reader.viewer.zooming();
     // Debounce timer handle, parked so it can never fire against a torn-down
     // app, and re-armed on each update.
     let timer = StoredValue::new_local(None::<TimeoutHandle>);
@@ -30,6 +37,17 @@ pub fn reading_progress(state: AppState) {
         let status = state.reader.document.status.get();
         let path = state.reader.document.path.get();
         let page = state.reader.viewer.page.get();
+        // A zoom transaction owns the geometry, and the page counter is not
+        // trustworthy while it does: the dominant arm stands down for the
+        // duration and a held navigation (the resume jump on open) has not
+        // been replayed yet, so the page on show is the pre-jump one. Saving
+        // it here is exactly how an open from the shelf used to overwrite a
+        // real resume point with page 1. The read is TRACKED, so the effect
+        // re-runs — with the settled page — on the frame the transaction
+        // closes; nothing is lost by waiting.
+        if zooming.get() {
+            return;
+        }
 
         if status != DocStatus::Ready {
             return;

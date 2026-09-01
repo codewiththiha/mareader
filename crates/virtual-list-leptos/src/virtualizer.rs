@@ -15,7 +15,7 @@ use web_sys::{Event, ResizeObserver, ResizeObserverEntry};
 
 use virtual_list::{Align, Viewport, Window};
 
-use crate::engine::{CoreConfig, Step, VirtualizerCore, build_layout};
+use crate::engine::{Step, VirtualizerCore};
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
 use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
@@ -23,131 +23,70 @@ use crate::retention::{prune_retained, retain_evicted};
 use crate::surface::{DomSurface, ScrollSurface};
 
 type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
-type ObserverBinding = (ResizeObserver, ObserverCallback);
 type ListenerCallback = Closure<dyn FnMut(Event)>;
-type ListenerBinding = (web_sys::Element, &'static str, ListenerCallback);
 type IdleCallback = Rc<dyn Fn()>;
 
-/// Create a virtualizer. Must be called inside a reactive owner.
-pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
-    let count0 = options.count.get_untracked();
-    let config = CoreConfig {
-        budget: options.budget,
-        shape: options.shape,
-        gap: options.gap,
-        padding_start: options.padding_start,
-        padding_end: options.padding_end,
-        viewport: options.initial_viewport,
-        initial_offset: options.initial_offset,
-        eps: options.measure_epsilon,
-        max_retries: options.max_scroll_retries,
-    };
-    let layout = build_layout(
-        &options.shape,
-        count0,
-        &*options.estimate_size,
-        options.initial_viewport.cross,
-        options.gap,
-    );
-    let core = VirtualizerCore::new(layout, config);
-    let initial_range = core.range();
-    let initial_scroll = core.scroll_top();
-    let initial_epoch = options
-        .epoch
-        .map(|signal| signal.get_untracked())
-        .unwrap_or(0);
-    // Captured before the struct literal moves `options` into it.
-    let initial_retention_grace = options.retention_grace_ms;
+/// One `ResizeObserver` and the wasm-bindgen closure that serves it. Named
+/// so the pairing is explicit: the callback must stay alive exactly as long
+/// as the observer is connected, and `dispose` drops both together.
+pub(crate) struct ObserverBinding {
+    observer: ResizeObserver,
+    callback: ObserverCallback,
+}
 
-    let inner = Rc::new(VirtualizerInner {
-        surface: DomSurface::new(options.axis, options.padding_start),
-        scroll_top: RwSignal::new(initial_scroll),
-        viewport: RwSignal::new(options.initial_viewport),
-        range: RwSignal::new(initial_range),
-        layout_version: RwSignal::new(0),
+/// One event listener and the closure that serves it. Named for the same
+/// reason: removing the listener with the SAME closure identity is what
+/// releases the JS-side function (and the WASM closure behind it).
+pub(crate) struct ListenerBinding {
+    element: web_sys::Element,
+    event: &'static str,
+    callback: ListenerCallback,
+}
 
-        last_epoch: Cell::new(initial_epoch),
-        options,
-        core: RefCell::new(core),
-        pending_scroll: Rc::new(Cell::new(None)),
-        scroll_armed: Rc::new(Cell::new(false)),
-        flush_armed: Rc::new(Cell::new(false)),
-        scroll_feedback: Cell::new(true),
-        container_ro: RefCell::new(None),
-        listeners: RefCell::new(Vec::new()),
-        scroll_end_timer: RefCell::new(None),
-        retained: RefCell::new(Vec::new()),
-        retained_version: RwSignal::new(0),
-        retention_grace: Cell::new(initial_retention_grace),
-        retention_timer: RefCell::new(None),
-        idle_cbs: RefCell::new(Vec::new()),
-        items_signal: OnceCell::new(),
-        rows_signal: OnceCell::new(),
-        total_signal: OnceCell::new(),
-        dominant_signal: OnceCell::new(),
-    });
+impl VirtualizerInner {
+    /// Build the shared state for a fresh virtualizer. All signal/lazy
+    /// handles are created HERE, in the hook's owner, so their lifetimes are
+    /// the component's (a signal created inside an effect run would be
+    /// disposed with that run — see `use_virtualizer` for the full story).
+    pub(crate) fn new(
+        options: VirtualizerOptions,
+        core: VirtualizerCore,
+        initial_range: Option<Window>,
+        initial_scroll: f64,
+        initial_epoch: u64,
+    ) -> Rc<Self> {
+        // Read every option-derived value before the struct literal moves
+        // `options` into the `options` field.
+        let initial_viewport = options.initial_viewport;
+        let initial_grace = options.retention_grace_ms;
+        Rc::new(Self {
+            surface: DomSurface::new(options.axis, options.padding_start),
+            scroll_top: RwSignal::new(initial_scroll),
+            viewport: RwSignal::new(initial_viewport),
+            range: RwSignal::new(initial_range),
+            layout_version: RwSignal::new(0),
 
-    {
-        let inner = inner.clone();
-        Effect::new(move |_| {
-            let count = inner.options.count.get();
-            let epoch = inner.options.epoch.map(|signal| signal.get()).unwrap_or(0);
-            let estimate = inner.options.estimate_size.clone();
-
-            let step = {
-                let mut core = inner.core.borrow_mut();
-                if core.item_count() != count {
-                    Some(core.set_count(count, &*estimate))
-                } else if epoch != inner.last_epoch.get() {
-                    Some(core.rebuild(&*estimate))
-                } else {
-                    None
-                }
-            };
-
-            if let Some(step) = step {
-                inner.apply(step);
-            }
-            inner.last_epoch.set(epoch);
-        });
+            last_epoch: Cell::new(initial_epoch),
+            options,
+            core: RefCell::new(core),
+            pending_scroll: Rc::new(Cell::new(None)),
+            scroll_armed: Rc::new(Cell::new(false)),
+            flush_armed: Rc::new(Cell::new(false)),
+            scroll_feedback: Cell::new(true),
+            container_ro: RefCell::new(None),
+            listeners: RefCell::new(Vec::new()),
+            scroll_end_timer: RefCell::new(None),
+            retained: RefCell::new(Vec::new()),
+            retained_version: RwSignal::new(0),
+            retention_grace: Cell::new(initial_grace),
+            retention_timer: RefCell::new(None),
+            idle_cbs: RefCell::new(Vec::new()),
+            items_signal: OnceCell::new(),
+            rows_signal: OnceCell::new(),
+            total_signal: OnceCell::new(),
+            dominant_signal: OnceCell::new(),
+        })
     }
-
-    if let Some(signal) = inner.options.pinned {
-        let inner = inner.clone();
-        Effect::new(move |_| {
-            let step = inner.core.borrow_mut().set_pinned(signal.get());
-            inner.apply(step);
-        });
-    }
-
-    {
-        let inner_handle = StoredValue::new_local(inner.clone());
-        on_cleanup(move || inner_handle.with_value(|inner| inner.dispose()));
-    }
-
-    let virtualizer = Virtualizer { inner };
-
-    // MATERIALIZE THE DERIVED SIGNALS HERE, IN THIS OWNER.
-    //
-    // The reader's effects (navigation_sync's scroll→page sync, the pinned
-    // window in ReaderPage) call `v.dominant()`, and other components call
-    // `items()`/`rows()`/`total_size()`/... lazily through these accessors.
-    // `Signal::derive_local` registers the memo with the CURRENT reactive
-    // owner, and a Leptos effect runs its callback inside a per-run temporary
-    // owner that is disposed the moment the run ends. A signal first created
-    // inside such a run would therefore be DISPOSED before the next effect
-    // run could read it — every subsequent `dominant().get()` panics with
-    // "already been disposed", which kills the scroll→page sync, the zoom
-    // window pinning and the thumbnail page tracking all at once. Creating
-    // them eagerly here (use_virtualizer runs in the component's stable
-    // owner) makes their lifetime the component's, not a single effect run's.
-    // Memos are lazy, so this is node registration only — no computation.
-    let _ = virtualizer.items();
-    let _ = virtualizer.rows();
-    let _ = virtualizer.total_size();
-    let _ = virtualizer.dominant();
-
-    virtualizer
 }
 
 /// Shared adapter state.
@@ -304,6 +243,16 @@ impl VirtualizerInner {
             return;
         }
         let content = dom_top - self.options.padding_start;
+        // Sub-epsilon echo (fractional-pixel wheel deltas fire events whose
+        // movement is below measure_epsilon): the engine would ignore the
+        // rewindow anyway, so skip the signal write, the range publish and
+        // the idle-timer re-arm entirely — dominant-page tracking and
+        // navigation sync stay quiet during sub-pixel movement.
+        if (content - self.core.borrow().scroll_top()).abs()
+            <= self.options.measure_epsilon
+        {
+            return;
+        }
         let step = self.core.borrow_mut().on_scroll(content);
         write_if_changed(self.scroll_top, content);
         self.publish_range(step.range);
@@ -374,14 +323,26 @@ impl VirtualizerInner {
     }
 
     /// Drop listeners and observers associated with the bound container.
+    ///
+    /// The removal happens with the SAME closure identity that was added
+    /// (the JS `removeEventListener` matches by function reference), and the
+    /// closure is dropped immediately after — so a rebound container can
+    /// never leak a WASM closure, and a disposed virtualizer releases every
+    /// DOM handle it took.
     pub(crate) fn teardown_bindings(&self) {
-        for (element, name, closure) in self.listeners.borrow().iter() {
-            let _ =
-                element.remove_event_listener_with_callback(name, closure.as_ref().unchecked_ref());
+        for binding in self.listeners.borrow_mut().drain(..) {
+            let _ = binding.element.remove_event_listener_with_callback(
+                binding.event,
+                binding.callback.as_ref().unchecked_ref(),
+            );
         }
-        self.listeners.borrow_mut().clear();
-        if let Some((ro, _)) = self.container_ro.borrow_mut().take() {
-            ro.disconnect();
+        if let Some(binding) = self.container_ro.borrow_mut().take() {
+            let ObserverBinding { observer, callback } = binding;
+            observer.disconnect();
+            // Release the wasm-bindgen closure AFTER the observer is dead;
+            // dropping it before disconnect would leave the observer holding
+            // a dangling JS callback.
+            drop(callback);
         }
     }
 }
@@ -390,6 +351,13 @@ impl VirtualizerInner {
 #[derive(Clone)]
 pub struct Virtualizer {
     inner: Rc<VirtualizerInner>,
+}
+
+impl Virtualizer {
+    /// Wrap freshly created inner state (the hook's constructor).
+    pub(crate) fn from_inner(inner: Rc<VirtualizerInner>) -> Self {
+        Self { inner }
+    }
 }
 
 /// Write a signal only when the value actually changed.
@@ -402,11 +370,18 @@ where
     }
 }
 
-/// The retention clock, in milliseconds. `Date::now()` on wasm (the adapter
-/// only runs in the browser; the pure retention maths is host-testable in
-/// `retention.rs` without this).
+/// The retention clock, in milliseconds.
+///
+/// `performance.now()` is monotonic (time origin) and sub-millisecond, so a
+/// zombie's `expires_at` is a true duration — a wall-clock NTP step or a DST
+/// switch cannot extend or cut a grace period short mid-zoom. `Date::now()`
+/// is the fallback for the webviews where `performance` is unavailable. (The
+/// pure retention maths in `retention.rs` stays host-testable without this.)
 fn now_ms() -> f64 {
-    js_sys::Date::now()
+    web_sys::window()
+        .and_then(|w| w.performance())
+        .map(|p| p.now())
+        .unwrap_or_else(|| js_sys::Date::now())
 }
 
 /// Milliseconds until the next zombie expiry (always at least 1, so a timer
@@ -469,10 +444,11 @@ impl Virtualizer {
                 }
             });
             let _ = el.add_event_listener_with_callback("scroll", closure.as_ref().unchecked_ref());
-            inner
-                .listeners
-                .borrow_mut()
-                .push((el.clone(), "scroll", closure));
+            inner.listeners.borrow_mut().push(ListenerBinding {
+                element: el.clone(),
+                event: "scroll",
+                callback: closure,
+            });
         }
 
         {
@@ -491,7 +467,7 @@ impl Virtualizer {
             );
             if let Ok(observer) = ResizeObserver::new(callback.as_ref().unchecked_ref()) {
                 observer.observe(&el);
-                *inner.container_ro.borrow_mut() = Some((observer, callback));
+                *inner.container_ro.borrow_mut() = Some(ObserverBinding { observer, callback });
             }
         }
     }
@@ -605,6 +581,14 @@ impl Virtualizer {
     /// Snapshot offset of an item, padding included.
     pub fn offset_of(&self, index: usize) -> f64 {
         self.inner.core.borrow().offset_of(index)
+    }
+
+    /// Index of the item whose span contains `pos` (leading-edge semantics),
+    /// `O(log n)` over the strip's prefix sums. The inverse of
+    /// [`offset_of`](Self::offset_of): a position handed back by that method
+    /// resolves to the same item it came from.
+    pub fn index_at(&self, pos: f64) -> usize {
+        self.inner.core.borrow().index_at(pos)
     }
 
     /// Reactive main-axis offset of one item, padding included.

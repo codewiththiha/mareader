@@ -31,6 +31,7 @@ use tauri::{Emitter, Manager, RunEvent};
 
 mod ai;
 mod commands;
+mod macos;
 
 /// The OS-opened PDF path the frontend has not collected yet.
 struct PendingFile(Mutex<Option<String>>);
@@ -89,65 +90,52 @@ fn ensure_readable_pdf(path: &str) -> Result<(), String> {
 /// Read a file's bytes for the webview. Returned as an IPC `Response` so the
 /// JS side receives an `ArrayBuffer` (no JSON round-trip for megabytes).
 /// Errors resolve as a rejected invoke, which the engine falls back from.
+/// The read itself runs on the blocking pool so a 50 MB book does not stall
+/// the async runtime while the bytes come off disk.
 #[tauri::command]
-fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+async fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
     ensure_readable_pdf(&path)?;
-    std::fs::read(&path)
-        .map(tauri::ipc::Response::new)
-        .map_err(|e| format!("could not read {path}: {e}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::read(&path)
+            .map(tauri::ipc::Response::new)
+            .map_err(|e| format!("could not read {path}: {e}"))
+    })
+    .await
+    .map_err(|e| format!("read worker failed: {e}"))?
 }
 
-/// Show/hide the native macOS traffic lights.
+/// Show/hide the native macOS traffic lights with dynamic vertical centering.
 ///
 /// `titleBarStyle: "Overlay"` lets the webview draw under the lights, but CSS
-/// cannot hide the buttons themselves — they are native NSViews owned by the
-/// window. The three buttons share one container view (the superview of the
-/// close button), so hiding that container hides all three. Driven by the
-/// frontend's hover-reveal signal so the lights fade in/out with the titlebar.
+/// cannot hide or re-center the buttons themselves — they are native NSViews.
+/// Delegates to `macos::traffic_light`, which owns the container geometry:
 ///
-/// macOS-only: on other platforms the window has a normal caption and this is
-/// a no-op.
+/// ```text
+/// y = ((header_height - button_height)/2 + natural_origin_y).max(0)
+/// container.height = visible ? button_height + y : 0
+/// ```
+///
+/// `tauri.conf.json:trafficLightPosition {x:20,y:25}` remains only the
+/// pre-mount fallback; after the first `invoke` Rust is the sole authority
+/// for `y`. `header_height` comes from the frontend's `ResizeObserver` on
+/// `#toolbar-row` (`h-12` = 48px). Pass `0` to keep the last height.
+/// Caches `natural_origin_y` in `OnceLock` so Tahoe's ~7pt vs Sonoma's ~5pt
+/// is self-correcting without drift. Re-applied on `ThemeChanged`.
 #[tauri::command]
-fn set_traffic_lights(window: tauri::Window, visible: bool) {
+fn set_traffic_lights(window: tauri::Window, visible: bool, header_height: Option<f64>) {
     #[cfg(target_os = "macos")]
     {
-        use objc2_app_kit::{NSView, NSWindowButton};
-        // rwh 0.6: window_handle() -> WindowHandle::as_raw() gives the raw
-        // handle. (HasRawWindowHandle::raw_window_handle() is the deprecated
-        // path, and HasWindowHandle alone doesn't provide raw_window_handle.)
-        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-
-        if let Ok(handle) = window.window_handle()
-            && let RawWindowHandle::AppKit(h) = handle.as_raw()
-        {
-            // SAFETY: the handle lends us a pointer to the window's own
-            // content view, which is alive for as long as the window is; we
-            // only ever read through the borrow.
-            let view = unsafe { &*h.ns_view.as_ptr().cast::<NSView>() };
-
-            // NSWindowCloseButton; its superview hosts all three lights.
-            if let Some(ns_window) = view.window()
-                && let Some(button) = ns_window.standardWindowButton(NSWindowButton::CloseButton)
-            {
-                // SAFETY: `superview` hands back an unretained pointer, but
-                // the container is owned by the window's view hierarchy and
-                // outlives this command alongside the window itself.
-                if let Some(container) = unsafe { button.superview() } {
-                    // objc2 encodes BOOL per-architecture itself, so a plain
-                    // bool is portable across Apple Silicon and Intel here.
-                    container.setHidden(!visible);
-                }
-            }
-        }
+        macos::traffic_light::set_traffic_lights(window, visible, header_height.unwrap_or(0.0));
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = (window, visible);
+    let _ = (window, visible, header_height);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(macos::traffic_light::init())
         // A PDF double-clicked while the app is already running must land in
         // the EXISTING window, not open a second one (Windows/Linux).
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {

@@ -19,27 +19,70 @@
 //! and nothing hover-gated coming back, so the hide lands in the same frame
 //! the floating rail finishes fading — which is the whole point of the
 //! fade's timing.
+//!
+//! Dynamic `y` (Tahoe-proof centering) — mirrors `readest` `traffic_light.rs`
+//! `compute_traffic_light_y + OnceLock + ResizeObserver`. The bar is `h-12`
+//! (48px, `TOOLBAR_H`) but `y` is NOT `tauri.conf.json:trafficLightPosition`
+//! (that's only the pre-mount fallback). The live header height is measured
+//! from `#toolbar-row` via `ResizeObserver`; every `visible=true` invoke
+//! carries it as `headerHeight`, and the Rust command owns
+//! `y = ((h - btn_h)/2 + natural_origin_y).max(0)` with a cached
+//! `natural_origin_y` (~5pt Sonoma, ~7pt Tahoe) so no per-OS branch.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
 
+use crate::components::primitives::hooks::dom::TOOLBAR_ROW_ID;
 use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::root::TitleBarCtx;
 
+const DEFAULT_HEADER_HEIGHT: f64 = 48.0; // h-12, mirrors Rust fallback
+
 #[component]
 pub fn TrafficLights() -> impl IntoView {
-    let shell = use_context::<ShellController>()
-        .expect("the page provides the shell controller");
+    let shell = use_context::<ShellController>().expect("the page provides the shell controller");
     let ctx = use_context::<TitleBarCtx>();
     let last_sent = StoredValue::new_local(None::<bool>);
     let hide_grace = StoredValue::new_local(None::<TimeoutHandle>);
+    // Live header height for Tahoe-proof centering. Observed on
+    // `#toolbar-row`; `on_cleanup` in `observe_content_size` disconnects it.
+    let header_height: RwSignal<f64> = RwSignal::new(DEFAULT_HEADER_HEIGHT);
+
+    // Keep `header_height` in sync with the real bar height. This is what
+    // replaces the static `tauri.conf.json {y:25}` with a live value. The
+    // observer fires once on `observe()` with the current size, so the
+    // first `visible=true` invoke already carries the centered `y`.
+    {
+        use crate::components::primitives::hooks::dom::by_id;
+        use crate::components::primitives::hooks::use_resize_observer::observe_elements;
+
+        Effect::new(move |_| {
+            let Some(el) = by_id(TOOLBAR_ROW_ID) else {
+                return;
+            };
+            let hh = header_height;
+            observe_elements(vec![el], move |entries| {
+                if let Some(entry) = entries.first() {
+                    let h = entry.content_rect().height();
+                    if h > 0.0 {
+                        hh.set(h);
+                    }
+                }
+            });
+        });
+    }
 
     Effect::new(move |_| {
         let Some(ctx) = ctx else {
             return;
         };
         let on = shell.rail_present().get() || (shell.bar_gutter().get() && ctx.visible.get());
+        // Re-read header_height so every transition (hover in/out,
+        // sidebar slide, resize) carries the current centered `y` — Rust
+        // re-applies `ThemeChanged` without IPC, but JS must send the
+        // height on each visibility toggle.
+        let h = header_height.get();
         if on {
             // Never send the end-of-slide false if hover re-enters on the
             // following frame.
@@ -52,7 +95,7 @@ pub fn TrafficLights() -> impl IntoView {
             }
             last_sent.set_value(Some(true));
             wasm_bindgen_futures::spawn_local(async move {
-                pdf_engine::api::set_traffic_lights(true).await;
+                pdf_engine::api::set_traffic_lights(true, h).await;
             });
         } else {
             // An already-hidden or pending hide does not schedule another
@@ -69,7 +112,7 @@ pub fn TrafficLights() -> impl IntoView {
             if !shell.bar_gutter().get_untracked() {
                 last_sent.set_value(Some(false));
                 wasm_bindgen_futures::spawn_local(async move {
-                    pdf_engine::api::set_traffic_lights(false).await;
+                    pdf_engine::api::set_traffic_lights(false, h).await;
                 });
                 return;
             }
@@ -78,7 +121,7 @@ pub fn TrafficLights() -> impl IntoView {
                     hide_grace.set_value(None);
                     last_sent.set_value(Some(false));
                     wasm_bindgen_futures::spawn_local(async move {
-                        pdf_engine::api::set_traffic_lights(false).await;
+                        pdf_engine::api::set_traffic_lights(false, h).await;
                     });
                 },
                 Duration::from_millis(120),

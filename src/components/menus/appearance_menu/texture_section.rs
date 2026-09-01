@@ -33,7 +33,8 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
     view! {
         <div class="grid grid-cols-3 gap-1">
             {TextureMode::all()
-                .into_iter()
+                .iter()
+                .copied()
                 .map(|mode| {
                     let selected = Signal::derive(move || current() == mode);
                     view! {

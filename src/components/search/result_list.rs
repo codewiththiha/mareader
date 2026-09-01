@@ -39,7 +39,7 @@ fn display_rows(matches: &[SearchMatch]) -> Arc<Vec<ResultRowView>> {
                 index,
                 page: m.page,
                 ordinal: m.index,
-                snippet: snippet(&m.text),
+                snippet: snippet(m.text.as_ref()),
             })
             .collect(),
     )
@@ -130,7 +130,7 @@ mod tests {
         SearchMatch {
             page,
             index,
-            text: text.to_string(),
+            text: text.into(),
             x: 0.0,
             y: 0.0,
             w: 0.0,

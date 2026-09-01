@@ -6,7 +6,7 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_core::settings::{GlossColor, GlossDensity, PaperArea, PaperMode};
+use pdf_core::settings::{GlossColor, GlossDensity, PaperArea, PaperMode, RenderPipeline};
 use pdf_paper::{MAX_SCAN_PAGES, MIN_SCAN_PAGES};
 
 use crate::components::settings::common::{Row, StyleSelect};
@@ -32,7 +32,8 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
         <div class="rounded-xl border border-line">
             <div class="grid grid-cols-6 gap-2 px-4 py-4">
                 {GlossColor::all()
-                    .into_iter()
+                    .iter()
+                    .copied()
                     .map(|c| {
                         let active = Signal::derive(move || s.with(|st| st.gloss_color) == c);
                         if c == GlossColor::Custom {
@@ -263,6 +264,35 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                 </span>
             </Row>
         </div>
+        <div class="mt-5"><Separator vertical=false /></div>
+        <SectionLabel text="Rendering" />
+        // Which pipeline paints the theme onto the pages. Live keeps the page
+        // and the backdrop in one compositor pass — the only way the two match
+        // exactly in blend mode — at the cost of a filter intermediate per
+        // mounted page. Baked burns the look into each raster instead: lighter
+        // to composite, but a re-bake on every appearance change and a page
+        // that can never be bit-identical to the backdrop.
+        <div class="divide-y divide-line rounded-xl border border-line">
+            <Row label="Theme Pipeline">
+                <StyleSelect
+                    value=Signal::derive(move || s.with(|st| st.render_pipeline))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.render_pipeline = v);
+                    })
+                    options=vec![
+                        (RenderPipeline::Live, "Live"),
+                        (RenderPipeline::Baked, "Baked"),
+                    ]
+                    label_of=|v: &RenderPipeline| v.label()
+                    disabled=Signal::derive(move || false)
+                />
+            </Row>
+        </div>
+        <p class="mt-2 text-xs text-muted">
+            "Live filters each page in the compositor, so pages and the blend \
+             backdrop share one pass. Baked burns the look into the rasters — \
+             lighter to composite, slightly slower to change."
+        </p>
         <div class="mt-5"><Separator vertical=false /></div>
         <p class="mt-2 text-xs text-muted">
             "Colour, tint, textures and presets live in the palette menu on the title bar."

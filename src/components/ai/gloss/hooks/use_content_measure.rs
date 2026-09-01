@@ -3,6 +3,8 @@
 //! surface's scroll column) live here; the effect mechanics (defer one frame,
 //! squash jitter under 2 px) live in the primitive.
 
+use std::sync::Arc;
+
 use leptos::{html, prelude::*};
 
 use crate::components::ai::types::WordInfo;
@@ -12,7 +14,7 @@ use crate::components::primitives::hooks::use_content_size::use_content_size;
 /// signal it feeds.
 pub fn use_content_measure(
     word: RwSignal<String>,
-    word_info: RwSignal<Option<WordInfo>>,
+    word_info: RwSignal<Option<Arc<WordInfo>>>,
 ) -> (NodeRef<html::Div>, RwSignal<f64>) {
     let measure_ref: NodeRef<html::Div> = NodeRef::new();
     let content_height = use_content_size(

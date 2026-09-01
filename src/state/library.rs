@@ -11,6 +11,7 @@
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use leptos::prelude::RwSignal;
 
@@ -167,5 +168,14 @@ pub struct LibraryState {
     /// Recent books, most-recent first.
     pub books: RwSignal<Vec<RecentBook>>,
     /// Cover art (page-1 JPEG data URLs) keyed by path.
-    pub covers: RwSignal<HashMap<String, CoverImage>>,
+    pub covers: RwSignal<CoverMap>,
 }
+
+/// The cover-art cache: page-1 JPEG data URLs keyed by document path.
+///
+/// Behind an `Arc` because a cover is a base64 data URL — tens of kilobytes
+/// of `String` each, a shelf's worth of them megabytes in total — and the map
+/// is read out of a signal on every shelf render and cloned whole before
+/// every save. Sharing the images makes those reads pointer copies; only the
+/// (small) map spine is ever duplicated.
+pub type CoverMap = HashMap<String, Arc<CoverImage>>;

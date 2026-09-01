@@ -28,7 +28,17 @@ pub(crate) struct ReaderVirtualizers {
 /// Keeps `css_heights` fully seeded from intrinsic sizes: it is the shared
 /// measurement store backing the vertical virtualizer and the zoom commit
 /// path, not a second layout model.
+///
+/// The seed is keyed on CONTENT — page count plus the intrinsic geometry
+/// signature — not on any per-frame signal. The zoom scale moves on every
+/// slider tick and the zoom coordinator rescales `css_heights` itself per
+/// frame, so re-seeding on scale would clobber live measured/zoomed heights
+/// (the old length-only guard had the same purpose but ALSO meant a fresh
+/// document with the same page count kept the previous book's heights until
+/// its first pages happened to re-measure). Keying on the signature re-seeds
+/// exactly when the book changes and never during a zoom gesture.
 fn seed_css_heights(state: ReaderState) {
+    let last_key = StoredValue::new_local(None::<u64>);
     Effect::new(move || {
         let count = state.document.num_pages.get() as usize;
         let scale = state.viewer.zoom.display.get();
@@ -42,10 +52,23 @@ fn seed_css_heights(state: ReaderState) {
         if count == 0 || scale <= 0.0 || (empty_intrinsic && fallback <= 0.0) {
             return;
         }
+        let key = {
+            let mut hasher = DefaultHasher::new();
+            count.hash(&mut hasher);
+            state.document.metrics.intrinsic.with(|sizes| {
+                sizes.len().hash(&mut hasher);
+                for size in sizes {
+                    size.width.to_bits().hash(&mut hasher);
+                    size.height.to_bits().hash(&mut hasher);
+                }
+            });
+            hasher.finish()
+        };
+        if last_key.with_value(|stored| *stored == Some(key)) {
+            return;
+        }
+        last_key.set_value(Some(key));
         state.document.metrics.css_heights.update(|heights| {
-            if heights.len() == count {
-                return;
-            }
             *heights = state.document.metrics.intrinsic.with(|sizes| {
                 (0..count)
                     .map(|index| {
@@ -87,7 +110,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             .get_untracked()
             .map(|size| size.height)
             .unwrap_or(0.0);
-        intrinsic.unwrap_or(fallback) * state.viewer.zoom.display.get_untracked()
+        intrinsic.unwrap_or(fallback) * state.viewer.zoom.visual_scale()
             + state.viewer.page_gap.get_untracked()
     };
     let epoch = Signal::derive(move || {
@@ -132,7 +155,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     let h_estimate = move |index: usize| {
         state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.get(index).map(|s| s.width).unwrap_or(0.0)
-        }) * state.viewer.zoom.display.get_untracked()
+        }) * state.viewer.zoom.visual_scale()
             + 2.0 * state.viewer.page_margin.get_untracked()
     };
     let h_virtualizer = use_virtualizer(

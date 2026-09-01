@@ -50,7 +50,22 @@ use pdf_paper::{PagePalette, PaperConfig, PaperDetector, PaperMode, Rgb, PAPER_S
 use crate::api;
 use crate::bridge;
 
-struct Session {
+mod lookahead;
+mod scan;
+
+use lookahead::ensure_lookahead;
+use scan::{bankable_partial, start_scan_if_needed};
+
+// Names the state-machine tests exercise directly. Test-only on purpose:
+// in a plain `cargo test` build they are reachable, and shipping them into
+// the lib surface would either shadow (or be shadowed by) the scan module's
+// own items.
+#[cfg(test)]
+use lookahead::lookahead_wants;
+#[cfg(test)]
+use scan::{finish_scan, scan_should_start};
+
+pub(super) struct Session {
     config: PaperConfig,
     blend_on: bool,
     doc_path: Option<String>,
@@ -107,7 +122,7 @@ thread_local! {
 }
 
 /// Run `f` against the session. The borrow ends before any engine call.
-fn with<R>(f: impl FnOnce(&mut Session) -> R) -> R {
+pub(super) fn with<R>(f: impl FnOnce(&mut Session) -> R) -> R {
     SESSION.with(|s| f(&mut s.borrow_mut()))
 }
 
@@ -115,7 +130,7 @@ fn with<R>(f: impl FnOnce(&mut Session) -> R) -> R {
 /// Host `cargo test` has no JS runtime, so tasks that would talk to it
 /// simply never start — the state-machine logic they drive is tested
 /// directly instead.
-fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: impl FnOnce() -> F + 'static) {
+pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: impl FnOnce() -> F + 'static) {
     if bridge::has_pdf_reader() {
         spawn_local(async move {
             f().await;
@@ -272,23 +287,6 @@ pub fn document_close() {
     api::set_paper(None, false, area); // the shelf shows the theme paper
 }
 
-/// The colour worth banking when a book closes: the pooled dominant of the
-/// pages an interrupted scan reached, or the interim when it reached none
-/// (a one-page answer — still this book's paper, not the theme's). `None`
-/// when there is nothing to bank: no book, blend off, continuous mode, or a
-/// colour that was already settled — and therefore already persisted — by
-/// a completed scan or a cache hit.
-fn bankable_partial(s: &Session) -> Option<Rgb> {
-    if !s.blend_on
-        || s.config.mode != PaperMode::Fixed
-        || s.doc_path.is_none()
-        || s.fixed_final.is_some()
-    {
-        return None;
-    }
-    s.document.dominant(PAPER_SHARE).or(s.interim)
-}
-
 /// A live render of `canvas_id` just completed: drain its stashed raw frame
 /// into the palette (and the interim, while no fixed colour is known).
 /// A no-op while blend is off — the engine's stash is gated on the same
@@ -340,7 +338,7 @@ fn feed_frame(frame: &api::PaperFrame) {
 
 /// The state half of a feed, for in-borrow use. Returns whether anything
 /// the publish reads has changed.
-fn feed_state(s: &mut Session, frame: &api::PaperFrame) -> bool {
+pub(super) fn feed_state(s: &mut Session, frame: &api::PaperFrame) -> bool {
     if s.doc_path.is_none() || frame.width == 0 || frame.height == 0 {
         return false;
     }
@@ -380,12 +378,12 @@ fn resolve(s: &Session) -> Option<Rgb> {
 /// session is deliberately blank (no book, blend off). An UNKNOWN colour
 /// holds what is already published: the backdrop must not flash to the
 /// theme paper while a sample is still in flight.
-fn publish() {
+pub(super) fn publish() {
     publish_with(false);
 }
 
 /// [`publish`], optionally persisting a just-landed fixed colour.
-fn publish_with(persist_final: bool) {
+pub(super) fn publish_with(persist_final: bool) {
     let outcome = with(|s| {
         if s.doc_path.is_none() || !s.blend_on {
             return (None, s.published.take(), false, false, s.config.area);
@@ -416,164 +414,7 @@ fn publish_with(persist_final: bool) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// The fixed scan
-// ---------------------------------------------------------------------------
 
-/// Would a scan be useful right now? (Fixed mode live, a book open, no
-/// final colour, no scan running — and the reader has painted at least one
-/// page: the scan's offscreen renders share the pdf.js worker with the
-/// first visible render, and that render wins the worker by right.)
-fn scan_should_start(s: &Session) -> bool {
-    s.blend_on
-        && s.config.mode == PaperMode::Fixed
-        && s.doc_path.is_some()
-        && s.fixed_final.is_none()
-        && s.interim.is_some()
-        && !s.scanning
-}
-
-fn start_scan_if_needed() {
-    if !with(|s| scan_should_start(s)) {
-        return;
-    }
-    start_scan();
-}
-
-/// Spawn the background scan: sample pages `scan_cursor..=cap` one at a
-/// time (the engine yields between pages so live renders never queue
-/// behind it), pooling every frame into the document detector, then settle
-/// the book's colour. The cursor makes the scan RESUMABLE: cancelling it
-/// (blend off, mode flip, book change) and starting again later continues
-/// from the page after the last one fed.
-fn start_scan() {
-    let epoch = with(|s| {
-        s.scanning = true;
-        if s.scan_cursor == 0 {
-            s.scan_cursor = 1;
-        }
-        s.epoch
-    });
-    spawn_engine(move || scan_task(epoch));
-}
-
-async fn scan_task(epoch: u64) {
-    loop {
-        // The next page to sample, or None when the scan is done/cancelled.
-        let next = with(|s| {
-            if s.epoch != epoch || !s.scanning {
-                return None; // cancelled or superseded
-            }
-            let last = s.num_pages.min(s.config.scan_pages);
-            if s.scan_cursor > last {
-                return Some(0); // done
-            }
-            Some(s.scan_cursor)
-        });
-        let Some(page) = next else { return };
-        if page == 0 {
-            finish_scan(epoch);
-            return;
-        }
-        let frame = api::sample_paper_page(page).await.ok().flatten();
-        let changed = with(|s| {
-            if s.epoch != epoch || !s.scanning {
-                return false; // the book changed under the sample
-            }
-            let mut changed = false;
-            if let Some(f) = &frame {
-                s.document.feed(
-                    s.config.area,
-                    f.width as usize,
-                    f.height as usize,
-                    &f.data,
-                    s.config.edge_width as usize,
-                );
-                changed = feed_state(s, f); // the scan fills the palette for free
-            }
-            s.scan_cursor = page + 1;
-            changed
-        });
-        if changed {
-            // A scan page can be the first frame the book ever offered (no
-            // live render yet): the interim it establishes must publish.
-            publish();
-        }
-    }
-}
-
-/// The scan covered its budget: settle the book's colour from the pooled
-/// histogram (falling back to the interim for photo books with no paper
-/// majority) and persist it — this is the ONE publish that writes the
-/// per-document cache.
-fn finish_scan(epoch: u64) {
-    let done = with(|s| {
-        if s.epoch != epoch {
-            return false;
-        }
-        s.scanning = false;
-        s.fixed_final = s.document.dominant(PAPER_SHARE).or(s.interim);
-        s.fixed_final.is_some()
-    });
-    if done {
-        publish_with(true);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// The continuous look-ahead
-// ---------------------------------------------------------------------------
-
-/// The pages whose colour continuous mode wants known: the pair the reader
-/// is straddling plus the one after it, so the colour is resolved before
-/// the reader arrives. Pure — the test exercises exactly this choice.
-fn lookahead_wants(s: &Session) -> Vec<u32> {
-    if !s.blend_on || s.config.mode != PaperMode::Continuous || s.num_pages == 0 {
-        return Vec::new();
-    }
-    let base = s.position.floor().max(1.0) as u32;
-    let mut wants = Vec::new();
-    for page in [base, base + 1, base + 2] {
-        if (1..=s.num_pages).contains(&page)
-            && !s.palette.contains(page)
-            && !s.sampling.contains(&page)
-        {
-            wants.push(page);
-        }
-    }
-    wants
-}
-
-/// Resolve (offscreen) the pages [`lookahead_wants`] names, one spawn each,
-/// all generation-guarded so a sample for one book cannot land in the next.
-fn ensure_lookahead() {
-    let pages = with(|s| {
-        let wants = lookahead_wants(s);
-        for page in &wants {
-            s.sampling.insert(*page);
-        }
-        wants
-    });
-    for page in pages {
-        spawn_engine(move || async move {
-            let epoch = with(|s| s.epoch);
-            let frame = api::sample_paper_page(page).await.ok().flatten();
-            let changed = with(|s| {
-                if s.epoch != epoch {
-                    return false;
-                }
-                s.sampling.remove(&page);
-                match &frame {
-                    Some(f) => feed_state(s, f),
-                    None => false, // unreadable page: nothing to learn
-                }
-            });
-            if changed {
-                publish();
-            }
-        });
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests: the state machine runs on the host (bridge calls are guarded, so

@@ -11,6 +11,7 @@ use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 
+use crate::components::document::layouts::layout_chrome;
 use crate::components::document::PageStrip;
 use crate::components::primitives::hooks::dom::{H_PAGE_LIST_ID, PAGE_LIST_ID};
 use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
@@ -30,6 +31,9 @@ pub fn ScrollShell(
         Axis::Horizontal => H_PAGE_LIST_ID,
     };
     observe_content_size(scroller_id, state.viewer.container_size);
+    let chrome = layout_chrome(state, progress_visible);
+    let _gap = chrome.gap;
+    let _inset = chrome.inset;
 
     // The vertical strip mirrors its scroll offset into `viewer.scroll_top`.
     // `vertical_scroll_sync` additionally restores the saved offset on mount and
@@ -116,7 +120,7 @@ pub fn ScrollShell(
                 scroller_id=scroller_id
                 horizontal=axis == Axis::Horizontal
             />
-            <Show when=move || progress_visible.get()>
+            <Show when=move || chrome.progress_visible.get()>
                 <ProgressStrip fraction=Signal::derive(progress) />
             </Show>
         </div>
@@ -159,12 +163,19 @@ fn install_wheel_to_hscroll(
         target.set_scroll_left((target.scroll_left() as f64 + dy) as i32);
     });
     let handler: js_sys::Function = cb.into_js_value().unchecked_into();
-    let opts = web_sys::AddEventListenerOptions::new();
-    opts.set_passive(false);
-    let _ = el.add_event_listener_with_callback_and_add_event_listener_options(
-        "wheel",
-        &handler,
-        &opts,
-    );
+    thread_local! {
+        static STRIP_WHEEL_OPTS: web_sys::AddEventListenerOptions = {
+            let opts = web_sys::AddEventListenerOptions::new();
+            opts.set_passive(false);
+            opts
+        };
+    }
+    STRIP_WHEEL_OPTS.with(|opts| {
+        let _ = el.add_event_listener_with_callback_and_add_event_listener_options(
+            "wheel",
+            &handler,
+            opts,
+        );
+    });
     wheel_guard.set_value(Some((el.clone(), handler)));
 }

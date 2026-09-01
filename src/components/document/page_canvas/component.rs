@@ -159,6 +159,13 @@ pub fn PageCanvas(
     let hid_boot = host_id.clone();
     let registered_boot = registered.clone();
     queue_microtask(move || {
+        debug_assert!(
+            web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.get_element_by_id(&cid_boot))
+                .is_some(),
+            "PageCanvas canvas must be in the DOM before register_page"
+        );
         if !registered_boot.get() {
             engine::register_page(page, &cid_boot, Some(&hid_boot));
             registered_boot.set(true);

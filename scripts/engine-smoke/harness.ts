@@ -136,6 +136,28 @@ interface FakeStyle {
 
 type CanvasLike = FakeCanvas & { width: number; height: number; data?: Uint8ClampedArray };
 
+type FakeClassList = {
+  add: (...names: string[]) => void;
+  remove: (...names: string[]) => void;
+  toggle: (name: string, force?: boolean) => boolean;
+  contains: (name: string) => boolean;
+};
+
+function makeClassList(): FakeClassList {
+  const names = new Set<string>();
+  return {
+    add: (...tokens) => tokens.forEach((token) => names.add(token)),
+    remove: (...tokens) => tokens.forEach((token) => names.delete(token)),
+    toggle: (token, force) => {
+      const on = force ?? !names.has(token);
+      if (on) names.add(token);
+      else names.delete(token);
+      return on;
+    },
+    contains: (token) => names.has(token),
+  };
+}
+
 export class FakeCanvas {
   tagName: string;
   width = 300;
@@ -143,7 +165,7 @@ export class FakeCanvas {
   _ctx: FakeCtx;
   style: FakeStyle = { setProperty() {}, removeProperty() {} };
   className = "";
-  classList = { add() {}, remove() {}, toggle() {}, contains() { return false; } };
+  classList = makeClassList();
   children: unknown[] = [];
   dataset: Record<string, string> = {};
   href = "";
@@ -181,7 +203,7 @@ function makeElement(id: string): FakeCanvas & { id: string; width: number; heig
     height: 0,
     style: { setProperty() {}, removeProperty() {} },
     className: "",
-    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    classList: makeClassList(),
     children: [],
     querySelectorAll() { return []; },
     querySelector() { return null; },
@@ -231,7 +253,7 @@ const docEl: FakeCanvas & { id: string; width: number; height: number } = (() =>
       removeProperty: (name: string) => { props.delete(name); },
       getPropertyValue: (name: string) => props.get(name) ?? "",
     },
-    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    classList: makeClassList(),
     getAttribute() { return _style; },
     setAttribute(k: string, v: string) { if (k === "style") _style = v; },
     appendChild() {},
@@ -245,6 +267,13 @@ const docEl: FakeCanvas & { id: string; width: number; height: number } = (() =>
   } as unknown as FakeCanvas & { id: string; width: number; height: number };
   return el;
 })();
+
+/** Whether the engine is currently in live mode, read the way the browser
+ * reads it: the class that turns the CSS filter path on. Smoke tests use it to
+ * avoid pretending the fake canvas can run a browser compositor. */
+export function isLivePipelineActive(): boolean {
+  return docEl.classList.contains("appearance-scrubbing");
+}
 
 export const fakeDocument = {
   documentElement: docEl,
@@ -444,13 +473,15 @@ interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thum
 interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;
   resolveOutline(): Promise<EngineResult<{ outline: unknown[] }>>;
-  registerPage(p: { canvasId: string; hostId: string; page: number }): void;
+  registerPage(page: number, canvasId: string, hostId?: string): void;
   renderPage(canvasId: string, scale: number, renderText: boolean): Promise<EngineResult<RenderPayload>>;
   renderThumb(canvasId: string, page: number, scale: number): Promise<EngineResult<ThumbPayload>>;
   cancelThumb(canvasId: string): void;
   hasThumb(page: number, scale: number): boolean;
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
+  setLivePipeline(on: boolean): Promise<void>;
+  isLivePipeline(): boolean;
   setPaper(hex: string, persist: boolean, area: "whole" | "edges"): void;
   setPaperActive(on: boolean): void;
   persistPaper(hex: string, area: "whole" | "edges"): void;
@@ -477,6 +508,12 @@ interface PDFReaderHandle {
   destroy(): Promise<void>;
   stats(): StatsPayload;
   takePendingFile(): Promise<string | null>;
+  extractPageText(page: number): Promise<
+    EngineResult<{ page: number; items: { str: string; x: number; y: number; w: number; h: number }[] }>
+  >;
+  setSearchContext(query: string): void;
+  setActiveMatch(page: number, index: number): void;
+  clearHighlights(): void;
 }
 
 export const PDFReader = sandbox.PDFReader as PDFReaderHandle;

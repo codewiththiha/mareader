@@ -34,47 +34,38 @@ function pumpThumbQueue(): void {
   }
 }
 
-import {
-  pdf,
-  releaseThumbEntry,
-  themeScrubActive,
-  THUMB_CACHE_MAX,
-  thumbCache,
-  thumbCancelled,
-  thumbLive,
-  thumbTasks,
-} from "./state";
+import { THUMB_CACHE_MAX, session } from "./state";
 
 export function cachePut(page: number, entry: ThumbEntry): void {
-  if (thumbCache.has(page)) {
-    const prev = thumbCache.get(page);
-    thumbCache.delete(page);
-    if (prev && prev !== entry) releaseThumbEntry(prev);
+  if (session.thumbCache.has(page)) {
+    const prev = session.thumbCache.get(page);
+    session.thumbCache.delete(page);
+    if (prev && prev !== entry) session.releaseThumbEntry(prev);
   }
-  thumbCache.set(page, entry);
-  while (thumbCache.size > THUMB_CACHE_MAX) {
-    const oldest = thumbCache.keys().next();
+  session.thumbCache.set(page, entry);
+  while (session.thumbCache.size > THUMB_CACHE_MAX) {
+    const oldest = session.thumbCache.keys().next();
     if (oldest.done || oldest.value === undefined) break;
-    const oldEntry = thumbCache.get(oldest.value);
-    thumbCache.delete(oldest.value);
-    if (oldEntry && oldEntry !== entry) releaseThumbEntry(oldEntry);
+    const oldEntry = session.thumbCache.get(oldest.value);
+    session.thumbCache.delete(oldest.value);
+    if (oldEntry && oldEntry !== entry) session.releaseThumbEntry(oldEntry);
   }
 }
 
 export function hasThumb(page: number, scale: number): boolean {
-  const hit = thumbCache.get(page);
+  const hit = session.thumbCache.get(page);
   return (
     !!hit &&
     Math.abs(hit.scale - scale) < 1e-9 &&
-    (themeScrubActive || hit.gen === pipelineCache.gen || !!hit.raw)
+    (session.themeScrubActive || hit.gen === pipelineCache.gen || !!hit.raw)
   );
 }
 
 export function blitThumb(canvasId: string, page: number): boolean {
   const dst = el(canvasId) as HTMLCanvasElement | null;
-  const entry = thumbCache.get(page);
+  const entry = session.thumbCache.get(page);
   if (!dst || !entry) return false;
-  const raw = themeScrubActive ? thumbRaw(entry) : null;
+  const raw = session.themeScrubActive ? thumbRaw(entry) : null;
   const src = raw ?? thumbSource(entry);
   if (!src) return false;
   return raw
@@ -89,7 +80,7 @@ export async function renderThumb(
 ): Promise<ThumbResult> {
   // A new mount supersedes any queued request for the same recycled canvas id.
   const generation = nextThumbGeneration(canvasId);
-  thumbCancelled.delete(canvasId);
+  session.thumbCancelled.delete(canvasId);
 
   // Cache hits are synchronous blits or a small display refresh; they do not
   // create pdf.js raster work and should never wait behind cold renders.
@@ -111,7 +102,7 @@ export async function renderThumb(
       // The cell disappeared, or a newer mount re-used this id, before the
       // job reached the front of the queue. Drop it without touching pdf.js.
       if (
-        thumbCancelled.has(canvasId)
+        session.thumbCancelled.has(canvasId)
         || thumbGeneration.get(canvasId) !== generation
       ) {
         resolve(fail("cancelled", "Thumbnail render cancelled"));
@@ -137,39 +128,39 @@ async function renderThumbInternal(
 ): Promise<ThumbResult> {
   const canvas = el(canvasId) as HTMLCanvasElement | null;
   if (!canvas) return fail("no_canvas", "No canvas: " + canvasId);
-  if (!pdf) return fail("no_document", "No document open");
+  if (!session.pdf) return fail("no_document", "No document open");
 
-  const hit = thumbCache.get(page);
+  const hit = session.thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) {
-    if (themeScrubActive) {
+    if (session.themeScrubActive) {
       if (showRaw(canvas, thumbRaw(hit), "thumb-raw")) {
         cachePut(page, hit);
-        thumbLive.set(canvasId, { page });
+        session.thumbLive.set(canvasId, { page });
         return { ok: true, width: hit.cssW, height: hit.cssH, scale, cached: true };
       }
     } else if (hit.gen === pipelineCache.gen) {
       const size = paintCached(canvas, hit);
       if (size) {
         cachePut(page, hit);
-        thumbLive.set(canvasId, { page });
+        session.thumbLive.set(canvasId, { page });
         return { ok: true, width: size.width, height: size.height, scale, cached: true };
       }
     } else if (await ensureEntryCurrent(hit)) {
       const size = paintCached(canvas, hit);
       if (size) {
         cachePut(page, hit);
-        thumbLive.set(canvasId, { page });
+        session.thumbLive.set(canvasId, { page });
         return { ok: true, width: size.width, height: size.height, scale, cached: false };
       }
     }
   }
 
-  try { const t = thumbTasks.get(canvasId); if (t) t.cancel(); } catch (_) { /* ignore */ }
-  thumbTasks.delete(canvasId);
-  thumbCancelled.delete(canvasId);
+  try { const t = session.thumbTasks.get(canvasId); if (t) t.cancel(); } catch (_) { /* ignore */ }
+  session.thumbTasks.delete(canvasId);
+  session.thumbCancelled.delete(canvasId);
 
   try {
-    const pg = await pdf.getPage(page);
+    const pg = await session.pdf.getPage(page);
     const viewport = pg.getViewport({ scale });
     const out = 1;
     const cssW = Math.floor(viewport.width);
@@ -186,11 +177,11 @@ async function renderThumbInternal(
     const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 
     const task = pg.render({ canvasContext: ctx, viewport, transform });
-    thumbTasks.set(canvasId, task);
+    session.thumbTasks.set(canvasId, task);
     try {
       await task.promise;
     } catch (e) {
-      thumbTasks.delete(canvasId);
+      session.thumbTasks.delete(canvasId);
       releaseCanvas(off);
       try { pg.cleanup(); } catch (_) { /* ignore */ }
       if ((e as { name?: string }).name === "RenderingCancelledException") {
@@ -199,7 +190,7 @@ async function renderThumbInternal(
       const info = errorInfo(e);
       return fail(info.name, info.message);
     }
-    thumbTasks.delete(canvasId);
+    session.thumbTasks.delete(canvasId);
     pg.cleanup();
 
     // Keep `off` as the unbaked raw for every later theme rebake. Never
@@ -207,7 +198,7 @@ async function renderThumbInternal(
     // createImageBitmap used to zero the only unthemed copy, so a theme
     // change could not update visible thumbs until a full pdf.js re-render.
     const raw = off;
-    let display: MaybeCanvas = themeScrubActive ? raw : bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = session.themeScrubActive ? raw : await bakeRaster(raw, readPipeline());
     if (display === raw) {
       if (typeof createImageBitmap === "function") {
         try {
@@ -225,23 +216,23 @@ async function renderThumbInternal(
       cssW,
       cssH,
       scale,
-      gen: themeScrubActive ? -1 : pipelineCache.gen,
+      gen: session.themeScrubActive ? -1 : pipelineCache.gen,
       pending: null,
     };
     cachePut(page, entry);
 
-    if (!thumbCancelled.has(canvasId)) {
+    if (!session.thumbCancelled.has(canvasId)) {
       const live = el(canvasId) as HTMLCanvasElement | null;
       if (live) {
-        thumbLive.set(canvasId, { page });
+        session.thumbLive.set(canvasId, { page });
         paintCached(live, entry);
       }
     }
-    thumbCancelled.delete(canvasId);
+    session.thumbCancelled.delete(canvasId);
 
     return { ok: true, width: cssW, height: cssH, scale, cached: false };
   } catch (e) {
-    thumbTasks.delete(canvasId);
+    session.thumbTasks.delete(canvasId);
     const info = errorInfo(e);
     return fail(info.name, info.message);
   }
@@ -250,13 +241,13 @@ async function renderThumbInternal(
 export function cancelThumb(canvasId: string): void {
   // Invalidate a queued job as well as cancelling an active pdf.js task.
   nextThumbGeneration(canvasId);
-  const task = thumbTasks.get(canvasId);
+  const task = session.thumbTasks.get(canvasId);
   if (task) {
     try { task.cancel(); } catch (_) { /* ignore */ }
-    thumbTasks.delete(canvasId);
+    session.thumbTasks.delete(canvasId);
   }
-  thumbCancelled.add(canvasId);
-  thumbLive.delete(canvasId);
+  session.thumbCancelled.add(canvasId);
+  session.thumbLive.delete(canvasId);
   releaseCanvas(el(canvasId) as HTMLCanvasElement | null);
 }
 
@@ -266,11 +257,11 @@ export function cancelThumb(canvasId: string): void {
  *  cache while idle; by the time the reader flings the grid to page N,
  *  pages N±k are cache-warm and every remount is an instant synchronous blit. */
 export async function prefetchThumb(page: number, scale: number): Promise<void> {
-  if (!pdf) return;
-  const hit = thumbCache.get(page);
+  if (!session.pdf) return;
+  const hit = session.thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) return;
   try {
-    const pg = await pdf.getPage(page);
+    const pg = await session.pdf.getPage(page);
     const viewport = pg.getViewport({ scale });
     const off = document.createElement("canvas");
     off.width = Math.max(1, Math.floor(viewport.width));
@@ -281,10 +272,10 @@ export async function prefetchThumb(page: number, scale: number): Promise<void> 
     await task.promise;
     pg.cleanup();
     const raw = off;
-    let display: MaybeCanvas = themeScrubActive ? raw : bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = session.themeScrubActive ? raw : await bakeRaster(raw, readPipeline());
     if (display !== raw) display = await cacheDisplay({ display });
     cachePut(page, { raw, display, cssW: Math.floor(viewport.width),
                      cssH: Math.floor(viewport.height), scale,
-                     gen: themeScrubActive ? -1 : pipelineCache.gen, pending: null });
+                     gen: session.themeScrubActive ? -1 : pipelineCache.gen, pending: null });
   } catch (_) { /* prefetch is best-effort */ }
 }

@@ -23,6 +23,7 @@ ignore = [
     "./src-tauri",
     "./styles.css",
     "./public/pdfEngine.js",
+    "./public/bake.worker.js",
     "./scripts/check-versions.js",
     "./scripts/test-engine-smoke.js",
     "./scripts/engine-smoke",

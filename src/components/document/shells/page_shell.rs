@@ -1,6 +1,7 @@
 use leptos::children::ChildrenFn;
 use leptos::prelude::*;
 
+use crate::components::document::layouts::layout_chrome;
 use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
 use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer_controls::progress_strip::ProgressStrip;
@@ -24,6 +25,7 @@ pub fn PageShell(
     children: ChildrenFn,
 ) -> impl IntoView {
     observe_content_size(scroller_id, state.viewer.container_size);
+    let chrome = layout_chrome(state, progress_visible);
     let fraction = Signal::derive(move || {
         let n = state.document.num_pages.get();
         if n == 0 {
@@ -41,7 +43,7 @@ pub fn PageShell(
             >
                 <div
                     class="m-auto"
-                    style:padding-inline=move || format!("{}px", state.viewer.page_margin.get())
+                    style:padding-inline=move || format!("{}px", chrome.inset.get())
                 >
                     {children()}
                 </div>

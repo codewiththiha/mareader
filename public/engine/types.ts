@@ -120,7 +120,6 @@ export type PaperFrame = {
 export type PaperArea = "whole" | "edges";
 
 export type SearchRect = { x: number; y: number; w: number; h: number };
-export type TextIndexEntry = { str: string; x: number; y: number; w: number; h: number };
 export type SearchMatch = SearchRect & { page: number; index: number; text: string };
 export type ActiveMatch = { page: number; index: number } | null;
 
@@ -152,22 +151,12 @@ export type Stats = {
   thumbLimit: number;
   thumbTasks: number;
 };
-export type SearchResult = Result<{
-  query: string;
-  total: number;
-  matches: SearchMatch[];
-}>;
-
 export type PDFReaderApi = {
   version: () => string;
   open: (path: string) => Promise<OpenResult>;
   resolveOutline: () => Promise<OutlineResult>;
   destroy: () => Promise<void>;
-  registerPage: (payload: {
-    canvasId: string;
-    hostId: string;
-    page: number;
-  }) => void;
+  registerPage: (page: number, canvasId: string, hostId?: string) => void;
   unregisterPage: (canvasId: string) => void;
   cancelPage: (canvasId: string) => void;
   renderPage: (
@@ -185,12 +174,20 @@ export type PDFReaderApi = {
   blitThumb: (canvasId: string, page: number) => boolean;
   coverDataUrl: (path: string, maxWidth?: number) => Promise<CoverResult>;
   stats: () => Stats;
-  buildSearchIndex: () => Promise<Result<{ count: number }>>;
-  search: (query: string) => Promise<SearchResult>;
+  /** Extract one page's text runs for the Rust search index. */
+  extractPageText: (page: number) => Promise<
+    | (Ok<{ page: number; items: { str: string; x: number; y: number; w: number; h: number }[] }>)
+    | Err
+  >;
+  /** Publish the active query so mounted text layers repaint highlights. */
+  setSearchContext: (query: string) => void;
   setActiveMatch: (page: number, index: number) => void;
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
   setScrubMode: (on: boolean) => Promise<void>;
+  /** Switch between the live compositor pipeline and the baked-raster one. */
+  setLivePipeline: (on: boolean) => Promise<void>;
+  isLivePipeline: () => boolean;
   setPaper: (hex: string, persist: boolean, area: PaperArea) => void;
   /** The Rust paper session's blend switch — gates stashPaperFrame so idle
    * renders cost nothing on the paper pipeline. */

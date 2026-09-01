@@ -10,7 +10,7 @@ use leptos::prelude::*;
 use pdf_core::gloss::{boxes_close, GlossBox};
 use wasm_bindgen::JsCast;
 
-use crate::components::ai::anchor::AnchorWatch;
+use crate::components::ai::anchor::{origin_outside_band, AnchorWatch, MENU_EXIT_FRAC};
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::primitives::floating::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
 use crate::components::primitives::hooks::use_viewport::viewport_size;
@@ -66,11 +66,11 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
 /// Whether the origin has left the viewport entirely — above the top or
 /// below the bottom. A `None` box (the mark's page unmounted) counts as gone:
 /// the hard exit fires no matter how the card opened.
+///
+/// The hard exit is the full-viewport band, the same shape the watcher applies
+/// to its softer `CARD_EXIT_FRAC` one.
 fn origin_gone(origin: Option<GlossBox>, vh: f64) -> bool {
-    match origin {
-        None => true,
-        Some(b) => (b.y + b.h) < 0.0 || b.y > vh,
-    }
+    origin_outside_band(origin, vh, MENU_EXIT_FRAC)
 }
 
 /// The soft band's verdict for an origin still inside the viewport: arm the

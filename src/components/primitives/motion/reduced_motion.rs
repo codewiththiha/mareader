@@ -29,6 +29,13 @@ pub fn reduced_motion_signal() -> RwSignal<bool> {
     let cb_store = StoredValue::new_local(None::<Closure<dyn FnMut()>>);
     let f_store = StoredValue::new_local(None::<js_sys::Function>);
     Effect::new(move |_| {
+        // Once only. The effect has no reactive dependencies, so it should
+        // never re-run — but a second registration would overwrite the stores
+        // and strand the first listener, which is exactly the leak the
+        // cleanup below exists to prevent.
+        if mql_store.try_get_value().flatten().is_some() {
+            return;
+        }
         let Some(mql) = web_sys::window()
             .and_then(|w| w.match_media("(prefers-reduced-motion: reduce)").ok())
             .flatten()

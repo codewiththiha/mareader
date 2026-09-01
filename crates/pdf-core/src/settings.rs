@@ -31,6 +31,39 @@ fn is_hex6(s: &str) -> bool {
     s.len() == 7 && b[0] == b'#' && b[1..].iter().all(|c| c.is_ascii_hexdigit())
 }
 
+/// How the appearance reaches the pixels of a page.
+///
+/// `Live` leaves the raw raster on screen and lets the compositor apply the
+/// filter and blend every frame, so a page and the document backdrop go
+/// through ONE floating-point pass — the two match exactly, which is what
+/// makes blend mode look seamless. `Baked` burns the same pipeline into each
+/// raster once per appearance change; the compositor then draws plain opaque
+/// textures, which is cheaper per frame but re-quantizes in integer stages,
+/// so a baked page can never be bit-identical to the live composite.
+///
+/// The reader picks: live for fidelity, baked for a lighter compositor on
+/// large pages and slow machines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderPipeline {
+    #[default]
+    Live,
+    Baked,
+}
+
+impl RenderPipeline {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Live => "Live",
+            Self::Baked => "Baked",
+        }
+    }
+
+    pub fn is_live(&self) -> bool {
+        matches!(self, Self::Live)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PageIndicatorStyle {
@@ -227,8 +260,17 @@ pub enum GlossColor {
 }
 
 impl GlossColor {
-    pub fn all() -> [GlossColor; 6] {
-        [Self::Accent, Self::Red, Self::Yellow, Self::Green, Self::Blue, Self::Custom]
+    pub const ALL: &'static [GlossColor] = &[
+        Self::Accent,
+        Self::Red,
+        Self::Yellow,
+        Self::Green,
+        Self::Blue,
+        Self::Custom,
+    ];
+
+    pub fn all() -> &'static [GlossColor] {
+        Self::ALL
     }
 
     pub fn label(&self) -> &'static str {
@@ -309,6 +351,10 @@ pub struct Settings {
     /// Settings.
     #[serde(default)]
     pub gloss_density: GlossDensity,
+    /// Live compositor pipeline vs baked rasters. Blobs saved before the
+    /// field existed load as `Live`, which is the behaviour they had.
+    #[serde(default)]
+    pub render_pipeline: RenderPipeline,
 
     // --- legacy fields, read once then dropped -------------------------------
     #[serde(skip_serializing, default)]
@@ -339,6 +385,7 @@ impl Default for Settings {
             gloss_opacity: default_gloss_opacity(),
             gloss_custom: default_custom_gloss(),
             gloss_density: GlossDensity::default(),
+            render_pipeline: RenderPipeline::default(),
             theme_id: None,
             texture: None,
             noise_enabled: None,

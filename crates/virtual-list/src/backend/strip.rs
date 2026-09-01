@@ -511,6 +511,12 @@ impl super::StripBackend for Strip {
             return 0;
         }
         let delta = new_sub.saturating_sub(old_sub);
+        // O(n) suffix walk, run once per MEASURED page (each measurement
+        // lands in its own flush, not in a loop over `n`): a 2 000-page book
+        // pays ~2 000 i64 adds per measured page, cache-friendly and faster
+        // than a Fenwick tree at this scale. If item counts ever reach tens
+        // of thousands (and a frame can contain many measurements), switch
+        // `starts` to a Fenwick tree for O(log n) update/query.
         for i in (index + 1)..=len {
             self.starts[i] = self.starts[i].saturating_add(delta);
         }

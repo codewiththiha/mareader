@@ -27,7 +27,8 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
     view! {
         <div class="grid grid-cols-3 gap-1">
             {NoiseMode::all()
-                .into_iter()
+                .iter()
+                .copied()
                 .map(|m| {
                     let selected = Signal::derive(move || current() == m);
                     view! {

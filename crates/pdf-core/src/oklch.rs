@@ -42,6 +42,7 @@ fn hex_to_linear(hex: &str) -> Option<(f64, f64, f64)> {
 /// Lightness, chroma and hue (degrees) of an `#rrggbb` colour in OKLCH.
 ///
 /// Standard Björn Ottosson matrices: linear sRGB -> LMS -> cube root -> OKLab.
+#[inline]
 pub fn hex_to_oklch(hex: &str) -> Option<(f64, f64, f64)> {
     let (r, g, b) = hex_to_linear(hex)?;
 
@@ -64,6 +65,7 @@ pub fn hex_to_oklch(hex: &str) -> Option<(f64, f64, f64)> {
 }
 
 /// A CSS `oklch(...)` literal, rounded so presets compare stably in tests.
+#[inline]
 pub fn oklch_css(l: f64, c: f64, h: f64) -> String {
     format!("oklch({:.4} {:.4} {:.2})", l.clamp(0.0, 1.0), c.max(0.0), h)
 }

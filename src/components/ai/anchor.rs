@@ -13,6 +13,7 @@ use wasm_bindgen::JsCast;
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
 use crate::components::primitives::hooks::dom::by_id;
 use crate::components::primitives::hooks::use_viewport::viewport_size;
+use crate::components::primitives::hooks::use_raf::raf_coalesce;
 use crate::components::primitives::hooks::use_window_event::{add_window_capture_listener, use_window_event};
 
 // Single public binding — do not also `use` PageAnchor above or rustc E0252s.
@@ -82,6 +83,20 @@ pub fn screen_box(anchor: &PageAnchor, scale: f64, mode: ViewMode) -> Option<Glo
         h,
         r: MARK_RADIUS.min(h / 2.0),
     })
+}
+
+/// Whether an origin box has left the band it is allowed to live in: above the
+/// viewport top, past `exit_frac` of the viewport height, or gone entirely
+/// (its page unmounted, which by itself counts as left).
+///
+/// One definition for both bands — the watcher's soft `CARD_EXIT_FRAC` one and
+/// the card's hard `1.0` one — so "off screen" cannot come to mean two
+/// slightly different things.
+pub fn origin_outside_band(origin: Option<GlossBox>, vh: f64, exit_frac: f64) -> bool {
+    match origin {
+        None => true,
+        Some(b) => (b.y + b.h) < 0.0 || b.y > vh * exit_frac,
+    }
 }
 
 /// Capture the current DOM selection as a page-space anchor.
@@ -195,10 +210,7 @@ pub fn watch_page_anchor(
             screen.set(b);
         }
         let (_, vh) = viewport_size();
-        let out = match b {
-            None => true,
-            Some(b) => (b.y + b.h) < 0.0 || b.y > vh * exit_frac,
-        };
+        let out = origin_outside_band(b, vh, exit_frac);
         if exited.get_untracked() != out {
             exited.set(out);
         }
@@ -214,8 +226,16 @@ pub fn watch_page_anchor(
         refresh.run(());
     });
 
-    add_window_capture_listener("scroll", move |_| tick.update(|n| *n += 1));
-    use_window_event("resize", move |_| tick.update(|n| *n += 1));
+    // Scroll and resize both fire faster than the screen updates, and each
+    // re-derive reads layout twice (the page host's rect, the viewport size).
+    // Coalescing to one recompute per frame drops the passes whose results
+    // were overwritten before anything was painted; the card is spring-driven
+    // at frame rate anyway, so it cannot tell the difference. Anything that
+    // needs the anchor NOW (an open, mid-tick) calls `refresh` directly.
+    let queue_refresh = raf_coalesce(move || tick.update(|n| *n += 1));
+    let on_scroll = queue_refresh.clone();
+    add_window_capture_listener("scroll", move |_| on_scroll());
+    use_window_event("resize", move |_| queue_refresh());
 
     AnchorWatch {
         screen,
@@ -226,7 +246,44 @@ pub fn watch_page_anchor(
 
 #[cfg(test)]
 mod tests {
-    use super::page_from_host_id;
+    use super::{origin_outside_band, page_from_host_id, GlossBox, CARD_EXIT_FRAC, MENU_EXIT_FRAC};
+
+    fn origin(y: f64, h: f64) -> Option<GlossBox> {
+        Some(GlossBox {
+            x: 100.0,
+            y,
+            w: 40.0,
+            h,
+            r: 6.0,
+        })
+    }
+
+    #[test]
+    fn an_unmounted_page_is_outside_every_band() {
+        assert!(origin_outside_band(None, 900.0, MENU_EXIT_FRAC));
+        assert!(origin_outside_band(None, 900.0, CARD_EXIT_FRAC));
+    }
+
+    #[test]
+    fn the_full_band_only_gives_up_off_screen() {
+        let vh = 900.0;
+        assert!(!origin_outside_band(origin(300.0, 100.0), vh, MENU_EXIT_FRAC));
+        // Overlapping either edge is still visible.
+        assert!(!origin_outside_band(origin(-50.0, 100.0), vh, MENU_EXIT_FRAC));
+        assert!(!origin_outside_band(origin(850.0, 100.0), vh, MENU_EXIT_FRAC));
+        // Fully above / fully below.
+        assert!(origin_outside_band(origin(-150.0, 100.0), vh, MENU_EXIT_FRAC));
+        assert!(origin_outside_band(origin(901.0, 100.0), vh, MENU_EXIT_FRAC));
+    }
+
+    #[test]
+    fn the_card_band_gives_up_early() {
+        let vh = 900.0; // the card's band ends at 720
+        assert!(!origin_outside_band(origin(700.0, 20.0), vh, CARD_EXIT_FRAC));
+        assert!(origin_outside_band(origin(760.0, 20.0), vh, CARD_EXIT_FRAC));
+        // Still visible, but past the band: the pill would stay, the card goes.
+        assert!(!origin_outside_band(origin(760.0, 20.0), vh, MENU_EXIT_FRAC));
+    }
 
     #[test]
     fn parses_continuous_host_ids_into_one_based_pages() {

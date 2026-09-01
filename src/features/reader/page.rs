@@ -82,7 +82,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 return;
             }
             vs.viewer.page_margin.set(m);
-            let scale = vs.viewer.zoom.display.get_untracked();
+            let scale = vs.viewer.zoom.visual_scale();
             let gap = vs.viewer.page_gap.get_untracked();
             let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
             let widths = vs
@@ -106,7 +106,15 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         }
         prev_mode.set_value(mode);
         let auto = state.settings.with(|s| s.layout.auto_scale);
-        if matches!(mode, ViewMode::Spread | ViewMode::ScrollHorizontal) || (auto && mode.is_paginated()) {
+        if mode == ViewMode::ScrollHorizontal {
+            // Horizontal is one page per virtual item. Do not reinterpret the
+            // outgoing layout's fit against the new axis: a single/vertical
+            // width fit would become a height fit here and drop the readout
+            // by almost half, while a spread width fit would jump the other
+            // way. Hand ownership to the already-resolved `desired` scale so
+            // every mode switch preserves the reader's zoom.
+            vs.viewer.fit.set(FitMode::None);
+        } else if matches!(mode, ViewMode::Spread) || (auto && mode.is_paginated()) {
             vs.viewer.fit.set(FitMode::Width);
         }
     });
@@ -117,6 +125,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // commands; nothing else writes a zoom scale or rescales a strip.
     let zoom = crate::viewer::zoom::ZoomController::new(engine);
     zoom.drive(vs);
+    // BEFORE reading_progress, and that is a contract rather than a habit.
+    // Leptos runs effects in insertion order, so when a zoom transaction
+    // closes both wake in the same flush: this one replays its held jump
+    // first, and reading progress then persists the page the reader actually
+    // asked for instead of the stale dominant the strip still shows.
     navigation_sync(vs, rv.virtualizer.clone(), rv.h_virtualizer.clone());
     // The zoom sources come last, after the controller that consumes them:
     // a container follow on every frame of a sidebar slide or a window drag

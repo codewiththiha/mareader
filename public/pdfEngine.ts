@@ -10,7 +10,7 @@ export {};
 
 import type { PDFReaderApi, Stats } from "./engine/types";
 import { disposeScratch, releaseCanvas } from "./engine/canvas";
-import { coverDataUrl, open, resolveOutline, takePendingFile } from "./engine/loader";
+import { coverDataUrl, destroyTask, open, resolveOutline, takePendingFile } from "./engine/loader";
 import {
   cancelPage,
   registerPage,
@@ -25,9 +25,14 @@ import {
   prefetchThumb,
   renderThumb,
 } from "./engine/thumbnails";
-import { buildSearchIndex, clearHighlights, search, setActiveMatch } from "./engine/search";
-import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
-import { invalidatePipeline } from "./engine/theme/pipeline";
+import {
+  clearHighlights,
+  extractPageText,
+  setActiveMatch,
+  setSearchContext,
+} from "./engine/search";
+import { rebakeTheme, setPipelineModeInternal, setScrubModeInternal } from "./engine/theme/scrub";
+import { invalidatePipeline, isLivePipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   getCachedPaper,
@@ -41,25 +46,8 @@ import {
 import { installSelectionTracker } from "./engine/selection";
 import {
   ENGINE_VERSION,
-  loadingTask,
-  releasePageSurfaces,
-  releaseThumbEntry,
-  setCurrentPath,
-  setLoadingTask,
-  setNumPages,
-  setPdf,
-  stateByCanvasId,
+  session,
   THUMB_CACHE_MAX,
-  thumbCache,
-  thumbCancelled,
-  thumbLive,
-  thumbTasks,
-  textIndex,
-  highlightsByPage,
-  setSearchQuery,
-  setActiveMatchValue,
-  sweepPdf,
-  themeScrubActive,
 } from "./engine/state";
 
 declare global {
@@ -82,39 +70,45 @@ declare global {
 }
 
 async function destroy(): Promise<void> {
-  for (const st of stateByCanvasId.values()) {
-    st.dead = true;
-    try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
-    try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
-    if (st.queueHandle) {
-      cancelAnimationFrame(st.queueHandle);
-      st.queueHandle = 0;
+  try {
+    for (const st of session.stateByCanvasId.values()) {
+      st.dead = true;
+      try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
+      try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
+      if (st.queueHandle) {
+        cancelAnimationFrame(st.queueHandle);
+        st.queueHandle = 0;
+      }
+      session.releasePageSurfaces(st);
     }
-    releasePageSurfaces(st);
+    session.stateByCanvasId.clear();
+    for (const task of session.thumbTasks.values()) {
+      try { task.cancel(); } catch (_) { /* ignore */ }
+    }
+    session.thumbTasks.clear();
+    session.thumbCancelled.clear();
+    session.thumbLive.clear();
+    for (const entry of session.thumbCache.values()) session.releaseThumbEntry(entry);
+    session.thumbCache.clear();
+    session.setSearchQuery("");
+    session.setActiveMatchValue(null);
+    if (session.loadingTask) {
+      // Guarded behind a WeakSet in loader.ts: open's own timeout may be
+      // destroying the same task right now, and a second destroy() on a
+      // pdf.js LoadingTask double-frees the worker.
+      const lt = session.loadingTask;
+      session.setLoadingTask(null);
+      destroyTask(lt).catch(() => { /* fire-and-forget */ });
+    }
+  } finally {
+    // Teardown always completes: a release that throws must not skip the
+    // document null-out, or the next open() sees a half-dead session.
+    session.setPdf(null);
+    session.setNumPages(0);
+    session.setCurrentPath(null);
+    resetPaperForDocument();
+    disposeScratch();
   }
-  stateByCanvasId.clear();
-  for (const task of thumbTasks.values()) {
-    try { task.cancel(); } catch (_) { /* ignore */ }
-  }
-  thumbTasks.clear();
-  thumbCancelled.clear();
-  thumbLive.clear();
-  for (const entry of thumbCache.values()) releaseThumbEntry(entry);
-  thumbCache.clear();
-  textIndex.clear();
-  highlightsByPage.clear();
-  setSearchQuery("");
-  setActiveMatchValue(null);
-  if (loadingTask) {
-    const lt = loadingTask;
-    setLoadingTask(null);
-    Promise.resolve(lt.destroy()).catch(() => { /* fire-and-forget */ });
-  }
-  setPdf(null);
-  setNumPages(0);
-  setCurrentPath(null);
-  resetPaperForDocument();
-  disposeScratch();
 }
 
 (globalThis as unknown as { __pdfDestroy?: () => Promise<void> }).__pdfDestroy = destroy;
@@ -140,12 +134,12 @@ async function refreshThemeInternal(): Promise<void> {
   // A slider commit arrives while scrub owns raw, individually tagged
   // canvases. Exit performs the single final bake, so do not enqueue a second
   // rebake (or page rerender) against that same pipeline here.
-  if (themeScrubActive) return;
+  if (session.themeScrubActive) return;
   await rebakeTheme();
   // Pages without a distinct raw must re-render from pdf.js (never
   // double-filter). Thumbs were already refreshed in rebakeTheme.
   let needsRerender = false;
-  for (const st of stateByCanvasId.values()) {
+  for (const st of session.stateByCanvasId.values()) {
     if (!st.dead && st.canvas && (!st.rawCanvas || st.rawCanvas === st.canvas)) {
       needsRerender = true;
       break;
@@ -156,8 +150,8 @@ async function refreshThemeInternal(): Promise<void> {
   // canvas. If a cache entry lost its unbaked raw, re-render that thumb
   // from pdf.js the same way live pages do.
   const thumbJobs: Promise<unknown>[] = [];
-  for (const [canvasId, { page }] of thumbLive) {
-    const entry = thumbCache.get(page);
+  for (const [canvasId, { page }] of session.thumbLive) {
+    const entry = session.thumbCache.get(page);
     if (!entry || !entry.display || (entry.display as ImageBitmap).width <= 0) {
       thumbJobs.push(renderThumb(canvasId, page, entry?.scale || 0.25));
     }
@@ -174,17 +168,24 @@ function setScrubMode(on: boolean): Promise<void> {
   return enqueueTheme(() => setScrubModeInternal(on));
 }
 
+/** Reader-facing pipeline switch (Appearance ▸ Rendering). Queued with every
+ * other theme mutation so a mode flip mid-scrub still ends in a consistent
+ * raster state. */
+function setLivePipelineMode(on: boolean): Promise<void> {
+  return enqueueTheme(() => setPipelineModeInternal(on));
+}
+
 function stats(): Stats {
   return {
-    pages: stateByCanvasId.size,
-    thumbs: thumbCache.size,
+    pages: session.stateByCanvasId.size,
+    thumbs: session.thumbCache.size,
     thumbLimit: THUMB_CACHE_MAX,
-    thumbTasks: thumbTasks.size,
+    thumbTasks: session.thumbTasks.size,
   };
 }
 
 function releaseAllSurfaces(): void {
-  for (const st of stateByCanvasId.values()) {
+  for (const st of session.stateByCanvasId.values()) {
     st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
     try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
@@ -192,9 +193,9 @@ function releaseAllSurfaces(): void {
       cancelAnimationFrame(st.queueHandle);
       st.queueHandle = 0;
     }
-    releasePageSurfaces(st);
+    session.releasePageSurfaces(st);
   }
-  for (const entry of thumbCache.values()) releaseThumbEntry(entry);
+  for (const entry of session.thumbCache.values()) session.releaseThumbEntry(entry);
   try {
     document.querySelectorAll("canvas").forEach((c) => releaseCanvas(c as HTMLCanvasElement));
   } catch (_) { /* document already torn down */ }
@@ -207,7 +208,7 @@ try {
     if (document.visibilityState !== "hidden") return;
     // Keep the live baked canvases (so coming back isn't a blank page)
     // but drop idle raws, scratch, and worker caches.
-    for (const st of stateByCanvasId.values()) {
+    for (const st of session.stateByCanvasId.values()) {
       if (st.rawCanvas && st.rawCanvas !== st.canvas) {
         releaseCanvas(st.rawCanvas);
         st.rawCanvas = null;
@@ -235,12 +236,14 @@ globalThis.PDFReader = {
   blitThumb,
   coverDataUrl,
   stats,
-  buildSearchIndex,
-  search,
+  extractPageText,
+  setSearchContext,
   setActiveMatch,
   clearHighlights,
   refreshTheme,
   setScrubMode,
+  setLivePipeline: setLivePipelineMode,
+  isLivePipeline,
   setPaper,
   setPaperActive,
   persistPaper,
@@ -248,8 +251,19 @@ globalThis.PDFReader = {
   samplePaperPage,
   getCachedPaper,
   sweep: () => {
-    sweepPdf();
+    session.sweepPdf();
   },
   takePendingFile,
   prefetchThumb,
 } satisfies PDFReaderApi;
+
+// The engine contract is fixed by the Rust bridge: surface integrity beats
+// extensibility, so freeze the object (has_pdf_reader only checks existence).
+Object.freeze(globalThis.PDFReader);
+
+// Boot in the engine's default mode. Live means the raw rasters go under the
+// CSS pipeline immediately; the reader's persisted choice is applied by the
+// app right after mount, through setLivePipeline.
+if (isLivePipeline()) {
+  void setScrubMode(true);
+}

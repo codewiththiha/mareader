@@ -52,6 +52,7 @@
 //! exactly as long as the reader page owns it.
 
 pub mod animation;
+pub mod command;
 pub mod config;
 pub mod coordinator;
 pub mod target;

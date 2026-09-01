@@ -1,20 +1,21 @@
-// On-demand streaming search. Pages are extracted as we scan and then
-// discarded — we do not keep a permanent Map of every TextItem in the heap.
+// Search support, engine side. Matching no longer happens here: the Rust
+// index (pdf-core::search::SearchIndex, fed by `extractPageText`) owns the
+// query. This module only:
+//
+//  * extracts one page's text runs for the index builder
+//    (`extractPageText` — the only JS work a search still does),
+//  * publishes the active query so the DOM text layers repaint their
+//    highlight boxes (`setSearchContext`), and
+//  * toggles the active-match emphasis / clears highlights (`setActiveMatch`,
+//    `clearHighlights`) — painting itself happens on the text layer spans
+//    in highlights.ts.
 
-import type { SearchMatch, SearchRect, SearchResult, TextItem } from "./types";
-import { fail } from "./canvas";
+import type { TextItem } from "./types";
+import { fail, errorInfo } from "./canvas";
 import { refreshHighlights } from "./highlights";
-import {
-  highlightsByPage,
-  numPages,
-  pdf,
-  setActiveMatchValue,
-  setSearchQuery,
-  stateByCanvasId,
-  textIndex,
-} from "./state";
+import { session } from "./state";
 
-function itemRect(item: TextItem, pageH: number): SearchRect {
+function itemRect(item: TextItem, pageH: number): { x: number; y: number; w: number; h: number } {
   const t = item.transform || [1, 0, 0, 1, 0, 0];
   const fontSize = Math.hypot(t[2] ?? 0, t[3] ?? 0);
   const ascent = (fontSize || 0) * 0.8;
@@ -26,85 +27,49 @@ function itemRect(item: TextItem, pageH: number): SearchRect {
   };
 }
 
-function snippetText(str: string, q: string, from: number | undefined): string {
-  const idx = from === undefined ? str.toLowerCase().indexOf(q) : from;
-  const start = Math.max(0, idx - 25);
-  const end = Math.min(str.length, idx + q.length + 30);
-  const pre = start > 0 ? "…" : "";
-  const post = end < str.length ? "…" : "";
-  return pre + str.slice(start, end) + post;
-}
+export type ExtractedPageItem = { str: string; x: number; y: number; w: number; h: number };
 
-/** No-op: search() streams pages itself. Same `{ok, count}` envelope as the rest. */
-export async function buildSearchIndex(): Promise<{ ok: true; count: number }> {
-  textIndex.clear();
-  return { ok: true, count: 0 };
-}
-
-export async function search(query: string): Promise<SearchResult> {
-  if (!pdf) return fail("no_document", "No document open");
-  const q = String(query || "").toLowerCase().trim();
-  if (!q) {
-    setSearchQuery("");
-    setActiveMatchValue(null);
-    highlightsByPage.clear();
-    return { ok: true, query: "", total: 0, matches: [] };
-  }
-
-  setSearchQuery(q);
-  highlightsByPage.clear();
-  const matches: SearchMatch[] = [];
-  const qlen = q.length;
-
-  for (let page = 1; page <= numPages; page += 1) {
+/** Extract `page`'s text runs, normalised to scale-1 CSS px relative to the
+ *  page's top-left. `{ok:true}` with no items is a valid empty page; an
+ *  unreadable page is `{ok:false, error}` — the Rust builder skips it, the
+ *  same way the old streaming search did. */
+export async function extractPageText(
+  page: number,
+): Promise<
+  | { ok: true; page: number; items: ExtractedPageItem[] }
+  | { ok: false; error: { name: string; message: string } }
+> {
+  const doc = session.pdf;
+  if (!doc || page < 1) return fail("no_document", "No document open");
+  try {
+    const pg = await doc.getPage(page);
+    const tc = await pg.getTextContent();
+    const pageH = pg.getViewport({ scale: 1 }).height;
+    const items: ExtractedPageItem[] = [];
+    for (const item of tc.items) {
+      if (!item.str) continue;
+      const r = itemRect(item, pageH);
+      if (r.w <= 0) continue; // no rectangle → nothing to highlight
+      items.push({ str: item.str, x: r.x, y: r.y, w: r.w, h: r.h });
+    }
     try {
-      const pg = await pdf.getPage(page);
-      const tc = await pg.getTextContent();
-      const pageH = pg.getViewport({ scale: 1 }).height;
-      const pageMatches: SearchRect[] = [];
-      let ord = 0;
-      for (const item of tc.items) {
-        if (!item.str) continue;
-        const r = itemRect(item, pageH);
-        if (r.w <= 0) continue;
-        const lower = item.str.toLowerCase();
-        const len = lower.length || 1;
-        for (
-          let at = lower.indexOf(q);
-          at !== -1;
-          at = lower.indexOf(q, at + qlen)
-        ) {
-          const rect: SearchRect = {
-            x: r.x + (r.w * at) / len,
-            y: r.y,
-            w: Math.max(1, (r.w * qlen) / len),
-            h: r.h,
-          };
-          pageMatches.push(rect);
-          matches.push({
-            page,
-            index: ord,
-            text: snippetText(item.str, q, at),
-            ...rect,
-          });
-          ord += 1;
-        }
-      }
-      if (pageMatches.length) highlightsByPage.set(page, pageMatches);
       pg.cleanup();
     } catch (_) {
-      /* skip unreadable page */
+      /* already cleaned */
     }
+    return { ok: true, page, items };
+  } catch (e) {
+    const info = errorInfo(e);
+    return fail(info.name, info.message);
   }
+}
 
-  setActiveMatchValue(null);
+/** Publish the active query so mounted text layers repaint their highlight
+ *  boxes immediately (they paint from the DOM spans, not from the match
+ *  list, so the index result alone would leave the page unmarked). */
+export function setSearchContext(query: string): void {
+  session.setSearchQuery(String(query || "").toLowerCase().trim());
   refreshHighlights();
-  try {
-    if (pdf) await pdf.cleanup();
-  } catch (_) {
-    /* advisory */
-  }
-  return { ok: true, query, total: matches.length, matches };
 }
 
 export function setActiveMatch(page: number, index: number): void {
@@ -112,8 +77,8 @@ export function setActiveMatch(page: number, index: number): void {
     Number.isFinite(page) && page > 0 && Number.isFinite(index) && index >= 0
       ? { page, index: index | 0 }
       : null;
-  setActiveMatchValue(next);
-  for (const st of stateByCanvasId.values()) {
+  session.setActiveMatchValue(next);
+  for (const st of session.stateByCanvasId.values()) {
     if (!st.textLayerEl) continue;
     const wanted = next && next.page === st.page ? String(next.index) : null;
     for (const d of st.textLayerEl.querySelectorAll(".highlight") as NodeListOf<HTMLElement>) {
@@ -123,14 +88,11 @@ export function setActiveMatch(page: number, index: number): void {
 }
 
 export function clearHighlights(): void {
-  highlightsByPage.clear();
-  setSearchQuery("");
-  setActiveMatchValue(null);
-  for (const st of stateByCanvasId.values()) {
+  session.setSearchQuery("");
+  session.setActiveMatchValue(null);
+  for (const st of session.stateByCanvasId.values()) {
     if (st.host) {
       st.host.querySelectorAll(".highlight").forEach((n) => n.remove());
     }
   }
 }
-
-

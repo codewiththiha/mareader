@@ -4,12 +4,24 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use leptos::prelude::RwSignal;
+use leptos::prelude::{Memo, RwSignal};
 
 use crate::state::library::LibraryState;
 use crate::state::ui::SidebarMode;
 use crate::state::reader::ReaderState;
+use pdf_core::appearance::Appearance;
 use pdf_core::settings::Settings;
+
+/// The appearance slice of the settings, as its own tracked value.
+///
+/// Every DOM-writing appearance consumer subscribes to THIS rather than to
+/// `settings` directly. Reading the whole settings signal subscribes to the
+/// whole blob, and the blob is written for things that have nothing to do
+/// with the look — a layout toggle, a gloss colour, `last_path` on every
+/// single document open. Each of those used to repaint every custom property
+/// on `<html>` and re-bake the engine's rasters. A memo of the slice only
+/// notifies when the look actually changed.
+pub type AppearanceSignal = Memo<Appearance>;
 
 /// Monotonic toast ids: the host's equality guard needs a per-toast identity
 /// so a stale auto-dismiss timer never wipes a newer toast.

@@ -96,6 +96,31 @@ impl Appearance {
         }
     }
 
+    /// Just the accent token, without building the seven-entry override list.
+    pub fn tinted_accent(&self) -> Option<String> {
+        if !self.has_tint() {
+            return None;
+        }
+        let t = self.tint_strength as f64 / 100.0;
+        let target_h = ui_hue_oklch(self.tint_hue as f64);
+        let hex = self
+            .base_palette()
+            .into_iter()
+            .find(|(k, _)| *k == "--base-accent")
+            .map(|(_, v)| v)?;
+        let (l, c0, h0) = crate::oklch::hex_to_oklch(hex)?;
+        let mut delta = target_h - h0;
+        while delta > 180.0 {
+            delta -= 360.0;
+        }
+        while delta < -180.0 {
+            delta += 360.0;
+        }
+        let h = (h0 + delta * t).rem_euclid(360.0);
+        let c = c0 + (0.150 - c0).max(0.0) * t;
+        Some(crate::oklch::oklch_css(l, c, h))
+    }
+
     /// The seven UI colour tokens, tinted to match the page.
     ///
     /// The tint preserves each token's OWN lightness (which encodes the

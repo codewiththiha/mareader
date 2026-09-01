@@ -19,6 +19,12 @@ use crate::storage::save_library;
 /// renders whenever `doc.status != Ready`). The library itself is untouched:
 /// the just-closed book keeps its saved page so reopening resumes there.
 pub fn close_document(state: AppState) {
+    // Take the document state over from whatever open may still be resolving.
+    // An open's tail (its `Ready` flip, its cover, its outline) lands frames
+    // after the engine answers; without this claim a close that arrives in
+    // that window would be undone by the book it just closed.
+    let _ = super::session::claim();
+
     // Flush the current reading position NOW, before the signals are reset.
     // The reading-progress effect writes the library signal synchronously but
     // debounces the localStorage save; closing (and then possibly quitting)
@@ -37,7 +43,7 @@ pub fn close_document(state: AppState) {
             }
         });
         if changed
-            && let Err(e) = save_library(&state.library.books.get_untracked())
+            && let Err(e) = state.library.books.with_untracked(|books| save_library(books))
         {
             e.report();
         }

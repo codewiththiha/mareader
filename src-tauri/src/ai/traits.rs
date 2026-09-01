@@ -71,6 +71,22 @@ pub enum AiChunk {
     Error(AiError),
 }
 
+/// What actually goes over the `ai-stream-chunk` event: a chunk plus the id
+/// of the run that produced it.
+///
+/// The frontend can have more than one run in flight — a reader who glosses a
+/// second word before the first answer lands — and every run emits on the same
+/// event name. Without the id, a late chunk from the abandoned run is
+/// indistinguishable from the live one's, so it gets rendered (and cached)
+/// against the wrong word. The id is chosen by the caller and echoed verbatim;
+/// the backend never interprets it.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AiStreamEvent {
+    /// The run id passed to `explain_word`.
+    pub run: String,
+    pub chunk: AiChunk,
+}
+
 /// The trait that all AI providers must implement.
 /// We use a pinned boxed stream to allow async streaming without lifetime hell.
 pub trait AiProvider: Send + Sync {
@@ -106,5 +122,19 @@ mod tests {
         });
         let json = serde_json::to_value(&other).unwrap();
         assert_eq!(json["data"]["kind"]["other"], "helper crashed");
+    }
+
+    /// The envelope must keep the chunk's own shape intact under `chunk` and
+    /// carry the run id beside it — the frontend gate reads `run` and then
+    /// parses `chunk` with the mirror asserted above.
+    #[test]
+    fn the_envelope_carries_the_run_id_beside_the_chunk() {
+        let event = AiStreamEvent {
+            run: "g3-1712#4".into(),
+            chunk: AiChunk::Done,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["run"], "g3-1712#4");
+        assert_eq!(json["chunk"]["type"], "Done");
     }
 }

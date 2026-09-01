@@ -14,6 +14,7 @@
 # (Trunk runs the hook on every build; `npm run build:ts` regenerates them
 # locally; CI runs `npm ci && npm run build:ts` before any test step.)
 /public/pdfEngine.js
+/public/bake.worker.js
 /public/engine/*.js
 /scripts/*.js
 /scripts/engine-smoke/*.js

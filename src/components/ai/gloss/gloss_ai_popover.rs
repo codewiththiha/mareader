@@ -90,7 +90,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     // through, so a snapshot that fills the POS lands in both places in one
     // frame.
     let pos_sig = Signal::derive(move || {
-        ctrl.content.word_info.get().map(|i| i.pos).unwrap_or_default()
+        ctrl.content.word_info.get().map(|i| i.pos.clone()).unwrap_or_default()
     });
     let density_sig = Signal::derive(move || state.settings.with(|s| s.gloss_density));
 

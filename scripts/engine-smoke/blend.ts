@@ -35,7 +35,7 @@ export async function run(): Promise<void> {
   // --- a live render parks its raw frame for the session to drain ----------
   const opened = await PDFReader.open("/fake/blend-book.pdf");
   if (!opened.ok) throw new Error("open failed: " + JSON.stringify(opened));
-  PDFReader.registerPage({ canvasId: "blend-1-cv", hostId: "blend-1-pg", page: 1 });
+  PDFReader.registerPage(1, "blend-1-cv", "blend-1-pg");
   const rendered = await PDFReader.renderPage("blend-1-cv", 1.0, true);
   if (!rendered.ok) throw new Error("render failed: " + JSON.stringify(rendered));
 
@@ -104,7 +104,7 @@ export async function run(): Promise<void> {
   console.log("paper samples ok: offscreen pages 2 + 3 + a frameless skip past the end");
 
   // --- a new document drops the previous book's undrained frames -----------
-  PDFReader.registerPage({ canvasId: "blend-2-cv", hostId: "blend-2-pg", page: 2 });
+  PDFReader.registerPage(2, "blend-2-cv", "blend-2-pg");
   const r2 = await PDFReader.renderPage("blend-2-cv", 1.0, true);
   if (!r2.ok) throw new Error("render page 2 failed: " + JSON.stringify(r2));
   const f2 = PDFReader.takePaperFrame("blend-2-cv");
@@ -128,7 +128,7 @@ export async function run(): Promise<void> {
   // While the session says blend is off, a live render pays nothing on the
   // paper pipeline: no downscale, no readback, no stash.
   PDFReader.setPaperActive(false);
-  PDFReader.registerPage({ canvasId: "blend-3-cv", hostId: "blend-3-pg", page: 3 });
+  PDFReader.registerPage(3, "blend-3-cv", "blend-3-pg");
   const r3 = await PDFReader.renderPage("blend-3-cv", 1.0, true);
   if (!r3.ok) throw new Error("render page 3 failed: " + JSON.stringify(r3));
   if (PDFReader.takePaperFrame("blend-3-cv") !== null) {

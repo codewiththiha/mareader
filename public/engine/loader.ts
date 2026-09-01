@@ -6,21 +6,14 @@
 
 import type {
   CoverResult,
+  LoadingTask,
   OpenResult,
   OutlineItem,
   PDFDocumentProxy,
 } from "./types";
 import { errorInfo, fail, releaseCanvas } from "./canvas";
 import { resetPaperForDocument } from "./paper";
-import {
-  currentPath,
-  numPages,
-  pdf,
-  setCurrentPath,
-  setLoadingTask,
-  setNumPages,
-  setPdf,
-} from "./state";
+import { session } from "./state";
 
 type PdfjsLib = {
   getDocument: (params: Record<string, unknown>) => {
@@ -39,8 +32,10 @@ export type TextLayerCtor = {
   }): { render: () => Promise<void>; cancel: () => void };
 };
 
+const WEB_PATH_RE = /^(https?:\/\/|blob:)/i;
+
 function isWebServedPath(path: string): boolean {
-  if (/^https?:\/\//i.test(path) || /^blob:/i.test(path)) return true;
+  if (WEB_PATH_RE.test(path)) return true;
   if (path.startsWith("/samples/") || path.startsWith("samples/")) return true;
   return false;
 }
@@ -73,6 +68,12 @@ function withTimeout<T>(
   });
 }
 
+// The pdf.js worker URL is resolved ONCE: getDocument (and every text layer
+// construction) calls getPdfjs, and re-resolving URL + re-assigning
+// GlobalWorkerOptions every time is pure busywork — the src never changes
+// for the app's lifetime.
+let workerSrcConfigured = false;
+
 /** Resolve pdf.js off globalThis at call time — never at module evaluate. */
 export function getPdfjs(): PdfjsLib {
   const l = globalThis.pdfjsLib as PdfjsLib | undefined;
@@ -81,7 +82,8 @@ export function getPdfjs(): PdfjsLib {
   }
   // Absolute worker URL so Tauri's Worker constructor resolves against the
   // webview origin, not a broken custom-protocol base.
-  if (l.GlobalWorkerOptions) {
+  if (l.GlobalWorkerOptions && !workerSrcConfigured) {
+    workerSrcConfigured = true;
     try {
       l.GlobalWorkerOptions.workerSrc = new URL(
         "/vendor/pdfjs/pdf.worker.min.mjs",
@@ -96,6 +98,24 @@ export function getPdfjs(): PdfjsLib {
 
 export function getDocument(params: Record<string, unknown>) {
   return getPdfjs().getDocument(params);
+}
+
+// A LoadingTask is destroyed at most once, ever: `open`'s own timeout and the
+// engine's teardown can race on the same task (timeout fires while destroy()
+// is running), and a second destroy() on a pdf.js task double-frees the
+// worker. The WeakSet makes both paths idempotent without keeping tasks alive.
+const destroyedTasks = new WeakSet<LoadingTask>();
+
+export async function destroyTask(task: LoadingTask | null | undefined): Promise<void> {
+  if (!task) return;
+  if (destroyedTasks.has(task)) return;
+  destroyedTasks.add(task);
+  session.setLoadingTask(null);
+  try {
+    await task.destroy();
+  } catch (_) {
+    /* best-effort teardown */
+  }
 }
 
 export function TextLayer(opts: ConstructorParameters<TextLayerCtor>[0]) {
@@ -189,18 +209,13 @@ async function openFromUrl(url: string): Promise<PDFDocumentProxy> {
     rangeChunkSize: 65536,
     isEvalSupported: false,
   });
-  setLoadingTask(task);
+  session.setLoadingTask(task);
   return await withTimeout(
     task.promise,
     8000,
     "Timed out opening this PDF (pdf.js worker failed to initialize)",
     () => {
-      try {
-        void task.destroy();
-      } catch (_) {
-        /* ignore */
-      }
-      setLoadingTask(null);
+      void destroyTask(task);
     },
   );
 }
@@ -213,18 +228,13 @@ async function openFromBytes(bytes: Uint8Array): Promise<PDFDocumentProxy> {
     disableStream: true,
     isEvalSupported: false,
   });
-  setLoadingTask(task);
+  session.setLoadingTask(task);
   return await withTimeout(
     task.promise,
     8000,
     "Timed out opening this PDF (pdf.js worker failed to initialize)",
     () => {
-      try {
-        void task.destroy();
-      } catch (_) {
-        /* ignore */
-      }
-      setLoadingTask(null);
+      void destroyTask(task);
     },
   );
 }
@@ -251,53 +261,14 @@ async function openDocument(path: string): Promise<PDFDocumentProxy> {
   return await openFromBytes(await fetchBytes(path));
 }
 
-function outlineTitle(raw: string | null | undefined): string {
-  return String(raw == null ? "" : raw).trim() || "(untitled)";
-}
-
-async function flattenOutline(
-  items: OutlineItem[] | null | undefined,
-  depth: number,
-  acc: { title: string; page: number; depth: number }[]
-): Promise<typeof acc> {
-  for (const it of items || []) {
-    let page: number | null = null;
-    try {
-      if (Array.isArray(it.dest)) {
-        const ref = it.dest[0];
-        if (ref && typeof ref === "object" && "num" in ref) {
-          const idx = await pdf!.getPageIndex(ref);
-          page = idx + 1;
-        } else if (typeof ref === "number") {
-          page = ref + 1;
-        }
-      } else if (typeof it.dest === "string") {
-        const d = await pdf!.getDestination(it.dest);
-        if (d && d[0]) {
-          const ref = d[0];
-          if (ref && typeof ref === "object" && "num" in ref) {
-            const idx = await pdf!.getPageIndex(ref);
-            page = idx + 1;
-          }
-        }
-      }
-    } catch (_) {
-      page = null;
-    }
-    if (page) acc.push({ title: outlineTitle(it.title), page, depth });
-    await flattenOutline(it.items, depth + 1, acc);
-  }
-  return acc;
-}
-
 export async function open(path: string): Promise<OpenResult> {
   try {
     const destroy = (globalThis as unknown as { __pdfDestroy?: () => Promise<void> }).__pdfDestroy;
     if (destroy) await destroy();
     const doc = await openDocument(path);
-    setPdf(doc);
-    setNumPages(doc.numPages);
-    setCurrentPath(path);
+    session.setPdf(doc);
+    session.setNumPages(doc.numPages);
+    session.setCurrentPath(path);
     // A new document means a fresh paper-detection budget and palette
     // (engine/paper.ts) — plus, when the cache remembers this book, its
     // colours published right away. Runs after setCurrentPath so the cache
@@ -319,16 +290,16 @@ export async function open(path: string): Promise<OpenResult> {
 
     // Seed every page with page-1's size so open returns immediately.
     // A serial getPage(n) over a long book looked like a permanent hang.
-    const pageHeights: number[] = new Array(numPages);
-    const pageWidths: number[] = new Array(numPages);
-    for (let i = 0; i < numPages; i += 1) {
+    const pageHeights: number[] = new Array(session.numPages);
+    const pageWidths: number[] = new Array(session.numPages);
+    for (let i = 0; i < session.numPages; i += 1) {
       pageHeights[i] = vp.height;
       pageWidths[i] = vp.width;
     }
 
     return {
       ok: true,
-      numPages,
+      numPages: session.numPages,
       title,
       author,
       // The outline is deliberately NOT resolved here — see resolveOutline.
@@ -357,27 +328,140 @@ export async function open(path: string): Promise<OpenResult> {
   }
 }
 
-/** The open document's flattened chapter tree. Each entry's destination is
- * resolved through the pdf.js worker (`getPageIndex`), so a textbook-sized
- * outline costs a round trip per chapter — call this AFTER the reader is
- * up, never in front of `open`. Races the 4s timeout; an empty tree on
- * failure keeps the caller's fallback path ("no chapters"). */
+function outlineTitle(raw: string | null | undefined): string {
+  return String(raw == null ? "" : raw).trim() || "(untitled)";
+}
+
+/** Run `fn` over `items` with at most `limit` in flight, keeping result
+ *  order. Used by the outline flattening: each sibling's destination is an
+ *  independent worker round trip, so a textbook-sized tree used to pay them
+ *  one by one (400 chapters ≈ 400 serial round trips ≈ seconds). */
+async function mapWithLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(limit, 1), Math.max(items.length, 1)) },
+    async () => {
+      while (next < items.length) {
+        const i = next;
+        next += 1;
+        out[i] = await fn(items[i]!, i);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return out;
+}
+
+const OUTLINE_CONCURRENCY = 8;
+
+async function resolveOutlineEntry(
+  it: OutlineItem,
+  depth: number,
+): Promise<{ title: string; page: number; depth: number } | null> {
+  let page: number | null = null;
+  try {
+    if (Array.isArray(it.dest)) {
+      const ref = it.dest[0];
+      if (ref && typeof ref === "object" && "num" in ref) {
+        const idx = await session.pdf!.getPageIndex(ref);
+        page = idx + 1;
+      } else if (typeof ref === "number") {
+        page = ref + 1;
+      }
+    } else if (typeof it.dest === "string") {
+      const d = await session.pdf!.getDestination(it.dest);
+      if (d && d[0]) {
+        const ref = d[0];
+        if (ref && typeof ref === "object" && "num" in ref) {
+          const idx = await session.pdf!.getPageIndex(ref);
+          page = idx + 1;
+        }
+      }
+    }
+  } catch (_) {
+    page = null;
+  }
+  if (!page) return null;
+  return { title: outlineTitle(it.title), page, depth };
+}
+
+async function flattenOutline(
+  items: OutlineItem[] | null | undefined,
+  depth: number,
+): Promise<{ title: string; page: number; depth: number }[]> {
+  const siblings = items || [];
+  // Siblings resolve concurrently (bounded), then concatenate in document
+  // order: the results list must read the way the bookmark tree reads.
+  const perSibling = await mapWithLimit(siblings, OUTLINE_CONCURRENCY, async (it) => {
+    const entry = await resolveOutlineEntry(it, depth);
+    const descendants = await flattenOutline(it.items, depth + 1);
+    return entry ? [entry, ...descendants] : descendants;
+  });
+  return perSibling.flat();
+}
+
 export async function resolveOutline(): Promise<{
   ok: true;
   outline: { title: string; page: number; depth: number }[];
 }> {
-  if (!pdf) return { ok: true, outline: [] };
+  if (!session.pdf) return { ok: true, outline: [] };
   try {
     // Race the timer against getOutline() AND flattenOutline(). Awaiting
     // getOutline() first meant a hung outline never started the 4s timeout.
-    const outlinePromise = pdf.getOutline().then((items) =>
-      flattenOutline(items, 0, []),
+    const outlinePromise = session.pdf.getOutline().then((items) =>
+      flattenOutline(items, 0),
     );
     const outline = await withTimeout(outlinePromise, 4000, "outline timeout");
     return { ok: true, outline };
   } catch (_) {
     return { ok: true, outline: [] };
   }
+}
+
+/**
+ * JPEG quality for shelf covers. Small art at a small size; 0.82 is the knee
+ * where further quality stops being visible on a 240px-wide cover.
+ */
+const COVER_QUALITY = 0.82;
+
+/**
+ * Encode a canvas as a JPEG data URL without blocking the frame.
+ *
+ * `toDataURL` encodes AND base64-writes synchronously on the main thread —
+ * for a cover that lands right as the reader is painting its first page, that
+ * is a visible hitch. `toBlob` hands the encode to the browser off-thread and
+ * FileReader does the base64 in a task of its own; the canvas stays untouched
+ * until the blob is out.
+ *
+ * Falls back to the synchronous path where either API is missing (older
+ * webviews, and the smoke-test harness's stub canvas).
+ */
+function encodeJpeg(canvas: HTMLCanvasElement): Promise<string> {
+  const sync = () => canvas.toDataURL("image/jpeg", COVER_QUALITY);
+  if (typeof canvas.toBlob !== "function" || typeof FileReader === "undefined") {
+    return Promise.resolve(sync());
+  }
+  return new Promise<string>((resolve) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return resolve(sync());
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const url = reader.result;
+          resolve(typeof url === "string" ? url : sync());
+        };
+        reader.onerror = () => resolve(sync());
+        reader.readAsDataURL(blob);
+      },
+      "image/jpeg",
+      COVER_QUALITY,
+    );
+  });
 }
 
 function renderCoverFromPdf(
@@ -398,9 +482,10 @@ function renderCoverFromPdf(
       .render({ canvasContext: ctx, viewport })
       .promise.then(() => {
         try { page.cleanup(); } catch (_) { /* ignore */ }
-        const dataUrl = off.toDataURL("image/jpeg", 0.82);
-        releaseCanvas(off);
-        return { dataUrl, width: viewport.width, height: viewport.height };
+        return encodeJpeg(off).then((dataUrl) => {
+          releaseCanvas(off);
+          return { dataUrl, width: viewport.width, height: viewport.height };
+        });
       });
   });
 }
@@ -409,8 +494,8 @@ export async function coverDataUrl(path: string, maxWidth = 240): Promise<CoverR
   try {
     if (!path) return fail("no_path", "No path");
     let result: { dataUrl: string; width: number; height: number };
-    if (pdf && currentPath === path) {
-      result = await renderCoverFromPdf(pdf, maxWidth);
+    if (session.pdf && session.currentPath === path) {
+      result = await renderCoverFromPdf(session.pdf, maxWidth);
     } else {
       const task = getDocument({
         data: await fetchBytes(path),

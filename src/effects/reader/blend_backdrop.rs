@@ -34,6 +34,7 @@
 use leptos::prelude::*;
 
 use pdf_core::layout::ViewMode;
+use pdf_core::settings::LayoutSettings;
 use pdf_paper::{PaperConfig, DEFAULT_EDGE_WIDTH};
 
 use crate::state::AppState;
@@ -49,25 +50,30 @@ use crate::state::AppState;
 /// the first open of a session used to flash the theme paper first.
 pub fn paper_settings(state: AppState) {
     let settings = state.settings;
-    Effect::new(move |_| {
-        let (blend_on, mode, area, scan_pages) = settings.with(|st| {
-            (
-                st.layout.blend_mode,
-                st.layout.blend_scope,
-                st.layout.blend_area,
-                st.layout.blend_scan_pages,
-            )
-        });
-        pdf_engine::paper::configure(
-            blend_on,
-            PaperConfig {
-                mode,
-                area,
-                scan_pages,
-                edge_width: DEFAULT_EDGE_WIDTH,
-            },
-        );
-    });
+    // Publish ONCE, synchronously, before anything is allowed to run. A
+    // Leptos effect's first run is queued, not immediate, and the open flow
+    // this has to precede is itself asynchronous — an OS "Open with" launch
+    // hands the backend a path before the webview has finished mounting, so
+    // "installed earlier in the app root" is not on its own a guarantee that
+    // this landed first. Asking the engine's colour cache under default
+    // detection settings is a silently wrong colour on the first book, so the
+    // seed does not wait for a flush.
+    publish(settings.with_untracked(|st| st.layout));
+    // ...and then track, for every later change.
+    Effect::new(move |_| publish(settings.with(|st| st.layout)));
+}
+
+/// Hand one snapshot of the layout settings to the paper session.
+fn publish(layout: LayoutSettings) {
+    pdf_engine::paper::configure(
+        layout.blend_mode,
+        PaperConfig {
+            mode: layout.blend_scope,
+            area: layout.blend_area,
+            scan_pages: layout.blend_scan_pages,
+            edge_width: DEFAULT_EDGE_WIDTH,
+        },
+    );
 }
 
 /// Geometry → the session. Called once from ReaderPage, alongside the other

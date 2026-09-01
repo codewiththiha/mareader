@@ -1,13 +1,11 @@
 //! Thin floating scrollbar that takes no layout space.
 
-use std::cell::Cell;
-use std::rc::Rc;
-
 use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
 use crate::components::primitives::hooks::dom::by_id;
+use crate::components::primitives::hooks::use_timeout::use_timeout_slot;
 
 #[component]
 pub fn OverlayScrollbar(
@@ -17,12 +15,11 @@ pub fn OverlayScrollbar(
     let progress = RwSignal::new(0.0f64);
     let frac = RwSignal::new(1.0f64);
     let shown = RwSignal::new(false);
-    let hide_handle: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(None));
+    let hide_slot = use_timeout_slot();
     let drag = RwSignal::new(None::<(f64, i32)>);
 
     // Bind once when the scroller mounts.
     Effect::new({
-        let hide_handle = hide_handle.clone();
         move |_| {
             let Some(el) = by_id(scroller_id) else {
                 return;
@@ -54,7 +51,7 @@ pub fn OverlayScrollbar(
             let progress_s = progress;
             let frac_s = frac;
             let shown_s = shown;
-            let hide_s = hide_handle.clone();
+            let hide_s = hide_slot;
             let horiz = horizontal;
             let sid = scroller_id;
 
@@ -77,29 +74,28 @@ pub fn OverlayScrollbar(
                     progress_s.set((pos / (total - client).max(1.0)).clamp(0.0, 1.0));
                 }
                 shown_s.set(true);
-                if let Some(prev) = hide_s.get()
-                    && let Some(w) = web_sys::window()
-                {
-                    w.clear_timeout_with_handle(prev);
+                if let Some(prev) = hide_s.try_get_value().flatten() {
+                    prev.clear();
                 }
                 let shown_hide = shown_s;
-                let slot = hide_s.clone();
-                let tcb = Closure::once_into_js(move || {
-                    shown_hide.set(false);
-                });
-                if let Some(w) = web_sys::window()
-                    && let Ok(h) = w.set_timeout_with_callback_and_timeout_and_arguments_0(
-                        tcb.as_ref().unchecked_ref(),
-                        1000,
-                    )
-                {
-                    slot.set(Some(h));
-                }
+                let h = set_timeout_with_handle(
+                    move || {
+                        shown_hide.set(false);
+                    },
+                    std::time::Duration::from_millis(1000),
+                )
+                .ok();
+                hide_s.set_value(h);
             }) as Box<dyn FnMut(web_sys::Event)>);
 
             let _ = el.add_event_listener_with_callback("scroll", cb.as_ref().unchecked_ref());
             // Retain for the component lifetime.
             StoredValue::new_local(cb);
+            on_cleanup(move || {
+                if let Some(el) = by_id(scroller_id) {
+                    let _ = el.remove_attribute("data-overlay-sb");
+                }
+            });
         }
     });
 

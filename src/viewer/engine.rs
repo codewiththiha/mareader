@@ -23,18 +23,18 @@
 //! same point lands in the new geometry, and puts it back under the viewport
 //! centre. Page interiors scale; the fixed gap between pages does not.
 //!
-//! Because this runs every frame, the column is copied once and walked to the
-//! centre once: the anchored page, the offset inside it, and the extent of all
-//! the pages above come out of the same pass, and the copy that pass reads is
-//! the one the layout is rebuilt from. The anchor cannot be left to the
-//! virtualizer either — that one scales item extents, and the strips fold the
-//! page gap *into* the item size (their `gap` is `0.0` and `report_size` is
-//! handed `height + gap`), so a uniform rescale there scales the chrome too.
-//! Nor can the scroll write be deferred a frame: layout and scroll have to move
-//! in the same tick.
+//! Because this runs every frame, the anchored page is resolved in `O(log n)`
+//! from the strip's own prefix sums (`index_at`) and the column is never
+//! copied: the anchor reads the pre-scale store once, the store is then scaled
+//! in place, and the strip rebuild reads the now-scaled values. The anchor
+//! cannot be left to the virtualizer either — that one scales item extents,
+//! and the strips fold the page gap *into* the item size (their `gap` is `0.0`
+//! and `report_size` is handed `height + gap`), so a uniform rescale there
+//! scales the chrome too. Nor can the scroll write be deferred a frame: layout
+//! and scroll have to move in the same tick.
 
 use leptos::prelude::*;
-use pdf_core::layout::TOOLBAR_H;
+use pdf_core::layout::{ViewMode, TOOLBAR_H};
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use crate::state::reader::ReaderState;
@@ -66,19 +66,27 @@ impl ViewerEngine {
 
         self.relayout_vertical(state, factor);
 
-        // Horizontal strip: widths are exact (intrinsic × scale + margin),
-        // so they are rebuilt from the intrinsic sizes at the scale this
-        // relayout lands on rather than from a scaled copy of the previous
-        // width — that keeps the running product free of drift across the
-        // many small factors a single tween applies. One copy of the widths
-        // is taken because the virtualizer reads the sizes once per item, and
-        // an array read beats a signal read per page. The virtualizer's own
-        // rescale anchor holds the cross-axis position.
+        // Horizontal strip: only the scroll-horizontal mode mounts it, so in
+        // every other mode rebuilding its widths — a per-frame `Vec` collect —
+        // would be dead work on every frame of a zoom. Gate it on the one mode
+        // that owns the horizontal strip.
+        if state.viewer.mode.get_untracked() != ViewMode::ScrollHorizontal {
+            return;
+        }
+
+        // Widths are exact (intrinsic × scale + margin), so they are rebuilt
+        // from the intrinsic sizes at the scale this relayout lands on rather
+        // than from a scaled copy of the previous width — that keeps the
+        // running product free of drift across the many small factors a single
+        // tween applies. One copy of the widths is taken because the
+        // virtualizer reads the sizes once per item, and an array read beats a
+        // signal read per page. The virtualizer's own rescale anchor holds the
+        // cross-axis position.
         let margin = state.viewer.page_margin.get_untracked();
         let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
         });
-        let new_scale = state.viewer.zoom.display.get_untracked() * factor;
+        let new_scale = state.viewer.zoom.visual_scale() * factor;
         if !widths.is_empty() {
             self.horizontal.rescale(factor, move |index| {
                 widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
@@ -97,9 +105,11 @@ impl ViewerEngine {
     /// The anchor is computed here rather than left to the virtualizer's own
     /// rescale anchor because it has to survive a scale the layout applies
     /// unevenly: page heights multiply by the factor, the gap between pages
-    /// stays put. Walking the column is the only way to get that exactly right,
-    /// so the walk is done once — `anchor_after_scale` copies nothing and reads
-    /// the array it is handed a single time.
+    /// stays put. The anchored page is resolved in `O(log n)` from the strip's
+    /// own prefix sums (`index_at` + `offset_of`) rather than by walking the
+    /// column, and the column itself is never copied: the anchor reads the
+    /// pre-scale store once, the store is then scaled in place, and the strip
+    /// rebuild reads the now-scaled values.
     fn relayout_vertical(&self, state: &ReaderState, factor: f64) {
         let gap = state.viewer.page_gap.get_untracked();
         let (_, vh) = state.viewer.container_size.get_untracked();
@@ -111,27 +121,45 @@ impl ViewerEngine {
         let centre_in_viewport = vh / 2.0;
         let centre_y_doc = (scroll_top + centre_in_viewport - TOOLBAR_H).max(0.0);
 
-        // One copy of the column per frame: the anchor walk and the layout
-        // rebuild read the same numbers, and the layout is rebuilt from a
-        // closure the virtualizer calls once per item, which wants them flat.
-        let heights = state
-            .document
-            .metrics
-            .css_heights
-            .with_untracked(|heights| heights.clone());
-        let Some(new_centre_y_doc) = anchor_after_scale(&heights, gap, centre_y_doc, factor) else {
+        // Resolve the page under the viewport centre and where that point lands
+        // once every page has scaled, in a single borrow of the pre-scale
+        // store. The strip folds the page gap into each item's size (its own
+        // `gap` is 0), so `offset_of(index)` is the extent of the pages above
+        // WITH their gaps; subtracting `index * gap` recovers their heights
+        // alone — the part that scales.
+        let anchored = state.document.metrics.css_heights.with_untracked(|heights| {
+            if heights.is_empty() {
+                return None;
+            }
+            let index = self.vertical.index_at(centre_y_doc).min(heights.len() - 1);
+            let height = heights[index];
+            let above_with_gap = self.vertical.offset_of(index);
+            let height_sum = above_with_gap - index as f64 * gap;
+            Some(anchored_position(
+                height,
+                above_with_gap,
+                height_sum,
+                gap,
+                centre_y_doc,
+                factor,
+                index,
+            ))
+        });
+        let Some(new_centre_y_doc) = anchored else {
             return; // nothing measured yet; no layout to hold still
         };
 
         // Scale the shared measurement store, then rebuild the strip's layout
-        // from it.
+        // from it. The rebuild reads the now-scaled store, so the column is
+        // not copied a second time.
         state.document.metrics.css_heights.update(|store| {
             for height in store.iter_mut() {
                 *height *= factor;
             }
         });
+        let css_heights = state.document.metrics.css_heights;
         self.vertical.rescale(factor, move |index| {
-            heights.get(index).copied().unwrap_or(0.0) * factor + gap
+            css_heights.with_untracked(|heights| heights.get(index).copied().unwrap_or(0.0)) + gap
         });
 
         // Scroll so the anchored point is back under the middle of the window.
@@ -168,91 +196,76 @@ impl ViewerEngine {
     }
 }
 
-/// Where the document point at `centre_y_doc` sits once every page in
-/// `heights` has been scaled by `factor`, the gaps between them left alone.
+/// Where the document point that was under the viewport centre lands once the
+/// page it sits on has been scaled by `factor` and the gaps between pages have
+/// been left alone.
 ///
-/// `None` when the column has not been measured yet. The walk stops at the page
-/// that holds the point, so the cost tracks how far down the document the
-/// reader is rather than the page count: the pages below the centre cannot move
-/// the anchor and are never summed.
-fn anchor_after_scale(heights: &[f64], gap: f64, centre_y_doc: f64, factor: f64) -> Option<f64> {
-    if heights.is_empty() {
-        return None;
+/// `index` is the anchored page, already resolved in `O(log n)` by the strip's
+/// `index_at`; `height` is that page's pre-scale height, `above_with_gap` the
+/// extent of the pages above it (gaps included) and `height_sum` their heights
+/// alone — the part that scales. Keeping the arithmetic here, divorced from any
+/// strip or signal, is what makes the gap-aware anchoring host-testable.
+fn anchored_position(
+    height: f64,
+    above_with_gap: f64,
+    height_sum: f64,
+    gap: f64,
+    centre_y_doc: f64,
+    factor: f64,
+    index: usize,
+) -> f64 {
+    // Where the pages above land at the new scale, plus this point's offset
+    // inside them. An anchor that fell in the gap keeps the unscaled
+    // remainder: the gap is fixed chrome and never scales.
+    let above = height_sum * factor + index as f64 * gap;
+    let offset_inside = centre_y_doc - above_with_gap;
+    above + if offset_inside <= height {
+        offset_inside * factor
+    } else {
+        height * factor + (offset_inside - height)
     }
-    let last = heights.len() - 1;
-    let mut old_before = 0.0; // extent of the pages above, gaps included
-    let mut height_sum = 0.0; // their heights alone, which is what scales
-    for (index, height) in heights.iter().enumerate() {
-        if old_before + *height + gap > centre_y_doc || index == last {
-            // Where the pages above land at the new scale, plus this point's
-            // offset inside them. An anchor that fell in the gap keeps the
-            // unscaled remainder: the gap is fixed chrome and never scales.
-            let above = height_sum * factor + (index as f64) * gap;
-            let offset_inside = centre_y_doc - old_before;
-            return Some(above
-                + if offset_inside <= *height {
-                    offset_inside * factor
-                } else {
-                    *height * factor + (offset_inside - *height)
-                });
-        }
-        old_before += *height + gap;
-        height_sum += *height;
-    }
-    None
 }
 
 #[cfg(test)]
 mod tests {
-    use super::anchor_after_scale;
+    use super::anchored_position;
 
-    /// A point inside a page moves with the page.
+    /// A point inside a page moves with the page: page 0 spans 0..100, so 40
+    /// inside it lands at 80 after a 2× zoom.
     #[test]
     fn an_anchor_on_a_page_scales_with_it() {
-        let heights = [100.0, 100.0, 100.0];
-        // Page 0 spans 0..100, so 40 is inside it: it lands at 80.
-        assert_eq!(anchor_after_scale(&heights, 20.0, 40.0, 2.0), Some(80.0));
+        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 40.0, 2.0, 0), 80.0);
     }
 
     /// The load-bearing case: the gap between pages is fixed chrome, so an
-    /// anchor that falls in it is carried along by the pages above it at
-    /// their scale and keeps the unscaled remainder of the gap. A uniform
-    /// rescale of the whole extent — what the virtualizer's own anchor, and a
-    /// CSS transform, both do — would put it at 110 × 2 = 220 instead.
+    /// anchor that falls in it is carried along by the pages above it at their
+    /// scale and keeps the unscaled remainder of the gap. A uniform rescale of
+    /// the whole extent would put it at 110 × 2 = 220 instead.
     #[test]
     fn an_anchor_in_a_gap_keeps_the_gap_unscaled() {
-        let heights = [100.0, 100.0, 100.0];
-        // Pages: 0..100, gap 100..120, page 1 at 120..220. 110 is 10 into the
-        // gap; after doubling, page 0 ends at 200 and the gap is still 20.
-        assert_eq!(
-            anchor_after_scale(&heights, 20.0, 110.0, 2.0),
-            Some(210.0),
-            "the gap must not scale with the pages"
-        );
+        // Page 0 ends at 100, the gap spans 100..120; 110 is 10 into the gap,
+        // so after doubling, page 0 ends at 200 and the gap is still 20.
+        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 110.0, 2.0, 0), 210.0);
     }
 
     /// Every gap above the reader counts, not just the one it is standing in:
     /// deep in a long document the unscaled sum is what keeps the page still.
     #[test]
     fn gaps_above_the_anchor_hold_the_page_still() {
-        let heights = [100.0; 10];
         // Page 5 starts at 5 * (100 + 20) = 600; +30 into it is 630, which
         // scales to 5 * 200 + 5 * 20 + 60 = 1160.
-        assert_eq!(anchor_after_scale(&heights, 20.0, 630.0, 2.0), Some(1160.0));
+        assert_eq!(anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5), 1160.0);
         // Zooming back out by the same factor returns to the exact start.
-        let forward = anchor_after_scale(&heights, 20.0, 630.0, 2.0).unwrap();
-        let scaled: Vec<f64> = heights.iter().map(|h| h * 2.0).collect();
-        assert_eq!(anchor_after_scale(&scaled, 20.0, forward, 0.5), Some(630.0));
+        let forward = anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5);
+        assert_eq!(anchored_position(200.0, 1100.0, 1000.0, 20.0, forward, 0.5, 5), 630.0);
     }
 
     /// A centre past the end of a short document still lands at the scaled end,
-    /// and an unmeasured column relayouts nothing.
+    /// keeping the overflow beyond the single page exactly as long as it was.
     #[test]
-    fn the_ends_of_the_column_are_both_stable() {
-        let heights = [100.0];
+    fn a_centre_past_the_end_keeps_the_overflow_unscaled() {
         // 900 is far past the single page: the page scales to 200 and the 800
         // of overflow beyond it stays exactly as long as it was.
-        assert_eq!(anchor_after_scale(&heights, 20.0, 900.0, 2.0), Some(1000.0));
-        assert_eq!(anchor_after_scale(&[], 20.0, 900.0, 2.0), None);
+        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 900.0, 2.0, 0), 1000.0);
     }
 }

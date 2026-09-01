@@ -1,8 +1,11 @@
 //! WASM bridge to the pdf.js engine (`window.PDFReader`).
 //!
-//! Three layers, one job: `bridge` declares the wasm-bindgen externs (the
-//! ONLY place externs live), `types` mirrors the engine's return shapes, and
-//! `api` provides typed `Result`-returning wrappers for the rest of the app.
+//! Four layers, one job: `bridge` declares the wasm-bindgen externs (the
+//! ONLY place externs live — typed, so a mount/render call allocates no
+//! payload objects), `types` mirrors the engine's return shapes, `api`
+//! provides typed `Result`-returning wrappers for the rest of the app (one
+//! focused module per surface: document, render, search, paper, dialog,
+//! theme, window), and `paper` is the paper session state machine.
 //!
 //! `bridge` is private: callers go through `api`, except for the few raw
 //! probes/surfaces the app legitimately needs directly (engine version,

@@ -64,7 +64,7 @@ type StepSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 /// landing. Both go through here so that "the layout moved and the display scale
 /// agrees with it" stays one rule rather than two that can drift apart.
 pub(crate) fn land(state: &ReaderState, engine: &ViewerEngine, t: &ZoomTransition) -> bool {
-    let cur = state.viewer.zoom.display.get_untracked();
+    let cur = state.viewer.zoom.visual_scale();
     if (t.to - cur).abs() < config::SETTLED_EPSILON {
         return false;
     }
@@ -188,7 +188,7 @@ impl Tween {
             // engine reads `display` to work out the horizontal strip's
             // exact widths, so the relayout must come first.
             if scrolls {
-                let cur = state.viewer.zoom.display.get_untracked();
+                let cur = state.viewer.zoom.visual_scale();
                 engine.relayout_to(&state, visual / cur);
             }
             state.viewer.zoom.display.set(visual);

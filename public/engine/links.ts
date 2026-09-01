@@ -6,16 +6,16 @@ import type {
   PDFPageProxy,
   Viewport,
 } from "./types";
-import { pdf } from "./state";
+import { session } from "./state";
 
 async function destToPage(dest: string | unknown[] | null | undefined): Promise<number | null> {
-  if (!pdf || !dest) return null;
+  if (!session.pdf || !dest) return null;
   try {
-    const explicit = typeof dest === "string" ? await pdf.getDestination(dest) : dest;
+    const explicit = typeof dest === "string" ? await session.pdf.getDestination(dest) : dest;
     if (!Array.isArray(explicit) || !explicit.length) return null;
     const ref = explicit[0];
     if (typeof ref === "object" && ref !== null) {
-      return (await pdf.getPageIndex(ref)) + 1;
+      return (await session.pdf.getPageIndex(ref)) + 1;
     }
     if (Number.isInteger(ref)) return (ref as number) + 1;
     return null;
@@ -45,7 +45,7 @@ export async function buildLinkLayer(
 
   let annots: Annotation[] = [];
   try {
-    const src = page || (await pdf!.getPage(st.page));
+    const src = page || (await session.pdf!.getPage(st.page));
     annots = await src.getAnnotations({ intent: "display" });
     if (!page) {
       try { src.cleanup(); } catch (_) { /* ignore */ }

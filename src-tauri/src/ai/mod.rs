@@ -28,7 +28,7 @@ pub mod apple;
 
 // The frontend-facing surface: the chunk stream and its error vocabulary.
 // `WordInfo` reaches commands inside an `AiChunk`, so it is not re-exported.
-pub use traits::{AiChunk, AiError, AiErrorKind, AiProvider};
+pub use traits::{AiChunk, AiError, AiErrorKind, AiProvider, AiStreamEvent};
 
 #[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]
 pub fn create_provider() -> Box<dyn AiProvider> {

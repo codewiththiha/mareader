@@ -108,7 +108,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                         let Some(sel) = detail.get_untracked() else {
                             return;
                         };
-                        let scale = state.reader.viewer.zoom.display.get_untracked();
+                        let scale = state.reader.viewer.zoom.visual_scale();
                         // Prefer the page-space anchor captured with the
                         // selection; fall back to a live DOM capture.
                         let mark = state
