@@ -15,8 +15,8 @@ use crate::components::settings::animations::AnimationsTab;
 use crate::components::settings::common::{Tab, TabButton};
 use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
-use crate::components::primitives::icon::IconName;
-use crate::components::primitives::icon_button::IconButton;
+use app_chrome::icon::IconName;
+use app_chrome::icon_button::IconButton;
 use crate::components::primitives::overlay::lanes::{use_overlay_lane, OverlayPolicy};
 use crate::state::AppState;
 

@@ -9,7 +9,7 @@ use leptos::prelude::*;
 use crate::components::document::page_canvas::component::GlossOverlayProps;
 use crate::components::document::shells::page_shell::PageShell;
 use crate::components::document::PageCanvas;
-use crate::components::primitives::hooks::dom::SINGLE_PAGE_CONTAINER_ID;
+use app_chrome::hooks::dom::SINGLE_PAGE_CONTAINER_ID;
 use crate::state::{ReaderState, TextureSignal};
 
 #[component]

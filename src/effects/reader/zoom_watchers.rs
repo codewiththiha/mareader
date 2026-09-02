@@ -56,8 +56,8 @@ use leptos::prelude::*;
 
 use pdf_core::math::FitMode;
 
-use crate::components::primitives::hooks::use_timeout::use_debounce;
-use crate::components::primitives::hooks::use_viewport::use_viewport;
+use app_chrome::hooks::use_timeout::use_debounce;
+use app_chrome::hooks::use_viewport::use_viewport;
 use crate::state::reader::ZoomCommand;
 use crate::state::{AppState, SidebarMode};
 use crate::viewer::zoom::config::FOLLOW_SETTLE_MS;

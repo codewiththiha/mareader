@@ -35,6 +35,11 @@ pub const TOOLBAR_LEADING_ID: &str = "toolbar-leading";
 /// Id of the toolbar's trailing control cluster.
 pub const TOOLBAR_TRAILING_ID: &str = "toolbar-trailing";
 
+/// Id of the center slot's content (the centered title). The shell reads its
+/// natural width to decide between exact-row-center and free-stretch
+/// placement, and observes it to re-measure when the name changes.
+pub const TOOLBAR_CENTER_TITLE_ID: &str = "toolbar-center-title";
+
 /// Id of the slot that frames the page column (the floating document title
 /// budgets its width against this element's rect).
 pub const VIEWER_SLOT_ID: &str = "viewer-slot";

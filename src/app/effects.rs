@@ -20,7 +20,9 @@
 //! 3. `publish_motion` — the reduced-motion projection, needed by the reader's
 //!    own pipeline and by the CSS the app does not model.
 //! 4. The input and selection arms, in any order among themselves.
-//! 5. `install_ai_chunk_bridge` — one app-lifetime Tauri listener.
+//! 5. The two app-lifetime Tauri listeners, in any order between them:
+//!    `install_ai_chunk_bridge` (AI chunks) and `install_window_state_bridge`
+//!    (the frameless maximize flag).
 //! 6. `init_open_file_handling` — LAST, and this is the step the ordering is
 //!    really for. It can open a document IMMEDIATELY (a double-clicked file
 //!    hands the backend a path before the webview finishes mounting), so
@@ -69,6 +71,9 @@ pub(crate) fn install_app_effects(state: AppState, appearance: AppearanceSignal)
     //    window event so the gloss popover never stacks or drops handlers
     //    across document switches.
     crate::services::ai::install_ai_chunk_bridge();
+    // 5b. The frameless maximize flag: one resize subscription publishing
+    //     into UiState, so the caption cluster never owns a listener.
+    crate::services::window::install_window_state_bridge(state);
     // 6. OS file opening: double-click / "Open with" / default-app launch.
     //    Last, because it can open a document on the spot.
     crate::services::document::init_open_file_handling(state);

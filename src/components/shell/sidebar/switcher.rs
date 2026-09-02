@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::icon::{Icon, IconName};
+use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::toggle_button::ToggleButton;
 use crate::state::SidebarMode;
 

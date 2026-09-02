@@ -8,7 +8,7 @@ use std::sync::Arc;
 use leptos::{html, prelude::*};
 
 use crate::components::ai::types::WordInfo;
-use crate::components::primitives::hooks::use_content_size::use_content_size;
+use app_chrome::hooks::use_content_size::use_content_size;
 
 /// Returns the node ref for the invisible measure twin plus the live height
 /// signal it feeds.

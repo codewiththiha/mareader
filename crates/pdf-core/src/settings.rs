@@ -15,20 +15,20 @@ use serde::{Deserialize, Serialize};
 use crate::appearance::{Appearance, BaseMode, NoiseMode, TextureMode};
 use crate::presets::{builtin_presets, Preset};
 
+/// The AI word card's settings types now live in `ai_core::settings`;
+/// re-exported so the old `pdf_core::settings::GlossColor` path keeps
+/// resolving.
+pub use ai_core::settings::{
+    default_custom_gloss, default_gloss_opacity, is_hex6, GlossColor, GlossDensity,
+};
+
 pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
 fn on_true() -> bool { true }
-fn default_gloss_opacity() -> f64 { 0.4 }
 fn default_page_margin() -> f64 { 0.0 }
 fn default_label_max_pct() -> f64 { 100.0 }
-fn default_custom_gloss() -> String { "#a58af0".into() }
 fn default_startup_fit() -> crate::math::FitMode {
     crate::math::FitMode::Page
-}
-
-fn is_hex6(s: &str) -> bool {
-    let b = s.as_bytes();
-    s.len() == 7 && b[0] == b'#' && b[1..].iter().all(|c| c.is_ascii_hexdigit())
 }
 
 /// How the appearance reaches the pixels of a page.
@@ -244,78 +244,6 @@ impl Default for AnimationSettings {
         }
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum GlossColor {
-    #[default]
-    Accent,
-    Red,
-    Yellow,
-    Green,
-    Blue,
-    /// Old saved `"violet"` becomes Custom (default hex = old violet).
-    #[serde(alias = "violet")]
-    Custom,
-}
-
-impl GlossColor {
-    pub const ALL: &'static [GlossColor] = &[
-        Self::Accent,
-        Self::Red,
-        Self::Yellow,
-        Self::Green,
-        Self::Blue,
-        Self::Custom,
-    ];
-
-    pub fn all() -> &'static [GlossColor] {
-        Self::ALL
-    }
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Accent => "Auto",
-            Self::Red => "Red",
-            Self::Yellow => "Yellow",
-            Self::Green => "Green",
-            Self::Blue => "Blue",
-            Self::Custom => "Custom",
-        }
-    }
-
-    /// `None` = follow the live accent tint.
-    pub fn resolve(&self, custom: &str) -> Option<String> {
-        match self {
-            Self::Accent => None,
-            Self::Red => Some("#e56b64".into()),
-            Self::Yellow => Some("#e8c449".into()),
-            Self::Green => Some("#6fd58c".into()),
-            Self::Blue => Some("#6ba3f5".into()),
-            Self::Custom => Some(custom.to_string()),
-        }
-    }
-}
-
-/// How much air the AI word card carries: the padding, line heights and
-/// section gaps of the gloss card's body. Compact is the default because a
-/// definition is scanned, not read like a page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum GlossDensity {
-    #[default]
-    Compact,
-    Comfortable,
-}
-
-impl GlossDensity {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Compact => "Compact",
-            Self::Comfortable => "Comfortable",
-        }
-    }
-}
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

@@ -24,7 +24,14 @@ pub fn tauri_listen(event: &str, handler: impl FnMut(Event) + 'static) {
     let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
     let event = event.to_string();
     wasm_bindgen_futures::spawn_local(async move {
-        _ = pdf_engine::listen(&event, f).await;
+        if let Err(error) = tauri_bridge::listen(&event, f).await {
+            web_sys::console::error_2(
+                &wasm_bindgen::JsValue::from_str(&format!(
+                    "Could not listen for Tauri event '{event}'"
+                )),
+                &error,
+            );
+        }
     });
     // Park the closure in the current owner: dropping it would free the wasm
     // function table entry while Tauri's JS still holds a reference.

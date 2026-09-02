@@ -6,13 +6,14 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_core::settings::{GlossColor, GlossDensity, PaperArea, PaperMode, RenderPipeline};
+use ai_core::settings::{GlossColor, GlossDensity};
+use pdf_core::settings::{PaperArea, PaperMode, RenderPipeline};
 use pdf_paper::{MAX_SCAN_PAGES, MIN_SCAN_PAGES};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use crate::components::primitives::form::slider::Slider;
-use crate::components::primitives::icon::IconName;
-use crate::components::primitives::icon_button::IconButton;
+use app_chrome::icon::IconName;
+use app_chrome::icon_button::IconButton;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
 use crate::components::primitives::section_label::SectionLabel;
 use crate::components::primitives::separator::Separator;

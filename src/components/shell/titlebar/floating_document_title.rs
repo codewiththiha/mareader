@@ -57,10 +57,10 @@ use leptos::prelude::*;
 use pdf_engine::types::DocStatus;
 use crate::components::ai::anchor::host_id_for_mode;
 use crate::components::shell::controller::ShellController;
-use crate::components::shell::titlebar::root::TitleBarCtx;
+use app_chrome::titlebar::root::TitleBarCtx;
 use crate::state::AppState;
-use crate::components::primitives::hooks::dom::{by_id, VIEWER_SLOT_ID};
-use crate::components::primitives::hooks::use_window_event::use_window_event;
+use app_chrome::hooks::dom::{by_id, VIEWER_SLOT_ID};
+use app_chrome::hooks::use_window_event::use_window_event;
 
 /// Fraction of the canvas width the label may cover.
 const MAX_CANVAS_OVERLAP: f64 = 0.25;

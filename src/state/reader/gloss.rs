@@ -1,9 +1,8 @@
 //! Gloss highlights: the persisted marks of the open document, plus the
 //! transient multi-select and "thinking" states the mark layer paints.
 
+use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
-
-use pdf_core::gloss::GlossMark;
 
 /// The persisted gloss highlights of the OPEN document.
 ///

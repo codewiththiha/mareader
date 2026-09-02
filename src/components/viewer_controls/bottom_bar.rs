@@ -16,7 +16,7 @@ use leptos::prelude::*;
 
 use crate::components::primitives::floating::types::z::BAR;
 use crate::components::primitives::form::range_input::RangeInput;
-use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
+use app_chrome::hooks::use_timeout::use_hover_visibility;
 use crate::components::viewer_controls::page_navigation::PageNavigation;
 use crate::state::ReaderState;
 

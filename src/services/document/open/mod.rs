@@ -52,7 +52,7 @@ pub fn init_open_file_handling(state: AppState) {
         }
     });
 
-    if !pdf_engine::has_tauri() {
+    if !tauri_bridge::has_tauri() {
         return;
     }
 

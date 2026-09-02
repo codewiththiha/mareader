@@ -1,0 +1,24 @@
+[package]
+name = "app-chrome"
+version = "0.1.0"
+edition = "2024"
+description = "Format-agnostic window chrome: the platform probe, the window commands, the caption cluster (Windows squares, GNOME circles), the macOS native traffic lights, the generic hover/pin titlebar shell, and the shared UI primitives those chrome surfaces render with."
+license = "MIT"
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+tauri-bridge = { path = "../tauri-bridge" }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Navigator",
+  "Document",
+  "Element",
+  "HtmlDivElement",
+  "ResizeObserver",
+  "ResizeObserverEntry",
+  "Event",
+  "console",
+] }

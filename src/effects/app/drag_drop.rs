@@ -85,7 +85,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     // Tauri's own events: drag-enter shows it, drag-leave hides it, and
     // drag-drop opens the file (and hides it); `tauri_listen` parks each
     // closure so the listener stays registered for the view's lifetime.
-    if !pdf_engine::has_tauri() {
+    if !tauri_bridge::has_tauri() {
         return;
     }
 

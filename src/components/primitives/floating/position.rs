@@ -76,6 +76,6 @@ pub fn panel_size(node: Option<web_sys::Element>, fallback: (f64, f64)) -> Size 
 
 /// The viewport as a [`Size`], via the shared reactive helper.
 pub fn viewport() -> Size {
-    let (w, h) = crate::components::primitives::hooks::use_viewport::viewport_size();
+    let (w, h) = app_chrome::hooks::use_viewport::viewport_size();
     Size::new(w, h)
 }

@@ -1,15 +1,10 @@
-//! Generic effect hooks: each owns one listener/effect family so components
-//! read as wiring + view, and the raw pattern (closure parking, cleanup
-//! ordering, JS-reference lifetimes) is written once.
+//! The app's effect hooks.
 //!
-//! Contract: nothing here may know what a PDF reader is. These are the
-//! layer-1 primitives the floating/interaction systems compose.
+//! The generic DOM/timer hooks (dom, use_raf, use_resize_observer,
+//! use_timeout, use_viewport, use_window_event, use_content_size) live in
+//! the `app-chrome` crate — they are format-agnostic, and chrome renders
+//! with them; import them from `app_chrome::hooks`. The one hook that is
+//! NOT format-agnostic stays here: the typed CustomEvent hook, which
+//! dispatches the app's own event protocol.
 
-pub mod dom;
-pub mod use_content_size;
 pub mod use_custom_event;
-pub mod use_raf;
-pub mod use_resize_observer;
-pub mod use_timeout;
-pub mod use_viewport;
-pub mod use_window_event;

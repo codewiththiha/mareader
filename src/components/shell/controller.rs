@@ -61,13 +61,16 @@
 //! [`ShellController::titlebar_only`], which answers every rail question
 //! with "no rail": the bar keeps the full window width, its 88px gutter and
 //! its lights. That keeps the no-rail rules in this file too, instead of an
-//! `Option`-shaped fork in every consumer.
+//! `Option`-shaped fork in every consumer. The traffic-light questions are
+//! macOS-only at heart (`app_chrome::platform`): Windows and Linux run
+//! frameless, so both gutter answers are constant `false` there and the
+//! row's leading control starts at the resting padding.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::use_timeout::use_debounce_for;
+use app_chrome::hooks::use_timeout::use_debounce_for;
 use crate::state::{AppState, SidebarMode};
 use pdf_core::settings::Settings;
 
@@ -334,10 +337,16 @@ impl ShellController {
     /// Does the bar's row reserve the 88px traffic-light gutter? Off when a
     /// docked rail has taken that corner over, and off in overlay mode —
     /// where there are no lights in the bar to clear, so the leading
-    /// control moves left into the space they would have occupied.
+    /// control moves left into the space they would have occupied. Also
+    /// off wholesale on Windows and Linux: frameless windows have no native
+    /// lights, so the row never owes the corner anything.
     pub fn lights_gutter(&self) -> Signal<bool> {
         let this = *self;
-        Signal::derive(move || !this.is_overlay().get() && !this.rail_present().get())
+        Signal::derive(move || {
+            app_chrome::platform::is_macos()
+                && !this.is_overlay().get()
+                && !this.rail_present().get()
+        })
     }
 
     /// Could the bar host the lights AT ALL in this layout mode, regardless
@@ -346,10 +355,11 @@ impl ShellController {
     /// leading control sits in the space the lights would have taken, so a
     /// hover must not put them back on top of it. The rail still hosts
     /// them from its own header while it is up, which is `rail_present`'s
-    /// job and not this signal's.
+    /// job and not this signal's. macOS only for the same platform reason
+    /// as `lights_gutter`.
     pub fn bar_gutter(&self) -> Signal<bool> {
         let this = *self;
-        Signal::derive(move || !this.is_overlay().get())
+        Signal::derive(move || app_chrome::platform::is_macos() && !this.is_overlay().get())
     }
 
     /// The bar row's left padding in px: the traffic-light gutter while the

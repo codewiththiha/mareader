@@ -14,8 +14,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use ai_core::gloss::GlossBox;
 use leptos::prelude::*;
-use pdf_core::gloss::GlossBox;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
@@ -76,18 +76,19 @@ impl SpringValue for FloatBox {
     }
 }
 
-/// The domain gloss box rides the same spring. `pdf_core::gloss` owns the
-/// math (via FloatBox delegation); this adapter is the only seam between the
-/// generic spring and the gloss domain type.
+/// The domain gloss box rides the same spring. `ai_core::gloss` owns the
+/// math (and `FloatBox` delegates to the same `ai_core::spring` integrator);
+/// this adapter is the only seam between the generic spring and the gloss
+/// domain type.
 impl SpringValue for GlossBox {
     fn zero() -> Self {
         GlossBox::default()
     }
     fn close(&self, other: &Self, epsilon: f64) -> bool {
-        pdf_core::gloss::boxes_close(*self, *other, epsilon)
+        ai_core::gloss::boxes_close(*self, *other, epsilon)
     }
     fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self) {
-        pdf_core::gloss::step_spring(*self, *vel, *target, dt)
+        ai_core::gloss::step_spring(*self, *vel, *target, dt)
     }
     fn all_small(&self, epsilon: f64) -> bool {
         self.w.abs() < epsilon

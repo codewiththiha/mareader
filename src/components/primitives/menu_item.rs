@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::icon::{Icon, IconName};
+use app_chrome::icon::{Icon, IconName};
 
 /// Semantic tone of a menu row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

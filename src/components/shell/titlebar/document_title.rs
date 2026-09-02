@@ -1,14 +1,21 @@
-//! The toolbar document-name label. Its width is the actual space between
-//! the leading controls and trailing toolbar cluster; it deliberately
-//! measures DOM rects rather than reproducing title-bar padding or
-//! sidebar-state assumptions.
+//! The toolbar document-name labels, one per page:
+//!
+//! - [`DocumentTitle`] (library) sits in the leading cluster and measures
+//!   its own max-width against the trailing cluster;
+//! - [`CenteredDocTitle`] (reader) sits in the shell's center slot, whose
+//!   box the shell resolves — the exact row center while the label fits,
+//!   the free stretch between the clusters once it does not.
+//!
+//! Both measure live DOM rects rather than reproducing title-bar padding
+//! or sidebar-state assumptions.
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::dom::{
-    by_id, by_id_warn, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID, TOOLBAR_TRAILING_ID,
+use app_chrome::hooks::dom::{
+    by_id, by_id_warn, TOOLBAR_CENTER_TITLE_ID, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID,
+    TOOLBAR_TRAILING_ID,
 };
-use crate::components::primitives::hooks::use_resize_observer::observe_elements;
+use app_chrome::hooks::use_resize_observer::observe_elements;
 use crate::components::shell::sidebar::container::SIDEBAR_ASIDE_SELECTOR;
 
 use crate::state::AppState;
@@ -23,9 +30,9 @@ const TITLE_MIN_LABEL_W: f64 = crate::components::shell::titlebar::constants::MI
 /// correct through the sidebar close slide because it uses the live rects,
 /// not the raw sidebar mode or title-bar padding model.
 fn measure_available() -> Option<f64> {
-    // Warn-once lookups: while the reader is mounted these ids always exist,
-    // so a miss is a renamed id (or a stale rAF after unmount) and deserves
-    // one console line rather than silence.
+    // Warn-once lookups: while the library page is mounted these ids always
+    // exist, so a miss is a renamed id (or a stale rAF after unmount) and
+    // deserves one console line rather than silence.
     let row = by_id_warn(TOOLBAR_ROW_ID)?;
     let row_rect = row.get_bounding_client_rect();
     if row_rect.width() <= 0.0 {
@@ -36,8 +43,8 @@ fn measure_available() -> Option<f64> {
     let right = by_id_warn(TOOLBAR_TRAILING_ID)?;
     let right_rect = right.get_bounding_client_rect();
 
-    // The pin button follows #toolbar-trailing inside its ml-auto parent. Using
-    // the trailing group's left edge therefore reserves it automatically.
+    // #toolbar-trailing is the shell's trailing group (right cluster + pin),
+    // so its left edge reserves both automatically.
     let start = pre_rect.right() - row_rect.left() + GAP_LEFT;
     let end = right_rect.left() - row_rect.left() - GAP_RIGHT;
     Some((end - start).max(0.0))
@@ -50,8 +57,8 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
     let remeasure = move || {
         request_animation_frame(move || {
             if let Some(w) = measure_available() {
-                // The rAF can outlive this component (a route flip back to the
-                // library disposes `avail` while a frame is in flight), so a
+                // The rAF can outlive this component (a route flip to the
+                // reader disposes `avail` while a frame is in flight), so a
                 // plain read would panic on the disposed signal. Try-accessors
                 // make a stale frame a silent no-op.
                 let prev = avail.try_get_untracked().flatten();
@@ -120,21 +127,35 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
 
 /// Centered document name for the reader title bar's center slot.
 ///
-/// The label carries `data-tauri-drag-region` itself, not just the band behind
-/// it. The label is the most obvious thing to grab in a bar whose whole job is
-/// holding the window title, and it is exactly the thing `-webkit-user-select:
-/// none` makes unselectable — so it must move the window instead of doing
-/// nothing. Whether Tauri's handler reads the attribute off the event's target
-/// (the per-element style every other drag region in this app uses: the band,
-/// the row, the leading and trailing clusters all carry it) or resolves the
-/// nearest ancestor, naming it here is the version that cannot fail.
+/// The shell (`TitleBar` in app-chrome) owns position and width: it
+/// measures the row, both clusters and this label's natural width (the
+/// `#toolbar-center-title` anchor), then places the label at the row's
+/// EXACT center while it fits, falling back to the free stretch between
+/// the clusters (centered, truncated) once it does not — with the
+/// caption cluster, the pin and the traffic-light gutter reserved on
+/// every platform. Below the shell's floor the slot hides the label
+/// rather than showing a stub.
+///
+/// The label carries `data-tauri-drag-region` itself: it is the most
+/// obvious thing to grab in a bar whose job is holding the window title,
+/// and `-webkit-user-select: none` makes it unselectable — so it must
+/// move the window instead of doing nothing.
 #[component]
 pub fn CenteredDocTitle(state: AppState) -> impl IntoView {
+    let center_title_ref =
+        expect_context::<app_chrome::titlebar::root::TitleBarCtx>().center_title_ref;
     let name = move || state.reader.document.display_name();
     view! {
         <span
+            node_ref=center_title_ref
+            // The shell's natural-width anchor (its scrollWidth) for the
+            // center-slot decision, observed to re-measure on renames.
+            // pointer-events-auto: the slot overlay is click-transparent,
+            // but the label itself must still grab the window and show
+            // its tooltip.
+            id=TOOLBAR_CENTER_TITLE_ID
             data-tauri-drag-region="true"
-            class="max-w-[46vw] truncate text-sm font-medium text-ink"
+            class="pointer-events-auto min-w-0 max-w-full truncate text-sm font-medium text-ink"
             title=name
         >
             {name}

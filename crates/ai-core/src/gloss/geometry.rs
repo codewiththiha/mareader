@@ -1,18 +1,19 @@
-//! Gloss card geometry: box math, viewport placement, spring stepping.
-//!
-//! Pure domain math for the AI word-card morph (the Gloss reference's
-//! `src/lib/geometry.ts`, ported). No wasm, no DOM, no leptos — unit-testable
-//! on the host via `cargo test -p pdf-core gloss`.
+//! Gloss card geometry: box math, the word-lookup gates, viewport placement
+//! and spring stepping.
 //!
 //! The card is one rectangle whose `left/top/width/height` and corner
-//! `radius` are all driven by a single critically-damped spring, so the chip's
-//! pill radius morphs into the card radius in the same motion that grows the
-//! box. Named `GlossBox` to avoid colliding with `std::boxed::Box`.
+//! `radius` are all driven by a single damped spring
+//! ([`crate::spring`]), so the chip's pill radius morphs into the card
+//! radius in the same motion that grows the box. Named `GlossBox` to avoid
+//! colliding with `std::boxed::Box`.
+
+use crate::spring::spring_axis;
 
 /// A positioned, sized, rounded rectangle — the five fields the spring drives.
 ///
-/// Serializable because [`GlossMark`] persists one of these to localStorage
-/// (and ships one through a `CustomEvent` detail when a mark is clicked).
+/// Serializable because [`crate::gloss::mark::GlossMark`] persists one of
+/// these to localStorage (and ships one through a `CustomEvent` detail when a
+/// mark is clicked).
 #[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub struct GlossBox {
     pub x: f64,
@@ -22,59 +23,6 @@ pub struct GlossBox {
     /// Corner radius — animated alongside the box so the chip's pill radius
     /// morphs into the card radius.
     pub r: f64,
-}
-
-/// A persisted gloss highlight: the word that was explained, plus WHERE it is
-/// on the page in a form that survives everything the viewport does to it.
-///
-/// The rect is deliberately in **page space** — unscaled CSS px measured from
-/// the `.pdf-page` host's origin — not in viewport space. A native
-/// `Selection` cannot be persisted (it is cleared when the card opens, it dies
-/// with the text-layer spans the virtualizer unmounts, and there is only ever
-/// one of it), so the mark is re-projected onto the screen as
-/// `host_rect.origin + rect * display_scale` every time the page mounts. That
-/// is what makes the highlight survive scroll, zoom, remounts and sessions.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct GlossMark {
-    pub id: String,
-    pub page: u32,
-    pub word: String,
-    pub context: String,
-    /// Page space (unscaled CSS px from the page origin). Screen = rect * display_scale.
-    pub rect: GlossBox,
-}
-
-/// A point of interest in *page* space (unscaled page coordinates). Unlike a
-/// screen rect it survives scroll, zoom and view-mode flips: the live screen
-/// box is re-derived from the page host element whenever anything moves.
-///
-/// Shared by the selection Info pill and the gloss card so both glue to the
-/// page without each inventing its own coordinate system.
-#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-pub struct PageAnchor {
-    pub page: u32,
-    pub rect: GlossBox,
-}
-
-impl PageAnchor {
-    pub fn from_mark(m: &GlossMark) -> Self {
-        Self {
-            page: m.page,
-            rect: m.rect,
-        }
-    }
-}
-
-impl GlossMark {
-    /// Whether two marks denote the same glossed spot: same page, same word,
-    /// and rects starting within a CSS px of each other. The single identity
-    /// definition shared by capture-time dedup and re-click toggle-to-close.
-    pub fn same_spot(&self, other: &GlossMark) -> bool {
-        self.page == other.page
-            && self.word == other.word
-            && (self.rect.x - other.rect.x).abs() < 1.0
-            && (self.rect.y - other.rect.y).abs() < 1.0
-    }
 }
 
 /// Longest selection still treated as a word lookup (chars, not bytes).
@@ -105,11 +53,14 @@ pub fn is_hintable(text: &str) -> bool {
     !t.is_empty() && t.chars().count() <= MAX_GLOSS_HINT_CHARS
 }
 
-/// `f64::clamp` lifted to a free fn so call sites read as the reference.
 /// Whether two boxes are equal to within `epsilon` on all five fields — the
 /// spring's "settled" and "already snapped" tests.
 pub fn boxes_close(a: GlossBox, b: GlossBox, epsilon: f64) -> bool {
-    FloatBox::from(a).close(&FloatBox::from(b), epsilon)
+    (a.x - b.x).abs() < epsilon
+        && (a.y - b.y).abs() < epsilon
+        && (a.w - b.w).abs() < epsilon
+        && (a.h - b.h).abs() < epsilon
+        && (a.r - b.r).abs() < epsilon
 }
 
 /// Smallest the card may shrink to before content stops being readable.
@@ -126,7 +77,7 @@ pub const MAX_CARD_H_FRAC: f64 = 0.8;
 /// hangs off its word), and clamped into the viewport margin. Shrinks the
 /// card when the viewport is too small to host it at the requested size.
 ///
-/// Pure: unit-testable on the host via `cargo test -p pdf-core gloss`.
+/// Pure: unit-testable on the host via `cargo test -p ai-core gloss`.
 #[allow(clippy::too_many_arguments)]
 pub fn place_card(
     anchor: GlossBox,
@@ -154,41 +105,17 @@ pub fn place_card(
     GlossBox { x, y, w, h, r: radius }
 }
 
-/// The gloss box's escape hatch into the primitive motion layer: `GlossBox`
-/// converts into [`FloatBox`] at this boundary so the domain type stays the
-/// single source of truth for persisted marks while the spring mechanics
-/// (including the stiffness/damping constants) stay reusable in
-/// [`crate::floating`].
-pub use crate::floating::FloatBox;
-
-impl From<GlossBox> for FloatBox {
-    fn from(b: GlossBox) -> Self {
-        FloatBox {
-            x: b.x,
-            y: b.y,
-            w: b.w,
-            h: b.h,
-            r: b.r,
-        }
-    }
-}
-
-impl From<FloatBox> for GlossBox {
-    fn from(b: FloatBox) -> Self {
-        GlossBox {
-            x: b.x,
-            y: b.y,
-            w: b.w,
-            h: b.h,
-            r: b.r,
-        }
-    }
-}
-
 /// One spring step over all five box fields. Returns `(next_box, next_velocity)`.
 pub fn step_spring(cur: GlossBox, vel: GlossBox, target: GlossBox, dt: f64) -> (GlossBox, GlossBox) {
-    let (next, next_vel) = FloatBox::from(cur).step(&FloatBox::from(vel), &FloatBox::from(target), dt);
-    (GlossBox::from(next), GlossBox::from(next_vel))
+    let (x, vx) = spring_axis(cur.x, vel.x, target.x, dt);
+    let (y, vy) = spring_axis(cur.y, vel.y, target.y, dt);
+    let (w, vw) = spring_axis(cur.w, vel.w, target.w, dt);
+    let (h, vh) = spring_axis(cur.h, vel.h, target.h, dt);
+    let (r, vr) = spring_axis(cur.r, vel.r, target.r, dt);
+    (
+        GlossBox { x, y, w, h, r },
+        GlossBox { x: vx, y: vy, w: vw, h: vh, r: vr },
+    )
 }
 
 #[cfg(test)]
@@ -220,34 +147,6 @@ mod tests {
         assert!(is_hintable(&"a".repeat(MAX_GLOSS_HINT_CHARS)));
         assert!(!is_hintable(&"a".repeat(MAX_GLOSS_HINT_CHARS + 1)));
         assert!(!is_hintable("   "));
-    }
-
-    #[test]
-    fn same_spot_tolerates_sub_pixel_drift_but_not_a_new_word() {
-        let base = GlossMark {
-            id: "g1".into(),
-            page: 1,
-            word: "palimpsest".into(),
-            context: String::new(),
-            rect: GlossBox { x: 100.0, y: 40.0, w: 60.0, h: 12.0, r: 0.0 },
-        };
-
-        let mut drifted = base.clone();
-        drifted.id = "g2".into();
-        drifted.rect.x += 0.4;
-        assert!(base.same_spot(&drifted), "sub-pixel drift is the same spot");
-
-        let mut other_word = base.clone();
-        other_word.word = "palimpsests".into();
-        assert!(!base.same_spot(&other_word));
-
-        let mut other_page = base.clone();
-        other_page.page = 2;
-        assert!(!base.same_spot(&other_page));
-
-        let mut moved = base.clone();
-        moved.rect.y += 2.0;
-        assert!(!base.same_spot(&moved));
     }
 
     #[test]
@@ -295,23 +194,6 @@ mod tests {
         let low = GlossBox { x: 400.0, y: 1000.0, w: 80.0, h: 20.0, r: 0.0 };
         let card = place_card(low, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 12.0);
         assert!(card.y + card.h <= 1080.0 - 12.0 + 1e-9);
-    }
-
-    #[test]
-    fn a_gloss_mark_round_trips_through_json() {
-        // The persistence contract: what localStorage holds must come back
-        // byte-identical, because the rect IS the anchor. A silently dropped
-        // field would put the highlight on the wrong word after a restart.
-        let mark = GlossMark {
-            id: "g3-1700000000000".to_string(),
-            page: 3,
-            word: "palimpsest".to_string(),
-            context: "a manuscript page, a palimpsest, scraped clean".to_string(),
-            rect: GlossBox { x: 120.5, y: 44.25, w: 62.0, h: 13.5, r: 0.0 },
-        };
-        let json = serde_json::to_string(&mark).expect("serialize");
-        let back: GlossMark = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(mark, back);
     }
 
     #[test]

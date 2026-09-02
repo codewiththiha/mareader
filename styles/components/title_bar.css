@@ -103,3 +103,116 @@ html.theme-switching * {
 /* The status bar keeps the auto-inverting treatment: it floats directly over
    the page with no background at all, so the backdrop really is arbitrary. */
 
+
+/* ---------------------------------------------------------------------
+   9. Frameless caption buttons (Windows/Linux).
+
+   `tauri.windows.conf.json` / `tauri.linux.conf.json` strip the native
+   title bar, and the titlebar's `window-controls` cluster (rendered after
+   the right cluster, inside the toolbar row) replaces it: minimize /
+   maximize-restore / close. macOS never mounts the cluster — it keeps its
+   native traffic lights.
+
+   The two frameless desktops draw their platform's own shape for the same
+   three commands: Windows keeps its square, full-height caption buttons
+   (`.win-btn`), while Linux gets GNOME-style circles (`.gnome-btn`).
+   The dispatcher lives in `window_controls.rs`; the platform is fixed for
+   the process, so exactly one variant ever mounts.
+
+   Sizing follows the platform convention rather than the app's icon
+   buttons: 46px-wide full-height hit targets flush against the window
+   edge, no rounding, no borders, hover-only backgrounds. That is what a
+   caption row is supposed to feel like; the toolbar's 36px rounded ghosts
+   would read as app controls living in the wrong country.
+   --------------------------------------------------------------------- */
+.window-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  /* Cancel the row's `pr-2` so the close button's hit area runs flush to
+     the window edge — the last 8px belong to the caption, not to padding.
+     The cluster is in-flow after the right cluster, so nothing else ever
+     needs to reserve space for it. */
+  margin-right: -8px;
+}
+.win-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--color-ink);
+  /* Chrome, not a link target: caption buttons keep the native arrow. */
+  cursor: default;
+}
+.win-btn:hover {
+  background: var(--color-line);
+}
+.win-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.win-btn:active {
+  opacity: 0.72;
+}
+/* The one Windows convention worth keeping everywhere: the close button
+   warns in red on hover, and its press is a darker red rather than the
+   neutral dim — users expect it, and it costs nothing on Linux. */
+.win-btn-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+.win-btn-close:active {
+  opacity: 1;
+  background: #c50f1f;
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------
+   9b. GNOME-style circular caption buttons (Linux only).
+
+   Same three commands as the Windows cluster; only the shape and fill
+   differ. The translucent circles are mixed from the theme ink, so they
+   adapt to light/dark/tinted themes without a per-theme rule, and the
+   close button warms to the GNOME red on hover.
+   --------------------------------------------------------------------- */
+.window-controls.gnome {
+  align-items: center;
+  gap: 8px;
+  padding-right: 10px;
+}
+.gnome-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in oklab, var(--color-ink) 12%, transparent);
+  color: var(--color-ink);
+  /* Chrome, not a link target: caption buttons keep the native arrow. */
+  cursor: default;
+  transition: background-color 120ms ease;
+}
+.gnome-btn:hover {
+  background: color-mix(in oklab, var(--color-ink) 24%, transparent);
+}
+.gnome-btn:active {
+  background: color-mix(in oklab, var(--color-ink) 34%, transparent);
+}
+.gnome-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+/* Softer than Windows' #e81123 — the shade a GNOME header bar uses. */
+.gnome-btn-close:hover {
+  background: #e0524f;
+  color: #fff;
+}
+.gnome-btn-close:active {
+  background: #c53a37;
+  color: #fff;
+}

@@ -1,14 +1,17 @@
 //! Row 1 of the sidebar: close toggle, floating-search toggle, More menu.
-//! Always visible while the sidebar is open (not hover-gated) — the sidebar
-//! is the native traffic lights' home whenever it is painted, docked or
-//! floating, so the gutter is not conditional on the layout mode.
+//! Always visible while the sidebar is open (not hover-gated) — on macOS,
+//! the sidebar is the native traffic lights' home whenever it is painted,
+//! docked or floating, so the gutter is not conditional on the layout mode.
+//! On the frameless desktops (Windows/Linux) there is nothing in that
+//! corner to clear, and the row starts at the same resting padding the
+//! title bar uses there.
 
 use leptos::prelude::*;
 
 use crate::components::primitives::button::{Button, ButtonVariant};
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::icon_button::IconButton;
-use crate::components::primitives::tooltip::Tooltip;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
+use app_chrome::tooltip::Tooltip;
 use crate::state::SidebarMode;
 use crate::components::menus::app_menu::MoreMenu;
 use crate::state::ReaderState;
@@ -18,12 +21,20 @@ pub(crate) fn SidebarHeader(
     reader: ReaderState,
     sidebar: RwSignal<SidebarMode>,
 ) -> impl IntoView {
+    // The chrome row's lead: the 48px traffic-light inset on macOS, the
+    // resting 12px everywhere else. Fixed per process, like the split it
+    // comes from — no reason for it to be reactive.
+    let lead = if app_chrome::platform::is_macos() {
+        "pl-[88px]"
+    } else {
+        "pl-3"
+    };
+
     view! {
-        // The chrome row carries the 48px traffic-light inset; the filled
-        // panel glyph marks "sidebar is on". A drag region so the window
-        // stays grabable from the sidebar.
+        // A drag region so the window stays grabable from the sidebar; the
+        // filled panel glyph below marks "sidebar is on".
         <div
-            class="flex h-12 shrink-0 items-center gap-1 pl-[88px] pr-2"
+            class=format!("flex h-12 shrink-0 items-center gap-1 {lead} pr-2")
             data-tauri-drag-region="true"
         >
             <Tooltip text="Close sidebar">

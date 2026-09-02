@@ -18,7 +18,7 @@ use leptos::children::ChildrenFn;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::shell::titlebar::root::TitleBarCtx;
+use app_chrome::titlebar::root::TitleBarCtx;
 use crate::components::primitives::floating::popover::Popover;
 use crate::components::primitives::floating::types::PlacementSide;
 use crate::components::primitives::overlay::lanes::{use_overlay_lane, OverlayPolicy};

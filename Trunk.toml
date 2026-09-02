@@ -53,10 +53,14 @@ stage = "pre_build"
 command = "node"
 command_arguments = ["./node_modules/@tailwindcss/cli/dist/index.mjs", "-i", "styles/input.css", "-o", "styles.css", "--minify"]
 
-[tools]
-# Release WASM shrink (~10–15% on top of LTO + opt-level=z).
-# Trunk 0.21 expects a level string, not an argv list.
-wasm_opt = "z"
+# Deliberately no `[tools]` table: its `wasm_opt` key pins the *binaryen
+# release* Trunk downloads, so `wasm_opt = "z"` here made every release build
+# fetch `binaryen-z-<platform>.tar.gz` and die on a 404 before the bundle was
+# produced. The size pass it was meant to enable is not lost — a *level*
+# belongs on the rust link in `index.html`, which already asks for it
+# (`data-wasm-opt="z"`), and Trunk runs wasm-opt on release builds from there.
+# Add `[tools] wasm_opt = "<version>"` only if a specific binaryen build ever
+# has to be pinned for reproducibility.
 
 [serve]
 port = 1420

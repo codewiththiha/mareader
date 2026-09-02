@@ -18,7 +18,7 @@ use leptos::html;
 use leptos::prelude::*;
 
 use crate::components::primitives::button::{Button, ButtonVariant};
-use crate::components::primitives::icon::{Icon, IconName};
+use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::section_label::SectionLabel;
 use crate::components::primitives::separator::Separator;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;

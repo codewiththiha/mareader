@@ -8,8 +8,8 @@ use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
 
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::icon_button::IconButton;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
 use crate::components::primitives::kbd::Kbd;
 use crate::components::primitives::menu_item::MenuItem;
 use crate::components::primitives::separator::Separator;
@@ -45,8 +45,8 @@ fn FitButton(state: AppState, f: FitMode, icon: IconName, title: &'static str) -
 
 fn toggle_fullscreen(full: RwSignal<bool>) {
     let next = !full.get();
-    if pdf_engine::has_tauri() {
-        let win = pdf_engine::tauri_get_current_window();
+    if tauri_bridge::has_tauri() {
+        let win = tauri_bridge::get_current_window();
         if !(win.is_undefined() || win.is_null()) {
             if let Ok(f) = js_sys::Reflect::get(&win, &JsValue::from_str("setFullscreen"))
                 && f.is_function()

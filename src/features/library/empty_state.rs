@@ -11,7 +11,7 @@ use crate::state::AppState;
 /// library — info text above, an "Open…" button in the middle.
 #[component]
 pub(crate) fn EmptyState(state: AppState) -> impl IntoView {
-    let has_tauri = pdf_engine::has_tauri();
+    let has_tauri = tauri_bridge::has_tauri();
     view! {
         <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
             <div class="flex max-w-md flex-col items-center gap-3 text-center">

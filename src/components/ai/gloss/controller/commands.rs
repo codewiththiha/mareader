@@ -1,8 +1,8 @@
 //! The shared behaviours. Every path funnels through these instead of
 //! re-implementing a close, a persistence dance or a retry.
 
+use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
-use pdf_core::gloss::GlossMark;
 
 use crate::components::ai::types::{AiPhase, GlossPhase};
 use crate::services::ai::invoke_explain_word;
@@ -172,7 +172,7 @@ pub(super) fn build_commands(
         let Some(mark) = open.mark.get_untracked() else {
             return;
         };
-        if !pdf_engine::has_tauri() {
+        if !tauri_bridge::has_tauri() {
             return; // the environment cannot change mid-session
         }
         content.error.set(None);

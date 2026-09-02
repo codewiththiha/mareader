@@ -4,7 +4,7 @@ use std::cell::Cell;
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::dom::{h_page_list, page_list};
+use app_chrome::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
 
 const AUTO_SCROLL_PX_PER_SEC: f64 = 72.0;

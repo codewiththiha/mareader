@@ -24,7 +24,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use super::types::target_within_selectors;
-use crate::components::primitives::hooks::use_window_event::use_window_event;
+use app_chrome::hooks::use_window_event::use_window_event;
 
 /// Which outside event the dismissal listens for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

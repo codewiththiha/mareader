@@ -36,7 +36,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::use_timeout::use_debounce;
+use app_chrome::hooks::use_timeout::use_debounce;
 use crate::state::reader::{ReaderState, ZoomTransition};
 use crate::viewer::engine::ViewerEngine;
 

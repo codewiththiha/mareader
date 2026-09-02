@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use crate::components::primitives::hooks::dom::{h_page_list, page_list};
+use app_chrome::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
 use pdf_core::layout::{TOOLBAR_H, ViewMode};
 use pdf_core::search::{SearchMatch, scroll_to_reveal};

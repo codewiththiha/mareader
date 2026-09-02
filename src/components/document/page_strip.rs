@@ -19,6 +19,11 @@
 //! their per-axis prefixes (`cont-` / `hp-`) because the engine's selection
 //! and the AI gloss layer parse them back into page numbers.
 //!
+//! Every offset this strip writes is snapped to the device-pixel grid (see
+//! [`crate::components::document::pixel_grid`]), because the sizes the page
+//! hosts write are: a wrapper positioned half a device pixel off its page's
+//! painted edge is exactly the compositor seam that snapping exists to close.
+//!
 //! Cross-axis centering is the same rule in every layout: the page host is
 //! centred with an AUTO margin (`mx-auto` here, `my-auto` in the horizontal
 //! strip, `m-auto` in [`PageShell`]) rather than flex `justify-content` /
@@ -35,6 +40,7 @@ use virtual_list_leptos::{VirtualItem, VirtualItemState, Virtualizer};
 
 use crate::components::document::PageCanvas;
 use crate::components::document::page_canvas::component::GlossOverlayProps;
+use crate::components::document::pixel_grid::{one_device_px, snap_px};
 use crate::state::{ReaderState, TextureSignal};
 
 #[component]
@@ -84,6 +90,10 @@ pub fn PageStrip(
     // Report a rendered page's main-axis extent back into the virtualizer.
     // Vertical uses the measured height (+ gap); horizontal uses the measured
     // width (+ the two horizontal margins, which are part of the main span).
+    // The sizes arriving here are already snapped to the device-pixel grid by
+    // the page host, so the offsets the virtualizer derives from them are
+    // grid-aligned too, and every page's wrapper sits exactly on the edge the
+    // page above it painted.
     // BOTH axes refuse to report while a zoom transaction is in flight: the
     // rendered size belongs to the committed geometry, and a mid-tween page
     // stretching to the visual scale would feed the virtualizer a size from
@@ -140,10 +150,35 @@ pub fn PageStrip(
                                     let page = (index + 1) as u32;
                                     let top = handle.with_value(|v| v.item_top(index));
                                     let dormant = dormant_signal(items, index);
-                                    let style = move || format!(
-                                        "position:absolute;top:{}px;left:0;right:0;display:flex;padding-inline:{}px",
-                                        top.get(), state.viewer.page_margin.get()
-                                    );
+                                    // Offsets are snapped for the same reason
+                                    // sizes are: the wrapper's top is a running
+                                    // sum of page extents at the live scale, so
+                                    // it lands mid-device-pixel at most zoom
+                                    // levels and the joint between two pages
+                                    // rounds into a hairline of backdrop.
+                                    //
+                                    // In no-gap mode snapping alone still leaves
+                                    // the two rects merely TOUCHING; pull every
+                                    // page after the first up by one device
+                                    // pixel so they always overlap instead. The
+                                    // host is opaque and pages composite
+                                    // source-over against each other, so the
+                                    // overlap is invisible — but a gap can no
+                                    // longer open up.
+                                    let style = move || {
+                                        let overlap = if index > 0
+                                            && state.viewer.page_gap.get() <= 1e-9
+                                        {
+                                            one_device_px()
+                                        } else {
+                                            0.0
+                                        };
+                                        format!(
+                                            "position:absolute;top:{}px;left:0;right:0;display:flex;padding-inline:{}px",
+                                            snap_px(top.get()) - overlap,
+                                            state.viewer.page_margin.get(),
+                                        )
+                                    };
                                     view! {
                                         <div id=wrapper_id(Axis::Vertical, index, page) style=style>
                                             <PageCanvas
@@ -191,9 +226,13 @@ pub fn PageStrip(
                                     let dormant = dormant_signal(items, index);
                                     // top:0 — the strip owns the full window height and
                                     // the auto-hiding title bar overlays it, like Spread.
+                                    // The main-axis offset is snapped to the device-pixel
+                                    // grid, same as the vertical strip's `top`: an
+                                    // unsnapped left edge rounds against the gutter behind
+                                    // it and paints a hairline down the side of the page.
                                     let style = move || format!(
                                         "position:absolute;top:0;left:{}px;height:100%;display:flex;padding-inline:{}px",
-                                        left.get(), state.viewer.page_margin.get()
+                                        snap_px(left.get()), state.viewer.page_margin.get()
                                     );
                                     view! {
                                         <div id=wrapper_id(Axis::Horizontal, index, page) style=style>

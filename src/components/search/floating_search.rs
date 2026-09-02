@@ -16,9 +16,9 @@ use crate::components::primitives::floating::dismiss::{
     DismissPolicy, DismissTrigger, use_dismiss,
 };
 use crate::components::primitives::floating::types::z::{BAR, POPOVER};
-use crate::components::primitives::hooks::use_timeout::use_debounce;
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::icon_button::IconButton;
+use app_chrome::hooks::use_timeout::use_debounce;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
 use crate::effects::reader::search::{
     activate_match, clear_search, dismiss_search, run_search, search_navigate,
 };

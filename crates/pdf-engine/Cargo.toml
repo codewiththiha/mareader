@@ -9,6 +9,7 @@ license = "MIT"
 # Bounded-concurrency plumbing for the search index builder (already in the
 # wasm graph via leptos, so it adds no new compilation unit to the app).
 futures = "0.3"
+tauri-bridge = { path = "../tauri-bridge" }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"

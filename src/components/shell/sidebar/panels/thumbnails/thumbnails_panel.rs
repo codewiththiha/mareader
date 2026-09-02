@@ -20,8 +20,8 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
-use crate::components::primitives::hooks::use_resize_observer::use_resize_observer;
-use crate::components::primitives::hooks::use_timeout::use_debounce;
+use app_chrome::hooks::use_resize_observer::use_resize_observer;
+use app_chrome::hooks::use_timeout::use_debounce;
 use crate::state::ReaderState;
 use crate::state::ui::SidebarMode;
 

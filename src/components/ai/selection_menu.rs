@@ -1,9 +1,9 @@
+use ai_core::gloss::{GlossMark, is_glossable, is_hintable};
 use leptos::prelude::*;
-use pdf_core::gloss::{GlossMark, is_glossable, is_hintable};
 
 use crate::components::ai::anchor::{MENU_EXIT_FRAC, capture_selection_mark, watch_page_anchor};
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
-use crate::components::primitives::icon::{Icon, IconName};
+use app_chrome::icon::{Icon, IconName};
 use crate::state::AppState;
 
 /// A small floating pill that appears near the user's text selection.
@@ -14,7 +14,7 @@ use crate::state::AppState;
 /// fully leaves the viewport.
 ///
 /// Length gate: word lookup is for words and short phrases. Past
-/// `pdf_core::gloss::MAX_GLOSS_CHARS` the pill stays visible but MUTED
+/// `ai_core::gloss::MAX_GLOSS_CHARS` the pill stays visible but MUTED
 /// (disabled, explaining tooltip) up to the hint band's edge, and vanishes
 /// beyond it — a disabled affordance reads as a rule, where a silently
 /// vanishing menu reads as a bug.
@@ -118,7 +118,6 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                             .get_untracked()
                             .map(|pa| GlossMark {
                                 id: format!("g{}-{}", pa.page, js_sys::Date::now() as u64),
-                                page: pa.page,
                                 // Only a single word passes the `is_glossable`
                                 // gate this click is behind, so trimming the
                                 // edges yields the canonical token — the card
@@ -126,7 +125,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                                 // stray surrounding space.
                                 word: sel.text.trim().to_string(),
                                 context: sel.context.trim().to_string(),
-                                rect: pa.rect,
+                                anchor: pa,
                             })
                             .or_else(|| {
                                 capture_selection_mark(scale, sel.text.clone(), sel.context.clone())

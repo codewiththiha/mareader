@@ -4,8 +4,8 @@ use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
-use crate::components::primitives::hooks::dom::by_id;
-use crate::components::primitives::hooks::use_timeout::use_timeout_slot;
+use app_chrome::hooks::dom::by_id;
+use app_chrome::hooks::use_timeout::use_timeout_slot;
 
 #[component]
 pub fn OverlayScrollbar(

@@ -1,10 +1,9 @@
 //! The AI text-selection slice: what the reader highlighted, where it sits on
 //! the page, and whether the explanation popover is open.
 
+use ai_core::gloss::PageAnchor;
 use leptos::prelude::*;
 use serde::Deserialize;
-
-use pdf_core::gloss::PageAnchor;
 
 /// Bounding rectangle of the selected text, in viewport CSS pixels — the
 /// "warp window" the AI selection menu anchors to.

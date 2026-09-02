@@ -9,8 +9,8 @@ use pdf_core::math::FitMode;
 use pdf_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
 
 use crate::components::settings::common::{Row, StyleSelect};
-use crate::components::primitives::icon::IconName;
-use crate::components::primitives::icon_button::IconButton;
+use app_chrome::icon::IconName;
+use app_chrome::icon_button::IconButton;
 use crate::components::primitives::section_label::SectionLabel;
 use crate::components::primitives::switch::Switch;
 use crate::state::AppState;

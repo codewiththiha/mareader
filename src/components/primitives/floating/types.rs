@@ -11,24 +11,11 @@ pub use pdf_core::floating::{
     PlacementOptions, PlacementSide, PlacedPanel, Point, Rect, Size,
 };
 
-/// Z-index layer tokens. The numeric values live in `styles/tokens.css` as
-/// `--z-*` custom properties; these class-name constants are what components
-/// embed, so layering is one decision instead of ten scattered numbers.
-///
-/// The Tailwind compiler scans source text: keep every token a static literal
-/// (they are, via these constants) so `z-[var(--z-popover)]` etc. ship in
-/// `styles.css`.
-pub mod z {
-    pub const CONTENT: &str = "z-0";
-    pub const CONTROLS: &str = "z-[var(--z-controls)]";
-    pub const BAR: &str = "z-[var(--z-bar)]";
-    pub const POPOVER: &str = "z-[var(--z-popover)]";
-    pub const SELECTION_BAR: &str = "z-[var(--z-selection-bar)]";
-    pub const CONTEXT_MENU: &str = "z-[var(--z-context-menu)]";
-    pub const AI_SELECTION: &str = "z-[var(--z-ai-selection)]";
-    pub const DRAG_OVERLAY: &str = "z-[var(--z-drag-overlay)]";
-    pub const TOAST: &str = "z-[var(--z-toast)]";
-}
+/// Z-index layer tokens. The table itself is owned by `app-chrome` (the
+/// chrome surfaces are the layering's anchor) and re-exported here so every
+/// surface — floating cards, toasts, the AI selection bar — reads one
+/// table through the path it always used.
+pub use app_chrome::z;
 
 /// A viewport-space [`Rect`] from a DOM element's bounding box.
 pub fn rect_from_element(el: &web_sys::Element) -> Rect {

@@ -29,8 +29,9 @@
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
+use ai_core::settings::GlossColor;
 use pdf_core::appearance::Appearance;
-use pdf_core::settings::{GlossColor, RenderPipeline};
+use pdf_core::settings::RenderPipeline;
 use crate::state::{AppearanceSignal, AppState};
 
 use crate::effects::appearance::schedule_save;

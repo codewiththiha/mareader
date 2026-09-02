@@ -20,11 +20,10 @@
 
 use std::sync::Arc;
 
+use ai_core::gloss::GlossBox;
+use ai_core::settings::GlossDensity;
 use leptos::{html, prelude::*};
-
-use pdf_core::gloss::GlossBox;
 use pdf_core::math::smoothstep;
-use pdf_core::settings::GlossDensity;
 
 use crate::components::ai::types::{AiError, AiPhase, GlossPhase, WordInfo};
 use crate::components::primitives::floating::floating_card::FloatingCard;

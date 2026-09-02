@@ -1,8 +1,8 @@
 //! Which mark the card belongs to, which one is queued, and which backend
 //! run is still allowed to answer into it.
 
+use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
-use pdf_core::gloss::GlossMark;
 
 /// The open plumbing: which persisted mark the card belongs to, the mark
 /// queued by the latest request, and the request nonce that re-runs the

@@ -55,7 +55,7 @@ pub async fn cover_data_url(path: &str, max_width: f64) -> Result<CoverResult, E
 /// wake-up can never open the same file twice. Resolves None (never errors)
 /// outside Tauri and whenever the backend has nothing queued.
 pub async fn take_pending_file() -> Option<String> {
-    if !bridge::has_tauri() || !bridge::has_pdf_reader() {
+    if !tauri_bridge::has_tauri() || !bridge::has_pdf_reader() {
         return None;
     }
     let value = bridge::take_pending_file().await;

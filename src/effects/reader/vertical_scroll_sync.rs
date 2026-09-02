@@ -34,7 +34,7 @@ use wasm_bindgen::JsCast;
 use web_sys::Event;
 
 use crate::state::ReaderState;
-use crate::components::primitives::hooks::dom::page_list;
+use app_chrome::hooks::dom::page_list;
 
 /// The wasm-side wrapper around the JS scroll handler. Not `Send + Sync`, so it
 /// can't be captured by `on_cleanup` — it is parked in a local `StoredValue`

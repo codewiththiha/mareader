@@ -38,7 +38,7 @@ pub fn GlossContextMenu(
             class="gloss-context-menu"
         >
             <MenuItem
-                icon=crate::components::primitives::icon::IconName::Close
+                icon=app_chrome::icon::IconName::Close
                 label="Remove highlight"
                 tone=MenuItemTone::Danger
                 row_class="rounded-lg px-3 py-2"

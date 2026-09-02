@@ -49,6 +49,13 @@ pub enum IconName {
     /// The settings tab for motion: a rail that eases, a page that follows.
     Motion,
     Minus,
+    // The frameless caption glyphs (Windows/Linux titlebar): minimize,
+    // maximize, restore. Their own family on purpose — the minimize glyph
+    // is `Minus`'s twin but lives in window chrome, not in control
+    // clusters, so swapping one must never silently re-skin the other.
+    WindowMinimize,
+    WindowMaximize,
+    WindowRestore,
 }
 
 fn icon_data(name: IconName) -> (&'static str, &'static str) {
@@ -101,6 +108,9 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
             "<rect width='18' height='7' x='3' y='3' rx='1'/><rect width='9' height='7' x='3' y='14' rx='1'/><rect width='5' height='7' x='16' y='14' rx='1'/>",
         ),
         IconName::Minus => ("0 0 24 24", "<path d='M5 12h14'/>"),
+        IconName::WindowMinimize => ("0 0 24 24", "<path d='M5 12h14'/>"),
+        IconName::WindowMaximize => ("0 0 24 24", "<rect x='5' y='5' width='14' height='14' rx='1'/>"),
+        IconName::WindowRestore => ("0 0 24 24", "<rect x='8' y='8' width='11' height='11' rx='1'/><path d='M5 15V6a1 1 0 0 1 1-1h9'/>"),
     }
 }
 

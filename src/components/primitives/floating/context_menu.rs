@@ -17,7 +17,7 @@ use wasm_bindgen::JsCast;
 
 use super::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
 use super::types::{place_context_menu, Point};
-use crate::components::primitives::hooks::use_window_event::use_window_event;
+use app_chrome::hooks::use_window_event::use_window_event;
 
 /// A right-click menu for a generic target payload.
 ///

@@ -3,12 +3,12 @@
 //! anchor-relative offset (owned by the [`GlossController`]) so the card
 //! keeps gliding with the page on scroll: target = f(live_anchor) + offset.
 
+use ai_core::gloss::GlossBox;
 use leptos::prelude::*;
-use pdf_core::gloss::GlossBox;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::placement::clamped_origin;
-use crate::components::primitives::hooks::use_viewport::viewport_size;
+use app_chrome::hooks::use_viewport::viewport_size;
 use crate::components::primitives::interactions::drag::use_pointer_drag;
 
 pub struct CardDrag {

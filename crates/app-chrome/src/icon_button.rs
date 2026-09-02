@@ -3,12 +3,12 @@
 //! disabled:opacity-50 the other controls use.
 //!
 //! The borderless look is deliberate and shared: toolbar icon buttons sit
-//! on glass/paper and only lift on hover, while the bordered
-//! [`Button`](super::button::Button) variant is for labeled actions.
+//! on glass/paper and only lift on hover, while the app's bordered `Button`
+//! variant is for labeled actions.
 
 use leptos::prelude::*;
 
-use super::icon::{Icon, IconName};
+use crate::icon::{Icon, IconName};
 
 #[component]
 pub fn IconButton(

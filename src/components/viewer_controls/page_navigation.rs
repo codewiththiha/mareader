@@ -8,9 +8,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::icon::IconName;
-use crate::components::primitives::icon_button::IconButton;
-use crate::components::primitives::tooltip::Tooltip;
+use app_chrome::icon::IconName;
+use app_chrome::icon_button::IconButton;
+use app_chrome::tooltip::Tooltip;
 use crate::state::ReaderState;
 use pdf_core::layout::{ViewMode, last_spread_start, spread_start, spread_step_next, spread_step_prev};
 

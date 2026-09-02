@@ -13,8 +13,8 @@ use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::icon_button::IconButton;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
 use crate::components::primitives::menu_item::MenuItem;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::components::primitives::shortcut_row::ShortcutRow;
@@ -28,15 +28,15 @@ pub fn MoreMenu() -> impl IntoView {
 
     // Fullscreen toggle: prefer the Tauri window handle, fall back to the
     // browser Fullscreen API when running outside Tauri (`trunk serve`).
-    // The Tauri global must be probed BEFORE calling bridge::tauri_get_current_window():
+    // The Tauri global must be probed BEFORE calling tauri_bridge::get_current_window():
     // its wasm-bindgen shim evaluates `window.__TAURI__.window.getCurrentWindow()`,
     // which throws a TypeError when `window.__TAURI__` is absent — so the guard
     // on the returned JsValue alone would never reach the browser fallback.
-    let has_tauri = pdf_engine::has_tauri();
+    let has_tauri = tauri_bridge::has_tauri();
     let toggle_fullscreen = move || {
         let next = !full.get();
         if has_tauri {
-            let win = pdf_engine::tauri_get_current_window();
+            let win = tauri_bridge::get_current_window();
             if !(win.is_undefined() || win.is_null()) {
                 if let Ok(f) = js_sys::Reflect::get(&win, &JsValue::from_str("setFullscreen"))
                                     && f.is_function()

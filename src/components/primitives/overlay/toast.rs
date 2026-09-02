@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::components::primitives::icon::{Icon, IconName};
+use app_chrome::icon::{Icon, IconName};
 
 /// Visual tone of a toast.
 ///

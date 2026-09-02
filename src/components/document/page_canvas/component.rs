@@ -4,7 +4,8 @@
 //! Contract:
 //!  - ids are Rust-chosen unique strings; the engine resolves elements by id.
 //!  - renders (page, scale) via engine.renderPage; reports the rendered
-//!    CSS-px size through `on_geometry`.
+//!    CSS-px size — snapped to the device-pixel grid, which is also the size
+//!    written to the host — through `on_geometry`.
 //!  - registers on first render, unregisters (cancels) when disposed.
 //!
 //! TWO EFFECTS, deliberately separated (see the zoom controller):
@@ -29,6 +30,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use super::host::{remove_snapshots, stretch_host};
+use crate::components::document::pixel_grid::snap_px;
 use leptos::task::spawn_local;
 
 use pdf_engine::api as engine;
@@ -42,7 +44,7 @@ use leptos::prelude::Signal;
 /// cannot arrive half-configured.
 pub struct GlossOverlayProps {
     /// The document's persisted gloss marks.
-    pub marks: Signal<Vec<pdf_core::gloss::GlossMark>>,
+    pub marks: Signal<Vec<ai_core::gloss::GlossMark>>,
     /// Id of the gloss mark currently waiting on the model.
     pub processing: Signal<Option<String>>,
     /// Shared gloss multi-select mode.
@@ -353,6 +355,13 @@ pub fn PageCanvas(
                     }
                     // Successful render: the canvas now has a bitmap.
                     painted_async.set(true);
+                    // Snap the rendered size to the device-pixel grid before
+                    // it becomes CSS. `r.width`/`r.height` are whole CSS px,
+                    // which is only whole DEVICE px when the ratio is an
+                    // integer; at 125% / 150% display scaling the page's
+                    // layer rect rounds independently of its neighbour's and
+                    // the joint shows a hairline of the backdrop.
+                    let (sw, sh) = (snap_px(r.width), snap_px(r.height));
                     // The engine stashed this render's raw frame (the one
                     // pipeline moment the page's own paper is unbaked); hand
                     // it to the paper session — every colour decision it
@@ -370,17 +379,20 @@ pub fn PageCanvas(
                         // container sizing) recomputes at scale 1 and misaligns selection.
                         let _ = host.set_attribute(
                             "style",
-                            &format!(
-                                "width:{}px;height:{}px;--scale-factor:{}",
-                                r.width, r.height, s
-                            ),
+                            &format!("width:{sw}px;height:{sh}px;--scale-factor:{s}"),
                         );
                         // New bitmap is live — drop any mask in the same flush.
                         remove_snapshots(&host);
                     }
+                    // The geometry cache keeps the RAW size: it only ever
+                    // feeds the stretch ratio, where an unrounded base keeps
+                    // successive zoom steps from drifting. What leaves this
+                    // component — the host's CSS box and the size the
+                    // virtualizer models the strip with — is the snapped one,
+                    // so painted pixels and computed offsets agree.
                     geo_async.try_set_value((r.width, r.height, s));
                     if let Some(cb) = cb {
-                        cb.run((page_no, r.width, r.height));
+                        cb.run((page_no, sw, sh));
                     }
                 }
                 Err(e) => {

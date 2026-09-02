@@ -3,8 +3,8 @@
 //! reference (with the Marginalia highlighter look for the mark itself).
 //!
 //! Layout:
-//! * The geometry + spring math (pure) lives in `pdf_core::gloss`, including
-//!   the side-aware card placement ([`pdf_core::gloss::place_card`]).
+//! * The geometry + spring math (pure) lives in `ai_core::gloss`, including
+//!   the side-aware card placement ([`ai_core::gloss::place_card`]).
 //! * Page-aware anchors live in [`crate::components::ai::anchor`] (shared
 //!   with the selection Info pill).
 //! * [`controller`]     — the state machine hub: grouped state slices

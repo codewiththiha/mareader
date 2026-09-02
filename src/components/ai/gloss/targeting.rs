@@ -9,15 +9,15 @@
 //! watcher reads the anchor and the sprung box) share one named bundle
 //! instead of twelve loose locals.
 
+use ai_core::gloss::GlossBox;
 use leptos::{html, prelude::*};
-use pdf_core::gloss::GlossBox;
 
 use crate::components::ai::anchor::{watch_page_anchor, AnchorWatch, PageAnchor, CARD_EXIT_FRAC};
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::hooks::use_content_measure::use_content_measure;
 use crate::components::ai::gloss::placement::{expanded_target, spring_target};
 use crate::components::ai::types::GlossPhase;
-use crate::components::primitives::hooks::use_viewport::use_viewport;
+use app_chrome::hooks::use_viewport::use_viewport;
 use crate::components::primitives::motion::reduced_motion::reduced_motion_signal;
 use crate::components::primitives::motion::spring::{use_spring_box, SpringBox};
 use crate::state::AppState;

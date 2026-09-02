@@ -7,9 +7,9 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use pdf_engine::types::OutlineNode;
-use crate::components::primitives::hooks::dom::reveal_in_scroll_parent;
-use crate::components::primitives::hooks::use_timeout::use_timeout_slot;
-use crate::components::primitives::hooks::use_window_event::use_window_event;
+use app_chrome::hooks::dom::reveal_in_scroll_parent;
+use app_chrome::hooks::use_timeout::use_timeout_slot;
+use app_chrome::hooks::use_window_event::use_window_event;
 use crate::state::ReaderState;
 use crate::state::ui::SidebarMode;
 
@@ -280,7 +280,7 @@ pub fn OutlinePanel(
             let Some(parent) = scroller.get_untracked() else { return };
             let parent: web_sys::Element = parent.into();
             if let Some(row) = parent.query_selector(&outline_row_selector(idx)).ok().flatten() {
-                crate::components::primitives::hooks::dom::center_in_scroll_parent(&row, &parent);
+                app_chrome::hooks::dom::center_in_scroll_parent(&row, &parent);
             }
         });
     });

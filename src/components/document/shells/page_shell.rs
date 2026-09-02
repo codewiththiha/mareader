@@ -2,7 +2,7 @@ use leptos::children::ChildrenFn;
 use leptos::prelude::*;
 
 use crate::components::document::layouts::layout_chrome;
-use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
+use app_chrome::hooks::use_resize_observer::observe_content_size;
 use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer_controls::progress_strip::ProgressStrip;
 use crate::state::ReaderState;

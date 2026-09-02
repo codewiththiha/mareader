@@ -1,9 +1,9 @@
 //! Card targeting: where the sprung box wants to be right now. The heavy
 //! lifting — side choice, viewport clamping, shrink-to-fit — lives in
-//! [`pdf_core::gloss::place_card`] so it is unit-testable on the host.
+//! [`ai_core::gloss::place_card`] so it is unit-testable on the host.
 
+use ai_core::gloss::{GlossBox, place_card};
 use leptos::prelude::*;
-use pdf_core::gloss::{GlossBox, place_card};
 
 use crate::components::ai::types::GlossPhase;
 use crate::components::primitives::floating::types::{clamp_point_to_viewport, Point, Size};

@@ -1,6 +1,6 @@
 //! Reusable button container: the variant owns the styling, the children own
 //! the content (`<Icon .../><span>"Open"</span>`). Icon-only buttons use
-//! [`IconButton`](super::icon_button::IconButton).
+//! [`IconButton`](app_chrome::icon_button::IconButton).
 
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;

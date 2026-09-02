@@ -21,7 +21,7 @@ use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
 
 use pdf_engine::api as engine;
-use crate::components::primitives::hooks::use_timeout::use_timeout_slot;
+use app_chrome::hooks::use_timeout::use_timeout_slot;
 use crate::state::ReaderState;
 
 use super::geometry::{CELL_W, PULSE_STOP_MS, THUMB_SCALE};

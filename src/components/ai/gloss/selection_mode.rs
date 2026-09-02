@@ -16,8 +16,8 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
-use pdf_core::gloss::GlossMark;
 use serde::{Deserialize, Serialize};
 
 use crate::components::ai::gloss::controller::GlossController;

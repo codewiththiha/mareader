@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "PDF Reader",
+        "decorations": false,
+        "shadow": true,
+        "dragDropEnabled": true,
+        "width": 1200,
+        "height": 800,
+        "minWidth": 640,
+        "minHeight": 480,
+        "additionalBrowserArgs": "--disable-gpu-rasterization --disable-accelerated-2d-canvas --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+      }
+    ]
+  }
+}

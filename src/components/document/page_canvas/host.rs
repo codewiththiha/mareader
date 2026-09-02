@@ -7,6 +7,8 @@
 
 use wasm_bindgen::JsCast;
 
+use crate::components::document::pixel_grid::snap_px;
+
 /// Resize a `.pdf-page` host so its EXISTING bitmap stretches to `new_scale`,
 /// optionally masking the canvas with a pixel copy first.
 ///
@@ -21,6 +23,12 @@ use wasm_bindgen::JsCast;
 /// and shows white until the new frame paints. During a zoom ANIMATION no
 /// render happens, so no mask is wanted — the real bitmap must stay visible to
 /// be stretched.
+///
+/// The stretched size is snapped to the device-pixel grid: the raw product
+/// `size × scale` is fractional at almost every zoom step, and a page whose
+/// layer rect rounds one way while its neighbour's rounds the other shows the
+/// backdrop through the joint as a hairline (see [`crate::components::document::pixel_grid`]).
+/// The scale ratio itself stays raw, so repeated stretches cannot drift.
 pub(super) fn stretch_host(
     host_id: &str,
     canvas_id: &str,
@@ -38,8 +46,8 @@ pub(super) fn stretch_host(
         "style",
         &format!(
             "width:{}px;height:{}px;--scale-factor:{}",
-            last_w * new_scale / last_scale,
-            last_h * new_scale / last_scale,
+            snap_px(last_w * new_scale / last_scale),
+            snap_px(last_h * new_scale / last_scale),
             new_scale
         ),
     );

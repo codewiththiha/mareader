@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
+use ai_core::settings::GlossDensity;
 use leptos::prelude::*;
-use pdf_core::settings::GlossDensity;
 
 use crate::components::ai::types::WordInfo;
 use crate::components::primitives::feedback::shimmer::LoadingShimmer;

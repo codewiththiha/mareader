@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
-use pdf_core::gloss::GlossMark;
 
 use crate::components::ai::types::WordInfo;
 

@@ -1,0 +1,18 @@
+[package]
+name = "ai-core"
+version = "0.1.0"
+edition = "2024"
+description = "The format-agnostic core of the AI reading features: the word-explanation wire types, the gloss card's geometry and spring, the gloss mark and its anchor trait, the AI settings types, and the Tauri explain_word kickoff. No format-specific code — a new format plugs in its own anchor implementation."
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri-bridge = { path = "../tauri-bridge" }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"

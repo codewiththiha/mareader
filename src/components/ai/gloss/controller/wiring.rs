@@ -12,13 +12,13 @@
 
 use std::sync::Arc;
 
+use ai_core::gloss::{GlossBox, GlossMark};
 use leptos::prelude::*;
-use pdf_core::gloss::{GlossBox, GlossMark};
 
 use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::mark_layer::GLOSS_OPEN_EVENT;
 use crate::components::ai::types::{AiError, AiErrorKind, AiPhase, GlossPhase, WordInfo};
-use crate::components::primitives::hooks::use_viewport::viewport_size;
+use app_chrome::hooks::use_viewport::viewport_size;
 use crate::components::primitives::motion::spring::SpringBox;
 use crate::services::ai::invoke_explain_word;
 use crate::state::AppState;
@@ -163,7 +163,7 @@ fn begin_fetch(
     ctrl.geometry.surface_visible.set(false);
     processing_id.set(Some(mark.id.clone()));
 
-    if pdf_engine::has_tauri() {
+    if tauri_bridge::has_tauri() {
         let run = ctrl.open.begin_run(&mark.id);
         invoke_explain_word(mark.word, mark.context, run);
     } else {
@@ -237,15 +237,17 @@ mod tests {
     fn mark(page: u32, word: &str, x: f64) -> GlossMark {
         GlossMark {
             id: format!("g{page}-{x}"),
-            page,
             word: word.to_string(),
             context: String::new(),
-            rect: GlossBox {
-                x,
-                y: 100.0,
-                w: 40.0,
-                h: 12.0,
-                r: 6.0,
+            anchor: ai_core::gloss::PageAnchor {
+                page,
+                rect: GlossBox {
+                    x,
+                    y: 100.0,
+                    w: 40.0,
+                    h: 12.0,
+                    r: 6.0,
+                },
             },
         }
     }

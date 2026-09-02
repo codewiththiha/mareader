@@ -43,13 +43,20 @@ impl Toast {
     }
 }
 
-/// UI chrome state: the sidebar and the toast surface.
+/// UI chrome state: the sidebar, the toast surface, and the window flag the
+/// frameless captions read.
 #[derive(Clone, Copy)]
 pub struct UiState {
     /// Which sidebar panel (if any) is open.
     pub sidebar: RwSignal<SidebarMode>,
     /// Current toast (if any), rendered by the app-root `ToastHost`.
     pub toast: RwSignal<Option<Toast>>,
+    /// Whether the window is maximized — the frameless caption cluster's
+    /// maximize/restore glyph. Written by the app-lifetime window-state
+    /// bridge (services/window.rs), never by the cluster itself: the state
+    /// changes under it by more than its own button (snapping, taskbar
+    /// restores, drag-to-edge), all of which resize the window.
+    pub window_maximized: RwSignal<bool>,
 }
 
 #[derive(Clone, Copy)]
@@ -69,6 +76,7 @@ impl Default for AppState {
             ui: UiState {
                 sidebar: RwSignal::new(SidebarMode::None),
                 toast: RwSignal::new(None),
+                window_maximized: RwSignal::new(false),
             },
         }
     }

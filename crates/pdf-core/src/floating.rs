@@ -8,6 +8,10 @@
 //! panel prefers, what it contains) is decided by the callers; the math here
 //! only answers "given this anchor and this panel, where does it go, and is
 //! it inside the viewport?"
+//!
+//! The spring itself (stiffness / damping / the Euler step) lives in
+//! `ai_core::spring`: the gloss card's spring rides the same physics, and
+//! keeping one integrator is what keeps the two surfaces feeling identical.
 
 /// A plain 2-D size in CSS px.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -67,8 +71,9 @@ impl Rect {
 }
 
 /// The five-field box the spring drives (position + size + corner radius).
-/// Named to avoid colliding with `std::boxed::Box`; `pdf_core::gloss::GlossBox`
-/// converts into/out of this type at the domain boundary.
+/// Named to avoid colliding with `std::boxed::Box`; the gloss domain's
+/// `ai_core::gloss::GlossBox` is field-identical and converts into this type
+/// at the domain boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub struct FloatBox {
     pub x: f64,
@@ -84,12 +89,16 @@ impl FloatBox {
     /// One explicit-Euler spring step over all five fields. Returns
     /// `(next_box, next_velocity)`. dt is clamped by the caller so long
     /// frames never blow the integrator past its stability bound.
+    ///
+    /// The step itself is `ai_core::spring::spring_axis` — the same
+    /// integrator the gloss card steps — so the floating panels and the word
+    /// card cannot drift out of tune.
     pub fn step(&self, vel: &FloatBox, target: &FloatBox, dt: f64) -> (FloatBox, FloatBox) {
-        let (x, vx) = spring_axis(self.x, vel.x, target.x, dt);
-        let (y, vy) = spring_axis(self.y, vel.y, target.y, dt);
-        let (w, vw) = spring_axis(self.w, vel.w, target.w, dt);
-        let (h, vh) = spring_axis(self.h, vel.h, target.h, dt);
-        let (r, vr) = spring_axis(self.r, vel.r, target.r, dt);
+        let (x, vx) = ai_core::spring::spring_axis(self.x, vel.x, target.x, dt);
+        let (y, vy) = ai_core::spring::spring_axis(self.y, vel.y, target.y, dt);
+        let (w, vw) = ai_core::spring::spring_axis(self.w, vel.w, target.w, dt);
+        let (h, vh) = ai_core::spring::spring_axis(self.h, vel.h, target.h, dt);
+        let (r, vr) = ai_core::spring::spring_axis(self.r, vel.r, target.r, dt);
         (
             FloatBox { x, y, w, h, r },
             FloatBox {
@@ -122,18 +131,19 @@ impl FloatBox {
     }
 }
 
-/// Spring stiffness and damping for animated boxes. Stiffness 210 / damping
-/// 26 is mildly underdamped (critical ≈ 29 at mass 1): a confident pop with
-/// one small settle.
-pub const SPRING_STIFFNESS: f64 = 210.0;
-pub const SPRING_DAMPING: f64 = 26.0;
-
-/// One explicit-Euler step of a 1-D spring toward `t` from `c` at velocity
-/// `v`. Returns `(position, velocity)`.
-pub fn spring_axis(c: f64, v: f64, t: f64, dt: f64) -> (f64, f64) {
-    let force = SPRING_STIFFNESS * (t - c) - SPRING_DAMPING * v;
-    let nv = v + force * dt;
-    (c + nv * dt, nv)
+/// The gloss card's box is field-identical to this one; converting in this
+/// direction lets the card ride the floating motion layer without the app
+/// hand-copying five fields.
+impl From<ai_core::gloss::GlossBox> for FloatBox {
+    fn from(b: ai_core::gloss::GlossBox) -> Self {
+        FloatBox {
+            x: b.x,
+            y: b.y,
+            w: b.w,
+            h: b.h,
+            r: b.r,
+        }
+    }
 }
 
 /// Which side of the anchor the panel prefers.

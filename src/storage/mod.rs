@@ -12,10 +12,10 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
+use ai_core::gloss::GlossMark;
 use wasm_bindgen::JsValue;
 
 use crate::state::library::{sanitize as sanitize_library, CoverImage, CoverMap, RecentBook};
-use pdf_core::gloss::GlossMark;
 use pdf_core::settings::{sanitize, Settings, SETTINGS_KEY};
 
 const LIBRARY_KEY: &str = "pdfreader.library.v1";

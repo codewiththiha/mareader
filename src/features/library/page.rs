@@ -6,10 +6,10 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, TOOLBAR_TRAILING_ID};
+use app_chrome::hooks::dom::TOOLBAR_LEADING_ID;
 use crate::components::primitives::button::{Button, ButtonVariant};
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::tooltip::Tooltip;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::tooltip::Tooltip;
 use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::components::menus::appearance_menu::AppearanceMenu;
@@ -50,8 +50,10 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     };
     let right = move || {
         view! {
+            // #toolbar-trailing is owned by the shell's trailing group
+            // (this cluster + the pin), so the page only styles its own
+            // cluster here.
             <div
-                id=TOOLBAR_TRAILING_ID
                 data-tauri-drag-region="true"
                 class="flex shrink-0 items-center gap-1"
             >

@@ -38,8 +38,8 @@
 
 use std::collections::HashSet;
 
+use ai_core::gloss::{GlossBox, GlossMark};
 use leptos::prelude::*;
-use pdf_core::gloss::{GlossBox, GlossMark};
 
 use crate::components::ai::gloss::selection_mode::{
     dispatch_gloss_context, toggle_selected, LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
