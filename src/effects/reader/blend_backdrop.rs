@@ -3,7 +3,7 @@
 //! `pdf-paper` crate).
 //!
 //! The session owns every COLOUR decision — detection off raw frames, the
-//! fixed scan, the per-page palette, the cache. The shell owns the GEOMETRY,
+//! per-page palette, the look-ahead. The shell owns the GEOMETRY,
 //! and reports it as ONE number: the viewport's position along the page
 //! ladder, the visible-paint-weighted mean page index. Resting on page N it
 //! is exactly `N.0`; straddling pages N and N+1 at 40/60 it is `N + 0.6`,
@@ -27,7 +27,7 @@
 //! The two halves are wired at different levels on purpose:
 //! [`paper_settings`] at the APP root, because the session must know the
 //! real blend switch and detection area BEFORE the first document opens —
-//! the open flow's cache lookup consults the area and publishes on
+//! the first book's first frame publishes only if the session already knows
 //! `blend_on`, and that happens before any reader mounts. [`blend_backdrop`]
 //! (geometry) stays with ReaderPage, where the virtualizer's scroll lives.
 
@@ -39,15 +39,15 @@ use pdf_paper::{PaperConfig, DEFAULT_EDGE_WIDTH};
 
 use crate::state::AppState;
 
-/// Settings → the session: the blend switch plus the mode / area / scan
-/// budget. Sent whether a document is open or not — the session keeps the
-/// configuration for the next book and idles otherwise.
+/// Settings → the session: the blend switch plus the detection area. Sent
+/// whether a document is open or not — the session keeps the configuration
+/// for the next book and idles otherwise.
 ///
 /// Wired at the APP root, not the reader: on a fresh launch this runs before
-/// the first `document_open`, so the cache lookup answers under the reader's
-/// real detection area and a hit publishes against a session that already
-/// knows blend is on — the alternative (first wiring at reader mount) is why
-/// the first open of a session used to flash the theme paper first.
+/// the first `document_open`, so the first frame of the first book publishes
+/// against a session that already knows blend is on — the alternative (first
+/// wiring at reader mount) is why the first open of a session used to flash
+/// the theme paper first.
 pub fn paper_settings(state: AppState) {
     let settings = state.settings;
     // Publish ONCE, synchronously, before anything is allowed to run. A
@@ -55,9 +55,9 @@ pub fn paper_settings(state: AppState) {
     // this has to precede is itself asynchronous — an OS "Open with" launch
     // hands the backend a path before the webview has finished mounting, so
     // "installed earlier in the app root" is not on its own a guarantee that
-    // this landed first. Asking the engine's colour cache under default
-    // detection settings is a silently wrong colour on the first book, so the
-    // seed does not wait for a flush.
+    // this landed first. A session that does not yet know blend is on drops
+    // the first book's first frame on the floor, so the seed does not wait
+    // for a flush.
     publish(settings.with_untracked(|st| st.layout));
     // ...and then track, for every later change.
     Effect::new(move |_| publish(settings.with(|st| st.layout)));
@@ -68,9 +68,7 @@ fn publish(layout: LayoutSettings) {
     pdf_engine::paper::configure(
         layout.blend_mode,
         PaperConfig {
-            mode: layout.blend_scope,
             area: layout.blend_area,
-            scan_pages: layout.blend_scan_pages,
             edge_width: DEFAULT_EDGE_WIDTH,
         },
     );

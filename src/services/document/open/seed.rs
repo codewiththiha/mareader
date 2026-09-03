@@ -9,11 +9,10 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use pdf_core::filename::display_name;
-use pdf_core::layout::TOOLBAR_H;
-use pdf_core::math::fit_scale;
 use pdf_engine::types::{OpenResult, PageSize};
 
 use crate::state::AppState;
+use crate::viewer::zoom::target::FitDims;
 
 /// What the rest of the flow needs to know once the state is seeded.
 pub(super) struct Seeded {
@@ -24,19 +23,17 @@ pub(super) struct Seeded {
     pub num_pages: u32,
 }
 
-/// Write everything the fresh mount will read. Returns the resume point,
-/// which the caller jumps to once the view exists.
+/// Write everything the fresh mount will read, the resume page included;
+/// the strip anchors itself to it on mount.
 pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u32) -> Seeded {
     let page1 = open.page1_size;
     let num_pages = open.num_pages;
     let name = display_name(open.title.as_deref(), Some(path));
     // Document state.
     state.reader.document.num_pages.set(num_pages);
-    // The paper session resets for the new book and asks the engine's
-    // per-document cache for its colour — synchronously, while the status is
-    // still `Opening` and nothing is mounted, so a cache hit repaints the
-    // blend backdrop with the intended colour in the reader's very first
-    // frame (zero sampling work) instead of flashing the theme paper first.
+    // The paper session resets for the new book — synchronously, while the
+    // status is still `Opening` and nothing is mounted, so the previous
+    // book's backdrop colour is gone before the reader's first frame.
     pdf_engine::paper::document_open(path, num_pages);
     state
         .reader
@@ -72,19 +69,19 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // stale/transient saved 0 must never resume before the book).
     let resume = saved_page.clamp(1, num_pages.max(1));
 
-    // Fresh-open baseline: page 1, top of the column. The resume jump happens
-    // AFTER the view mounts (see the caller), because writing `page = resume`
-    // here — in the same batch as the `page_heights` reset and
-    // `scroll_top = 0` — races the page-tracking effects: the scroll→page
-    // effect reads scroll 0 and "corrects" the page back to 1 before the jump
-    // lands.
+    // The reading position is authored HERE, once, and the strip anchors
+    // itself to it when it mounts (`ScrollShell`). Until that anchor has
+    // landed the strip's own dominant page is whatever offset it last held,
+    // so the scroll→page sync is told to stand down first — before the page
+    // is written, so no effect can ever observe the new page against the
+    // old strip. Every other reader of `page` (the indicator, reading
+    // progress, the thumbnails) simply sees the resume point from the start;
+    // nothing passes through a transient page 1 any more.
     //
     // ALL of this lands BEFORE `status = Ready` flips the route to the
-    // reader: the mount-time container-bind scroll reads `viewer.page`, and a
-    // stale `page = 42` from the document that was open a drag-and-drop ago
-    // would jump the new book's strip to its page 42 for the frames between
-    // the flip and this correction. Baseline first, mount second.
-    state.reader.viewer.page.set(1);
+    // reader, so the fresh mount reads a fully seeded state.
+    state.reader.viewer.awaiting_anchor.set(true);
+    state.reader.viewer.page.set(resume);
     state.reader.viewer.scroll_top.set(0.0);
     // The startup fit mode is a user setting (Fit Page / Fit Width), not a
     // hard-coded fit-width. `sanitize` has already replaced a persisted `None`
@@ -96,8 +93,15 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // gesture. ReaderPage re-seeds them from the intrinsic page sizes at the
     // current scale.
     state.reader.document.metrics.css_heights.set(Vec::new());
-    let (cw, ch) = state.reader.viewer.container_size.get();
-    let scale = fit_scale(startup_fit, cw, ch, page1.width, page1.height, TOOLBAR_H, 1.0);
+    // The seed scale is resolved by the same geometry the first live refit
+    // will use, so the first frame already sits where the fit will land.
+    let scale = FitDims::from_geometry(
+        state.reader.viewer.mode.get_untracked(),
+        state.reader.viewer.container_size.get_untracked(),
+        state.reader.viewer.page_margin.get_untracked(),
+        (page1.width, page1.height),
+    )
+    .map_or(1.0, |dims| dims.fit(startup_fit, 1.0));
     // Seeding the zoom state is correct HERE and nowhere else: this is the
     // initial scale for a brand-new document, so there is no layout to
     // animate from and nothing to anchor to. All three scales start in

@@ -22,7 +22,6 @@ use crate::components::settings::modal::SettingsModal;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use app_chrome::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
 use app_chrome::icon::{Icon, IconName};
-use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;
 use crate::features::reader::rail::ReaderRail;
 use crate::components::viewer_controls::bottom_bar::ReaderBottomBar;
@@ -31,6 +30,7 @@ use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
 use crate::features::reader::use_reader_virtualizers;
 use crate::services::document::close_document;
+use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
 use pdf_core::layout::{PAGE_GAP, ViewMode};
 use pdf_core::math::FitMode;
@@ -52,10 +52,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     let rv = use_reader_virtualizers(vs);
 
-    // Seed margin from persisted settings once the reader mounts.
+    // Seed margin from persisted settings once the reader mounts. The
+    // horizontal strip is the one mode that never carries a page margin, so
+    // the seed honours the same mode rule as the sync effect below.
     {
         let m = state.settings.with_untracked(|st| st.layout.page_margin);
-        vs.viewer.page_margin.set(m);
+        let horizontal = vs.viewer.mode.get_untracked() == ViewMode::ScrollHorizontal;
+        vs.viewer.page_margin.set(if horizontal { 0.0 } else { m });
     }
 
     // No-gap pref → runtime gap + rescale.
@@ -73,11 +76,20 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         });
     }
 
-    // Page margin pref — cross-axis for vertical, main-axis for horizontal.
+    // Page margin pref — cross-axis for the vertical strip and both
+    // paginated shells. The horizontal strip is exempt: it lays pages
+    // edge-to-edge along the scroll axis, so side air there would read as
+    // dead space between pages rather than margin. This effect resolves the
+    // stored pref to an effective margin of 0 whenever the mode is
+    // ScrollHorizontal — without touching the stored value — and tracks the
+    // mode, so leaving the horizontal strip restores whatever the setting
+    // holds on the flip itself.
     {
         let (v, hv) = (rv.virtualizer.clone(), rv.h_virtualizer.clone());
         Effect::new(move |_| {
-            let m = state.settings.with(|st| st.layout.page_margin);
+            let stored = state.settings.with(|st| st.layout.page_margin);
+            let horizontal = vs.viewer.mode.get() == ViewMode::ScrollHorizontal;
+            let m = if horizontal { 0.0 } else { stored };
             if (vs.viewer.page_margin.get_untracked() - m).abs() < 1e-9 {
                 return;
             }
@@ -92,8 +104,22 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 .with_untracked(|w| w.iter().map(|s| s.width).collect::<Vec<f64>>());
             // Vertical: margin is cross-axis; sizes unchanged aside from gap.
             v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
-            // Horizontal: margin is main-axis.
+            // Horizontal: margin is main-axis — which the exempt mode simply
+            // never has (m resolves to 0 there).
             hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m);
+            // A margin change must re-fit the page under the reader: the fit
+            // target derives from the usable width (`cw - 2*margin`), so the
+            // page only visibly gains side space once that scale is re-resolved
+            // against the newly applied margin. Posting here guarantees the
+            // refit even if no other watcher happens to fire for a setting-only
+            // change, and is a no-op when no fit is active. Entering the
+            // horizontal strip skips the post: that switch drops the fit to
+            // None anyway, and resolving the OUTGOING fit against the new axis
+            // is exactly the zoom jump the mode-change guard below exists to
+            // prevent.
+            if !horizontal && vs.viewer.fit.get_untracked() != FitMode::None {
+                vs.viewer.zoom.post(ZoomCommand::Refit, false);
+            }
         });
     }
 
@@ -105,6 +131,18 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             return;
         }
         prev_mode.set_value(mode);
+        // The incoming view's strip (if it has one) mounts fresh and anchors
+        // itself to `viewer.page` in `ScrollShell`; until it has, its
+        // dominant is not the reader's page. Raised HERE, in the same flush
+        // as the mode flip, so the scroll→page arm that re-runs for the flip
+        // sees it and stands down rather than reading the unplaced strip.
+        if matches!(mode, ViewMode::ScrollVertical | ViewMode::ScrollHorizontal) {
+            vs.viewer.awaiting_anchor.set(true);
+        }
+        // A mode flip leaves the outgoing view's rasters behind and nothing
+        // necessarily renders right after, so the engine's own sweep (which
+        // only runs inside a render) would never fire. Release now.
+        pdf_engine::api::sweep();
         let auto = state.settings.with(|s| s.layout.auto_scale);
         if mode == ViewMode::ScrollHorizontal {
             // Horizontal is one page per virtual item. Do not reinterpret the
@@ -153,12 +191,17 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let is_ready = move || status.get() == DocStatus::Ready;
 
     let settings_open = RwSignal::new(false);
+    // The settings modal is opened from several places (the 3-dash menu's
+    // Settings… item, the sidebar header's gear) that sit under different
+    // mount points, so the open signal is shared through context rather than
+    // threaded as a prop through the rail composition.
+    provide_context(settings_open);
     let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
     let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
 
-    // Left: sidebar toggle + Library. Title is centered; right is appearance +
-    // settings + the 3-dash view menu.
+    // Left: sidebar toggle + Library. Title is centered; right is the 3-dash
+    // view menu + Appearance.
     //
     // The sidebar toggle's visibility is the controller's rule: overlay mode
     // drops it (the rail opens by brushing the window's left edge and closes
@@ -167,7 +210,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // above the bar and covers it while it is up, which is the rail's job,
     // not this cluster's. The cluster is always mounted so the row keeps its
     // left edge (and `#toolbar-leading`, the measurement anchor the library
-    // title uses) wherever the mode puts it.
+    // title uses) wherever the mode puts it. Reader settings have no button
+    // of their own here: they open from the 3-dash menu's Settings… item and
+    // the sidebar header's gear.
     let left = move || {
         view! {
             <div
@@ -208,13 +253,8 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let center = move || view! { <CenteredDocTitle state=state /> };
     let right = move || {
         view! {
-            <AppearanceMenu state=state />
-            <IconButton
-                icon=IconName::Settings
-                title="Reader settings"
-                on_click=move || settings_open.set(true)
-            />
             <ReaderMenu state=state settings_open=settings_open />
+            <AppearanceMenu state=state />
         }
     };
 

@@ -13,6 +13,7 @@
 use leptos::prelude::*;
 
 use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::feedback::loader::CenteredLoader;
 use app_chrome::icon::{Icon, IconName};
 use pdf_engine::types::DocStatus;
 use crate::services::document;
@@ -37,23 +38,22 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
 
     let has_tauri = tauri_bridge::has_tauri();
     let open_state = state;
+    let cancel_state = state;
 
     view! {
         <div class="flex h-full w-full flex-col">
-            // Opening: centered spinner.
+            // Opening stays on the library route, so cancellation has to live
+            // here rather than in the reader toolbar (which is unmounted).
             <Show when=is_opening fallback=|| ()>
-                <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
-                    <div class="flex flex-col items-center gap-4">
-                        <div class="flex items-center gap-3">
-                            <div class="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent"></div>
-                            <p class="text-lg">"Opening…"</p>
-                        </div>
+                <div class="relative h-full w-full">
+                    <CenteredLoader />
+                    <div class="absolute inset-x-0 top-1/2 flex justify-center pt-20">
                         <Button
-                            on_click=move |_| document::close_document(state)
-                            variant=ButtonVariant::Ghost
-                            title="Cancel and return to the library"
+                            on_click=move |_| document::close_document(cancel_state)
+                            variant=ButtonVariant::Toolbar
+                            title="Cancel opening this PDF"
                         >
-                            <span>"Cancel"</span>
+                            <span>"Cancel opening"</span>
                         </Button>
                     </div>
                 </div>
@@ -116,4 +116,3 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
         </div>
     }
 }
-

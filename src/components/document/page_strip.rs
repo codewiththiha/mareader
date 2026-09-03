@@ -35,7 +35,7 @@
 
 use leptos::html;
 use leptos::prelude::*;
-use pdf_core::layout::{Axis, TOOLBAR_H};
+use pdf_core::layout::Axis;
 use virtual_list_leptos::{VirtualItem, VirtualItemState, Virtualizer};
 
 use crate::components::document::PageCanvas;
@@ -137,10 +137,7 @@ pub fn PageStrip(
                 Axis::Vertical => {
                     let each_items = items;
                     view! {
-                        <div
-                            class="relative"
-                            style=move || format!("margin-top:{TOOLBAR_H}px")
-                        >
+                        <div class="relative">
                             <div aria-hidden="true" style:height=move || format!("{}px", total_size.get())></div>
                             <For
                                 each=move || each_items.get()

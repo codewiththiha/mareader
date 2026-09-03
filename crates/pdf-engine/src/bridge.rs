@@ -130,24 +130,17 @@ extern "C" {
 
     // --- Engine: paper pipeline (the `pdf-paper` crate's eyes) ---
     // The engine owns the CANVASES; the crate (via this crate's `paper`
-    // session) owns every colour decision. Five calls carry the whole
+    // session) owns every colour decision. Four calls carry the whole
     // contract, all in the established Rust→engine direction:
     //
-    // * `setPaper` publishes (or, with "", clears) `--pdf-paper`; `persist`
-    //   also writes the per-document cache under `area` — the engine owns
-    //   localStorage.
-    // * `persistPaper` writes the per-document cache WITHOUT publishing —
-    //   the session's close path, banking an interrupted scan's answer
-    //   while the backdrop itself is being cleared.
+    // * `setPaper` publishes (or, with "", clears) `--pdf-paper`.
+    // * `setPaperActive` gates the per-render frame stash on the blend switch.
     // * `takePaperFrame` drains the raw frame a live render stashed at the
     //   one pipeline moment the page's own paper is still unbaked.
     // * `samplePaperPage` renders `page` offscreen at a tiny scale and
-    //   resolves its frame — the fixed-mode scan and the continuous
-    //   look-ahead both sample through it.
-    // * `getCachedPaper` reads the per-document cache so a reopened book
-    //   repaints with zero sampling work.
+    //   resolves its frame — the look-ahead samples through it.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPaper")]
-    pub fn set_paper(hex: &str, persist: bool, area: &str);
+    pub fn set_paper(hex: &str);
 
     /// The session's blend switch: while off, the engine skips stashing a
     /// ≤96px downscale + readback per live render entirely (the session
@@ -155,27 +148,11 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPaperActive")]
     pub fn set_paper_active(on: bool);
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "persistPaper")]
-    pub fn persist_paper(hex: &str, area: &str);
-
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "takePaperFrame")]
     pub fn take_paper_frame(canvas_id: &str) -> JsValue;
 
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "samplePaperPage")]
     pub async fn sample_paper_page(page: u32) -> JsValue;
-
-    /// The cached fixed-mode colour for `path`, if the engine remembers one.
-    ///
-    /// SYNC on purpose, and the pairing is load-bearing: the TS side is a
-    /// synchronous localStorage read that returns a plain object, never a
-    /// Promise. An `async` extern raw-casts whatever comes back to a
-    /// `Promise` and polls it with `.then` — on a plain object that is a
-    /// TypeError, which unwinds as a panic inside whatever Rust future
-    /// awaited it (it once silently killed the whole open flow, pinning the
-    /// app on "Opening…"). Async externs pair ONLY with TS functions that
-    /// actually return Promises; everything else stays sync on both sides.
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "getCachedPaper")]
-    pub fn get_cached_paper(path: &str) -> JsValue;
 
     /// Release rasters/caches the engine no longer needs (advisory
     /// `pdf.cleanup`). Fired when reading work ends: zoom commit, mode flip,

@@ -7,7 +7,7 @@
 //!     know what a PDF reader is
 //!   * `shell` — the unified application shell (the ShellController that
 //!     owns layout truth, the titlebar family, the sidebar rail family)
-//!   * `menus`      — menu features (appearance_menu, app_menu)
+//!   * `menus`      — menu features (appearance_menu, reader_menu)
 //!   * `settings`   — the reader settings modal: one module per tab
 //!   * `overlays`   — transient UI (toast, drag feedback)
 //!   * `viewer_controls` — reader-only controls (zoom, page indicator, …)

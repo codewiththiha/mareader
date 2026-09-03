@@ -1,5 +1,5 @@
 //! The library route (`/`): the recent-books shelf with a minimal titlebar —
-//! Open + name left, Appearance + More right, plus the built-in pin. No
+//! Open + name left, Appearance + Settings right, plus the built-in pin. No
 //! sidebar / zoom / mode / search: those are reader-only, so the shell
 //! controller this page provides is rail-less and the bar keeps the full
 //! window width, its gutter and its lights.
@@ -9,12 +9,13 @@ use leptos::prelude::*;
 use app_chrome::hooks::dom::TOOLBAR_LEADING_ID;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;
 use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::shell::titlebar::document_title::DocumentTitle;
-use crate::components::menus::app_menu::MoreMenu;
+use crate::components::settings::modal::SettingsModal;
 use crate::state::AppState;
 use crate::features::library::LibraryShelf;
 
@@ -24,6 +25,9 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     // rail" — the bar and the traffic lights ask it like any page's do.
     let shell = ShellController::titlebar_only(state);
     provide_context(shell);
+
+    // The library is rail-less, so settings open straight from its title bar.
+    let settings_open = RwSignal::new(false);
 
     let left = move || {
         view! {
@@ -58,7 +62,11 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
                 class="flex shrink-0 items-center gap-1"
             >
                 <AppearanceMenu state=state />
-                <MoreMenu />
+                <IconButton
+                    icon=IconName::Settings
+                    title="Reader settings"
+                    on_click=move || settings_open.set(true)
+                />
             </div>
         }
     };
@@ -68,6 +76,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             <div class="relative h-full w-full overflow-hidden bg-paper text-ink">
                 <LibraryShelf state=state />
             </div>
+            <SettingsModal state=state open=settings_open />
         </AppTitleBar>
     }
 }

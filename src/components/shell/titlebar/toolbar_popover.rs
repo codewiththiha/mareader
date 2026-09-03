@@ -34,7 +34,8 @@ pub fn MenuPopover(
     #[prop(optional, into)]
     class: String,
     /// Whether opening this popover holds the reader titlebar open.
-    /// Defaults to true; sidebar popovers (MoreMenu) set this to false.
+    /// Defaults to true; anchored popovers that sit clear of the bar (for
+    /// example the settings rows' dropdowns) set this to false.
     #[prop(default = true)]
     hold_titlebar: bool,
     #[prop(default = PlacementSide::Auto)]

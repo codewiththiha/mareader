@@ -4,10 +4,9 @@
 //! One detector, two ways to feed it. [`PaperDetector::feed`] routes by
 //! [`PaperArea`]: the whole frame, or just the left and right edge strips
 //! (the margins — where artwork-heavy pages still show honest paper). A
-//! detector also POOLS: feeding it every page of a scan, one raster at a
-//! time, yields the whole book's dominant colour, which is exactly how the
-//! fixed mode finds one colour for a thousand-page document without ever
-//! holding more than one raster's pixels.
+//! detector also POOLS: feeding it several rasters, one at a time, yields
+//! their combined dominant colour without ever holding more than one
+//! raster's pixels.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -150,7 +149,7 @@ impl PaperDetector {
         ))
     }
 
-    /// Total pixels counted across every feed (the pooled-scan denominator).
+    /// Total pixels counted across every feed (the pooled denominator).
     /// A test-only inspector: production reads the dominant colour, never the
     /// raw count.
     #[cfg(test)]
@@ -280,8 +279,8 @@ mod tests {
     #[test]
     fn feeds_pool_across_pages() {
         // Two frames: page 1 mostly cream with ink text, page 2 all cream.
-        // Pooled, cream owns the book even though page 1's own histogram
-        // leans the other way — this is the fixed-mode scan's whole trick.
+        // Pooled, cream owns the pair even though page 1's own histogram
+        // leans the other way.
         let mut page1 = frame(40, 10, [0xfa, 0xf4, 0xe8]);
         paint(&mut page1, 40, 0, 30, [0x22, 0x22, 0x22]); // 75% ink
         let page2 = frame(40, 10, [0xfa, 0xf4, 0xe8]);

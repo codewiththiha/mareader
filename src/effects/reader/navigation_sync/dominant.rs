@@ -1,9 +1,9 @@
 //! Scroll → page: the strip's dominant item names the page the reader is on.
 //!
 //! One arm per axis, both the same shape — only the view mode they answer for
-//! differs. Each stands down for a mode restore, for an open zoom transaction,
-//! and for a held navigation that has not replayed yet; the reasoning for each
-//! stand-down is at its guard.
+//! differs. Each stands down while a freshly mounted strip is still anchoring
+//! itself, for an open zoom transaction, and for a held navigation that has
+//! not replayed yet; the reasoning for each stand-down is at its guard.
 
 use std::rc::Rc;
 
@@ -34,7 +34,6 @@ pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpG
     let Arms {
         state,
         suppress,
-        defer,
         zooming,
     } = arms;
     let page = state.viewer.page;
@@ -43,12 +42,14 @@ pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpG
         if mode.get() != axis {
             return;
         }
-        // While on_mode_change is re-anchoring the strip after a mode flip,
-        // the strip is still sitting at its initial (unrestored) offset and
-        // its dominant would misreport the page — reading it now resets the
-        // reader back to (a transient) page 0/1. Stand down; the restored
-        // scroll re-runs this effect with the true dominant.
-        if defer.get() {
+        // A strip that has just mounted (document open, back from the
+        // library, a mode switch) is still being placed on `viewer.page`
+        // by `ScrollShell`; until then it sits at whatever offset it last
+        // held and its dominant is not the reader's page. Reading it now is
+        // exactly what used to reset a resumed book to page 1. TRACKED, so
+        // the arm re-runs on the frame the anchor lands and adopts the true
+        // dominant from there.
+        if state.viewer.awaiting_anchor.get() {
             return;
         }
         let dominant = page_from_dominant(v.dominant().get(), state.document.num_pages.get());
@@ -70,8 +71,8 @@ pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpG
         }
         // A held navigation replays in this same flush and the strip has
         // not moved yet — correcting the page from the stale dominant now
-        // is exactly how the resume jump used to die. Let the replay land
-        // first; the re-run it causes reads the TRUE dominant.
+        // would lose it. Let the replay land first; the re-run it causes
+        // reads the TRUE dominant.
         if gate.pending().is_some() {
             return;
         }

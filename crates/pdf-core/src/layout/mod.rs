@@ -9,11 +9,12 @@ pub use virtual_list::Budget;
 pub const PAGE_GAP: f64 = 24.0;
 
 /// Height of the glass toolbar, in CSS px. The viewer scrollport spans the
-/// full window height so pages travel under the translucent header; each view
-/// offsets its content by this inset.
+/// full window height and no view reserves this band: the bar is an overlay
+/// that reveals on hover, so the pages start at the very top and travel under
+/// it. It remains the reference for anything that must clear the bar while it
+/// IS shown (the search reveal's dead zone, the traffic-light centring).
 ///
-/// MUST stay in sync with Tailwind `h-12` / `mt-12` on the title bar and the
-/// continuous page-list offset.
+/// MUST stay in sync with Tailwind `h-12` on the title bar.
 pub const TOOLBAR_H: f64 = 48.0;
 
 /// Comfortable read-ahead: half a screenful each way, up to 3 mounted pages

@@ -5,22 +5,22 @@
 //! - page -> scroll: `scroll_to_index(Start, Auto)` — `Auto` resolves to a glide,
 //!   and the reader's scroll switch is what decides whether it may (see
 //!   `scroll_mode`)
-//! - mode flip -> scroll: `scroll_to_index(Start, Instant)` when re-entering
-//!   continuous mode
+//! - mount -> scroll: NOT here. A strip that mounts — on a document open, a
+//!   return from the library, a switch into its mode — anchors itself to
+//!   `viewer.page` in `ScrollShell`, and raises `viewer.awaiting_anchor` until
+//!   it has landed. The scroll → page arm stands down for exactly that window,
+//!   so the strip's pre-anchor offset (usually the top) can never be read back
+//!   as "the reader is on page 1".
 //!
 //! Both directions stand down while a zoom transaction is in flight: a zoom
 //! moves the geometry, and the transaction's anchor — not a window churn's
 //! idea of the dominant item — decides where the reader lands. Sync resumes
 //! against the committed geometry when the transition ends.
 //!
-//! A page write that arrives WHILE a transaction holds the geometry (the
-//! resume jump on open, an outline click during a fit slide, a search hit
-//! mid-gesture) is not dropped, though — it is held by [`JumpGate`] and
-//! replayed on the frame the transaction closes. Without that replay, every
-//! open from the library lost its resume point: the reader mounts, its
-//! container's first measure opens a fit transaction, the resume jump lands
-//! one frame later inside it, and the dominant arm "corrected" the page back
-//! to 1 — which reading_progress then dutifully saved over the real position.
+//! A page write that arrives WHILE a transaction holds the geometry (an
+//! outline click during a fit slide, a search hit mid-gesture) is not
+//! dropped, though — it is held by [`JumpGate`] and replayed on the frame the
+//! transaction closes.
 //!
 //! The wiring lives here; the pieces live beside it —
 //! [`jump_gate`] holds a navigation across a transaction, [`dominant`] is the
@@ -48,10 +48,8 @@ use crate::state::ReaderState;
 
 use jump_gate::JumpGate;
 
-use super::on_mode_change::on_mode_change;
-
-/// What every arm needs: the state, the shared echo-suppression flag, the
-/// mode-restore flag, and the tracked "a zoom transaction is in flight".
+/// What every arm needs: the state, the shared echo-suppression flag, and
+/// the tracked "a zoom transaction is in flight".
 ///
 /// `Copy`-ish by clone: the flags are handles, so an arm gets its own copy of
 /// the bag rather than a borrow of a shared one.
@@ -61,17 +59,6 @@ pub(super) struct Arms {
     /// Echo suppression: a write this module made itself must not be read
     /// back as if the reader had scrolled.
     pub suppress: Rc<Cell<bool>>,
-    /// A mode restore is in flight: the scroll→page sync must stand down so it
-    /// does not read the not-yet-restored strip and clobber the preserved page.
-    ///
-    /// A REACTIVE signal on purpose, not a `Cell`. The dominant arm reads it
-    /// as a dependency and returns early while it is up; when the restore
-    /// lands and it falls, that write re-runs the arm against the now-true
-    /// dominant. A `Cell` hand-off left the arm with no reason to re-run after
-    /// a mode flip, so the page counter sat on the pre-restore value until the
-    /// reader scrolled. Making it reactive closes that without re-introducing
-    /// the read-a-strip-mid-restore race the flag exists to prevent.
-    pub defer: RwSignal<bool>,
     /// The tracked form of "a zoom transaction is in flight", for the arms
     /// that must RESYNC when one lands. The untracked `zooming_now()` stays on
     /// the ones that must only not fight it.
@@ -87,13 +74,8 @@ pub fn navigation_sync(
     let arms = Arms {
         state,
         suppress: Rc::new(Cell::new(false)),
-        defer: RwSignal::new(false),
         zooming: state.viewer.zooming(),
     };
-
-    // The mode-restore flag is shared with on_mode_change, which raises it
-    // during a mode flip and lowers it once the restored scroll has landed.
-    on_mode_change(state, virtualizer.clone(), h_virtualizer.clone(), arms.defer);
 
     // One gate per axis: its page→scroll arm holds navigation writes that
     // arrive mid-transaction, and its dominant arm defers to the held write

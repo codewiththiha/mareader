@@ -18,6 +18,16 @@
 //! lands in the same frame the floating rail finishes fading — which is the
 //! whole point of the fade's timing.
 //!
+//! THE HIDE ALWAYS LANDS. The lights follow the bar's hover-reveal through
+//! [`TitleBarCtx::visible`], and the bar's hide is re-checked at both ends
+//! of its hold (see `app_chrome::titlebar::root`) — so the decision here is
+//! sound, but the command is async IPC while the decision is synchronous: a
+//! decision that changes mid-flight could otherwise let a stale command land
+//! last, leaving the native lights up with nothing left to re-run the
+//! effect. Every send therefore re-checks the live truth once its promise
+//! resolves and answers a mismatch — the lights' version of the bar's own
+//! recheck, and why an unfocus always ends with the lights gone.
+//!
 //! Dynamic `y` (Tahoe-proof centering) — mirrors `readest` `traffic_light.rs`
 //! `compute_traffic_light_y + OnceLock + ResizeObserver`. The bar is `h-12`
 //! (48px, `TOOLBAR_H`) but `y` is NOT `tauri.conf.json:trafficLightPosition`
@@ -32,6 +42,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use crate::hooks::dom::{by_id, TOOLBAR_ROW_ID};
+use crate::hooks::use_async_truth::use_async_truth;
 use crate::hooks::use_resize_observer::observe_elements;
 use crate::titlebar::root::TitleBarCtx;
 use crate::window::api::set_traffic_lights;
@@ -51,7 +62,6 @@ pub fn TrafficLights(
     bar_hosted: Signal<bool>,
 ) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
-    let last_sent = StoredValue::new_local(None::<bool>);
     let hide_grace = StoredValue::new_local(None::<TimeoutHandle>);
     // Live header height for Tahoe-proof centering. Observed on
     // `#toolbar-row`; `on_cleanup` in `observe_content_size` disconnects it.
@@ -76,6 +86,19 @@ pub fn TrafficLights(
         });
     });
 
+    // The live truth about whether the lights should be on, read WITHOUT
+    // subscribing — the verification pass probes it after the command has
+    // landed, where a tracked read would create a dependency on an owner
+    // that no longer runs it.
+    let truth = move || {
+        rail_hosted.get_untracked()
+            || (bar_hosted.get_untracked() && ctx.is_some_and(|c| c.visible.get_untracked()))
+    };
+    // Send-and-verify lives in the shared hook: the decision is recorded,
+    // the IPC awaited, and a truth that moved mid-flight answered with one
+    // more command — so a stale send can never settle the native side last.
+    let lights = use_async_truth(truth, |want, height: f64| set_traffic_lights(want, height));
+
     Effect::new(move |_| {
         let Some(ctx) = ctx else {
             return;
@@ -93,17 +116,14 @@ pub fn TrafficLights(
                 h.clear();
                 hide_grace.set_value(None);
             }
-            if last_sent.get_value() == Some(true) {
+            if lights.last_sent() == Some(true) {
                 return;
             }
-            last_sent.set_value(Some(true));
-            wasm_bindgen_futures::spawn_local(async move {
-                set_traffic_lights(true, h).await;
-            });
+            lights.send(true, h);
         } else {
             // An already-hidden or pending hide does not schedule another
             // command.
-            if last_sent.get_value() == Some(false) || hide_grace.get_value().is_some() {
+            if lights.last_sent() == Some(false) || hide_grace.get_value().is_some() {
                 return;
             }
             // The grace exists for the docked handoff (rail releases chrome,
@@ -113,19 +133,14 @@ pub fn TrafficLights(
             // buttons floating over the rail that has just finished fading
             // out from under them.
             if !bar_hosted.get_untracked() {
-                last_sent.set_value(Some(false));
-                wasm_bindgen_futures::spawn_local(async move {
-                    set_traffic_lights(false, h).await;
-                });
+                lights.send(false, h);
                 return;
             }
+            let lights = lights.clone();
             let handle = set_timeout_with_handle(
                 move || {
                     hide_grace.set_value(None);
-                    last_sent.set_value(Some(false));
-                    wasm_bindgen_futures::spawn_local(async move {
-                        set_traffic_lights(false, h).await;
-                    });
+                    lights.send(false, h);
                 },
                 Duration::from_millis(120),
             )

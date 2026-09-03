@@ -21,7 +21,7 @@ pub fn clamp_scale(s: f64) -> f64 {
 }
 
 /// Scale that fits a page (base CSS-px size `page_w` x `page_h`) into a
-/// container of `container_w` x `container_h`, leaving `padding` px of air.
+/// container of `container_w` x `container_h`, edge to edge.
 /// `FitMode::None` should never call this — it returns the caller's current scale.
 pub fn fit_scale(
     fit: FitMode,
@@ -29,20 +29,14 @@ pub fn fit_scale(
     container_h: f64,
     page_w: f64,
     page_h: f64,
-    padding: f64,
     current: f64,
 ) -> f64 {
+    let w = container_w.max(1.0);
+    let h = container_h.max(1.0);
     match fit {
         FitMode::None => clamp_scale(current),
-        FitMode::Width => {
-            let w = (container_w - padding).max(1.0);
-            clamp_scale(w / page_w.max(1.0))
-        }
-        FitMode::Page => {
-            let w = (container_w - padding).max(1.0);
-            let h = (container_h - padding).max(1.0);
-            clamp_scale((w / page_w.max(1.0)).min(h / page_h.max(1.0)))
-        }
+        FitMode::Width => clamp_scale(w / page_w.max(1.0)),
+        FitMode::Page => clamp_scale((w / page_w.max(1.0)).min(h / page_h.max(1.0))),
     }
 }
 
@@ -79,26 +73,23 @@ mod tests {
     fn fit_uses_the_page_under_the_eyes_not_page_one() {
         // Portrait letter, then a landscape plate twice as wide: the same
         // container must fit the plate at half the letter's scale.
-        let letter = fit_scale(FitMode::Width, 600.0, 800.0, 612.0, 792.0, 0.0, 1.0);
-        let plate = fit_scale(FitMode::Width, 600.0, 800.0, 1224.0, 792.0, 0.0, 1.0);
+        let letter = fit_scale(FitMode::Width, 600.0, 800.0, 612.0, 792.0, 1.0);
+        let plate = fit_scale(FitMode::Width, 600.0, 800.0, 1224.0, 792.0, 1.0);
         assert!((letter - 2.0 * plate).abs() < 1e-9, "letter {letter} plate {plate}");
     }
 
     /// Fit modes: width uses the container width, page takes the smaller of the
-    /// two ratios (so the whole page shows), and padding comes off first.
+    /// two ratios (so the whole page shows).
     #[test]
     fn fit_modes() {
-        let s = fit_scale(FitMode::Width, 600.0, 800.0, 300.0, 400.0, 0.0, 1.0);
+        let s = fit_scale(FitMode::Width, 600.0, 800.0, 300.0, 400.0, 1.0);
         assert!((s - 2.0).abs() < 1e-9);
         // 300x400 page in 500x1000 -> height-limited (500/300=1.66 vs 1000/400=2.5).
-        let s = fit_scale(FitMode::Page, 500.0, 1000.0, 300.0, 400.0, 0.0, 1.0);
+        let s = fit_scale(FitMode::Page, 500.0, 1000.0, 300.0, 400.0, 1.0);
         assert!((s - 1.6666).abs() < 1e-3);
         // ...and in 500x600 -> width-limited (1.6666 vs 1.5).
-        let s = fit_scale(FitMode::Page, 500.0, 600.0, 300.0, 400.0, 0.0, 1.0);
+        let s = fit_scale(FitMode::Page, 500.0, 600.0, 300.0, 400.0, 1.0);
         assert!((s - 1.5).abs() < 1e-9);
-        // Padding is removed from the container before dividing.
-        let s = fit_scale(FitMode::Width, 600.0, 800.0, 300.0, 400.0, 20.0, 1.0);
-        assert!((s - (580.0 / 300.0)).abs() < 1e-9);
     }
 
     /// Zoom presets: clamped to the supported range, and stepping moves to the

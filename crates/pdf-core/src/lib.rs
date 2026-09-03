@@ -4,6 +4,7 @@
 //! Everything here is unit-testable on the host via `cargo test -p pdf-core`.
 
 pub mod appearance;
+pub mod documents;
 pub mod filename;
 pub mod floating;
 pub mod layout;

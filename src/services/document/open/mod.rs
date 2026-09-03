@@ -135,26 +135,14 @@ fn ready(
     let seeded = seed::seed(state, &path, open, saved_page);
 
     // The book is ready: flip the route LAST, after every signal the fresh
-    // mount reads (page, heights, scale) is already in its new-document state.
+    // mount reads (page, heights, scale) is already in its new-document
+    // state. The resume page is one of them: the strip scrolls to
+    // `viewer.page` as it binds its container (`ScrollShell`), so there is no
+    // second jump to schedule here.
     state.reader.document.error.set(None);
     state.reader.document.status.set(DocStatus::Ready);
     // A successful open dismisses any stale error toast.
     state.ui.toast.set(None);
-
-    // Jump to the saved page once the view has mounted and seeded its page
-    // heights — the same `page.set()` path outline / thumbnail / search
-    // navigation use, which is proven correct.
-    if seeded.resume > 1 {
-        let resume = seeded.resume;
-        request_animation_frame(move || {
-            // A close (or another open) between the flip and this frame means
-            // the jump belongs to a book that is no longer on screen.
-            if !session::owns(stamp) {
-                return;
-            }
-            state.reader.viewer.page.set(resume);
-        });
-    }
 
     // Reset search + clear stale highlights. The floating search overlay must
     // not linger after opening a new document.

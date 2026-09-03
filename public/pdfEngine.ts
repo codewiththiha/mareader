@@ -35,8 +35,7 @@ import { rebakeTheme, setPipelineModeInternal, setScrubModeInternal } from "./en
 import { invalidatePipeline, isLivePipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
-  getCachedPaper,
-  persistPaper,
+  clearLegacyPaperCache,
   resetPaperForDocument,
   samplePaperPage,
   setPaper,
@@ -220,6 +219,7 @@ try {
   /* no document */
 }
 installSelectionTracker();
+clearLegacyPaperCache();
 
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
@@ -246,10 +246,9 @@ globalThis.PDFReader = {
   isLivePipeline,
   setPaper,
   setPaperActive,
-  persistPaper,
+  clearLegacyPaperCache,
   takePaperFrame,
   samplePaperPage,
-  getCachedPaper,
   sweep: () => {
     session.sweepPdf();
   },

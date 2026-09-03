@@ -25,11 +25,11 @@ function isColour(actual: [number, number, number], want: [number, number, numbe
 }
 
 export async function run(): Promise<void> {
-  // The colour DECISIONS (detection, the scan, the palette, the scroll
-  // interpolation) live in the pdf-paper crate behind the Rust paper session
-  // and are covered by cargo tests. This scenario walks the ENGINE side of
-  // the contract: the frames it hands over, the cache it keeps, and the
-  // --pdf-paper it paints when told to.
+  // The colour DECISIONS (detection, the palette, the scroll interpolation)
+  // live in the pdf-paper crate behind the Rust paper session and are
+  // covered by cargo tests. This scenario walks the ENGINE side of the
+  // contract: the frames it hands over and the --pdf-paper it paints when
+  // told to.
   setFakePageColors({ 1: "#404040", 2: "#ffffff", 3: "#a0a0a0", 4: "#ffffff", 5: "#ffffff" });
 
   // --- a live render parks its raw frame for the session to drain ----------
@@ -54,34 +54,23 @@ export async function run(): Promise<void> {
   }
   console.log("paper frame stash ok: page 1's raw pixels handed over + drained");
 
-  // --- setPaper publishes; persist writes the per-document cache -----------
-  PDFReader.setPaper("#404040", false, "whole");
+  // --- setPaper publishes; nothing is written to storage --------------------
+  PDFReader.setPaper("#404040");
   if (paper() !== "#404040") {
     throw new Error("setPaper should publish --pdf-paper, got " + paper());
   }
-  if (fakeLocalStorage.has("pdfreader.blend-paper.v2")) {
-    throw new Error("persist=false must not write the cache");
-  }
-  PDFReader.setPaper("#faf4e8", true, "edges");
+  PDFReader.setPaper("#faf4e8");
   if (paper() !== "#faf4e8") {
-    throw new Error("persisting setPaper should still publish, got " + paper());
+    throw new Error("a second setPaper should repaint, got " + paper());
   }
-  const cached = fakeLocalStorage.get("pdfreader.blend-paper.v2");
-  if (!cached || !cached.includes('"fixed":"#faf4e8"') || !cached.includes('"area":"edges"')) {
-    throw new Error("fixed colour was not cached per document: " + String(cached));
+  PDFReader.setPaper("");
+  if (paper()) {
+    throw new Error("an empty setPaper should clear --pdf-paper, got " + paper());
   }
-  console.log("paper publish ok: --pdf-paper set + colour cached under its area");
-
-  // --- the cache reads back; an unknown path misses -------------------------
-  const hit = PDFReader.getCachedPaper("/fake/blend-book.pdf");
-  if (!hit.ok || hit.hex !== "#faf4e8" || hit.area !== "edges") {
-    throw new Error("cache hit should restore colour + area, got " + JSON.stringify(hit));
+  if (fakeLocalStorage.size !== 0) {
+    throw new Error("the paper pipeline must not touch storage, found " + [...fakeLocalStorage.keys()].join(","));
   }
-  const miss = PDFReader.getCachedPaper("/fake/other-book.pdf");
-  if (!miss.ok || miss.hex !== null || miss.area !== null) {
-    throw new Error("an unknown path must miss, got " + JSON.stringify(miss));
-  }
-  console.log("paper cache ok: hit restores colour + area, unknown path misses");
+  console.log("paper publish ok: --pdf-paper set, repainted, cleared; storage untouched");
 
   // --- offscreen samples carry the page's own paint -------------------------
   const sample2 = await PDFReader.samplePaperPage(2);
@@ -96,7 +85,7 @@ export async function run(): Promise<void> {
     throw new Error("page 3's sample should be #a0a0a0, got " + firstPixel(sample3.data));
   }
   // A page that cannot answer (past the end) resolves {ok:true} with no
-  // frame — a skip for the scan, not an error.
+  // frame — a skip for the look-ahead, not an error.
   const none = await PDFReader.samplePaperPage(99);
   if (!none.ok || (none as { data?: Uint8ClampedArray }).data) {
     throw new Error("an out-of-range page must resolve a frameless ok, got " + JSON.stringify(none));
@@ -144,23 +133,14 @@ export async function run(): Promise<void> {
   }
   console.log("paper gate ok: blend off skips the stash, blend on restores it");
 
-  // --- clearing --------------------------------------------------------------
-  PDFReader.setPaper("", false, "whole");
-  if (paper() !== "") {
-    throw new Error("setPaper('') should remove --pdf-paper, got " + paper());
+  // --- a stale per-document cache from an older build is swept on load ------
+  // The engine used to remember one colour per book in localStorage; the
+  // facade clears that key when it installs, so a reader upgrading from an
+  // older build does not carry the dead entries around forever.
+  fakeLocalStorage.set("pdfreader.blend-paper.v2", '{"/fake/x.pdf":{"fixed":"#101010"}}');
+  PDFReader.clearLegacyPaperCache();
+  if (fakeLocalStorage.has("pdfreader.blend-paper.v2")) {
+    throw new Error("the legacy paper cache should be swept");
   }
-  console.log("paper clear ok: empty hex removes --pdf-paper");
-
-  // --- persistPaper banks a colour without publishing ------------------------
-  // The session's close path: the backdrop is being cleared, but an
-  // interrupted scan's answer is still worth remembering for the next open.
-  PDFReader.persistPaper("#101010", "whole");
-  if (paper() !== "") {
-    throw new Error("persistPaper must not publish --pdf-paper, got " + paper());
-  }
-  const banked = PDFReader.getCachedPaper("/fake/blend-book.pdf");
-  if (!banked.ok || banked.hex !== "#101010" || banked.area !== "whole") {
-    throw new Error("persistPaper should bank under the current path, got " + JSON.stringify(banked));
-  }
-  console.log("paper bank ok: persistPaper writes the cache without publishing");
+  console.log("paper cache sweep ok: the retired localStorage key is removed");
 }

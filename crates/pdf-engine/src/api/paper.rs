@@ -4,8 +4,6 @@
 
 use wasm_bindgen::JsValue;
 
-use pdf_paper::PaperArea;
-
 use super::{
     guard_pdf_reader, reflect_get, resolve, EngineError, KEY_DATA, KEY_HEIGHT, KEY_OK, KEY_PAGE,
     KEY_WIDTH,
@@ -27,8 +25,8 @@ pub fn take_paper_frame(canvas_id: &str) -> Option<PaperFrame> {
     parse_frame(&bridge::take_paper_frame(canvas_id))
 }
 
-/// Render `page` offscreen at a tiny scale and return its frame — the fixed
-/// scan's samples and the continuous look-ahead both come through here.
+/// Render `page` offscreen at a tiny scale and return its frame — the
+/// look-ahead's samples come through here.
 /// `Ok(None)` when the engine has no answer for the page (render failed).
 pub async fn sample_paper_page(page: u32) -> Result<Option<PaperFrame>, EngineError> {
     if !guard_pdf_reader() {
@@ -38,47 +36,12 @@ pub async fn sample_paper_page(page: u32) -> Result<Option<PaperFrame>, EngineEr
     resolve_frame(value, &format!("samplePaperPage({page})"))
 }
 
-/// A cached fixed-mode colour, and the detection area it was computed
-/// under — a cache written for whole-page detection is not valid under
-/// edge detection, so the session treats an area mismatch as a miss.
-#[derive(Debug, Clone, PartialEq)]
-pub struct CachedPaper {
-    pub hex: String,
-    pub area: PaperArea,
-}
-
-/// The cached fixed-mode colour for `path`, if the engine remembers one
-/// **and** it was found under `area`.
-///
-/// Synchronous end to end — the TS side is a plain localStorage read — so
-/// the open flow can consult it BEFORE the reader view mounts without an
-/// await, and a hit repaints the backdrop in the reader's very first frame.
-pub fn cached_paper(path: &str, area: PaperArea) -> Result<Option<CachedPaper>, EngineError> {
-    if !guard_pdf_reader() {
-        return Ok(None);
-    }
-    let value = bridge::get_cached_paper(path);
-    let payload: PaperCacheResult = resolve(value, "getCachedPaper")?;
-    let Some(hex) = payload.hex.filter(|h| !h.is_empty()) else {
-        return Ok(None);
-    };
-    if payload.area != Some(area.engine_id().to_string()) {
-        return Ok(None); // cached under the other detection area: a miss
-    }
-    Ok(Some(CachedPaper { hex, area }))
-}
-
-/// Publish (or, with `None`, clear) `--pdf-paper`. `persist` also writes the
-/// per-document cache under `area` — call it exactly once per resolved book
-/// colour.
-pub fn set_paper(hex: Option<&str>, persist: bool, area: PaperArea) {
+/// Publish (or, with `None`, clear) `--pdf-paper`.
+pub fn set_paper(hex: Option<&str>) {
     if !guard_pdf_reader() {
         return;
     }
-    match hex {
-        Some(hex) => bridge::set_paper(hex, persist, area.engine_id()),
-        None => bridge::set_paper("", false, area.engine_id()),
-    }
+    bridge::set_paper(hex.unwrap_or(""));
 }
 
 /// Tell the engine whether the paper session wants frames at all: while
@@ -91,26 +54,10 @@ pub fn set_paper_active(on: bool) {
     }
 }
 
-/// Bank `hex` as the current book's fixed colour under `area` WITHOUT
-/// publishing it — the paper session's close path, when the backdrop is
-/// being cleared but an interrupted scan's answer is still worth
-/// remembering for the next open.
-pub fn persist_paper(hex: &str, area: PaperArea) {
-    if !guard_pdf_reader() {
-        return;
-    }
-    bridge::persist_paper(hex, area.engine_id());
-}
-
-/// `{ok:true, hex, area}` — engine.getCachedPaper. `hex` is null on a miss;
-/// `area` is the detection area the colour was cached under.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct PaperCacheResult {
-    #[serde(default)]
-    hex: Option<String>,
-    #[serde(default)]
-    area: Option<String>,
-}
+/// The shape `resolve` deserialises a frameless `{ok:false, error}` into:
+/// nothing but the envelope, which `resolve` itself consumes.
+#[derive(Debug, serde::Deserialize)]
+struct Empty {}
 
 /// Parse a `{ok, page, width, height, data}` frame payload. The pixels come
 /// back as a typed array, not JSON, so the fields are read by hand.
@@ -153,7 +100,7 @@ fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFrame>, Engin
     }
     // `{ok:false, error}` — surface it through the shared error path (which
     // always errs here; the Ok arm is unreachable and defensive).
-    match resolve::<PaperCacheResult>(value, what) {
+    match resolve::<Empty>(value, what) {
         Err(e) => Err(e),
         Ok(_) => Ok(None),
     }

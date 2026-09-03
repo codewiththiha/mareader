@@ -69,6 +69,6 @@ pub fn close_document(state: AppState) {
     state.reader.ai_selection.reset();
     state.ui.sidebar.set(SidebarMode::None);
     // The paper session forgets the book and drops the backdrop back to the
-    // theme paper; in-flight samples/scans die with the generation bump.
+    // theme paper; in-flight samples die with the generation bump.
     pdf_engine::paper::document_close();
 }

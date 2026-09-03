@@ -34,7 +34,7 @@
 //! and scroll have to move in the same tick.
 
 use leptos::prelude::*;
-use pdf_core::layout::{ViewMode, TOOLBAR_H};
+use pdf_core::layout::ViewMode;
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use crate::state::reader::ReaderState;
@@ -115,11 +115,12 @@ impl ViewerEngine {
         let (_, vh) = state.viewer.container_size.get_untracked();
         let scroll_top = self.vertical.scroll_offset().get_untracked();
 
-        // The strip's content starts TOOLBAR_H below the scroller's origin —
-        // the pages scroll under a fixed toolbar — so the content point under
-        // the middle of the window sits that band short of half the height.
+        // The strip's content starts at the scroller's origin — the title bar
+        // is an overlay that reveals on hover, not a band the pages sit under
+        // — so the content point under the middle of the window is exactly
+        // half the height down.
         let centre_in_viewport = vh / 2.0;
-        let centre_y_doc = (scroll_top + centre_in_viewport - TOOLBAR_H).max(0.0);
+        let centre_y_doc = (scroll_top + centre_in_viewport).max(0.0);
 
         // Resolve the page under the viewport centre and where that point lands
         // once every page has scaled, in a single borrow of the pre-scale
@@ -163,14 +164,12 @@ impl ViewerEngine {
         });
 
         // Scroll so the anchored point is back under the middle of the window.
-        // The ceiling is the virtualizer's own (`total − viewport`), not the
-        // DOM's: it does not know about the toolbar band, and
-        // `scroll_to_offset` clamps to it, so adopting the larger DOM range
-        // here would leave `viewer.scroll_top` disagreeing with the offset that
+        // The ceiling is the virtualizer's own (`total − viewport`):
+        // `scroll_to_offset` clamps to it, so adopting a larger range here
+        // would leave `viewer.scroll_top` disagreeing with the offset that
         // actually landed at the very end of a document.
         let max_scroll = (self.vertical.total_size().get_untracked() - vh).max(0.0);
-        let new_scroll_top =
-            (new_centre_y_doc + TOOLBAR_H - centre_in_viewport).clamp(0.0, max_scroll);
+        let new_scroll_top = (new_centre_y_doc - centre_in_viewport).clamp(0.0, max_scroll);
 
         if (new_scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
             state.viewer.scroll_top.set(new_scroll_top);

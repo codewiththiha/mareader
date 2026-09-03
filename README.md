@@ -405,9 +405,9 @@ crates/
   pdf-core/               pure PDF domain math: the settings schema, the zoom
                           ladder, fit, layout, filename rules, search index
   pdf-engine/             wasm-bindgen bridge to the imperative engine
-  pdf-paper/              the blend backdrop's colour brain: mode/area config,
-                          dominant-colour detection (whole page or edge
-                          margins), the per-page palette, scan planning
+  pdf-paper/              the blend backdrop's colour brain: the detection
+                          area, dominant-colour detection (whole page or edge
+                          margins), the per-page palette
   virtual-list/           generic windowing math: the prefix-sum strip,
                           windows, budgets, anchor correction
   virtual-list-leptos/    the Leptos adapter: virtualizer, rows, retention

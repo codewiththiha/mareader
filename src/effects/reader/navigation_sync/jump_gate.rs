@@ -2,10 +2,9 @@
 //!
 //! A page write that lands while a zoom transaction holds the geometry cannot
 //! be acted on — the transaction's anchor decides where the reader ends up,
-//! and a scroll issued into it fights that. Dropping the write is worse: the
-//! resume jump on open lands inside the mount's own fit transaction, and
-//! losing it is how every open from the shelf used to forget where the reader
-//! was.
+//! and a scroll issued into it fights that. Dropping the write is worse: an
+//! outline click or a search hit that lands inside a fit slide would simply
+//! never happen.
 //!
 //! So the write is HELD, with its value, and replayed on the first run after
 //! the transaction closes. Pure and `Cell`-based, so the whole contract is

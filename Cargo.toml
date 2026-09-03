@@ -50,6 +50,8 @@ web-sys = { version = "0.3", features = [
   "AddEventListenerOptions",
   "DragEvent",
   "DataTransfer",
+  "DataTransferItem",
+  "DataTransferItemList",
   "ScrollToOptions",
   "ScrollBehavior",
   "Storage",

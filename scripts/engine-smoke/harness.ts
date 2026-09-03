@@ -294,7 +294,11 @@ interface FakeWindow {
   devicePixelRatio: number;
   innerWidth: number;
   innerHeight: number;
-  localStorage: { getItem(k: string): string | null; setItem(k: string, v: string): void };
+  localStorage: {
+    getItem(k: string): string | null;
+    setItem(k: string, v: string): void;
+    removeItem(k: string): void;
+  };
   addEventListener(): void;
   dispatchEvent(): boolean;
   getComputedStyle: (el: { _style?: string }) => {
@@ -323,11 +327,12 @@ export const fakeWindow: FakeWindow = {
   devicePixelRatio: 2,
   innerWidth: 1280,
   innerHeight: 800,
-  // Real-enough storage: the engine's per-document paper cache
-  // (pdfreader.blend-paper.v2) reads and writes through globalThis.localStorage.
+  // Real-enough storage: the engine sweeps the retired per-document paper
+  // cache (pdfreader.blend-paper.*) through globalThis.localStorage on load.
   localStorage: {
     getItem: (k: string) => fakeLocalStorage.get(k) ?? null,
     setItem: (k: string, v: string) => { fakeLocalStorage.set(k, v); },
+    removeItem: (k: string) => { fakeLocalStorage.delete(k); },
   },
   addEventListener() {},
   dispatchEvent() { return true; },
@@ -482,9 +487,9 @@ interface PDFReaderHandle {
   setScrubMode(on: boolean): Promise<void>;
   setLivePipeline(on: boolean): Promise<void>;
   isLivePipeline(): boolean;
-  setPaper(hex: string, persist: boolean, area: "whole" | "edges"): void;
+  setPaper(hex: string): void;
   setPaperActive(on: boolean): void;
-  persistPaper(hex: string, area: "whole" | "edges"): void;
+  clearLegacyPaperCache(): void;
   takePaperFrame(canvasId: string): {
     ok: true;
     page: number;
@@ -499,11 +504,6 @@ interface PDFReaderHandle {
     height?: number;
     data?: Uint8ClampedArray;
   }>;
-  getCachedPaper(path: string): {
-    ok: true;
-    hex: string | null;
-    area: "whole" | "edges" | null;
-  };
   unregisterPage(canvasId: string): void;
   destroy(): Promise<void>;
   stats(): StatsPayload;

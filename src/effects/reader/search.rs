@@ -116,7 +116,11 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
     let scale = state.viewer.zoom.visual_scale();
     let page_top = virtualizer.offset_of(m.page.saturating_sub(1) as usize);
 
-    let top = TOOLBAR_H + page_top + m.y * scale;
+    // The strip starts at the scroller's origin (no toolbar band above the
+    // first page), so a match's scroll position is the page's own offset plus
+    // its position on the page. The overlay bar and search bar still cover
+    // the top of the VIEWPORT, which is what the reveal inset below models.
+    let top = page_top + m.y * scale;
     let bottom = top + (m.h * scale).max(1.0);
 
     if let Some(next) = scroll_to_reveal(

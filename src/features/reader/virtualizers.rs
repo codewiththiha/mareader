@@ -25,98 +25,60 @@ pub(crate) struct ReaderVirtualizers {
     pub h_virtualizer_view: StoredValue<virtual_list_leptos::Virtualizer, LocalStorage>,
 }
 
-/// Keeps `css_heights` fully seeded from intrinsic sizes: it is the shared
-/// measurement store backing the vertical virtualizer and the zoom commit
-/// path, not a second layout model.
+/// Page-1 height, the estimate for any page whose own size is unknown.
+fn fallback_height(state: ReaderState) -> f64 {
+    state
+        .document
+        .page1_size
+        .get_untracked()
+        .map_or(0.0, |size| size.height)
+}
+
+/// Keeps `css_heights` — the shared measurement store behind the vertical
+/// virtualizer and the zoom commit path — filled from the intrinsic sizes.
 ///
-/// The seed is keyed on CONTENT — page count plus the intrinsic geometry
-/// signature — not on any per-frame signal. The zoom scale moves on every
-/// slider tick and the zoom coordinator rescales `css_heights` itself per
-/// frame, so re-seeding on scale would clobber live measured/zoomed heights
-/// (the old length-only guard had the same purpose but ALSO meant a fresh
-/// document with the same page count kept the previous book's heights until
-/// its first pages happened to re-measure). Keying on the signature re-seeds
-/// exactly when the book changes and never during a zoom gesture.
+/// The rule is simply "an empty store gets seeded": the open flow empties it
+/// for every new document (the same book included), the zoom coordinator
+/// rescales it in place, and the pages overwrite entries as they measure.
+/// So emptiness is exactly "a book just arrived", and nothing else — not a
+/// zoom tick, not a re-measure — can trigger a re-seed that would clobber
+/// live heights.
 fn seed_css_heights(state: ReaderState) {
-    let last_key = StoredValue::new_local(None::<u64>);
     Effect::new(move || {
         let count = state.document.num_pages.get() as usize;
+        let filled = state.document.metrics.css_heights.with(|heights| !heights.is_empty());
         let scale = state.viewer.zoom.display.get();
-        let empty_intrinsic = state.document.metrics.intrinsic.with(|sizes| sizes.is_empty());
-        let fallback = state
-            .document
-            .page1_size
-            .get()
-            .map(|size| size.height)
-            .unwrap_or(0.0);
-        if count == 0 || scale <= 0.0 || (empty_intrinsic && fallback <= 0.0) {
+        if filled || count == 0 || scale <= 0.0 {
             return;
         }
-        let key = {
-            let mut hasher = DefaultHasher::new();
-            count.hash(&mut hasher);
-            state.document.metrics.intrinsic.with(|sizes| {
-                sizes.len().hash(&mut hasher);
-                for size in sizes {
-                    size.width.to_bits().hash(&mut hasher);
-                    size.height.to_bits().hash(&mut hasher);
-                }
-            });
-            hasher.finish()
-        };
-        if last_key.with_value(|stored| *stored == Some(key)) {
-            return;
-        }
-        last_key.set_value(Some(key));
-        state.document.metrics.css_heights.update(|heights| {
-            *heights = state.document.metrics.intrinsic.with(|sizes| {
-                (0..count)
-                    .map(|index| {
-                        sizes
-                            .get(index)
-                            .map(|size| size.height)
-                            .filter(|height| *height > 0.0)
-                            .unwrap_or(fallback)
-                            * scale
-                    })
-                    .collect()
-            });
+        // Tracked reads: the store is only worth filling once the sizes are
+        // there, and they arrive in the same open that emptied it.
+        let fallback = state.document.page1_size.get().map_or(0.0, |size| size.height);
+        let seeded: Vec<f64> = state.document.metrics.intrinsic.with(|sizes| {
+            (0..count)
+                .map(|index| {
+                    sizes
+                        .get(index)
+                        .map(|size| size.height)
+                        .filter(|height| *height > 0.0)
+                        .unwrap_or(fallback)
+                        * scale
+                })
+                .collect()
         });
+        if seeded.iter().all(|height| *height <= 0.0) {
+            return; // nothing measured yet; keep the store empty for the next run
+        }
+        state.document.metrics.css_heights.set(seeded);
     });
 }
 
-pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers {
-    seed_css_heights(state);
-
-    let count = Signal::derive(move || state.document.num_pages.get() as usize);
-    let estimate = move |index: usize| {
-        let measured = state
-            .document
-            .metrics
-            .css_heights
-            .with_untracked(|heights| heights.get(index).copied());
-        if let Some(height) = measured.filter(|height| *height > 0.0) {
-            return height + state.viewer.page_gap.get_untracked();
-        }
-        let intrinsic = state
-            .document
-            .metrics
-            .intrinsic
-            .with_untracked(|sizes| sizes.get(index).map(|size| size.height))
-            .filter(|height| *height > 0.0);
-        let fallback = state
-            .document
-            .page1_size
-            .get_untracked()
-            .map(|size| size.height)
-            .unwrap_or(0.0);
-        intrinsic.unwrap_or(fallback) * state.viewer.zoom.visual_scale()
-            + state.viewer.page_gap.get_untracked()
-    };
-    let epoch = Signal::derive(move || {
-        let count = state.document.num_pages.get() as usize;
+/// A fingerprint of the document's geometry: page count plus every
+/// intrinsic size. The virtualizers rebuild their layouts when it changes.
+fn geometry_epoch(state: ReaderState) -> Signal<u64> {
+    Signal::derive(move || {
         let mut hasher = DefaultHasher::new();
-        count.hash(&mut hasher);
+        state.document.num_pages.get().hash(&mut hasher);
         state.document.metrics.intrinsic.with(|sizes| {
             sizes.len().hash(&mut hasher);
             for size in sizes {
@@ -125,7 +87,33 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             }
         });
         hasher.finish()
-    });
+    })
+}
+
+pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers {
+    seed_css_heights(state);
+
+    let count = Signal::derive(move || state.document.num_pages.get() as usize);
+    let estimate = move |index: usize| {
+        let gap = state.viewer.page_gap.get_untracked();
+        let measured = state
+            .document
+            .metrics
+            .css_heights
+            .with_untracked(|heights| heights.get(index).copied())
+            .filter(|height| *height > 0.0);
+        if let Some(height) = measured {
+            return height + gap;
+        }
+        let intrinsic = state
+            .document
+            .metrics
+            .intrinsic
+            .with_untracked(|sizes| sizes.get(index).map(|size| size.height))
+            .filter(|height| *height > 0.0);
+        intrinsic.unwrap_or_else(|| fallback_height(state)) * state.viewer.zoom.visual_scale() + gap
+    };
+    let epoch = geometry_epoch(state);
     let pinned_sig: RwSignal<Option<(usize, usize)>> = RwSignal::new(None);
     let initial_vh = {
         let (_, height) = state.viewer.container_size.get_untracked();

@@ -1,28 +1,26 @@
-// The paper pipeline's EYES. Every colour decision — detection, the fixed
-// scan, the per-page palette, the scroll interpolation — lives in the
-// `--pdf-paper` crate behind the Rust paper session; this module only moves
-// pixels across the boundary:
+// The paper pipeline's EYES. Every colour decision — detection, the
+// per-page palette, the scroll interpolation — lives in the `pdf-paper`
+// crate behind the Rust paper session; this module only moves pixels across
+// the boundary:
 //
 // * `stashPaperFrame` — the renderer parks each live raster's raw frame at
 //   the one pipeline moment the page's own paper is still unbaked; the Rust
 //   session drains it after each successful render via `takePaperFrame`.
-// * `samplePaperPage` — an offscreen render at a tiny scale, for the fixed
-//   scan and the continuous look-ahead. Resolves only after a yield, so a
-//   page-by-page scan never starves live renders.
-// * `setPaper` — publish (or clear) `--pdf-paper`; when the session says
-//   so, remember the colour per document path.
-// * `persistPaper` — remember a colour WITHOUT publishing: the session's
-//   close path, banking an interrupted scan's answer while the backdrop
-//   itself is being cleared.
-// * `getCachedPaper` — read that memory back, so a reopened book repaints
-//   with zero sampling work.
+// * `samplePaperPage` — an offscreen render at a tiny scale, for the
+//   look-ahead. Resolves only after a yield, so a burst of samples never
+//   starves live renders.
+// * `setPaper` — publish (or clear) `--pdf-paper`.
+//
+// Nothing is persisted: the palette is rebuilt from live frames every time
+// a book opens. (Older builds kept a per-document colour cache in
+// localStorage under `pdfreader.blend-paper.v2`; it is cleared on load.)
 //
 // Cost per frame: one ≤96×96 downscale and one pixel readback — and none
 // at all while blend mode is off, which is the common case: the session
 // gates the stash from the Rust side (setPaperActive).
 
 import { session } from "./state";
-import type { PaperArea, PaperFrame } from "./types";
+import type { PaperFrame } from "./types";
 import { releaseCanvas } from "./canvas";
 
 /** Longest edge of a frame handed to Rust. Small enough that a page render
@@ -35,11 +33,11 @@ const SAMPLE_EDGE = 96;
  * valve, not a working set. */
 const STASH_MAX = 8;
 
-/** Per-document cache: path → the fixed colour and the detection area it
- * was found under. v2 — the v1 shape (per-scope colours) died with the
- * scopes themselves. */
-const CACHE_KEY = "pdfreader.blend-paper.v2";
-const CACHE_MAX = 16;
+/** localStorage keys older builds used for the per-document paper cache
+ * (v1: per-scope colours; v2: one colour + detection area). The cache is
+ * gone — the backdrop follows the reader page by page and needs no memory
+ * of the book — so the stale entries are swept on load. */
+const LEGACY_CACHE_KEYS = ["pdfreader.blend-paper.v1", "pdfreader.blend-paper.v2"];
 
 const stash = new Map<string, PaperFrame>();
 
@@ -60,37 +58,16 @@ export function setPaperActive(on: boolean): void {
 let scratch: HTMLCanvasElement | null = null;
 
 // --------------------------------------------------------------------------
-// Cache
+// Legacy cache sweep
 // --------------------------------------------------------------------------
 
-type CacheEntry = { fixed?: string; area?: PaperArea };
-
-function readCache(): Record<string, CacheEntry> {
+/** Drop the per-document colour cache older builds left behind. Idempotent
+ * and silent: a missing key or an unavailable storage is nothing to report. */
+export function clearLegacyPaperCache(): void {
   try {
-    const raw = globalThis.localStorage?.getItem(CACHE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, CacheEntry>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    for (const key of LEGACY_CACHE_KEYS) globalThis.localStorage?.removeItem(key);
   } catch {
-    return {};
-  }
-}
-
-/** Remember the book's fixed colour, re-inserting the path so the store
- * stays roughly least-recently-touched and pruning to CACHE_MAX books. */
-function writeCache(path: string, fixed: string, area: PaperArea): void {
-  if (!path) return;
-  try {
-    const all = readCache();
-    delete all[path]; // re-insert at the end = most recent
-    all[path] = { fixed, area };
-    const keys = Object.keys(all);
-    for (const k of keys.slice(0, Math.max(0, keys.length - CACHE_MAX))) {
-      delete all[k];
-    }
-    globalThis.localStorage?.setItem(CACHE_KEY, JSON.stringify(all));
-  } catch {
-    /* storage unavailable: the colour re-detects next open */
+    /* storage unavailable: nothing to sweep */
   }
 }
 
@@ -157,42 +134,13 @@ export function takePaperFrame(
 // Public API (pdfEngine facade)
 // --------------------------------------------------------------------------
 
-/** Publish `hex` as `--pdf-paper` (empty string clears it). `persist`
- * remembers it as this book's fixed colour under `area` — the one write,
- * fired exactly once per resolved book colour. */
-export function setPaper(hex: string, persist: boolean, area: PaperArea): void {
-  if (!hex) {
-    session.setDetectedPaper(null);
-    return;
-  }
-  session.setDetectedPaper(hex);
-  if (persist && session.currentPath) writeCache(session.currentPath, hex, area);
-}
-
-/** Remember `hex` as this book's fixed colour under `area` WITHOUT
- * publishing it — the Rust session's close path, when the backdrop is being
- * cleared but an interrupted scan's answer is still worth banking for the
- * next open. */
-export function persistPaper(hex: string, area: PaperArea): void {
-  if (hex && session.currentPath) writeCache(session.currentPath, hex, area);
-}
-
-/** The cached fixed colour for `path`, and the detection area it was found
- * under (null on a miss — the Rust side treats an area mismatch as a miss
- * too, and rescans). */
-export function getCachedPaper(path: string): {
-  ok: true;
-  hex: string | null;
-  area: PaperArea | null;
-} {
-  const entry = readCache()[path] ?? {};
-  const area: PaperArea | null =
-    entry.area === "edges" ? "edges" : entry.area === "whole" ? "whole" : null;
-  return { ok: true, hex: entry.fixed ?? null, area };
+/** Publish `hex` as `--pdf-paper` (empty string clears it). */
+export function setPaper(hex: string): void {
+  session.setDetectedPaper(hex ? hex : null);
 }
 
 /** Render `page` offscreen at a tiny scale and hand its frame back. The
- * promise resolves only after a macrotask yield, so a page-by-page scan
+ * promise resolves only after a macrotask yield, so a burst of samples
  * leaves live renders their turn. `{ok:true}` with no frame = the page had
  * no answer (the caller skips it). */
 export async function samplePaperPage(page: number): Promise<

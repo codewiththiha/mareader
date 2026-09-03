@@ -79,6 +79,14 @@ pub(super) fn install(
         if target == 0 {
             return;
         }
+        // A strip that is still being placed on `viewer.page` by its shell
+        // (`ScrollShell::anchor_to_page`) will read the page itself, on a
+        // bound container and instantly; a glide commanded here on top of
+        // that would only fight it. UNTRACKED: the anchor landing is not a
+        // navigation, so it must not replay this arm.
+        if state.viewer.awaiting_anchor.get_untracked() {
+            return;
+        }
         // The glide is the animation; the jump is not. With the reader's
         // scroll switch off the column lands on the page in one write
         // (`Auto` is what resolves to a smooth scroll when the distance is

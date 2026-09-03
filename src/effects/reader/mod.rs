@@ -4,10 +4,8 @@
 
 pub mod auto_scroll;
 pub mod blend_backdrop;
-pub mod vertical_scroll_sync;
 pub mod zoom_watchers;
 pub mod link_navigation;
-pub mod on_mode_change;
 pub mod navigation_sync;
 pub mod page_selection;
 pub mod reading_progress;

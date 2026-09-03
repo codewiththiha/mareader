@@ -43,7 +43,7 @@ use std::time::Duration;
 use leptos::children::ChildrenFn;
 use leptos::prelude::*;
 
-use app_chrome::hooks::use_timeout::use_hover_visibility;
+use app_chrome::hooks::{use_hover_reveal, HoverConfig};
 use crate::components::shell::controller::ShellController;
 
 /// How long the pointer may be off the rail before it closes.
@@ -55,19 +55,27 @@ const HOVER_GRACE_MS: u64 = 250;
 #[component]
 pub fn OverlayRail(shell: ShellController, children: ChildrenFn) -> impl IntoView {
     // Shown while the pointer is over the strip or the rail; a docked
-    // layout postpones any hide forever, which parks the machine inert
-    // (the edge effect below also refuses to act while docked).
-    let hover = use_hover_visibility(
-        Duration::from_millis(HOVER_GRACE_MS),
-        move || !shell.is_overlay().get(),
-    );
+    // layout is the hold, which parks the machine inert (the edge effect
+    // below also refuses to act while docked). The shared reveal is the
+    // same machine the title bar and the bottom bar run: the strip and the
+    // rail feed one `hovered` truth, and its recheck settles the rail when
+    // the hold releases — an undock with the pointer elsewhere fires no
+    // `mouseleave`, and used to leave a floating rail open with nothing
+    // scheduled to close it.
+    let hover = use_hover_reveal(HoverConfig {
+        delay: Duration::from_millis(HOVER_GRACE_MS),
+        hold: Some(Signal::derive(move || !shell.is_overlay().get())),
+        pin: None,
+    });
+
+    let visible = hover.visible;
 
     // Edge-triggered open/close: only a transition of `visible` acts, and
     // only in overlay mode — the raw reads below are unconditional so the
     // effect keeps its subscriptions (see the components module rules).
     let prev_vis = StoredValue::new_local(false);
     Effect::new(move |_| {
-        let vis = hover.visible.get();
+        let vis = visible.get();
         let was = prev_vis.get_value();
         prev_vis.set_value(vis);
         if !shell.is_overlay().get() {
@@ -80,22 +88,21 @@ pub fn OverlayRail(shell: ShellController, children: ChildrenFn) -> impl IntoVie
         }
     });
 
-    // The hover handles are `Rc`s, and `Show`'s children must stay `Fn` —
-    // so the view's handlers bump Copy counter signals and these effects
-    // (outside the view) relay them to the hover machine. Every bump is a
-    // new value, so every enter/leave fires its side exactly once.
+    // The reveal's handles are `Rc`s, and `Show`'s children must stay `Fn`
+    // — so the view's handlers bump Copy counter signals and these effects
+    // (outside the view) relay them to the reveal. Every bump is a new
+    // value, so every enter/leave fires its side exactly once.
     let request_show = RwSignal::new(0u32);
     let request_hide = RwSignal::new(0u32);
-    let show = hover.show.clone();
+    let (enter, leave) = hover.bind();
     Effect::new(move |_| {
         if request_show.get() > 0 {
-            show();
+            enter();
         }
     });
-    let hide = hover.hide_later.clone();
     Effect::new(move |_| {
         if request_hide.get() > 0 {
-            hide();
+            leave();
         }
     });
 

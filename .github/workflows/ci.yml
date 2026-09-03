@@ -102,6 +102,14 @@ jobs:
       - name: Check wasm frontend
         run: cargo check --target wasm32-unknown-unknown
 
+      # Feature unification hides under-declared dependencies: inside the
+      # workspace another crate turns on the web-sys features this one uses,
+      # so a missing feature only surfaces for whoever reuses the crate on
+      # its own. app-chrome is the crate meant to be reused (it is the
+      # format-agnostic chrome), so check it alone.
+      - name: Check app-chrome standalone
+        run: cargo check -p app-chrome --target wasm32-unknown-unknown
+
       # The imperative engine (public/pdfEngine.ts) is browser code; run its
       # stub-based smoke test (compiled to scripts/test-engine-smoke.js by
       # the TypeScript build step above) to catch regressions in open /

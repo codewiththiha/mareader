@@ -556,6 +556,36 @@ impl Virtualizer {
         self.inner.viewport
     }
 
+    /// Whether a scroll container is currently bound.
+    pub fn is_bound(&self) -> bool {
+        self.inner.surface.element().is_some()
+    }
+
+    /// The bound container's scroll offset as the DOM reports it right now,
+    /// in content coordinates (padding removed); `None` while unbound.
+    ///
+    /// The core's own offset (`scroll_offset`) is what the last command or
+    /// echo made it; this is what the browser actually holds, which differs
+    /// when a write was clamped against a box that had not been laid out
+    /// yet. A mount-time anchor compares the two to know whether it landed.
+    pub fn surface_offset(&self) -> Option<f64> {
+        let el = self.inner.surface.element()?;
+        let html = el.dyn_into::<web_sys::HtmlElement>().ok()?;
+        Some(dom_scroll_offset(&html, self.inner.options.axis) - self.inner.options.padding_start)
+    }
+
+    /// Re-read the bound container's viewport extent only, leaving the
+    /// scroll position to whoever is about to command it. The mount-time
+    /// anchor uses this: adopting the DOM offset there would rewindow to a
+    /// position the very next call replaces.
+    pub fn remeasure_viewport(&self) {
+        let Some(el) = self.inner.surface.element() else {
+            return;
+        };
+        let vp = viewport_of(&el, self.inner.options.axis);
+        self.inner.handle_viewport(vp);
+    }
+
     /// Re-read the bound container's real viewport and scroll position.
     pub fn remeasure_container(&self) {
         let Some(el) = self.inner.surface.element() else {

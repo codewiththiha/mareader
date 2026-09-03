@@ -35,7 +35,7 @@ pub mod theme;
 
 pub use dialog::pick_pdf;
 pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
-pub use paper::{cached_paper, persist_paper, sample_paper_page, set_paper, set_paper_active, take_paper_frame, CachedPaper, PaperFrame};
+pub use paper::{sample_paper_page, set_paper, set_paper_active, take_paper_frame, PaperFrame};
 pub use render::{
     blit_thumb, cancel_thumb, has_thumb, prefetch_thumb, register_page, render_page, render_thumb,
     unregister_page,
@@ -139,7 +139,7 @@ pub(crate) fn guard_pdf_reader() -> bool {
 
 /// Parses a `{ok:bool, error?:{name,message}, ...fields}` value into `T`.
 /// Pure parsing — no JS awaits — so the whole engine-answer path that needs
-/// no Promise (e.g. the synchronous paper-cache lookup) can use it too.
+/// no Promise can use it too.
 pub(crate) fn resolve<T: DeserializeOwned>(value: JsValue, what: &str) -> Result<T, EngineError> {
     let is_ok = reflect_get(&value, &KEY_OK)
         .ok()

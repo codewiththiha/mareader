@@ -2,7 +2,6 @@
 
 use leptos::html;
 use leptos::prelude::*;
-use wasm_bindgen::JsValue;
 
 use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
@@ -43,43 +42,12 @@ fn FitButton(state: AppState, f: FitMode, icon: IconName, title: &'static str) -
     }
 }
 
-fn toggle_fullscreen(full: RwSignal<bool>) {
-    let next = !full.get();
-    if tauri_bridge::has_tauri() {
-        let win = tauri_bridge::get_current_window();
-        if !(win.is_undefined() || win.is_null()) {
-            if let Ok(f) = js_sys::Reflect::get(&win, &JsValue::from_str("setFullscreen"))
-                && f.is_function()
-            {
-                let f = js_sys::Function::from(f);
-                let args = js_sys::Array::new();
-                args.push(&JsValue::from_bool(next));
-                _ = js_sys::Reflect::apply(&f, &win, &args);
-            }
-            full.set(next);
-            return;
-        }
-    }
-    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-        let entering = doc.fullscreen_element().is_none();
-        if entering {
-            if let Some(el) = doc.document_element() {
-                _ = el.request_fullscreen();
-            }
-        } else {
-            doc.exit_fullscreen();
-        }
-        full.set(entering);
-    }
-}
-
 #[component]
 pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoView {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
     let r = state.reader;
     let mode = r.viewer.mode;
-    let full = RwSignal::new(false);
     let percent = move || format!("{}%", (r.viewer.zoom.display.get() * 100.0).round() as u32);
     let (show_keys, set_show_keys) = signal(false);
 
@@ -144,11 +112,6 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                     on_click=move || { open.set(false); settings_open.set(true); }
                 />
                 <div class="my-1"><Separator vertical=false /></div>
-                <MenuItem
-                    icon=IconName::Fullscreen
-                    label="Fullscreen".to_string()
-                    on_click=move || toggle_fullscreen(full)
-                />
                 <MenuItem
                     icon=IconName::Keyboard
                     label="Keyboard Shortcuts".to_string()

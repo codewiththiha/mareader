@@ -39,12 +39,10 @@ pub fn reading_progress(state: AppState) {
         let page = state.reader.viewer.page.get();
         // A zoom transaction owns the geometry, and the page counter is not
         // trustworthy while it does: the dominant arm stands down for the
-        // duration and a held navigation (the resume jump on open) has not
-        // been replayed yet, so the page on show is the pre-jump one. Saving
-        // it here is exactly how an open from the shelf used to overwrite a
-        // real resume point with page 1. The read is TRACKED, so the effect
-        // re-runs — with the settled page — on the frame the transaction
-        // closes; nothing is lost by waiting.
+        // duration and a held navigation has not been replayed yet, so the
+        // page on show may be the pre-jump one. The read is TRACKED, so the
+        // effect re-runs — with the settled page — on the frame the
+        // transaction closes; nothing is lost by waiting.
         if zooming.get() {
             return;
         }

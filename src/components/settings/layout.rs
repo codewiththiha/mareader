@@ -5,6 +5,7 @@
 
 use leptos::prelude::*;
 
+use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
 use pdf_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
 
@@ -20,6 +21,13 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
     let s = state.settings;
     let indicator_off = Signal::derive(move || !s.with(|st| st.layout.page_indicator));
     let label_off = Signal::derive(move || !s.with(|st| st.layout.floating_label));
+    // The horizontal strip never carries a page margin — the reader resolves
+    // the stored pref to 0 while that mode is on — so the adjuster sits
+    // disabled until another mode returns. The stored value is untouched and
+    // comes back with it.
+    let horizontal_mode = Signal::derive(move || {
+        state.reader.viewer.mode.get() == ViewMode::ScrollHorizontal
+    });
     view! {
         <SectionLabel text="Reader chrome" />
         <div class="divide-y divide-line rounded-xl border border-line">
@@ -165,19 +173,19 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     title="Remove the spacing between pages in scroll view".to_string()
                 />
             </Row>
-            // No Gap suspends the margin rather than zeroing it: the readout
-            // greys out and the stepper stops while the gap owns the spacing,
-            // and the margin the reader dialled in comes back the moment No
-            // Gap turns off again.
+            // Page Margin is the horizontal (left/right) air around each page,
+            // which No Gap never touches — No Gap only removes the vertical
+            // gap between stacked pages. The two stay fully independent, so
+            // the margin adjuster is live whether or not No Gap is on. The one
+            // exception is the horizontal scroll mode, which never carries a
+            // margin: while it is on, the adjuster is disabled and the stored
+            // value waits, untouched, for the other modes.
             <Row label="Page Margin">
                 <span class="flex items-center gap-3">
-                    <span class=move || {
-                        if s.with(|st| st.layout.no_gap) {
-                            "w-10 text-right text-sm tabular-nums text-muted/60"
-                        } else {
-                            "w-10 text-right text-sm tabular-nums text-ink"
-                        }
-                    }>
+                    <span
+                        class="w-10 text-right text-sm tabular-nums text-ink"
+                        class=("opacity-45", move || horizontal_mode.get())
+                    >
                         {move || {
                             let m = s.with(|st| st.layout.page_margin) as u32;
                             if m == 0 {
@@ -194,7 +202,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                             title="Less margin"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
                             disabled=Signal::derive(move || {
-                                s.with(|st| st.layout.no_gap)
+                                horizontal_mode.get()
                                     || s.with(|st| st.layout.page_margin) <= 0.0
                             })
                             on_click=move || {
@@ -210,7 +218,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                             title="More margin"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
                             disabled=Signal::derive(move || {
-                                s.with(|st| st.layout.no_gap)
+                                horizontal_mode.get()
                                     || s.with(|st| st.layout.page_margin) >= 64.0
                             })
                             on_click=move || {

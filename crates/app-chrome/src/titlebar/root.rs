@@ -14,25 +14,21 @@
 //! and search holds arrive as props/signals computed by `app_title_bar.rs`
 //! from the shell controller.
 
-use std::time::Duration;
-
 use leptos::children::ViewFn;
 use leptos::html;
 use leptos::prelude::*;
 
 use crate::z::BAR;
+use crate::hooks::{use_hover_reveal, HoverConfig, DEFAULT_HOVER_DELAY};
 use crate::hooks::dom::{
     by_id, TOOLBAR_CENTER_TITLE_ID, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID, TOOLBAR_TRAILING_ID,
 };
 use crate::hooks::use_resize_observer::observe_elements;
-use crate::hooks::use_timeout::use_hover_visibility;
 use crate::hooks::use_window_event::use_window_event;
 use crate::icon::IconName;
 use crate::icon_button::IconButton;
 use crate::tooltip::Tooltip;
 
-/// Pointer must be off the bar this long before it hides.
-const HIDE_DELAY_MS: u64 = 400;
 /// Breathing room between the measured clusters and the centered slot.
 const CENTER_GAP: f64 = 8.0;
 /// Below this width a centered title is a stub ("R…") — hide it instead.
@@ -186,45 +182,21 @@ pub fn TitleBar(
     let is_held = Signal::derive(move || held_count.get() > 0);
     let center_title_ref = NodeRef::<html::Span>::new();
     // Show on enter, hide after a grace period unless something holds the bar
-    // open (an open popover, the floating search). The shared primitive owns
-    // the timer + re-check-both-ends semantics; the shell owns the hold
-    // definition.
-    let hover = use_hover_visibility(
-        Duration::from_millis(HIDE_DELAY_MS),
-        move || is_held.get() || extra_hold.get(),
-    );
-    let bar_hovered = hover.visible;
-    let visible = Signal::derive(move || pinned.get() || bar_hovered.get());
+    // open (an open popover, the floating search) or the pin is on. The
+    // shared reveal owns the timer, the shared `hovered` truth for the band
+    // and the row, and the recheck when a hold releases; the shell owns the
+    // hold definition. Non-short-circuiting `|`: the effect inside must
+    // track BOTH holds, or a release of the untracked one never settles.
+    let hover = use_hover_reveal(HoverConfig {
+        delay: DEFAULT_HOVER_DELAY,
+        hold: Some(Signal::derive(move || is_held.get() | extra_hold.get())),
+        pin: Some(pinned.into()),
+    });
+    let visible = hover.visible;
     provide_context(TitleBarCtx { visible, held_count, center_title_ref });
 
-    let hovered = StoredValue::new_local(false);
-    let enter = {
-        let show = hover.show.clone();
-        move || {
-            hovered.set_value(true);
-            show();
-        }
-    };
-    let leave = {
-        let hide = hover.hide_later.clone();
-        move || {
-            hovered.set_value(false);
-            hide();
-        }
-    };
-    let recheck = hover.hide_later.clone();
-    Effect::new(move |_| {
-        let _ = is_held.get();
-        let _ = extra_hold.get();
-        if !is_held.get() && !extra_hold.get() && !hovered.get_value() {
-            recheck(); // postpone is now false → schedules the hide
-        }
-    });
-
-    let enter_band = enter.clone();
-    let leave_band = leave.clone();
-    let enter_bar = enter;
-    let leave_bar = leave;
+    let (enter_band, leave_band) = hover.bind();
+    let (enter_bar, leave_bar) = hover.bind();
     let sidebar_open = move || band_inset.get();
 
     // The center slot's box — exact row center while the title fits, free

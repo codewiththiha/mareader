@@ -31,21 +31,22 @@ pub fn ScrollShell(
         Axis::Horizontal => H_PAGE_LIST_ID,
     };
     observe_content_size(scroller_id, state.viewer.container_size);
+    // This strip is about to be placed on `viewer.page` (see `anchor_to_page`);
+    // until it is, the scroll→page sync must not read it. Idempotent with the
+    // open flow and the mode flip, which raise the flag before the mount.
+    state.viewer.awaiting_anchor.set(true);
     let chrome = layout_chrome(state, progress_visible);
     let _gap = chrome.gap;
     let _inset = chrome.inset;
 
-    // The vertical strip mirrors its scroll offset into `viewer.scroll_top`.
-    // `vertical_scroll_sync` additionally restores the saved offset on mount and
-    // keeps the signal in sync from the DOM; both write the same signal so
-    // they stay consistent. Horizontal has no scroll_top to mirror.
+    // The vertical strip mirrors its scroll offset into `viewer.scroll_top`
+    // (the horizontal strip has no scroll_top to mirror). The virtualizer's
+    // offset is the one source: it already follows the DOM, and it is the
+    // offset every relayout anchors against.
     if axis == Axis::Vertical {
-        crate::effects::reader::vertical_scroll_sync::vertical_scroll_sync(state);
-        {
-            let scroll_top = state.viewer.scroll_top;
-            let offset = virtualizer.scroll_offset();
-            Effect::new(move |_| scroll_top.set(offset.get()));
-        }
+        let scroll_top = state.viewer.scroll_top;
+        let offset = virtualizer.scroll_offset();
+        Effect::new(move |_| scroll_top.set(offset.get()));
     }
 
     let list_ref: NodeRef<html::Div> = NodeRef::new();
@@ -61,16 +62,6 @@ pub fn ScrollShell(
             };
             let el: web_sys::Element = div.clone().unchecked_into();
             v.bind_container(el.clone());
-            v.remeasure_container();
-
-            let page = state.viewer.page.get_untracked();
-            if page > 0 {
-                let align = match axis {
-                    Axis::Vertical => Align::Start,
-                    Axis::Horizontal => Align::Center,
-                };
-                v.scroll_to_index((page - 1) as usize, align, ScrollMode::Instant);
-            }
 
             if axis == Axis::Horizontal {
                 install_wheel_to_hscroll(&el, &wheel_guard);
@@ -82,6 +73,25 @@ pub fn ScrollShell(
                 }
                 wheel_guard.set_value(None);
             });
+        });
+    }
+
+    // THE reading-position anchor for a scrolling strip. It answers every
+    // way a strip can find itself needing a position: the mount itself
+    // (document open, back from the library, a switch into this mode), and a
+    // document opened over a mounted reader (drag-drop, "Open with"), which
+    // re-raises the flag without remounting anything. Installed AFTER the
+    // bind effect above so the first run finds the container bound.
+    {
+        let v = virtualizer.clone();
+        Effect::new(move |_| {
+            if !state.viewer.awaiting_anchor.get() {
+                return;
+            }
+            if list_ref.get().is_none() || !v.is_bound() {
+                return;
+            }
+            anchor_to_page(state, &v, axis, ANCHOR_SETTLE_FRAMES);
         });
     }
 
@@ -125,6 +135,79 @@ pub fn ScrollShell(
             </Show>
         </div>
     }
+}
+
+/// How many frames the mount anchor re-checks itself before it trusts the
+/// strip. One is what a settled layout needs; the rest cover a container
+/// whose box the browser has not committed on the frame it was bound (a
+/// scroller that measures 0 tall, a spacer that has not taken its height yet,
+/// so the scroll write is clamped to the top).
+const ANCHOR_SETTLE_FRAMES: u32 = 3;
+
+/// Put the strip on `viewer.page` — the ONE place a freshly mounted strip
+/// takes its position from, whether the mount is a document open (resume),
+/// a return from the library, or a switch into this mode.
+///
+/// The jump is instant and re-asserted for a few frames: the first write
+/// happens the moment the container is bound, when the browser may not have
+/// laid the scroller out yet, and a `scrollTop` written into a box that is
+/// still 0 tall is silently clamped. Each frame re-measures the container,
+/// re-issues the jump (a no-op once it has landed) and, once the DOM agrees
+/// with the target, hands the page back to the scroll→page sync by lowering
+/// `awaiting_anchor`. The page is re-read every frame so a navigation issued
+/// while the strip was settling wins over the value the mount started with.
+fn anchor_to_page(state: ReaderState, v: &Virtualizer, axis: Axis, frames_left: u32) {
+    let generation = state.viewer.begin_anchor();
+    anchor_to_page_frame(state, v, axis, frames_left, generation);
+}
+
+fn anchor_to_page_frame(
+    state: ReaderState,
+    v: &Virtualizer,
+    axis: Axis,
+    frames_left: u32,
+    generation: u64,
+) {
+    if !state.viewer.owns_anchor(generation) {
+        return;
+    }
+    let align = match axis {
+        Axis::Vertical => Align::Start,
+        Axis::Horizontal => Align::Center,
+    };
+    v.remeasure_viewport();
+    let page = state.viewer.page.get_untracked();
+    let index = page.saturating_sub(1) as usize;
+    v.scroll_to_index(index, align, ScrollMode::Instant);
+
+    // Landed = the browser holds the offset the core adopted, inside a box
+    // that has a real extent. A clamped write leaves the two apart.
+    let core = v.scroll_offset().get_untracked();
+    let landed = v
+        .surface_offset()
+        .is_some_and(|dom| (dom - core).abs() <= 1.0)
+        && v.viewport().get_untracked().main > 1.0;
+    if frames_left == 0 || landed {
+        if state.viewer.owns_anchor(generation) {
+            state.viewer.awaiting_anchor.set(false);
+        }
+        return;
+    }
+    let v = v.clone();
+    request_animation_frame(move || {
+        if !state.viewer.owns_anchor(generation) {
+            return;
+        }
+        // The strip may have been unmounted (a close, a mode flip) between
+        // frames; a detached surface has nothing to anchor.
+        if !v.is_bound() {
+            if state.viewer.owns_anchor(generation) {
+                state.viewer.awaiting_anchor.set(false);
+            }
+            return;
+        }
+        anchor_to_page_frame(state, &v, axis, frames_left - 1, generation);
+    });
 }
 
 /// Horizontal wheel policy. The strip is a horizontal scrollport in a world

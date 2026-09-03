@@ -114,11 +114,6 @@ export type PaperFrame = {
   data: Uint8ClampedArray;
 };
 
-/** Which pixels of a page the paper detector trusts — the engine side of
- * the reader's `layout.blend_area` setting, persisted alongside each cached
- * colour so a cache found under one area is not reused under the other. */
-export type PaperArea = "whole" | "edges";
-
 export type SearchRect = { x: number; y: number; w: number; h: number };
 export type SearchMatch = SearchRect & { page: number; index: number; text: string };
 export type ActiveMatch = { page: number; index: number } | null;
@@ -188,23 +183,19 @@ export type PDFReaderApi = {
   /** Switch between the live compositor pipeline and the baked-raster one. */
   setLivePipeline: (on: boolean) => Promise<void>;
   isLivePipeline: () => boolean;
-  setPaper: (hex: string, persist: boolean, area: PaperArea) => void;
+  /** Publish (or, with "", clear) `--pdf-paper`. */
+  setPaper: (hex: string) => void;
   /** The Rust paper session's blend switch — gates stashPaperFrame so idle
    * renders cost nothing on the paper pipeline. */
   setPaperActive: (on: boolean) => void;
-  /** Bank a fixed colour for the current document WITHOUT publishing it —
-   * the Rust paper session's close path (an interrupted scan's answer). */
-  persistPaper: (hex: string, area: PaperArea) => void;
+  /** Sweep the per-document colour cache older builds kept in localStorage.
+   * Runs once when the facade installs; exposed for the smoke test. */
+  clearLegacyPaperCache: () => void;
   takePaperFrame: (canvasId: string) => (PaperFrame & { ok: true }) | null;
   samplePaperPage: (page: number) => Promise<
     | (PaperFrame & { ok: true })
     | { ok: true }
   >;
-  getCachedPaper: (path: string) => {
-    ok: true;
-    hex: string | null;
-    area: PaperArea | null;
-  };
   sweep: () => void;
   takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;

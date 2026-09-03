@@ -7,8 +7,7 @@ use leptos::html;
 use leptos::prelude::*;
 
 use ai_core::settings::{GlossColor, GlossDensity};
-use pdf_core::settings::{PaperArea, PaperMode, RenderPipeline};
-use pdf_paper::{MAX_SCAN_PAGES, MIN_SCAN_PAGES};
+use pdf_core::settings::{PaperArea, RenderPipeline};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use crate::components::primitives::form::slider::Slider;
@@ -166,22 +165,9 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                         s.update(|st| st.layout.blend_mode = v);
                     })
                     title="Paint the reader background with the page's own paper \
-                           colour, through the same filter the pages use"
+                           colour, following the scroll page by page, through the \
+                           same filter the pages use"
                         .to_string()
-                />
-            </Row>
-            <Row label="Paper Mode">
-                <StyleSelect
-                    value=Signal::derive(move || s.with(|st| st.layout.blend_scope))
-                    on_change=Callback::new(move |v| {
-                        s.update(|st| st.layout.blend_scope = v);
-                    })
-                    options=vec![
-                        (PaperMode::Fixed, "Fixed"),
-                        (PaperMode::Continuous, "Continuous"),
-                    ]
-                    label_of=|v: &PaperMode| v.label()
-                    disabled=blend_off
                 />
             </Row>
             <Row label="Detection">
@@ -197,72 +183,6 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                     label_of=|v: &PaperArea| v.label()
                     disabled=blend_off
                 />
-            </Row>
-            // The fixed scan's page budget: at most this many pages are
-            // sampled for the book's one colour. Continuous mode needs no
-            // budget — it detects each page as the reader reaches it, one
-            // by one — so the stepper sleeps while it is on, and wakes with
-            // the persisted value when the mode returns to Fixed.
-            <Row label="Scan Pages">
-                <span class="flex items-center gap-3">
-                    <span class=move || {
-                        if s.with(|st| {
-                            st.layout.blend_mode && st.layout.blend_scope == PaperMode::Fixed
-                        }) {
-                            "w-14 text-right text-sm tabular-nums text-ink"
-                        } else {
-                            "w-14 text-right text-sm tabular-nums text-muted/60"
-                        }
-                    }>
-                        {move || s.with(|st| st.layout.blend_scan_pages)}
-                    </span>
-                    <span class="flex gap-1.5">
-                        <IconButton
-                            icon=IconName::Minus
-                            size=14
-                            title="Scan fewer pages (Fixed mode)"
-                            class="rounded-full bg-line/60 hover:bg-line".to_string()
-                            disabled=Signal::derive(move || {
-                                if blend_off.get() {
-                                    return true;
-                                }
-                                s.with(|st| {
-                                    st.layout.blend_scope == PaperMode::Continuous
-                                        || st.layout.blend_scan_pages <= MIN_SCAN_PAGES
-                                })
-                            })
-                            on_click=move || {
-                                s.update(|st| {
-                                    st.layout.blend_scan_pages =
-                                        (st.layout.blend_scan_pages - 10)
-                                            .clamp(MIN_SCAN_PAGES, MAX_SCAN_PAGES);
-                                });
-                            }
-                        />
-                        <IconButton
-                            icon=IconName::Plus
-                            size=14
-                            title="Scan more pages (Fixed mode)"
-                            class="rounded-full bg-line/60 hover:bg-line".to_string()
-                            disabled=Signal::derive(move || {
-                                if blend_off.get() {
-                                    return true;
-                                }
-                                s.with(|st| {
-                                    st.layout.blend_scope == PaperMode::Continuous
-                                        || st.layout.blend_scan_pages >= MAX_SCAN_PAGES
-                                })
-                            })
-                            on_click=move || {
-                                s.update(|st| {
-                                    st.layout.blend_scan_pages =
-                                        (st.layout.blend_scan_pages + 10)
-                                            .clamp(MIN_SCAN_PAGES, MAX_SCAN_PAGES);
-                                });
-                            }
-                        />
-                    </span>
-                </span>
             </Row>
         </div>
         <div class="mt-5"><Separator vertical=false /></div>

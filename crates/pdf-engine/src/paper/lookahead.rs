@@ -1,14 +1,14 @@
-//! The continuous-mode look-ahead: resolve the pages the reader is
-//! approaching before the reader arrives.
+//! The look-ahead: resolve the pages the reader is approaching before the
+//! reader arrives.
 
 use super::{feed_state, publish, spawn_engine, with, Session};
 use crate::api;
 
-/// The pages whose colour continuous mode wants known: the pair the reader
+/// The pages whose colour the session wants known: the pair the reader
 /// is straddling plus the one after it, so the colour is resolved before
 /// the reader arrives. Pure — the test exercises exactly this choice.
 pub(super) fn lookahead_wants(s: &Session) -> Vec<u32> {
-    if !s.blend_on || s.config.mode != pdf_paper::PaperMode::Continuous || s.num_pages == 0 {
+    if !s.blend_on || s.num_pages == 0 {
         return Vec::new();
     }
     let base = s.position.floor().max(1.0) as u32;

@@ -13,7 +13,7 @@
 
 use leptos::prelude::*;
 
-use pdf_core::layout::{TOOLBAR_H, ViewMode};
+use pdf_core::layout::ViewMode;
 use pdf_core::math::{clamp_scale, fit_scale, nearest_zoom, FitMode};
 
 use crate::state::reader::{ZoomCommand, ReaderState};
@@ -118,15 +118,13 @@ fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
 pub(crate) struct FitDims {
     /// Usable container width (margins removed), `>= 1`.
     pub cw_eff: f64,
-    /// Usable container height (`>= 1`; the toolbar band is reserved only
-    /// for the vertical strip, which scrolls under a fixed bar).
+    /// Usable container height (`>= 1`); the full window height in every
+    /// mode, the title bar being a hover-revealed overlay rather than a band.
     pub ch_eff: f64,
     /// Effective page width (doubled in spread mode).
     pub pw_eff: f64,
     /// Effective page height.
     pub ph_eff: f64,
-    /// Vertical air a fit must leave in scrolling-vertical mode.
-    pub pad: f64,
     /// Whether the strip runs horizontally. In that mode Fit Page uses the
     /// viewport height, while Fit Width still means the width of one page.
     pub horizontal: bool,
@@ -137,9 +135,6 @@ impl FitDims {
     /// container or the document is still unmeasured — fitting to a
     /// placeholder would slam the page to the minimum scale.
     pub(crate) fn of(state: &ReaderState) -> Option<Self> {
-        let mode = state.viewer.mode.get_untracked();
-        let (cw, ch) = state.viewer.container_size.get_untracked();
-        let margin = state.viewer.page_margin.get_untracked();
         let page = state.viewer.page.get_untracked().max(1);
         let p1 = state.document.page1_size.get_untracked()?;
 
@@ -151,38 +146,41 @@ impl FitDims {
                 _ => (p1.width, p1.height),
             }
         });
+        Self::from_geometry(
+            state.viewer.mode.get_untracked(),
+            state.viewer.container_size.get_untracked(),
+            state.viewer.page_margin.get_untracked(),
+            (pw, ph),
+        )
+    }
 
-        let horizontal = mode == ViewMode::ScrollHorizontal;
-        let cw_eff = (cw - 2.0 * margin).max(1.0);
-        // The horizontal strip joins the paginated modes: it owns the full
-        // window height and the auto-hiding title bar overlays it. Reserving
-        // that band would leave a permanent dead strip above the pages.
-        let ch_eff = if mode.is_paginated() || horizontal {
-            ch.max(1.0)
-        } else {
-            (ch - TOOLBAR_H).max(1.0)
-        };
-        // Only the spread renders a true two-page spread; the horizontal
-        // strip lays out one page per virtual item.
-        let spread = matches!(mode, ViewMode::Spread);
-        let (pw_eff, ph_eff) = if spread { (pw * 2.0, ph) } else { (pw, ph) };
-        let pad = if mode.is_paginated() || horizontal {
-            0.0
-        } else {
-            TOOLBAR_H
-        };
-
-        if cw_eff <= 1.0 || ch_eff <= 1.0 {
+    /// The fit geometry for a page of `(pw, ph)` in a `(cw, ch)` container —
+    /// the ONE definition of what a fit measures against, shared by the live
+    /// fit and the open flow's seed scale so the first frame and the first
+    /// refit agree. The reader margin comes off the width, every mode keeps
+    /// the full height (the title bar is an overlay, not a band) and a
+    /// spread doubles the page width. `None` when either raw container
+    /// dimension is unmeasured.
+    pub(crate) fn from_geometry(
+        mode: ViewMode,
+        (cw, ch): (f64, f64),
+        margin: f64,
+        (pw, ph): (f64, f64),
+    ) -> Option<Self> {
+        if !(cw > 1.0 && ch > 1.0) {
             return None;
         }
-
+        let cw_eff = (cw - 2.0 * margin).max(1.0);
+        let ch_eff = ch.max(1.0);
+        // Only the spread renders a true two-page spread; the horizontal
+        // strip lays out one page per virtual item.
+        let pw_eff = if mode == ViewMode::Spread { pw * 2.0 } else { pw };
         Some(Self {
             cw_eff,
             ch_eff,
             pw_eff,
-            ph_eff,
-            pad,
-            horizontal,
+            ph_eff: ph,
+            horizontal: mode == ViewMode::ScrollHorizontal,
         })
     }
 
@@ -192,22 +190,10 @@ impl FitDims {
     /// `None` is included for completeness even though callers only ask this
     /// method to resolve an active fit.
     pub fn fit(&self, fit: FitMode, current: f64) -> f64 {
-        if self.horizontal {
-            return match fit {
-                FitMode::Width => clamp_scale(self.cw_eff.max(1.0) / self.pw_eff.max(1.0)),
-                FitMode::Page => clamp_scale(self.ch_eff.max(1.0) / self.ph_eff.max(1.0)),
-                FitMode::None => clamp_scale(current),
-            };
+        if self.horizontal && fit == FitMode::Page {
+            return clamp_scale(self.ch_eff / self.ph_eff.max(1.0));
         }
-        fit_scale(
-            fit,
-            self.cw_eff,
-            self.ch_eff,
-            self.pw_eff,
-            self.ph_eff,
-            self.pad,
-            current,
-        )
+        fit_scale(fit, self.cw_eff, self.ch_eff, self.pw_eff, self.ph_eff, current)
     }
 }
 
@@ -215,20 +201,13 @@ impl FitDims {
 mod tests {
     use super::*;
 
-    fn dims(horizontal: bool, spread: bool, cw: f64, ch: f64, pw: f64, ph: f64, pad: f64) -> FitDims {
-        FitDims {
-            cw_eff: cw,
-            ch_eff: ch,
-            pw_eff: if spread { pw * 2.0 } else { pw },
-            ph_eff: ph,
-            pad,
-            horizontal,
-        }
+    fn dims(mode: ViewMode, cw: f64, ch: f64, pw: f64, ph: f64) -> FitDims {
+        FitDims::from_geometry(mode, (cw, ch), 0.0, (pw, ph)).expect("measured container")
     }
 
     #[test]
     fn horizontal_fit_width_uses_one_page_while_fit_page_uses_height() {
-        let d = dims(true, false, 1200.0, 600.0, 612.0, 792.0, 0.0);
+        let d = dims(ViewMode::ScrollHorizontal, 1200.0, 600.0, 612.0, 792.0);
         let by_width = d.fit(FitMode::Width, 1.0);
         let by_page = d.fit(FitMode::Page, 1.0);
         assert!((by_width - 1200.0 / 612.0).abs() < 1e-9);
@@ -238,19 +217,41 @@ mod tests {
 
     #[test]
     fn a_spread_fits_two_pages_across() {
-        let single = dims(false, false, 1024.0, 768.0, 612.0, 792.0, 0.0);
-        let spread = dims(false, true, 1024.0, 768.0, 612.0, 792.0, 0.0);
+        let single = dims(ViewMode::Single, 1024.0, 768.0, 612.0, 792.0);
+        let spread = dims(ViewMode::Spread, 1024.0, 768.0, 612.0, 792.0);
         assert!((spread.fit(FitMode::Width, 1.0) - single.fit(FitMode::Width, 1.0) / 2.0).abs() < 1e-9);
     }
 
     #[test]
-    fn the_toolbar_band_is_reserved_only_where_the_strip_scrolls_under_it() {
-        // Vertical: fit-page leaves the toolbar band as air on the height.
-        let vertical = dims(false, false, 1000.0, 800.0, 500.0, 700.0, 56.0);
-        assert!((vertical.fit(FitMode::Page, 1.0) - (800.0 - 56.0) / 700.0).abs() < 1e-9);
-        // fit_scale subtracts the pad from the constrained axis in both
-        // modes, so the width fit keeps it as side air too.
-        assert!((vertical.fit(FitMode::Width, 1.0) - (1000.0 - 56.0) / 500.0).abs() < 1e-9);
+    fn a_vertical_fit_is_edge_to_edge_on_both_axes() {
+        // Nothing is reserved for the overlay title bar: Fit Width spans the
+        // full width and Fit Page the full height.
+        let vertical = dims(ViewMode::ScrollVertical, 1000.0, 800.0, 500.0, 700.0);
+        let by_w = 1000.0 / 500.0;
+        let by_h = 800.0 / 700.0;
+        assert!((vertical.fit(FitMode::Width, 1.0) - by_w).abs() < 1e-9);
+        assert!((vertical.fit(FitMode::Page, 1.0) - by_w.min(by_h)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_reader_margin_comes_off_the_width_only() {
+        let d = FitDims::from_geometry(ViewMode::ScrollVertical, (1000.0, 800.0), 20.0, (500.0, 700.0))
+            .unwrap();
+        assert!((d.fit(FitMode::Width, 1.0) - 960.0 / 500.0).abs() < 1e-9);
+        assert!(FitDims::from_geometry(ViewMode::Single, (0.0, 800.0), 0.0, (500.0, 700.0)).is_none());
+    }
+
+    #[test]
+    fn a_measured_narrow_container_keeps_the_effective_width_fallback() {
+        let d = FitDims::from_geometry(
+            ViewMode::ScrollVertical,
+            (30.0, 800.0),
+            20.0,
+            (500.0, 700.0),
+        )
+        .expect("the raw container is measured");
+        assert_eq!(d.cw_eff, 1.0);
+        assert_eq!(d.ch_eff, 800.0);
     }
 
     use pdf_core::math::{MAX_SCALE, MIN_SCALE};

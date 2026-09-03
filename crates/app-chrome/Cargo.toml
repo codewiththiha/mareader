@@ -16,6 +16,13 @@ web-sys = { version = "0.3", features = [
   "Navigator",
   "Document",
   "Element",
+  # Rect returns: `get_bounding_client_rect` (DomRect) and a resize entry's
+  # `content_rect` (DomRectReadOnly). Undeclared, the crate still built
+  # inside the workspace — a sibling turns them on and feature unification
+  # hands them over — but `cargo check -p app-chrome` failed. CI now runs
+  # that check on its own so the crate stays reusable in isolation.
+  "DomRect",
+  "DomRectReadOnly",
   "HtmlDivElement",
   "ResizeObserver",
   "ResizeObserverEntry",

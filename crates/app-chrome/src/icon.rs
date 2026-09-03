@@ -35,7 +35,6 @@ pub enum IconName {
     ChevronDown,
     Palette,
     More,
-    Fullscreen,
     Keyboard,
     Pin,
     // Back-to-library (the recent-books shelf).
@@ -88,7 +87,6 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Palette => ("0 0 24 24", "<path d='M12 22a10 10 0 1 1 10-10c0 2-1.5 3-3 3h-2a2 2 0 0 0-2 2c0 1 .5 1.5 1 2s-1 3-4 3z'/>"),
         IconName::Motion => ("0 0 24 24", "<path d='M2 12h3l2.5 6 4-13L14 17l1.5-5H22'/>"),
         IconName::More => ("0 0 24 24", "<circle cx='5' cy='12' r='1.5'/><circle cx='12' cy='12' r='1.5'/><circle cx='19' cy='12' r='1.5'/>"),
-        IconName::Fullscreen => ("0 0 24 24", "<path d='M8 3H5a2 2 0 0 0-2 2v3 M16 3h3a2 2 0 0 1 2 2v3 M8 21H5a2 2 0 0 1-2-2v-3 M16 21h3a2 2 0 0 0 2-2v-3'/>"),
         IconName::Keyboard => ("0 0 24 24", "<path d='M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/><path d='M6 10h.01 M10 10h.01 M14 10h.01 M18 10h.01 M6 14h.01 M18 14h.01 M10 14h4'/>"),
         IconName::Pin => ("0 0 24 24", "<path d='M12 17v5'/><path d='M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z'/>"),
         IconName::Library => ("0 0 24 24", "<path d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/><path d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/>"),
