@@ -1,7 +1,7 @@
 //! The look-ahead: resolve the pages the reader is approaching before the
 //! reader arrives.
 
-use super::{feed_state, publish, spawn_engine, with, Session};
+use super::{Session, feed_state, publish, spawn_engine, with};
 use crate::api;
 
 /// The pages whose colour the session wants known: the pair the reader

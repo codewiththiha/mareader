@@ -6,15 +6,15 @@
 //! two-step gloss semantics (first Escape collapses, second gives up) stay
 //! here.
 
-use ai_core::gloss::{boxes_close, GlossBox};
+use ai_core::gloss::{GlossBox, boxes_close};
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::components::ai::anchor::{origin_outside_band, AnchorWatch, MENU_EXIT_FRAC};
+use crate::components::ai::anchor::{AnchorWatch, PILL_EXIT_FRAC, origin_outside_band};
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::primitives::floating::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
+use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::hooks::use_viewport::viewport_size;
-use crate::components::ai::types::GlossPhase;
+use crate::components::ai::gloss::phase::GlossPhase;
 use crate::state::AppState;
 
 /// Escape collapses the expanded card; a second Escape on the bare chip gives
@@ -70,7 +70,7 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
 /// The hard exit is the full-viewport band, the same shape the watcher applies
 /// to its softer `CARD_EXIT_FRAC` one.
 fn origin_gone(origin: Option<GlossBox>, vh: f64) -> bool {
-    origin_outside_band(origin, vh, MENU_EXIT_FRAC)
+    origin_outside_band(origin, vh, PILL_EXIT_FRAC)
 }
 
 /// The soft band's verdict for an origin still inside the viewport: arm the
@@ -182,16 +182,7 @@ pub fn use_zoom_reset(state: AppState, ctrl: GlossController) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn origin(y: f64, h: f64) -> Option<GlossBox> {
-        Some(GlossBox {
-            x: 100.0,
-            y,
-            w: 40.0,
-            h,
-            r: 6.0,
-        })
-    }
+    use crate::components::ai::fixture::origin;
 
     #[test]
     fn an_unmounted_page_counts_as_gone() {

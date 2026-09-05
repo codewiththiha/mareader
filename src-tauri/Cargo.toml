@@ -1,6 +1,6 @@
 [package]
 name = "pdf"
-version = "0.6.0"
+version = "0.7.0"
 description = "A desktop PDF reader built for long-form reading."
 authors = ["codewiththiha"]
 edition = "2024"

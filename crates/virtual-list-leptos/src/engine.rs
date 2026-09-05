@@ -488,7 +488,7 @@ impl VirtualizerCore {
 
     /// Lowest scrollable content offset: the start of the
     /// `padding_start` band.
-    pub fn min_scroll(&self) -> f64 {
+    fn min_scroll(&self) -> f64 {
         -self.padding_start
     }
 

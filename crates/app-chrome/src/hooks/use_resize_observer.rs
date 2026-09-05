@@ -1,7 +1,7 @@
 //! ResizeObserver plumbing: one install, one teardown, no closure leaks.
 //!
-//! `DocumentTitle` / `AdaptiveToolbar` / the thumbnail panel each carried an
-//! identical ~45-line block for this: two `StoredValue`s, a run-once guard, a
+//! `DocumentTitle`, the thumbnail panel and the gloss card's content-size hook
+//! each carried an identical ~45-line block for this: two `StoredValue`s, a run-once guard, a
 //! `Closure::wrap`, a `ResizeObserver`, and an `on_cleanup` that MUST
 //! disconnect before the closure is dropped. Only the observed elements
 //! differed.
@@ -13,7 +13,8 @@
 
 use std::rc::Rc;
 
-use leptos::{html, prelude::*};
+use leptos::html;
+use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;

@@ -6,6 +6,12 @@ description = "The format-agnostic core of the AI reading features: the word-exp
 license = "MIT"
 
 [dependencies]
+# The persisted gloss settings belong to the reader's core; the spring the
+# gloss box rides and the floating-box geometry it converts into belong to
+# `ui-geom`, the dependency-free leaf the chrome crate also places panels with.
+# Neither dependency runs the other way: no general crate knows AI exists.
+reader-core = { path = "../reader-core" }
+ui-geom = { path = "../ui-geom" }
 serde = { version = "1", features = ["derive"] }
 tauri-bridge = { path = "../tauri-bridge" }
 wasm-bindgen = "0.2"

@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use crate::state::AppState;
-use pdf_core::presets::PresetGroup;
+use reader_core::appearance::presets::PresetGroup;
 
 use super::swatch::PresetSwatch;
 

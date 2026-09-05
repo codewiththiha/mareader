@@ -1,0 +1,11 @@
+[package]
+name = "ui-geom"
+version = "0.1.0"
+edition = "2024"
+description = "Pure geometry for the surfaces that float: placement and viewport clamping for anchored panels, and the damped spring those panels and the gloss card both ride. No DOM, no framework, no feature knowledge — unit-testable on the host."
+license = "MIT"
+
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"

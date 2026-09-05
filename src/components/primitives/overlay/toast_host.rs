@@ -13,7 +13,7 @@
 use leptos::prelude::*;
 
 use super::toast::ToastData;
-use crate::components::primitives::floating::types::z::TOAST;
+use app_chrome::layers::TOAST;
 
 /// Arm an auto-dismiss for the *current* slot toast.
 ///

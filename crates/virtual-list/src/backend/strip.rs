@@ -55,18 +55,12 @@ impl Strip {
     }
 
     /// Build a strip of `count` items that all have the same size.
+    ///
+    /// The size may be an ESTIMATE the caller refines with [`Strip::set_size`]
+    /// as real measurements arrive — the placeholder-height pattern, and what
+    /// a strip of not-yet-rendered pages is built with.
     pub fn uniform(count: usize, size: f64, gap: f64) -> Self {
         Self::new(core::iter::repeat_n(size, count), gap)
-    }
-
-    /// Build a strip of `count` items using an **estimated** size that the
-    /// caller will later refine with [`Strip::set_size`] as the real sizes are
-    /// measured (e.g. an image finishes loading). This is the "placeholder
-    /// height" pattern from React Window / `UICollectionView`.
-    ///
-    /// For zero-count, returns an empty strip.
-    pub fn with_estimated(count: usize, estimated_size: f64, gap: f64) -> Self {
-        Self::uniform(count, estimated_size, gap)
     }
 
     /// Number of items.
@@ -285,7 +279,7 @@ impl Strip {
     }
 
     /// [`Strip::overlapping`] with a **hint** — see [`Strip::index_at_hinted`].
-    pub fn overlapping_hinted(&self, top: f64, extent: f64, hint: &mut usize) -> Option<Window> {
+    fn overlapping_hinted(&self, top: f64, extent: f64, hint: &mut usize) -> Option<Window> {
         let len = self.len();
         if len == 0 {
             return None;
@@ -408,46 +402,12 @@ impl Strip {
     /// extent also updates.
     ///
     /// Returns the **delta** (new_size - old_size) in CSS pixels, which the
-    /// caller can feed to [`Strip::scroll_anchor_delta`] to keep the viewport
-    /// pinned to whatever the reader was looking at.
+    /// caller feeds to [`crate::anchor::correct`] to keep the viewport pinned
+    /// to whatever the reader was looking at.
     ///
     /// Does nothing if `index` is out of range or the new size equals the old.
     pub fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
         StripBackend::set_size(self, index, new_size)
-    }
-
-    /// Compute the new `scroll_top` to keep item `anchor_index` visually pinned
-    /// after a size change above the viewport.
-    ///
-    /// When an item **above** the viewport grows or shrinks (e.g. an image
-    /// finishes loading above where the reader is), the scroll position must
-    /// adjust by the same delta so the reader's view does not jump. This helper
-    /// returns the corrected `scroll_top`.
-    ///
-    /// The contract is: if `anchor_index`'s start was at `scroll_top` before
-    /// the change, after the change it must still be at the returned
-    /// `scroll_top`. Equivalently, `new_scroll_top = scroll_top + delta` when
-    /// the change is above the anchor; below or at the anchor, no shift.
-    ///
-    /// `delta` is the (signed) size change returned by [`Strip::set_size`].
-    /// Positive deltas push subsequent items (and the anchor) downwards.
-    #[inline]
-    pub fn scroll_anchor_delta(
-        &self,
-        scroll_top: f64,
-        anchor_index: usize,
-        changed_index: usize,
-        delta: f64,
-    ) -> f64 {
-        if anchor_index >= self.len() || delta == 0.0 {
-            return scroll_top;
-        }
-        // Only items *above* the anchor shift its screen position.
-        if changed_index < anchor_index {
-            scroll_top + delta
-        } else {
-            scroll_top
-        }
     }
 
 }
@@ -869,32 +829,18 @@ mod tests {
     }
 
     #[test]
-    fn scroll_anchor_compensates_for_size_change_above() {
+    fn a_size_change_above_the_anchor_moves_the_item_by_the_delta() {
+        // The scroll correction itself is `crate::anchor::correct`, tested
+        // there; what a strip owes it is an honest delta and offsets that
+        // already reflect the new size.
         let mut s = Strip::uniform(20, 100.0, 0.0);
-        let scroll_top = s.offset(10);
-        let delta = s.set_size(5, 150.0);
-        assert_eq!(delta, 50.0);
-        let new_top = s.scroll_anchor_delta(scroll_top, 10, 5, delta);
-        assert_eq!(new_top, scroll_top + 50.0);
-        assert_eq!(s.offset(10), new_top);
-    }
-
-    #[test]
-    fn scroll_anchor_ignores_changes_below_or_at_anchor() {
-        let mut s = Strip::uniform(20, 100.0, 0.0);
-        let scroll_top = s.offset(10);
-        let delta = s.set_size(15, 200.0);
-        assert_eq!(delta, 100.0);
-        let new_top = s.scroll_anchor_delta(scroll_top, 10, 15, delta);
-        assert_eq!(new_top, scroll_top);
-    }
-
-    #[test]
-    fn with_estimated_creates_uniform_strip() {
-        let s = Strip::with_estimated(10, 250.0, 16.0);
-        assert_eq!(s.len(), 10);
-        assert_eq!(s.size(0), 250.0);
-        assert_eq!(s.total(), 10.0 * 250.0 + 9.0 * 16.0);
+        let before = s.offset(10);
+        assert_eq!(s.set_size(5, 150.0), 50.0);
+        assert_eq!(s.offset(10), before + 50.0);
+        // A change below the anchor leaves everything above it where it was.
+        let before = s.offset(10);
+        assert_eq!(s.set_size(15, 200.0), 100.0);
+        assert_eq!(s.offset(10), before);
     }
 
 }

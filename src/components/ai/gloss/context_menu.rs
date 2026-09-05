@@ -7,9 +7,9 @@
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::ai::gloss::selection_mode::{park_undo, ContextTarget, UndoBatch};
+use crate::components::ai::gloss::selection_mode::{ContextTarget, UndoBatch, park_undo};
 use crate::components::primitives::floating::context_menu::ContextMenu;
-use crate::components::primitives::menu_item::{MenuItem, MenuItemTone};
+use crate::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
 use crate::state::AppState;
 
 #[component]

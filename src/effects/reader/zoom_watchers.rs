@@ -2,7 +2,7 @@
 //! when the world under the reader changes.
 //!
 //! Neither watcher computes a scale, writes a zoom signal, or calls the
-//! engine — they POST COMMANDS ([`ZoomCommand`]) and the controller's one
+//! actuator — they POST COMMANDS ([`ZoomCommand`]) and the controller's one
 //! transition pipeline does the rest. The one question either asks back is
 //! `posting_gate`: whether a transaction is already open that it must not
 //! disturb, and whether the burst it is holding should carry this change too.
@@ -54,14 +54,14 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_core::math::FitMode;
+use reader_core::zoom_math::FitMode;
 
 use app_chrome::hooks::use_timeout::use_debounce;
 use app_chrome::hooks::use_viewport::use_viewport;
 use crate::state::reader::ZoomCommand;
 use crate::state::{AppState, SidebarMode};
-use crate::viewer::zoom::config::FOLLOW_SETTLE_MS;
-use crate::viewer::zoom::command::{Gate, posting_gate};
+use crate::zoom::config::FOLLOW_SETTLE_MS;
+use crate::zoom::command::{Gate, posting_gate};
 
 /// Trailing debounce for a discrete refit: the same window of quiet a held
 /// follow waits for before it commits, so a page turn and the end of a resize

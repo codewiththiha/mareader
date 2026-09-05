@@ -9,7 +9,7 @@ use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::selection_mode::{exit_selection, park_undo};
-use crate::components::primitives::button::{Button, ButtonTone, ButtonVariant};
+use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
 use crate::components::primitives::overlay::action_bar::ActionBar;
 use crate::state::AppState;
 

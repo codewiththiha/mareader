@@ -33,9 +33,9 @@
 
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
-use pdf_core::settings::LayoutSettings;
-use pdf_paper::{PaperConfig, DEFAULT_EDGE_WIDTH};
+use reader_core::view::ViewMode;
+use reader_core::settings::LayoutSettings;
+use pdf_paper::{DEFAULT_EDGE_WIDTH, PaperConfig};
 
 use crate::state::AppState;
 
@@ -79,12 +79,18 @@ fn publish(layout: LayoutSettings) {
 pub fn blend_backdrop(state: AppState) {
     let settings = state.settings;
     let viewer = state.reader.viewer;
-    let heights = state.reader.document.metrics.css_heights;
+    let heights = state.reader.document.content.metrics.css_heights;
 
     // The viewport's weighted position along the page ladder. Per scroll
     // tick, and only while blend mode is actually driving a backdrop — the
     // session ignores the number otherwise, so there is nothing to compute.
     Effect::new(move |_| {
+        // Text documents want for none of this: their pages are a colour
+        // the compositor already has, so the paper session is closed when
+        // one opens and never fed positions.
+        if state.reader.reflowable() {
+            return;
+        }
         if !settings.with(|st| st.layout.blend_mode) {
             return;
         }

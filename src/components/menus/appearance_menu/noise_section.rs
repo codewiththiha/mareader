@@ -7,10 +7,10 @@
 use leptos::prelude::*;
 
 use crate::components::primitives::form::slider::Slider;
-use pdf_core::appearance::NoiseMode;
-use crate::components::primitives::option_button::OptionButton;
+use reader_core::appearance::NoiseMode;
+use crate::components::primitives::controls::option_button::OptionButton;
 use crate::state::AppState;
-use crate::effects::appearance::{preview_appearance, AppearanceScrub};
+use crate::effects::appearance::{AppearanceScrub, preview_appearance};
 
 #[component]
 pub fn NoiseSection(state: AppState) -> impl IntoView {

@@ -3,7 +3,7 @@
 use crate::bridge;
 use crate::types::{RenderResult, ThumbResult};
 
-use super::{guard_pdf_reader, require_pdf_reader, resolve, EngineError};
+use super::{EngineError, guard_pdf_reader, require_pdf_reader, resolve};
 
 /// Register a page's canvas with the engine (virtualized rows call this on
 /// mount). Typed end to end: the bridge takes `(page, canvas_id, host_id)`
@@ -40,9 +40,9 @@ pub async fn render_page(
 ///
 /// Unlike `render_page` this needs no `register_page` (the engine resolves the
 /// canvas by id per call) and never builds a text layer. When the page's bitmap
-/// is already cached the engine blits it synchronously and returns
-/// `cached: true` — the caller must then skip its loading skeleton, because the
-/// canvas is already painted on the first mounted frame.
+/// is already cached the engine blits it synchronously, so the canvas is painted
+/// on the first mounted frame — a caller that needs to know BEFORE that frame
+/// asks [`has_thumb`] instead of waiting on this promise.
 pub async fn render_thumb(
     canvas_id: &str,
     page: u32,

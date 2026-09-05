@@ -47,10 +47,10 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPage")]
     pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> JsValue;
 
-    // Thumbnail lane: a separate, cheap render path
-    // with a bitmap cache. `renderThumb` resolves `{ok, width, height, scale,
-    // cached}`; `cached:true` means the bitmap was blitted synchronously from
-    // the cache, so the caller must NOT show a loading skeleton over it.
+    // Thumbnail lane: a separate, cheap render path with a bitmap cache.
+    // `renderThumb` resolves `{ok, width, height, scale}`. A cache hit still
+    // blits synchronously, but a caller that must know BEFORE its first frame
+    // asks `hasThumb` below — a flag riding this promise arrives after it.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderThumb")]
     pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> JsValue;
 

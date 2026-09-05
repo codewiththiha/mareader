@@ -9,7 +9,7 @@ use virtual_list_leptos::Virtualizer;
 
 use crate::effects::reader::search::activate_match;
 use crate::state::ReaderState;
-use pdf_core::search::SearchMatch;
+use reader_core::search::SearchMatch;
 
 /// Page + snippet for one list row. Built when `matches` changes, not
 /// when the active index ticks.
@@ -124,7 +124,7 @@ pub fn ResultList(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pdf_core::search::SearchMatch;
+    use reader_core::search::SearchMatch;
 
     fn m(page: u32, index: u32, text: &str) -> SearchMatch {
         SearchMatch {
@@ -135,6 +135,7 @@ mod tests {
             y: 0.0,
             w: 0.0,
             h: 0.0,
+            block_hit: None,
         }
     }
 

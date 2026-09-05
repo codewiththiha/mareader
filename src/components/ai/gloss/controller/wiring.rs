@@ -1,6 +1,6 @@
 //! The open path, wired up.
 //!
-//! Every open (a stroke click or the selection Info pill) arrives as a
+//! Every open (a stroke click or the selection Explain pill) arrives as a
 //! `pdfreader:gloss-open` CustomEvent carrying the mark, which
 //! [`use_open_listener`] turns into a pending mark plus a bumped request
 //! nonce. [`use_open_effect`] tracks that nonce, asks [`open_verdict`] what
@@ -13,19 +13,23 @@
 use std::sync::Arc;
 
 use ai_core::gloss::{GlossBox, GlossMark};
+use ai_core::types::{AiError, AiErrorKind, WordInfo};
 use leptos::prelude::*;
 
 use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::mark_layer::GLOSS_OPEN_EVENT;
-use crate::components::ai::types::{AiError, AiErrorKind, AiPhase, GlossPhase, WordInfo};
+use crate::components::ai::gloss::phase::{AiPhase, GlossPhase};
 use app_chrome::hooks::use_viewport::viewport_size;
 use crate::components::primitives::motion::spring::SpringBox;
 use crate::services::ai::invoke_explain_word;
 use crate::state::AppState;
 
+use super::content::GlossContent;
+use super::geometry::GlossGeometry;
+use super::open::GlossOpen;
 use super::GlossController;
 
-/// Every open (stroke click OR Info pill) arrives as a CustomEvent that
+/// Every open (stroke click OR Explain pill) arrives as a CustomEvent that
 /// carries the mark and bumps the nonce. Tracking `request` is what makes a
 /// second open of an already-open popover re-run the open effect.
 pub fn use_open_listener(state: AppState, ctrl: GlossController) {
@@ -102,7 +106,7 @@ fn begin_open(
     viewport: RwSignal<(f64, f64)>,
     mark: GlossMark,
 ) -> GlossMark {
-    // Self-contained open: mark is already in hand (Info pill or stroke
+    // Self-contained open: mark is already in hand (Explain pill or stroke
     // click). Persist it so re-open/re-explain reuse the id.
     let mark = ctrl.commands.add_mark.run(mark);
 
@@ -151,33 +155,44 @@ fn serve_cached(
 
 /// Fresh (or retried) explain. No surface while thinking: the highlighter
 /// stroke is the only processing UI, so nothing is stacked over the word.
-fn begin_fetch(
-    ctrl: GlossController,
+///
+/// Takes the three slices it writes rather than the whole controller because
+/// the retry command (`super::commands`) is built BEFORE the controller exists
+/// and must still funnel through here: one opening ritual, one spelling of the
+/// desktop-only verdict, and no second copy of either to drift.
+pub(super) fn begin_fetch(
+    content: GlossContent,
+    geometry: GlossGeometry,
+    open: GlossOpen,
     processing_id: RwSignal<Option<String>>,
     mark: GlossMark,
 ) {
-    ctrl.content.word_info.set(None);
-    ctrl.content.error.set(None);
-    ctrl.content.phase.set(AiPhase::Processing);
-    ctrl.geometry.gphase.set(GlossPhase::Processing);
-    ctrl.geometry.surface_visible.set(false);
+    content.word_info.set(None);
+    content.error.set(None);
+    content.phase.set(AiPhase::Processing);
+    geometry.gphase.set(GlossPhase::Processing);
+    geometry.surface_visible.set(false);
     processing_id.set(Some(mark.id.clone()));
 
     if tauri_bridge::has_tauri() {
-        let run = ctrl.open.begin_run(&mark.id);
-        invoke_explain_word(mark.word, mark.context, run);
+        let run = open.begin_run(&mark.id);
+        // The sentence, not the envelope: a reflowable mark's
+        // `context` carries its spot alongside the prose, and the model
+        // wants only the prose.
+        let explain = crate::components::ai::reflow_anchor::explain_context(&mark);
+        invoke_explain_word(mark.word, explain, run);
     } else {
         // The environment cannot change mid-session: this is a terminal,
         // non-retryable state, shown as an expanded error card.
-        ctrl.content.error.set(Some(AiError {
+        content.error.set(Some(AiError {
             kind: AiErrorKind::Other("desktop-only".into()),
             message: "AI explanations are only available in the desktop app.".into(),
             retryable: false,
         }));
-        ctrl.content.phase.set(AiPhase::Error);
+        content.phase.set(AiPhase::Error);
         processing_id.set(None);
-        ctrl.geometry.gphase.set(GlossPhase::Expanded);
-        ctrl.geometry.surface_visible.set(true);
+        geometry.gphase.set(GlossPhase::Expanded);
+        geometry.surface_visible.set(true);
     }
 }
 
@@ -223,7 +238,13 @@ pub fn use_open_effect(
                 let mark = begin_open(&state, ctrl, &watch, &spring, viewport, pending);
                 match ctrl.cache.get(&mark.id) {
                     Some(info) => serve_cached(ctrl, processing_id, info),
-                    None => begin_fetch(ctrl, processing_id, mark),
+                    None => begin_fetch(
+                        ctrl.content,
+                        ctrl.geometry,
+                        ctrl.open,
+                        processing_id,
+                        mark,
+                    ),
                 }
             }
         }

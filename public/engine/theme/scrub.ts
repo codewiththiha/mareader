@@ -9,7 +9,7 @@ import { session } from "../state";
 import { isLivePipeline, readPipeline, setLivePipeline } from "./pipeline";
 import { paperInfo } from "./paper";
 import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
-import { preparePagesForScrub, rerenderLivePages } from "../renderer";
+import { preparePagesForScrub, renderPageInternal, rerenderLivePages } from "../renderer";
 
 // A Settings commit after a scrub has the same final pipeline the scrub exit
 // just baked. Remember it by value rather than generation: invalidation bumps
@@ -52,7 +52,51 @@ export async function rebakeTheme(force = false): Promise<void> {
   // `paintCached` selects baked displays while scrub is off, retaining the
   // stale baked canvas until each async replacement is ready.
   paintAllVisibleThumbs();
+  // A page render that landed while this loop awaited could have been baked
+  // against the superseded generation or left with the live tag; converge
+  // before declaring the theme current.
+  await settleCanvasTheme();
   lastBakedFingerprint = fingerprint;
+}
+
+/**
+ * Convergence sweep after a theme transition settles: every live canvas must
+ * carry exactly the theme state of the mode the document is in NOW —
+ * `canvas-raw` (raw pixels under the live CSS filter + blend) when the live
+ * pipeline or a scrub is in force, baked pixels without the tag otherwise.
+ *
+ * Page renders are NOT serialized with the theme queue, so a render landing
+ * mid-transition can settle one page on the other side of the tag from its
+ * sibling — a spread's left half themed, right half not — or bake against a
+ * palette generation the repaint already invalidated. This sweep is the
+ * generation guard's second half: idempotent, and cheap when nothing drifted
+ * (a class check per live page). Canvases that lost their unbaked raw are
+ * re-rendered rather than baked in place, which would double-filter.
+ */
+export async function settleCanvasTheme(): Promise<void> {
+  const wantRaw = isLivePipeline() || session.themeScrubActive;
+  const rerender: Array<() => Promise<unknown>> = [];
+  for (const [id, st] of session.stateByCanvasId) {
+    if (st.dead || !st.canvas) continue;
+    const hasTag = st.canvas.classList.contains("canvas-raw");
+    if (wantRaw) {
+      if (hasTag) continue;
+      if (st.rawCanvas && st.rawCanvas !== st.canvas) {
+        showRaw(st.canvas, st.rawCanvas, "canvas-raw");
+      } else {
+        // The live canvas already holds raw pixels; only the tag is missing.
+        st.canvas.classList.add("canvas-raw");
+      }
+    } else if (hasTag) {
+      if (st.rawCanvas && st.rawCanvas !== st.canvas) {
+        await bakeInto(st.canvas, st.rawCanvas, readPipeline(), "canvas-raw");
+        session.dropRawIfIdle(st);
+      } else {
+        rerender.push(() => renderPageInternal(id, st.scale || 1, !!st.textLayerEl));
+      }
+    }
+  }
+  if (rerender.length) await Promise.all(rerender.map((job) => job()));
 }
 
 /**
@@ -79,7 +123,10 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
     paintAllVisibleThumbs();
     // Pages without a retained raw are rendered into their live canvas by
     // preparePagesForScrub; renderer tags that raw result before yielding.
+    // The sweep then repairs any page whose render landed past the loop —
+    // one half of a spread cannot be left un-themet.
     await preparePagesForScrub();
+    await settleCanvasTheme();
     return;
   }
 
@@ -92,6 +139,10 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
   session.setThemeScrubActive(false);
   await rebakeTheme(true);
   if (needsRerender) await rerenderLivePages();
+  // `needsRerender` was snapshotted before the flag cleared; a render landing
+  // since then is covered here — as is any canvases the bake loop skipped
+  // because their raw had become the live canvas mid-flight.
+  await settleCanvasTheme();
   document.documentElement.classList.remove("appearance-scrubbing");
 }
 

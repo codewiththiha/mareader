@@ -17,6 +17,7 @@ import type {
   ThumbEntry,
 } from "./types";
 import { disposeScratch, releaseCanvas } from "./canvas";
+import { PAGE_SNAPSHOT_SELECTOR, TEXT_LAYER_SELECTOR } from "./dom-contract";
 
 export const ENGINE_VERSION = "0.5.0"; // 0.5.0: search fully ported to Rust (extractPageText + setSearchContext); registerPage became typed args
 
@@ -163,12 +164,12 @@ export class EngineSession {
     if (st.host) {
       try {
         st.host.querySelectorAll("canvas").forEach((c) => releaseCanvas(c as HTMLCanvasElement));
-        const text = st.host.querySelector(".textLayer");
+        const text = st.host.querySelector(TEXT_LAYER_SELECTOR);
         if (text) text.replaceChildren();
         const links = st.host.querySelector(".linkLayer");
         if (links) links.remove();
         st.host.querySelectorAll(".highlight").forEach((n) => n.remove());
-        st.host.querySelectorAll(".page-snapshot").forEach((n) => n.remove());
+        st.host.querySelectorAll(PAGE_SNAPSHOT_SELECTOR).forEach((n) => n.remove());
       } catch (_) {
         /* host already detached */
       }

@@ -6,7 +6,7 @@
 /// `65536` — i.e. every common UI coordinate (`0.25`, `0.5`, `0.75`, sub-pixel
 /// `1/64` font hinting, etc.) — and keeps `i64` arithmetic exact for any
 /// total extent below ~4.2e9 CSS pixels (~4 200 km).
-pub(crate) const SUBPIXEL_BITS: u32 = 16;
+const SUBPIXEL_BITS: u32 = 16;
 
 /// `2 ** SUBPIXEL_BITS`. Multiply an `f64` pixel value by this to get its
 /// `i64` sub-pixel representation; divide an `i64` sub-pixel value by this to

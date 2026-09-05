@@ -4,9 +4,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ai_core::gloss::GlossMark;
+use ai_core::types::WordInfo;
 use leptos::prelude::*;
-
-use crate::components::ai::types::WordInfo;
 
 /// Answers already fetched this session, keyed by mark id. Re-opening a
 /// stroke is recall, not a rescan.

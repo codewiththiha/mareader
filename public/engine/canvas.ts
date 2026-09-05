@@ -37,6 +37,38 @@ export function acquirePooledCanvas(w: number, h: number): HTMLCanvasElement {
   return c;
 }
 
+/** A fresh offscreen canvas sized to a viewport, with its opaque 2d context.
+ *
+ *  Three render entry points needed exactly this — the book cover, a thumbnail,
+ *  and a thumbnail prefetch — and each spelled it out, including the
+ *  `Math.max(1, Math.floor(...))` guard that keeps a degenerate viewport from
+ *  handing pdf.js a zero-sized destination. `scale` multiplies the viewport for
+ *  the callers that render supersampled.
+ *
+ *  `null` means the platform refused a context, which is a real failure mode
+ *  once enough canvases are alive; the canvas is released before returning, so
+ *  a caller has nothing to clean up on that path (one of the three copies used
+ *  to throw straight past its own allocation).
+ *
+ *  Deliberately NOT the pool: these canvases become retained rasters — a cover
+ *  is encoded from one, a thumbnail keeps one as its unthemed raw — so their
+ *  lifetime belongs to the caller, not to a recycler.
+ */
+export function offscreenFor(
+  viewport: { width: number; height: number },
+  scale = 1
+): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.floor(viewport.width * scale));
+  canvas.height = Math.max(1, Math.floor(viewport.height * scale));
+  const ctx = canvas.getContext("2d", { alpha: false });
+  if (!ctx) {
+    releaseCanvas(canvas);
+    return null;
+  }
+  return { canvas, ctx };
+}
+
 export function releasePooledCanvas(c: HTMLCanvasElement | null | undefined): void {
   if (!c || typeof c.getContext !== "function") return;
   if (canvasPool.length < POOL_MAX) {
@@ -150,4 +182,13 @@ export function errorInfo(e: unknown): { name: string; message: string } {
   const name = (er && er.name) || "Error";
   const message = (er && er.message) || String(e);
   return { name, message };
+}
+
+/** The catch half of an engine entry point: whatever threw becomes an error
+ *  envelope, keeping pdf.js's own `name` so a caller can still branch on
+ *  "PasswordException" and friends. Ten entry points spelled this out as
+ *  `errorInfo` followed by `fail`, which was ten chances to drop the name. */
+export function failFrom(e: unknown): { ok: false; error: { name: string; message: string } } {
+  const info = errorInfo(e);
+  return fail(info.name, info.message);
 }

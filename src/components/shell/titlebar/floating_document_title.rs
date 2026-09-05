@@ -59,7 +59,7 @@ use crate::components::ai::anchor::host_id_for_mode;
 use crate::components::shell::controller::ShellController;
 use app_chrome::titlebar::root::TitleBarCtx;
 use crate::state::AppState;
-use app_chrome::hooks::dom::{by_id, VIEWER_SLOT_ID};
+use app_chrome::hooks::dom::{VIEWER_SLOT_ID, by_id};
 use app_chrome::hooks::use_window_event::use_window_event;
 
 /// Fraction of the canvas width the label may cover.
@@ -96,7 +96,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
             // A missing host is the ordinary virtualization gap (the page
             // under the eyes is between mounts), so this stays a silent
             // `by_id` — but the viewer slot itself is chrome.
-            let Some(doc_el) = by_id(&host_id_for_mode(page, mode)) else { return };
+            let Some(doc_el) = by_id(&host_id_for_mode(mode, page)) else { return };
             let Some(viewer) = by_id(VIEWER_SLOT_ID) else { return };
 
             let pr = doc_el.get_bounding_client_rect();
@@ -168,7 +168,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
 
     let enabled = move || state.settings.with(|st| st.layout.floating_label);
     let label = move || {
-        use pdf_core::settings::FloatingLabelStyle::*;
+        use reader_core::settings::FloatingLabelStyle::*;
         let st = state.settings.with(|s| s.layout.floating_label_style);
         let r = &state.reader;
         match st {

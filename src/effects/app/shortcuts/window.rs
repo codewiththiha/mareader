@@ -2,8 +2,8 @@
 
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
-use pdf_core::math::FitMode;
+use reader_core::view::ViewMode;
+use reader_core::zoom_math::FitMode;
 use crate::state::ReaderState;
 
 /// One Cmd/Ctrl combo. `on_open` is the app's open-file action, injected so

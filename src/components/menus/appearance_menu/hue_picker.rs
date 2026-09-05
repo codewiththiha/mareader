@@ -18,7 +18,7 @@ use crate::components::primitives::form::range_input::RangeInput;
 /// Named landmarks on the hue circle. These are the hues behind the classic
 /// reading modes plus the obvious cool/neutral choices, so the presets are
 /// reachable in one click and hand-tuning starts from somewhere sensible.
-pub const HUE_SWATCHES: [(u16, &str); 7] = [
+const HUE_SWATCHES: [(u16, &str); 7] = [
     (34, "Sepia"),
     (14, "Rose"),
     (104, "Green"),

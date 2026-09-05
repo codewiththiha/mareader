@@ -2,9 +2,10 @@
 
 use std::sync::Arc;
 
+use ai_core::types::{AiError, WordInfo};
 use leptos::prelude::*;
 
-use crate::components::ai::types::{AiError, AiPhase, WordInfo};
+use crate::components::ai::gloss::phase::AiPhase;
 
 /// The data phase + payload of the open card: what the *model* is doing,
 /// independent of the card's geometry.

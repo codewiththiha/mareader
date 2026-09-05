@@ -41,7 +41,7 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
+use reader_core::view::ViewMode;
 use virtual_list_leptos::{Align, Virtualizer};
 
 use crate::state::ReaderState;

@@ -5,8 +5,8 @@
 use ai_core::gloss::{GlossBox, place_card};
 use leptos::prelude::*;
 
-use crate::components::ai::types::GlossPhase;
-use crate::components::primitives::floating::types::{clamp_point_to_viewport, Point, Size};
+use crate::components::ai::gloss::phase::GlossPhase;
+use app_chrome::floating::types::{Point, Size, clamp_point_to_viewport};
 
 /// Preferred card width before viewport clamping.
 pub const CARD_WIDTH: f64 = 360.0;
@@ -21,9 +21,9 @@ const CARD_GAP: f64 = 16.0;
 /// target to the anchor box (a flash of collapsed card on first open). The
 /// floor is the shimmer's resting height, so a not-yet-measured card opens at
 /// about the size the loading state occupies rather than at nothing.
-pub const MIN_CARD_CONTENT_H: f64 = 120.0;
+const MIN_CARD_CONTENT_H: f64 = 120.0;
 /// Viewport margin the expanded card must stay inside.
-pub const CARD_MARGIN: f64 = 12.0;
+const CARD_MARGIN: f64 = 12.0;
 /// How far the card's midline sits BELOW the word's midline. Dead-centre on
 /// the line reads as pasted over it; a touch lower reads as attached to the
 /// word and hanging off it, the way a footnote hangs off its referent. The

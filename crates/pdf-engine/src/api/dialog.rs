@@ -3,15 +3,15 @@
 use wasm_bindgen::JsValue;
 
 use super::{
-    reflect_set, KEY_DIRECTORY, KEY_EXTENSIONS, KEY_FILTERS, KEY_MULTIPLE, KEY_NAME, KEY_PDF,
+    reflect_set, KEY_DIRECTORY, KEY_DOCUMENTS, KEY_EXTENSIONS, KEY_FILTERS, KEY_MULTIPLE, KEY_NAME,
 };
 
-/// Native open-file dialog (Tauri dialog plugin). Returns the chosen path, or
-/// `Err` on cancel / no plugin.
-pub async fn pick_pdf() -> Result<String, String> {
+/// Native open-file dialog (Tauri dialog plugin), admitting every format the
+/// reader opens. Returns the chosen path, or `Err` on cancel / no plugin.
+pub async fn pick_document() -> Result<String, String> {
     if !tauri_bridge::has_tauri() {
         return Err(
-            "Open dialog only available in the desktop app. Drag and drop a PDF instead."
+            "Open dialog only available in the desktop app. Drag and drop a document instead."
                 .to_string(),
         );
     }
@@ -20,10 +20,10 @@ pub async fn pick_pdf() -> Result<String, String> {
     _ = reflect_set(&opts, &KEY_MULTIPLE, &JsValue::FALSE);
     _ = reflect_set(&opts, &KEY_DIRECTORY, &JsValue::FALSE);
     let filter: JsValue = js_sys::Object::new().into();
-    let pdf_name = KEY_PDF.with(|v| v.clone());
-    _ = reflect_set(&filter, &KEY_NAME, &pdf_name);
+    let filter_name = KEY_DOCUMENTS.with(|v| v.clone());
+    _ = reflect_set(&filter, &KEY_NAME, &filter_name);
     let exts = js_sys::Array::new();
-    for ext in pdf_core::documents::extensions() {
+    for ext in reader_core::format::extensions() {
         exts.push(&JsValue::from_str(ext));
     }
     _ = reflect_set(&filter, &KEY_EXTENSIONS, &exts);

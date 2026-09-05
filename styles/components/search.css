@@ -1,0 +1,90 @@
+/* =====================================================================
+   Search hits — one visual language, two painters.
+
+   A PDF's boxes are appended by the engine into the page's text layer
+   (public/engine/highlights.ts). A reflowable document has no engine and no
+   text layer, so its boxes are painted by the row that renders the block
+   (src/components/formats/reflow/highlight.rs) — same algorithm: find the
+   query in the rendered text, take a Range per occurrence, one box per client
+   rect.
+
+   Both emit the same markup, which is why both are styled here and nowhere
+   else: a div carrying `.highlight`, `.is-active` on the one the reader has
+   stepped to, `data-match` holding the ordinal it answers to. Every rule lists
+   the two hosts a box can live in — `.pdf-page .textLayer` for the engine's,
+   `.tx-hits` for the reader's.
+
+   The PDF half of each selector keeps its three-class shape on purpose: the
+   vendored pdf_viewer.css (linked ahead of this sheet in index.html) styles
+   `.textLayer .highlight` for pdf.js's own find controller, and the box the
+   engine appends matches that rule as well. Out-specificity it instead of
+   relying on link order.
+   ===================================================================== */
+
+/* The reflowable half's layer: it covers its row, never intercepts a click, and
+   paints above the type without becoming a stacking context. A z-index here
+   would isolate the boxes, and `mix-blend-mode` on them needs to reach the
+   glyphs underneath — the same reason the gloss strokes' layer sits above this
+   one in the page host rather than inside a block. The PDF half needs no such
+   rule: the engine appends its boxes into a text layer that is already
+   positioned over the page. */
+.tx-hits {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* EVERY HIT: the accent laid over the glyphs, not replacing them. The box is a
+   sibling of the text rather than a decoration on it, so it can cover a span
+   boundary — a hit that wraps a line, a hit across a styled run — with one
+   rect per line fragment and no change to the type underneath. */
+.pdf-page .textLayer .highlight,
+.tx-hits .highlight {
+  position: absolute;
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  mix-blend-mode: multiply;
+  border-radius: 2px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* THE CURRENT MATCH. Every hit is tinted with the accent; the one the reader
+   has stepped to needs to be findable at a glance on a page that may hold
+   dozens of them, so it switches HUE rather than just deepening the same
+   colour — a stronger blue among blues is hard to pick out, amber among blues
+   is not. The ring adds a shape cue for anyone who cannot rely on hue.
+
+   `--match-current` is defined next to the other runtime variables (tokens.css)
+   so a theme can retune it in one place. */
+.pdf-page .textLayer .highlight.is-active,
+.tx-hits .highlight.is-active {
+  background: color-mix(in srgb, var(--match-current) 58%, transparent);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--match-current) 85%, transparent);
+  border-radius: 2.5px;
+}
+
+/* A box must never take part in a text selection: it is a decorative div living
+   inside a selectable container, and a sweep across one would give it a
+   ::selection box of its own — a stray filled rectangle over the page. */
+.pdf-page .textLayer .highlight::selection,
+.tx-hits .highlight::selection {
+  background: transparent;
+}
+
+/* Multiply is right on the light themes (it darkens the paper under the text)
+   but on inverted dark surfaces it drives the highlight toward black and
+   swallows the glyphs. Screen keeps it a visible glow there. */
+:root.dark .pdf-page .textLayer .highlight,
+:root.dark .tx-hits .highlight {
+  mix-blend-mode: screen;
+  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
+}
+
+/* Re-state the current match for dark themes. The rule above is as specific as
+   the `.is-active` one and comes later in the sheet, so without this it would
+   repaint the current match in the ordinary accent and the reader would lose
+   track of where they are. */
+:root.dark .pdf-page .textLayer .highlight.is-active,
+:root.dark .tx-hits .highlight.is-active {
+  background: color-mix(in srgb, var(--match-current) 46%, transparent);
+}

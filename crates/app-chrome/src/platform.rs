@@ -16,7 +16,7 @@ use std::sync::OnceLock;
 
 /// The desktops this app ships on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesktopPlatform {
+enum DesktopPlatform {
     MacOs,
     Windows,
     Linux,
@@ -27,7 +27,7 @@ pub enum DesktopPlatform {
 static PLATFORM: OnceLock<DesktopPlatform> = OnceLock::new();
 
 /// The desktop this webview runs on.
-pub fn platform() -> DesktopPlatform {
+fn platform() -> DesktopPlatform {
     *PLATFORM.get_or_init(detect)
 }
 

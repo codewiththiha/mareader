@@ -10,10 +10,10 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::form::slider::Slider;
-use pdf_core::appearance::TextureMode;
-use crate::components::primitives::option_button::OptionButton;
+use reader_core::appearance::TextureMode;
+use crate::components::primitives::controls::option_button::OptionButton;
 use crate::state::AppState;
-use crate::effects::appearance::{preview_appearance, AppearanceScrub};
+use crate::effects::appearance::{AppearanceScrub, preview_appearance};
 
 #[component]
 pub fn TextureSection(state: AppState) -> impl IntoView {

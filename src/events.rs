@@ -6,8 +6,11 @@
 //! without either side holding a signal from the other. Some of these names
 //! are also a protocol with the imperative engine under `public/engine/`,
 //! which dispatches `pdfreader:navigate`, `pdfreader:selection-pages` and
-//! `pdfreader:selection-detail` from plain JS; renaming one means renaming it
-//! there too.
+//! `pdfreader:selection-detail` from plain JS. The engine declares those three
+//! in `public/engine/events.ts`, and `tools/check-events.ts` fails CI when
+//! the two tables disagree or when a name is written as a literal somewhere
+//! else — a mismatch is not a compile error on either side, only a dispatch
+//! into a window nobody is listening on.
 
 use serde::Serialize;
 

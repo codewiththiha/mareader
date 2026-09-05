@@ -33,12 +33,21 @@ pub(crate) fn BookInfo(
                             />
                         }
                         .into_any(),
-                        None => view! {
-                            <div class="flex h-12 w-10 items-center justify-center rounded-sm border border-line bg-surface">
-                                <Icon name=IconName::Open size=14 />
-                            </div>
+                        None => {
+                            // No rendered cover: PDFs get the open-book glyph,
+                            // the reflowable formats their type glyph.
+                            let icon = if reader.reflowable() {
+                                IconName::Type
+                            } else {
+                                IconName::Open
+                            };
+                            view! {
+                                <div class="flex h-12 w-10 items-center justify-center rounded-sm border border-line bg-surface">
+                                    <Icon name=icon size=14 />
+                                </div>
+                            }
+                            .into_any()
                         }
-                        .into_any(),
                     }
                 }}
                 <div class="min-w-0 flex-1" data-tauri-drag-region="true">

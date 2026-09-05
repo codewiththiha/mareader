@@ -1,0 +1,13 @@
+[package]
+name = "md-core"
+version = "0.1.0"
+edition = "2024"
+description = "Markdown: the fence-aware block split, the construct classification that decides what may be cut, the heading-derived chapter tree, and front-matter title and author. No renderer, no wasm, no DOM, no leptos — unit-testable on the host."
+license = "MIT"
+
+[dependencies]
+reader-core = { path = "../reader-core" }
+reflow-core = { path = "../reflow-core" }
+
+[lints.rust]
+unsafe_code = "forbid"

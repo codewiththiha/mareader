@@ -5,15 +5,15 @@
 
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
-use pdf_core::math::FitMode;
-use pdf_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
+use reader_core::view::ViewMode;
+use reader_core::zoom_math::FitMode;
+use reader_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::section_label::SectionLabel;
-use crate::components::primitives::switch::Switch;
+use crate::components::primitives::menu::section_label::SectionLabel;
+use crate::components::primitives::controls::switch::Switch;
 use crate::state::AppState;
 
 #[component]
@@ -28,6 +28,12 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
     let horizontal_mode = Signal::derive(move || {
         state.reader.viewer.mode.get() == ViewMode::ScrollHorizontal
     });
+    // Continuous text reading has no pages to number: while the stream is
+    // live the indicator is a percentage by definition, so the style
+    // selector stands disabled rather than offering a choice that is not
+    // being honoured. (The stream has no inter-page gap to remove either,
+    // so No Gap joins it.)
+    let stream_live = Signal::derive(move || state.reader.reflow_streaming());
     view! {
         <SectionLabel text="Reader chrome" />
         <div class="divide-y divide-line rounded-xl border border-line">
@@ -54,7 +60,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                         PageIndicatorStyle::PageNumber => "Page Number",
                         PageIndicatorStyle::Percentage => "Percentage",
                     }
-                    disabled=indicator_off
+                    disabled=Signal::derive(move || indicator_off.get() || stream_live.get())
                 />
             </Row>
             <Row label="Floating Label">
@@ -170,7 +176,10 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     on_change=Callback::new(move |v| {
                         s.update(|st| st.layout.no_gap = v);
                     })
-                    title="Remove the spacing between pages in scroll view".to_string()
+                    disabled=Signal::derive(move || stream_live.get())
+                    title="Remove the spacing between pages in scroll view. A continuously \
+                           streaming text document has no pages — and so no gap — to remove."
+                        .to_string()
                 />
             </Row>
             // Page Margin is the horizontal (left/right) air around each page,
@@ -256,7 +265,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     on_change=Callback::new(move |v| {
                         s.update(|st| st.layout.page_shadow = v);
                     })
-                    title="Drop shadow under PDF pages".to_string()
+                    title="Drop shadow under pages".to_string()
                 />
             </Row>
             <Row label="Overlay Sidebar">

@@ -127,3 +127,31 @@
   --color-accent-soft: var(--base-accent-soft);
 }
 
+/* ---------------------------------------------------------------------
+   3b. Text-page tokens — the reflowable formats' own paper/ink pipeline.
+   The PDF filter pipeline never touches these; the reflowable appearance
+   module writes them (crates/reader-core/src/appearance/reflowable). The
+   defaults alias the global tokens so nothing breaks before the first paint,
+   and the precomposed ink tints fall back to the full ink.
+   --------------------------------------------------------------------- */
+:root {
+  --tx-paper: var(--color-paper);
+  --tx-ink: var(--color-ink);
+  --tx-muted: var(--color-muted);
+  --tx-surface: var(--color-surface);
+  --tx-line: var(--color-line);
+  --tx-accent: var(--color-accent);
+  --tx-accent-soft: var(--color-accent-soft);
+  /* Precomposed ink tints (markdown rules). Flat fallbacks: the real
+     values are painted by appearance::reflowable before any document
+     renders. */
+  --tx-ink-soft: var(--tx-ink);
+  --tx-ink-border: var(--tx-ink);
+  --tx-ink-code-bg: var(--tx-ink);
+  --tx-ink-pre-bg: var(--tx-ink);
+  --tx-ink-pre-border: var(--tx-ink);
+  --tx-ink-table-border: var(--tx-ink);
+  --tx-ink-table-head: var(--tx-ink);
+  --tx-ink-hr: var(--tx-ink);
+}
+

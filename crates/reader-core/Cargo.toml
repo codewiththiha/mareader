@@ -1,0 +1,21 @@
+[package]
+name = "reader-core"
+version = "0.1.0"
+edition = "2024"
+description = "The reader's format-agnostic domain: the format registry, the persisted settings and appearance models, the theme presets, the zoom ladder, the view-mode and spread maths, the search result model and the outline node. No wasm, no DOM, no leptos, no knowledge of any one format — unit-testable on the host."
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# The only two workspace crates reader-core names, both leaves of the graph:
+# the persisted blend config references the paper model `pdf-paper` defines, and
+# the render budget is `virtual-list`'s type. Neither may depend back on this
+# crate, and no format crate may be named here.
+pdf-paper = { path = "../pdf-paper" }
+virtual-list = { path = "../virtual-list" }
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"

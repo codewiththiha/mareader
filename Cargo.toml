@@ -1,6 +1,6 @@
 [package]
 name = "pdf-reader"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -30,6 +30,7 @@ web-sys = { version = "0.3", features = [
   "HtmlSelectElement",
   "Node",
   "NodeList",
+  "HtmlCollection",
   "DomTokenList",
   "CssStyleDeclaration",
   "CanvasRenderingContext2d",
@@ -45,6 +46,9 @@ web-sys = { version = "0.3", features = [
   "DomRectList",
   "Selection",
   "Range",
+  # The reflowable gloss anchor walks a block's text nodes to turn a character
+  # range back into a DOM Range (and reads each node's `data` to count them).
+  "Text",
   "PointerEvent",
   "EventTarget",
   "AddEventListenerOptions",
@@ -64,17 +68,47 @@ serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 serde_json = "1"
 console_error_panic_hook = "0.1.7"
+# Markdown rendering for the reflowable formats: parses each block and
+# emits Leptos views directly (GFM on, raw HTML off, no theme classes —
+# the reader's own stylesheet owns the look).
+leptos-md = "0.1"
 ai-core = { path = "crates/ai-core" }
 virtual-list = { path = "crates/virtual-list" }
 virtual-list-leptos = { path = "crates/virtual-list-leptos" }
-pdf-core = { path = "crates/pdf-core" }
 pdf-engine = { path = "crates/pdf-engine" }
 pdf-paper = { path = "crates/pdf-paper" }
 tauri-bridge = { path = "crates/tauri-bridge" }
 app-chrome = { path = "crates/app-chrome" }
+# The format cores. `reader-core` is everything a reader needs that no format
+# owns (the format list, the view modes, the settings, the colour pipeline);
+# `pdf-core` is the PDF's geometry and text index; `reflow-core` is the shared
+# maths of laying text out, with `txt-core` and `md-core` one parser each on
+# top of it. Nothing here knows about the next format; adding one is a new
+# crate that depends on `reflow-core`, plus one directory in
+# `src/components/formats`.
+reader-core = { path = "crates/reader-core" }
+pdf-core = { path = "crates/pdf-core" }
+reflow-core = { path = "crates/reflow-core" }
+txt-core = { path = "crates/txt-core" }
+md-core = { path = "crates/md-core" }
 
 [workspace]
-members = ["src-tauri", "crates/ai-core", "crates/virtual-list", "crates/virtual-list-leptos", "crates/pdf-core", "crates/pdf-engine", "crates/pdf-paper", "crates/tauri-bridge", "crates/app-chrome"]
+members = [
+  "src-tauri",
+  "crates/ai-core",
+  "crates/virtual-list",
+  "crates/virtual-list-leptos",
+  "crates/reader-core",
+  "crates/ui-geom",
+  "crates/pdf-core",
+  "crates/pdf-engine",
+  "crates/pdf-paper",
+  "crates/tauri-bridge",
+  "crates/app-chrome",
+  "crates/reflow-core",
+  "crates/txt-core",
+  "crates/md-core",
+]
 
 [profile.release]
 # Keep wasm small for a desktop app.

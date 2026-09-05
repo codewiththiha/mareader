@@ -8,9 +8,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
-use crate::state::SidebarMode;
-use crate::state::AppState;
-use crate::storage::save_library;
+use crate::state::{AppState, SidebarMode};
 
 /// Close the current document and return to the library shelf.
 ///
@@ -42,10 +40,8 @@ pub fn close_document(state: AppState) {
                 changed = true;
             }
         });
-        if changed
-            && let Err(e) = state.library.books.with_untracked(|books| save_library(books))
-        {
-            e.report();
+        if changed {
+            crate::storage::persist_library(state.library);
         }
     }
 
@@ -58,6 +54,10 @@ pub fn close_document(state: AppState) {
         _ = engine::destroy().await;
     });
 
+    // One call sheds everything the open flow wrote — the identity, the outline
+    // and BOTH formats' pages — because `DocumentState::reset` owns that list
+    // (including the reflowable half it delegates to). Resetting anything here
+    // as well would be a second place to remember.
     state.reader.document.reset();
     state.reader.viewer.reset_position();
     state.reader.search.reset();
@@ -65,7 +65,7 @@ pub fn close_document(state: AppState) {
     // so the next open of this book paints them again.
     state.reader.gloss.reset();
     // Drop any in-flight AI selection/card so a stale popover_open cannot
-    // hide the Info button or swallow the first open on the next document.
+    // hide the Explain button or swallow the first open on the next document.
     state.reader.ai_selection.reset();
     state.ui.sidebar.set(SidebarMode::None);
     // The paper session forgets the book and drops the backdrop back to the

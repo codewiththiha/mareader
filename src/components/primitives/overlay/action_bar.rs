@@ -21,8 +21,8 @@ pub fn ActionBar(
 ) -> impl IntoView {
     let base = format!(
         "fixed bottom-5 right-5 {} flex items-center gap-1 rounded-full border border-line \
-         bg-surface py-1.5 pl-4 pr-1.5 shadow-[var(--gloss-shadow-menu)]",
-        crate::components::primitives::floating::types::z::SELECTION_BAR
+         bg-surface py-1.5 pl-4 pr-1.5 shadow-[var(--gloss-shadow-float)]",
+        app_chrome::layers::SELECTION_BAR
     );
     let pill_class = match class {
         Some(c) => format!("{base} {c}"),

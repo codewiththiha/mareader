@@ -17,7 +17,7 @@ use super::{
 };
 
 /// Selecting this word yields a retryable error instead of an answer.
-pub const FAIL_WORD: &str = "__fail";
+const FAIL_WORD: &str = "__fail";
 
 pub struct MockAiProvider;
 

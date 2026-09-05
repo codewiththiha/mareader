@@ -5,3 +5,4 @@ pub mod drag_drop;
 pub mod motion;
 pub mod shortcuts;
 pub mod theme;
+pub mod typography;

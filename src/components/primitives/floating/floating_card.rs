@@ -14,7 +14,7 @@
 use leptos::children::Children;
 use leptos::prelude::*;
 
-use super::types::FloatBox;
+use app_chrome::floating::types::FloatBox;
 
 /// A morphing floating surface driven by a box signal.
 #[component]

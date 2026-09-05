@@ -7,11 +7,18 @@
 //! primes the thumbnail cache. Every step after the engine's answer is
 //! guarded by the session stamp (see [`super::session`]), because all of them
 //! can outlive the attempt that started them.
+//!
+//! [`enter`] is the part the two pipelines share: the identity write, the gloss
+//! marks, the resume clamp, the startup scale and the route flip. A tail owns
+//! its own content seeding and calls into [`enter`] for everything a reader
+//! would expect to behave the same whatever the file extension was.
 
 mod cover;
+mod enter;
 mod outline;
 mod seed;
 mod shelf;
+mod reflow;
 mod warmup;
 
 use leptos::prelude::*;
@@ -23,11 +30,11 @@ use leptos::prelude::*;
 // wasm-bindgen executor runs the future to completion regardless of owner.
 use wasm_bindgen_futures::spawn_local;
 
+use reader_core::format::{Format, format_of};
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 
-use crate::state::library;
-use crate::state::{AppState, Toast};
+use crate::state::{AppState, Toast, library};
 
 use super::session;
 
@@ -39,7 +46,7 @@ use super::session;
 ///     backend before the webview finished mounting (initial-launch argv on
 ///     Windows/Linux, the macOS open-file event at launch). An event emitted
 ///     before mount would be lost, so the command is the source of truth.
-///   * PUSH — the backend emits `pdf-open-file` for files opened while the
+///   * PUSH — the backend emits `document-open-file` for files opened while the
 ///     app is already running (single-instance forward on Windows/Linux,
 ///     LaunchServices on macOS). The listener just re-runs the pull: the
 ///     command clears itself, so an event + a stray second pull can never
@@ -59,7 +66,7 @@ pub fn init_open_file_handling(state: AppState) {
     // PUSH — the listener just re-runs the pull (the command clears itself,
     // so an event + a stray second pull can never open the same file twice).
     let cb_state = state;
-    crate::services::tauri_listen("pdf-open-file", move |_ev: web_sys::Event| {
+    crate::services::tauri_listen("document-open-file", move |_ev: web_sys::Event| {
         let st = cb_state;
         spawn_local(async move {
             if let Some(path) = engine::take_pending_file().await {
@@ -75,22 +82,30 @@ pub fn init_open_file_handling(state: AppState) {
 /// doc status / status bar.
 pub fn open_dialog(state: AppState) {
     spawn_local(async move {
-        match engine::pick_pdf().await {
+        match engine::pick_document().await {
             Ok(path) => open_path(state, path),
             Err(msg) => {
                 if msg != "Open cancelled" {
                     state.reader.document.error.set(Some(msg.clone()));
                     state.reader.document.status.set(DocStatus::Error);
-                    state.ui.toast.set(Some(Toast::new(format!("Could not open PDF: {}", msg))));
+                    state.ui.toast.set(Some(Toast::new(format!(
+                        "Could not open document: {}",
+                        msg
+                    ))));
                 }
             }
         }
     });
 }
-/// Shared open-flow: open `path` in the engine and populate the whole app state
-/// (document, viewer, search, library). Resumes at the saved page if this book
-/// was opened before, and records it in the recent-books library. Drag-drop
-/// calls this directly.
+/// Shared open-flow: open `path` through the pipeline its format needs and
+/// populate the whole app state (document, viewer, search, library). Resumes
+/// at the saved page if this book was opened before, and records it in the
+/// recent-books library. Drag-drop calls this directly.
+///
+/// The pipeline fork happens here and only here: PDFs go to the pdf.js
+/// engine, the reflowable formats go to the reflow pipeline ([`reflow`]). Both
+/// tails converge on the same state contract, so everything downstream —
+/// the viewer, navigation, the shelf — is format-agnostic.
 pub fn open_path(state: AppState, path: String) {
     // Claim the document state for THIS attempt. Pick a second book while the
     // first is still resolving and the loser's tail would otherwise still run:
@@ -103,12 +118,21 @@ pub fn open_path(state: AppState, path: String) {
 
     // The resume point is read BEFORE the open resolves so it can't be
     // clobbered by a concurrent page-tracking write from the closing document.
-    let saved_page = state
-        .library
-        .books
-        .with_untracked(|books| library::find_page(books, &path))
-        .unwrap_or(1);
+    // The reflowable tail also takes the fractional stream position, when the
+    // last session left one.
+    let (saved_page, saved_fraction) = state.library.books.with_untracked(|books| {
+        (library::find_page(books, &path).unwrap_or(1), library::find_fraction(books, &path))
+    });
 
+    match format_of(&path) {
+        Format::Pdf => open_pdf(state, path, saved_page, stamp),
+        fmt => reflow::open_reflowable(state, path, fmt, saved_page, saved_fraction, stamp),
+    }
+}
+
+/// The PDF tail of the open flow: hand the path to the engine and seed from
+/// its answer.
+fn open_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
     spawn_local(async move {
         let opened = engine::open(&path).await;
         // The engine answered — but a second open (or a close) may have taken
@@ -139,14 +163,10 @@ fn ready(
     // state. The resume page is one of them: the strip scrolls to
     // `viewer.page` as it binds its container (`ScrollShell`), so there is no
     // second jump to schedule here.
-    state.reader.document.error.set(None);
-    state.reader.document.status.set(DocStatus::Ready);
-    // A successful open dismisses any stale error toast.
-    state.ui.toast.set(None);
+    enter::enter_ready(state);
 
-    // Reset search + clear stale highlights. The floating search overlay must
-    // not linger after opening a new document.
-    state.reader.search.reset();
+    // The engine's own highlight layer belongs to the previous book; the
+    // search reset inside `enter_ready` is the app's half of the same cleanup.
     engine::clear_highlights();
 
     outline::resolve(state, path.clone(), stamp);
@@ -164,12 +184,15 @@ fn ready(
     warmup::prewarm_thumbs(seeded.num_pages);
 }
 
-/// The book did not open: surface it on the status bar and as a toast.
+/// The document did not open: surface it on the status bar and as a toast.
 fn fail(state: AppState, message: String) {
     state.reader.document.error.set(Some(message.clone()));
     state.reader.document.status.set(DocStatus::Error);
     state
         .ui
         .toast
-        .set(Some(Toast::new(format!("Could not open PDF: {}", message))));
+        .set(Some(Toast::new(format!(
+            "Could not open document: {}",
+            message
+        ))));
 }

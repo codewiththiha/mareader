@@ -37,6 +37,19 @@ pub fn reading_progress(state: AppState) {
         let status = state.reader.document.status.get();
         let path = state.reader.document.path.get();
         let page = state.reader.viewer.page.get();
+        // The stream's fractional position rides along with the page: the
+        // page remains the paged modes' resume point, and the fraction is
+        // the same position at full precision for the next continuous
+        // read. Only the stream writes one — anything else clears a stale
+        // fraction an earlier streamed session left behind. The scroll
+        // mirror is the tracked input that moves it.
+        let streaming = state.reader.reflow_streaming();
+        let _scroll = if streaming {
+            state.reader.viewer.scroll_top.get()
+        } else {
+            0.0
+        };
+        let fraction = if streaming { state.reader.stream_fraction() } else { None };
         // A zoom transaction owns the geometry, and the page counter is not
         // trustworthy while it does: the dominant arm stands down for the
         // duration and a held navigation has not been replayed yet, so the
@@ -60,16 +73,29 @@ pub fn reading_progress(state: AppState) {
             return;
         }
 
-        // No-op write guard: only touch the library when the page actually
-        // moved, so the page-tracking syncs (which can re-write an equal page)
-        // never dirty the list or trigger a save.
+        // No-op write guard: only touch the library when the position
+        // actually moved, so the position-tracking syncs (which can re-write
+        // an equal page) never dirty the list or trigger a save. A fraction
+        // counts as moved past half a percent — finer steps are scroll
+        // noise, and the debounce would only coalesce them anyway.
         let mut changed = false;
         state.library.books.update(|books| {
-            if let Some(b) = books.iter_mut().find(|b| b.path == path)
-                && b.page != page
-            {
-                b.page = page;
-                changed = true;
+            if let Some(b) = books.iter_mut().find(|b| b.path == path) {
+                let page_moved = b.page != page;
+                let fraction_moved = match (b.fraction, fraction) {
+                    (Some(old), Some(new)) => (new - old).abs() > 0.005,
+                    (None, None) => false,
+                    _ => true,
+                };
+                if page_moved {
+                    b.page = page;
+                }
+                if fraction_moved {
+                    b.fraction = fraction;
+                }
+                if page_moved || fraction_moved {
+                    changed = true;
+                }
             }
         });
         if !changed {

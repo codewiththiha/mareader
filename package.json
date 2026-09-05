@@ -1,15 +1,15 @@
 {
   "name": "pdf-reader",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
     "build:css": "tailwindcss -i styles/input.css -o styles.css --minify",
     "watch:css": "tailwindcss -i styles/input.css -o styles.css --watch",
-    "build:ts": "tsc --noEmit --project tsconfig.json && tsc --project tsconfig.scripts.json && node ./scripts/bundle-engine.mjs",
-    "watch:ts": "tsc --project tsconfig.scripts.json && node ./scripts/bundle-engine.mjs",
-    "check:ts": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project tsconfig.scripts.json",
+    "build:ts": "tsc --noEmit --project tsconfig.json && tsc --project tsconfig.tools.json && node ./tools/bundle-engine.mjs",
+    "watch:ts": "tsc --project tsconfig.tools.json && node ./tools/bundle-engine.mjs",
+    "check:ts": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project tsconfig.tools.json",
     "build": "npm run build:ts && npm run build:css && trunk build --release"
   },
   "devDependencies": {

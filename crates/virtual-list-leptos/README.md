@@ -12,8 +12,8 @@ This crate has two layers:
 - list virtualizers with per-item estimates and measurement correction
 - grid virtualizers with row windowing and width-driven column resolution
 - scroll anchoring for measurement changes and zoom-style rescaling
-- `scroll_to_offset` and `scroll_to_index` with alignment and retry support
-- reactive `items()`, `rows()`, `total_size()`, `padding()`, `range()`, `dominant()`, and `is_scrolling()` signals
+- `scroll_to_offset` and `scroll_to_index` with alignment and retry support, and `on_scroll_idle` for the moment the scroll settles
+- reactive `items()`, `rows()`, `total_size()` and `dominant()` signals, plus `scroll_offset()`, `viewport()` and a per-item `item_top()`
 
 ## Continuous-list sketch
 

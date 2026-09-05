@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::toggle_button::ToggleButton;
+use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::state::SidebarMode;
 
 /// One rail toggle: the shared pressed/quiet shell + the rail's own size.
@@ -34,23 +34,29 @@ pub(crate) fn PanelSwitcher(
     thumbs_active: Signal<bool>,
     outline_active: Signal<bool>,
     on_reveal: fn(),
+    /// The Thumbs toggle exists only while the engine has pages to thumb —
+    /// text documents carry none, so the rail offers Outline alone.
+    #[prop(into, default = Signal::derive(|| true))]
+    thumbs_visible: Signal<bool>,
 ) -> impl IntoView {
     view! {
         <div class="flex shrink-0 items-center justify-around gap-1 border-t border-line p-1.5">
-            <RailToggle
-                icon=IconName::Thumbs
-                title="Thumbnails"
-                active=thumbs_active
-                on_click=move || {
-                    // Re-clicking the ACTIVE tab means "take me to where
-                    // I am", not "close".
-                    if mode.get() == SidebarMode::Thumbs {
-                        on_reveal();
-                    } else {
-                        mode.set(SidebarMode::Thumbs);
+            <Show when=move || thumbs_visible.get()>
+                <RailToggle
+                    icon=IconName::Thumbs
+                    title="Thumbnails"
+                    active=thumbs_active
+                    on_click=move || {
+                        // Re-clicking the ACTIVE tab means "take me to where
+                        // I am", not "close".
+                        if mode.get() == SidebarMode::Thumbs {
+                            on_reveal();
+                        } else {
+                            mode.set(SidebarMode::Thumbs);
+                        }
                     }
-                }
-            />
+                />
+            </Show>
             <RailToggle
                 icon=IconName::Outline
                 title="Outline"

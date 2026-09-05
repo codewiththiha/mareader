@@ -1,9 +1,9 @@
 //! Document lifecycle: open, outline, teardown, covers, OS-file handoff.
 
 use crate::bridge;
-use crate::types::{CoverResult, OpenResult, OutlineNode};
+use crate::types::{CoverResult, OpenResult, OutlineEntry};
 
-use super::{guard_pdf_reader, require_pdf_reader, resolve, EngineError};
+use super::{EngineError, guard_pdf_reader, require_pdf_reader, resolve};
 
 pub async fn open(path: &str) -> Result<OpenResult, EngineError> {
     require_pdf_reader()?;
@@ -15,10 +15,14 @@ pub async fn open(path: &str) -> Result<OpenResult, EngineError> {
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OutlinePayload {
-    outline: Vec<OutlineNode>,
+    outline: Vec<OutlineEntry>,
 }
 
-/// The open document's chapter tree, flattened. The open flow asks for this
+/// The open document's chapter tree, flattened into wire entries.
+///
+/// Entries, not outline nodes: which page a chapter may be jumped to is the
+/// reader's business (it clamps against the page count it knows and drops what
+/// never resolved), and the engine's job ends at reporting what the file said. The open flow asks for this
 /// AFTER the reader is up: resolving every outline destination is a per-entry
 /// worker round trip, and holding `open` hostage to it was most of the
 /// document-opening lag on textbook-sized outlines.
@@ -26,7 +30,7 @@ struct OutlinePayload {
 /// INVARIANT: `Ok(empty)` means "no engine, or no outline in this book" —
 /// never an error. `outline_panel` treats empty as "no chapters", which is
 /// correct in both cases; a genuine engine failure still surfaces as `Err`.
-pub async fn outline() -> Result<Vec<OutlineNode>, EngineError> {
+pub async fn outline() -> Result<Vec<OutlineEntry>, EngineError> {
     if !guard_pdf_reader() {
         return Ok(Vec::new());
     }

@@ -4,9 +4,9 @@
 
 use leptos::prelude::*;
 
-use pdf_core::layout::{PAGE_GAP, ViewMode};
-use pdf_core::math::FitMode;
-use pdf_core::settings::AnimationSettings;
+use reader_core::view::{PAGE_GAP, ViewMode};
+use reader_core::zoom_math::FitMode;
+use reader_core::settings::AnimationSettings;
 
 use super::zoom::ZoomState;
 
@@ -85,9 +85,9 @@ pub struct ViewerSignals {
     /// the page index from its id (`cont-{i}-pg`), and dispatches a
     /// `pdfreader:selection-pages` CustomEvent with `{ first, last }` (or
     /// `null` to clear). This effect listens for that event and writes the
-    /// range here so `PageList` can PIN those pages in the virtualization
-    /// window — otherwise scrolling evicts them, orphaning the selection's
-    /// DOM nodes and breaking copy of multi-page selections.
+    /// range here so `features::reader::virtualizers` can PIN those pages in
+    /// the virtualization window — otherwise scrolling evicts them, orphaning
+    /// the selection's DOM nodes and breaking copy of multi-page selections.
     pub selected_pages: RwSignal<Option<(u32, u32)>>,
     /// Continuous auto-scroll along the active strip (Continuous / Horizontal).
     pub auto_scroll: RwSignal<bool>,

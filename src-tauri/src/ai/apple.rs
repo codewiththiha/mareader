@@ -6,7 +6,9 @@
 //! instead of string-matching on prose that may change between OS releases.
 
 use async_stream::stream;
-use fm_bridge::{Bridge, Error as BridgeError, Request, StreamEvent, Unavailable};
+use fm_bridge::Bridge;
+use fm_bridge::Error as BridgeError;
+use fm_bridge::{Request, StreamEvent, Unavailable};
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use std::time::Duration;

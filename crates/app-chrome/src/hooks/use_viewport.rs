@@ -1,5 +1,5 @@
 //! Viewport size utilities: a pure snapshot read and a reactive resize-aware
-//! signal. Shared by every floating surface (gloss card, selection menu,
+//! signal. Shared by every floating surface (gloss card, selection pill,
 //! popovers) so clamping math never re-implements the lookup.
 
 use leptos::prelude::*;
@@ -24,7 +24,7 @@ pub fn viewport_size() -> (f64, f64) {
 ///
 /// The resize listener is deliberately always-on rather than gated on
 /// visibility: it is a single cheap listener and it makes "is my clamping
-/// viewport stale" a non-question for any consumer (gloss, selection menu,
+/// viewport stale" a non-question for any consumer (gloss, selection pill,
 /// context menus).
 pub fn use_viewport() -> RwSignal<(f64, f64)> {
     let size = RwSignal::new(viewport_size());

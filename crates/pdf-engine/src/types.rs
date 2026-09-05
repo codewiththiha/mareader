@@ -2,7 +2,7 @@
 //!
 //! The engine resolves `{ok:true, ...}` objects whose field names are camelCase
 //! (they come straight from JS). These structs are deserialized via
-//! serde_wasm_bindgen after the `ok` flag is checked in crate::api::engine.
+//! serde_wasm_bindgen after the `ok` flag is checked in `crate::api::resolve`.
 //!
 //! CONTRACT: field names are the wire contract with pdfEngine.js.
 
@@ -15,12 +15,13 @@ pub struct PageSize {
     pub height: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct OutlineNode {
-    pub title: String,
-    pub page: u32,
-    pub depth: u32,
-}
+/// One flattened chapter, exactly as `pdfEngine.js` resolves it.
+///
+/// The type is `pdf-core`'s rather than the engine's: the entries cross this
+/// boundary on the wire and land in the reader's outline with one conversion in
+/// between, and a wire shape duplicated on both sides of that conversion is how
+/// a field rename becomes a silent `depth: 0` instead of a compile error.
+pub use pdf_core::outline::OutlineEntry;
 
 /// `{ok:true, numPages, title, author, outline, page1Size, pageHeights}` — engine.open().
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,7 +30,7 @@ pub struct OpenResult {
     pub num_pages: u32,
     pub title: Option<String>,
     pub author: Option<String>,
-    pub outline: Vec<OutlineNode>,
+    pub outline: Vec<OutlineEntry>,
     pub page1_size: PageSize,
     /// Intrinsic (scale-1) height of every page, in document order.
     ///
@@ -56,22 +57,22 @@ pub struct RenderResult {
     pub scale: f64,
 }
 
-/// `{ok:true, width, height, scale, cached}` — engine.renderThumb.
+/// `{ok:true, width, height, scale}` — engine.renderThumb.
 ///
-/// `cached` is the load-bearing field: `true` means the engine blitted an
-/// already-rendered bitmap into the canvas SYNCHRONOUSLY (before the promise
-/// ever suspended), so the thumbnail is painted on the very first frame the
-/// cell is mounted. The cell uses it to skip its loading skeleton entirely —
-/// covering an already-painted thumbnail and then crossfading the cover away
-/// is precisely the per-row flicker seen when scrolling a virtualized grid.
+/// This used to carry a `cached` flag saying the engine had blitted an
+/// already-rendered bitmap synchronously, so the cell could skip its loading
+/// skeleton. A flag that arrives with the promise is too late for that: the
+/// cell's first frame is composited before the render resolves. What actually
+/// removed the flicker is `has_thumb` — the same question, asked synchronously
+/// while the cell is still being built (`thumbnails/thumbnail_cell.rs`) — and
+/// the flag was left behind unread, still advertised as load-bearing by its own
+/// doc comment. The blit is still synchronous; only the reporting of it is gone.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThumbResult {
     pub width: f64,
     pub height: f64,
     pub scale: f64,
-    #[serde(default)]
-    pub cached: bool,
 }
 
 /// `{ok:true, dataUrl, width, height}` — engine.coverDataUrl.
@@ -102,7 +103,7 @@ pub enum DocStatus {
 /// (a live render's stash) and `samplePaperPage` (an offscreen sample).
 ///
 /// The pixels travel as a typed array rather than JSON, so this shape is
-/// parsed by hand in `api::parse_frame`, not through serde.
+/// parsed by hand in `crate::api::paper::parse_frame`, not through serde.
 pub struct PaperFrame {
     pub page: u32,
     pub width: u32,

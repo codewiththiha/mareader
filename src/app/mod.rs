@@ -10,7 +10,7 @@ mod shell;
 use leptos::prelude::*;
 use leptos_router::components::Router;
 
-use crate::components::overlays::toast::ToastHost;
+use crate::components::app_overlays::toast::ToastHost;
 use bootstrap::{create_app_state, provide_app_contexts};
 use effects::install_app_effects;
 use shell::AppShell;
@@ -19,11 +19,11 @@ use shell::AppShell;
 pub fn App() -> impl IntoView {
     let state = create_app_state();
     provide_context(state);
-    let appearance = provide_app_contexts(state);
+    let (appearance, typography) = provide_app_contexts(state);
 
     // Every app-lifetime effect, in one ordered place: see `app::effects` for
     // the order and what depends on it.
-    install_app_effects(state, appearance);
+    install_app_effects(state, appearance, typography);
 
     view! {
         <Router>

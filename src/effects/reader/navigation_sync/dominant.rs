@@ -9,11 +9,10 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
+use reader_core::view::ViewMode;
 use virtual_list_leptos::Virtualizer;
 
-use super::JumpGate;
-use super::Arms;
+use super::{Arms, JumpGate};
 
 /// The page a strip's dominant item (0-based index) corresponds to, SAFELY.
 ///
@@ -40,6 +39,14 @@ pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpG
     let mode = state.viewer.mode;
     Effect::new(move |_| {
         if mode.get() != axis {
+            return;
+        }
+        // The continuous text stream owns the page bookkeeping for itself:
+        // it virtualizes BLOCKS, so this arm's page-cut dominant would be
+        // reading a virtualizer that has no container and no window — and
+        // its one honest write (page 1) would clobber the resume position.
+        // The stream maps its dominant block to the page cut directly.
+        if axis == ViewMode::ScrollVertical && state.reflowable() {
             return;
         }
         // A strip that has just mounted (document open, back from the

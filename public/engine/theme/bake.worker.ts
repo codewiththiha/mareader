@@ -1,6 +1,6 @@
 // The bake worker: applies the CSS filter matrix to RGBA pixels off the main
 // thread. Bundled by esbuild to public/bake.worker.js (see
-// scripts/bundle-engine.mjs); the main thread falls back to the same kernel
+// tools/bundle-engine.mjs); the main thread falls back to the same kernel
 // inline when no Worker is available (Node smoke runs, exotic webviews).
 //
 // The shared math lives in ./filterKernel — the worker IS the same code the

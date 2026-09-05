@@ -50,7 +50,7 @@ use crate::components::ai::gloss::selection_mode::use_select_mode;
 use crate::components::ai::gloss::targeting::use_card_targeting;
 use crate::components::ai::gloss::context_menu::GlossContextMenu;
 use crate::components::ai::gloss::undo_toast::GlossUndoToast;
-use crate::components::ai::types::AiPhase;
+use crate::components::ai::gloss::phase::AiPhase;
 use crate::state::AppState;
 
 #[component]

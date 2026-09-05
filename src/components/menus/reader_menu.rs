@@ -3,16 +3,16 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
-use pdf_core::math::FitMode;
+use reader_core::view::ViewMode;
+use reader_core::zoom_math::FitMode;
 
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::kbd::Kbd;
-use crate::components::primitives::menu_item::MenuItem;
-use crate::components::primitives::separator::Separator;
-use crate::components::primitives::shortcut_row::ShortcutRow;
+use crate::components::primitives::menu::kbd::Kbd;
+use crate::components::primitives::menu::menu_item::MenuItem;
+use crate::components::primitives::menu::separator::Separator;
+use crate::components::primitives::menu::shortcut_row::ShortcutRow;
 use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
 

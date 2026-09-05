@@ -6,7 +6,7 @@
    entrance animations. Page turns, popovers, the floating search and
    toasts appear instantly; layout chrome (the sidebar width, overlays)
    may keep short STRUCTURAL CSS transitions, and zooms scale one
-   continuous surface linearly (see src/viewer/zoom).
+   continuous surface linearly (see src/zoom).
 
    What remains here is the global reduced-motion safety net, the identical
    collapse the reader's own master switch asks for, and the two transitions
@@ -34,6 +34,22 @@
   .sidebar-aside,
   .sidebar-panel {
     transition: none;
+  }
+
+  /* The one animation the nets must not silence: the loading mark. Every other
+     rule here trades motion for calm, and a frozen loader cannot be told apart
+     from an app that stopped answering — its stillness IS the thing users report
+     as a hang, which is the opposite of what an indicator is for. So it keeps
+     its loop and loses its travel: `loader-fade` breathes in place, which is
+     not the kind of motion `prefers-reduced-motion` exists to protect against.
+     Two classes deep plus `!important` because the `*` rule above outranks a
+     lone class selector and takes its duration from the animation's own
+     declaration; `animation-name` needs no `!important`, since this selector
+     beats the per-dot ones below on specificity alone. */
+  .loader .loader-dot {
+    animation-name: loader-fade;
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
   }
 }
 
@@ -63,6 +79,16 @@ html.animations-off .sidebar-panel {
   transition: none;
 }
 
+/* The loading mark again, for the reader's own switch — the same exemption, with
+   the master spelled out in the selector because the `*` rule above it is the
+   identical one. Turning animations off is a preference about animation, not a
+   request to be told the app has stopped; the mark fades instead of hopping. */
+html.animations-off .loader .loader-dot {
+  animation-name: loader-fade;
+  animation-duration: 1.6s !important;
+  animation-iteration-count: infinite !important;
+}
+
 /* Settings → Animations → "Sidebar Animation" off, which is the only rule
    here a switch owns directly. Two classes deep, so it outranks the aside's
    own `.transition-[width]` utility without `!important`, and it touches
@@ -82,22 +108,98 @@ html.animations-off .sidebar-panel {
    The loading mark (primitives/feedback/loader.rs): three dots stepping
    around the corners of a square. Painted in currentColor, so the theme's
    ink colours it wherever it is mounted; sized by an inline width, the
-   aspect ratio keeps it square. The reduced-motion net above stops it like
-   every other animation.
+   aspect ratio keeps it square.
+
+   The three dots are THREE ELEMENTS moved by `transform`, which is more
+   markup than the single box this used to be (one div, three radial
+   gradients, `background-position` stepping between the corners). The single
+   box was the bug. `background-position` is not a composited property: every
+   frame of it needs the main thread to recompute style and repaint, and the
+   one moment this mark is doing its job is the moment the main thread is
+   busy — a document being parsed, the block list measured, page one coming
+   back from the engine. The loop was never stopped, only starved, and a
+   starved paint animation holds the last frame it painted: opening a big text
+   file turned the chase into a still triangle of dots, which is the app
+   looking hung while it was working. `transform` and `opacity` are the two
+   properties a webview keeps animating on the compositor with the script
+   thread blocked, and that is the whole difference between a loader that
+   watches a load and one that is hostage to it.
+
+   Nothing here is timed against the open. The mark is mounted while
+   `DocStatus::Opening` holds and unmounted when the document lands, so the
+   loop just runs at its own beat; the process it reports on owns the
+   lifetime, never the cadence.
    ------------------------------------------------------------------- */
 .loader {
+  position: relative;
   aspect-ratio: 1;
-  --_g: no-repeat radial-gradient(circle closest-side, currentColor 90%, #0000);
-  background:
-    var(--_g) 0    0,
-    var(--_g) 0    100%,
-    var(--_g) 100% 100%;
-  background-size: 40% 40%;
-  animation: loader-steps 1s infinite linear;
+  /* One place decides the dot's edge, and the far corner and the hop both
+     derive from it — a mark that scales by inline `width` alone has to keep
+     those three in step or a dot ends up half off the box. */
+  --loader-size: 40%;
+  --loader-far: calc(100% - var(--loader-size));
+  /* The far corner is 60% of the mark, which is 150% OF THE DOT — and
+     `translate()` percentages are the element's own box, so the keyframes are
+     written in dot units and never need to know the size. */
+  --loader-hop: 150%;
 }
-@keyframes loader-steps {
-  25%  { background-position: 100% 0,    0 100%, 100% 100%; }
-  50%  { background-position: 100% 0,    0 0,    100% 100%; }
-  75%  { background-position: 100% 0,    0 0,    0    100%; }
-  100% { background-position: 100% 100%, 0 0,    0    100%; }
+
+.loader-dot {
+  position: absolute;
+  width: var(--loader-size);
+  height: var(--loader-size);
+  /* The dot the gradients used to paint, unchanged: a circle at 90% of its own
+     box, feathered into the box edge. */
+  background: no-repeat radial-gradient(circle closest-side, currentColor 90%, #0000);
+  animation-duration: 1s;
+  animation-iteration-count: infinite;
+  animation-timing-function: linear;
+}
+
+/* The resting positions — three of the four corners, the empty one at top
+   right. They are declared as geometry rather than left to the first keyframe
+   because the mark has to look right in every state the animation is NOT
+   running in: the reduced-motion nets below, a paused tab, the frame before the
+   first tick. Three dots stacked in one corner is not a loader. */
+.loader-dot-a {
+  top: 0;
+  left: 0;
+  animation-name: loader-hop-a;
+}
+.loader-dot-b {
+  top: var(--loader-far);
+  left: 0;
+  animation-name: loader-hop-b;
+}
+.loader-dot-c {
+  top: var(--loader-far);
+  left: var(--loader-far);
+  animation-name: loader-hop-c;
+}
+
+/* One hop per quarter, in sequence, so two dots always wait while one moves.
+   The dots are indistinguishable and the corners occupied at 100% are exactly
+   the corners occupied at 0%, which is what lets the cycle restart with no
+   visible seam: the empty corner simply keeps travelling. Offsets are relative
+   to each dot's resting corner, in dot units. */
+@keyframes loader-hop-a {
+  0%       { transform: translate(0, 0); }
+  25%, 75% { transform: translate(var(--loader-hop), 0); }
+  100%     { transform: translate(var(--loader-hop), var(--loader-hop)); }
+}
+@keyframes loader-hop-b {
+  0%, 25%   { transform: translate(0, 0); }
+  50%, 100% { transform: translate(0, calc(-1 * var(--loader-hop))); }
+}
+@keyframes loader-hop-c {
+  0%, 50%   { transform: translate(0, 0); }
+  75%, 100% { transform: translate(calc(-1 * var(--loader-hop)), 0); }
+}
+
+/* The nets' alternative: the mark still changes, it just stops travelling.
+   `opacity` only, so nothing crosses the screen — see both blocks below for
+   why this one animation is exempt. */
+@keyframes loader-fade {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 1; }
 }

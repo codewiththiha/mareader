@@ -19,21 +19,19 @@ use crate::components::shell::titlebar::floating_document_title::FloatingDocumen
 use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::menus::reader_menu::ReaderMenu;
 use crate::components::settings::modal::SettingsModal;
-use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use app_chrome::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::tooltip::Tooltip;
 use crate::features::reader::rail::ReaderRail;
-use crate::components::viewer_controls::bottom_bar::ReaderBottomBar;
-use crate::components::viewer_controls::page_indicator::PageIndicator;
+use crate::components::viewer::controls::bottom_bar::ReaderBottomBar;
+use crate::components::viewer::controls::page_indicator::PageIndicator;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
 use crate::features::reader::use_reader_virtualizers;
 use crate::services::document::close_document;
-use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
-use pdf_core::layout::{PAGE_GAP, ViewMode};
-use pdf_core::math::FitMode;
+use reader_core::settings::PageIndicatorStyle;
 use pdf_engine::types::DocStatus;
 
 #[component]
@@ -52,116 +50,34 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     let rv = use_reader_virtualizers(vs);
 
-    // Seed margin from persisted settings once the reader mounts. The
-    // horizontal strip is the one mode that never carries a page margin, so
-    // the seed honours the same mode rule as the sync effect below.
-    {
-        let m = state.settings.with_untracked(|st| st.layout.page_margin);
-        let horizontal = vs.viewer.mode.get_untracked() == ViewMode::ScrollHorizontal;
-        vs.viewer.page_margin.set(if horizontal { 0.0 } else { m });
-    }
+    // The layout prefs (page gap, page margin) resolve their settings into the
+    // strips' size models. Installed BEFORE the reflow layout effect below,
+    // which reads the gap they resolve.
+    crate::effects::reader::layout_prefs::layout_prefs(
+        state,
+        rv.virtualizer.clone(),
+        rv.h_virtualizer.clone(),
+    );
 
-    // No-gap pref → runtime gap + rescale.
-    {
-        let v = rv.virtualizer.clone();
-        Effect::new(move |_| {
-            let no_gap = state.settings.with(|st| st.layout.no_gap);
-            let gap = if no_gap { 0.0 } else { PAGE_GAP };
-            if (vs.viewer.page_gap.get_untracked() - gap).abs() < 1e-9 {
-                return;
-            }
-            vs.viewer.page_gap.set(gap);
-            let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
-            v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
-        });
-    }
+    // The vertical text strip's size model: page units sized to the sum of
+    // their blocks, projected into the shared measurement store whenever the
+    // format, the mode or the cut moves (and reverted to A4 when any of
+    // those stop asking for it). Installed AFTER the gap effects so its
+    // relayout reads the gap they just resolved.
+    crate::effects::reader::reflow_layout::reflow_layout(state, rv.virtualizer.clone());
+    // The Markdown outline follows the same page cut, so it is installed beside
+    // it: one re-cut republishes the pages AND moves the chapters.
+    crate::effects::reader::reflow_outline::reflow_outline(state);
 
-    // Page margin pref — cross-axis for the vertical strip and both
-    // paginated shells. The horizontal strip is exempt: it lays pages
-    // edge-to-edge along the scroll axis, so side air there would read as
-    // dead space between pages rather than margin. This effect resolves the
-    // stored pref to an effective margin of 0 whenever the mode is
-    // ScrollHorizontal — without touching the stored value — and tracks the
-    // mode, so leaving the horizontal strip restores whatever the setting
-    // holds on the flip itself.
-    {
-        let (v, hv) = (rv.virtualizer.clone(), rv.h_virtualizer.clone());
-        Effect::new(move |_| {
-            let stored = state.settings.with(|st| st.layout.page_margin);
-            let horizontal = vs.viewer.mode.get() == ViewMode::ScrollHorizontal;
-            let m = if horizontal { 0.0 } else { stored };
-            if (vs.viewer.page_margin.get_untracked() - m).abs() < 1e-9 {
-                return;
-            }
-            vs.viewer.page_margin.set(m);
-            let scale = vs.viewer.zoom.visual_scale();
-            let gap = vs.viewer.page_gap.get_untracked();
-            let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
-            let widths = vs
-                .document
-                .metrics
-                .intrinsic
-                .with_untracked(|w| w.iter().map(|s| s.width).collect::<Vec<f64>>());
-            // Vertical: margin is cross-axis; sizes unchanged aside from gap.
-            v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
-            // Horizontal: margin is main-axis — which the exempt mode simply
-            // never has (m resolves to 0 there).
-            hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m);
-            // A margin change must re-fit the page under the reader: the fit
-            // target derives from the usable width (`cw - 2*margin`), so the
-            // page only visibly gains side space once that scale is re-resolved
-            // against the newly applied margin. Posting here guarantees the
-            // refit even if no other watcher happens to fire for a setting-only
-            // change, and is a no-op when no fit is active. Entering the
-            // horizontal strip skips the post: that switch drops the fit to
-            // None anyway, and resolving the OUTGOING fit against the new axis
-            // is exactly the zoom jump the mode-change guard below exists to
-            // prevent.
-            if !horizontal && vs.viewer.fit.get_untracked() != FitMode::None {
-                vs.viewer.zoom.post(ZoomCommand::Refit, false);
-            }
-        });
-    }
+    // What a mode flip owes: the incoming strip's anchor, the stream's zoom, the
+    // outgoing view's rasters, and the fit the next mode owns.
+    crate::effects::reader::mode_change::mode_change(state);
 
-    let prev_mode = StoredValue::new(vs.viewer.mode.get_untracked());
-    Effect::new(move |_| {
-        let mode = vs.viewer.mode.get();
-        let prev = prev_mode.get_value();
-        if mode == prev {
-            return;
-        }
-        prev_mode.set_value(mode);
-        // The incoming view's strip (if it has one) mounts fresh and anchors
-        // itself to `viewer.page` in `ScrollShell`; until it has, its
-        // dominant is not the reader's page. Raised HERE, in the same flush
-        // as the mode flip, so the scroll→page arm that re-runs for the flip
-        // sees it and stands down rather than reading the unplaced strip.
-        if matches!(mode, ViewMode::ScrollVertical | ViewMode::ScrollHorizontal) {
-            vs.viewer.awaiting_anchor.set(true);
-        }
-        // A mode flip leaves the outgoing view's rasters behind and nothing
-        // necessarily renders right after, so the engine's own sweep (which
-        // only runs inside a render) would never fire. Release now.
-        pdf_engine::api::sweep();
-        let auto = state.settings.with(|s| s.layout.auto_scale);
-        if mode == ViewMode::ScrollHorizontal {
-            // Horizontal is one page per virtual item. Do not reinterpret the
-            // outgoing layout's fit against the new axis: a single/vertical
-            // width fit would become a height fit here and drop the readout
-            // by almost half, while a spread width fit would jump the other
-            // way. Hand ownership to the already-resolved `desired` scale so
-            // every mode switch preserves the reader's zoom.
-            vs.viewer.fit.set(FitMode::None);
-        } else if matches!(mode, ViewMode::Spread) || (auto && mode.is_paginated()) {
-            vs.viewer.fit.set(FitMode::Width);
-        }
-    });
-
-    let engine = crate::viewer::engine::ViewerEngine::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
+    let actuator = crate::zoom::actuator::ZoomActuator::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
     // The zoom controller is created and driven here, and lives exactly as
     // long as this page's reactive owner. Everything downstream only posts
     // commands; nothing else writes a zoom scale or rescales a strip.
-    let zoom = crate::viewer::zoom::ZoomController::new(engine);
+    let zoom = crate::zoom::ZoomController::new(actuator);
     zoom.drive(vs);
     // BEFORE reading_progress, and that is a contract rather than a habit.
     // Leptos runs effects in insertion order, so when a zoom transaction
@@ -199,6 +115,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
     let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
+    // Continuous text reading has no meaningful page number: while the
+    // stream is live the badge is a percentage of the document whatever the
+    // indicator style says (the style selector stands disabled for exactly
+    // as long, so it cannot show a choice that is not being honoured).
+    let stream_live = Signal::derive(move || vs.reflow_streaming());
+    let stream_percent = Signal::derive(move || vs.stream_percent());
 
     // Left: sidebar toggle + Library. Title is centered; right is the 3-dash
     // view menu + Appearance.
@@ -264,7 +186,16 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             // so it can never leak a phantom scrollbar onto the window.
             <div
                 class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
-                class=("blend", move || state.settings.with(|st| st.layout.blend_mode))
+                class=("blend", move || {
+                    // The blend ::after is the PDF paper pipeline (the
+                    // document's own paper through the canvas filter). A
+                    // text/Markdown page is its OWN paper — the surface
+                    // paints --tx-paper (see shell.css) — so the layer
+                    // must not run for it, or a second (filtered) backdrop
+                    // stacks under the text page.
+                    state.settings.with(|st| st.layout.blend_mode)
+                        && !state.reader.reflowable()
+                })
             >
                 <div class="relative flex min-h-0 flex-1">
                     // DOCKED: the rail is a flex sibling of `<main>`, so the
@@ -279,23 +210,49 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         class=("no-page-shadow", move || !state.settings.with(|st| st.layout.page_shadow))
                     >
                         <Show when=is_ready>
-                            <crate::components::document::Viewer
+                            <crate::components::viewer::Viewer
                                 state=vs
                                 virtualizer=rv.virtualizer_view.get_value()
                                 h_virtualizer=rv.h_virtualizer_view.get_value()
                                 progress_visible=progress_visible
                             />
                         </Show>
+                        // The offscreen measure column for text documents:
+                        // mounted for as long as one is open, torn down with
+                        // it. It renders every block once at scale 1 and
+                        // refines the page cut from the DOM's real heights
+                        // (see `components::formats::reflow::measure`).
+                        <Show when=move || state.reader.reflowable()>
+                            <crate::components::formats::reflow::ReflowMeasureColumn app=state />
+                        </Show>
                         <FloatingDocumentTitle state=state />
                         // Corner page counter, gated on a ready document and
                         // positioned by the page; the indicator itself is
                         // reusable UI with no knowledge of AppState.
                         <Show when=move || is_ready() && show_indicator.get()>
-                            <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", crate::components::primitives::floating::types::z::CONTROLS)>
+                            <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", app_chrome::layers::CONTROLS)>
                                 <PageIndicator
-                                    current=state.reader.viewer.page
-                                    total=state.reader.document.num_pages
-                                    style=indicator_style
+                                    current=Signal::derive(move || {
+                                        if stream_live.get() {
+                                            stream_percent.get()
+                                        } else {
+                                            vs.viewer.page.get()
+                                        }
+                                    })
+                                    total=Signal::derive(move || {
+                                        if stream_live.get() {
+                                            100
+                                        } else {
+                                            vs.document.num_pages.get()
+                                        }
+                                    })
+                                    style=Signal::derive(move || {
+                                        if stream_live.get() {
+                                            PageIndicatorStyle::Percentage
+                                        } else {
+                                            indicator_style.get()
+                                        }
+                                    })
                                     hidden=Signal::derive(move || state.reader.gloss.selection_active.get())
                                 />
                             </div>
@@ -307,7 +264,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             state=vs
                             virtualizer=rv.virtualizer_view
                         />
-                        <crate::components::ai::selection_menu::SelectionMenu state=state />
+                        <crate::components::ai::selection_pill::SelectionPill state=state />
                         <crate::components::ai::gloss::gloss_ai_popover::GlossAiPopover state=state />
                     </main>
                 </div>

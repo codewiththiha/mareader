@@ -1,18 +1,24 @@
 //! Continuous auto-scroll along the active strip (vertical or horizontal).
-
-use std::cell::Cell;
+//!
+//! The drift is a [`FrameLoop`]: one frame at a time, each frame deciding
+//! whether it needs another. It used to be a free `fn tick` that re-armed
+//! itself with its state parked in two `thread_local!` cells — a running flag
+//! and the previous frame's stamp. That worked, and it was the only loop in the
+//! app that could not be stopped from the outside: nothing owned it, so a
+//! document closed mid-drift left a queued frame callback reading signals whose
+//! reactive graph had already been disposed. The loop's own flag check could
+//! not help, because the flag lived in a thread-local that outlived the reader
+//! it belonged to, and the read that panicked was the one before it.
 
 use leptos::prelude::*;
 
 use app_chrome::hooks::dom::{h_page_list, page_list};
+use app_chrome::hooks::use_raf::FrameLoop;
+
+use crate::components::primitives::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
 use crate::state::ReaderState;
 
 const AUTO_SCROLL_PX_PER_SEC: f64 = 72.0;
-
-thread_local! {
-    static AS_RAF: Cell<bool> = const { Cell::new(false) };
-    static AS_LAST: Cell<f64> = const { Cell::new(f64::NAN) };
-}
 
 pub fn auto_scroll(state: ReaderState) {
     // Paginated modes can't scroll: force the toggle off so the menu row
@@ -22,34 +28,39 @@ pub fn auto_scroll(state: ReaderState) {
             state.viewer.auto_scroll.set(false);
         }
     });
+
+    // The previous frame's stamp belongs to ONE drift: it is reset when the
+    // toggle goes on, so the first frame of a new drift passes no time and the
+    // second starts moving at a real rate.
+    let last_ms = StoredValue::new_local(f64::NAN);
+    let frames = FrameLoop::new();
     Effect::new(move |_| {
-        if !state.viewer.auto_scroll.get() || AS_RAF.with(|r| r.get()) {
+        if !state.viewer.auto_scroll.get() {
+            frames.stop();
             return;
         }
-        AS_RAF.with(|r| r.set(true));
-        AS_LAST.with(|t| t.set(f64::NAN));
-        request_animation_frame(move || tick(state));
+        last_ms.set_value(f64::NAN);
+        frames.arm(move || tick(state, last_ms));
     });
 }
 
-fn tick(state: ReaderState) {
+/// One frame of drift. `false` ends the loop: the toggle went off, the mode
+/// stopped being scrollable, or the strip ran out.
+fn tick(state: ReaderState, last_ms: StoredValue<f64, LocalStorage>) -> bool {
     let mode = state.viewer.mode.get_untracked();
     if !state.viewer.auto_scroll.get_untracked() || !mode.can_scroll() {
         state.viewer.auto_scroll.set(false);
-        AS_RAF.with(|r| r.set(false));
-        return;
+        return false;
     }
     let now = js_sys::Date::now();
-    let mut last = AS_LAST.with(|t| t.get());
-    if last.is_nan() {
-        last = now;
-    }
-    let dt = ((now - last) / 1000.0).clamp(0.0, 0.05);
-    AS_LAST.with(|t| t.set(now));
+    // A frame after the tab was backgrounded reports seconds of gap; clamped,
+    // so returning to the window resumes the drift instead of leaping.
+    let dt = frame_delta(last_ms.get_value(), now, MAX_SCROLL_FRAME_S);
+    last_ms.set_value(now);
     let delta = AUTO_SCROLL_PX_PER_SEC * dt;
 
     let done = match mode {
-        pdf_core::layout::ViewMode::ScrollVertical => page_list()
+        reader_core::view::ViewMode::ScrollVertical => page_list()
             .map(|el| {
                 step(
                     &el,
@@ -61,7 +72,7 @@ fn tick(state: ReaderState) {
                 )
             })
             .unwrap_or(false),
-        pdf_core::layout::ViewMode::ScrollHorizontal => h_page_list()
+        reader_core::view::ViewMode::ScrollHorizontal => h_page_list()
             .map(|el| {
                 step(
                     &el,
@@ -77,10 +88,9 @@ fn tick(state: ReaderState) {
     };
     if done {
         state.viewer.auto_scroll.set(false);
-        AS_RAF.with(|r| r.set(false));
-        return;
+        return false;
     }
-    request_animation_frame(move || tick(state));
+    true
 }
 
 /// Returns true when the end of the strip was reached.

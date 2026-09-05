@@ -6,7 +6,7 @@
 //! * The geometry + spring math (pure) lives in `ai_core::gloss`, including
 //!   the side-aware card placement ([`ai_core::gloss::place_card`]).
 //! * Page-aware anchors live in [`crate::components::ai::anchor`] (shared
-//!   with the selection Info pill).
+//!   with the selection Explain pill).
 //! * [`controller`]     — the state machine hub: grouped state slices
 //!   (content / geometry / open / drag / cache), the shared commands,
 //!   and the open path as a named verdict + transitions.
@@ -19,6 +19,10 @@
 //! * [`hooks`]          — chunk ingestion (measurement is the generic hook).
 //! * [`selection_mode`] — multi-select mode: entry guards, exit paths, the
 //!   context-menu listener, the undo pipeline.
+//! * [`spring`]         — the gloss box's adapter to the generic spring
+//!   primitive (the dependency points this way, never into `primitives`).
+//! * [`phase`]          — the card's two orthogonal phase machines: its box
+//!   ([`phase::GlossPhase`]) and its data ([`phase::AiPhase`]).
 //! * [`mark_layer`]     — the persistent highlighter stroke layer per page
 //!   (incl. the long-press gesture + contextmenu).
 //! * [`selection_bar`]  — the bottom-right selection action bar.
@@ -42,9 +46,11 @@ pub mod gloss_surface;
 pub mod hooks;
 pub mod interactions;
 pub mod mark_layer;
+pub mod phase;
 pub mod placement;
 pub mod selection_bar;
 pub mod selection_mode;
+pub mod spring;
 pub mod targeting;
 pub mod undo_toast;
 pub mod word_info;

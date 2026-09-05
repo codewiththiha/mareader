@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::services::document;
 use crate::state::AppState;
 
@@ -15,14 +15,18 @@ pub(crate) fn EmptyState(state: AppState) -> impl IntoView {
     view! {
         <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
             <div class="flex max-w-md flex-col items-center gap-3 text-center">
-                <p class="text-lg text-ink">"Open a PDF to start reading"</p>
+                <p class="text-lg text-ink">"Open a document to start reading"</p>
                 {has_tauri.then(|| view! {
-                    <p class="text-sm text-muted">"Or drop a PDF anywhere in the window"</p>
+                    // The kinds come out of the format registry rather than out
+                    // of a sentence someone has to remember to update.
+                    <p class="text-sm text-muted">
+                        {move || format!("Or drop a {} file anywhere in the window", reader_core::format::kind_list())}
+                    </p>
                 })}
                 <Button
                     on_click=move |_| document::open_dialog(state)
                     variant=ButtonVariant::Primary
-                    title="Open a PDF file"
+                    title="Open a document file"
                 >
                     <span>"Open…"</span>
                 </Button>

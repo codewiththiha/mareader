@@ -12,10 +12,10 @@ use leptos::task::spawn_local;
 use virtual_list_leptos::Virtualizer;
 
 use super::result_list::ResultList;
-use crate::components::primitives::floating::dismiss::{
+use app_chrome::floating::dismiss::{
     DismissPolicy, DismissTrigger, use_dismiss,
 };
-use crate::components::primitives::floating::types::z::{BAR, POPOVER};
+use app_chrome::layers::{BAR, POPOVER};
 use app_chrome::hooks::use_timeout::use_debounce;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;

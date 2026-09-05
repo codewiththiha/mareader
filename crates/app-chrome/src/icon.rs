@@ -45,6 +45,8 @@ pub enum IconName {
     Undo,
     Settings,
     Layout,
+    /// The settings tab for the reflowable formats' typography.
+    Type,
     /// The settings tab for motion: a rail that eases, a page that follows.
     Motion,
     Minus,
@@ -85,6 +87,7 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Sidebar => ("0 0 24 24", "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='M9 4v16'/>"),
         IconName::SidebarOpen => ("0 0 24 24", "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='M9 4v16'/><path d='M4.5 5.5H9v13H4.5z' fill='currentColor' stroke='none'/>"),
         IconName::Palette => ("0 0 24 24", "<path d='M12 22a10 10 0 1 1 10-10c0 2-1.5 3-3 3h-2a2 2 0 0 0-2 2c0 1 .5 1.5 1 2s-1 3-4 3z'/>"),
+        IconName::Type => ("0 0 24 24", "<path d='M4 7V4h16v3'/><path d='M9 20h6'/><path d='M12 4v16'/>"),
         IconName::Motion => ("0 0 24 24", "<path d='M2 12h3l2.5 6 4-13L14 17l1.5-5H22'/>"),
         IconName::More => ("0 0 24 24", "<circle cx='5' cy='12' r='1.5'/><circle cx='12' cy='12' r='1.5'/><circle cx='19' cy='12' r='1.5'/>"),
         IconName::Keyboard => ("0 0 24 24", "<path d='M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/><path d='M6 10h.01 M10 10h.01 M14 10h.01 M18 10h.01 M6 14h.01 M18 14h.01 M10 14h4'/>"),

@@ -4,15 +4,14 @@
 //! still `Opening` and nothing is mounted. The order is the interesting part
 //! and each step says why it is where it is.
 
-use std::sync::Arc;
-
 use leptos::prelude::*;
 
-use pdf_core::filename::display_name;
+use reader_core::format::Format;
+use reader_core::filename::display_name;
 use pdf_engine::types::{OpenResult, PageSize};
 
+use super::enter;
 use crate::state::AppState;
-use crate::viewer::zoom::target::FitDims;
 
 /// What the rest of the flow needs to know once the state is seeded.
 pub(super) struct Seeded {
@@ -29,7 +28,28 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     let page1 = open.page1_size;
     let num_pages = open.num_pages;
     let name = display_name(open.title.as_deref(), Some(path));
-    // Document state.
+
+    // Document identity, through the step both open tails share (see
+    // [`super::enter`]). The format flips BACK here: a PDF opening over a text
+    // document must shed the reflowable gates (blend, thumbnails, the Fonts
+    // tab) the same way a text open claims them. The chapter tree is `None`
+    // because a PDF's outline is resolved AFTER the open, and that is what
+    // keeps `outline_pending` true (see `super::outline`).
+    enter::identity(
+        state,
+        enter::DocumentIdentity {
+            format: Format::Pdf,
+            path: path.to_string(),
+            title: open.title,
+            author: open.author,
+            page1_size: page1.clone(),
+            outline: None,
+        },
+    );
+
+    // A text document's model must not survive the PDF that opens over it
+    // (the measure column mounts while `reflow.blocks` is a document).
+    state.reader.document.content.reflow.reset();
     state.reader.document.num_pages.set(num_pages);
     // The paper session resets for the new book — synchronously, while the
     // status is still `Opening` and nothing is mounted, so the previous
@@ -38,36 +58,17 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     state
         .reader
         .document
+        .content
         .metrics
         .intrinsic
         .set(intrinsic_sizes(&open.page_widths, &open.page_heights, &page1, num_pages));
-    state.reader.document.title.set(open.title);
-    state.reader.document.author.set(open.author);
-    // The previous book's chapters must not linger while the new tree
-    // resolves (a mid-read open never passes through close_document's reset).
-    // The engine's `open` no longer resolves the outline at all — see
-    // `super::outline`.
-    state.reader.document.outline.set(Arc::new(Vec::new()));
-    state.reader.document.outline_pending.set(true);
-    state.reader.document.page1_size.set(Some(page1.clone()));
-    state.reader.document.path.set(Some(path.to_string()));
 
-    // Gloss highlights for THIS document. Loaded here rather than lazily by
-    // the mark layer so the very first page mount already paints them (they
-    // are page-space rects, not DOM state). `reset` first so a field added to
-    // `GlossState` cannot be missed here; the loaded marks then overwrite the
-    // empty list.
-    state.reader.gloss.reset();
-    state.reader.gloss.marks.set(
-        crate::storage::load_gloss()
-            .remove(path)
-            .unwrap_or_default(),
-    );
+    // Gloss highlights for THIS document, loaded where the reflowable tail
+    // loads them: before anything mounts, so the first painted page already
+    // carries them. For a PDF they are page-space rects, not DOM state.
+    enter::load_marks(state, path);
 
-    // Resume point (clamped to the real count AND at least page 1 — a
-    // re-edited document may have fewer pages than remembered, and a
-    // stale/transient saved 0 must never resume before the book).
-    let resume = saved_page.clamp(1, num_pages.max(1));
+    let resume = enter::resume_page(saved_page, num_pages);
 
     // The reading position is authored HERE, once, and the strip anchors
     // itself to it when it mounts (`ScrollShell`). Until that anchor has
@@ -83,25 +84,16 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     state.reader.viewer.awaiting_anchor.set(true);
     state.reader.viewer.page.set(resume);
     state.reader.viewer.scroll_top.set(0.0);
-    // The startup fit mode is a user setting (Fit Page / Fit Width), not a
-    // hard-coded fit-width. `sanitize` has already replaced a persisted `None`
-    // with the default, so this is always a real fit mode here.
-    let startup_fit = state.settings.with(|s| s.layout.default_fit);
-    state.reader.viewer.fit.set(startup_fit);
     // Heights belong to the document that was just closed; leaving them would
     // have the zoom coordinator anchor against a stale column on the first
     // gesture. ReaderPage re-seeds them from the intrinsic page sizes at the
     // current scale.
-    state.reader.document.metrics.css_heights.set(Vec::new());
-    // The seed scale is resolved by the same geometry the first live refit
-    // will use, so the first frame already sits where the fit will land.
-    let scale = FitDims::from_geometry(
-        state.reader.viewer.mode.get_untracked(),
-        state.reader.viewer.container_size.get_untracked(),
-        state.reader.viewer.page_margin.get_untracked(),
-        (page1.width, page1.height),
-    )
-    .map_or(1.0, |dims| dims.fit(startup_fit, 1.0));
+    state.reader.document.content.metrics.css_heights.set(Vec::new());
+    // The seed scale comes from the step both open tails share: the same
+    // geometry the first live refit will use, including the stream exception
+    // that has no page to fit.
+    let (startup_fit, scale) = enter::startup_scale(state, (page1.width, page1.height));
+    state.reader.viewer.fit.set(startup_fit);
     // Seeding the zoom state is correct HERE and nowhere else: this is the
     // initial scale for a brand-new document, so there is no layout to
     // animate from and nothing to anchor to. All three scales start in

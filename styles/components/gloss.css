@@ -20,7 +20,7 @@
 :root {
   /* One elevation for every floating surface — the card is a panel like the
      menus, not a special object with its own heavier shadow. */
-  --gloss-shadow-menu: var(--shadow-float);
+  --gloss-shadow-float: var(--shadow-float);
   --gloss-shadow-card: var(--shadow-float);
 }
 
@@ -52,18 +52,32 @@
 
 /* ---------------------------------------------------------------------
 Persisted gloss highlighter — one exact-fit stroke per mark in the
-glossLayer (same trade-off as the link layer: above the text layer,
-pointer-events only on the strokes). One layer per mark: a flat
-translucent pass of the gloss colour, exact-fit, small radius, canvas
-glyphs reading straight through it.
+gloss-layer (same trade-off as the link layer: above the text layer,
+pointer-events only on the strokes). One stroke per mark: a flat
+translucent pass of the gloss colour, exact-fit, small radius, with the
+page's own glyphs reading straight through it.
+
+One definition, shared by every format. The rules used to hang off
+`.pdf-page`, which meant a page of type could not have a highlight at
+all; nothing below is actually about a raster — `mix-blend-mode:
+multiply` over ink on paper reads exactly as it does over ink on a
+canvas, and the dark-theme `screen` swap is about the backdrop being
+dark, not about it being a bitmap.
+
+What a format supplies is the layer's positioning context and the
+coordinates its resolver returns, and one rule covers all three hosts:
+the layer is always `inset: 0` inside the element its resolver measured
+— a `.pdf-page`, a `.tx-page`, or the continuous stream's scroller box,
+where one layer serves the whole reading column because its blocks are
+virtualized individually rather than paginated.
 --------------------------------------------------------------------- */
-.pdf-page .glossLayer {
+.gloss-layer {
   position: absolute;
   inset: 0;
   z-index: 3;
   pointer-events: none;
 }
-.pdf-page .glossLayer .gloss-mark {
+.gloss-layer .gloss-mark {
   position: absolute;
   z-index: 0;
   pointer-events: auto;
@@ -86,10 +100,10 @@ glyphs reading straight through it.
      feedback lives on a sibling overlay instead — see `gloss-mark-pulse`
      below. */
 }
-.pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
-:root.dark .pdf-page .glossLayer .gloss-mark { mix-blend-mode: screen; }
-.pdf-page .glossLayer .gloss-mark:hover,
-.pdf-page .glossLayer .gloss-mark:focus-visible {
+.gloss-layer .gloss-mark::selection { background: transparent; }
+:root.dark .gloss-layer .gloss-mark { mix-blend-mode: screen; }
+.gloss-layer .gloss-mark:hover,
+.gloss-layer .gloss-mark:focus-visible {
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 40%, transparent);
   outline: none;
 }
@@ -114,8 +128,8 @@ glyphs reading straight through it.
    is no static twin to be mistaken for.
 
    Deliberately barely-there: low opacity, one soft comet, no bloom. */
-.pdf-page .glossLayer .gloss-mark-processing,
-:root.dark .pdf-page .glossLayer .gloss-mark-processing {
+.gloss-layer .gloss-mark-processing,
+:root.dark .gloss-layer .gloss-mark-processing {
   box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 68%, transparent);
 }
 
@@ -125,7 +139,7 @@ glyphs reading straight through it.
    overlay stays an empty, invisible element and the static ring above is
    the whole cue — which is also what both motion nets below reduce to. */
 @supports ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
-  .pdf-page .glossLayer .gloss-mark-pulse {
+  .gloss-layer .gloss-mark-pulse {
     position: absolute;
     z-index: 1;
     pointer-events: none;
@@ -150,7 +164,7 @@ glyphs reading straight through it.
     opacity: 0.55;
   }
 
-  .pdf-page .glossLayer .gloss-mark-pulse::before {
+  .gloss-layer .gloss-mark-pulse::before {
     content: "";
     position: absolute;
     left: 50%;
@@ -205,21 +219,21 @@ glyphs reading straight through it.
    counting: a quiet dim of the same tint — no brightness flicker, no
    inflate-then-deflate.
 --------------------------------------------------------------------- */
-.pdf-page .glossLayer .gloss-mark-pressing {
+.gloss-layer .gloss-mark-pressing {
     opacity: 0.8;
 }
 
-.pdf-page .glossLayer-selecting .gloss-mark:not(.gloss-mark-selected) {
+.gloss-layer-selecting .gloss-mark:not(.gloss-mark-selected) {
     opacity: 0.6;
 }
-.pdf-page .glossLayer-selecting .gloss-mark:not(.gloss-mark-selected):hover {
+.gloss-layer-selecting .gloss-mark:not(.gloss-mark-selected):hover {
     opacity: 0.92;
 }
 
 /* Defined AFTER the processing rules so it wins the tie (processing keeps
    its ring). */
-.pdf-page .glossLayer .gloss-mark-selected,
-:root.dark .pdf-page .glossLayer .gloss-mark-selected {
+.gloss-layer .gloss-mark-selected,
+:root.dark .gloss-layer .gloss-mark-selected {
     background: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 62%, transparent);
     box-shadow:
         0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 78%, transparent),
@@ -271,7 +285,7 @@ glyphs reading straight through it.
        before. (The global net in animations.css shortens animations to
        0.01ms instead of removing them, which for an infinite lap is
        exactly that one settled frame — hence `display`, not `animation`.) */
-    .pdf-page .glossLayer .gloss-mark-pulse {
+    .gloss-layer .gloss-mark-pulse {
         display: none;
     }
 }
@@ -279,6 +293,6 @@ glyphs reading straight through it.
 /* The same for the reader's own master switch (Settings → Layout →
    Animations), for the same reason: a promise that nothing interpolates
    has to mean the comet does not sit still on the rim either. */
-html.animations-off .pdf-page .glossLayer .gloss-mark-pulse {
+html.animations-off .gloss-layer .gloss-mark-pulse {
     display: none;
 }

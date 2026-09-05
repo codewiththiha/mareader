@@ -2,7 +2,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::ai::types::GlossPhase;
+use crate::components::ai::gloss::phase::GlossPhase;
 
 /// The geometry phase of the surface: where the card's *box* is in its
 /// morph lifecycle, and whether the surface exists at all.

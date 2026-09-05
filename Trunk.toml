@@ -8,11 +8,15 @@ target = "./index.html"
 # Cargo crate the frontend doesn't need to react to.
 #
 # IMPORTANT: every path in this list MUST exist on disk when `trunk serve`
-# starts. Trunk canonicalizes each entry at startup, and a missing path is
-# a hard error (https://github.com/trunk-rs/trunk). The generated .js files
-# are gitignored, which is why `beforeDevCommand` runs `npm run build:ts`
-# first — on a fresh clone nothing would otherwise exist for the watcher to
-# canonicalize.
+# starts. Trunk 0.21.x canonicalizes each entry at startup, and a missing path
+# is a hard error (https://github.com/trunk-rs/trunk/issues/256) — so these are
+# real paths, not globs, and an entry matches its whole subtree (the watcher
+# compares against every ancestor of the changed path). `scripts/` and the three
+# bundles are generated and gitignored, which is why `beforeDevCommand` runs
+# `npm run build:ts` first: on a fresh clone nothing would otherwise exist for
+# the watcher to canonicalize. (Trunk's main branch has since switched this list
+# to globset patterns, where a bare directory no longer matches its children —
+# if that release is ever adopted, `./scripts` becomes `./scripts/**`.)
 #
 # Trunk's watcher uses mtime to decide whether to fire a rebuild — NOT
 # file content — so even though tsc's output is byte-identical across
@@ -22,11 +26,27 @@ target = "./index.html"
 ignore = [
     "./src-tauri",
     "./styles.css",
+    # Generated tooling output, and ONLY that: `tools/*.ts` compiles to
+    # `scripts/*.js` (see tsconfig.tools.json), so ignoring the directory
+    # covers every tool that exists and every tool added later. This used to be
+    # a list of the individual .js files, which is a list that has to be
+    # updated by hand each time a tool is added — and forgetting it is not a
+    # warning, it is an endless rebuild: the pre_build hook rewrites the file,
+    # Trunk's mtime watcher fires, the build runs the hook again. Adding
+    # `scripts/repo.js` without adding it here is exactly how that happened.
+    "./scripts",
+    # The Tailwind sources are compiled by the pre_build hook on EVERY build,
+    # so watching them only bought a second rebuild per CSS edit — one for the
+    # source change and one for the hook's own output. Worse, that rebuild
+    # swapped `styles.css` under a running app, and a stylesheet arriving after
+    # the wasm has booted is exactly the window in which an offscreen element
+    # that hides itself through the cascade paints for a frame. Ignoring the
+    # directory leaves the compiled sheet stable for the life of a session;
+    # `npm run watch:css` is the tool for iterating on CSS alone.
+    "./styles",
     "./public/pdfEngine.js",
+    "./public/readerEngine.js",
     "./public/bake.worker.js",
-    "./scripts/check-versions.js",
-    "./scripts/test-engine-smoke.js",
-    "./scripts/engine-smoke",
 ]
 
 # Bundle the engine with esbuild (IIFE, no import graph). `node` runs the
@@ -34,12 +54,12 @@ ignore = [
 [[hooks]]
 stage = "pre_build"
 command = "node"
-command_arguments = ["./scripts/bundle-engine.mjs"]
+command_arguments = ["./tools/bundle-engine.mjs"]
 
 [[hooks]]
 stage = "pre_build"
 command = "node"
-command_arguments = ["./node_modules/typescript/bin/tsc", "-p", "tsconfig.scripts.json"]
+command_arguments = ["./node_modules/typescript/bin/tsc", "-p", "tsconfig.tools.json"]
 
 # Compile Tailwind v4 (CSS-first) before every trunk build (dev + prod).
 # Invoke the CLI's JS entry point through `node` directly rather than `npx`.

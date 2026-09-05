@@ -24,13 +24,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @import "./tokens.css";      /* §1-3: @theme, base palettes, runtime vars */
-@import "./pdf-page.css";    /* §4: .pdf-page host, thumbnails, textLayer, selection, highlights */
+@import "./page_host.css";   /* §4: the .pdf-page host, its canvas, blend unclip, scrub tags, snapshot */
+@import "./components/thumbnails.css"; /* thumbnail grid: card, canvas, badge, skeleton */
+@import "./components/pdfjs.css";      /* pdf.js text layer, selection scoping, vendored-sheet neutralisation */
+@import "./components/search.css";     /* search hits: one look for the engine's boxes and a reflowable row's */
 @import "./textures.css";    /* §5: texture modes */
 @import "./noise.css";       /* §6: grain overlay + crawl keyframes */
 @import "./components/shell.css";       /* app shell, scrollbars, drag regions, toolbar measurement twin */
 @import "./components/title_bar.css";    /* toolbar glass, sidebar outro, status bar */
 @import "./components/animations.css";  /* reduced motion, the sidebar's own transitions */
-@import "./components/ai.css";         /* AI blur-fade, shimmer, Info-menu entrance */
+@import "./components/ai.css";         /* AI blur-fade, shimmer, the Explain pill's entrance */
 @import "./components/gloss.css";      /* word-card morph surface + highlighter stroke */
 @import "./components/appearance.css";  /* hue strip, preset thumbnails, link layer */
 @import "./library.css";     /* bookshelf + drag overlay */
+@import "./text.css";        /* §7: text pages (TXT, Markdown), measure column */

@@ -12,12 +12,13 @@ use wasm_bindgen::JsCast;
 
 use std::cell::Cell;
 
-use pdf_core::layout::{ViewMode, spread_step_next, spread_step_prev};
+use reader_core::view::{ViewMode, spread_step_next, spread_step_prev};
 use app_chrome::hooks::dom::{h_page_list, page_list};
+use crate::components::primitives::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
 use crate::state::ReaderState;
 
 use super::is_chrome_scroll_target;
-use super::keymap::{self, NavAction};
+use super::keymap::{NavAction, self};
 
 /// One Arrow Up/Down tap is a reading nudge, not a page jump.
 ///
@@ -210,7 +211,7 @@ fn hold_tick() {
     });
     let down_at = HOLD_DOWN_AT.with(|t| t.get());
     if now - down_at >= HOLD_DELAY_MS {
-        let dt = ((now - last) / 1000.0).clamp(0.0, 0.05);
+        let dt = frame_delta(last, now, MAX_SCROLL_FRAME_S);
         let delta = dir * HOLD_PX_PER_SEC * dt;
         if HOLD_AXIS.with(|a| a.get()) == 2 {
             scroll_reader_x(delta, false);

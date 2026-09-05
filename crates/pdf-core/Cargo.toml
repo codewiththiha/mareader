@@ -2,14 +2,17 @@
 name = "pdf-core"
 version = "0.5.0"
 edition = "2024"
-description = "Pure PDF-reader domain logic: layout, zoom/fit math, appearance, presets, search, filenames, settings. No wasm, no DOM, no leptos — unit-testable on the host."
+description = "PDF-only domain logic: the page frame's constants, the outline a PDF carries, the page-text search index, and the device-pixel snapping every composite layer of a page is written against. Everything format-agnostic lives in reader-core. No wasm, no DOM, no leptos — unit-testable on the host."
 license = "MIT"
 
 [dependencies]
-ai-core = { path = "../ai-core" }
+reader-core = { path = "../reader-core" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-virtual-list = { path = "../virtual-list" }
-pdf-paper = { path = "../pdf-paper" }
+# Only the wasm half of `pixel_grid` needs it, and only for one read.
+web-sys = { version = "0.3", features = ["Window"] }
 
 [dev-dependencies]
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"

@@ -1,7 +1,7 @@
 // LRU thumbnail cache + blit / render.
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
-import { el, errorInfo, fail, releaseCanvas, showBaked, showRaw } from "./canvas";
+import { el, fail, failFrom, offscreenFor, releaseCanvas, showBaked, showRaw } from "./canvas";
 import { bakeRaster } from "./theme/bake";
 import { readPipeline, pipelineCache } from "./theme/pipeline";
 import {
@@ -88,8 +88,7 @@ export async function renderThumb(
     try {
       return await renderThumbInternal(canvasId, page, scale);
     } catch (e) {
-      const info = errorInfo(e);
-      return fail(info.name, info.message);
+      return failFrom(e);
     }
   }
 
@@ -112,8 +111,7 @@ export async function renderThumb(
       renderThumbInternal(canvasId, page, scale)
         .then(resolve)
         .catch((e: unknown) => {
-          const info = errorInfo(e);
-          resolve(fail(info.name, info.message));
+          resolve(failFrom(e));
         })
         .finally(finish);
     });
@@ -136,21 +134,21 @@ async function renderThumbInternal(
       if (showRaw(canvas, thumbRaw(hit), "thumb-raw")) {
         cachePut(page, hit);
         session.thumbLive.set(canvasId, { page });
-        return { ok: true, width: hit.cssW, height: hit.cssH, scale, cached: true };
+        return { ok: true, width: hit.cssW, height: hit.cssH, scale };
       }
     } else if (hit.gen === pipelineCache.gen) {
       const size = paintCached(canvas, hit);
       if (size) {
         cachePut(page, hit);
         session.thumbLive.set(canvasId, { page });
-        return { ok: true, width: size.width, height: size.height, scale, cached: true };
+        return { ok: true, width: size.width, height: size.height, scale };
       }
     } else if (await ensureEntryCurrent(hit)) {
       const size = paintCached(canvas, hit);
       if (size) {
         cachePut(page, hit);
         session.thumbLive.set(canvasId, { page });
-        return { ok: true, width: size.width, height: size.height, scale, cached: false };
+        return { ok: true, width: size.width, height: size.height, scale };
       }
     }
   }
@@ -166,14 +164,9 @@ async function renderThumbInternal(
     const cssW = Math.floor(viewport.width);
     const cssH = Math.floor(viewport.height);
 
-    const off = document.createElement("canvas");
-    off.width = Math.max(1, Math.floor(viewport.width * out));
-    off.height = Math.max(1, Math.floor(viewport.height * out));
-    const ctx = off.getContext("2d", { alpha: false });
-    if (!ctx) {
-      releaseCanvas(off);
-      return fail("no_context", "No 2d context");
-    }
+    const made = offscreenFor(viewport, out);
+    if (!made) return fail("no_context", "No 2d context");
+    const { canvas: off, ctx } = made;
     const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 
     const task = pg.render({ canvasContext: ctx, viewport, transform });
@@ -187,8 +180,7 @@ async function renderThumbInternal(
       if ((e as { name?: string }).name === "RenderingCancelledException") {
         return fail("cancelled", "Thumb render cancelled");
       }
-      const info = errorInfo(e);
-      return fail(info.name, info.message);
+      return failFrom(e);
     }
     session.thumbTasks.delete(canvasId);
     pg.cleanup();
@@ -230,11 +222,10 @@ async function renderThumbInternal(
     }
     session.thumbCancelled.delete(canvasId);
 
-    return { ok: true, width: cssW, height: cssH, scale, cached: false };
+    return { ok: true, width: cssW, height: cssH, scale };
   } catch (e) {
     session.thumbTasks.delete(canvasId);
-    const info = errorInfo(e);
-    return fail(info.name, info.message);
+    return failFrom(e);
   }
 }
 
@@ -252,10 +243,11 @@ export function cancelThumb(canvasId: string): void {
 }
 
 /** Render a page into the cache with no DOM canvas (idle prefetch).
- *  A cache-hit cell mounts with `cached: true` → synchronous blit → zero
- *  skeleton, zero waiting. So render the pages AROUND the reader into the
- *  cache while idle; by the time the reader flings the grid to page N,
- *  pages N±k are cache-warm and every remount is an instant synchronous blit. */
+ *  A cell whose page is cache-warm asks `hasThumb` while it is still being
+ *  built, mounts already loaded, and its first render call is a synchronous
+ *  blit → zero skeleton, zero waiting. So render the pages AROUND the reader
+ *  into the cache while idle; by the time the reader flings the grid to page
+ *  N, pages N±k answer that probe true and every remount is instant. */
 export async function prefetchThumb(page: number, scale: number): Promise<void> {
   if (!session.pdf) return;
   const hit = session.thumbCache.get(page);
@@ -263,11 +255,9 @@ export async function prefetchThumb(page: number, scale: number): Promise<void> 
   try {
     const pg = await session.pdf.getPage(page);
     const viewport = pg.getViewport({ scale });
-    const off = document.createElement("canvas");
-    off.width = Math.max(1, Math.floor(viewport.width));
-    off.height = Math.max(1, Math.floor(viewport.height));
-    const ctx = off.getContext("2d", { alpha: false });
-    if (!ctx) { releaseCanvas(off); return; }
+    const made = offscreenFor(viewport);
+    if (!made) return;
+    const { canvas: off, ctx } = made;
     const task = pg.render({ canvasContext: ctx, viewport });
     await task.promise;
     pg.cleanup();

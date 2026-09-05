@@ -8,12 +8,11 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;
-use crate::state::SidebarMode;
-use crate::state::ReaderState;
+use crate::state::{ReaderState, SidebarMode};
 
 #[component]
 pub(crate) fn SidebarHeader(

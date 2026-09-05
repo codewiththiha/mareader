@@ -1,5 +1,10 @@
-//! The tiny colour algebra the paper pipeline needs: an RGB triple, its hex
-//! string (the wire format `--pdf-paper` speaks), and linear interpolation.
+//! The tiny colour algebra the paper pipeline needs: an RGB triple, the hex
+//! string it publishes as `--pdf-paper`, and linear interpolation.
+//!
+//! Hex goes one way, out. Parsing a colour back used to live here too, for the
+//! per-document cache this crate kept; that cache moved to the engine (which is
+//! where the pixels are), and a parser with nothing to parse is a guess about
+//! input nobody sends.
 
 use serde::{Deserialize, Serialize};
 
@@ -21,24 +26,6 @@ impl Rgb {
     pub fn to_hex(self) -> String {
         format!("#{:02x}{:02x}{:02x}", self.r, self.g, self.b)
     }
-
-    /// Parse `#rrggbb`. Returns `None` for anything else — a malformed
-    /// cached colour must be dropped, not guessed at.
-    pub fn parse_hex(hex: &str) -> Option<Self> {
-        let hex = hex.trim();
-        let bytes = hex.strip_prefix('#')?;
-        if bytes.len() != 6 || !bytes.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return None;
-        }
-        let channel = |range: std::ops::Range<usize>| {
-            u8::from_str_radix(&bytes[range], 16).ok()
-        };
-        Some(Self {
-            r: channel(0..2)?,
-            g: channel(2..4)?,
-            b: channel(4..6)?,
-        })
-    }
 }
 
 /// Linear blend of two colours; `t` 0 returns `a`, 1 returns `b`, values
@@ -55,20 +42,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hex_round_trips() {
-        let c = Rgb::new(0x40, 0xa0, 0xff);
-        assert_eq!(c.to_hex(), "#40a0ff");
-        assert_eq!(Rgb::parse_hex("#40a0ff"), Some(c));
-        assert_eq!(Rgb::parse_hex("#40A0FF"), Some(c));
-        assert_eq!(Rgb::parse_hex(" #40a0ff "), Some(c));
-    }
-
-    #[test]
-    fn malformed_hex_is_rejected_not_guessed() {
-        assert_eq!(Rgb::parse_hex("#40a0"), None);
-        assert_eq!(Rgb::parse_hex("40a0ff"), None);
-        assert_eq!(Rgb::parse_hex("#40a0zz"), None);
-        assert_eq!(Rgb::parse_hex(""), None);
+    fn hex_is_lowercase_and_zero_padded() {
+        assert_eq!(Rgb::new(0x40, 0xa0, 0xff).to_hex(), "#40a0ff");
+        // The wire format the engine and the CSS custom property both expect:
+        // six digits, so a dark channel does not come out one character short.
+        assert_eq!(Rgb::new(0x00, 0x0a, 0xff).to_hex(), "#000aff");
     }
 
     #[test]

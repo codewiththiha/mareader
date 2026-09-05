@@ -1,6 +1,6 @@
 //! Centered reader settings modal shell: the tab strip, the Escape handler and
-//! the body that hosts one tab at a time. The tabs live in `layout`, `theme`
-//! and `animations`, and the SET of them is not fixed — see `shown`.
+//! the body that hosts one tab at a time. The tabs live in `layout`, `theme`,
+//! `animations` and `fonts`, and the SET of them is not fixed — see `shown`.
 //!
 //! The `open` signal belongs to the page (two things open this modal: the gear
 //! button and the reader menu's item), so the page's signal is registered as
@@ -13,11 +13,12 @@ use wasm_bindgen::JsCast;
 
 use crate::components::settings::animations::AnimationsTab;
 use crate::components::settings::common::{Tab, TabButton};
+use crate::components::settings::fonts::FontsTab;
 use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::overlay::lanes::{use_overlay_lane, OverlayPolicy};
+use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
 use crate::state::AppState;
 
 #[component]
@@ -37,8 +38,14 @@ pub fn SettingsModal(
     // that tab happens to be open falls back to Layout for as long as it is
     // off, and the reader's own selection survives to be returned to.
     let animations_on = Signal::derive(move || state.settings.with(|st| st.animations.enabled));
+    // The Fonts tab exists only while a reflowable document is open — a
+    // PDF carries none of the type it controls — and follows the same
+    // fallback rule as the Animations tab: selected while a PDF opens over
+    // it, the strip shows Layout, and the selection survives the return.
+    let fonts_on = Signal::derive(move || state.reader.reflowable());
     let shown = Signal::derive(move || match tab.get() {
         Tab::Animations if !animations_on.get() => Tab::Layout,
+        Tab::Fonts if !fonts_on.get() => Tab::Layout,
         other => other,
     });
     Effect::new(move |_| {
@@ -53,7 +60,7 @@ pub fn SettingsModal(
                 // the modal owns this press: its own handler peels it,
                 // and closing the modal underneath it in the same
                 // keydown would take both layers down at once.
-                if crate::components::primitives::floating::dismiss::has_open_dismissable() {
+                if app_chrome::floating::dismiss::has_open_dismissable() {
                     return;
                 }
                 open.set(false);
@@ -96,6 +103,15 @@ pub fn SettingsModal(
                                 label="Animations"
                             />
                         </Show>
+                        <Show when=move || fonts_on.get()>
+                            <TabButton
+                                tab=tab
+                                active=shown
+                                t=Tab::Fonts
+                                icon=IconName::Type
+                                label="Fonts"
+                            />
+                        </Show>
                         <div class="ml-auto">
                             <IconButton
                                 icon=IconName::Close
@@ -112,6 +128,7 @@ pub fn SettingsModal(
                             Tab::Animations => {
                                 view! { <AnimationsTab state=state /> }.into_any()
                             }
+                            Tab::Fonts => view! { <FontsTab state=state /> }.into_any(),
                         }}
                     </div>
                 </div>

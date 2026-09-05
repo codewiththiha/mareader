@@ -41,8 +41,8 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::hooks::dom::{by_id, TOOLBAR_ROW_ID};
-use crate::hooks::use_async_truth::use_async_truth;
+use crate::hooks::dom::{TOOLBAR_ROW_ID, by_id};
+use crate::hooks::verified_switch::use_verified_switch;
 use crate::hooks::use_resize_observer::observe_elements;
 use crate::titlebar::root::TitleBarCtx;
 use crate::window::api::set_traffic_lights;
@@ -97,7 +97,7 @@ pub fn TrafficLights(
     // Send-and-verify lives in the shared hook: the decision is recorded,
     // the IPC awaited, and a truth that moved mid-flight answered with one
     // more command — so a stale send can never settle the native side last.
-    let lights = use_async_truth(truth, |want, height: f64| set_traffic_lights(want, height));
+    let lights = use_verified_switch(truth, |want, height: f64| set_traffic_lights(want, height));
 
     Effect::new(move |_| {
         let Some(ctx) = ctx else {

@@ -42,7 +42,6 @@ import {
   setPaperActive,
   takePaperFrame,
 } from "./engine/paper";
-import { installSelectionTracker } from "./engine/selection";
 import {
   ENGINE_VERSION,
   session,
@@ -218,7 +217,9 @@ try {
 } catch (_) {
   /* no document */
 }
-installSelectionTracker();
+// The selection tracker is NOT installed here: it is format-agnostic and
+// lives in the reader bundle (public/readerEngine.ts), which index.html loads
+// first. Nothing in this facade depends on it.
 clearLegacyPaperCache();
 
 globalThis.PDFReader = {

@@ -2,14 +2,14 @@
 //! transaction, and the three scales the controller moves.
 //!
 //! Nothing here decides anything — the resolving, tweening and committing all
-//! live in `crate::viewer::zoom`. This is the shape those parts agree on.
+//! live in `crate::zoom`. This is the shape those parts agree on.
 
 use leptos::prelude::*;
 
 /// One zoom intent, posted by whichever surface wants the zoom to change
 /// (toolbar buttons, keyboard steps, the fit watcher, the follow watcher).
 ///
-/// The [`crate::viewer::zoom::ZoomController`] is the only consumer: a
+/// The [`crate::zoom::ZoomController`] is the only consumer: a
 /// command is resolved against the current window, mode and page, and lands
 /// through the one transition pipeline. Nobody executes a zoom by writing
 /// the scale signals directly.
@@ -41,7 +41,7 @@ pub enum ZoomCommand {
 /// for exactly the duration of the transition; `None` means idle.
 ///
 /// There is deliberately no position in here. The layout is rescaled on
-/// every frame of the tween and the engine holds the document point under
+/// every frame of the tween and the zoom actuator holds the document point under
 /// the viewport centre exactly where it is, so a transaction has nothing to
 /// remember about where the reader was looking.
 #[derive(Debug, Clone, Copy)]
@@ -116,7 +116,7 @@ impl ZoomState {
     /// is a silent bug: `display` is what the reader is LOOKING at this frame,
     /// `committed` is what the mounted rasters are crisp at, and during a zoom
     /// they disagree. (Newtypes were the other option, but these scales cross
-    /// into layout maths, the DOM and the engine on every frame, so wrapping
+    /// into layout maths, the DOM and the zoom actuator on every frame, so wrapping
     /// them would have bought type safety at the cost of unwrapping at every
     /// use — the naming is where the distinction earns its keep.)
     pub fn visual_scale(&self) -> f64 {

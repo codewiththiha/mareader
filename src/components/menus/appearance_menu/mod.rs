@@ -1,9 +1,17 @@
 //! The 🎨 Appearance popover: presets, base mode + tint, texture, film grain.
 //!
 //! Dismissal rules (owned by the shared window-aware `Popover`):
-//! - Outside-click and Escape close it. This also gives menu-exclusivity:
-//!   pointerdown on any other toolbar trigger lands outside this root, closing
-//!   this popover first, then the click opens the other.
+//! - Outside-click and Escape close it.
+//! - Exclusivity with every other floating surface is NOT a side effect of that
+//!   outside press. It used to be — a press on another toolbar trigger landed
+//!   outside this root, so this popover closed and then the other opened — and
+//!   that story only ever held menu-to-menu: a modal is not a press target, and
+//!   a trigger under a modal's backdrop is still clickable, so this menu and the
+//!   settings modal could end up open at once. `MenuPopover` now registers this
+//!   popover's open signal with the overlay board
+//!   ([`crate::components::primitives::overlay::lanes`]) as
+//!   [`OverlayPolicy::MENU`][crate::components::primitives::overlay::lanes::OverlayPolicy],
+//!   and the board evicts whichever surface loses. Nothing here does that work.
 //! - NOTHING inside closes it. The old menu closed on theme selection, which
 //!   made sense when a theme was one click and you were done. It is actively
 //!   wrong now: choosing a preset and then nudging its tint is the normal
@@ -17,14 +25,14 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::section_label::SectionLabel;
-use crate::components::primitives::separator::Separator;
+use crate::components::primitives::menu::section_label::SectionLabel;
+use crate::components::primitives::menu::separator::Separator;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;
-use pdf_core::settings::Settings;
+use reader_core::settings::Settings;
 
 /// A structural appearance change (base mode, texture mode, grain mode):
 /// flush any slider scrub still pending so the values the reader was just

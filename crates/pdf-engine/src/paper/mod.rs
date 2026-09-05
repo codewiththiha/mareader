@@ -38,10 +38,9 @@ use std::cell::RefCell;
 
 use wasm_bindgen_futures::spawn_local;
 
-use pdf_paper::{PagePalette, PaperConfig, PaperDetector, Rgb, PAPER_SHARE};
+use pdf_paper::{PAPER_SHARE, PagePalette, PaperConfig, PaperDetector, Rgb};
 
-use crate::api;
-use crate::bridge;
+use crate::{api, bridge};
 
 mod lookahead;
 

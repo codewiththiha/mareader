@@ -21,7 +21,7 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::primitives::floating::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
+use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use crate::components::primitives::hooks::use_custom_event::{dispatch_typed_event, use_typed_event};
 use crate::state::AppState;
 

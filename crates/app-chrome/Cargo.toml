@@ -7,6 +7,10 @@ license = "MIT"
 
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
+# The only workspace crate this one names: the pure placement math the
+# floating adapters wrap. A leaf with no dependencies of its own, so reusing
+# the chrome crate drags nothing else along.
+ui-geom = { path = "../ui-geom" }
 tauri-bridge = { path = "../tauri-bridge" }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
@@ -16,6 +20,8 @@ web-sys = { version = "0.3", features = [
   "Navigator",
   "Document",
   "Element",
+  "KeyboardEvent",
+  "Node",
   # Rect returns: `get_bounding_client_rect` (DomRect) and a resize entry's
   # `content_rect` (DomRectReadOnly). Undeclared, the crate still built
   # inside the workspace — a sibling turns them on and feature unification
@@ -23,6 +29,11 @@ web-sys = { version = "0.3", features = [
   # that check on its own so the crate stays reusable in isolation.
   "DomRect",
   "DomRectReadOnly",
+  # `range_rects` measures a Range: the type itself and the rect list it hands
+  # back. Same rule as the two above — declared here, not inherited from a
+  # sibling's feature unification.
+  "Range",
+  "DomRectList",
   "HtmlDivElement",
   "ResizeObserver",
   "ResizeObserverEntry",

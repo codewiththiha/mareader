@@ -18,7 +18,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::color::{lerp, Rgb};
+use crate::color::{Rgb, lerp};
 
 /// Known paper colours, keyed by 1-based page number.
 #[derive(Debug, Default, Clone)]

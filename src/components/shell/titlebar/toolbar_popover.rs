@@ -11,8 +11,8 @@
 //!   HERE is what makes that automatic for every menu, so a new one cannot
 //!   forget it.
 //!
-//! Not a `SuperPopover`: it is a thin, single-purpose composition — holds,
-//! policy, pass-through. New policy belongs in its own wrapper, not here.
+//! Not a second popover primitive: it is a thin, single-purpose composition —
+//! holds, policy, pass-through. New policy belongs in its own wrapper, not here.
 
 use leptos::children::ChildrenFn;
 use leptos::html;
@@ -20,8 +20,8 @@ use leptos::prelude::*;
 
 use app_chrome::titlebar::root::TitleBarCtx;
 use crate::components::primitives::floating::popover::Popover;
-use crate::components::primitives::floating::types::PlacementSide;
-use crate::components::primitives::overlay::lanes::{use_overlay_lane, OverlayPolicy};
+use app_chrome::floating::types::PlacementSide;
+use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
 
 #[component]
 pub fn MenuPopover(

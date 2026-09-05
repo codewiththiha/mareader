@@ -1,6 +1,6 @@
 //! A single thumbnail cell.
 //!
-//! Split out of `thumbnails_panel.rs`: the cell owns its own render lifecycle
+//! Split out of `panel.rs`: the cell owns its own render lifecycle
 //! (engine registration, the cached-blit fast path, the skeleton crossfade and
 //! cancellation on unmount) and is the only place that talks to the engine's
 //! thumbnail lane. The panel above it only decides WHICH cells exist.
@@ -24,7 +24,11 @@ use pdf_engine::api as engine;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
 use crate::state::ReaderState;
 
-use super::geometry::{CELL_W, PULSE_STOP_MS, THUMB_SCALE};
+use super::geometry::{CELL_W, THUMB_SCALE};
+
+/// Delay (ms) before the skeleton pulse is removed after a thumbnail render
+/// resolves.
+const PULSE_STOP_MS: u64 = 400;
 
 /// Registry of pages whose canvases are currently engine-bound. A `HashSet`
 /// keeps the per-cell mount/unmount bookkeeping O(1); `Arc<Mutex>` because
@@ -183,8 +187,7 @@ pub fn ThumbCell(
         // alone — every close/open cycle would otherwise leak a batch of
         // IOSurfaces until GC gets around to it. Zero the backing store so
         // the panel's close costs a constant, never growth.
-        if let Some(doc) = web_sys::window().and_then(|w| w.document())
-            && let Some(el) = doc.get_element_by_id(&cid_cleanup)
+        if let Some(el) = app_chrome::hooks::dom::by_id(&cid_cleanup)
             && let Some(cv) = el.dyn_ref::<web_sys::HtmlCanvasElement>()
         {
             cv.set_width(0);

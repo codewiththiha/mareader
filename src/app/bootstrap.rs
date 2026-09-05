@@ -4,9 +4,8 @@
 
 use leptos::prelude::*;
 
-use crate::state::AppState;
-use crate::state::TextureSignal;
-use crate::state::AppearanceSignal;
+use crate::state::reader::TypographySignal;
+use crate::state::{AppState, AppearanceSignal, TextureSignal};
 use crate::storage::{load_covers, load_library, load_settings};
 
 /// App state seeded from the persisted settings/library/covers.
@@ -28,13 +27,14 @@ pub(crate) fn create_app_state() -> AppState {
 }
 
 /// Provide the app-level contexts: the app state (done by the caller), the
-/// viewer slice of it, and the appearance/texture signals the page hosts need
-/// (derived from settings; the viewer never touches settings itself).
+/// viewer slice of it, the appearance/texture signals the page hosts need,
+/// and the text typography signal (all derived from settings; the viewer
+/// never touches settings itself).
 ///
-/// Returns the appearance memo so the app root can hand it to the effects
-/// that paint from it — one memo for the whole app, rather than one per
-/// consumer each re-deriving the same slice.
-pub(crate) fn provide_app_contexts(state: AppState) -> AppearanceSignal {
+/// Returns the appearance and typography memos so the app root can hand them
+/// to the effects that paint from them — one memo for the whole app, rather
+/// than one per consumer each re-deriving the same slice.
+pub(crate) fn provide_app_contexts(state: AppState) -> (AppearanceSignal, TypographySignal) {
     // The look, narrowed out of the settings blob once. See
     // [`AppearanceSignal`] for why every DOM-writing consumer subscribes here
     // instead of to `settings`.
@@ -42,12 +42,16 @@ pub(crate) fn provide_app_contexts(state: AppState) -> AppearanceSignal {
     // Narrowed again for the page hosts, which only care about the texture:
     // a tint nudge must not re-run their `texture-*` class.
     let texture: TextureSignal = Memo::new(move |_| appearance.get().texture);
-    provide_context(state.reader);
+    // The reflowable formats' typography, narrowed the same way: page hosts,
+    // the measure column and the painter all subscribe to this one memo.
+    let typography: TypographySignal =
+        Memo::new(move |_| state.settings.with(|s| s.text.clone()));
     provide_context(appearance);
     provide_context(texture);
+    provide_context(typography);
     // One overlay-lane registry for the whole app: menus and modals arbitrate
     // through it, and portaled surfaces resolve it like any other descendant
     // of the root.
     provide_context(crate::components::primitives::overlay::lanes::OverlayBoard::default());
-    appearance
+    (appearance, typography)
 }

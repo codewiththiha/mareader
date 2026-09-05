@@ -9,13 +9,12 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
+use reader_core::view::ViewMode;
 use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use crate::state::ReaderState;
 
-use super::JumpGate;
-use super::Arms;
+use super::{Arms, JumpGate};
 
 /// How a page-to-scroll jump should travel: gliding while the reader's scroll
 /// switch allows it, in one step when it does not. Read UNTRACKED, because the
@@ -46,6 +45,14 @@ pub(super) fn install(
     let mode = state.viewer.mode;
     Effect::new(move |_| {
         if mode.get() != axis {
+            return;
+        }
+        // A page write means a page-cut strip in this mode only for PDFs;
+        // the continuous text stream scrolls blocks, and a page number
+        // commanded at its (unbound) page virtualizer would be a no-op at
+        // best. The stream's own layout is placed by its anchor, its
+        // search reveal and its scrubber — none of which write the page.
+        if axis == ViewMode::ScrollVertical && state.reflowable() {
             return;
         }
         // Scroll restoration is the transaction's job while one is open;

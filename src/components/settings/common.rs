@@ -12,7 +12,7 @@ use leptos::prelude::*;
 
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::menu_item::MenuItem;
+use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -21,6 +21,9 @@ pub(crate) enum Tab {
     Theme,
     /// Hosted only while `Settings::animations.enabled` is on (see `modal`).
     Animations,
+    /// Hosted only while a reflowable (TXT/Markdown) document is open —
+    /// PDFs carry none of the type it controls (see `modal`).
+    Fonts,
 }
 
 #[component]
@@ -72,7 +75,9 @@ pub(crate) fn StyleSelect<T>(
     disabled: Signal<bool>,
 ) -> impl IntoView
 where
-    T: Clone + Copy + PartialEq + Send + Sync + 'static,
+    // Clone, not Copy: the Fonts tab offers `FontChoice`, whose built-in
+    // variant carries a `String`.
+    T: Clone + PartialEq + Send + Sync + 'static,
 {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
@@ -109,20 +114,25 @@ disabled:cursor-not-allowed disabled:opacity-45"
                 {opts.with_value(|opts| {
                     opts.iter()
                         .map(|(v, l)| {
-                            let v = *v;
+                            // One option value, three closures (the selected
+                            // memo, the click handler, the check glyph): each
+                            // takes its own clone now that T is no longer Copy.
+                            let v_selected = v.clone();
+                            let v_for_click = v.clone();
+                            let v_for_check = v.clone();
                             let label = (*l).to_string();
                             view! {
                                 <MenuItem
                                     label=label
-                                    selected=Signal::derive(move || value.get() == v)
+                                    selected=Signal::derive(move || value.get() == v_selected)
                                     on_click=move || {
-                                        on_change.run(v);
+                                        on_change.run(v_for_click.clone());
                                         open.set(false);
                                     }
                                 >
                                     <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
                                         {move || {
-                                            (value.get() == v).then(|| {
+                                            (value.get() == v_for_check).then(|| {
                                                 view! { <Icon name=IconName::Check size=14 /> }
                                             })
                                         }}

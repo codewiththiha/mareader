@@ -126,6 +126,10 @@
   pointer-events: none;
   opacity: var(--ps-tex-opacity, 0.9);
   --tex-scale: var(--ps-tex-scale, 1);
+  /* Restated beside --tex-scale on purpose: a custom property resolves its own
+     var()s before the value is inherited, so the derived pair cannot live on
+     :root and still follow this swatch's scale. See the note in
+     styles/textures.css. */
   --tex-unit: calc(26px * var(--tex-scale));
   --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
   background-origin: border-box;

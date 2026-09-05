@@ -70,7 +70,7 @@ impl GridSpec {
     }
 
     /// Resolve the column count for a live cross extent (viewport width).
-    pub fn columns_at(&self, cross_extent: f64) -> usize {
+    fn columns_at(&self, cross_extent: f64) -> usize {
         match self.columns {
             GridColumns::Fixed(n) => n.max(1),
             GridColumns::Responsive { min_width } => {
@@ -142,12 +142,6 @@ impl GridLayout {
         self.columns
     }
 
-    /// Number of resolved rows.
-    #[inline]
-    pub fn rows_len(&self) -> usize {
-        self.rows.len()
-    }
-
     /// The spec this grid was resolved from (for re-resolution on resize).
     #[inline]
     pub fn spec(&self) -> &GridSpec {
@@ -160,12 +154,6 @@ impl GridLayout {
         self.row_pitch
     }
 
-    /// Resolved cell width.
-    #[inline]
-    pub fn cell_width(&self) -> f64 {
-        self.cell_width
-    }
-
     /// Row containing item `index`.
     #[inline]
     pub fn row_of(&self, index: usize) -> usize {
@@ -174,7 +162,7 @@ impl GridLayout {
 
     /// Column containing item `index`.
     #[inline]
-    pub fn col_of(&self, index: usize) -> usize {
+    fn col_of(&self, index: usize) -> usize {
         index % self.columns
     }
 
@@ -192,12 +180,12 @@ impl GridLayout {
 
     /// The **row** window for this scroll position — what a row-rendering
     /// consumer (a `<For>` over rows) mounts directly.
-    pub fn rows_window(&self, scroll: f64, viewport: Viewport, budget: Budget) -> Option<Window> {
+    fn rows_window(&self, scroll: f64, viewport: Viewport, budget: Budget) -> Option<Window> {
         self.rows.window(scroll, viewport.main, budget)
     }
 
     /// [`rows_window`](Self::rows_window) with a per-frame hint.
-    pub fn rows_window_hinted(
+    fn rows_window_hinted(
         &self,
         scroll: f64,
         viewport: Viewport,
@@ -332,8 +320,9 @@ mod tests {
     #[test]
     fn mapping_and_partial_last_row() {
         let g = thumbs(5);
-        assert_eq!(g.rows_len(), 3);
         assert_eq!(g.columns(), 2);
+        // Three rows for five items in two columns: the last item sits in row 2.
+        assert_eq!(g.row_of(4), 2);
         assert_eq!(g.row_of(3), 1);
         assert_eq!(g.col_of(3), 1);
         assert_eq!(g.row_items(0), 0..2);
@@ -348,7 +337,7 @@ mod tests {
     #[test]
     fn thousand_item_grid_mounts_a_bounded_window() {
         let g = thumbs(1_000);
-        assert_eq!(g.rows_len(), 500);
+        assert_eq!(g.row_of(999), 499);
         let budget = Budget::items(2, 64);
         let vp = Viewport::new(720.0, 264.0);
 
@@ -405,9 +394,11 @@ mod tests {
 
         let g = GridLayout::resolve(spec, 100, 150.0, 540.0);
         assert_eq!(g.columns(), 4);
-        assert_eq!(g.rows_len(), 25);
-        assert!((g.cell_width() - 126.0).abs() < 1e-9);
+        assert_eq!(g.row_of(99), 24);
         assert_eq!(g.col_of(5), 1);
+        // The resolved cell width, read the way a consumer reads it: as the
+        // cross extent of a cell, and as the stride between two columns.
+        assert!((g.cross_size(0) - 126.0).abs() < 1e-9);
         assert!((g.cross_offset(5) - 138.0).abs() < 1e-9);
     }
 

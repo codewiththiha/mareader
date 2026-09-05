@@ -1,4 +1,4 @@
-//! The "recent books" library: which PDFs the reader has opened, where they
+//! The "recent books" library: which documents the reader has opened, where they
 //! left off in each, and the persisted cover art for the shelf.
 //!
 //! Kept OUT of `Settings` on purpose. Reading position changes on every page
@@ -6,7 +6,13 @@
 //! is the appearance/zoom blob that repaints and re-serialises on every write.
 //! Coupling the two would make each page turn re-run the appearance paint
 //! effect and re-serialise the whole settings JSON. The library therefore lives
-//! in its own signal and its own localStorage key, saved on its own debounce.
+//! in its own signal and its own localStorage key, and written on its own
+//! schedule: reading progress — the hot path, a write per page turn — is saved
+//! on a debounce by `crate::effects::reader::reading_progress`, while the
+//! moments that are the last thing before a teardown — a document closing, a
+//! book leaving the shelf — write immediately through
+//! `crate::storage::persist_library`, because a debounced save there is a save
+//! that may never land.
 
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +40,13 @@ pub struct RecentBook {
     /// Total page count (for the "page X of Y" hint). 0 when unknown.
     #[serde(default)]
     pub num_pages: u32,
+    /// Fractional position (0..=1) inside the continuous reading of a
+    /// reflowable document — where the stream was between the very top and
+    /// the very bottom of the text. Written only while the stream mode is
+    /// the live one; `None` everywhere else (a page is the whole truth
+    /// there, and the page field above is the resume point).
+    #[serde(default)]
+    pub fraction: Option<f64>,
 }
 
 fn default_page() -> u32 {
@@ -77,6 +90,16 @@ pub fn find_page(recent: &[RecentBook], path: &str) -> Option<u32> {
     recent.iter().find(|b| b.path == path).map(|b| b.page)
 }
 
+/// The saved fractional stream position (see [`RecentBook::fraction`]),
+/// for reflowable documents opening back into the continuous mode.
+pub fn find_fraction(recent: &[RecentBook], path: &str) -> Option<f64> {
+    recent
+        .iter()
+        .find(|b| b.path == path)
+        .and_then(|b| b.fraction)
+        .filter(|f| (0.0..=1.0).contains(f))
+}
+
 /// Make a persisted list internally valid: drop empty paths, dedupe by path
 /// (first wins), clamp pages to >= 1, and trim to the cap. Idempotent.
 pub fn sanitize(recent: &mut Vec<RecentBook>) {
@@ -98,6 +121,7 @@ mod tests {
             title: None,
             page,
             num_pages: num,
+            fraction: None,
         }
     }
 
@@ -146,8 +170,8 @@ mod tests {
         let mut v = vec![
             book("a", 1, 10),
             book("a", 99, 10), // duplicate path
-            RecentBook { path: "  ".into(), title: None, page: 3, num_pages: 0 }, // empty path
-            RecentBook { path: "c".into(), title: None, page: 0, num_pages: 0 }, // page 0
+            RecentBook { path: "  ".into(), title: None, page: 3, num_pages: 0, fraction: None }, // empty path
+            RecentBook { path: "c".into(), title: None, page: 0, num_pages: 0, fraction: None }, // page 0
         ];
         sanitize(&mut v);
         let paths: Vec<&str> = v.iter().map(|b| b.path.as_str()).collect();

@@ -13,7 +13,7 @@
 //! outcome; `navigation.rs` reads the event, calls this, and performs it.
 //! Should the reader ever get a custom keymap, this is the table it edits.
 
-use pdf_core::layout::ViewMode;
+use reader_core::view::ViewMode;
 
 /// Which way a navigation key points. `-1` is back/up/left, `1` is
 /// forward/down/right.

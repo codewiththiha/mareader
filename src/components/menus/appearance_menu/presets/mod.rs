@@ -12,7 +12,7 @@ mod swatch;
 use leptos::prelude::*;
 
 use crate::state::AppState;
-use pdf_core::presets::{group_presets, user_group_names};
+use reader_core::appearance::presets::{group_presets, user_group_names};
 
 use editor::PresetEditor;
 use gallery::PresetGallery;

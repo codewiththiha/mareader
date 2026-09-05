@@ -13,19 +13,27 @@ use std::fmt;
 use std::sync::Arc;
 
 use ai_core::gloss::GlossMark;
+use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use crate::state::library::{sanitize as sanitize_library, CoverImage, CoverMap, RecentBook};
-use pdf_core::settings::{sanitize, Settings, SETTINGS_KEY};
+use crate::state::library::sanitize as sanitize_library;
+use crate::state::library::{CoverImage, CoverMap, LibraryState, RecentBook};
+use reader_core::settings::{SETTINGS_KEY, Settings, sanitize};
 
 const LIBRARY_KEY: &str = "pdfreader.library.v1";
 const COVERS_KEY: &str = "pdfreader.covers.v1";
 /// Gloss highlights, keyed by document path.
 ///
-/// Versioned like the rest: the rects are page-space CSS px, so they are
-/// stable across zoom and sessions but NOT across a change in how a page is
+/// Versioned like the rest: a PDF's mark is a page-space rect in CSS px, which
+/// is stable across zoom and sessions but NOT across a change in how a page is
 /// laid out. If page rendering metrics ever change, bump this to `v2` rather
 /// than letting old marks drift onto the wrong words.
+///
+/// A reflowable mark carries its identity in `context` instead — a tagged
+/// envelope holding a block index and a character range (see
+/// `components::ai::reflow_anchor`) — because its pages are re-cut whenever the
+/// typography or the column width moves. The envelope is versioned by its own
+/// tag, so a change there does not need a new storage key.
 const GLOSS_KEY: &str = "pdfreader.gloss.v1";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization
@@ -151,6 +159,42 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
         detail: format!("serialize failed: {e}"),
     })?;
     set(COVERS_KEY, &json)
+}
+
+/// Write the shelf's current books, reporting a failure instead of returning it.
+///
+/// The shelf is written from four moments, and three of them want exactly this:
+/// a document opening (the shelf record), a document closing (the last known
+/// page) and a book being removed from the shelf. None of the three can do
+/// anything with a `StorageError` — a shelf that will not write is still a shelf
+/// the reader can use, and the next write carries the same books again — so all
+/// three spelled the same `if let Err(e) = … { e.report() }` around the same
+/// untracked read.
+///
+/// The fourth moment is the reading-progress debounce, which keeps
+/// [`save_library`]: it snapshots the VALUE and hands it to a timer, because a
+/// timer that fired during teardown and reached back into a disposed signal
+/// would panic where a dropped save would not.
+///
+/// The read here is untracked, and that is the only relationship this module
+/// has with the reactive graph: storage takes a value and writes it, and never
+/// subscribes to anything.
+///
+/// Writes here are immediate rather than debounced on purpose. Two of the three
+/// are the last thing that happens before a document is torn down or the window
+/// closes, and a debounced save is a save that may never land.
+pub fn persist_library(library: LibraryState) {
+    if let Err(e) = library.books.with_untracked(|books| save_library(books)) {
+        e.report();
+    }
+}
+
+/// [`persist_library`] for the cover cache, which travels with the shelf: the
+/// recent-book cap is only a memory cap if covers are evicted with their books.
+pub fn persist_covers(library: LibraryState) {
+    if let Err(e) = library.covers.with_untracked(|covers| save_covers(covers)) {
+        e.report();
+    }
 }
 
 /// Load every document's gloss highlights (path -> marks).

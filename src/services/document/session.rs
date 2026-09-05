@@ -4,8 +4,8 @@
 //! resolve, the cover render — and nothing stops a reader from picking a
 //! second book while the first is still in the middle of them. Without an
 //! owner, the loser of that race still runs its tail: it writes `num_pages`,
-//! `page1_size` and `metrics` for a book that is no longer open, seeds the
-//! zoom for the wrong page size, and flips `status` to `Ready` after the
+//! `page1_size` and the per-page size stores for a book that is no longer
+//! open, seeds the zoom for the wrong page size, and flips `status` to `Ready` after the
 //! winner already did — resuming the new book at the old one's page.
 //!
 //! So every attempt takes a stamp before it starts and re-checks it after

@@ -1,9 +1,11 @@
 //! The wire protocol between the Tauri backend and the frontend: the chunk
 //! stream ([`AiChunk`]) and the typed error it can carry ([`AiError`]).
 //!
-//! The frontend mirrors both in `src/components/ai/types.rs` and
-//! `src/services/ai.rs` — keep the serde shapes in sync (the test below pins
-//! this crate's half of the contract).
+//! The frontend's half of the contract is `crates/ai-core/src/types.rs` for
+//! the error and the word payload — the app imports that crate, so there is
+//! nothing to keep in step — and `src/services/ai.rs` for the chunk envelope it
+//! deserializes off the Tauri event. Keep THAT one's serde shape in sync; the
+//! test below pins this crate's half.
 
 use futures::Stream;
 use std::pin::Pin;

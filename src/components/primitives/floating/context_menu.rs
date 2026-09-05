@@ -11,12 +11,13 @@
 //! </ContextMenu>
 //! ```
 
-use leptos::{html, prelude::*};
+use leptos::html;
+use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 
-use super::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
-use super::types::{place_context_menu, Point};
+use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
+use app_chrome::floating::types::{Point, place_context_menu};
 use app_chrome::hooks::use_window_event::use_window_event;
 
 /// A right-click menu for a generic target payload.
@@ -53,11 +54,11 @@ pub fn ContextMenu<T: Clone + Send + Sync + 'static>(
         };
         let (px, py) = position(&t);
         let place = move || {
-            let size = super::position::panel_size(
+            let size = app_chrome::floating::position::panel_size(
                 panel_ref.get().map(|p| p.unchecked_into::<web_sys::Element>()),
                 (min_width as f64, 48.0),
             );
-            let vp = super::position::viewport();
+            let vp = app_chrome::floating::position::viewport();
             let placed = place_context_menu(Point::new(px, py), size, vp, 8.0);
             style_sig.set(format!(
                 "left:{:.1}px;top:{:.1}px;min-width:{min_width}px",
@@ -98,7 +99,7 @@ pub fn ContextMenu<T: Clone + Send + Sync + 'static>(
 
     let base_class = format!(
         "menu-popover context-menu fixed {} min-w-[{min_width}px] surface-popover",
-        super::types::z::CONTEXT_MENU
+        app_chrome::layers::CONTEXT_MENU
     );
     let panel_class = match class {
         Some(extra) => format!("{base_class} {extra}"),

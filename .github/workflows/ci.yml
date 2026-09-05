@@ -44,7 +44,7 @@ jobs:
         run: npm ci
 
       # Type-check the TypeScript sources (public/pdfEngine.ts and
-      # scripts/*.ts). The actual .js emission happens in the Trunk pre-build
+      # tools/*.ts). The actual .js emission happens in the Trunk pre-build
       # hook and the `build:ts` npm script; this gate catches type errors
       # that the smoke test would otherwise only fail on at runtime.
       - name: Type-check TypeScript
@@ -119,6 +119,31 @@ jobs:
 
       - name: Verify versions are in sync
         run: node scripts/check-versions.js
+
+      # The formats the reader opens are declared three times (the reader-core
+      # registry, the Tauri shell's filesystem gate and the bundle's file
+      # associations) in two languages that cannot see each other. Same family
+      # of check as the versions one above.
+      - name: Verify supported formats are in sync
+        run: node scripts/check-formats.js
+
+      # Module docs in this repo name the modules they work with, and a rename
+      # leaves the prose pointing at nothing. Rustdoc only checks `///` links it
+      # can resolve as links; most of these are backticked prose. The same claim
+      # is made in the stylesheets' comments, which no Rust tool reads at all.
+      - name: Verify comment paths resolve
+        run: node scripts/check-doc-paths.js
+
+      # The engine and the app agree on three window-event names, declared once
+      # in Rust and once in TypeScript. A disagreement is silent at build time.
+      - name: Verify the window-event tables agree
+        run: node scripts/check-events.js
+
+      # The app builds the page hosts and the engine paints into them; the only
+      # thing they share is names in the DOM, and a `closest` that finds nothing
+      # is not an error.
+      - name: Verify the DOM contract agrees
+        run: node scripts/check-dom-contract.js
 
   # The Linux job above cannot see `set_traffic_lights`: it is
   # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2

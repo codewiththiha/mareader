@@ -12,4 +12,4 @@ pub use geometry::{
     boxes_close, is_glossable, is_hintable, place_card, step_spring, GlossBox, MAX_CARD_H_FRAC,
     MIN_CARD_H, MIN_CARD_W,
 };
-pub use mark::{MarkAnchor, PageAnchor, GlossMark};
+pub use mark::{mark_id, GlossMark, MarkAnchor, PageAnchor, ReflowSpot};

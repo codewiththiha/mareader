@@ -5,10 +5,11 @@
 
 use std::sync::Arc;
 
-use leptos::{html, prelude::*};
+use ai_core::types::WordInfo;
+use leptos::html;
+use leptos::prelude::*;
 
-use crate::components::ai::types::WordInfo;
-use app_chrome::hooks::use_content_size::use_content_size;
+use super::use_content_size::use_content_size;
 
 /// Returns the node ref for the invisible measure twin plus the live height
 /// signal it feeds.

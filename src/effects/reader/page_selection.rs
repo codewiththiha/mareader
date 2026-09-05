@@ -7,8 +7,8 @@
 //! clear.
 //!
 //! This effect is the single place that turns that event into a write on
-//! `state.reader.viewer.selected_pages`, which `PageList` reads to PIN those pages in
-//! the virtualization window.
+//! `state.reader.viewer.selected_pages`, which `features::reader::virtualizers`
+//! merges into the virtualizer's PINNED window, so those pages stay mounted.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;

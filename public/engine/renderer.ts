@@ -4,26 +4,46 @@ import type {
   PageState,
   RenderResult,
 } from "./types";
-import { el, errorInfo, fail, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
+import { el, fail, failFrom, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
 import { CLEANUP_EVERY, PAGE_MAX_PIXELS, session } from "./state";
+import {
+  hostIdFromCanvasId,
+  pageFromCanvasId,
+  TEXT_LAYER_CLASS,
+  TEXT_LAYER_SELECTOR,
+} from "./dom-contract";
 import { TextLayer } from "./loader";
 import { applyHighlights } from "./highlights";
 import { buildLinkLayer } from "./links";
 
-// Compiled once, not per canvas: pageFromCanvasId runs on the fallback path
-// of every unmounted-id resolution, which on a fast scroll is per row.
-const SP_CV_RE = /^sp-(\d+)-cv$/;
-const CONT_CV_RE = /^cont-(\d+)-cv$/;
-
-function pageFromCanvasId(canvasId: string): number {
-  const sp = SP_CV_RE.exec(canvasId);
-  if (sp && sp[1]) return parseInt(sp[1], 10);
-  const cont = CONT_CV_RE.exec(canvasId);
-  if (cont && cont[1]) return parseInt(cont[1], 10) + 1;
-  return 1;
+/** A page with nothing in flight: no render task, no text layer, no viewport,
+ *  no raw raster, and both queue counters at zero. Two callers build one — a
+ *  canvas found in the DOM, and a page registered before its canvas exists —
+ *  and a field added to `PageState` should have exactly one place to be given
+ *  its initial value. */
+function blankPage(
+  page: number,
+  canvas: HTMLCanvasElement | null,
+  host: HTMLElement | null,
+  textLayerEl: HTMLElement | null
+): PageState {
+  return {
+    page,
+    canvas,
+    host,
+    textLayerEl,
+    renderTask: null,
+    textLayer: null,
+    viewport: null,
+    scale: 1,
+    dead: false,
+    rawCanvas: null,
+    queueGen: 0,
+    queueHandle: 0,
+  };
 }
 
 /** Look up or create PageState. Recovers when registerPage ran before the
@@ -40,9 +60,9 @@ function ensurePage(
     return existing;
   }
   if (!canvas) return null;
-  const hostId = hostIdHint || canvasId.replace(/-cv$/, "-pg");
+  const hostId = hostIdHint || hostIdFromCanvasId(canvasId);
   const host = el(hostId);
-  const textLayerEl = host ? (host.querySelector(".textLayer") as HTMLElement | null) : null;
+  const textLayerEl = host ? (host.querySelector(TEXT_LAYER_SELECTOR) as HTMLElement | null) : null;
   if (existing) {
     existing.dead = false;
     existing.canvas = canvas;
@@ -50,22 +70,12 @@ function ensurePage(
     existing.textLayerEl = textLayerEl;
     return existing;
   }
-  const st: PageState = {
-    // Prefer the caller's hint (registerPage passes the page number); fall
-    // back to parsing the id only when the mount never registered.
-    page: pageHint && pageHint > 0 ? pageHint : pageFromCanvasId(canvasId),
-    canvas,
-    host,
-    textLayerEl,
-    renderTask: null,
-    textLayer: null,
-    viewport: null,
-    scale: 1,
-    dead: false,
-    rawCanvas: null,
-    queueGen: 0,
-    queueHandle: 0,
-  };
+  // Prefer the caller's hint (registerPage passes the page number); fall back to
+  // parsing the id only when the mount never registered. An id this cannot parse
+  // is not a reader host at all, and page 1 is the least wrong guess for a
+  // canvas that is about to be told which page it is.
+  const page = pageHint && pageHint > 0 ? pageHint : (pageFromCanvasId(canvasId) ?? 1);
+  const st = blankPage(page, canvas, host, textLayerEl);
   session.stateByCanvasId.set(canvasId, st);
   return st;
 }
@@ -85,20 +95,10 @@ export function registerPage(page: number, canvasId: string, hostId?: string): v
   if (!st) {
     // Canvas not in the DOM yet. Remember the page/host so renderPage can
     // finish registration on the next tick.
-    session.stateByCanvasId.set(canvasId, {
-      page,
-      canvas: null,
-      host: hostId ? el(hostId) : null,
-      textLayerEl: null,
-      renderTask: null,
-      textLayer: null,
-      viewport: null,
-      scale: 1,
-      dead: false,
-      rawCanvas: null,
-      queueGen: 0,
-      queueHandle: 0,
-    });
+    session.stateByCanvasId.set(
+      canvasId,
+      blankPage(page, null, hostId ? el(hostId) : null, null)
+    );
   }
 }
 
@@ -172,9 +172,15 @@ export async function renderPageInternal(
   const pxW = Math.max(1, Math.floor(viewport.width * out));
   const pxH = Math.max(1, Math.floor(viewport.height * out));
 
-  const pipeline = session.themeScrubActive ? null : readPipeline();
-  const needsBake = !session.themeScrubActive && pipeline ? !pipelineIsIdentity(pipeline) : false;
-  const target = needsBake ? document.createElement("canvas") : st.canvas;
+  // Where the render draws: a scratch when the pipeline in force at start is
+  // non-identity (the visible canvas keeps its baked copy until the swap),
+  // the live canvas otherwise. pdf.js needs the destination NOW, so this
+  // half is start-time; the THEME decision itself is re-made at completion
+  // (see the generation guard below) — a render that spans a pipeline
+  // change must not bake against the palette it started under.
+  const pipeline0 = session.themeScrubActive ? null : readPipeline();
+  const needsBake0 = !session.themeScrubActive && pipeline0 ? !pipelineIsIdentity(pipeline0) : false;
+  const target = needsBake0 ? document.createElement("canvas") : st.canvas;
   target.width = pxW;
   target.height = pxH;
   const ctx = target.getContext("2d", { alpha: false });
@@ -203,8 +209,7 @@ export async function renderPageInternal(
     if ((e as { name?: string }).name === "RenderingCancelledException") {
       return fail("cancelled", "Render cancelled");
     }
-    const info = errorInfo(e);
-    return fail(info.name, info.message);
+    return failFrom(e);
   }
   if (st.dead) {
     try { page.cleanup(); } catch (_) { /* ignore */ }
@@ -218,6 +223,19 @@ export async function renderPageInternal(
   // ≤96×96 frame for the Rust paper session to drain after the render —
   // every colour decision downstream lives in the pdf-paper crate.
   stashPaperFrame(canvasId, st.page, target);
+
+  // GENERATION GUARD: settle under the pipeline CURRENT at landing, not the
+  // one in force when the render was issued. `readPipeline()` caches by the
+  // root style token, so a Rust appearance repaint (which bumps the cache
+  // generation and re-bakes through the theme queue) or a scrub / pipeline
+  // flip can land while this raster is still in flight; page renders are
+  // NOT serialized with the theme queue, so a spread's two pages — issued a
+  // beat apart — used to be able to bake against different theme states, or
+  // land one on `canvas-raw` and its sibling baked, which is exactly the
+  // half-theme seam. The raw pixels are in `target` either way, so the
+  // decision is free to move to here.
+  const pipeline = session.themeScrubActive ? null : readPipeline();
+  const needsBake = pipeline ? !pipelineIsIdentity(pipeline) : false;
 
   if (needsBake && pipeline) {
     // Keep the unbaked `target` on the page. Slider scrub restores it and
@@ -244,7 +262,7 @@ export async function renderPageInternal(
     st.host.style.setProperty("--scale-factor", String(scale));
 
     const layer = document.createElement("div");
-    layer.className = "textLayer";
+    layer.className = TEXT_LAYER_CLASS;
     layer.setAttribute("aria-hidden", "true");
 
     const textContent = await textTask;
@@ -264,8 +282,7 @@ export async function renderPageInternal(
       if ((e as { name?: string }).name === "AbortException") {
         return fail("cancelled", "Text render cancelled");
       }
-      const info = errorInfo(e);
-      return fail(info.name, info.message);
+      return failFrom(e);
     }
     if (st.dead) {
       try { page.cleanup(); } catch (_) { /* ignore */ }
@@ -273,7 +290,7 @@ export async function renderPageInternal(
       return fail("cancelled", "Render cancelled");
     }
 
-    const live = st.host.querySelector(".textLayer");
+    const live = st.host.querySelector(TEXT_LAYER_SELECTOR);
     if (live && live.parentNode) {
       live.replaceWith(layer);
     } else {
@@ -345,8 +362,7 @@ export async function renderPage(
       try {
         renderPageInternal(canvasId, scale, !!renderText).then(resolve);
       } catch (e) {
-        const info = errorInfo(e);
-        resolve(fail(info.name, info.message));
+        resolve(failFrom(e));
       }
     });
   });

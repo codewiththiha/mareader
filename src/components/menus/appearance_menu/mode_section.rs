@@ -12,10 +12,11 @@ use leptos::prelude::*;
 use crate::components::menus::appearance_menu::hue_picker::HuePicker;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::form::slider::Slider;
-use pdf_core::appearance::BaseMode;
-use crate::components::primitives::option_button::OptionButton;
+use reader_core::appearance::BaseMode;
+use crate::components::primitives::controls::option_button::OptionButton;
+use crate::components::settings::fonts::update_text;
 use crate::state::AppState;
-use crate::effects::appearance::{preview_appearance, AppearanceScrub};
+use crate::effects::appearance::{AppearanceScrub, preview_appearance};
 
 fn base_icon(b: BaseMode) -> IconName {
     match b {
@@ -113,5 +114,47 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                 label="Tint strength"
             />
         </div>
+
+        // The reflowable formats' own contrast dial, directly under the tint
+        // it complements. PDFs earn their look through the canvas pipeline —
+        // filters and blend modes over an always-light raster — and that
+        // pipeline must never touch DOM text (it would invert or double-tint
+        // it), so the row exists only while a text document is open. Text
+        // needs exactly one number, and the stylesheet does the rest.
+        <Show when=move || state.reader.reflowable()>
+            <div class="mt-3">
+                <TextInkSlider state=state />
+            </div>
+        </Show>
+    }
+}
+
+/// The ink-intensity slider: how strong the body text's ink sits against
+/// the paper, from a comfortable grey to the theme's full ink. Writes
+/// through the shared typography path (sanitize included), so the live
+/// readout and the persisted value can never disagree.
+#[component]
+fn TextInkSlider(state: AppState) -> impl IntoView {
+    let (ink, set_ink) = signal(state.settings.with_untracked(|s| s.text.ink_contrast));
+    // Mirror external writes (a preset landing, another control's scrub)
+    // back into the local signal, or the slider would keep showing the old
+    // dial's number.
+    Effect::new(move || {
+        set_ink.set(state.settings.with(|s| s.text.ink_contrast));
+    });
+    view! {
+        <Slider
+            value=ink
+            min=10.0
+            max=100.0
+            step=1.0
+            unit="%"
+            on_change=move |v| {
+                let v = v.round().clamp(10.0, 100.0);
+                set_ink.set(v);
+                update_text(state, move |t| t.ink_contrast = v);
+            }
+            label="Text ink intensity"
+        />
     }
 }

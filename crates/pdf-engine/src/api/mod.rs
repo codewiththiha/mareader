@@ -33,7 +33,7 @@ pub mod render;
 pub mod search;
 pub mod theme;
 
-pub use dialog::pick_pdf;
+pub use dialog::pick_document;
 pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
 pub use paper::{sample_paper_page, set_paper, set_paper_active, take_paper_frame, PaperFrame};
 pub use render::{
@@ -102,7 +102,7 @@ js_keys! {
     KEY_DIRECTORY => "directory",
     KEY_FILTERS => "filters",
     KEY_EXTENSIONS => "extensions",
-    KEY_PDF => "PDF",
+    KEY_DOCUMENTS => "Documents",
 }
 
 /// `obj[key]` using one of the hoisted keys.

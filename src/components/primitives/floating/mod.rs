@@ -1,15 +1,14 @@
-//! The floating system: placement math + dismissal + the anchored surfaces
-//! that compose them (popover, context menu, floating card).
+//! The anchored floating surfaces: popover, context menu and the floating
+//! card.
 //!
-//! Position math is pure and lives in `pdf_core::floating` (host-testable);
-//! `position.rs` adapts it to the DOM. `dismiss.rs` owns the shared
-//! Escape/outside-press contract. `popover.rs` is the classic anchored menu,
-//! `context_menu.rs` the cursor-point menu, `floating_card.rs` the advanced
-//! phase-driven surface AI-style cards compose.
+//! The plumbing they sit on is chrome and lives in the `app-chrome` crate:
+//! placement glue ([`app_chrome::floating::position`]), shared dismissal
+//! mechanics ([`app_chrome::floating::dismiss`]) and the element/geometry
+//! helpers ([`app_chrome::floating::types`]), with the pure placement math
+//! in `ui_geom::floating`. These three modules are the views — the
+//! components that decide what a popover, a menu or a morphing card looks
+//! like, composed out of that plumbing.
 
 pub mod context_menu;
-pub mod dismiss;
 pub mod floating_card;
 pub mod popover;
-pub mod position;
-pub mod types;

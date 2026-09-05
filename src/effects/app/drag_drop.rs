@@ -10,7 +10,7 @@
 //!     two apart, and while it is open every enter is ignored.
 //!   * A drag of something else (a PNG, a folder, a URL). The DOM drag names
 //!     its items' kinds and MIME types up front; Tauri names the paths. Each
-//!     is checked against `pdf_core::documents`, the one registry of what the
+//!     is checked against `reader_core::format`, the one registry of what the
 //!     reader opens, so a new format is a new row there and nothing here.
 //!
 //! Two transports feed the same decision:
@@ -25,7 +25,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use pdf_core::documents;
+use reader_core::format;
 use web_sys::Event;
 
 use crate::state::AppState;
@@ -96,7 +96,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     // one with the paths it carries; both go through the same admission.
     let admit = {
         let internal = internal.clone();
-        move |ev: &Event| !internal.get() && drop_paths(ev).iter().any(|p| documents::is_supported_path(p))
+        move |ev: &Event| !internal.get() && drop_paths(ev).iter().any(|p| format::is_supported_path(p))
     };
     let enter_admit = admit.clone();
     crate::services::tauri_listen("tauri://drag-enter", move |ev: Event| {
@@ -111,7 +111,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
             return;
         }
         let paths = drop_paths(&ev);
-        if let Some(path) = documents::first_supported(paths.iter().map(String::as_str)) {
+        if let Some(path) = format::first_supported(paths.iter().map(String::as_str)) {
             crate::services::document::open_path(state, path.to_string());
         }
     });
@@ -129,7 +129,7 @@ fn carries_supported_file(ev: &leptos::ev::DragEvent) -> bool {
     (0..items.length())
         .filter_map(|i| items.get(i))
         .filter(|item| item.kind() == "file")
-        .any(|item| documents::is_supported_mime(&item.type_()))
+        .any(|item| format::is_supported_mime(&item.type_()))
 }
 
 /// `payload.paths` of a Tauri v2 drag event (`drag-enter` and `drag-drop`

@@ -2,7 +2,7 @@
 
 use leptos::prelude::*;
 
-use pdf_core::search::SearchMatch;
+use reader_core::search::SearchMatch;
 
 #[derive(Clone, Copy)]
 pub struct SearchState {

@@ -41,7 +41,11 @@ body.noise-enabled .noise-overlay {
    only way a reader can judge colour and tint against the texture they will
    actually be reading through. */
 
-/* css-comment-stripped */
+/* ANIMATED GRAIN. The static tile comes off the overlay and the same noise
+   moves on an `::after` instead, jittered through the eight discrete positions
+   of `noise-crawl` below — `steps(1)` because grain re-rolls rather than
+   interpolates. Only one of the two layers carries the tile at a time: both at
+   once would composite the same noise over itself and double its contrast. */
 body.noise-animated .noise-overlay {
   background-image: none;
 }

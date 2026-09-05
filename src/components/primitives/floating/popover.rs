@@ -2,8 +2,8 @@
 //! floating internals:
 //!
 //! * placement + viewport clamping + upward flip + transform origin come from
-//!   [`super::position`] (pure math in `pdf_core::floating`);
-//! * Escape / outside-press dismissal comes from [`super::dismiss`];
+//!   [`position`](app_chrome::floating::position) (pure math in `ui_geom::floating`);
+//! * Escape / outside-press dismissal comes from [`dismiss`](app_chrome::floating::dismiss);
 //! * the open/close transition is reported through `on_open_change` rather
 //!   than the popover reaching into app chrome itself (the app-shell
 //!   `MenuPopover` in `crate::components::shell::titlebar::toolbar_popover` owns
@@ -18,9 +18,9 @@ use leptos::children::ChildrenFn;
 use leptos::html;
 use leptos::prelude::*;
 
-use super::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
-use super::position::{place_at_anchor, placement_options};
-use super::types::{node_within_any, PlacementSide, Size};
+use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
+use app_chrome::floating::position::{place_at_anchor, placement_options};
+use app_chrome::floating::types::{PlacementSide, Size, node_within_any};
 use app_chrome::hooks::use_window_event::use_window_event;
 
 #[component]
@@ -150,12 +150,12 @@ pub fn Popover(
         StoredValue::new_local(if class.is_empty() {
             format!(
                 "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg",
-                super::types::z::POPOVER
+                app_chrome::layers::POPOVER
             )
         } else {
             format!(
                 "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg {class}",
-                super::types::z::POPOVER
+                app_chrome::layers::POPOVER
             )
         });
 

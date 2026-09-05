@@ -6,6 +6,7 @@ import type {
   PDFPageProxy,
   Viewport,
 } from "./types";
+import { NAVIGATE_EVENT } from "./events";
 import { session } from "./state";
 
 async function destToPage(dest: string | unknown[] | null | undefined): Promise<number | null> {
@@ -92,7 +93,7 @@ export async function buildLinkLayer(
       aEl.addEventListener("click", (ev) => {
         ev.preventDefault();
         globalThis.dispatchEvent(
-          new CustomEvent("pdfreader:navigate", { detail: { page: p } })
+          new CustomEvent(NAVIGATE_EVENT, { detail: { page: p } })
         );
       });
     }

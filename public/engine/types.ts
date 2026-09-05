@@ -138,7 +138,7 @@ export type OutlineResult = Result<{
   outline: { title: string; page: number; depth: number }[];
 }>;
 export type RenderResult = Result<{ width: number; height: number; scale: number }>;
-export type ThumbResult = Result<{ width: number; height: number; scale: number; cached: boolean }>;
+export type ThumbResult = Result<{ width: number; height: number; scale: number }>;
 export type CoverResult = Result<{ dataUrl: string; width: number; height: number }>;
 export type Stats = {
   pages: number;

@@ -53,6 +53,29 @@ thread_local! {
 }
 
 /// The element with `id`, if the document is available and it exists.
+/// The client rects a `Range` covers, as pure `(left, top, right, bottom)`
+/// tuples in viewport CSS px.
+///
+/// One range can report several rects — a span that wraps a line, or that
+/// crosses inline boxes — and everything that paints over text needs all of
+/// them: a gloss stroke unions them into one box, a search hit paints one box
+/// per rect. Both format families call this, so it lives with the other shared
+/// DOM lookups rather than inside either subtree. An empty list (a range the
+/// browser will not give rects for) is a normal answer, and every caller reads
+/// it as "nothing to place".
+pub fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
+    let Some(rects) = range.get_client_rects() else {
+        return Vec::new();
+    };
+    let mut out = Vec::with_capacity(rects.length() as usize);
+    for index in 0..rects.length() {
+        if let Some(rect) = rects.get(index) {
+            out.push((rect.left(), rect.top(), rect.right(), rect.bottom()));
+        }
+    }
+    out
+}
+
 pub fn by_id(id: &str) -> Option<web_sys::Element> {
     web_sys::window()
         .and_then(|w| w.document())

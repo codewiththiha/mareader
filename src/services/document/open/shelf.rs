@@ -2,15 +2,14 @@
 
 use leptos::prelude::*;
 
-use crate::state::library::{self, RecentBook};
+use crate::state::library::{RecentBook, self};
 use crate::state::AppState;
-use crate::storage::{save_covers, save_library};
 
 /// Move this book to the front of the shelf and persist it.
 ///
 /// An entry evicted past the cap has its cover dropped with it, so the cover
 /// store cannot outgrow the list it belongs to.
-pub(super) fn record(
+pub(crate) fn record(
     state: AppState,
     path: &str,
     title: Option<String>,
@@ -25,6 +24,11 @@ pub(super) fn record(
         .update(|s| s.last_path = Some(path.to_string()));
 
     let mut recent = state.library.books.get_untracked();
+    // A reflowable book's fractional stream position survives the re-open's
+    // upsert: the entry below replaces this one in the same breath, and the
+    // open flow just consumed this fraction to place the stream. The first
+    // scroll of the new session overwrites it with the truth of this read.
+    let fraction = recent.iter().find(|b| b.path == path).and_then(|b| b.fraction);
     let evicted = library::upsert(
         &mut recent,
         RecentBook {
@@ -32,18 +36,15 @@ pub(super) fn record(
             title,
             page,
             num_pages,
+            fraction,
         },
     );
     state.library.books.set(recent);
-    if let Err(e) = state.library.books.with_untracked(|books| save_library(books)) {
-        e.report();
-    }
+    crate::storage::persist_library(state.library);
     if let Some(evicted_path) = evicted {
         state.library.covers.update(|c| {
             c.remove(&evicted_path);
         });
-        if let Err(e) = state.library.covers.with_untracked(save_covers) {
-            e.report();
-        }
+        crate::storage::persist_covers(state.library);
     }
 }

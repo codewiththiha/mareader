@@ -168,6 +168,16 @@ body {
   z-index: 0;
   background-color: var(--color-paper); /* the blend backdrop for ::after */
 }
+/* TEXT PAPER — a reflowable document's page IS the whole surface: the
+   `.reader-bg` backdrop is the paper (`--tx-paper`) and the `.tx-page`
+   hosts are transparent frames (see text.css), so nothing stacks over
+   the view mode's backdrop. PDF keeps `--color-paper` and the blend
+   paper. `data-format` is painted by the appearance effect from the open
+   document's format. */
+:root[data-format="text"] .reader-bg,
+:root[data-format="markdown"] .reader-bg {
+  background-color: var(--tx-paper);
+}
 /* BLEND PAPER — the backdrop must equal the CANVAS background, and that is
    the PDF's own paper run through the theme pipeline, not any app colour.
    The engine publishes the document's most-used raster colour as
@@ -193,4 +203,16 @@ body {
   mix-blend-mode: var(--canvas-blend, multiply);
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
+
+/* TEXT/MD paginated modes (single, two-page): show the same paper as the
+   scroll modes. The scroller carries the `bg-surface` utility for PDF
+   (the gutter around pages is the chrome surface), but for reflowable
+   formats that opaque chrome layer hides .reader-bg's --tx-paper and
+   makes single/two-page read as a different theme. Drop it so the view
+   mode's backdrop shows through. Scoped to data-format, so PDF never
+   matches and keeps its surface gutter. */
+:root[data-format="text"] .paginated-scroller,
+:root[data-format="markdown"] .paginated-scroller {
+  background-color: transparent;
+}
 

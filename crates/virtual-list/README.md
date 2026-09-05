@@ -59,11 +59,15 @@ Two invariants hold for any budget:
 
 ## Backends
 
-Three storage backends are available:
+`Strip` is the one backend today, behind the `StripBackend` trait it implements. The windowing logic
+(`overlapping`, `visible`, `window`, `dominant`) is written once against that trait, so a new
+backend — a tree, a chunked column, whatever a surface needs — only has to provide the primitives,
+and the `i64` sub-pixel math keeps boundary behaviour bit-for-bit identical between them.
+`ListLayout` is generic over the backend and defaults to `Strip`.
 
-| Backend        | Lookup   | Update    | Use when |
-| -------------- | -------- | --------- | -------- |
-| `Strip`        | `O(1)`   | `O(n)`    | Static or rarely-resized lists |
+| Backend | Lookup | Update | Use when |
+| ------- | ------ | ------ | -------- |
+| `Strip` | `O(1)` | `O(n)` | Static or rarely-resized lists |
 
 ## Example
 

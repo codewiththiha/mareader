@@ -1,0 +1,12 @@
+[package]
+name = "txt-core"
+version = "0.1.0"
+edition = "2024"
+description = "Plain text: paragraph detection from blank lines, verbatim hard line breaks, and the line-bounded split that lets a page be filled. No markup is sniffed, ever. Unit-testable on the host."
+license = "MIT"
+
+[dependencies]
+reflow-core = { path = "../reflow-core" }
+
+[lints.rust]
+unsafe_code = "forbid"

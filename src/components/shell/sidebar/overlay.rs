@@ -43,7 +43,7 @@ use std::time::Duration;
 use leptos::children::ChildrenFn;
 use leptos::prelude::*;
 
-use app_chrome::hooks::{use_hover_reveal, HoverConfig};
+use app_chrome::hooks::{HoverConfig, use_hover_reveal};
 use crate::components::shell::controller::ShellController;
 
 /// How long the pointer may be off the rail before it closes.

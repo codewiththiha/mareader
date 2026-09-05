@@ -17,12 +17,13 @@
 
 use std::cell::RefCell;
 
-use futures::stream::{self, StreamExt};
+use futures::stream::{StreamExt, self};
 use serde::Deserialize;
 
-use pdf_core::search::{PageText, SearchIndex, SearchItem, SearchResponse};
+use pdf_core::search::{PageText, SearchIndex, SearchItem};
+use reader_core::search::SearchResponse;
 
-use super::{require_pdf_reader, resolve, EngineError};
+use super::{EngineError, require_pdf_reader, resolve};
 use crate::bridge;
 
 /// Pages extracted concurrently per turn while the index is built. Three is

@@ -11,7 +11,7 @@ import type {
   OutlineItem,
   PDFDocumentProxy,
 } from "./types";
-import { errorInfo, fail, releaseCanvas } from "./canvas";
+import { errorInfo, fail, failFrom, offscreenFor, releaseCanvas } from "./canvas";
 import { resetPaperForDocument } from "./paper";
 import { session } from "./state";
 
@@ -123,7 +123,38 @@ export function TextLayer(opts: ConstructorParameters<TextLayerCtor>[0]) {
   return new Ctor(opts);
 }
 
-const CMAP = { cMapUrl: "/vendor/pdfjs/cmaps/", cMapPacked: true };
+/** The pdf.js open parameters every entry point in this engine shares.
+ *
+ *  `isEvalSupported: false` is the CSP half: the app ships without
+ *  `unsafe-eval`, so a function pdf.js would otherwise compile has to take the
+ *  interpreter path instead of throwing at runtime. `disableAutoFetch` and
+ *  `disableStream` are the memory half — a document opened for a cover
+ *  thumbnail must not pull more bytes than it asked for. The c-map pair is what
+ *  makes CID-keyed CJK fonts resolve at all. */
+const BASE_PARAMS = {
+  cMapUrl: "/vendor/pdfjs/cmaps/",
+  cMapPacked: true,
+  disableAutoFetch: true,
+  disableStream: true,
+  isEvalSupported: false,
+};
+
+/** How long the worker may take to hand back a document before the open is
+ *  declared dead. A worker that never initialises leaves `task.promise` pending
+ *  forever, and the UI would sit on its spinner with nothing to report. */
+const OPEN_TIMEOUT_MS = 8000;
+const OPEN_TIMEOUT_MSG = "Timed out opening this PDF (pdf.js worker failed to initialize)";
+
+/** The whole of "open a document": one task registered on the session so a
+ *  teardown can find it, one ceiling on the worker, and a cleanup that runs if
+ *  the ceiling wins. Only the source differs between callers. */
+async function openTask(source: Record<string, unknown>): Promise<PDFDocumentProxy> {
+  const task = getDocument({ ...BASE_PARAMS, ...source });
+  session.setLoadingTask(task);
+  return await withTimeout(task.promise, OPEN_TIMEOUT_MS, OPEN_TIMEOUT_MSG, () => {
+    void destroyTask(task);
+  });
+}
 
 async function doFetch(src: string): Promise<Uint8Array> {
   const res = await fetch(src);
@@ -199,44 +230,15 @@ async function probeAssetUrl(url: string): Promise<boolean> {
   }
 }
 
+/** A URL pdf.js can Range-request, so the file is never held whole in V8. */
 async function openFromUrl(url: string): Promise<PDFDocumentProxy> {
-  const task = getDocument({
-    url,
-    ...CMAP,
-    disableRange: false,
-    disableStream: true,
-    disableAutoFetch: true,
-    rangeChunkSize: 65536,
-    isEvalSupported: false,
-  });
-  session.setLoadingTask(task);
-  return await withTimeout(
-    task.promise,
-    8000,
-    "Timed out opening this PDF (pdf.js worker failed to initialize)",
-    () => {
-      void destroyTask(task);
-    },
-  );
+  return openTask({ url, disableRange: false, rangeChunkSize: 65536 });
 }
 
+/** Bytes already in memory (the Tauri IPC path, and the fallback when the asset
+ *  protocol misbehaves): there is nothing to range over. */
 async function openFromBytes(bytes: Uint8Array): Promise<PDFDocumentProxy> {
-  const task = getDocument({
-    data: bytes,
-    ...CMAP,
-    disableAutoFetch: true,
-    disableStream: true,
-    isEvalSupported: false,
-  });
-  session.setLoadingTask(task);
-  return await withTimeout(
-    task.promise,
-    8000,
-    "Timed out opening this PDF (pdf.js worker failed to initialize)",
-    () => {
-      void destroyTask(task);
-    },
-  );
+  return openTask({ data: bytes });
 }
 
 async function openDocument(path: string): Promise<PDFDocumentProxy> {
@@ -323,8 +325,7 @@ export async function open(path: string): Promise<OpenResult> {
       const d = errorInfo(e);
       return fail("corrupt", `Could not read this PDF. (${d.name}: ${d.message})`);
     }
-    const info = errorInfo(e);
-    return fail(info.name, info.message);
+    return failFrom(e);
   }
 }
 
@@ -473,11 +474,9 @@ function renderCoverFromPdf(
     const scale = Math.min((maxWidth || 240) / (vp1.width || 1), 2);
     const viewport = page.getViewport({ scale });
 
-    const off = document.createElement("canvas");
-    off.width = Math.max(1, Math.floor(viewport.width));
-    off.height = Math.max(1, Math.floor(viewport.height));
-    const ctx = off.getContext("2d", { alpha: false });
-    if (!ctx) throw new Error("no_context");
+    const made = offscreenFor(viewport);
+    if (!made) throw new Error("no_context");
+    const { canvas: off, ctx } = made;
     return page
       .render({ canvasContext: ctx, viewport })
       .promise.then(() => {
@@ -497,12 +496,7 @@ export async function coverDataUrl(path: string, maxWidth = 240): Promise<CoverR
     if (session.pdf && session.currentPath === path) {
       result = await renderCoverFromPdf(session.pdf, maxWidth);
     } else {
-      const task = getDocument({
-        data: await fetchBytes(path),
-        ...CMAP,
-        disableAutoFetch: true,
-        disableStream: true,
-      });
+      const task = getDocument({ ...BASE_PARAMS, data: await fetchBytes(path) });
       try {
         const doc = await task.promise;
         result = await renderCoverFromPdf(doc, maxWidth);
@@ -512,8 +506,7 @@ export async function coverDataUrl(path: string, maxWidth = 240): Promise<CoverR
     }
     return { ok: true, dataUrl: result.dataUrl, width: result.width, height: result.height };
   } catch (e) {
-    const info = errorInfo(e);
-    return fail(info.name, info.message);
+    return failFrom(e);
   }
 }
 

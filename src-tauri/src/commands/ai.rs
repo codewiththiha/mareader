@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use futures::StreamExt;
 use tauri::{AppHandle, Emitter};
 
-use crate::ai::{create_provider, AiChunk, AiError, AiErrorKind, AiProvider, AiStreamEvent};
+use crate::ai::{AiChunk, AiError, AiErrorKind, AiProvider, AiStreamEvent, create_provider};
 
 /// One provider for the process's lifetime. `create_provider` reads the env
 /// and builds the bridge (with its shared concurrency budget); doing that on
@@ -14,14 +14,15 @@ fn provider() -> &'static dyn AiProvider {
     PROVIDER.get_or_init(create_provider).as_ref()
 }
 
-/// Mirror of `pdf_core::gloss::MAX_GLOSS_CHARS` — the frontend gate (the
-/// Info pill) is the real one; this only protects the invoke boundary.
+/// Mirror of the limit behind `ai_core::gloss::is_glossable` (its
+/// `MAX_GLOSS_CHARS`, in `ai_core::gloss::geometry`) — the frontend gate (the
+/// Explain pill) is the real one; this only protects the invoke boundary.
 /// Keep the two in sync.
 const MAX_GLOSS_CHARS: usize = 60;
 
 fn is_glossable(word: &str) -> bool {
     // A word, not a phrase: trimmed, within the cap, and free of interior
-    // whitespace — same rule as `pdf_core::gloss::is_glossable`.
+    // whitespace — same rule as `ai_core::gloss::is_glossable`.
     let t = word.trim();
     !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS && !t.chars().any(char::is_whitespace)
 }
@@ -103,7 +104,7 @@ pub async fn explain_word(
 mod tests {
     use super::is_glossable;
 
-    /// Same rule as `pdf_core::gloss::is_glossable`, asserted here so a
+    /// Same rule as `ai_core::gloss::is_glossable`, asserted here so a
     /// drift between the two gates fails a test instead of failing silently
     /// at the invoke boundary.
     #[test]

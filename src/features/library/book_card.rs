@@ -17,7 +17,7 @@ pub(crate) fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
     // renders many closures that outlive this function's frame).
     let path = book.path.clone();
     let title = book.title.clone().unwrap_or_else(|| {
-        pdf_core::filename::file_stem_from_path(&path).unwrap_or_else(|| path.clone())
+        reader_core::filename::file_stem_from_path(&path).unwrap_or_else(|| path.clone())
     });
     let page = book.page;
     let num = book.num_pages;
@@ -72,20 +72,8 @@ pub(crate) fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
         state.library.covers.update(|covers| {
             covers.remove(&remove_path);
         });
-        if let Err(e) = state
-            .library
-            .books
-            .with_untracked(|books| crate::storage::save_library(books))
-        {
-            e.report();
-        }
-        if let Err(e) = state
-            .library
-            .covers
-            .with_untracked(crate::storage::save_covers)
-        {
-            e.report();
-        }
+        crate::storage::persist_library(state.library);
+        crate::storage::persist_covers(state.library);
     };
 
     let alt_path = path.clone();

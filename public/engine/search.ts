@@ -11,7 +11,7 @@
 //    in highlights.ts.
 
 import type { TextItem } from "./types";
-import { fail, errorInfo } from "./canvas";
+import { fail, failFrom } from "./canvas";
 import { refreshHighlights } from "./highlights";
 import { session } from "./state";
 
@@ -59,8 +59,7 @@ export async function extractPageText(
     }
     return { ok: true, page, items };
   } catch (e) {
-    const info = errorInfo(e);
-    return fail(info.name, info.message);
+    return failFrom(e);
   }
 }
 
