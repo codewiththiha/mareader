@@ -45,21 +45,13 @@ pub fn IconButton(
 ) -> impl IntoView {
     let pressed_sig = pressed.unwrap_or_else(|| Signal::derive(|| false));
     let box_class = "btn-icon inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg";
-    // Plain (non-toggle) buttons carry no text colour class of their own —
-    // they inherit, so a caller's `class` passthrough can set the colour
-    // without fighting a conditional utility. Toggle buttons keep the
-    // accent/ink swap (only one branch is ever in the DOM).
-    let base_sig = pressed.map(|_| {
-        (
-            format!(
-                "{box_class} border border-transparent bg-transparent transition-colors hover:bg-line \
-                 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
-                 disabled:cursor-not-allowed disabled:opacity-45"
-            ),
-            pressed_sig,
-        )
-    });
-    let base_plain = format!(
+    // One base string for both branches — the toggle and plain buttons share
+    // every class. The only difference is the conditional colour swap the
+    // class closure below appends; plain (non-toggle) buttons carry no text
+    // colour class of their own so a caller's `class` passthrough can set the
+    // colour without fighting a conditional utility, while toggle buttons
+    // keep the accent/ink swap (only one branch is ever in the DOM).
+    let base = format!(
         "{box_class} border border-transparent bg-transparent transition-colors hover:bg-line \
          focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
          disabled:cursor-not-allowed disabled:opacity-45"
@@ -75,11 +67,12 @@ pub fn IconButton(
             on:click=move |_| on_click()
             class=move || {
                 let extra = class.as_deref().unwrap_or("");
-                match &base_sig {
-                    Some((base, ps)) => {
-                        format!("{base} {} {extra}", if ps.get() { "text-accent" } else { "text-ink" })
-                    }
-                    None => format!("{base_plain} {extra}"),
+                match pressed {
+                    Some(_) => format!(
+                        "{base} {} {extra}",
+                        if pressed_sig.get() { "text-accent" } else { "text-ink" }
+                    ),
+                    None => format!("{base} {extra}"),
                 }
             }
         >

@@ -11,8 +11,8 @@
 //! The windowing arithmetic itself lives in `virtual-list` and
 //! `virtual-list-leptos`; this module carries the reader's policy and re-exports
 //! [`Budget`] so a caller sizes a strip without naming two crates. The PDF
-//! page frame's own constants (the toolbar band the search reveal must clear)
-//! stay in `pdf_core::layout`.
+//! page frame's own constant (the toolbar band the search reveal must clear)
+//! stays at `pdf_core`'s root.
 
 pub use virtual_list::Budget;
 

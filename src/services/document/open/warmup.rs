@@ -5,11 +5,10 @@ use wasm_bindgen_futures::spawn_local;
 
 use pdf_engine::api as engine;
 
+use crate::components::shell::sidebar::panels::thumbnails::geometry::THUMB_SCALE;
+
 /// How many pages to pre-render. The rail shows roughly this many at once.
 const WARM_PAGES: u32 = 16;
-
-/// Mirrors `THUMB_SCALE` (panels/thumbnails/geometry.rs).
-const THUMB_SCALE: f64 = 0.25;
 
 /// How long to wait before starting. Well past the reader's own first paints:
 /// the resume jump's renders can still be landing a second in on big books,

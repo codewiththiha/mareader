@@ -387,7 +387,7 @@ pub fn PdfPageCanvas(
                     // pipeline moment the page's own paper is unbaked); hand
                     // it to the paper session — every colour decision it
                     // feeds lives in the pdf-paper crate.
-                    pdf_engine::paper::live_frame(&cid);
+                    pdf_engine::backdrop::live_frame(&cid);
                     if let Some(host) = app_chrome::hooks::dom::by_id(&hid) {
                         // Note: cannot use host.style() (tachys ElementExt::style shadows
                         // web_sys' inherent method); set the inline style attribute directly.

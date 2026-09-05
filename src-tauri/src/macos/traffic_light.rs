@@ -44,7 +44,9 @@ mod imp {
         Window, WindowEvent,
     };
 
-    const DEFAULT_HEADER_HEIGHT: f64 = 48.0; // pdf-reader `h-12`
+    // The wasm side's canonical source is `app_chrome::TITLE_BAR_H` (h-12);
+    // the shell cannot depend on wasm crates, so it keeps this mirror.
+    const DEFAULT_HEADER_HEIGHT: f64 = 48.0;
     const TRAFFIC_LIGHT_X_INSET: f64 = 20.0; // matches tauri.conf.json x:20
     /// AppKit's rest origin for a standard button when nothing better has
     /// been measured yet (Sonoma's value; Tahoe measures ~7).

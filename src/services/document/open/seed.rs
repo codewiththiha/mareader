@@ -54,7 +54,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // The paper session resets for the new book — synchronously, while the
     // status is still `Opening` and nothing is mounted, so the previous
     // book's backdrop colour is gone before the reader's first frame.
-    pdf_engine::paper::document_open(path, num_pages);
+    pdf_engine::backdrop::document_open(path, num_pages);
     state
         .reader
         .document

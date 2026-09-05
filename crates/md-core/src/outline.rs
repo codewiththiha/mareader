@@ -15,6 +15,7 @@
 //! chapters follow the pagination instead of fighting it.
 
 use reader_core::outline::{OutlineNode, clamp_depth};
+use reflow_core::block::FenceTracker;
 use reflow_core::block::TextBlock;
 use reflow_core::source::normalize;
 
@@ -40,12 +41,13 @@ pub struct MarkdownHeading {
 /// blank line closes a block, a fence keeps its interior blank lines): one
 /// pass over the text, no allocation of block strings just to find a dozen
 /// headings. Fence state is not decoration here — a `#` inside a code sample is
-/// a shell prompt, not a chapter.
+/// a shell prompt, not a chapter — and it is the shared
+/// [`FenceTracker`](reflow_core::block::FenceTracker) the splitter itself
+/// runs, so the two can never disagree about what a fence is.
 pub fn extract_headings(raw: &str) -> Vec<MarkdownHeading> {
     let text = normalize(raw);
     let mut headings = Vec::new();
-    let mut in_fence = false;
-    let mut fence_marker = "";
+    let mut fences = FenceTracker::default();
     // The block the current line belongs to, and how many blocks have opened.
     // Counting them here — rather than parsing the blocks and searching them —
     // is what keeps this one pass over the source.
@@ -53,31 +55,23 @@ pub fn extract_headings(raw: &str) -> Vec<MarkdownHeading> {
     let mut opened = 0usize;
     for line in text.split('\n') {
         let trimmed = line.trim();
-        if !in_fence && reflow_core::block::is_fence_open(trimmed) {
-            // The fence line itself belongs to a block (that is how the
-            // splitter sees it), so it opens one if the blank line before it
-            // had closed the previous.
-            if current.is_none() {
-                current = Some(opened);
-                opened += 1;
-            }
-            in_fence = true;
-            fence_marker = reflow_core::block::fence_marker_of(trimmed);
-            continue;
-        }
-        if in_fence {
-            let marker_char = fence_marker.chars().next().unwrap_or('`');
-            if trimmed.starts_with(fence_marker)
-                && trimmed.trim_end_matches(marker_char).trim().is_empty()
-            {
-                in_fence = false;
+        if fences.feed(trimmed) {
+            if fences.inside() {
+                // The fence line itself belongs to a block (that is how the
+                // splitter sees it), so it opens one if the blank line before
+                // it had closed the previous.
+                if current.is_none() {
+                    current = Some(opened);
+                    opened += 1;
+                }
+            } else {
                 // The closer ends the block for the counter too, or the
                 // heading under it would be attributed to the fenced block.
                 current = None;
             }
             continue;
         }
-        if in_fence {
+        if fences.inside() {
             continue;
         }
         if trimmed.is_empty() {

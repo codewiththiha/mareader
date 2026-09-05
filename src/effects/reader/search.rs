@@ -22,8 +22,8 @@ use leptos::prelude::*;
 use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use app_chrome::hooks::dom::{h_page_list, page_list};
+use app_chrome::TITLE_BAR_H;
 use crate::state::ReaderState;
-use pdf_core::layout::TOOLBAR_H;
 use reader_core::view::ViewMode;
 use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
 use pdf_engine::api as engine;
@@ -171,7 +171,7 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
                 .map(|s| s.width)
                 .sum::<f64>()
         });
-        let left = TOOLBAR_H + before * scale + m.x * scale;
+        let left = TITLE_BAR_H + before * scale + m.x * scale;
         let right = left + (m.w * scale).max(1.0);
         if let Some(next) = scroll_to_reveal(
             left,
@@ -232,7 +232,7 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
         bottom,
         list.scroll_top() as f64,
         list.client_height() as f64,
-        TOOLBAR_H + SEARCH_BAR_H,
+        TITLE_BAR_H + SEARCH_BAR_H,
         0.0,
         REVEAL_MARGIN,
     ) {

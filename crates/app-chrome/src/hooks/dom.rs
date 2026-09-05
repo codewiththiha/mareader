@@ -52,7 +52,6 @@ thread_local! {
         RefCell::new(HashSet::new());
 }
 
-/// The element with `id`, if the document is available and it exists.
 /// The client rects a `Range` covers, as pure `(left, top, right, bottom)`
 /// tuples in viewport CSS px.
 ///
@@ -76,6 +75,7 @@ pub fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
     out
 }
 
+/// The element with `id`, if the document is available and it exists.
 pub fn by_id(id: &str) -> Option<web_sys::Element> {
     web_sys::window()
         .and_then(|w| w.document())

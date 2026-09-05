@@ -28,7 +28,7 @@ pub mod search;
 pub mod source;
 pub mod typography;
 
-pub use block::{BlockKind, TextBlock, SPLIT_MAX_LINES, split_blocks, subdivide_with};
+pub use block::{BlockKind, FenceTracker, TextBlock, SPLIT_MAX_LINES, split_blocks, subdivide_with};
 pub use geometry::{PageGeometry, SpineSide, PAGE_HEIGHT, PAGE_WIDTH, geometry};
 pub use pager::{
     block_page_index, estimate_block_height, estimate_heights, first_block_of_page, paginate,

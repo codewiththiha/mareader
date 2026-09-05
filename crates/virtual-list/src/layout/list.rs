@@ -98,10 +98,11 @@ impl<B: StripBackend> Layout for ListLayout<B> {
         self.backend.index_at(pos)
     }
 
-    fn index_at_hinted(&self, pos: f64, _hint: &mut usize) -> usize {
-        // For now, fall back to unhinted index_at. A full hinted path
-        // requires the backend to expose index_at_hinted directly.
-        self.backend.index_at(pos)
+    fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
+        // The backend's hinted search: for the default `Strip` that is the
+        // neighbour-then-gallop answer, so the list rides the same amortized
+        // O(1) the grid's row windowing does.
+        self.backend.index_at_hinted(pos, hint)
     }
 
     fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
@@ -117,9 +118,9 @@ impl<B: StripBackend> Layout for ListLayout<B> {
         scroll: f64,
         viewport: Viewport,
         budget: Budget,
-        _hint: &mut usize,
+        hint: &mut usize,
     ) -> Option<Window> {
-        crate::backend::window(&self.backend, scroll, viewport.main, budget)
+        self.backend.window_hinted(scroll, viewport.main, budget, hint)
     }
 
     #[inline]
@@ -170,5 +171,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn hinted_matches_unhinted() {
+        // The hint is now plumbing that actually runs (the backend's hinted
+        // leading-edge search), so the list owes the grid's guarantee: the
+        // hinted answers are the unhinted answers, at every position.
+        let l: ListLayout = ListLayout::estimated(200, |i| 80.0 + (i % 7) as f64 * 13.0, 11.0);
+        let mut hint = 0usize;
+        let mut pos = 0.0;
+        while pos < l.total() {
+            assert_eq!(l.index_at(pos), l.index_at_hinted(pos, &mut hint), "index_at {pos}");
+            pos += 17.0;
+        }
+        let budget = Budget::items(2, 64);
+        let mut hint = 0usize;
+        let mut top = 0.0;
+        while top < l.total() {
+            assert_eq!(
+                l.window(top, Viewport::main_only(720.0), budget),
+                l.window_hinted(top, Viewport::main_only(720.0), budget, &mut hint),
+                "window at {top}"
+            );
+            top += 61.0;
+        }
     }
 }

@@ -170,13 +170,20 @@ pub struct PlacedPanel {
     pub transform_origin: &'static str,
 }
 
+/// Clamp one axis of a position so a box of `size` stays inside `extent`
+/// with `margin`. The allowed range collapses to the margin when the box
+/// cannot fit (a plain `clamp` would panic on min > max), which is the
+/// policy both viewport clamps below share — written once so the point and
+/// rect variants cannot drift apart.
+fn clamp_axis(pos: f64, extent: f64, size: f64, margin: f64) -> f64 {
+    pos.clamp(margin, (extent - size - margin).max(margin))
+}
+
 /// Clamp `p` so a box of `size` stays inside `viewport` with `margin`.
 pub fn clamp_point_to_viewport(p: Point, size: Size, viewport: Size, margin: f64) -> Point {
-    let max_x = (viewport.w - size.w - margin).max(margin);
-    let max_y = (viewport.h - size.h - margin).max(margin);
     Point {
-        x: p.x.clamp(margin, max_x),
-        y: p.y.clamp(margin, max_y),
+        x: clamp_axis(p.x, viewport.w, size.w, margin),
+        y: clamp_axis(p.y, viewport.h, size.h, margin),
     }
 }
 
@@ -185,8 +192,8 @@ pub fn clamp_point_to_viewport(p: Point, size: Size, viewport: Size, margin: f64
 /// margin rather than panicking on min > max).
 fn clamp_rect_to_viewport(rect: Rect, viewport: Size, margin: f64) -> Rect {
     Rect {
-        x: rect.x.clamp(margin, (viewport.w - rect.w - margin).max(margin)),
-        y: rect.y.clamp(margin, (viewport.h - rect.h - margin).max(margin)),
+        x: clamp_axis(rect.x, viewport.w, rect.w, margin),
+        y: clamp_axis(rect.y, viewport.h, rect.h, margin),
         ..rect
     }
 }

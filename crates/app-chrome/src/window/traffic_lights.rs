@@ -30,10 +30,11 @@
 //!
 //! Dynamic `y` (Tahoe-proof centering) — mirrors `readest` `traffic_light.rs`
 //! `compute_traffic_light_y + OnceLock + ResizeObserver`. The bar is `h-12`
-//! (48px, `TOOLBAR_H`) but `y` is NOT `tauri.conf.json:trafficLightPosition`
-//! (that's only the pre-mount fallback). The live header height is measured
-//! from `#toolbar-row` via `ResizeObserver`; every `visible=true` invoke
-//! carries it as `headerHeight`, and the Rust command owns
+//! (48px, [`TITLE_BAR_H`](crate::TITLE_BAR_H)) but `y` is NOT
+//! `tauri.conf.json:trafficLightPosition` (that's only the pre-mount
+//! fallback). The live header height is measured from `#toolbar-row` via
+//! `ResizeObserver`; every `visible=true` invoke carries it as
+//! `headerHeight`, and the Rust command owns
 //! `y = ((h - btn_h)/2 + natural_origin_y).max(0)` with a cached
 //! `natural_origin_y` (~5pt Sonoma, ~7pt Tahoe) so no per-OS branch.
 
@@ -45,9 +46,8 @@ use crate::hooks::dom::{TOOLBAR_ROW_ID, by_id};
 use crate::hooks::verified_switch::use_verified_switch;
 use crate::hooks::use_resize_observer::observe_elements;
 use crate::titlebar::root::TitleBarCtx;
+use crate::titlebar::TITLE_BAR_H;
 use crate::window::api::set_traffic_lights;
-
-const DEFAULT_HEADER_HEIGHT: f64 = 48.0; // h-12, mirrors Rust fallback
 
 #[component]
 pub fn TrafficLights(
@@ -65,7 +65,7 @@ pub fn TrafficLights(
     let hide_grace = StoredValue::new_local(None::<TimeoutHandle>);
     // Live header height for Tahoe-proof centering. Observed on
     // `#toolbar-row`; `on_cleanup` in `observe_content_size` disconnects it.
-    let header_height: RwSignal<f64> = RwSignal::new(DEFAULT_HEADER_HEIGHT);
+    let header_height: RwSignal<f64> = RwSignal::new(TITLE_BAR_H);
 
     // Keep `header_height` in sync with the real bar height. This is what
     // replaces the static `tauri.conf.json {y:25}` with a live value. The

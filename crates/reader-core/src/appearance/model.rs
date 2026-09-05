@@ -11,6 +11,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::base::base_tokens;
+
 /// The structural half of a look: what the canvas filter pipeline does, and
 /// which direction the grain/texture blends go. A tint can be layered on any
 /// of these; the tint never changes which family you are in.
@@ -221,16 +223,14 @@ impl Appearance {
 
     /// The exact hex (or oklch literal) the UI accent currently has.
     /// Computed directly so a theme tick does not allocate the seven-token
-    /// override vector just to pick one key.
+    /// override vector just to pick one key: the base table is a Copy struct
+    /// of `&'static str`s, and only the untinted arm — the one answer that
+    /// lives there — reads it. A tinted look answers from its overrides.
     pub fn accent_hex(&self) -> String {
         if let Some(value) = self.tinted_accent() {
             return value;
         }
-        match self.base {
-            BaseMode::Light => "#2563eb".into(),
-            BaseMode::Dark => "#60a5fa".into(),
-            BaseMode::Dim => "#7a9bd4".into(),
-        }
+        base_tokens(self.base).accent.to_string()
     }
 }
 #[cfg(test)]

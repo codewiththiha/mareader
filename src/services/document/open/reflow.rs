@@ -194,7 +194,7 @@ fn ready(
     spawn_local(async move {
         _ = pdf_engine::api::destroy().await;
     });
-    pdf_engine::paper::document_close();
+    pdf_engine::backdrop::document_close();
 
     // The other pipeline's model is released at the same moment, and this
     // document's gloss highlights are loaded before anything mounts — exactly

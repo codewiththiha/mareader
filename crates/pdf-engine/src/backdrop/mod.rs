@@ -1,5 +1,7 @@
-//! The paper session: the `pdf-paper` crate's brain, wired to the engine's
-//! eyes.
+//! The paper-session state machine, wired to the engine's eyes — named
+//! `backdrop` for what it drives. The pure colour math it leans on is the
+//! `pdf-paper` crate (the brain); this module is its live half, and the two
+//! no longer share a name one namespace apart.
 //!
 //! Every colour decision — what a page's paper is, what the backdrop should
 //! show right now — lives in the pure crate and in this state machine. The

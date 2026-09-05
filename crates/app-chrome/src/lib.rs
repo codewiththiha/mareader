@@ -26,3 +26,5 @@ pub mod titlebar;
 pub mod tooltip;
 pub mod window;
 pub mod layers;
+
+pub use titlebar::TITLE_BAR_H;

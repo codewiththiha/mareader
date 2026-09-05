@@ -13,7 +13,6 @@
 //! read at the presentation boundary, and unit-testable on the host via
 //! `cargo test -p pdf-core`.
 
-pub mod layout;
 pub mod outline;
 pub mod pixel_grid;
 pub mod search;

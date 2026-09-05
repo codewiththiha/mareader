@@ -15,16 +15,16 @@ pub struct Window {
 
 impl Window {
     /// Number of items in the range.
+    ///
+    /// No `is_empty` companion: a `Window` is a non-empty range token, not a
+    /// collection — it is only ever produced when at least one item qualifies,
+    /// so an `is_empty` that answered `false` unconditionally was a branch
+    /// callers could write but never take. The clippy lint that asks for the
+    /// pair is suppressed here on purpose.
+    #[allow(clippy::len_without_is_empty)]
     #[inline]
     pub const fn len(&self) -> usize {
         self.last - self.first + 1
-    }
-
-    /// Always `false` — a `Window` is non-empty by construction. Present
-    /// because clippy asks for it whenever `len` exists.
-    #[inline]
-    pub const fn is_empty(&self) -> bool {
-        false
     }
 
     /// Whether `index` falls inside the range.

@@ -34,9 +34,10 @@ impl Appearance {
     /// writes invalidate NOTHING inside the swatch — the swatch is simply never
     /// repainted during the drag, so its blend can never sample a wrong
     /// backdrop. The `contain: layout paint` on `.preset-swatch` (see
-    /// input.css) is a second isolation layer: even if a descendant did
-    /// somehow depend on a root name, the repaint would be caged to the
-    /// swatch's own subtree and couldn't sample the popover's moving backdrop.
+    /// styles/components/appearance.css) is a second isolation layer: even if
+    /// a descendant did somehow depend on a root name, the repaint would be
+    /// caged to the swatch's own subtree and couldn't sample the popover's
+    /// moving backdrop.
     pub fn preview_style(&self) -> String {
         let mut out = String::new();
 

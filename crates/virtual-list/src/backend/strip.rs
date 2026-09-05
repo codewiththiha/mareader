@@ -156,8 +156,159 @@ impl Strip {
     /// integer comparison.
     ///
     /// The hint is updated in place, so callers can keep it across frames in
-    /// the rendering loop's state.
+    /// the rendering loop's state. Delegates to the [`StripBackend`]
+    /// override — the same galloping search every generic hinted windowing
+    /// path over this strip runs.
     pub fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
+        StripBackend::index_at_hinted(self, pos, hint)
+    }
+
+    /// Inclusive range of items overlapping the span `[top, top + extent)`.
+    ///
+    /// An item that ends exactly at `top` has scrolled out and is excluded; an
+    /// item that starts exactly at the bottom edge is also excluded because the
+    /// lower bound is half-open. Returns `None` for an empty strip, a span with
+    /// no extent, or when the span lies entirely within a gap.
+    pub fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
+        super::overlapping(self, top, extent)
+    }
+
+    /// Inclusive range of items that are at least partly on screen.
+    ///
+    /// Shorthand for [`overlapping`](Self::overlapping) with the raw viewport.
+    #[inline]
+    pub fn visible(&self, scroll_top: f64, viewport: f64) -> Option<Window> {
+        super::visible(self, scroll_top, viewport)
+    }
+
+    /// Inclusive range of items to keep mounted.
+    ///
+    /// The window is everything overlapping
+    /// `[scroll_top - look, scroll_top + viewport + look]` where
+    /// `look` is derived from [`Budget::overscan`], trimmed to
+    /// `budget.max_items`.
+    ///
+    /// Two invariants hold for any `budget`:
+    ///
+    /// - every partly-visible item is always included, so no budget can blank
+    ///   out what the reader is looking at;
+    /// - trimming drops the item furthest from the viewport first and prefers
+    ///   to keep the item below, so the next item the reader reaches is the
+    ///   last one evicted.
+    pub fn window(&self, scroll_top: f64, viewport: f64, budget: Budget) -> Option<Window> {
+        crate::backend::window(self, scroll_top, viewport, budget)
+    }
+
+    /// [`Strip::window`] using a hinted overlap search (amortized O(1) when
+    /// `hint` is the previous frame's first mounted index). Delegates to the
+    /// [`StripBackend`] default — the shared hinted windowing, which seeds
+    /// its leading-edge search with this strip's galloping `index_at_hinted`
+    /// and shares the budget trim with the unhinted path.
+    pub fn window_hinted(
+        &self,
+        scroll_top: f64,
+        viewport: f64,
+        budget: Budget,
+        hint: &mut usize,
+    ) -> Option<Window> {
+        StripBackend::window_hinted(self, scroll_top, viewport, budget, hint)
+    }
+
+    /// Index of the item occupying the most of the viewport.
+    ///
+    /// # Why not just "the item at the top edge"?
+    ///
+    /// "Which item's span contains the top pixel" is a different question, and
+    /// the wrong one for a position indicator. Shrinking every item (zooming
+    /// out) slides more of the *previous* item down into the top of the
+    /// viewport, so the top-edge answer keeps changing even though the reader
+    /// never moved and the content under their eyes is identical.
+    ///
+    /// Area-of-viewport degrades gracefully at both extremes: when one item
+    /// fills the screen it trivially wins, and when several are visible the one
+    /// you see most of wins. After a jump that aligns item `i` with the top of
+    /// the viewport, `i` covers at least as much as anything below it, so a
+    /// jump still reports the item it jumped to.
+    ///
+    /// Ties go to the lower index. Falls back to [`index_at`](Self::index_at)
+    /// when the viewport has no extent.
+    pub fn dominant(&self, scroll_top: f64, viewport: f64) -> usize {
+        super::dominant(self, scroll_top, viewport)
+    }
+
+    /// Change the size of a single item in `O(n)` time. Useful when an item
+    /// has finished loading and its measured size replaces an earlier estimate,
+    /// or when an interactive element (accordion, expandable card) resizes.
+    ///
+    /// After this call, [`Strip::offset`] and [`Strip::size`] reflect the new
+    /// size for `index` and any items below it shift accordingly. The total
+    /// extent also updates.
+    ///
+    /// Returns the **delta** (new_size - old_size) in CSS pixels, which the
+    /// caller feeds to [`crate::anchor::correct`] to keep the viewport pinned
+    /// to whatever the reader was looking at.
+    ///
+    /// Does nothing if `index` is out of range or the new size equals the old.
+    pub fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
+        StripBackend::set_size(self, index, new_size)
+    }
+
+}
+
+impl super::StripBackend for Strip {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn gap_sub(&self) -> i64 {
+        self.gap
+    }
+
+    fn offset_sub(&self, index: usize) -> i64 {
+        match self.starts.get(index) {
+            Some(&v) => v,
+            None => self.total_sub(),
+        }
+    }
+
+    fn size_sub(&self, index: usize) -> i64 {
+        let len = self.len();
+        if index >= len {
+            return 0;
+        }
+        let end = if index + 1 == len {
+            self.starts[len]
+        } else {
+            self.starts[index + 1].saturating_sub(self.gap)
+        };
+        end.saturating_sub(self.starts[index]).max(0)
+    }
+
+    fn total_sub(&self) -> i64 {
+        self.starts.last().copied().unwrap_or(0)
+    }
+
+    fn index_at_sub(&self, p: i64) -> usize {
+        let len = self.len();
+        if len == 0 || p <= 0 {
+            return 0;
+        }
+        let idx = self.starts[..len]
+            .partition_point(|&s| s <= p)
+            .saturating_sub(1);
+        if self.starts[idx].saturating_add(self.size_sub(idx)) <= p && idx + 1 < len {
+            idx + 1
+        } else {
+            idx
+        }
+    }
+
+    /// The hinted leading-edge search: neighbour first, then a galloping
+    /// bracket. This is the override every generic hinted windowing path
+    /// over a [`Strip`] runs — the f64 entry point
+    /// [`Strip::index_at_hinted`] delegates here.
+    fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
         let len = self.len();
         if len == 0 || pos <= 0.0 {
             *hint = 0;
@@ -266,199 +417,6 @@ impl Strip {
             };
         *hint = idx;
         idx
-    }
-
-    /// Inclusive range of items overlapping the span `[top, top + extent)`.
-    ///
-    /// An item that ends exactly at `top` has scrolled out and is excluded; an
-    /// item that starts exactly at the bottom edge is also excluded because the
-    /// lower bound is half-open. Returns `None` for an empty strip, a span with
-    /// no extent, or when the span lies entirely within a gap.
-    pub fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
-        super::overlapping(self, top, extent)
-    }
-
-    /// [`Strip::overlapping`] with a **hint** — see [`Strip::index_at_hinted`].
-    fn overlapping_hinted(&self, top: f64, extent: f64, hint: &mut usize) -> Option<Window> {
-        let len = self.len();
-        if len == 0 {
-            return None;
-        }
-        let extent = extent.max(0.0);
-        if extent == 0.0 {
-            return None;
-        }
-        let bottom_sub = to_sub(top + extent);
-
-        let mut first = self.index_at_hinted(top, hint);
-        if self.starts[first].saturating_add(self.size_sub(first)) <= to_sub(top) {
-            first += 1;
-        }
-        if first >= len || self.starts[first] >= bottom_sub {
-            return None;
-        }
-        let last = self.starts[..len]
-            .partition_point(|&s| s < bottom_sub)
-            .saturating_sub(1);
-        (last >= first).then_some(Window { first, last })
-    }
-
-    /// Inclusive range of items that are at least partly on screen.
-    ///
-    /// Shorthand for [`overlapping`](Self::overlapping) with the raw viewport.
-    #[inline]
-    pub fn visible(&self, scroll_top: f64, viewport: f64) -> Option<Window> {
-        super::visible(self, scroll_top, viewport)
-    }
-
-    /// Inclusive range of items to keep mounted.
-    ///
-    /// The window is everything overlapping
-    /// `[scroll_top - look, scroll_top + viewport + look]` where
-    /// `look` is derived from [`Budget::overscan`], trimmed to
-    /// `budget.max_items`.
-    ///
-    /// Two invariants hold for any `budget`:
-    ///
-    /// - every partly-visible item is always included, so no budget can blank
-    ///   out what the reader is looking at;
-    /// - trimming drops the item furthest from the viewport first and prefers
-    ///   to keep the item below, so the next item the reader reaches is the
-    ///   last one evicted.
-    pub fn window(&self, scroll_top: f64, viewport: f64, budget: Budget) -> Option<Window> {
-        crate::backend::window(self, scroll_top, viewport, budget)
-    }
-
-    /// [`Strip::window`] using a hinted overlap search (amortized O(1) when
-    /// `hint` is the previous frame's first mounted index).
-    pub fn window_hinted(
-        &self,
-        scroll_top: f64,
-        viewport: f64,
-        budget: Budget,
-        hint: &mut usize,
-    ) -> Option<Window> {
-        if self.is_empty() {
-            return None;
-        }
-        let vh = viewport.max(0.0);
-        if vh == 0.0 {
-            return (scroll_top < self.total()).then(|| {
-                let index = self.index_at_hinted(scroll_top, hint);
-                Window {
-                    first: index,
-                    last: index,
-                }
-            });
-        }
-        let look = budget.overscan.padding(vh, self.mean_size());
-        let padded = self.overlapping_hinted(scroll_top - look, vh + 2.0 * look, hint)?;
-        let vis = self.visible(scroll_top, vh).unwrap_or(padded);
-        let max = budget.max_items.max(1);
-        let Window {
-            mut first,
-            mut last,
-        } = padded;
-        while last - first + 1 > max {
-            if first < vis.first {
-                first += 1;
-            } else if last > vis.last {
-                last -= 1;
-            } else {
-                break;
-            }
-        }
-        Some(Window { first, last })
-    }
-
-    /// Index of the item occupying the most of the viewport.
-    ///
-    /// # Why not just "the item at the top edge"?
-    ///
-    /// "Which item's span contains the top pixel" is a different question, and
-    /// the wrong one for a position indicator. Shrinking every item (zooming
-    /// out) slides more of the *previous* item down into the top of the
-    /// viewport, so the top-edge answer keeps changing even though the reader
-    /// never moved and the content under their eyes is identical.
-    ///
-    /// Area-of-viewport degrades gracefully at both extremes: when one item
-    /// fills the screen it trivially wins, and when several are visible the one
-    /// you see most of wins. After a jump that aligns item `i` with the top of
-    /// the viewport, `i` covers at least as much as anything below it, so a
-    /// jump still reports the item it jumped to.
-    ///
-    /// Ties go to the lower index. Falls back to [`index_at`](Self::index_at)
-    /// when the viewport has no extent.
-    pub fn dominant(&self, scroll_top: f64, viewport: f64) -> usize {
-        super::dominant(self, scroll_top, viewport)
-    }
-
-    /// Change the size of a single item in `O(n)` time. Useful when an item
-    /// has finished loading and its measured size replaces an earlier estimate,
-    /// or when an interactive element (accordion, expandable card) resizes.
-    ///
-    /// After this call, [`Strip::offset`] and [`Strip::size`] reflect the new
-    /// size for `index` and any items below it shift accordingly. The total
-    /// extent also updates.
-    ///
-    /// Returns the **delta** (new_size - old_size) in CSS pixels, which the
-    /// caller feeds to [`crate::anchor::correct`] to keep the viewport pinned
-    /// to whatever the reader was looking at.
-    ///
-    /// Does nothing if `index` is out of range or the new size equals the old.
-    pub fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
-        StripBackend::set_size(self, index, new_size)
-    }
-
-}
-
-impl super::StripBackend for Strip {
-    #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    fn gap_sub(&self) -> i64 {
-        self.gap
-    }
-
-    fn offset_sub(&self, index: usize) -> i64 {
-        match self.starts.get(index) {
-            Some(&v) => v,
-            None => self.total_sub(),
-        }
-    }
-
-    fn size_sub(&self, index: usize) -> i64 {
-        let len = self.len();
-        if index >= len {
-            return 0;
-        }
-        let end = if index + 1 == len {
-            self.starts[len]
-        } else {
-            self.starts[index + 1].saturating_sub(self.gap)
-        };
-        end.saturating_sub(self.starts[index]).max(0)
-    }
-
-    fn total_sub(&self) -> i64 {
-        self.starts.last().copied().unwrap_or(0)
-    }
-
-    fn index_at_sub(&self, p: i64) -> usize {
-        let len = self.len();
-        if len == 0 || p <= 0 {
-            return 0;
-        }
-        let idx = self.starts[..len]
-            .partition_point(|&s| s <= p)
-            .saturating_sub(1);
-        if self.starts[idx].saturating_add(self.size_sub(idx)) <= p && idx + 1 < len {
-            idx + 1
-        } else {
-            idx
-        }
     }
 
     fn set_size_sub(&mut self, index: usize, new_sub: i64) -> i64 {
@@ -698,7 +656,6 @@ mod tests {
     fn window_iteration_is_inclusive() {
         let w = Window { first: 2, last: 5 };
         assert_eq!(w.len(), 4);
-        assert!(!w.is_empty());
         assert!(w.contains(2) && w.contains(5) && !w.contains(6));
         assert_eq!(w.iter().collect::<Vec<_>>(), alloc::vec![2, 3, 4, 5]);
         assert_eq!(w.into_iter().count(), 4);
@@ -799,7 +756,7 @@ mod tests {
         let mut top = 0.0;
         while top < s.total() {
             let a = s.overlapping(top, 200.0);
-            let b = s.overlapping_hinted(top, 200.0, &mut hint);
+            let b = crate::backend::overlapping_hinted(&s, top, 200.0, &mut hint);
             assert_eq!(a, b, "hinted overlapping disagrees at top={top}");
             top += 23.0;
         }

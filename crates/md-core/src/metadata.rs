@@ -13,6 +13,7 @@
 //! Anything the front matter nests (an `authors:` list, a `date:` map) is
 //! skipped rather than guessed at.
 
+use reflow_core::block::FenceTracker;
 use reflow_core::source::normalize;
 
 use crate::ast::heading_of_line;
@@ -23,19 +24,11 @@ use crate::ast::heading_of_line;
 /// A block that never closes is not front matter. An empty one is — a file that
 /// opens with `---` / `---` is saying "the convention applies, there is nothing
 /// to read", and the body after it must still be the body.
+///
+/// A projection of [`split_front_matter`], the one scan that answers what the
+/// block holds AND what follows it.
 pub fn front_matter(normalized: &str) -> Option<String> {
-    let mut after_opener = normalized.strip_prefix("---")?.strip_prefix('\n')?;
-    let mut body: Vec<&str> = Vec::new();
-    loop {
-        let Some(line) = next_line(&mut after_opener) else {
-            return None; // no closer: prose that happened to start with `---`
-        };
-        let trimmed = line.trim();
-        if trimmed == "---" || trimmed == "..." {
-            return Some(body.join("\n"));
-        }
-        body.push(line);
-    }
+    split_front_matter(normalized).map(|(matter, _)| matter.to_string())
 }
 
 /// One `key: value` line at a time, from the remainder of the source.
@@ -49,6 +42,34 @@ fn next_line<'a>(rest: &mut &'a str) -> Option<&'a str> {
     };
     *rest = tail;
     Some(line)
+}
+
+/// The leading front-matter block, answered in ONE scan: the text between the
+/// opening `---` and its closer (without either marker), and the body after
+/// the closer. `None` when the file does not open with a block that closes —
+/// prose that merely starts with `---` is a thematic break, not front matter.
+///
+/// Both questions a reader asks about the block — [`front_matter`] (what is
+/// inside it) and the title fallback (what follows it) — are projections of
+/// this, so a title lookup walks the block once instead of twice.
+fn split_front_matter(normalized: &str) -> Option<(&str, &str)> {
+    let mut rest = normalized.strip_prefix("---")?.strip_prefix('\n')?;
+    // Byte offset just past the line `next_line` consumed last.
+    let mut consumed = "---\n".len();
+    loop {
+        let before = consumed;
+        let Some(line) = next_line(&mut rest) else {
+            return None; // no closer: prose that happened to start with `---`
+        };
+        consumed += line.len() + 1;
+        let trimmed = line.trim();
+        if trimmed == "---" || trimmed == "..." {
+            // The matter runs to the newline before the closer; a closer
+            // directly under the opener is the empty matter.
+            let matter_end = if before > "---\n".len() { before - 1 } else { before };
+            return Some((&normalized["---\n".len()..matter_end], rest));
+        }
+    }
 }
 
 /// The value of a top-level front-matter key: quotes and a trailing comment
@@ -80,34 +101,17 @@ fn front_matter_value(matter: &str, key: &str) -> Option<String> {
 /// stem stand in.
 pub fn document_title(raw: &str) -> Option<String> {
     let text = normalize(raw);
-    if let Some(matter) = front_matter(&text)
-        && let Some(title) = front_matter_value(&matter, "title")
-    {
+    let (matter, body) = match split_front_matter(&text) {
+        Some((matter, after)) => (matter, after),
+        None => ("", text.as_str()),
+    };
+    if let Some(title) = front_matter_value(matter, "title") {
         return Some(title);
     }
     // The fallback reads the body: a front-matter block that carries no title
     // must not consume the heading under it, and its `---` line is not a
     // heading, so scanning from the top of the file would find nothing.
-    first_heading_title(after_front_matter(&text))
-}
-
-/// The file with a closed front-matter block removed. A file without one is
-/// returned as it came; the markers only belong to front matter when they close.
-fn after_front_matter(normalized: &str) -> &str {
-    let mut rest = match normalized
-        .strip_prefix("---")
-        .and_then(|r| r.strip_prefix('\n'))
-    {
-        Some(rest) => rest,
-        None => return normalized,
-    };
-    while let Some(line) = next_line(&mut rest) {
-        let trimmed = line.trim();
-        if trimmed == "---" || trimmed == "..." {
-            return rest;
-        }
-    }
-    normalized
+    first_heading_title(body)
 }
 
 /// The document's author, from front matter only. Markdown has no
@@ -119,16 +123,18 @@ pub fn document_author(raw: &str) -> Option<String> {
 }
 
 /// The first heading's text, skipping fences so a `#` inside a code sample is
-/// not mistaken for the document's name.
+/// not mistaken for the document's name. The fence rules are the shared
+/// [`FenceTracker`] the block splitter runs — an info-string line inside an
+/// open fence is content, not a close, which a plain marker toggle gets
+/// wrong.
 fn first_heading_title(normalized: &str) -> Option<String> {
-    let mut in_fence = false;
+    let mut fences = FenceTracker::default();
     for line in normalized.split('\n') {
         let trimmed = line.trim();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            in_fence = !in_fence;
+        if fences.feed(trimmed) {
             continue;
         }
-        if in_fence || trimmed.is_empty() {
+        if fences.inside() || trimmed.is_empty() {
             continue;
         }
         let (level, title) = heading_of_line(trimmed)?;
@@ -161,6 +167,13 @@ mod tests {
         assert_eq!(first_heading_title(""), None);
         // A shell prompt inside a sample is not the document's name.
         assert_eq!(first_heading_title("```\n# make install\n```\n\n# Build notes"), Some("Build notes".into()));
+        // An info-string line inside an open fence is content, not a close —
+        // the splitter's rule, which a plain marker toggle gets wrong (it
+        // would let the `#` under it win the title).
+        assert_eq!(
+            first_heading_title("```\nsample code\n~~~rs\n# an inner prompt\n```\n\n# Real Title"),
+            Some("Real Title".into())
+        );
     }
 
     #[test]

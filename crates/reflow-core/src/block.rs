@@ -81,8 +81,7 @@ pub const SPLIT_MAX_LINES: usize = 5;
 pub fn split_blocks(text: &str, kind: BlockKind, fence_aware: bool) -> Vec<TextBlock> {
     let mut blocks = Vec::new();
     let mut current: Vec<&str> = Vec::new();
-    let mut in_fence = false;
-    let mut fence_marker = "";
+    let mut fences = FenceTracker::default();
 
     let flush = |blocks: &mut Vec<TextBlock>, current: &mut Vec<&str>| {
         if current.is_empty() {
@@ -97,21 +96,9 @@ pub fn split_blocks(text: &str, kind: BlockKind, fence_aware: bool) -> Vec<TextB
 
     for line in text.split('\n') {
         let trimmed = line.trim_start();
-        if fence_aware && !in_fence && is_fence_open(trimmed) {
-            in_fence = true;
-            fence_marker = fence_marker_of(trimmed);
+        if fence_aware && fences.feed(trimmed) {
             current.push(line);
-            continue;
-        }
-        if fence_aware && in_fence {
-            current.push(line);
-            // A closing fence: the same marker char, nothing on the line
-            // but the fence itself (it may be longer than the opener).
-            let marker_char = fence_marker.chars().next().unwrap_or('`');
-            if trimmed.starts_with(fence_marker)
-                && trimmed.trim_end_matches(marker_char).trim().is_empty()
-            {
-                in_fence = false;
+            if !fences.inside() {
                 // The closer ENDS the block: what follows opens a fresh one,
                 // without waiting for a blank line. CommonMark is explicit
                 // about it, and a paragraph glued under a code sample must not
@@ -119,6 +106,10 @@ pub fn split_blocks(text: &str, kind: BlockKind, fence_aware: bool) -> Vec<TextB
                 // "never cut" verdict and push a whole page over.
                 flush(&mut blocks, &mut current);
             }
+            continue;
+        }
+        if fence_aware && fences.inside() {
+            current.push(line);
             continue;
         }
         if line.trim().is_empty() {
@@ -145,6 +136,55 @@ pub fn fence_marker_of(trimmed: &str) -> &'static str {
         "~~~"
     } else {
         ""
+    }
+}
+
+/// One shared fence state machine — the open/close rules
+/// [`split_blocks`] follows, extracted so every scanner over Markdown lines
+/// (the block splitter, the outline's heading scan, the metadata reader's
+/// title fallback) answers the fence question identically instead of each
+/// carrying its own copy of the rules.
+///
+/// A fence OPENS on ``` or ~~~ (three or more, optionally followed by an
+/// info string) when no fence is open, and CLOSES on a line that is nothing
+/// but the SAME marker characters (possibly longer, possibly spaced). An
+/// opener-looking line inside a fence is info-string noise, not a close —
+/// the splitter's own rule, which a plain startswith toggle gets wrong.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FenceTracker {
+    /// The marker of the open fence (``` or ~~~), "" while outside.
+    marker: &'static str,
+}
+
+impl FenceTracker {
+    /// Whether the scan is currently inside a fenced block.
+    pub fn inside(&self) -> bool {
+        !self.marker.is_empty()
+    }
+
+    /// Feed one line, trimmed however the caller trims it (the rules only
+    /// look at the line's own bytes). Returns whether the line is fence
+    /// syntax — an opener or a closer — which the caller treats as
+    /// structure, never as content. After a `true` return,
+    /// [`inside`](Self::inside) says whether the fence just opened or just
+    /// closed.
+    pub fn feed(&mut self, trimmed: &str) -> bool {
+        if self.inside() {
+            // A closing fence: the same marker char, nothing on the line
+            // but the fence itself (it may be longer than the opener).
+            let marker_char = self.marker.chars().next().unwrap_or('`');
+            let closes = trimmed.starts_with(self.marker)
+                && trimmed.trim_end_matches(marker_char).trim().is_empty();
+            if closes {
+                self.marker = "";
+            }
+            closes
+        } else if is_fence_open(trimmed) {
+            self.marker = fence_marker_of(trimmed);
+            true
+        } else {
+            false
+        }
     }
 }
 

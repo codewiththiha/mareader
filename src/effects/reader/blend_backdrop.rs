@@ -1,5 +1,5 @@
 //! Paper backdrop driver: wires the reader's settings and scroll geometry to
-//! the paper session (`pdf_engine::paper`, the state machine over the
+//! the paper session (`pdf_engine::backdrop`, the state machine over the
 //! `pdf-paper` crate).
 //!
 //! The session owns every COLOUR decision — detection off raw frames, the
@@ -65,7 +65,7 @@ pub fn paper_settings(state: AppState) {
 
 /// Hand one snapshot of the layout settings to the paper session.
 fn publish(layout: LayoutSettings) {
-    pdf_engine::paper::configure(
+    pdf_engine::backdrop::configure(
         layout.blend_mode,
         PaperConfig {
             area: layout.blend_area,
@@ -102,7 +102,7 @@ pub fn blend_backdrop(state: AppState) {
         // report: the position is the page itself, and the backdrop switches
         // with the page turn.
         if viewer.mode.get() != ViewMode::ScrollVertical {
-            pdf_engine::paper::position(f64::from(page));
+            pdf_engine::backdrop::position(f64::from(page));
             return;
         }
         let scroll = viewer.scroll_top.get();
@@ -111,7 +111,7 @@ pub fn blend_backdrop(state: AppState) {
         // Borrow, don't clone: this effect runs on every scroll tick while
         // blend is on, and the column can be a thousand heights deep.
         let pos = heights.with(|column| paper_position(column, gap, scroll, viewport_h));
-        pdf_engine::paper::position(if pos > 0.0 { pos } else { f64::from(page) });
+        pdf_engine::backdrop::position(if pos > 0.0 { pos } else { f64::from(page) });
     });
 }
 
