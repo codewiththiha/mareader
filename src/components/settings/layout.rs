@@ -31,11 +31,16 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
     let horizontal_mode = Signal::derive(move || {
         state.reader.viewer.mode.get() == ViewMode::ScrollHorizontal
     });
-    // A reflowable document answers to the typography and the two width
-    // dials, not to page chrome: rows that would only lie about what they
-    // control for text/Markdown (No Gap is a PDF strip's concern — a
-    // streamed document has no gap to remove) leave the tree entirely
-    // rather than sitting disabled.
+    // A reflowable document answers to the typography and the width dials,
+    // not to page chrome, and a PDF's page is the document's own: rows that
+    // would only lie about what they control leave the tree entirely rather
+    // than sitting disabled. No Gap is a PDF strip's concern (a streamed
+    // document has no gap to remove), the page shadow paints under
+    // `.pdf-page` hosts only (a `.tx-page` is a transparent frame with no
+    // shadow of its own), and Auto Resize exists for mixed-size books while
+    // a reflowable one is cut from a single identical A4 sheet. The mirror
+    // case is Column Width: it is the reflowable column's own measure, so it
+    // stands down where the page cannot grow one.
     let reflowable = Signal::derive(move || state.reader.reflowable());
     // Continuous text reading has no pages to number: while the stream is
     // live the indicator is a percentage by definition, so the style
@@ -253,28 +258,32 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
             // Column Width is the reading measure dial: 100% is the natural
             // column the typography and the page geometry agreed on, and the
             // ends trade line length for everything else. Text and Markdown
-            // answer it in every mode (the paginated card grows with the
-            // column, the stream's column follows it directly); a PDF's page
-            // is the document's own, so there the dial moves the fit-width
-            // budget the pages resolve against instead.
-            <Row label="Column Width">
-                <span class="flex w-44 items-center">
-                    <Slider
-                        value=Signal::derive(move || s.with(|st| st.layout.column_width_pct))
-                        min=MIN_COLUMN_WIDTH_PCT
-                        max=MAX_COLUMN_WIDTH_PCT
-                        step=5.0
-                        unit="%"
-                        on_change=move |v| {
-                            s.update(|st| {
-                                st.layout.column_width_pct =
-                                    v.round().clamp(MIN_COLUMN_WIDTH_PCT, MAX_COLUMN_WIDTH_PCT);
-                            });
-                        }
-                        label="Column width"
-                    />
-                </span>
-            </Row>
+            // answer it in every mode — the paginated card grows with the
+            // column, the stream's column follows it directly. A PDF's page
+            // is the document's own and has no column to grow, so the dial
+            // has no honest work there and the row leaves the tree for it,
+            // the way No Gap leaves it for text.
+            <Show when=move || reflowable.get()>
+                <Row label="Column Width">
+                    <span class="flex w-44 items-center">
+                        <Slider
+                            value=Signal::derive(move || s.with(|st| st.layout.column_width_pct))
+                            min=MIN_COLUMN_WIDTH_PCT
+                            max=MAX_COLUMN_WIDTH_PCT
+                            step=5.0
+                            unit="%"
+                            on_change=move |v| {
+                                s.update(|st| {
+                                    st.layout.column_width_pct = v
+                                        .round()
+                                        .clamp(MIN_COLUMN_WIDTH_PCT, MAX_COLUMN_WIDTH_PCT);
+                                });
+                            }
+                            label="Column width"
+                        />
+                    </span>
+                </Row>
+            </Show>
             <Row label="Auto Scale">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.auto_scale))
@@ -284,25 +293,38 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     title="Refit to width when entering single / two-page modes".to_string()
                 />
             </Row>
-            <Row label="Auto Resize">
-                <Switch
-                    checked=Signal::derive(move || s.with(|st| st.layout.auto_resize))
-                    on_change=Callback::new(move |v| {
-                        s.update(|st| st.layout.auto_resize = v);
-                    })
-                    title="Re-fit to width when a page of a different size comes into view"
-                        .to_string()
-                />
-            </Row>
-            <Row label="Page Shadow">
-                <Switch
-                    checked=Signal::derive(move || s.with(|st| st.layout.page_shadow))
-                    on_change=Callback::new(move |v| {
-                        s.update(|st| st.layout.page_shadow = v);
-                    })
-                    title="Drop shadow under pages".to_string()
-                />
-            </Row>
+            // Auto Resize exists for mixed-size books — a plate twice the
+            // size of the page before it must re-fit on arrival. A text or
+            // Markdown document is cut from one identical A4 sheet, so a
+            // differently sized page never arrives there and the row stands
+            // down for reflowable documents.
+            <Show when=move || !reflowable.get()>
+                <Row label="Auto Resize">
+                    <Switch
+                        checked=Signal::derive(move || s.with(|st| st.layout.auto_resize))
+                        on_change=Callback::new(move |v| {
+                            s.update(|st| st.layout.auto_resize = v);
+                        })
+                        title="Re-fit to width when a page of a different size comes into view"
+                            .to_string()
+                    />
+                </Row>
+            </Show>
+            // The shadow paints under `.pdf-page` hosts only; a text page
+            // (`.tx-page`) is a transparent frame with no shadow of its own,
+            // so there is nothing for this switch to reach in a reflowable
+            // document and the row leaves the tree for it.
+            <Show when=move || !reflowable.get()>
+                <Row label="Page Shadow">
+                    <Switch
+                        checked=Signal::derive(move || s.with(|st| st.layout.page_shadow))
+                        on_change=Callback::new(move |v| {
+                            s.update(|st| st.layout.page_shadow = v);
+                        })
+                        title="Drop shadow under pages".to_string()
+                    />
+                </Row>
+            </Show>
             <Row label="Overlay Sidebar">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.sidebar_overlay))
