@@ -119,6 +119,15 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             .filter(|height| *height > 0.0);
         intrinsic.unwrap_or_else(|| fallback_height(state)) * state.viewer.zoom.visual_scale() + gap
     };
+    // Both strips estimate from the live DISPLAY scale — the scale the
+    // layout is relaid out to as a zoom runs — so the two axes can never
+    // disagree about how big a page is.
+    let h_estimate = move |index: usize| {
+        state.document.content.metrics.intrinsic.with_untracked(|sizes| {
+            sizes.get(index).map(|s| s.width).unwrap_or(0.0)
+        }) * state.viewer.zoom.visual_scale()
+            + 2.0 * state.viewer.page_margin.get_untracked()
+    };
     let epoch = geometry_epoch(state);
     let pinned_sig: RwSignal<Option<(usize, usize)>> = RwSignal::new(None);
     let initial_vh = {
@@ -129,6 +138,25 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             800.0
         }
     };
+    // Start the window on the RESUME page rather than at the top: page 1 is
+    // never in a fresh open's first window, so it is never mounted, never
+    // rendered, and its raster can never flash past on the way to the page
+    // the reader actually resumes on. Summed under the SAME estimates the
+    // virtualizer builds its layout from, so the first window sits exactly
+    // where the mount anchor (`anchor_to_page`) is about to aim — the
+    // anchor still re-asserts, it simply agrees on its first frame. The
+    // reader's page is seeded by the open flow BEFORE the route flips
+    // (`enter_ready` last), so it is already the resume page here.
+    let resume_index = {
+        let count0 = state.document.num_pages.get_untracked() as usize;
+        ((state.viewer.page.get_untracked().max(1) as usize) - 1).min(count0)
+    };
+    let mut v_off = 0.0;
+    let mut h_off = 0.0;
+    for index in 0..resume_index {
+        v_off += estimate(index);
+        h_off += h_estimate(index);
+    }
     // Zombie retention: an item that leaves the window mid-fling (or in a
     // zoom's geometry commit — the controller raises the grace for that)
     // keeps its DOM briefly instead of popping out.
@@ -136,29 +164,19 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
         VirtualizerOptions::list(count, estimate)
             .gap(0.0)
             .budget(RENDER_BUDGET)
-            .initial(Viewport::main_only(initial_vh), 0.0)
+            .initial(Viewport::main_only(initial_vh), v_off)
             .pinned(pinned_sig.into())
             .epoch(epoch)
             .retention(STRIP_SCROLL_GRACE_MS, MAX_ZOMBIES),
     );
 
-    // Horizontal virtualizer: created unconditionally (hook), bound only when the view mounts.
-    // Both strips estimate from the live DISPLAY scale — the scale the
-    // layout is relaid out to as a zoom runs — so the two axes can never
-    // disagree about how big a page is.
-    let h_estimate = move |index: usize| {
-        state.document.content.metrics.intrinsic.with_untracked(|sizes| {
-            sizes.get(index).map(|s| s.width).unwrap_or(0.0)
-        }) * state.viewer.zoom.visual_scale()
-            + 2.0 * state.viewer.page_margin.get_untracked()
-    };
     let h_virtualizer = use_virtualizer(
         VirtualizerOptions::list(count, h_estimate)
             .axis(virtual_list_leptos::Axis::Horizontal)
             .gap(0.0)
             .budget(RENDER_BUDGET)
             .padding(0.0, 0.0)
-            .initial(Viewport::new(1200.0, initial_vh), 0.0)
+            .initial(Viewport::new(1200.0, initial_vh), h_off)
             .epoch(epoch)
             .retention(STRIP_SCROLL_GRACE_MS, MAX_ZOMBIES),
     );

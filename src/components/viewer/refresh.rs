@@ -46,7 +46,7 @@ pub fn no_invalidation() -> Signal<u64> {
 /// the card and the Explain pill notice.
 ///
 /// The typography is deliberately NOT read here. Every knob that moves type
-/// moves the cut (the measure column re-publishes it), so the cut's generation
+/// moves the cut (the measurement pipeline re-publishes it), so the cut's generation
 /// and `geometry` already cover it — and a knob that moves neither (the ink
 /// dial, the column's alignment) cannot move a mark either. Reading settings
 /// instead would re-derive every stroke on a colour change for nothing.

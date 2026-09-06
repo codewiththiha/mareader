@@ -2,7 +2,7 @@
 //!
 //! A PDF mark stores a rect against a page host and is done: the page is fixed
 //! pixels, so the rect is the identity. A plain-text or Markdown document has
-//! no such fixed grid — a font-size change, a window resize, the measure column
+//! no such fixed grid — a font-size change, a window resize, a re-measure
 //! settling onto real heights, all of them re-cut the pages — so a page-space
 //! rect would drift onto whatever text moved under it. The identity that
 //! survives every re-flow is the BLOCK the words sit in and how far into that

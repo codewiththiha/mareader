@@ -100,7 +100,8 @@ pub(super) fn resume_page(saved_page: u32, num_pages: u32) -> u32 {
 /// Resolved through the same geometry the first live refit will use, so the
 /// first frame already sits where the fit is going to land rather than jumping
 /// to it a moment later. `page_size` is the sheet being fitted: page 1's for a
-/// PDF, the A4 constant for a reflowable document.
+/// PDF, the dialled card (A4 unless the column-width dial grew it) for a
+/// reflowable document.
 ///
 /// A document that opens straight into the continuous stream is the exception,
 /// and the reason this returns the fit mode instead of only the scale: there is
@@ -119,13 +120,42 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
     let scale = if streaming {
         1.0
     } else {
+        // The container CANNOT be asked at seed time: `container_size` is
+        // what the mounted scroller reports, and nothing is mounted yet —
+        // seeding from it fits the first page against the previous
+        // document's box (or the default one), and the post-mount refit
+        // then commits a zoom over the first renders. The window is alive
+        // already, so measure IT instead: the title bar overlays the
+        // content, so only a DOCKED rail gives width up (`w-72`,
+        // border-box), and the fit maths gets the same container the
+        // mounted viewer will report a moment later — which is what turns
+        // the post-mount refit into a no-op.
+        //
+        // For a PDF, the column-width dial scales the fit budget the same
+        // way the live fit maths scales it (see `crate::zoom::target`); a
+        // reflowable document's page box already carries the dial through
+        // the geometry it was cut with, so its container stays plain. The
+        // format is settled by the identity step that runs before this one.
+        const DOCKED_RAIL_W: f64 = 288.0;
+        let (vw, vh) = app_chrome::hooks::use_viewport::viewport_size();
+        let docked = !state.settings.with_untracked(|s| s.layout.sidebar_overlay)
+            && state.ui.sidebar.get_untracked() != crate::state::SidebarMode::None;
+        let cw = vw - if docked { DOCKED_RAIL_W } else { 0.0 };
         FitDims::from_geometry(
             state.reader.viewer.mode.get_untracked(),
-            state.reader.viewer.container_size.get_untracked(),
+            (cw.max(1.0), vh.max(1.0)),
             state.reader.viewer.page_margin.get_untracked(),
             page_size,
         )
-        .map_or(1.0, |dims| dims.fit(startup_fit, 1.0))
+        .map_or(1.0, |mut dims| {
+            if !state.reader.reflowable_untracked() {
+                dims.cw_eff = (dims.cw_eff
+                    * state.reader.viewer.column_width_pct.get_untracked()
+                    / 100.0)
+                    .max(1.0);
+            }
+            dims.fit(startup_fit, 1.0)
+        })
     };
     (startup_fit, scale)
 }

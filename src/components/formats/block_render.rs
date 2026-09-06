@@ -1,7 +1,7 @@
 //! The one place the reader decides HOW a block is painted.
 //!
 //! Both reflowable formats lay their blocks out through the same machinery —
-//! the same page host, the same stream, the same measure column — and at the end
+//! the same page host and the same stream — and at the end
 //! of that machinery sits a single question: is this block's text literal, or is
 //! it Markdown? Answering it used to mean a `match block.kind` inside one shared
 //! block view, which put format names in the common code and made a third format
@@ -12,7 +12,7 @@
 //!
 //! What is shared stays here — the block wrapper, its continuation rule, and the
 //! search-hit layer an addressable row carries — so the two views differ only in
-//! what they put INSIDE the box, and a page and a measure column can never
+//! what they put INSIDE the box, and a page and a stream row can never
 //! disagree about spacing or about what is painted over it.
 
 use leptos::prelude::*;
@@ -54,11 +54,11 @@ impl BlockRender {
 pub fn BlockView(
     /// Reader state, for the search-hit layer an addressable row carries.
     ///
-    /// Only such a row uses it: the measure column renders every block a second
-    /// time, publishes no index, and so paints no hits — which is what keeps a
-    /// query from doubling the boxes a document shows and, more importantly,
-    /// from putting absolutely positioned children inside the element whose
-    /// height is being measured.
+    /// Only an addressable row (one handed an `index`) uses it: a stream row
+    /// publishes no index here and paints its hits as a SIBLING of this view
+    /// instead, so a query never doubles the boxes a document shows, and the
+    /// element a measurement reads never gains an absolutely positioned
+    /// child.
     state: ReaderState,
     /// The block to paint.
     block: TextBlock,
@@ -69,9 +69,9 @@ pub fn BlockView(
     /// This is the one handle a gloss mark has on the DOM: a reflowable mark
     /// remembers a block and a character range rather than a rect, and
     /// projecting it back to pixels means finding the element that renders
-    /// that block (see `crate::components::ai::reflow_anchor`). Absent for the
-    /// measure column, which renders every block a second time and must never
-    /// answer for one.
+    /// that block (see `crate::components::ai::reflow_anchor`). Absent for a
+    /// stream row, where the row WRAPPER carries the lookup id and this view
+    /// must never answer for one of its own.
     #[prop(optional)]
     index: Option<usize>,
 ) -> impl IntoView {
@@ -81,8 +81,8 @@ pub fn BlockView(
     };
     // A row that can be looked up is a row a search hit can be painted over:
     // the layer positions itself against the row's own box, so it belongs
-    // inside it, and it walks the row's text — which the measure column's twin
-    // must never do.
+    // inside it, and it walks the row's text — which a stream row's
+    // measurement must never see (its hits stay a sibling).
     let hits = match index {
         Some(row) => view! { <BlockSearchHits state=state block=row /> }.into_any(),
         None => ().into_any(),
@@ -92,10 +92,9 @@ pub fn BlockView(
     // both formats, from here.
     let class = if block.continuation { "tx-block tx-cont" } else { "tx-block" };
     // The id is the lookup half of the pair the attribute is the identity half
-    // of: `data-block-index` is what the engine's selection tracker walks up to
-    // (and what tells a measure-column twin from a real row, since it gets no
-    // index at all), the id is what the gloss projection resolves a mark's
-    // block with, per mark per frame. See
+    // of: `data-block-index` is what the engine's selection tracker walks up
+    // to, the id is what the gloss projection resolves a mark's block with,
+    // per mark per frame. See
     // [`crate::components::viewer::page_host::block_row_id`].
     let id = index.map(crate::components::viewer::page_host::block_row_id);
     view! {

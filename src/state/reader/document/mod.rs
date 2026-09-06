@@ -205,7 +205,7 @@ impl DocumentState {
     /// This is the one place the two pipelines meet, and it is what lets the
     /// paged modes, the zoom ladder and the progress chrome never ask which
     /// format is open. The reflow half decides the numbers
-    /// ([`reflow::ReflowContent::apply_heights`]) and the document writes them,
+    /// ([`reflow::ReflowContent::recut`]) and the document writes them,
     /// because they are the document's fields: a format's content describing its
     /// own pages is a re-cut, while a format's content setting the reader's page
     /// count is one module reaching across into another's state.

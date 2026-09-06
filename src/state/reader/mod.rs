@@ -42,7 +42,7 @@ pub type TextureSignal = leptos::prelude::Memo<TextureMode>;
 
 /// The reflowable formats' typography, provided via context by the app
 /// bootstrap (derived from settings) — the same pattern [`TextureSignal`] uses,
-/// for the same reason: the pages, the measure column and the stream all need
+/// for the same reason: the pages and the stream all need
 /// the resolved knobs, and none of them may reach into settings to get them.
 pub type TypographySignal = leptos::prelude::Memo<TextSettings>;
 

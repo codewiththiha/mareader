@@ -24,9 +24,20 @@ It has no DOM, no framework coupling, and is the long-term public crate surface.
 
 - `VirtualizerCore` is still pure and unit-testable
 - `use_virtualizer` binds browser scroll containers and resize observers
-- the public `Virtualizer` exposes reactive mounted items/rows, total size, dominant item, scroll offset and viewport, per-item offsets, the scroll-to APIs, and the measurement controls (report, suspend, resume, retention grace)
+- the public `Virtualizer` exposes reactive mounted items/rows, total size, dominant item, scroll offset and viewport, per-item offsets and sizes, per-item render state, the scroll-to APIs, and the measurement controls (report, suspend, resume, retention grace)
 
 This layer is responsible for DOM measurement flow, scroll scheduling, and keeping the geometry authoritative.
+
+It also owns the split between the MOUNT window and the RENDER band. The mount
+window is what the geometry keeps warm; the render band — a tighter window
+around the viewport, `VirtualizerOptions::render_band` — decides which of the
+mounted items carry real content (`Active`) and which stand as placeholders at
+the layout's own sizes (`Blank`). With no band (`render_screens == 0`) every
+mounted item is `Active` — the pages mode, where everything the window mounts
+renders fully. The stream pairs a wide budget with a band narrower than it, so
+a fling slides cheap placeholders past the reader's eyes; every partly-visible
+item is inside the band by construction, so nothing on screen is ever a
+placeholder, and the band never changes what mounts or what the extent says.
 
 ## 3. Reader app: policy + rendering
 
@@ -184,14 +195,15 @@ format-agnostic.
   boundaries into continuation-flagged chunks (`subdivide`, five lines each), and an estimate cut
   is published immediately, so the reader is up the instant the bytes land. The subdivision is
   what lets the paginator pack pages tightly: no single block is taller than a few lines of type,
-  so a page bottom never carries a blank band a pushed-over paragraph used to leave. A hidden
-  measure column (carrying the page content's own `tx-content` rules, so it measures the reading
-  face and not the browser's fallback) then renders every block once at scale 1 with the live
-  typography, reads the true heights, and republishes the cut. Pagination is therefore
-  measurement-true, and re-cuts whenever a typography knob moves — holding the reader on the
-  block they were reading.
-- `apply_heights` is the one place the cut, its inverse block→page map and the per-page size
-  bookkeeping are written together, so a split can never disagree with its map.
+  so a page bottom never carries a blank band a pushed-over paragraph used to leave. The heights
+  are then refined block by block as the reader's own rows render: each mounted row reports its
+  measured scale-1 height into the shared store (`effects::reader::reflow_measure`), debounced so
+  a fling costs one re-cut, not one per frame, and a typography or width-dial change re-runs the
+  pure estimate instead of any DOM. Pagination is therefore measurement-true, and re-cuts whenever
+  a typography knob moves — holding the reader on the block they were reading.
+- `set_initial_heights` and `recut` are the two doors into the cut, its inverse block→page map
+  and the per-page size bookkeeping, and both write the split and its map together, so a split can
+  never disagree with its map.
 - Zoom never re-paginates. The cut is computed at scale 1; a page host is sized `A4 × scale` and
   its type resolves through a scale-1 CSS variable times the host's own `--ts`, so the layout is
   identical at every scale and uniform scaling provably preserves the cut. During the tween the
@@ -205,9 +217,12 @@ format-agnostic.
   modes, the page bookkeeping and the resume flow; it simply is not what scrolls. The stream owns
   its zoom relayout (the page virtualizer is unbound there, and `navigation_sync`'s two page arms
   stand down), maps its dominant block back onto `viewer.page` for progress persistence, reveals
-  search hits through its own virtualizer, and reports its rendered item heights back so a column
-  narrower than the page model still lays out truthfully. Single, spread and horizontal keep real
-  A4 sheets.
+  search hits through its own virtualizer, and runs a render band wider than its visible window:
+  rows inside the band carry type, rows the band has not reached are empty boxes at the
+  virtualizer's own heights. What it renders is also what it measures: the mounted rows report
+  their scale-1 heights into the shared store (`effects::reader::reflow_measure`), which debounces
+  them into the page cut, so a column narrower than the page model still lays out truthfully.
+  Single, spread and horizontal keep real A4 sheets.
 - A Markdown document gets the sidebar's outline panel for real: `md_core::headings_of_blocks`
   finds the headings among the final blocks and `effects::reader::reflow_outline` projects them
   onto the live block→page table, so the chapter tree follows every re-cut instead of going
@@ -231,7 +246,7 @@ format-agnostic.
   `ReaderState::reflowable()` is the tracked read of it, and the UI never tests an extension
   or a document variant inline. The leaf renderer is the same deal one level down:
   `components::formats::block_render::BlockView` dispatches a block to the text or Markdown view
-  from the document's format, so the page, the stream and the measure column share one
+  from the document's format, so the page and the stream share one
   answer and none of them knows what Markdown is.
 - Text never enters blend mode and never touches the paper session: a text page is recoloured by
   its own tokens, so the backdrop's colour machine is gated off for the format (the Theme tab
@@ -289,7 +304,7 @@ generalised instead of the feature being forked per format.
   (`reflow_anchor::explain_context` reads the prose back out; a PDF's bare
   sentence passes through untouched).
 - **Offsets are Unicode code points**, counted over the block's text nodes in
-  document order with the stroke layer and the measure column skipped (a mark's
+  document order with the stroke layer skipped (a mark's
   button carries the glossed word as its accessible name, and counting that would
   shift every offset after it). The conversion to the UTF-16 units a DOM `Range`
   speaks happens once, at `set_start`/`set_end`, so an emoji or a mathematical
@@ -302,8 +317,8 @@ generalised instead of the feature being forked per format.
 - **The walk is shared.** `formats::reflow::spot` is the one module that answers "where is this
   character, in pixels": the text-node walk, the character→code-unit conversion, the `Range` over
   a span and that range's client rects. The gloss projection and the search-hit layer both call it,
-  and the layers a walk must skip — a stroke's button, a hit's box, the measure column's twins —
-  are one list in it rather than one per caller.
+  and the layers a walk must skip — a stroke's button, a hit's box — are one list in it rather
+  than one per caller.
 - **Two resolvers, one dispatch.** `anchor::anchor_resolver` answers in viewport
   space for the Explain pill and the gloss card; `anchor::stroke_resolver` answers in
   a stroke layer's own coordinates, relative to the element it measured. Neither

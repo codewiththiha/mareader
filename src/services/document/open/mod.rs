@@ -115,6 +115,10 @@ pub fn open_path(state: AppState, path: String) {
     let stamp = session::claim();
     state.reader.document.status.set(DocStatus::Opening);
     state.reader.document.error.set(None);
+    // Re-arm the first-paint cover for THIS document: an open over a mounted
+    // reader (drag-drop, "Open with") never passes through `close_document`'s
+    // reset, and the gate belongs to the open, not the close.
+    state.reader.viewer.first_paint.set(false);
 
     // The resume point is read BEFORE the open resolves so it can't be
     // clobbered by a concurrent page-tracking write from the closing document.

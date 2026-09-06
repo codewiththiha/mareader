@@ -1,10 +1,9 @@
-//! The reusable "glued to the page, dies when the origin leaves" behaviour, and
-//! the two bands it dies in.
+//! The reusable "glued to the page, dies when the origin leaves" behaviour.
 //!
-//! One watcher serves both floating surfaces — the selection pill and the gloss
-//! card — and the only difference between them is how far the origin may travel
-//! before `exited` flips, which is what [`PILL_EXIT_FRAC`] and
-//! [`CARD_EXIT_FRAC`] say.
+//! One watcher serves both floating surfaces — the selection pill and the
+//! gloss card — and both die by one rule: the origin is out when NO PART of
+//! it is on screen (or its host unmounted), identically above the top edge
+//! and below the bottom edge, identically for PDF and reflow.
 
 use ai_core::gloss::{GlossBox, PageAnchor};
 use leptos::prelude::*;
@@ -15,29 +14,20 @@ use app_chrome::hooks::use_window_event::{add_window_capture_listener, use_windo
 
 use super::MarkResolver;
 
-/// The selection "Explain" pill lives until its origin fully leaves the viewport.
+/// One exit rule for every anchored surface (pill and card, PDF and reflow):
+/// the surface stays open while any part of its mark is on screen, and exits
+/// only once the mark has fully left the viewport — above the top edge or
+/// below the bottom edge. `None` (the mark's host is unmounted) always counts
+/// as out.
 ///
-/// `1.0` is deliberate, not an untuned placeholder: the pill is small and
-/// passive (it morphs nothing and owns no screen real estate), so it should
-/// never vanish while any part of the text it points at is still visible —
-/// unlike the gloss card below, which covers content and yields earlier.
-pub const PILL_EXIT_FRAC: f64 = 1.0;
-
-/// The expanded gloss card tolerates scroll until its origin passes this
-/// fraction of the viewport height (or leaves the top edge).
-pub const CARD_EXIT_FRAC: f64 = 0.8;
-
-/// Whether an origin box has left the band it is allowed to live in: above the
-/// viewport top, past `exit_frac` of the viewport height, or gone entirely
-/// (its page unmounted, which by itself counts as left).
-///
-/// One definition for both bands — the watcher's soft `CARD_EXIT_FRAC` one and
-/// the card's hard `1.0` one — so "off screen" cannot come to mean two
-/// slightly different things.
-pub fn origin_outside_band(origin: Option<GlossBox>, vh: f64, exit_frac: f64) -> bool {
+/// The old rule mixed two bands: fully-out at the top but `y > vh * 0.8` at
+/// the bottom. Scrolling up moves the mark toward the bottom edge, so the
+/// card collapsed while the mark was still visible; scrolling down looked
+/// correct only because the top edge used the strict rule.
+pub fn origin_outside_band(origin: Option<GlossBox>, vh: f64) -> bool {
     match origin {
         None => true,
-        Some(b) => (b.y + b.h) < 0.0 || b.y > vh * exit_frac,
+        Some(b) => (b.y + b.h) <= 0.0 || b.y >= vh,
     }
 }
 
@@ -45,8 +35,8 @@ pub fn origin_outside_band(origin: Option<GlossBox>, vh: f64, exit_frac: f64) ->
 pub struct AnchorWatch {
     /// Live viewport-space box of the anchor (None = page not mounted).
     pub screen: RwSignal<Option<GlossBox>>,
-    /// Origin left the allowed band: above the viewport top, or below
-    /// `exit_frac` of the viewport height (or the page unmounted).
+    /// Origin left the viewport: fully above the top edge or fully below
+    /// the bottom edge (or its host unmounted). See [`origin_outside_band`].
     pub exited: RwSignal<bool>,
     /// Synchronous re-derive (reads the DOM now). Call before using `screen`
     /// inside the same tick that the mark changed.
@@ -57,9 +47,8 @@ pub struct AnchorWatch {
 ///
 /// The screen box is re-derived whenever scroll / zoom / view mode / page /
 /// container size change (plus a capture-phase scroll listener so *any*
-/// scroller is caught, and window resize). `exit_frac` is the fraction of the
-/// viewport height the origin may reach before `exited` flips: `1.0` means
-/// "fully out of the viewport", `0.8` means "past 80% of the height".
+/// scroller is caught, and window resize), and `exited` follows the one
+/// symmetric rule ([`origin_outside_band`]).
 ///
 /// `resolve` is the format's answer to "where is this anchor in the viewport
 /// right now" — [`super::anchor_resolver`] builds the right one for whichever
@@ -75,7 +64,6 @@ pub fn watch_page_anchor(
     scroll_top: Signal<f64>,
     page: Signal<u32>,
     invalidate: Signal<u64>,
-    exit_frac: f64,
 ) -> AnchorWatch {
     let screen = RwSignal::new(None::<GlossBox>);
     let exited = RwSignal::new(false);
@@ -89,7 +77,7 @@ pub fn watch_page_anchor(
             screen.set(b);
         }
         let (_, vh) = viewport_size();
-        let out = origin_outside_band(b, vh, exit_frac);
+        let out = origin_outside_band(b, vh);
         if exited.get_untracked() != out {
             exited.set(out);
         }
@@ -125,33 +113,37 @@ pub fn watch_page_anchor(
 
 #[cfg(test)]
 mod tests {
-    use super::{origin_outside_band, CARD_EXIT_FRAC, PILL_EXIT_FRAC};
+    use super::origin_outside_band;
     use crate::components::ai::fixture::origin;
 
     #[test]
     fn an_unmounted_page_is_outside_every_band() {
-        assert!(origin_outside_band(None, 900.0, PILL_EXIT_FRAC));
-        assert!(origin_outside_band(None, 900.0, CARD_EXIT_FRAC));
+        assert!(origin_outside_band(None, 900.0));
     }
 
     #[test]
-    fn the_full_band_only_gives_up_off_screen() {
+    fn only_fully_out_of_view_counts_as_gone() {
         let vh = 900.0;
-        assert!(!origin_outside_band(origin(300.0, 100.0), vh, PILL_EXIT_FRAC));
+        assert!(!origin_outside_band(origin(300.0, 100.0), vh));
         // Overlapping either edge is still visible.
-        assert!(!origin_outside_band(origin(-50.0, 100.0), vh, PILL_EXIT_FRAC));
-        assert!(!origin_outside_band(origin(850.0, 100.0), vh, PILL_EXIT_FRAC));
+        assert!(!origin_outside_band(origin(-50.0, 100.0), vh));
+        assert!(!origin_outside_band(origin(850.0, 100.0), vh));
         // Fully above / fully below.
-        assert!(origin_outside_band(origin(-150.0, 100.0), vh, PILL_EXIT_FRAC));
-        assert!(origin_outside_band(origin(901.0, 100.0), vh, PILL_EXIT_FRAC));
+        assert!(origin_outside_band(origin(-150.0, 100.0), vh));
+        assert!(origin_outside_band(origin(901.0, 100.0), vh));
     }
 
     #[test]
-    fn the_card_band_gives_up_early() {
-        let vh = 900.0; // the card's band ends at 720
-        assert!(!origin_outside_band(origin(700.0, 20.0), vh, CARD_EXIT_FRAC));
-        assert!(origin_outside_band(origin(760.0, 20.0), vh, CARD_EXIT_FRAC));
-        // Still visible, but past the band: the pill would stay, the card goes.
-        assert!(!origin_outside_band(origin(760.0, 20.0), vh, PILL_EXIT_FRAC));
+    fn touching_a_viewport_edge_without_overlapping_is_outside() {
+        let vh = 900.0;
+        assert!(origin_outside_band(origin(-100.0, 100.0), vh));
+        assert!(origin_outside_band(origin(vh, 100.0), vh));
+    }
+
+    #[test]
+    fn a_mark_near_the_bottom_edge_stays_open_while_scrolling_up() {
+        let vh = 900.0;
+        assert!(!origin_outside_band(origin(760.0, 20.0), vh));
+        assert!(!origin_outside_band(origin(880.0, 200.0), vh));
     }
 }

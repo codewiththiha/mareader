@@ -42,8 +42,7 @@ use crate::components::ai::gloss::drag::use_card_drag;
 use crate::components::ai::gloss::gloss_surface::{GlossMeasureTwin, GlossSurface, GlossSurfaceContent};
 use crate::components::ai::gloss::hooks::use_ai_chunks::use_ai_chunks;
 use crate::components::ai::gloss::interactions::{
-    use_dismiss_interactions, use_origin_exit_collapse, use_page_flip_collapse, use_settle_unmount,
-    use_zoom_reset,
+    use_dismiss_interactions, use_origin_exit_collapse, use_settle_unmount, use_zoom_reset,
 };
 use crate::components::ai::gloss::selection_bar::GlossSelectBar;
 use crate::components::ai::gloss::selection_mode::use_select_mode;
@@ -70,7 +69,6 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     use_dismiss_interactions(ctrl);
     use_origin_exit_collapse(card.watch, ctrl);
     use_settle_unmount(ctrl, card.anchor.into(), card.sprung.into());
-    use_page_flip_collapse(state, ctrl);
     use_zoom_reset(state, ctrl);
 
     // ── Drag physics ──────────────────────────────────────────────────

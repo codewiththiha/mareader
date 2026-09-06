@@ -199,7 +199,14 @@ body {
   z-index: -1; /* above our own bg (the blend backdrop), below texture + pages */
   pointer-events: none;
   background-color: var(--pdf-paper, var(--color-paper));
-  filter: var(--canvas-filter, none);
+  /* The canvas filter — invert(1) in dark themes — is only correct over
+     the engine's SAMPLED paper colour, so it arrives through a gate:
+     --backdrop-filter is only defined once --pdf-paper is published
+     (data-paper-ready, raised beside the write — see tokens.css and
+     pdf_engine::backdrop). Before that, this layer's fallback is the UI
+     paper token — dark in dark mode — and filtering it would paint a
+     full-screen white field while the first sample is in flight. */
+  filter: var(--backdrop-filter, none);
   mix-blend-mode: var(--canvas-blend, multiply);
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }

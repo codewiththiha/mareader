@@ -55,8 +55,12 @@ fn frame(state: ReaderState, v: Virtualizer, frames_left: u32, generation: u64, 
     v.remeasure_viewport();
     aim();
 
-    if frames_left == 0 || landed(&v) {
-        release(state, generation);
+    if landed(&v) {
+        release(state, generation, true);
+        return;
+    }
+    if frames_left == 0 {
+        release(state, generation, false);
         return;
     }
     request_animation_frame(move || {
@@ -66,7 +70,7 @@ fn frame(state: ReaderState, v: Virtualizer, frames_left: u32, generation: u64, 
         // The strip may have been unmounted (a close, a mode flip) between
         // frames; a detached surface has nothing to anchor.
         if !v.is_bound() {
-            release(state, generation);
+            release(state, generation, false);
             return;
         }
         frame(state, v, frames_left - 1, generation, aim.clone());
@@ -83,8 +87,16 @@ fn landed(v: &Virtualizer) -> bool {
 }
 
 /// Lower the guard the scroll→page sync stands behind while a mount anchors.
-fn release(state: ReaderState, generation: u64) {
+///
+/// A reflowable surface paints synchronously — its pages are DOM text, not
+/// rasters — so for one the anchor LANDING is the paint: the first-paint
+/// cover lifts with the guard (the PDF strip's lift is paint-true instead,
+/// on its `on_geometry` reports — see `crate::components::formats::pdf::strip`).
+fn release(state: ReaderState, generation: u64, painted: bool) {
     if state.viewer.owns_anchor(generation) {
         state.viewer.awaiting_anchor.set(false);
+        if painted && state.reflowable() && !state.viewer.first_paint.get_untracked() {
+            state.viewer.first_paint.set(true);
+        }
     }
 }

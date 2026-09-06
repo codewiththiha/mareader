@@ -9,8 +9,12 @@
 //! The layer knows nothing about formats. It paints whatever its `resolve`
 //! callback can place, in the layer's own coordinate space, and hides what comes
 //! back `None` — which is how a page that is not mounted, a block that has
-//! scrolled out of the stream's window, and a mark a re-parse orphaned all get
-//! the same honest treatment. [`crate::components::ai::anchor::stroke_resolver`]
+//! scrolled out of the stream's window, a row the stream's render band is
+//! holding blank, and a mark a re-parse orphaned all get the same honest
+//! treatment. A blanked row carries the block's lookup id but no text yet, so
+//! its mark stands down with the type and reappears the moment the band
+//! renders the row for real — the layer re-derives on scroll, which is what
+//! catches the crossing. [`crate::components::ai::anchor::stroke_resolver`]
 //! builds that callback for either pipeline, and the three hosts that mount a
 //! layer (a PDF page, a text page, the continuous stream's one surface for the
 //! whole reading column) differ only in which element their strokes are

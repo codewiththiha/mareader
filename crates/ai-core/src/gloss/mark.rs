@@ -122,7 +122,7 @@ impl PageAnchor {
 ///
 /// A page number and a rect are the right answer for a PDF, whose pages are
 /// fixed pixels. They are the wrong answer for a document that re-lays itself
-/// out: a font-size change, a window resize or the measure column settling all
+/// out: a font-size change, a window resize or a re-measure settling all
 /// re-cut the pages, and a page-space rect then points at whatever text happens
 /// to have moved under it. What survives every re-flow is the block the words
 /// live in and how far into it they start — so that is what a reflowable mark

@@ -1,6 +1,6 @@
 //! Shared page-space anchor watchers: glue a [`PageAnchor`] to the live page
-//! host so the selection Explain pill and the gloss card both follow scroll/zoom
-//! and die when their origin leaves a configurable band of the viewport.
+//! host so the selection Explain pill and the gloss card both follow
+//! scroll/zoom and die when their origin fully leaves the viewport.
 //!
 //! The pure data type lives in `ai_core::gloss::PageAnchor` so state can hold
 //! it without depending on the component layer.
@@ -29,7 +29,8 @@
 //! [`anchor_resolver`], [`stroke_resolver`]), the selection walk both capture
 //! paths start from ([`selection_start`]) and the one place a capture becomes a
 //! persisted mark ([`captured_mark`]). Everything the rest of the app names is
-//! re-exported, so `crate::components::ai::anchor::X` addresses all of it.
+//! re-exported, so every consumer reaches it all through
+//! `crate::components::ai::anchor`.
 
 use ai_core::gloss::{mark_id, GlossBox, GlossMark, ReflowSpot};
 use leptos::prelude::*;
@@ -48,9 +49,7 @@ pub use pdf::{capture_selection_mark, PdfAnchorBridge};
 // in this feature reaches for them through this module.
 pub use crate::components::viewer::refresh::{layer_refresh, no_invalidation, reflow_invalidation};
 pub use reflow::ReflowAnchorBridge;
-pub use watch::{
-    origin_outside_band, watch_page_anchor, AnchorWatch, CARD_EXIT_FRAC, PILL_EXIT_FRAC,
-};
+pub use watch::{origin_outside_band, watch_page_anchor, AnchorWatch};
 
 pub use ai_core::gloss::PageAnchor;
 

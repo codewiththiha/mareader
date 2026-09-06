@@ -80,6 +80,14 @@ fn leave_scrub() {
     }
 }
 
+/// True while an appearance slider scrub is in flight. The theme applier
+/// consults this to leave the engine's rasters alone mid-gesture: the drag
+/// has been repainting the variables every frame, and the scrub EXIT is what
+/// performs the one final bake at the values the drag landed on.
+pub fn is_scrubbing() -> bool {
+    SCRUBBING.with(|s| s.get())
+}
+
 thread_local! {
     static PAINT_PENDING: Cell<Option<(Appearance, f64)>> = const { Cell::new(None) };
     static PAINT_SCHEDULED: Cell<bool> = const { Cell::new(false) };
@@ -190,13 +198,14 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
     let ink_contrast = settings.get_untracked().text.ink_contrast;
     apply_scrub(&mut a, patch);
     paint_appearance(a, ink_contrast);
-    // The page re-colours under the drag through the live CSS pipeline.
-    // refresh_theme keeps the engine's pipeline cache honest for the rebake
-    // (a no-op while scrub owns the canvases, and a no-op for a text
-    // document — the guard lives in the engine api); the blend backdrop
-    // follows in the same frame on its own, being pure CSS over the same
-    // variables.
-    raster::refresh_theme();
+    // The page re-colours under the drag through the live CSS pipeline
+    // alone — that is what scrub mode exists for. The engine is deliberately
+    // NOT told per tick: the bridge crossing (and the serialized no-op it
+    // queues while scrub owns the canvases) is main-thread work in the middle
+    // of the frame budget the drag is trying to hit, once per input event for
+    // the length of the gesture. The scrub exit performs the single final
+    // bake at the values the drag settled on; a text document never hears
+    // about any of it, its tokens having repainted from CSS all along.
 
     let commit_gen = bump_commit_gen();
     COMMIT_PAYLOAD.with(|p| p.set(Some((settings, patch))));
@@ -207,9 +216,12 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
                 return;
             }
             COMMIT_PAYLOAD.with(|p| p.set(None));
-            // Commit final variables first so its refresh queues before the
-            // scrub exit. The serialized engine then rebakes once at the
-            // final values and only afterwards drops live CSS.
+            // Commit final variables first so the theme applier paints them
+            // (and records the signature) while the scrub still owns the
+            // canvases — its engine refresh stands down for exactly that
+            // window. Leaving scrub afterwards hands the engine one final
+            // bake, at the settled values, on its serialized theme queue: one
+            // bake per drag, not one per tick.
             settings.update(|s| {
                 apply_scrub(&mut s.appearance, patch);
                 s.touch_appearance();

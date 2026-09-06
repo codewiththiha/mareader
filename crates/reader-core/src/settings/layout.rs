@@ -15,6 +15,14 @@ fn default_label_max_pct() -> f64 { 100.0 }
 /// The fit mode a document opens with. `FitMode::None` is not a startup mode,
 /// which is why [`super::sanitize`] retries it.
 pub(super) fn default_startup_fit() -> FitMode { FitMode::Page }
+/// The column-width dial's resting point: the natural column.
+pub const DEFAULT_COLUMN_WIDTH_PCT: f64 = 100.0;
+/// The column-width dial's floor. Kept beside the setting (rather than in
+/// the reflow geometry that also clamps it) because the persisted knob lives
+/// here and the two crates do not see each other.
+pub const MIN_COLUMN_WIDTH_PCT: f64 = 60.0;
+/// The column-width dial's ceiling. See [`MIN_COLUMN_WIDTH_PCT`].
+pub const MAX_COLUMN_WIDTH_PCT: f64 = 140.0;
 
 /// How the appearance reaches the pixels of a page.
 ///
@@ -71,6 +79,9 @@ pub enum FloatingLabelStyle {
 /// settings model stays the one place the reader's persisted knobs live.
 use pdf_paper::PaperArea;
 
+/// The persisted knob's default: the natural column.
+fn default_column_width_pct() -> f64 { DEFAULT_COLUMN_WIDTH_PCT }
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LayoutSettings {
     #[serde(default = "on_true")]
@@ -120,6 +131,13 @@ pub struct LayoutSettings {
     /// Horizontal inset around pages (CSS px). `0` removes the margin entirely.
     #[serde(default = "default_page_margin")]
     pub page_margin: f64,
+    /// Scale of the reading column in percent of its natural width: the
+    /// text/Markdown column (and the reflowable page's card) grows and
+    /// shrinks with it, while a PDF's fit-width budget resolves against the
+    /// dialled share of the window. `100` is the natural width the typography
+    /// and the page geometry already agreed on.
+    #[serde(default = "default_column_width_pct")]
+    pub column_width_pct: f64,
     /// Keep the floating label on screen even when the sidebar or title bar
     /// would normally hide it, and ignore the width budget.
     #[serde(default)]
@@ -147,6 +165,7 @@ impl Default for LayoutSettings {
             blend_mode: false,
             blend_area: PaperArea::default(),
             page_margin: default_page_margin(),
+            column_width_pct: default_column_width_pct(),
             floating_label_persist: false,
             floating_label_max_pct: default_label_max_pct(),
         }

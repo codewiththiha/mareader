@@ -24,6 +24,14 @@ const GUTTER: f64 = 92.0;
 /// Book layout: the outer margin.
 const EDGE: f64 = 56.0;
 
+/// The column-width dial's floor, in percent of the natural column.
+pub const MIN_COLUMN_PCT: f64 = 60.0;
+/// The column-width dial's ceiling, in percent of the natural column.
+pub const MAX_COLUMN_PCT: f64 = 140.0;
+/// The narrowest text column any dial combination may leave: a page that
+/// cannot hold a line of body type is a page that cannot be read.
+const MIN_CONTENT_WIDTH: f64 = 160.0;
+
 /// Where one page sits relative to the book spine while a book layout is on.
 ///
 /// A gutter is geometry, not a style: it decides which paddings the page host
@@ -53,6 +61,11 @@ pub struct PageGeometry {
     pub pad_inline_left: f64,
     /// Inline padding of a LEFT page (or a symmetric page): the far side.
     pub pad_inline_right: f64,
+    /// Reader margin spent INSIDE the card, on both inline sides, on top of
+    /// the pads above. The shells already spend the same dial as air around
+    /// the page; this is the half that widens the text block's own margins,
+    /// so a reflowable page answers the dial in every mode, paginated or not.
+    pub extra_inline: f64,
     /// Width the text actually flows in.
     pub content_width: f64,
     /// Height the paginator packs blocks into.
@@ -89,18 +102,49 @@ impl PageGeometry {
             (EDGE, GUTTER)
         }
     }
+
+    /// Spend `extra` CSS px of margin on BOTH inline sides, inside the same
+    /// page box: the pads grow, the text column shrinks to match, and the
+    /// paginator packs against the narrower column. The dial cannot push the
+    /// column under the readable floor. The card equation — width is
+    /// exactly the column plus its pads — holds whichever order the dials
+    /// land in.
+    pub fn with_extra_inline(mut self, extra: f64) -> Self {
+        self.extra_inline = extra.max(0.0);
+        self.content_width =
+            (self.content_width - 2.0 * self.extra_inline).max(MIN_CONTENT_WIDTH);
+        let pads =
+            self.pad_inline_left + self.pad_inline_right + 2.0 * self.extra_inline;
+        self.width = pads + self.content_width;
+        self
+    }
+
+    /// Scale the text column to `pct` percent of its width in this geometry,
+    /// growing the page box with it so the card always wraps the column: a
+    /// wider line count is a wider sheet, not smaller type. Height is
+    /// untouched — the dial is about measure, not fit.
+    pub fn with_column_pct(mut self, pct: f64) -> Self {
+        let factor = (pct / 100.0).clamp(MIN_COLUMN_PCT / 100.0, MAX_COLUMN_PCT / 100.0);
+        self.content_width = (self.content_width * factor).max(MIN_CONTENT_WIDTH);
+        let pads =
+            self.pad_inline_left + self.pad_inline_right + 2.0 * self.extra_inline;
+        self.width = pads + self.content_width;
+        self
+    }
 }
 
 impl PageGeometry {
     /// The inline paddings of `page` (0-based) as it sits on the spine. The
     /// single entry point a page host needs: `Auto` alternates with parity,
-    /// a fixed side reads as that half of a spread.
+    /// a fixed side reads as that half of a spread. The reader margin rides
+    /// on top of whichever pair this resolves to.
     pub fn pads(&self, book_layout: bool, page: usize, spine: SpineSide) -> (f64, f64) {
-        match spine {
+        let (left, right) = match spine {
             SpineSide::Auto => self.inline_pads(book_layout, page),
             SpineSide::Left => self.spread_pads(book_layout, false),
             SpineSide::Right => self.spread_pads(book_layout, true),
-        }
+        };
+        (left + self.extra_inline, right + self.extra_inline)
     }
 }
 
@@ -120,6 +164,7 @@ pub fn geometry(book_layout: bool) -> PageGeometry {
         pad_block: PAD,
         pad_inline_left: left,
         pad_inline_right: right,
+        extra_inline: 0.0,
         content_width: PAGE_WIDTH - left - right,
         content_height: PAGE_HEIGHT - 2.0 * PAD,
     }
@@ -168,5 +213,56 @@ mod tests {
             assert_eq!(g.pads(true, page, SpineSide::Right), (GUTTER, EDGE));
             assert_eq!(g.pads(true, page, SpineSide::Auto), g.inline_pads(true, page));
         }
+    }
+
+    #[test]
+    fn the_reader_margin_widens_the_pads_inside_the_same_card() {
+        let base = geometry(false);
+        let g = base.with_extra_inline(16.0);
+        // The card keeps its A4 box; the margin is spent inside it.
+        assert_eq!(g.width, base.width);
+        assert_eq!(g.pads(false, 3, SpineSide::Auto), (PAD + 16.0, PAD + 16.0));
+        assert!((g.content_width - (base.content_width - 32.0)).abs() < 1e-9);
+        // The gutter side carries it too, so a book layout answers the dial
+        // on every page of the strip.
+        let book = geometry(true).with_extra_inline(8.0);
+        assert_eq!(book.pads(true, 0, SpineSide::Auto), (GUTTER + 8.0, EDGE + 8.0));
+        assert_eq!(book.pads(true, 1, SpineSide::Auto), (EDGE + 8.0, GUTTER + 8.0));
+    }
+
+    #[test]
+    fn an_absurd_margin_still_leaves_a_readable_column() {
+        let g = geometry(false).with_extra_inline(500.0);
+        assert_eq!(g.content_width, MIN_CONTENT_WIDTH);
+        assert!(g.content_width > 0.0);
+    }
+
+    #[test]
+    fn the_column_dial_grows_the_card_around_the_column() {
+        let base = geometry(false);
+        let wide = base.with_column_pct(140.0);
+        // The card wraps the column: pads unchanged, both widths grown by
+        // the same forty percent.
+        assert!((wide.content_width - base.content_width * 1.4).abs() < 1e-9);
+        assert!((wide.width - base.width - base.content_width * 0.4).abs() < 1e-9);
+        assert_eq!(wide.height, base.height);
+        assert_eq!(wide.pad_inline_left, base.pad_inline_left);
+        // Narrow works the same way, and the dial clamps outside its range.
+        let narrow = base.with_column_pct(60.0);
+        assert!((narrow.content_width - base.content_width * 0.6).abs() < 1e-9);
+        assert!((narrow.width - (PAD + PAD + narrow.content_width)).abs() < 1e-9);
+        assert_eq!(base.with_column_pct(500.0).width, wide.width);
+        assert_eq!(base.with_column_pct(10.0).content_width, narrow.content_width);
+    }
+
+    #[test]
+    fn margin_and_column_dial_compose() {
+        let g = geometry(true)
+            .with_extra_inline(12.0)
+            .with_column_pct(120.0);
+        // Whatever order the dials land in, the card is exactly the column
+        // plus its pads — margin included.
+        assert!((g.width - (GUTTER + 12.0 + g.content_width + EDGE + 12.0)).abs() < 1e-9);
+        assert!((g.content_width - (PAGE_WIDTH - GUTTER - EDGE - 24.0) * 1.2).abs() < 1e-9);
     }
 }

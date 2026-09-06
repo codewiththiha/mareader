@@ -43,7 +43,7 @@ pub(crate) fn provide_app_contexts(state: AppState) -> (AppearanceSignal, Typogr
     // a tint nudge must not re-run their `texture-*` class.
     let texture: TextureSignal = Memo::new(move |_| appearance.get().texture);
     // The reflowable formats' typography, narrowed the same way: page hosts,
-    // the measure column and the painter all subscribe to this one memo.
+    // the measurement pipeline and the painter all subscribe to this one memo.
     let typography: TypographySignal =
         Memo::new(move |_| state.settings.with(|s| s.text.clone()));
     provide_context(appearance);

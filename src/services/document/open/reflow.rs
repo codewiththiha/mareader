@@ -15,9 +15,10 @@
 //!   reflowable format adds one arm here (and a block view, and a renderer);
 //!   it does not copy this file.
 //! * pagination starts from the pure estimate — character counts against the
-//!   column width — so the reader is up the instant the file is read. The measure
-//!   column then replaces the estimate with the DOM's real heights and re-cuts
-//!   once (see `components::formats::reflow::measure`).
+//!   column width — so the reader is up the instant the file is read. The
+//!   measurement pipeline then refines the estimate block by block, as the
+//!   reader's own rows render and report their heights (see
+//!   `crate::effects::reader::reflow_measure`).
 //!
 //! Markdown also gets an outline, and it is seeded rather than resolved: the
 //! headings are already in the text, so this file hands the reader the block
@@ -37,7 +38,7 @@ use reader_core::filename::display_name;
 use reader_core::format::Format;
 use reader_core::view::ViewMode;
 use reflow_core::block::TextBlock;
-use reflow_core::geometry::{geometry, PAGE_HEIGHT, PAGE_WIDTH};
+use reflow_core::geometry::{geometry, PAGE_HEIGHT};
 use reflow_core::pager::estimate_heights;
 
 use crate::state::AppState;
@@ -152,7 +153,7 @@ fn parse(format: Format, raw: &str) -> Parsed {
 }
 
 /// The document read and parsed: seed the state, flip the route, and let the
-/// measure column refine the cut.
+/// measurement pipeline refine the cut.
 ///
 /// The steps this shares with the PDF tail — identity, gloss marks, the resume
 /// clamp, the startup scale, the route flip, the shelf record — are
@@ -168,15 +169,24 @@ fn ready(
     saved_fraction: Option<f64>,
 ) {
     let settings = state.settings.get_untracked();
-    let geo = geometry(settings.text.book_layout);
+    // The geometry the first cut is estimated against — resolved through the
+    // same two dials the measurement pipeline will resolve (the reader's
+    // margin and column-width runtime signals, which the layout prefs have
+    // already seeded from the persisted settings), so the seed and the
+    // refine agree and the dialled document never opens against numbers it
+    // immediately re-cuts away from.
+    let geo = geometry(settings.text.book_layout)
+        .with_extra_inline(state.reader.viewer.page_margin.get_untracked())
+        .with_column_pct(state.reader.viewer.column_width_pct.get_untracked());
     let name = display_name(parsed.title.as_deref(), Some(&path));
     let Parsed { blocks, title, author, headings } = parsed;
 
-    // Document identity, through the shared handshake. A text page is always
-    // the A4 sheet `reflow_core::geometry` cuts into, and the outline starts
-    // SEEDED rather than pending: the headings are already in the blocks, so
-    // `effects::reader::reflow_outline` re-projects them against the live cut
-    // and there is no resolver tail to race.
+    // Document identity, through the shared handshake. A text page is the
+    // sheet `reflow_core::geometry` cuts into — as wide as the column and
+    // its pads say, which the dials above already answered — and the outline
+    // starts SEEDED rather than pending: the headings are already in the
+    // blocks, so `effects::reader::reflow_outline` re-projects them against
+    // the live cut and there is no resolver tail to race.
     super::enter::identity(
         state,
         super::enter::DocumentIdentity {
@@ -184,7 +194,7 @@ fn ready(
             path: path.clone(),
             title,
             author,
-            page1_size: PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+            page1_size: PageSize { width: geo.width, height: PAGE_HEIGHT },
             outline: Some(Arc::new(Vec::new())),
         },
     );
@@ -200,16 +210,17 @@ fn ready(
     // document's gloss highlights are loaded before anything mounts — exactly
     // where the PDF open loads them, so the first page (or the first stream
     // window) already paints them. A reflowable mark is a block and a
-    // character range rather than a rect, so it is `apply_heights` below —
-    // which publishes the block→page map — that makes it projectable; loading
-    // first and paginating second is what puts a mark on the right page at
-    // first paint instead of a frame later.
+    // character range rather than a rect, so it is `set_initial_heights`
+    // below — which publishes the block→page map — that makes it
+    // projectable; loading first and paginating second is what puts a mark
+    // on the right page at first paint instead of a frame later.
     state.reader.document.content.reflow.reset();
     super::enter::load_marks(state, &path);
 
-    // The reflowable content: blocks in, estimate cut out. `apply_heights`
-    // carries the page count and the per-page sizes across to the machinery
-    // the PDF shares.
+    // The reflowable content: blocks in, estimate cut out.
+    // `set_initial_heights` carries the page count and the per-page sizes
+    // across to the machinery the PDF shares; every later correction arrives
+    // through the measurement pipeline's `recut`.
     let metrics = estimate_metrics(&settings.text, &geo);
     let heights = estimate_heights(&blocks, &metrics);
     state.reader.document.content.reflow.blocks.set(Arc::new(blocks));
@@ -217,7 +228,7 @@ fn ready(
 
     // The seed scale, from the same shared step the PDF seed uses — including
     // the stream exception, where there is no page to fit.
-    let (startup_fit, scale) = super::enter::startup_scale(state, (PAGE_WIDTH, PAGE_HEIGHT));
+    let (startup_fit, scale) = super::enter::startup_scale(state, (geo.width, PAGE_HEIGHT));
 
     // Reading position + zoom, seeded in the same order the PDF seed uses:
     // anchor guard up BEFORE the page is written, zoom initialised BEFORE the
@@ -241,7 +252,7 @@ fn ready(
     // clamp inside `resume_page` is against the page count this cut produced,
     // so reading the count back out of the signal would only be a slower way of
     // asking the cut.
-    let cut = state.reader.document.content.reflow.apply_heights(state, heights, geo);
+    let cut = state.reader.document.content.reflow.set_initial_heights(state, heights, geo);
     state.reader.document.publish_cut(&cut);
     let resume = super::enter::resume_page(saved_page, cut.num_pages);
     state.reader.viewer.page.set(resume);

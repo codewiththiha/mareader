@@ -116,10 +116,11 @@ as real text in the DOM.
   across a page break. An image is the one construct that does not arrive: the app's
   content-security policy admits no network origin and the asset protocol serves documents only,
   so a Markdown image displays when — and only when — its source is a `data:` URI.
-- **Pagination follows the type.** A hidden measure column renders the document once at scale 1,
-  reads the true block heights and re-cuts the pages, so what you see is paginated by the real
-  fonts — and re-cuts again whenever a typography knob moves, keeping your place on the block you
-  were reading. Zoom never re-paginates: pages scale uniformly, which provably preserves the cut.
+- **Pagination follows the type.** Every block's rendered height is reported back into the shared
+  model as it is drawn — estimates seed the cut at open, measurements refine it block by block —
+  so what you see is paginated by the real fonts, and the pages re-cut whenever a typography knob
+  moves, keeping your place on the block you were reading. Zoom never re-paginates: pages scale
+  uniformly, which provably preserves the cut.
 - **Search and theming carry over.** Full-text search scans the document in-process (no engine
   round-trip) and paints its hits over the type with the same boxes a PDF gets — one per line
   fragment, the current match in the same amber, stepping to a result scrolling to the block it
@@ -456,7 +457,7 @@ src/
                           indicator, page navigation)
     formats/              the SUBSTANCE of a document: pdf/ (canvas + strip),
                           reflow/ (A4 page host, continuous stream, strip,
-                          measure column, the spot walk that finds a block's
+                          the spot walk that finds a block's
                           characters in the DOM, and the search-hit layer that
                           paints over them), txt/ and md/ block views, and
                           block_render, the renderer dispatch
@@ -548,7 +549,7 @@ styles/
   input.css               Tailwind v4 entry point assembling the design system
   tokens.css              the @theme block, base palettes and runtime vars
   page_host.css           the .pdf-page host, its canvas and the zoom snapshot
-  text.css                the reflowable page host and its measure column
+  text.css                the reflowable page host and the continuous stream
   textures.css, noise.css texture modes, and the grain overlay + its crawl
   library.css             the bookshelf and its drag overlay
   components/             shell, title bar, animations, ai, gloss, appearance,

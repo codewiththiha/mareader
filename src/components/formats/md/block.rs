@@ -6,7 +6,7 @@
 //!
 //! Typography does not live here on purpose: every style the settings control
 //! (font, size, spacing, justification) is inherited from the page host's inline
-//! style, so a block renders identically on a page and in the measure column, at
+//! style, so a block renders identically on a page and in the stream, at
 //! any scale, with no props for it.
 
 use leptos::prelude::*;

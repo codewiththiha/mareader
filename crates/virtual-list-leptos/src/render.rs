@@ -9,11 +9,23 @@
 /// bridging the virtualization lifecycle across the change — but it is no
 /// longer part of the window, never drives dominant-item selection, and a
 /// renderer should not start new expensive work for it.
+///
+/// A stream-mode virtualizer further splits the mount window in two: the
+/// **render band** around the viewport carries real content
+/// ([`VirtualItemState::Active`]); the rest of the window stays mounted as
+/// [`VirtualItemState::Blank`] placeholders at the layout's own sizes — the
+/// scrollbar and the anchors stay honest while the rows a fling is flying
+/// past cost nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VirtualItemState {
-    /// Inside the active mount window.
+    /// Inside the active mount window, carrying real content.
     #[default]
     Active,
+    /// Mounted, but outside the render band: a placeholder at the laid-out
+    /// size. Only produced when a render band is on (see
+    /// [`crate::VirtualizerOptions::render_band`]); a band-less virtualizer
+    /// mounts everything [`VirtualItemState::Active`].
+    Blank,
     /// Outside the window, retained briefly so its DOM can outlive the
     /// window change that evicted it. Expires on its own.
     Zombie,

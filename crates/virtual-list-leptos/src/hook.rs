@@ -26,6 +26,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         initial_offset: options.initial_offset,
         eps: options.measure_epsilon,
         max_retries: options.max_scroll_retries,
+        render_screens: options.render_screens,
     };
     let layout = build_layout(
         &options.shape,

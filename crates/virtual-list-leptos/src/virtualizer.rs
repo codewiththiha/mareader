@@ -13,7 +13,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 use web_sys::{Event, ResizeObserver, ResizeObserverEntry};
 
-use virtual_list::{Align, Viewport, Window};
+use virtual_list::{Align, Layout, Viewport, Window};
 
 use crate::engine::{Step, VirtualizerCore};
 use crate::observe::{raf, viewport_of};
@@ -631,6 +631,59 @@ impl Virtualizer {
         Signal::derive_local(move || {
             let _ = inner.layout_version.get();
             inner.core.borrow().offset_of(index)
+        })
+    }
+
+    /// Reactive main-axis extent of one item.
+    ///
+    /// Same lifetime rules as [`Self::item_top`]: layout-version only. A
+    /// stream's blank placeholders read their height here — the layout's own
+    /// number, so a measurement landing under a blank patches one style
+    /// attribute instead of waiting for the row to render.
+    pub fn item_size(&self, index: usize) -> Signal<f64, LocalStorage> {
+        let inner = self.inner.clone();
+        Signal::derive_local(move || {
+            let _ = inner.layout_version.get();
+            inner.core.borrow().layout().size(index)
+        })
+    }
+
+    /// Reactive render state of one mounted item.
+    ///
+    /// A `For` child does not re-run when its key persists, so the child
+    /// cannot read its state off the [`VirtualItem`] it was handed: a scroll
+    /// that crosses the row into or out of the render band would leave the
+    /// stale answer in place. This signal re-derives on the things that move
+    /// the band and the window — scroll, viewport, range, layout, retention —
+    /// and the view rebuilds only when the state itself crosses.
+    pub fn item_state(&self, index: usize) -> Signal<VirtualItemState, LocalStorage> {
+        let inner = self.inner.clone();
+        Signal::derive_local(move || {
+            let _ = inner.viewport.get();
+            let _ = inner.range.get();
+            let _ = inner.layout_version.get();
+            let _ = inner.scroll_top.get();
+            let _ = inner.retained_version.get();
+            let in_window = inner
+                .core
+                .borrow()
+                .range()
+                .map(|window| window.contains(index))
+                .unwrap_or(false);
+            if !in_window {
+                // Retention is the adapter's clock: a zombie is whatever the
+                // retained set still holds, and its state outranks the band.
+                let now = now_ms();
+                let zombie = inner
+                    .retained
+                    .borrow()
+                    .iter()
+                    .any(|retained| retained.index == index && retained.expires_at > now);
+                if zombie {
+                    return VirtualItemState::Zombie;
+                }
+            }
+            inner.core.borrow().item_state(index)
         })
     }
 

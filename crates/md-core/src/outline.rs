@@ -11,7 +11,7 @@
 //! the current page cut. So the extraction is keyed on the BLOCK the heading
 //! starts in ([`MarkdownHeading::block_index`]), and [`headings_to_nodes`] turns
 //! those into pages against the live block→page map. That is also why the reader
-//! re-derives the tree after the measure column re-cuts the document: the
+//! re-derives the tree after a re-measure re-cuts the document: the
 //! chapters follow the pagination instead of fighting it.
 
 use reader_core::outline::{OutlineNode, clamp_depth};

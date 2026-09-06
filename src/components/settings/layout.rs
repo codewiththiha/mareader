@@ -7,11 +7,14 @@ use leptos::prelude::*;
 
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
-use reader_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
+use reader_core::settings::{
+    FloatingLabelStyle, MAX_COLUMN_WIDTH_PCT, MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
+};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
+use crate::components::primitives::form::slider::Slider;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::controls::switch::Switch;
 use crate::state::AppState;
@@ -28,11 +31,16 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
     let horizontal_mode = Signal::derive(move || {
         state.reader.viewer.mode.get() == ViewMode::ScrollHorizontal
     });
+    // A reflowable document answers to the typography and the two width
+    // dials, not to page chrome: rows that would only lie about what they
+    // control for text/Markdown (No Gap is a PDF strip's concern — a
+    // streamed document has no gap to remove) leave the tree entirely
+    // rather than sitting disabled.
+    let reflowable = Signal::derive(move || state.reader.reflowable());
     // Continuous text reading has no pages to number: while the stream is
     // live the indicator is a percentage by definition, so the style
     // selector stands disabled rather than offering a choice that is not
-    // being honoured. (The stream has no inter-page gap to remove either,
-    // so No Gap joins it.)
+    // being honoured.
     let stream_live = Signal::derive(move || state.reader.reflow_streaming());
     view! {
         <SectionLabel text="Reader chrome" />
@@ -170,18 +178,20 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     disabled=Signal::derive(move || false)
                 />
             </Row>
-            <Row label="No Gap">
-                <Switch
-                    checked=Signal::derive(move || s.with(|st| st.layout.no_gap))
-                    on_change=Callback::new(move |v| {
-                        s.update(|st| st.layout.no_gap = v);
-                    })
-                    disabled=Signal::derive(move || stream_live.get())
-                    title="Remove the spacing between pages in scroll view. A continuously \
-                           streaming text document has no pages — and so no gap — to remove."
-                        .to_string()
-                />
-            </Row>
+            <Show when=move || !reflowable.get()>
+                <Row label="No Gap">
+                    <Switch
+                        checked=Signal::derive(move || s.with(|st| st.layout.no_gap))
+                        on_change=Callback::new(move |v| {
+                            s.update(|st| st.layout.no_gap = v);
+                        })
+                        title="Remove the spacing between pages in scroll view. A text \\
+                               or Markdown document has no page gap — and no page strip \\
+                               the switch could reach — so the row stands down for them."
+                            .to_string()
+                    />
+                </Row>
+            </Show>
             // Page Margin is the horizontal (left/right) air around each page,
             // which No Gap never touches — No Gap only removes the vertical
             // gap between stacked pages. The two stay fully independent, so
@@ -238,6 +248,31 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                             }
                         />
                     </span>
+                </span>
+            </Row>
+            // Column Width is the reading measure dial: 100% is the natural
+            // column the typography and the page geometry agreed on, and the
+            // ends trade line length for everything else. Text and Markdown
+            // answer it in every mode (the paginated card grows with the
+            // column, the stream's column follows it directly); a PDF's page
+            // is the document's own, so there the dial moves the fit-width
+            // budget the pages resolve against instead.
+            <Row label="Column Width">
+                <span class="flex w-44 items-center">
+                    <Slider
+                        value=Signal::derive(move || s.with(|st| st.layout.column_width_pct))
+                        min=MIN_COLUMN_WIDTH_PCT
+                        max=MAX_COLUMN_WIDTH_PCT
+                        step=5.0
+                        unit="%"
+                        on_change=move |v| {
+                            s.update(|st| {
+                                st.layout.column_width_pct =
+                                    v.round().clamp(MIN_COLUMN_WIDTH_PCT, MAX_COLUMN_WIDTH_PCT);
+                            });
+                        }
+                        label="Column width"
+                    />
                 </span>
             </Row>
             <Row label="Auto Scale">

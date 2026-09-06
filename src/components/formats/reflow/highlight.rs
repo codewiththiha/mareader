@@ -41,9 +41,10 @@ use leptos::prelude::*;
 
 use app_chrome::hooks::dom::{by_id, range_rects};
 
+use std::sync::Arc;
+
 use super::spot::{match_spans, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
-use crate::components::viewer::refresh::reflow_invalidation;
 use crate::state::ReaderState;
 
 /// Boxes one row will paint, mirroring the engine's cap on the boxes it paints
@@ -79,7 +80,37 @@ pub fn BlockSearchHits(
     let boxes: RwSignal<Vec<HitBox>> = RwSignal::new(Vec::new());
     // Built once, outside the effect: a fingerprint signal made per run would be
     // a new reactive node per frame.
-    let invalidation = reflow_invalidation(state);
+    //
+    // The boxes are positioned RELATIVE TO THEIR ROW, so scrolling can never
+    // misplace one — and this fingerprint deliberately contains nothing that
+    // moves while the reader scrolls. The old shape hashed the stream's
+    // extent too, and the extent shifts whenever a measurement lands, which
+    // on a fast fling through unmeasured country is every frame: every
+    // mounted row then re-walked its whole text (a string scan plus a layout
+    // read per occurrence) inside the scroll handler, which is the lag a
+    // huge document showed. What CAN move type inside a row is what re-wraps
+    // it: a re-cut (the cut's generation), any re-measure (the heights'
+    // identity), the reading column's width (the geometry and the
+    // container), and the margin that insets the stream's column. Zoom is
+    // read separately below, at its commit.
+    let relayout = {
+        let reflow = state.document.content.reflow;
+        let container = state.viewer.container_size;
+        let margin = state.viewer.page_margin;
+        Signal::derive(move || {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            reflow.cut_generation.get().hash(&mut hasher);
+            reflow
+                .heights
+                .with(|heights| (Arc::as_ptr(heights) as usize).hash(&mut hasher));
+            let geo = reflow.geometry.get();
+            geo.content_width.to_bits().hash(&mut hasher);
+            container.get().0.to_bits().hash(&mut hasher);
+            margin.get().to_bits().hash(&mut hasher);
+            hasher.finish()
+        })
+    };
     let row_id = block_row_id(block);
 
     Effect::new(move |_| {
@@ -93,10 +124,8 @@ pub fn BlockSearchHits(
         // boxes do: a zoom rebuilds the text layer they live in.
         let settled = state.viewer.zoom.committed.get();
         let mid_zoom = state.viewer.zoom.transition.get().is_some();
-        // The cut's generation, the geometry it was cut with, the reading
-        // column's width and the view mode: everything that moves type without
-        // the reader scrolling.
-        let moved = invalidation.get();
+        // Everything that re-wraps the row without the reader scrolling.
+        let moved = relayout.get();
         let _ = (settled, moved);
 
         let needle = query.trim();

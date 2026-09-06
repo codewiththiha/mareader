@@ -129,6 +129,11 @@ pub fn fit_watcher(state: AppState) {
         let fit = vs.fit.get();
         let chosen = last_fit.get_value() != fit;
         let _ = vs.mode.get();
+        // The column-width dial moves what a fit resolves against — a PDF's
+        // budget, a reflowable card — so a slider tick re-arms the same
+        // debounced refit a mode flip gets; the rescale itself is nothing
+        // this watcher needs to know.
+        let _ = state.settings.with(|st| st.layout.column_width_pct);
         // Read CONDITIONALLY, so that turning the setting off also drops the
         // subscription: while Auto Resize is off, a page turn does not re-run
         // this effect at all. The setting itself is read as a dependency just

@@ -39,11 +39,8 @@ use wasm_bindgen::JsCast;
 ///
 /// A gloss stroke's button carries the glossed word as its accessible name, and
 /// a search hit's box is an empty sibling of the text it covers; counting either
-/// would shift every offset after the first. The measure column renders every
-/// block a second time and is skipped for the same reason — guarded rather than
-/// excluded by construction, since it is mounted as a SIBLING of the page hosts
-/// (`features/reader/page.rs`) and a walk that starts at a host never reaches it.
-const OVERLAY_CLASSES: [&str; 3] = ["gloss-layer", "tx-hits", "tx-measure"];
+/// would shift every offset after the first.
+const OVERLAY_CLASSES: [&str; 2] = ["gloss-layer", "tx-hits"];
 
 /// The block's text nodes, in document order.
 ///
@@ -65,16 +62,10 @@ fn collect_text_nodes(node: &web_sys::Node, out: &mut Vec<web_sys::Node>) {
             if let Some(el) = node.dyn_ref::<web_sys::Element>() {
                 let classes = el.class_list();
                 // An overlay's own text is not document text: a mark's button
-                // carries the glossed word as its accessible name, and counting
-                // either one would shift every offset after it.
-                //
-                // The measure column is the same case, guarded rather than
-                // excluded by construction: it renders every block a second
-                // time, but it is mounted as a SIBLING of the page hosts
-                // (`features/reader/page.rs`), so this walk — which starts at a
-                // host — never reaches it. The class check is what keeps the
-                // offsets honest if it is ever moved inside one; it costs one
-                // `DOMTokenList::contains` per element.
+                // carries the glossed word as its accessible name, and a hit's
+                // box is an empty sibling of the text it covers; counting
+                // either one would shift every offset after it. The check costs
+                // one `DOMTokenList::contains` per element.
                 if OVERLAY_CLASSES.iter().any(|name| classes.contains(name)) {
                     return;
                 }

@@ -95,6 +95,12 @@ pub struct ViewerSignals {
     pub page_gap: RwSignal<f64>,
     /// Horizontal inset around pages (CSS px). `0` removes the margin.
     pub page_margin: RwSignal<f64>,
+    /// The column-width dial, as the open reader resolves it (percent:
+    /// `100` is the natural column). Mirrored from the persisted setting by
+    /// the layout prefs so the surfaces that have no settings handle — the
+    /// stream's column, the fit maths — read one runtime number, the same
+    /// arrangement the page margin uses.
+    pub column_width_pct: RwSignal<f64>,
     /// Which motions animate. Written only by the shell, from the settings
     /// (`Motion::from_prefs`); see the type's contract.
     pub motion: RwSignal<Motion>,
@@ -112,6 +118,21 @@ pub struct ViewerSignals {
     /// strip's queued animation frame runs; the identity keeps that stale
     /// callback from releasing the replacement's guard.
     pub(crate) anchor_generation: RwSignal<u64>,
+    /// The one-shot gate over this open's first VISIBLE frame — false from
+    /// the moment a document is claimed ([`Self::reset_position`] re-arms it
+    /// on every close, `open_path` on every open) until the page the reader
+    /// should see has actually PAINTED. The release is paint-driven, and each
+    /// surface owns its own: the PDF strip lifts it on a completed render
+    /// (its `on_geometry` reports), the text stream and text strip lift it
+    /// when their mount anchor lands (DOM text paints synchronously), and
+    /// the paginated modes — which have no anchor to land — release on
+    /// their first frame after mount. A safety net in
+    /// `features::reader::page` guarantees a release either way. For
+    /// exactly that long an opaque cover the colour of the reader's paper
+    /// masks the viewer there, so the first renders — however healthy — are
+    /// never watched arriving: the reader appears already settled on the
+    /// resume page.
+    pub first_paint: RwSignal<bool>,
 }
 
 impl ViewerSignals {
@@ -139,6 +160,8 @@ impl ViewerSignals {
         self.auto_scroll.set(false);
         self.page_gap.set(PAGE_GAP);
         self.page_margin.set(0.0);
+        // Re-arm the first-paint cover: the next open gets its own gate.
+        self.first_paint.set(false);
     }
 
     /// True while a zoom transaction is in flight: renders are suspended,
@@ -187,9 +210,11 @@ impl Default for ViewerSignals {
             auto_scroll: RwSignal::new(false),
             page_gap: RwSignal::new(PAGE_GAP),
             page_margin: RwSignal::new(0.0),
+            column_width_pct: RwSignal::new(100.0),
             motion: RwSignal::new(Motion::default()),
             awaiting_anchor: RwSignal::new(false),
             anchor_generation: RwSignal::new(0),
+            first_paint: RwSignal::new(false),
         }
     }
 }

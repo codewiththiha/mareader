@@ -6,6 +6,7 @@ pub mod auto_scroll;
 pub mod blend_backdrop;
 pub mod layout_prefs;
 pub mod reflow_layout;
+pub mod reflow_measure;
 pub mod reflow_outline;
 pub mod zoom_watchers;
 pub mod link_navigation;

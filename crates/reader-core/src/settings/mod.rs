@@ -30,7 +30,10 @@ pub mod typography;
 /// re-exported so every persisted knob is still reached as
 /// `reader_core::settings::<Type>`.
 pub use animation::AnimationSettings;
-pub use layout::{FloatingLabelStyle, LayoutSettings, PageIndicatorStyle, RenderPipeline};
+pub use layout::{
+    DEFAULT_COLUMN_WIDTH_PCT, FloatingLabelStyle, LayoutSettings, MAX_COLUMN_WIDTH_PCT,
+    MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle, RenderPipeline,
+};
 pub use typography::TextSettings;
 
 /// The AI word card's knobs are part of the persisted schema — the flat
@@ -240,6 +243,10 @@ pub fn sanitize(settings: &mut Settings) {
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
     settings.gloss_opacity = settings.gloss_opacity.clamp(0.1, 1.0);
     settings.layout.page_margin = settings.layout.page_margin.clamp(0.0, 64.0);
+    settings.layout.column_width_pct = settings
+        .layout
+        .column_width_pct
+        .clamp(layout::MIN_COLUMN_WIDTH_PCT, layout::MAX_COLUMN_WIDTH_PCT);
     // A startup fit of `None` is meaningless (the reader would not know how to
     // size the first page); retry to the default `FitMode::Page`.
     if settings.layout.default_fit == crate::zoom_math::FitMode::None {
@@ -522,5 +529,19 @@ mod tests {
         s.layout.floating_label_max_pct = 0.0;
         sanitize(&mut s);
         assert_eq!(s.layout.floating_label_max_pct, 10.0);
+    }
+
+    #[test]
+    fn the_column_width_dial_is_clamped() {
+        let mut s = Settings::default();
+        assert_eq!(s.layout.column_width_pct, DEFAULT_COLUMN_WIDTH_PCT);
+
+        s.layout.column_width_pct = 400.0;
+        sanitize(&mut s);
+        assert_eq!(s.layout.column_width_pct, MAX_COLUMN_WIDTH_PCT);
+
+        s.layout.column_width_pct = 5.0;
+        sanitize(&mut s);
+        assert_eq!(s.layout.column_width_pct, MIN_COLUMN_WIDTH_PCT);
     }
 }

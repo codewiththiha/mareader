@@ -42,7 +42,7 @@ use reader_core::settings::GlossColor;
 use reader_core::settings::RenderPipeline;
 use crate::state::{AppState, AppearanceSignal};
 
-use crate::effects::appearance::{raster, reflow, schedule_save};
+use crate::effects::appearance::{is_scrubbing, raster, reflow, schedule_save};
 
 fn document_element() -> Option<web_sys::Element> {
     web_sys::window()
@@ -187,11 +187,11 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
         let a = appearance.get();
         paint_appearance_now(a, ink_contrast.get());
         // The engine bakes the theme into its rasters (pages + thumbnails);
-        // re-bake them at the freshly painted variables. A no-op while a
-        // scrub is in flight (scrub mode owns the canvases then) and before
-        // the first document opens — and for a text document, whose pages
-        // repaint from the tokens alone.
-        //
+        // re-bake them at the freshly painted variables. Skipped while a
+        // scrub is in flight (scrub mode owns the canvases then, and its exit
+        // bakes once at the settled values) and a no-op before the first
+        // document opens — and for a text document, whose pages repaint from
+        // the tokens alone.
         // Only when the BAKE changed, though: dragging the grain or texture
         // slider moves an overlay, not the pixels underneath, and re-baking
         // every mounted page and thumbnail for it was the most expensive
@@ -203,7 +203,15 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
         );
         if baked.try_get_value().flatten().as_ref() != Some(&signature) {
             baked.set_value(Some(signature));
-            raster::refresh_theme();
+            // Not while a slider scrub is in flight: the drag has been
+            // repainting these very variables every frame, and the scrub exit
+            // performs the one final bake at the settled values. Queueing a
+            // refresh here too would only hand the engine's serialized theme
+            // queue a no-op per commit — and per structural click that lands
+            // mid-drag, which is exactly when the gesture needs the frame.
+            if !is_scrubbing() {
+                raster::refresh_theme();
+            }
         }
 
         if !warmed.get_value() {

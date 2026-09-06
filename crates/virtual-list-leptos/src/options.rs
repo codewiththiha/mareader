@@ -83,6 +83,15 @@ pub struct VirtualizerOptions {
     pub measure_epsilon: f64,
     /// Max re-aims for an in-flight `scroll_to_index`.
     pub max_scroll_retries: u32,
+    /// The render band, in viewport screens around the viewport. Mounted items
+    /// inside the band carry real content ([`crate::VirtualItemState::Active`]);
+    /// mounted items outside it are [`crate::VirtualItemState::Blank`]
+    /// placeholders at the layout's own sizes. `0` disables the band — the
+    /// pages mode, where everything the window mounts renders fully. A stream
+    /// pairs a wide mount budget with a band narrower than it, so a fling
+    /// slides cheap placeholders past the reader's eyes and only the band
+    /// around the viewport ever lays out real content.
+    pub render_screens: f64,
 }
 
 impl VirtualizerOptions {
@@ -109,6 +118,7 @@ impl VirtualizerOptions {
             retention_max: 12,
             measure_epsilon: 0.5,
             max_scroll_retries: 3,
+            render_screens: 0.0,
         }
     }
 
@@ -121,6 +131,28 @@ impl VirtualizerOptions {
         let mut options = Self::list(count, estimate_size);
         options.shape = LayoutShape::Grid(spec);
         options
+    }
+
+    /// A continuous stream: a list whose mount window is wider than its
+    /// render band. Items the window mounts outside the band stay
+    /// [`crate::VirtualItemState::Blank`] placeholders — layout and scrollbar
+    /// honest, content free — until the band reaches them. Pair it with a
+    /// mount budget wider than the band (the band is `0.75` viewport screens
+    /// each way); a budget narrower than the band would mount nothing the
+    /// band does not already cover.
+    pub fn stream(
+        count: impl Into<Signal<usize>>,
+        estimate_size: impl Fn(usize) -> f64 + 'static,
+    ) -> Self {
+        Self::list(count, estimate_size).render_band(0.75)
+    }
+
+    /// The render band, in viewport screens around the viewport (see
+    /// [`Self::render_screens`]). `0` — the default — disables it: pages
+    /// mode, where everything the window mounts renders fully.
+    pub fn render_band(mut self, screens: f64) -> Self {
+        self.render_screens = screens.max(0.0);
+        self
     }
 
     /// Gap between list items.

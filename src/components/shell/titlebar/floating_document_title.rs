@@ -186,6 +186,12 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         if !enabled() || state.reader.document.status.get() != DocStatus::Ready {
             return false;
         }
+        // The label is portaled to the body, so the first-paint cover
+        // inside the viewer slot cannot mask it — it stands down for the
+        // same gate and fades in with the settled reader.
+        if !state.reader.viewer.first_paint.get() {
+            return false;
+        }
         // The rail owns the top-left corner in either mode: docked, its
         // identity row already shows the name; floating, it is painted right
         // under this label.

@@ -3,7 +3,7 @@ use leptos::prelude::*;
 
 use crate::components::ai::anchor::{
     anchor_resolver, captured_mark, capture_selection_mark, no_invalidation, reflow_invalidation,
-    watch_page_anchor, FormatAnchorBridge, ReflowAnchorBridge, PILL_EXIT_FRAC,
+    watch_page_anchor, FormatAnchorBridge, ReflowAnchorBridge,
 };
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
 use crate::components::ai::reflow_anchor::spot_envelope;
@@ -66,7 +66,6 @@ pub fn SelectionPill(state: AppState) -> impl IntoView {
         state.reader.viewer.scroll_top.into(),
         state.reader.viewer.page.into(),
         invalidate,
-        PILL_EXIT_FRAC,
     );
 
     // Once the selection's origin leaves the viewport, the menu is gone for

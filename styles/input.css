@@ -37,4 +37,4 @@
 @import "./components/gloss.css";      /* word-card morph surface + highlighter stroke */
 @import "./components/appearance.css";  /* hue strip, preset thumbnails, link layer */
 @import "./library.css";     /* bookshelf + drag overlay */
-@import "./text.css";        /* §7: text pages (TXT, Markdown), measure column */
+@import "./text.css";        /* §7: text pages (TXT, Markdown), the continuous stream */

@@ -16,7 +16,7 @@ use virtual_list::{
 };
 
 use crate::options::{LayoutShape, ScrollMode};
-use crate::render::{VirtualItem, VirtualRow};
+use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 use crate::surface::ScrollSurface;
 
 /// Engine configuration that does not change per frame.
@@ -40,6 +40,10 @@ pub struct CoreConfig {
     pub eps: f64,
     /// How many times an in-flight `scroll_to_index` may re-aim.
     pub max_retries: u32,
+    /// The render band, in viewport screens around the viewport: mounted
+    /// items outside it answer [`VirtualItemState::Blank`]. `0` disables the
+    /// band (pages mode: everything mounted renders fully).
+    pub render_screens: f64,
 }
 
 impl Default for CoreConfig {
@@ -54,6 +58,7 @@ impl Default for CoreConfig {
             initial_offset: 0.0,
             eps: 0.5,
             max_retries: 3,
+            render_screens: 0.0,
         }
     }
 }
@@ -97,6 +102,7 @@ pub struct VirtualizerCore {
     padding_end: f64,
     eps: f64,
     max_retries: u32,
+    render_screens: f64,
 
     hint: usize,
     scroll_top: f64,
@@ -120,6 +126,7 @@ impl VirtualizerCore {
             padding_end: config.padding_end,
             eps: config.eps,
             max_retries: config.max_retries,
+            render_screens: config.render_screens,
             hint: 0,
             scroll_top: config.initial_offset,
             viewport: config.viewport,
@@ -462,6 +469,38 @@ impl VirtualizerCore {
         self.range
     }
 
+    /// The render band: the tighter window inside the mount window that
+    /// carries real content. With no band configured it IS the mount window
+    /// (pages mode); with one, it is the items overlapping the viewport
+    /// padded by `render_screens` viewport screens each way, intersected
+    /// with the mount window — the band never mounts, it only decides which
+    /// of the mounted items render. Every partly-visible item is inside it
+    /// by construction, so nothing the reader is looking at is ever a
+    /// placeholder.
+    pub fn render_range(&self) -> Option<Window> {
+        let mount = self.range?;
+        if self.render_screens <= 0.0 {
+            return Some(mount);
+        }
+        let pad = self.render_screens * self.viewport.main;
+        let band = self
+            .layout
+            .overlapping(self.scroll_top - pad, self.viewport.main + 2.0 * pad)?;
+        let first = band.first.max(mount.first);
+        let last = band.last.min(mount.last);
+        (first <= last).then_some(Window { first, last })
+    }
+
+    /// The render state of a mounted index: [`VirtualItemState::Active`]
+    /// inside the render band, [`VirtualItemState::Blank`] outside it. The
+    /// adapter overrides it for retained zombies.
+    pub fn item_state(&self, index: usize) -> VirtualItemState {
+        match self.render_range() {
+            Some(band) if band.contains(index) => VirtualItemState::Active,
+            _ => VirtualItemState::Blank,
+        }
+    }
+
     /// Current scroll position.
     pub fn scroll_top(&self) -> f64 {
         self.scroll_top
@@ -543,11 +582,25 @@ impl VirtualizerCore {
     }
 
     /// The mounted items, DOM-ready (`start` includes `padding_start`).
+    ///
+    /// An item's state says what the renderer owes it: [`VirtualItemState::Active`]
+    /// inside the render band, [`VirtualItemState::Blank`] for the rest of the
+    /// window when a band is on. Zombie retention is the adapter's layer on
+    /// top (it knows the grace clock this pure core does not).
     pub fn items(&self) -> Vec<VirtualItem> {
         let Some(window) = self.range else {
             return Vec::new();
         };
-        (window.first..=window.last).map(|index| self.item_at(index)).collect()
+        let band = self.render_range();
+        (window.first..=window.last)
+            .map(|index| {
+                let mut item = self.item_at(index);
+                if band.map(|band| !band.contains(index)).unwrap_or(true) {
+                    item.state = VirtualItemState::Blank;
+                }
+                item
+            })
+            .collect()
     }
 
     /// One item's render contract, window-independent: valid for any index
@@ -1104,5 +1157,70 @@ mod tests {
         assert!(core.scroll_to_offset(-500.0, ScrollMode::Instant, &surface).is_some());
         assert_eq!(surface.writes()[2].0, -12.0);
         assert_eq!(core.scroll_top(), -12.0);
+    }
+
+    fn stream_core(render_screens: f64) -> VirtualizerCore {
+        VirtualizerCore::new(
+            LayoutKind::List(ListLayout::uniform(200, 100.0, 0.0)),
+            CoreConfig {
+                // A mount budget WIDER than the band: two screens of overscan
+                // each way, so the band has something to blank.
+                budget: Budget::screenfuls(2.0, 1_000),
+                viewport: Viewport::main_only(200.0),
+                render_screens,
+                ..CoreConfig::default()
+            },
+        )
+    }
+
+    #[test]
+    fn a_render_band_blanks_the_mount_fringes_but_never_the_viewport() {
+        let mut core = stream_core(0.75);
+        let _ = core.on_scroll(2_000.0);
+        // Mount: visible rows 20-21 plus two screens of overscan -> 16..=25.
+        // Band: viewport padded three quarters of a screen -> rows 18..=23.
+        let items = core.items();
+        assert_eq!(
+            items.iter().map(|item| item.index).collect::<Vec<_>>(),
+            (16..=25).collect::<Vec<_>>()
+        );
+        for item in &items {
+            let want = if (18..=23).contains(&item.index) {
+                VirtualItemState::Active
+            } else {
+                VirtualItemState::Blank
+            };
+            assert_eq!(item.state, want, "item {}", item.index);
+            // A placeholder keeps the layout's own size: the scrollbar and
+            // the anchors must not see the band at all.
+            assert_eq!(item.size, 100.0);
+        }
+        // The rows under the reader's eyes are never blanks.
+        assert_eq!(core.item_state(20), VirtualItemState::Active);
+        assert_eq!(core.item_state(21), VirtualItemState::Active);
+    }
+
+    #[test]
+    fn without_a_band_everything_mounted_is_active() {
+        let mut core = stream_core(0.0);
+        let _ = core.on_scroll(2_000.0);
+        let items = core.items();
+        assert!(!items.is_empty());
+        assert!(items.iter().all(|item| item.state == VirtualItemState::Active));
+        assert_eq!(core.render_range(), core.range());
+    }
+
+    #[test]
+    fn the_band_never_changes_what_the_window_mounts_or_totals() {
+        let mut banded = stream_core(0.75);
+        let mut plain = stream_core(0.0);
+        let mut top = 0.0;
+        while top < 19_000.0 {
+            let _ = banded.on_scroll(top);
+            let _ = plain.on_scroll(top);
+            assert_eq!(banded.range(), plain.range(), "mount window at {top}");
+            assert_eq!(banded.total_size(), plain.total_size(), "extent at {top}");
+            top += 317.0;
+        }
     }
 }

@@ -127,7 +127,6 @@ fn begin_open(
     viewport.set(viewport_size());
     ctrl.drag.offset.set(None);
     ctrl.drag.active.set(false);
-    ctrl.geometry.exit_armed.set(false);
 
     // Exactly one highlighter: the native tint goes the moment the stroke
     // takes over (it would also fight the card's own text selection).

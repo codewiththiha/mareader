@@ -23,6 +23,13 @@
   --canvas-blend: multiply;
   --noise-opacity: 0;
   --app-radius: 8px;
+  /* The blend backdrop runs the canvas filter ONLY once the engine has
+     sampled the document's real paper colour into --pdf-paper — the flag
+     is raised next to that write and dropped when the session goes blank
+     (crates/pdf-engine's backdrop). Before it, filtering would run the
+     theme's invert over the dark UI paper token and paint a white field
+     (see .reader-bg.blend::after in components/shell.css). Undefined by
+     default: the backdrop's var() fallback reads `none`. */
 
   /* Z-index scale — the ONE layering decision for floating UI. Components
      embed these as `z-[var(--z-…)]` utilities (primitives/floating/types.rs
@@ -52,6 +59,10 @@
      and it survives both blend directions (multiply on light paper, screen on
      the inverted dark canvases). */
   --match-current: #f59e0b;
+}
+
+:root[data-paper-ready="true"] {
+  --backdrop-filter: var(--canvas-filter);
 }
 /* Lifted and warmed for the dark canvases, where `screen` washes a mid amber
    toward the paper colour. */

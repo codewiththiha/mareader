@@ -15,7 +15,7 @@ use leptos::prelude::*;
 
 use crate::components::ai::anchor::{
     anchor_resolver, no_invalidation, reflow_invalidation, watch_page_anchor, AnchorWatch,
-    CARD_EXIT_FRAC, PageAnchor,
+    PageAnchor,
 };
 use crate::components::ai::reflow_anchor::parse_spot;
 use crate::components::ai::gloss::controller::GlossController;
@@ -55,8 +55,8 @@ pub struct CardTargeting {
 /// origin-exit and settle watchers).
 pub fn use_card_targeting(state: AppState, ctrl: GlossController) -> CardTargeting {
     // ONE shared, page-aware anchor: follows scroll/zoom/mode/page, and
-    // flags `exited` once the origin passes CARD_EXIT_FRAC of the viewport
-    // height (or leaves the top, or its page unmounts).
+    // flags `exited` once the origin has fully left the viewport (either
+    // edge) or its host unmounts.
     // The card's spot rides in the open mark's own context envelope, so the
     // resolver reads it from whichever mark is current — one closure, and no
     // second copy of the mark to keep in step.
@@ -80,7 +80,6 @@ pub fn use_card_targeting(state: AppState, ctrl: GlossController) -> CardTargeti
         state.reader.viewer.scroll_top.into(),
         state.reader.viewer.page.into(),
         invalidate,
-        CARD_EXIT_FRAC,
     );
     let anchor = watch.screen;
 

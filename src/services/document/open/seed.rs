@@ -48,7 +48,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     );
 
     // A text document's model must not survive the PDF that opens over it
-    // (the measure column mounts while `reflow.blocks` is a document).
+    // (the stream mounts while `reflow.blocks` is a document).
     state.reader.document.content.reflow.reset();
     state.reader.document.num_pages.set(num_pages);
     // The paper session resets for the new book — synchronously, while the

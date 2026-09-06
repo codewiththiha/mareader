@@ -7,7 +7,7 @@
 //! settings for type — they set their own `--ts` multiplier and let the
 //! stylesheet resolve `calc(var(--tx-…) * var(--ts))`. That split is why a
 //! zoom never repaints typography (only `--ts` moves) and why a settings
-//! change repaints everywhere at once, pages and the measure column alike.
+//! change repaints everywhere at once, pages and the stream alike.
 
 use leptos::prelude::*;
 

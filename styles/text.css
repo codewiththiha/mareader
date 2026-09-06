@@ -71,7 +71,7 @@
 }
 
 /* One layout atom. Spacing under a block rides `padding-bottom` (never a
-   margin) so the measure column's offsetHeight and the page's flow always
+   margin) so the block's measured `offsetHeight` and the page's flow always
    agree — margins would collapse, padding cannot.
 
    `position: relative` makes the row the containing block for the search-hit
@@ -233,33 +233,6 @@
 }
 
 /* ---------------------------------------------------------------------
-   The measure column — offscreen, invisible, but laid out for real, at
-   scale 1 and the page's exact width. `visibility:hidden` (not
-   `display:none`) is what keeps the layout honest enough to read.
-
-   The host ALSO carries `.tx-content`: measurement is only truthful when
-   the measured column resolves the very typography the pages do — font,
-   size, line height, spacing all live on `.tx-content`, so a column
-   without it measures the browser's fallback face and paginates against
-   fiction.
-   --------------------------------------------------------------------- */
-.tx-measure {
-  position: fixed;
-  left: -100000px;
-  top: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-
-/* Parity must not move the column: the typography rules the host just
-   inherited (`.tx-content` sets its own position) give way to the
-   offscreen box, declared here so the pair can never be reordered by
-   accident. */
-.tx-measure.tx-content {
-  position: fixed;
-}
-
-/* ---------------------------------------------------------------------
    The continuous stream — vertical reading of a reflowable document.
 
    The window is the page: no paper cards, no gaps, no boxes — the
@@ -279,6 +252,15 @@
    positioned inside it by the virtualizer. */
 .tx-stream-col {
   position: relative;
+}
+
+/* A row the virtualizer's render band has not reached: an empty box at the
+   layout's own height for the item, so the scrollbar and the anchors never
+   move while the type stands down. A whisper of ink, not a skeleton — the
+   point is that nothing is rendered, not that something else is. */
+.tx-blank {
+  background: color-mix(in srgb, var(--tx-ink) 5%, transparent);
+  border-radius: 4px;
 }
 
 /* Column alignment for the continuous stream. The page margin is an

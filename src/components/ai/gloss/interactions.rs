@@ -1,16 +1,15 @@
 //! Window-level interactions: Escape handling, outside-press dismissal,
-//! origin-exit collapse, page-flip/zoom guards, and the outro's
-//! settle-unmount. Each is a small self-contained hook so the popover stays
-//! wiring + view; the generic part of dismissal (outside press, topmost
-//! Escape, exclusion selectors) is the primitive `use_dismiss`, and only the
-//! two-step gloss semantics (first Escape collapses, second gives up) stay
-//! here.
+//! origin-exit collapse, the zoom guard, and the outro's settle-unmount.
+//! Each is a small self-contained hook so the popover stays wiring + view;
+//! the generic part of dismissal (outside press, topmost Escape, exclusion
+//! selectors) is the primitive `use_dismiss`, and only the two-step gloss
+//! semantics (first Escape collapses, second gives up) stay here.
 
 use ai_core::gloss::{GlossBox, boxes_close};
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::components::ai::anchor::{AnchorWatch, PILL_EXIT_FRAC, origin_outside_band};
+use crate::components::ai::anchor::{AnchorWatch, origin_outside_band};
 use crate::components::ai::gloss::controller::GlossController;
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::hooks::use_viewport::viewport_size;
@@ -63,64 +62,30 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
     );
 }
 
-/// Whether the origin has left the viewport entirely — above the top or
-/// below the bottom. A `None` box (the mark's page unmounted) counts as gone:
-/// the hard exit fires no matter how the card opened.
-///
-/// The hard exit is the full-viewport band, the same shape the watcher applies
-/// to its softer `CARD_EXIT_FRAC` one.
+/// Whether the origin has left the viewport entirely — fully above the top
+/// or fully below the bottom, identically in both directions. A `None` box
+/// (the mark's host unmounted) counts as gone no matter how the card opened.
 fn origin_gone(origin: Option<GlossBox>, vh: f64) -> bool {
-    origin_outside_band(origin, vh, PILL_EXIT_FRAC)
+    origin_outside_band(origin, vh)
 }
 
-/// The soft band's verdict for an origin still inside the viewport: arm the
-/// band while the origin is inside it, collapse once it has left — but only
-/// if it was armed while inside. A card opened near the bottom edge starts
-/// past the band and unarmed; collapsing it on spawn is what made low opens
-/// read as "the card can't decide where to spawn", so it survives until it
-/// has been inside the band at least once.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum BandVerdict {
-    /// Origin inside the band: arm the one-shot.
-    Arm,
-    /// Origin past the band and it was armed: collapse.
-    Collapse,
-    /// Origin past the band but never armed: leave it (the hard exit owns it).
-    Keep,
-}
-
-fn band_verdict(exited: bool, armed: bool) -> BandVerdict {
-    match (exited, armed) {
-        (false, _) => BandVerdict::Arm,
-        (true, true) => BandVerdict::Collapse,
-        (true, false) => BandVerdict::Keep,
-    }
-}
-
-/// Scrolling does not kill the card instantly: it tracks its anchor until the
-/// origin crosses CARD_EXIT_FRAC of the viewport height, leaves the top, or
-/// its page is virtualized away — then it collapses back onto the mark.
+/// Scrolling does not kill the card while any part of its mark is on screen:
+/// the surface tracks its anchor until the origin fully leaves the viewport
+/// (either edge) or its host is virtualized away — then it collapses back
+/// onto the mark. Page flips need no rule of their own: in the paginated
+/// modes a flip unmounts the host (origin `None`), and in the continuous
+/// ones a boundary crossing is just scroll — the watcher re-resolves on the
+/// page signal and this rule stays the single source of exits. A collapsed
+/// card only reopens on an explicit click, so a mark riding the viewport
+/// edge cannot flicker.
 pub fn use_origin_exit_collapse(watch: AnchorWatch, ctrl: GlossController) {
     Effect::new(move |_| {
         if !ctrl.geometry.surface_visible.get() || ctrl.geometry.gphase.get() != GlossPhase::Expanded {
             return;
         }
-
-        // Hard exit: the mark's page unmounted, or the origin fully left the
-        // viewport (top or bottom). Collapses no matter how the card opened.
         let (_, vh) = viewport_size();
         if origin_gone(watch.screen.get(), vh) {
             ctrl.commands.collapse_to_mark.run(());
-            return;
-        }
-
-        // Soft band: arm while the origin is inside; only an armed card is
-        // collapsed by the band. Opened low → unarmed → survives; scroll up
-        // (arms) then back down past the band → collapses, as designed.
-        match band_verdict(watch.exited.get(), ctrl.geometry.exit_armed.get_untracked()) {
-            BandVerdict::Arm => ctrl.geometry.exit_armed.set(true),
-            BandVerdict::Collapse => ctrl.commands.collapse_to_mark.run(()),
-            BandVerdict::Keep => {}
         }
     });
 }
@@ -146,17 +111,6 @@ pub fn use_settle_unmount(
         };
         if sprung.get().is_some_and(|b| boxes_close(b, a, 0.5)) {
             ctrl.geometry.surface_visible.set(false);
-        }
-    });
-}
-
-/// A page flip collapses an expanded card back onto its mark (which may now
-/// be off screen — the anchor still knows where it is).
-pub fn use_page_flip_collapse(state: AppState, ctrl: GlossController) {
-    Effect::new(move |_| {
-        let _ = state.reader.viewer.page.get();
-        if ctrl.geometry.surface_visible.get_untracked() {
-            ctrl.commands.collapse_to_mark.run(());
         }
     });
 }
@@ -202,16 +156,5 @@ mod tests {
         assert!(origin_gone(origin(-150.0, 100.0), vh));
         // Fully below: y > vh.
         assert!(origin_gone(origin(901.0, 100.0), vh));
-    }
-
-    #[test]
-    fn the_band_arms_inside_and_collapses_only_once_armed() {
-        // Inside the band: arm.
-        assert_eq!(band_verdict(false, false), BandVerdict::Arm);
-        assert_eq!(band_verdict(false, true), BandVerdict::Arm);
-        // Past the band, armed at some point: collapse.
-        assert_eq!(band_verdict(true, true), BandVerdict::Collapse);
-        // Past the band, never armed (opened low): the hard exit owns it.
-        assert_eq!(band_verdict(true, false), BandVerdict::Keep);
     }
 }

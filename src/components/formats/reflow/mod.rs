@@ -1,8 +1,9 @@
 //! The reflowable formats' shared machinery: page host, continuous stream,
-//! virtualized strip, the column that measures the real heights, the walk that
-//! finds a block's characters in the DOM ([`spot`]), and what gets painted over
-//! them — a block's gloss strokes ([`gloss`]) and its search hits
-//! ([`highlight`]).
+//! virtualized strip, the walk that finds a block's characters in the DOM
+//! ([`spot`]), and what gets painted over them — a block's gloss strokes
+//! ([`gloss`]) and its search hits ([`highlight`]). The heights all of it
+//! lays out against live in the shared store the measurement pipeline tends
+//! (`crate::effects::reader::reflow_measure`).
 //!
 //! Not one of these components knows whether the document it is laying out came
 //! from `txt-core` or `md-core`. The blocks are the same shape, the
@@ -20,7 +21,6 @@
 
 mod gloss;
 mod highlight;
-mod measure;
 mod page;
 pub(crate) mod spot;
 mod strip;
@@ -28,7 +28,6 @@ mod stream;
 
 pub use gloss::ReflowGlossLayer;
 pub use highlight::BlockSearchHits;
-pub use measure::ReflowMeasureColumn;
 pub use page::ReflowPage;
 pub use strip::ReflowPageStrip;
 pub use stream::ReflowStreamLayout;
@@ -40,8 +39,8 @@ use crate::state::ReaderState;
 ///
 /// One read of `document.format`, tracked, so a document of the other kind
 /// swapping in rebuilds the pages. Every surface that paints a block — a paged
-/// host, a stream row, the measure column — asks this rather than deciding for
-/// itself, which is what keeps a page and its measurement in agreement.
+/// host or a stream row — asks this rather than deciding for itself, which is
+/// what keeps a page and its measurements in agreement.
 pub(crate) fn block_render(state: ReaderState) -> BlockRender {
     BlockRender::of_format(state.format())
 }

@@ -146,12 +146,23 @@ impl FitDims {
                 _ => (p1.width, p1.height),
             }
         });
-        Self::from_geometry(
+        let mut dims = Self::from_geometry(
             state.viewer.mode.get_untracked(),
             state.viewer.container_size.get_untracked(),
             state.viewer.page_margin.get_untracked(),
             (pw, ph),
-        )
+        )?;
+        // A reflowable page's own box already carries the column-width dial
+        // (the card grows with the column, and its published size says so),
+        // so its fits measure against the plain container. A PDF's page is
+        // the document's own and cannot grow — there the dial adjusts the
+        // fit BUDGET: fit-width resolves against the dialled share of the
+        // window, so a wider dial reads as a wider page on screen. Manual
+        // zoom never passes through here, and stays uncapped as ever.
+        if !state.reflowable_untracked() {
+            dims.cw_eff = fit_budget(dims.cw_eff, state.viewer.column_width_pct.get_untracked());
+        }
+        Some(dims)
     }
 
     /// The fit geometry for a page of `(pw, ph)` in a `(cw, ch)` container —
@@ -197,6 +208,13 @@ impl FitDims {
     }
 }
 
+/// The width a fit resolves against after the column-width dial: the
+/// dialled share of the container, floored at the same 1px the margin
+/// subtraction uses. Small enough to live here, pure enough to test.
+fn fit_budget(cw: f64, pct: f64) -> f64 {
+    (cw * pct / 100.0).max(1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,6 +257,17 @@ mod tests {
             .unwrap();
         assert!((d.fit(FitMode::Width, 1.0) - 960.0 / 500.0).abs() < 1e-9);
         assert!(FitDims::from_geometry(ViewMode::Single, (0.0, 800.0), 0.0, (500.0, 700.0)).is_none());
+    }
+
+    #[test]
+    fn the_column_dial_scales_the_fit_budget_without_touching_the_floor() {
+        // 140% of a 960px usable width is 1344px of budget; a dial below
+        // 100 shrinks it; and no dial can push the budget under the 1px
+        // floor the rest of the fit maths leans on.
+        assert!((fit_budget(960.0, 140.0) - 1344.0).abs() < 1e-9);
+        assert!((fit_budget(960.0, 60.0) - 576.0).abs() < 1e-9);
+        assert_eq!(fit_budget(960.0, 100.0), 960.0);
+        assert_eq!(fit_budget(0.5, 60.0), 1.0);
     }
 
     #[test]

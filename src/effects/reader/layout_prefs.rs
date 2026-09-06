@@ -1,11 +1,14 @@
 //! The layout preferences, from the settings that store them to the strips that
 //! lay out against them.
 //!
-//! Two of the reader's layout settings are not read where they are used. The
+//! Three of the reader's layout settings are not read where they are used. The
 //! page gap and the page margin are prefs a settings surface writes; the thing
 //! that actually has to change is a strip's size model, and only a rescale can
 //! change that. So each pref needs an effect, and both effects end the same way
 //! — `rescale(1.0, …)` against the vertical strip, the horizontal one, or both.
+//! (The column-width dial joins them as a plain mirror: it changes no strip
+//! model here — the reflowable measure pass and the fit watcher are what react
+//! to it.)
 //!
 //! These lived in `features/reader/page.rs`, in the run of effects before that
 //! file's `view!`, where a reader who came for the slot wiring had to step over
@@ -110,4 +113,19 @@ pub fn layout_prefs(state: AppState, vertical: Virtualizer, horizontal: Virtuali
             }
         });
     }
+
+    // The column-width dial → runtime mirror. Unlike the margin this one has
+    // no mode exceptions to resolve, so it is a plain tracked sync rather
+    // than a seeded once-off: the dial is a reader-wide preference, and the
+    // fit maths and the stream's column (which have no settings handle)
+    // read the mirrored value. The refit a dial move deserves is posted by
+    // the fit watcher, which subscribes to the setting itself; the
+    // reflowable side re-measures through the measurement pipeline's own
+    // dependency on this signal.
+    Effect::new(move |_| {
+        let pct = state.settings.with(|st| st.layout.column_width_pct);
+        if (vs.viewer.column_width_pct.get_untracked() - pct).abs() > 1e-9 {
+            vs.viewer.column_width_pct.set(pct);
+        }
+    });
 }

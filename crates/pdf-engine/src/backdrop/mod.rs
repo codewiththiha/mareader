@@ -114,6 +114,31 @@ pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: imp
     }
 }
 
+/// The root attribute the blend backdrop's filter gate reads. The canvas
+/// filter — `invert(1)` in dark themes — is only correct over the engine's
+/// SAMPLED paper colour: while `--pdf-paper` still holds nothing, the
+/// backdrop's fallback is the UI paper token (dark in dark mode), and
+/// running the filter over it paints a full-screen white field. So the
+/// attribute rises exactly when a colour publishes, and drops whenever the
+/// session goes deliberately blank — the gate itself lives in
+/// `styles/tokens.css`, read by `.reader-bg.blend::after`.
+fn set_paper_ready(on: bool) {
+    if !cfg!(target_arch = "wasm32") {
+        return;
+    }
+    let Some(root) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.document_element())
+    else {
+        return;
+    };
+    if on {
+        let _ = root.set_attribute("data-paper-ready", "true");
+    } else {
+        let _ = root.remove_attribute("data-paper-ready");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -175,6 +200,7 @@ pub fn configure(blend_on: bool, mut config: PaperConfig) {
             s.epoch += 1;
         });
         api::set_paper(None);
+        set_paper_ready(false);
     }
     publish();
     ensure_lookahead();
@@ -194,6 +220,7 @@ pub fn document_open(path: &str, num_pages: u32) {
         s.sampling.clear();
     });
     api::set_paper(None); // the previous book's colour must not linger
+    set_paper_ready(false); // ...and neither may its paper-ready gate
 }
 
 /// The document closed (or the app is tearing down): forget everything and
@@ -207,6 +234,7 @@ pub fn document_close() {
         };
     });
     api::set_paper(None); // the shelf shows the theme paper
+    set_paper_ready(false);
 }
 
 /// A live render of `canvas_id` just completed: drain its stashed raw frame
@@ -307,9 +335,15 @@ pub(super) fn publish() {
         }
     });
     match outcome {
-        (Some(hex), _) => api::set_paper(Some(hex.as_str())),
+        (Some(hex), _) => {
+            api::set_paper(Some(hex.as_str()));
+            set_paper_ready(true);
+        }
         // Deliberate blank: no book / blend off — clear the backdrop.
-        (None, Some(_)) => api::set_paper(None),
+        (None, Some(_)) => {
+            api::set_paper(None);
+            set_paper_ready(false);
+        }
         _ => {}
     }
 }

@@ -4,7 +4,7 @@
 //! tab exists only while a text document is open (the modal resolves that,
 //! the same way it resolves the Animations tab). Every control writes into
 //! `Settings::text`, which the typography effect paints onto `<html>` and
-//! the measure column turns into a re-cut — so a knob here moves the whole
+//! the measurement pipeline turns into a re-cut — so a knob here moves the whole
 //! pipeline, and nothing in this file touches layout directly.
 //!
 //! The font pickers offer the system faces today; the choice type
