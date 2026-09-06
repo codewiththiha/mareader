@@ -16,7 +16,7 @@ use reflow_core::block::{BlockKind, TextBlock};
 
 /// The top-level constructs a reader distinguishes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MarkdownConstruct {
+enum MarkdownConstruct {
     /// An ATX (`#`) or setext (`===`) heading.
     Heading,
     /// A fenced or indented code block.
@@ -86,7 +86,7 @@ fn construct_of_line(line: &str) -> Option<MarkdownConstruct> {
 }
 
 /// The block's construct: the first marker it carries, or prose.
-pub fn classify(block: &TextBlock) -> MarkdownConstruct {
+fn classify(block: &TextBlock) -> MarkdownConstruct {
     if block.kind != BlockKind::Markdown {
         return MarkdownConstruct::Prose;
     }
@@ -101,18 +101,8 @@ pub fn classify(block: &TextBlock) -> MarkdownConstruct {
 /// Whether the block is running prose and may therefore be cut at its line
 /// boundaries. A block whose lines are all prose has no structure for a split
 /// to break; anything else keeps its render whole.
-pub fn is_prose_block(block: &TextBlock, _lines: &[&str]) -> bool {
+pub(crate) fn is_prose_block(block: &TextBlock, _lines: &[&str]) -> bool {
     block.kind == BlockKind::Text || classify(block) == MarkdownConstruct::Prose
-}
-
-/// Whether one Markdown line is running prose — no construct opens on it, and
-/// it says something. The check is deliberately conservative: anything that
-/// could begin a block-level construct disqualifies the whole block, so a false
-/// "not prose" only costs a tighter page pack, never a broken render. A blank
-/// line is refused on the same logic: the splitter never leaves one inside a
-/// block, so a block that carries one is not in a state to be cut.
-pub fn is_prose_line(line: &str) -> bool {
-    !line.trim().is_empty() && construct_of_line(line).is_none()
 }
 
 /// How many columns the line is indented by, counting a tab as four — which is
@@ -164,7 +154,7 @@ fn is_ordered_item(trimmed: &str) -> bool {
 /// One ATX heading line: its level (1–6) and its title with the markers and
 /// the emphasis noise stripped. `None` for anything else, including a seventh
 /// `#` (not a heading in CommonMark) and an empty one.
-pub fn heading_of_line(line: &str) -> Option<(u32, String)> {
+pub(crate) fn heading_of_line(line: &str) -> Option<(u32, String)> {
     let trimmed = line.trim();
     let level = trimmed.chars().take_while(|c| *c == '#').count();
     if !(1..=6).contains(&level) {
@@ -232,16 +222,5 @@ mod tests {
         // points, whatever the bytes look like.
         let plain = TextBlock::new(BlockKind::Text, "```\ncode");
         assert!(is_prose_block(&plain, &[]));
-    }
-
-    #[test]
-    fn prose_line_agrees_with_the_classifier() {
-        assert!(is_prose_line("a plain line"));
-        assert!(!is_prose_line("- a"));
-        assert!(!is_prose_line("# h"));
-        assert!(!is_prose_line("\tcode"));
-        // An empty line is not prose either: the splitter never leaves one
-        // inside a block, and refusing it is the safe answer if it ever does.
-        assert!(!is_prose_line(""));
     }
 }

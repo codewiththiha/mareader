@@ -98,7 +98,16 @@
   filter: var(--canvas-filter, none);
   mix-blend-mode: var(--canvas-blend, multiply);
 }
-html.appearance-scrubbing .pdf-page::before {
+/* The texture goes BEHIND the canvas only while a BAKED pipeline's scrub
+   temporarily exposes raw rasters. Under the LIVE pipeline the scrub class
+   is permanent, and there the texture must stay OVER the blend: the blend
+   backdrop (components/shell.css) paints its paper with the overhanging
+   texture on top of it, and the page must composite in the same order —
+   texture over the blend — or the two underlays carry the strokes at
+   different strengths. multiply (light) and screen (dark) are identity on
+   the paper, which is why the two orders coincided there; dim's soft-light
+   is not, and the gutter's strokes read darker than the page's. */
+html[data-pipeline="baked"].appearance-scrubbing .pdf-page::before {
   z-index: 0;
 }
 

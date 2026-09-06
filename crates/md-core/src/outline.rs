@@ -15,9 +15,7 @@
 //! chapters follow the pagination instead of fighting it.
 
 use reader_core::outline::{OutlineNode, clamp_depth};
-use reflow_core::block::FenceTracker;
 use reflow_core::block::TextBlock;
-use reflow_core::source::normalize;
 
 use crate::ast::heading_of_line;
 
@@ -34,69 +32,13 @@ pub struct MarkdownHeading {
     pub block_index: usize,
 }
 
-/// Scan a Markdown source for its headings, in document order.
-///
-/// The scan runs on the RAW file rather than on the parsed blocks, and counts
-/// block boundaries exactly as [`reflow_core::block::split_blocks`] does (a
-/// blank line closes a block, a fence keeps its interior blank lines): one
-/// pass over the text, no allocation of block strings just to find a dozen
-/// headings. Fence state is not decoration here — a `#` inside a code sample is
-/// a shell prompt, not a chapter — and it is the shared
-/// [`FenceTracker`](reflow_core::block::FenceTracker) the splitter itself
-/// runs, so the two can never disagree about what a fence is.
-pub fn extract_headings(raw: &str) -> Vec<MarkdownHeading> {
-    let text = normalize(raw);
-    let mut headings = Vec::new();
-    let mut fences = FenceTracker::default();
-    // The block the current line belongs to, and how many blocks have opened.
-    // Counting them here — rather than parsing the blocks and searching them —
-    // is what keeps this one pass over the source.
-    let mut current: Option<usize> = None;
-    let mut opened = 0usize;
-    for line in text.split('\n') {
-        let trimmed = line.trim();
-        if fences.feed(trimmed) {
-            if fences.inside() {
-                // The fence line itself belongs to a block (that is how the
-                // splitter sees it), so it opens one if the blank line before
-                // it had closed the previous.
-                if current.is_none() {
-                    current = Some(opened);
-                    opened += 1;
-                }
-            } else {
-                // The closer ends the block for the counter too, or the
-                // heading under it would be attributed to the fenced block.
-                current = None;
-            }
-            continue;
-        }
-        if fences.inside() {
-            continue;
-        }
-        if trimmed.is_empty() {
-            current = None;
-            continue;
-        }
-        if current.is_none() {
-            current = Some(opened);
-            opened += 1;
-        }
-        if let Some((level, title)) = heading_of_line(trimmed) {
-            headings.push(MarkdownHeading { title, level, block_index: current.unwrap_or(0) });
-        }
-    }
-    headings
-}
-
 /// The headings of an ALREADY-PARSED document, keyed on its final blocks.
 ///
-/// [`extract_headings`] is the cheap path for a caller that has the source; this
-/// is the correct path for the open flow, because the blocks it returns have
-/// been through `subdivide_prose` and a split shifts every index after it. Keyed
-/// on the final list, an outline entry points at the block the interface will
-/// actually paint, which is what lets the page number be derived from the live
-/// cut rather than chased after it.
+/// This is the path the open flow takes, because the blocks it reads have
+/// been through `subdivide_prose` and a split shifts every index after it.
+/// Keyed on the final list, an outline entry points at the block the
+/// interface will actually paint, which is what lets the page number be
+/// derived from the live cut rather than chased after it.
 ///
 /// A heading is a block that is not a continuation and whose first line is an
 /// ATX heading — so a `#` inside a fenced sample never joins the tree (a fence is
@@ -140,15 +82,20 @@ mod tests {
     use super::*;
     use crate::parser::{parse_markdown, subdivide_prose};
     use reflow_core::block::{BlockKind, TextBlock, split_blocks};
+    use reflow_core::source::normalize;
 
     fn blocks_of(md: &str) -> Vec<TextBlock> {
         split_blocks(&normalize(md), BlockKind::Markdown, true)
     }
 
+    fn headings_of(md: &str) -> Vec<MarkdownHeading> {
+        headings_of_blocks(&blocks_of(md))
+    }
+
     #[test]
     fn headings_are_found_in_document_order_with_their_block() {
         let md = "# Dune\n\nSome prose.\n\n## Part One\n\nMore prose.\n\n###### Deep\n";
-        let headings = extract_headings(md);
+        let headings = headings_of(md);
         assert_eq!(
             headings.iter().map(|h| (h.title.as_str(), h.level, h.block_index)).collect::<Vec<_>>(),
             vec![("Dune", 1, 0), ("Part One", 2, 2), ("Deep", 6, 4)]
@@ -168,20 +115,20 @@ mod tests {
     #[test]
     fn a_hash_inside_a_code_sample_is_not_a_chapter() {
         let md = "# Real\n\n```sh\n$ cargo run\n# a comment, not a heading\n```\n\n## Second\n";
-        let headings = extract_headings(md);
+        let headings = headings_of(md);
         assert_eq!(headings.iter().map(|h| h.title.as_str()).collect::<Vec<_>>(), ["Real", "Second"]);
     }
 
     #[test]
     fn an_unclosed_fence_hides_the_rest_of_the_file() {
-        let headings = extract_headings("# A\n\n```\n# B\n# C");
+        let headings = headings_of("# A\n\n```\n# B\n# C");
         assert_eq!(headings.len(), 1);
     }
 
     #[test]
     fn blank_lines_and_leading_noise_shift_nothing() {
         let md = "\n\n# One\n\n\n\n# Two\n";
-        let headings = extract_headings(md);
+        let headings = headings_of(md);
         assert_eq!(headings.len(), 2);
         let blocks = blocks_of(md);
         for h in &headings {
@@ -191,21 +138,21 @@ mod tests {
 
     #[test]
     fn empty_and_headingless_files_have_no_outline() {
-        assert!(extract_headings("").is_empty());
-        assert!(extract_headings("just prose\nstill prose").is_empty());
-        assert!(extract_headings("#\n\n##   \n").is_empty());
+        assert!(headings_of("").is_empty());
+        assert!(headings_of("just prose\nstill prose").is_empty());
+        assert!(headings_of("#\n\n##   \n").is_empty());
     }
 
     #[test]
     fn block_headings_survive_a_prose_split_that_moves_the_indices() {
         // A long prose paragraph before a heading is subdivided for the page
         // pack, which pushes the heading's index. Reading the headings off the
-        // FINAL blocks is what keeps the entry pointing at the right one; the
-        // raw source scan, which counts the blocks as the splitter first cut
-        // them, would land on the last chunk instead. The paragraph has to be
-        // long in LINES for this to be a test at all: `subdivide_with` only
-        // cuts a block taller than `SPLIT_MAX_LINES`, so one very long line
-        // would subdivide into nothing and the indices would not move.
+        // FINAL blocks is what keeps the entry pointing at the right one; a
+        // count taken before the split would land on the last chunk instead.
+        // The paragraph has to be long in LINES for this to be a test at all:
+        // `subdivide_with` only cuts a block taller than `SPLIT_MAX_LINES`, so
+        // one very long line would subdivide into nothing and the indices
+        // would not move.
         let line = "word ".repeat(12).trim().to_string();
         let prose = (0..8).map(|_| line.as_str()).collect::<Vec<_>>().join("\n");
         let source = format!("{prose}\n\n## Chapter\n\ntext\n");
@@ -216,11 +163,6 @@ mod tests {
         assert_eq!(found[0].title, "Chapter");
         assert_eq!(found[0].block_index, 2, "the split moved the heading");
         assert_eq!(blocks[found[0].block_index].first_line(), "## Chapter");
-        assert_eq!(
-            extract_headings(&source)[0].block_index,
-            1,
-            "the stale answer the final-blocks read exists to prevent"
-        );
         // A `#` inside a fence stays out of the tree.
         let fenced = parse_markdown("# Real\n\n```\n# not a heading\n```\n");
         let found = headings_of_blocks(&fenced);

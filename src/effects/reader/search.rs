@@ -143,7 +143,7 @@ pub fn resume_search(state: ReaderState) {
     state.search.visible.set(true);
 }
 
-pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) {
+fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) {
     // Only the engine has to be TOLD which match is current: it owns the boxes
     // it paints into the page's text layer. A reflowable document's rows read
     // `search.active` themselves and re-class the box that answers to it.

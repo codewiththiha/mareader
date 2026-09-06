@@ -56,7 +56,10 @@ export const PAGE_MAX_PIXELS = memoryScaledPixelCeiling();
 const RAW_IDLE_MS = 10_000;
 const SWEEP_IDLE_MS = 30_000;
 
-export class EngineSession {
+/** The engine's per-document session state: the pdf.js document proxy, live
+ *  page surfaces, thumbnail cache, search context, and theme pipeline state.
+ *  One instance per open document; destroyed and recreated on every `open()`. */
+class EngineSession {
   loadingTask: LoadingTask | null = null;
   pdf: PDFDocumentProxy | null = null;
   numPages = 0;
@@ -64,9 +67,11 @@ export class EngineSession {
 
   /** The dominant raster colour of the open document — the PDF's own paper —
    *  or null until the paper session (the Rust side of the pipeline)
-   *  resolves one. The blend backdrop paints this through the same filter +
-   *  blend the raw canvases use, so backdrop and page background are the
-   *  same composite by construction. */
+   *  resolves one. Under the live pipeline the blend backdrop paints this
+   *  through the same filter + blend the raw canvases use; under the baked
+   *  pipeline it paints the pre-themed twin the engine derives from it
+   *  (--pdf-paper-baked, theme/paper.ts), so backdrop and page are the same
+   *  composite by construction in either mode. */
   detectedPaper: string | null = null;
 
   /** Live page surfaces, keyed by canvas id. Bounded by the virtualizer's

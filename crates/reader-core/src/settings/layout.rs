@@ -118,9 +118,7 @@ pub struct LayoutSettings {
     #[serde(default)]
     pub sidebar_overlay: bool,
     /// Paint the reader background with the page's own paper colour, a
-    /// colour per page blended along the scroll. (Older blobs also carry
-    /// `blend_scope` and `blend_scan_pages` from the retired fixed mode;
-    /// serde ignores them.)
+    /// colour per page blended along the scroll.
     #[serde(default)]
     pub blend_mode: bool,
     /// Which pixels of a page raster the detector trusts: the whole page,

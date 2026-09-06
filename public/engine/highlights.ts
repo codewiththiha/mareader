@@ -19,7 +19,7 @@ const MAX_HIGHLIGHTS_PER_PAGE = 200;
 
 /** One occurrence's offsets in a span's text, in UTF-16 code units — the unit
  *  `Range.setStart` counts in, and the unit `String.indexOf` reports. */
-export type Occurrence = { start: number; end: number };
+type Occurrence = { start: number; end: number };
 
 /** Every occurrence of `query` in `text`, and whether those offsets may be
  *  handed to a Range over the RAW text node.
@@ -37,7 +37,7 @@ export type Occurrence = { start: number; end: number };
  * case, and the caller counts the ordinals without painting, which is the same
  * call the Rust scan makes ("a missed hit is a smaller lie").
  */
-export function occurrences(
+function occurrences(
   text: string,
   query: string,
 ): { spans: Occurrence[]; offsetsUsable: boolean } {

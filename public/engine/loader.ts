@@ -24,7 +24,7 @@ type PdfjsLib = {
   TextLayer: unknown;
 };
 
-export type TextLayerCtor = {
+type TextLayerCtor = {
   new (opts: {
     textContentSource: { items: unknown[] };
     container: HTMLElement;
@@ -75,7 +75,7 @@ function withTimeout<T>(
 let workerSrcConfigured = false;
 
 /** Resolve pdf.js off globalThis at call time — never at module evaluate. */
-export function getPdfjs(): PdfjsLib {
+function getPdfjs(): PdfjsLib {
   const l = globalThis.pdfjsLib as PdfjsLib | undefined;
   if (!l || typeof l.getDocument !== "function") {
     throw new Error("pdf.js is not loaded");
@@ -179,7 +179,10 @@ function toUint8(bytes: unknown): Uint8Array {
   });
 }
 
-export async function fetchBytes(path: string): Promise<Uint8Array> {
+/** Fetch a document's bytes from a web path or local filesystem via Tauri.
+ *  Web-served paths go through fetch; native paths use Tauri's `read_file_bytes`
+ *  command. Resolves to a Uint8Array ready for pdf.js. */
+async function fetchBytes(path: string): Promise<Uint8Array> {
   if (isWebServedPath(path)) {
     const url = path.startsWith("samples/") ? "/" + path : path;
     return doFetch(url);

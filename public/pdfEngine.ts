@@ -33,9 +33,9 @@ import {
 } from "./engine/search";
 import { rebakeTheme, setPipelineModeInternal, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline, isLivePipeline } from "./engine/theme/pipeline";
+import { publishBakedPaper } from "./engine/theme/paper";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
-  clearLegacyPaperCache,
   resetPaperForDocument,
   samplePaperPage,
   setPaper,
@@ -105,6 +105,10 @@ async function destroy(): Promise<void> {
     session.setNumPages(0);
     session.setCurrentPath(null);
     resetPaperForDocument();
+    // The document's paper goes with it: setPdf's null-out cleared
+    // --pdf-paper, and the backdrop's pre-themed twin must not outlive the
+    // book it was themed for.
+    publishBakedPaper();
     disposeScratch();
   }
 }
@@ -220,7 +224,6 @@ try {
 // The selection tracker is NOT installed here: it is format-agnostic and
 // lives in the reader bundle (public/readerEngine.ts), which index.html loads
 // first. Nothing in this facade depends on it.
-clearLegacyPaperCache();
 
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
@@ -247,7 +250,6 @@ globalThis.PDFReader = {
   isLivePipeline,
   setPaper,
   setPaperActive,
-  clearLegacyPaperCache,
   takePaperFrame,
   samplePaperPage,
   sweep: () => {

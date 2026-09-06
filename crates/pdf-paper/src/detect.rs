@@ -8,30 +8,10 @@
 //! their combined dominant colour without ever holding more than one
 //! raster's pixels.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::color::Rgb;
 use crate::config::PaperArea;
-
-thread_local! {
-    /// Scratch buffer for callers that sample a downscaled frame before
-    /// feeding the detector. Bounded to a 96×96 RGBA tile (~37 KB).
-    static SAMPLE_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-}
-
-/// Borrow the thread-local sample buffer, sized to `bytes`.
-pub fn with_sample_buf<R>(bytes: usize, f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
-    SAMPLE_BUF.with(|buf| {
-        let mut buf = buf.borrow_mut();
-        if buf.capacity() < bytes {
-            buf.reserve(bytes);
-        }
-        buf.clear();
-        buf.resize(bytes, 0);
-        f(&mut buf)
-    })
-}
 
 /// A book's paper has to own at least this share of the sampled pixels; a
 /// photo-heavy raster has no paper majority and yields nothing rather than

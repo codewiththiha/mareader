@@ -132,15 +132,4 @@ export async function run(): Promise<void> {
     throw new Error("blend on must restore the stash, got " + JSON.stringify(f3));
   }
   console.log("paper gate ok: blend off skips the stash, blend on restores it");
-
-  // --- a stale per-document cache from an older build is swept on load ------
-  // The engine used to remember one colour per book in localStorage; the
-  // facade clears that key when it installs, so a reader upgrading from an
-  // older build does not carry the dead entries around forever.
-  fakeLocalStorage.set("pdfreader.blend-paper.v2", '{"/fake/x.pdf":{"fixed":"#101010"}}');
-  PDFReader.clearLegacyPaperCache();
-  if (fakeLocalStorage.has("pdfreader.blend-paper.v2")) {
-    throw new Error("the legacy paper cache should be swept");
-  }
-  console.log("paper cache sweep ok: the retired localStorage key is removed");
 }

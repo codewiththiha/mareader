@@ -183,4 +183,86 @@ export async function run(): Promise<void> {
   console.log("pipeline switch ok (live): raw pixels restored");
 
   if (!startedLive) await PDFReader.setLivePipeline(false);
+
+  // 14. THE BAKED BACKDROP PAPER. A baked page already carries the themed
+  // paper in its pixels, so the backdrop may not run the filter + blend a
+  // second time over the detected colour — the engine publishes the
+  // pre-themed paper as --pdf-paper-baked instead. multiply and screen are
+  // identity on the paper, so the mode where a double pass shows is dim's
+  // soft-light; assert it there.
+  const rootProp = (name: string): string => {
+    const root = getEl("documentElement") as unknown as {
+      style: { getPropertyValue: (n: string) => string };
+    };
+    return root.style.getPropertyValue(name);
+  };
+  const hexToRgb = (hex: string): [number, number, number] => {
+    const m = /^#([0-9a-f]{6})$/i.exec(hex);
+    if (!m || !m[1]) throw new Error("expected a #rrggbb baked paper colour, got " + JSON.stringify(hex));
+    const v = m[1];
+    return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
+  };
+
+  // Live mode re-derives the paper in the compositor; the variable must
+  // stay out of the way no matter what colour the session publishes.
+  if (!PDFReader.isLivePipeline()) await PDFReader.setLivePipeline(true);
+  PDFReader.setPaper("#faf4e8");
+  if (rootProp("--pdf-paper-baked")) {
+    throw new Error("the live backdrop needs no pre-themed paper, got " + rootProp("--pdf-paper-baked"));
+  }
+
+  await PDFReader.setLivePipeline(false);
+  setFakeComputed({
+    "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)",
+    "--canvas-blend": "soft-light",
+    paper: "#1a1c1f",
+  });
+  await PDFReader.refreshTheme();
+  const dimBackdrop = expectedBakePixel(
+    [0xfa, 0xf4, 0xe8],
+    fakeComputed["--canvas-filter"],
+    "soft-light",
+    [0x1a, 0x1c, 0x1f],
+  );
+  assertClose(
+    new Uint8ClampedArray(hexToRgb(rootProp("--pdf-paper-baked"))),
+    dimBackdrop,
+    "baked backdrop paper after a theme change",
+  );
+  console.log("baked backdrop paper ok (theme change):", rootProp("--pdf-paper-baked"), "expected", dimBackdrop);
+
+  // The detected paper itself moves (the session lerps it along the page
+  // ladder); the pre-themed twin must follow on the same write.
+  PDFReader.setPaper("#ffffff");
+  const dimBackdropWhite = expectedBakePixel(
+    [255, 255, 255],
+    fakeComputed["--canvas-filter"],
+    "soft-light",
+    [0x1a, 0x1c, 0x1f],
+  );
+  assertClose(
+    new Uint8ClampedArray(hexToRgb(rootProp("--pdf-paper-baked"))),
+    dimBackdropWhite,
+    "baked backdrop paper after a paper publish",
+  );
+  console.log("baked backdrop paper ok (paper publish):", rootProp("--pdf-paper-baked"), "expected", dimBackdropWhite);
+
+  // A blank session paints no backdrop paper.
+  PDFReader.setPaper("");
+  if (rootProp("--pdf-paper-baked")) {
+    throw new Error("a cleared --pdf-paper must clear --pdf-paper-baked, got " + rootProp("--pdf-paper-baked"));
+  }
+
+  // Leaving baked mode, the variable must go with the mode that justified
+  // it: a stale themed value under the live compositor would double-theme.
+  PDFReader.setPaper("#faf4e8");
+  await PDFReader.setLivePipeline(true);
+  if (rootProp("--pdf-paper-baked")) {
+    throw new Error("leaving baked mode must clear --pdf-paper-baked, got " + rootProp("--pdf-paper-baked"));
+  }
+  PDFReader.setPaper("");
+  console.log("baked backdrop paper ok: cleared on blank sessions and on the way back to live");
+
+  // Leave the pipeline exactly as this scenario found it.
+  if (!startedLive) await PDFReader.setLivePipeline(false);
 }

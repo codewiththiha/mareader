@@ -327,8 +327,8 @@ export const fakeWindow: FakeWindow = {
   devicePixelRatio: 2,
   innerWidth: 1280,
   innerHeight: 800,
-  // Real-enough storage: the engine sweeps the retired per-document paper
-  // cache (pdfreader.blend-paper.*) through globalThis.localStorage on load.
+  // Real-enough storage: a paper pipeline that touched it would be a
+  // regression, and the blend scenario asserts the map stays empty.
   localStorage: {
     getItem: (k: string) => fakeLocalStorage.get(k) ?? null,
     setItem: (k: string, v: string) => { fakeLocalStorage.set(k, v); },
@@ -489,7 +489,6 @@ interface PDFReaderHandle {
   isLivePipeline(): boolean;
   setPaper(hex: string): void;
   setPaperActive(on: boolean): void;
-  clearLegacyPaperCache(): void;
   takePaperFrame(canvasId: string): {
     ok: true;
     page: number;

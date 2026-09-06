@@ -12,8 +12,7 @@
 // * `setPaper` — publish (or clear) `--pdf-paper`.
 //
 // Nothing is persisted: the palette is rebuilt from live frames every time
-// a book opens. (Older builds kept a per-document colour cache in
-// localStorage under `pdfreader.blend-paper.v2`; it is cleared on load.)
+// a book opens.
 //
 // Cost per frame: one ≤96×96 downscale and one pixel readback — and none
 // at all while blend mode is off, which is the common case: the session
@@ -22,6 +21,7 @@
 import { session } from "./state";
 import type { PaperFrame } from "./types";
 import { releaseCanvas } from "./canvas";
+import { publishBakedPaper } from "./theme/paper";
 
 /** Longest edge of a frame handed to Rust. Small enough that a page render
  * for colour purposes is near-free, large enough that a paper/plain region
@@ -32,12 +32,6 @@ const SAMPLE_EDGE = 96;
  * canvas. The Rust session drains after every render, so this is a safety
  * valve, not a working set. */
 const STASH_MAX = 8;
-
-/** localStorage keys older builds used for the per-document paper cache
- * (v1: per-scope colours; v2: one colour + detection area). The cache is
- * gone — the backdrop follows the reader page by page and needs no memory
- * of the book — so the stale entries are swept on load. */
-const LEGACY_CACHE_KEYS = ["pdfreader.blend-paper.v1", "pdfreader.blend-paper.v2"];
 
 const stash = new Map<string, PaperFrame>();
 
@@ -56,20 +50,6 @@ export function setPaperActive(on: boolean): void {
  * render stashes on EVERY completion, and a ≤96px bitmap is not worth an
  * allocation per page flip. */
 let scratch: HTMLCanvasElement | null = null;
-
-// --------------------------------------------------------------------------
-// Legacy cache sweep
-// --------------------------------------------------------------------------
-
-/** Drop the per-document colour cache older builds left behind. Idempotent
- * and silent: a missing key or an unavailable storage is nothing to report. */
-export function clearLegacyPaperCache(): void {
-  try {
-    for (const key of LEGACY_CACHE_KEYS) globalThis.localStorage?.removeItem(key);
-  } catch {
-    /* storage unavailable: nothing to sweep */
-  }
-}
 
 // --------------------------------------------------------------------------
 // Pixels
@@ -134,9 +114,13 @@ export function takePaperFrame(
 // Public API (pdfEngine facade)
 // --------------------------------------------------------------------------
 
-/** Publish `hex` as `--pdf-paper` (empty string clears it). */
+/** Publish `hex` as `--pdf-paper` (empty string clears it). A baked
+ *  backdrop cannot re-derive this colour with the compositor — its pages
+ *  already carry the themed result — so the pre-themed paper rides out
+ *  with it, in the same write. */
 export function setPaper(hex: string): void {
   session.setDetectedPaper(hex ? hex : null);
+  publishBakedPaper();
 }
 
 /** Render `page` offscreen at a tiny scale and hand its frame back. The

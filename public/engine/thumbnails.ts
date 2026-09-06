@@ -36,7 +36,9 @@ function pumpThumbQueue(): void {
 
 import { THUMB_CACHE_MAX, session } from "./state";
 
-export function cachePut(page: number, entry: ThumbEntry): void {
+/** Insert a thumbnail entry into the cache, releasing any previous entry for
+ *  the page and evicting the LRU entry if the cache is full. */
+function cachePut(page: number, entry: ThumbEntry): void {
   if (session.thumbCache.has(page)) {
     const prev = session.thumbCache.get(page);
     session.thumbCache.delete(page);

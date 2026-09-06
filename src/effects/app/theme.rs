@@ -228,7 +228,19 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
     let pipeline: Memo<RenderPipeline> = Memo::new(move |_| state.settings.with(|st| st.render_pipeline));
 
     Effect::new(move || {
-        raster::set_live_pipeline(pipeline.get().is_live());
+        let p = pipeline.get();
+        raster::set_live_pipeline(p.is_live());
+        // CSS keys the blend backdrop off the same choice: under the live
+        // pipeline the backdrop re-derives the paper with the compositor's
+        // filter + blend, but a baked page already carries the themed
+        // paper, so the backdrop must paint it directly instead of running
+        // the pipeline twice (styles/components/shell.css). The attribute
+        // lands synchronously; the raster swap follows through the engine's
+        // serialized theme queue, and the scrub class keeps the backdrop on
+        // the live treatment for as long as raw pixels are actually shown.
+        if let Some(el) = document_element() {
+            let _ = el.set_attribute("data-pipeline", if p.is_live() { "live" } else { "baked" });
+        }
     });
 
     // Same narrowing for the gloss tokens: three fields out of the blob, so a

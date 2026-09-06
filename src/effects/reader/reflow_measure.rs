@@ -48,7 +48,7 @@ use crate::state::AppState;
 /// gloss measure applies to its own reports (`accepted_height` in
 /// `components::ai::gloss::hooks::use_content_size`), and the feedback loop
 /// ingest → heights → re-measure → ingest terminates only through it.
-pub const INGEST_EPSILON: f64 = 2.0;
+const INGEST_EPSILON: f64 = 2.0;
 
 /// How long a measurement batch waits for company before it flushes. Short
 /// enough that a settled page converges within a blink of its rows landing;

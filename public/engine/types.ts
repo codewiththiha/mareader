@@ -38,7 +38,7 @@ export type PDFPageProxy = {
 };
 
 export type RenderTask = { promise: Promise<void>; cancel: () => void };
-export type TextLayerHandle = { render: () => Promise<void>; cancel: () => void };
+type TextLayerHandle = { render: () => Promise<void>; cancel: () => void };
 
 export type Viewport = {
   width: number;
@@ -114,13 +114,15 @@ export type PaperFrame = {
   data: Uint8ClampedArray;
 };
 
-export type SearchRect = { x: number; y: number; w: number; h: number };
-export type SearchMatch = SearchRect & { page: number; index: number; text: string };
 export type ActiveMatch = { page: number; index: number } | null;
 
-export type Err = { ok: false; error: { name: string; message: string } };
-export type Ok<T extends Record<string, unknown>> = T & { ok: true };
-export type Result<T extends Record<string, unknown>> = Ok<T> | Err;
+/** An operation that failed: carries the error name and message. */
+type Err = { ok: false; error: { name: string; message: string } };
+/** An operation that succeeded: carries the result fields plus `ok: true`. */
+type Ok<T extends Record<string, unknown>> = T & { ok: true };
+/** A discriminated union of success or failure, the shape every async engine
+ *  API resolves to. The `ok` boolean is the discriminant. */
+type Result<T extends Record<string, unknown>> = Ok<T> | Err;
 
 export type OpenResult = Result<{
   numPages: number;
@@ -134,7 +136,8 @@ export type OpenResult = Result<{
   pageHeights: number[];
   pageWidths: number[];
 }>;
-export type OutlineResult = Result<{
+/** The result of resolving a document's outline: flattened chapter tree. */
+type OutlineResult = Result<{
   outline: { title: string; page: number; depth: number }[];
 }>;
 export type RenderResult = Result<{ width: number; height: number; scale: number }>;
@@ -188,9 +191,6 @@ export type PDFReaderApi = {
   /** The Rust paper session's blend switch — gates stashPaperFrame so idle
    * renders cost nothing on the paper pipeline. */
   setPaperActive: (on: boolean) => void;
-  /** Sweep the per-document colour cache older builds kept in localStorage.
-   * Runs once when the facade installs; exposed for the smoke test. */
-  clearLegacyPaperCache: () => void;
   takePaperFrame: (canvasId: string) => (PaperFrame & { ok: true }) | null;
   samplePaperPage: (page: number) => Promise<
     | (PaperFrame & { ok: true })

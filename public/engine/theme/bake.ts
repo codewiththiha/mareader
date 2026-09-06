@@ -25,7 +25,7 @@ import {
 } from "../canvas";
 import { pipelineIsIdentity } from "./pipeline";
 import { paperInfo } from "./paper";
-import { applyFilterToData, composeFilter } from "./filterKernel";
+import { applyFilterToData, isIdentityFilter } from "./filterKernel";
 
 // --- Worker routing --------------------------------------------------------
 
@@ -116,16 +116,6 @@ function workerApply(
 }
 
 // --- Filter application ----------------------------------------------------
-
-function isIdentityFilter(filterString: string): boolean {
-  const { m, o } = composeFilter(filterString);
-  return (
-    m[0] === 1 && m[1] === 0 && m[2] === 0 &&
-    m[3] === 0 && m[4] === 1 && m[5] === 0 &&
-    m[6] === 0 && m[7] === 0 && m[8] === 1 &&
-    o[0] === 0 && o[1] === 0 && o[2] === 0
-  );
-}
 
 async function applyFilterPixels(
   src: HTMLCanvasElement,

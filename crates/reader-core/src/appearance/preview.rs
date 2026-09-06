@@ -126,12 +126,10 @@ pub(crate) fn ps_surface_tail(a: &Appearance, dark_paper: bool) -> String {
     ));
     if dark_paper {
         out.push_str("--ps-texture-line:rgba(255,255,255,0.22);");
-        out.push_str("--ps-texture-strong:rgba(255,255,255,0.36);");
         out.push_str("--ps-texture-paper:rgba(255,255,255,0.08);");
         out.push_str("--ps-texture-blend:screen;");
     } else {
         out.push_str("--ps-texture-line:rgba(15,23,42,0.16);");
-        out.push_str("--ps-texture-strong:rgba(15,23,42,0.26);");
         out.push_str("--ps-texture-paper:rgba(15,23,42,0.05);");
         out.push_str("--ps-texture-blend:multiply;");
     }

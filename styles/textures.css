@@ -18,13 +18,11 @@
    subtle dark strokes via the `:root` defaults. */
 :root {
   --texture-line: rgba(15, 23, 42, 0.16); /* lined / grid / dotted / cross strokes */
-  --texture-strong: rgba(15, 23, 42, 0.26); /* margins / header rules (reserved) */
   --texture-paper: rgba(15, 23, 42, 0.05); /* paper-grain tint */
   --texture-blend: multiply; /* dark grain tint over light paper */
 }
 :root.dark {
   --texture-line: rgba(255, 255, 255, 0.22);
-  --texture-strong: rgba(255, 255, 255, 0.36);
   --texture-paper: rgba(255, 255, 255, 0.08);
   /* multiply of a near-white tint is an identity (it can only darken), so the
      light grain would stay dark-on-dark and invisible; screen lightens the
@@ -34,13 +32,12 @@
 
 /* ---------------------------------------------------------------------
    PER-PAGE TEXTURE (PDF) — .pdf-page carries its own pattern, layered
-   BEHIND the canvas and composited over the page's pixels. The
-   `.tx-page` arms are vestigial: the kill rule in the reflowable
-   section below suppresses them, and a page of type carries no pattern
-   class anyway — the scroller section is its texture system.
+   BEHIND the canvas and composited over the page's pixels. A page of
+   type is a frame, never a card: the reflowable formats texture the
+   scroller itself instead (see the REFLOWABLE SCROLLER TEXTURE section
+   below), so no `.tx-page` arm exists here.
    --------------------------------------------------------------------- */
-.pdf-page::before,
-.tx-page::before {
+.pdf-page::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -49,9 +46,14 @@
      the canvas's multiply/screen blend; with the blend baked into the raster
      the texture must multiply OVER the baked page instead. Both blends are
      commutative, so the composite is the same — texture darkens/lightens
-     paper and ink exactly as before, at full sharpness. During a scrub the
-     canvas is raw + live-CSS blended again, and the scrub rule below returns
-     this layer to z-index 0 (its original place). */
+     paper and ink exactly as before, at full sharpness. During a BAKED
+     pipeline's scrub the canvas is raw + live-CSS blended again, and the
+     scrub rule in page_host.css returns this layer to z-index 0 (its
+     original place) for exactly that window. Under the LIVE pipeline it
+     stays here, over the blend: the blend backdrop composites its texture
+     the same way (components/shell.css), and soft-light — unlike
+     multiply/screen — is not identity on the paper, so the two orders
+     would read as different stroke strengths in dim. */
   z-index: 1;
   pointer-events: none;
   /* User-controlled texture strength. 0.9 was the old hard-coded value and is
@@ -78,8 +80,7 @@
   background-position: 0 0;
 }
 
-.pdf-page.texture-paper::before,
-.tx-page.texture-paper::before {
+.pdf-page.texture-paper::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
   /* Tint the gray fractal noise toward the theme's grain color without losing
      the noise pattern. The blend is driven by --texture-blend: multiply in the
@@ -94,8 +95,7 @@
   background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
 }
 
-.pdf-page.texture-lined::before,
-.tx-page.texture-lined::before {
+.pdf-page.texture-lined::before {
   background-image: repeating-linear-gradient(
     to bottom,
     var(--texture-line) 0 var(--tex-line),
@@ -103,15 +103,13 @@
   );
 }
 
-.pdf-page.texture-grid::before,
-.tx-page.texture-grid::before {
+.pdf-page.texture-grid::before {
   background-image:
     repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
     repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
 }
 
-.pdf-page.texture-dotted::before,
-.tx-page.texture-dotted::before {
+.pdf-page.texture-dotted::before {
   background-image: radial-gradient(
     var(--texture-line) calc(1px * var(--tex-scale)),
     transparent calc(1.5px * var(--tex-scale))
@@ -119,8 +117,7 @@
   background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
 }
 
-.pdf-page.texture-cross::before,
-.tx-page.texture-cross::before {
+.pdf-page.texture-cross::before {
   background-image:
     repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
     repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
@@ -131,20 +128,6 @@
     var(--tex-unit) var(--tex-unit);
 }
 
-
-/* TEXT/MD pages never paint their own texture rectangle — the scroller
-   does (see below). The reflowable backdrop is ONE uniform surface
-   (.reader-bg -> --tx-paper), and a per-page ::before would stamp a
-   page-shaped seam onto that backdrop in single, two-page and horizontal
-   modes (lighter band in dark/dim bases, because the dark texture family
-   uses screen + white). `.tx-page` no longer receives a `texture-*`
-   class, but the kill rule stays as a guarantee: a page of type is a
-   frame, never a card. PDF keeps its per-page texture above; this
-   selector is keyed off data-format, so PDF never matches. */
-:root[data-format="text"] .tx-page::before,
-:root[data-format="markdown"] .tx-page::before {
-  content: none;
-}
 
 /* ---------------------------------------------------------------------
    REFLOWABLE SCROLLER TEXTURE (text/Markdown) — one surface, one

@@ -83,6 +83,18 @@ function filterTokenToMatrix(tok: string): FilterMatrix | null {
   }
 }
 
+/** Whether a filter string composes to the identity matrix — the single
+ *  test every caller shares (the bake's early-out and the kernel's own). */
+export function isIdentityFilter(filterString: string): boolean {
+  const { m, o } = composeFilter(filterString);
+  return (
+    m[0] === 1 && m[1] === 0 && m[2] === 0 &&
+    m[3] === 0 && m[4] === 1 && m[5] === 0 &&
+    m[6] === 0 && m[7] === 0 && m[8] === 1 &&
+    o[0] === 0 && o[1] === 0 && o[2] === 0
+  );
+}
+
 /** Compose a filter string into one 3×3 matrix + offset (row-major). */
 export function composeFilter(filterString: string): FilterMatrix {
   let m = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -133,14 +145,9 @@ export function applyFilterToData(
   filterString: string,
 ): boolean {
   if (w <= 0 || h <= 0) return false;
-  const { m, o } = composeFilter(filterString);
-  const identity =
-    m[0] === 1 && m[1] === 0 && m[2] === 0 &&
-    m[3] === 0 && m[4] === 1 && m[5] === 0 &&
-    m[6] === 0 && m[7] === 0 && m[8] === 1 &&
-    o[0] === 0 && o[1] === 0 && o[2] === 0;
-  if (identity) return false;
+  if (isIdentityFilter(filterString)) return false;
 
+  const { m, o } = composeFilter(filterString);
   const luts = lutsFor(m, filterString);
   const o0 = Math.round((o[0] ?? 0) * 255 * LU_TSCALE);
   const o1 = Math.round((o[1] ?? 0) * 255 * LU_TSCALE);

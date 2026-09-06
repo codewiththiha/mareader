@@ -3,16 +3,15 @@
 //! CONTRACT: field names below are the serde schema persisted to localStorage
 //! under `pdfreader.settings.v1`. Do not rename fields.
 //!
-//! SCHEMA EVOLUTION. The appearance model changed shape (six fixed themes ->
-//! base mode + computed tint + presets), but the storage KEY did not: bumping
-//! it to `.v2` would silently reset everyone's last-opened file and zoom too.
-//! Instead the old fields are kept as `Option`s and migrated on load, so an
-//! existing install lands on the preset that reproduces the theme it had. The
-//! old fields are dropped when writing, so the migration runs at most once.
+//! SCHEMA EVOLUTION. The storage key outlives every schema change on purpose:
+//! bumping it would silently reset everyone's last-opened file and zoom too.
+//! Fields this model no longer knows are simply ignored on the way in, and
+//! every field carries a default, so a blob written by any older build loads
+//! cleanly — unknown keys fall away on the first write-back.
 
 use serde::{Deserialize, Serialize};
 
-use crate::appearance::{Appearance, BaseMode, NoiseMode, TextureMode};
+use crate::appearance::Appearance;
 use crate::appearance::presets::{builtin_presets, Preset};
 
 mod animation;
@@ -94,16 +93,6 @@ pub struct Settings {
     /// text formats existed load the defaults.
     #[serde(default)]
     pub text: TextSettings,
-
-    // --- legacy fields, read once then dropped -------------------------------
-    #[serde(skip_serializing, default)]
-    pub theme_id: Option<String>,
-    #[serde(skip_serializing, default)]
-    pub texture: Option<TextureMode>,
-    #[serde(skip_serializing, default)]
-    pub noise_enabled: Option<bool>,
-    #[serde(skip_serializing, default)]
-    pub noise_intensity: Option<u8>,
 }
 
 impl Default for Settings {
@@ -126,10 +115,6 @@ impl Default for Settings {
             gloss_density: GlossDensity::default(),
             render_pipeline: RenderPipeline::default(),
             text: TextSettings::default(),
-            theme_id: None,
-            texture: None,
-            noise_enabled: None,
-            noise_intensity: None,
         }
     }
 }
@@ -174,69 +159,8 @@ impl Settings {
     }
 }
 
-/// The preset that reproduces a retired theme id, for the themes that
-/// became presets. The plain bases (light / dark / dim) answer `None` —
-/// they are the Mode section's buttons now, and their migration is
-/// [`legacy_theme_base`]'s job instead.
-fn legacy_theme_to_preset(id: &str) -> Option<&'static str> {
-    match id {
-        "sepia" => Some("sepia"),
-        "green" => Some("green"),
-        "night" => Some("night"),
-        _ => None,
-    }
-}
-
-/// The base a retired plain theme id stood for. `None` for "light" (the
-/// default base already IS light) and for anything the model never knew.
-fn legacy_theme_base(id: &str) -> Option<BaseMode> {
-    match id {
-        "dark" => Some(BaseMode::Dark),
-        "dim" => Some(BaseMode::Dim),
-        _ => None,
-    }
-}
-
-/// Ensures a persisted `Settings` is internally valid, and migrates the
-/// pre-preset schema.
+/// Ensures a persisted `Settings` is internally valid.
 pub fn sanitize(settings: &mut Settings) {
-    // --- migration -----------------------------------------------------------
-    // Presence of a legacy `theme_id` means this blob predates the appearance
-    // model. Rebuild the look from it so the user's chosen theme survives the
-    // upgrade instead of snapping back to Light.
-    if let Some(old) = settings.theme_id.take() {
-        if let Some(id) = legacy_theme_to_preset(&old)
-            && let Some(p) = builtin_presets().into_iter().find(|p| p.id == id)
-        {
-            settings.appearance = p.appearance;
-            settings.active_preset = Some(p.id);
-        } else if let Some(base) = legacy_theme_base(&old) {
-            // A plain base is not a preset: restore the look and leave the
-            // selection empty, which the Mode section's buttons express
-            // better than a swatch ever did.
-            settings.appearance = Appearance { base, ..Default::default() };
-            settings.active_preset = None;
-        }
-        // Texture and grain were independent of the theme before, so carry them
-        // across on top of the reconstructed look rather than letting the
-        // preset's own values overwrite what the user had set.
-        if let Some(t) = settings.texture.take() {
-            settings.appearance.texture = t;
-        }
-        if let Some(on) = settings.noise_enabled.take() {
-            settings.appearance.noise = if on { NoiseMode::Static } else { NoiseMode::Off };
-        }
-        if let Some(i) = settings.noise_intensity.take() {
-            settings.appearance.noise_intensity = i;
-        }
-        // Those carried-over values almost certainly no longer match the
-        // preset, so re-derive whether one is really active.
-        settings.touch_appearance();
-    }
-    settings.texture = None;
-    settings.noise_enabled = None;
-    settings.noise_intensity = None;
-
     // --- validation ----------------------------------------------------------
     settings.appearance.sanitize();
     typography::sanitize(&mut settings.text);
@@ -293,71 +217,6 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
-    }
-
-    #[test]
-    fn legacy_themes_migrate_to_the_matching_preset() {
-        // The upgrade path that matters: someone reading in Sepia must still be
-        // in Sepia after the update, not thrown back to Light.
-        for old in ["sepia", "green", "night"] {
-            let json = format!(r#"{{"theme_id":"{old}"}}"#);
-            let mut s: Settings = serde_json::from_str(&json).unwrap();
-            sanitize(&mut s);
-            assert_eq!(s.active_preset.as_deref(), Some(old), "migrating {old}");
-        }
-    }
-
-    #[test]
-    fn legacy_plain_themes_migrate_to_their_base_not_a_preset() {
-        // Light/Dark/Dim were the plain bases; they are the Mode section's
-        // buttons now, so the look survives as a bare base with no preset
-        // claiming it. "light" is the default base already and needs no
-        // branch at all.
-        for old in ["dark", "dim"] {
-            let json = format!(r#"{{"theme_id":"{old}"}}"#);
-            let mut s: Settings = serde_json::from_str(&json).unwrap();
-            sanitize(&mut s);
-            assert_eq!(s.active_preset, None, "migrating {old}");
-            let want = if old == "dark" { BaseMode::Dark } else { BaseMode::Dim };
-            assert_eq!(s.appearance.base, want, "migrating {old}");
-        }
-        let mut s: Settings = serde_json::from_str(r#"{"theme_id":"light"}"#).unwrap();
-        sanitize(&mut s);
-        assert_eq!(s.appearance.base, BaseMode::Light);
-        assert_eq!(s.active_preset, None);
-    }
-
-    #[test]
-    fn migration_reconstructs_the_actual_look_not_just_the_id() {
-        let mut s: Settings = serde_json::from_str(r#"{"theme_id":"night"}"#).unwrap();
-        sanitize(&mut s);
-        assert_eq!(s.appearance.base, BaseMode::Dark);
-        assert!(s.appearance.has_tint(), "Night had a green cast");
-    }
-
-    #[test]
-    fn migration_carries_texture_and_grain_across() {
-        // Texture/noise were independent of the theme, so they must survive the
-        // move even though the preset they land on has its own values.
-        let json = r#"{"theme_id":"sepia","texture":"lined","noise_enabled":true,"noise_intensity":70}"#;
-        let mut s: Settings = serde_json::from_str(json).unwrap();
-        sanitize(&mut s);
-        assert_eq!(s.appearance.texture, TextureMode::Lined);
-        assert_eq!(s.appearance.noise, NoiseMode::Static);
-        assert_eq!(s.appearance.noise_intensity, 70);
-        // Sepia + a lined texture is no longer the stock Sepia preset.
-        assert_eq!(s.active_preset, None, "modified look must read as Custom");
-    }
-
-    #[test]
-    fn legacy_fields_are_not_written_back() {
-        let mut s: Settings = serde_json::from_str(r#"{"theme_id":"sepia"}"#).unwrap();
-        sanitize(&mut s);
-        let json = serde_json::to_string(&s).unwrap();
-        assert!(!json.contains("theme_id"), "migration must run once: {json}");
-        // ...and re-reading keeps the migrated look.
-        let back: Settings = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.active_preset.as_deref(), Some("sepia"));
     }
 
     #[test]

@@ -28,7 +28,6 @@ pub mod metadata;
 pub mod outline;
 pub mod parser;
 
-pub use ast::{MarkdownConstruct, classify, is_prose_line};
-pub use metadata::{document_author, document_title, front_matter};
-pub use outline::{MarkdownHeading, extract_headings, headings_of_blocks, headings_to_nodes};
+pub use metadata::{document_author, document_title};
+pub use outline::{MarkdownHeading, headings_of_blocks, headings_to_nodes};
 pub use parser::{parse_markdown, subdivide_prose};

@@ -25,9 +25,9 @@ const GUTTER: f64 = 92.0;
 const EDGE: f64 = 56.0;
 
 /// The column-width dial's floor, in percent of the natural column.
-pub const MIN_COLUMN_PCT: f64 = 60.0;
+const MIN_COLUMN_PCT: f64 = 60.0;
 /// The column-width dial's ceiling, in percent of the natural column.
-pub const MAX_COLUMN_PCT: f64 = 140.0;
+const MAX_COLUMN_PCT: f64 = 140.0;
 /// The narrowest text column any dial combination may leave: a page that
 /// cannot hold a line of body type is a page that cannot be read.
 const MIN_CONTENT_WIDTH: f64 = 160.0;

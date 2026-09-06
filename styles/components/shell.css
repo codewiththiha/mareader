@@ -209,6 +209,33 @@ body {
   filter: var(--backdrop-filter, none);
   mix-blend-mode: var(--canvas-blend, multiply);
 }
+/* BAKED PIPELINE — the re-application above is only correct while the
+   canvases are RAW (the live pipeline and, below, a scrub). Once the baker
+   has burned the filter + blend into every raster, a page shows an opaque,
+   already-themed paper; the backdrop must then show that same themed paper
+   DIRECTLY instead of running the pipeline a second time. multiply (light)
+   and screen (dark) happen to be identity on the paper, which is why the
+   double pass went unseen there; dim's soft-light is not, and re-applying
+   it moved the gutter away from the page. The engine publishes the
+   detected paper run through the SAME filter matrix + blend it bakes with
+   as --pdf-paper-baked (public/engine/theme/paper.ts); the fallbacks
+   mirror the live rule. The attribute rides on <html> next to the engine
+   switch that flips the pipeline (effects/app/theme.rs). */
+html[data-pipeline="baked"] .reader-bg.blend::after {
+  filter: none;
+  mix-blend-mode: normal;
+  background-color: var(--pdf-paper-baked, var(--pdf-paper, var(--color-paper)));
+}
+/* A slider scrub exposes the raw rasters even in baked mode (the raw
+   markers ride out the drag), so for exactly that long the backdrop
+   rejoins the live pipeline — the same filter + blend the raw canvases
+   are under, over the raw detected paper. scrub.ts raises and drops the
+   class around the raw window. */
+html[data-pipeline="baked"].appearance-scrubbing .reader-bg.blend::after {
+  filter: var(--backdrop-filter, none);
+  mix-blend-mode: var(--canvas-blend, multiply);
+  background-color: var(--pdf-paper, var(--color-paper));
+}
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
 /* TEXT/MD paginated modes (single, two-page): show the same paper as the

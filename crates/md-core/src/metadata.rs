@@ -27,7 +27,7 @@ use crate::ast::heading_of_line;
 ///
 /// A projection of [`split_front_matter`], the one scan that answers what the
 /// block holds AND what follows it.
-pub fn front_matter(normalized: &str) -> Option<String> {
+fn front_matter(normalized: &str) -> Option<String> {
     split_front_matter(normalized).map(|(matter, _)| matter.to_string())
 }
 

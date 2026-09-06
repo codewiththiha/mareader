@@ -129,7 +129,7 @@ pub fn is_fence_open(trimmed: &str) -> bool {
 }
 
 /// The fence marker a line opens with (``` or ~~~), or "" for none.
-pub fn fence_marker_of(trimmed: &str) -> &'static str {
+fn fence_marker_of(trimmed: &str) -> &'static str {
     if trimmed.starts_with("```") {
         "```"
     } else if trimmed.starts_with("~~~") {
