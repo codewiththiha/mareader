@@ -2,15 +2,14 @@
 //!
 //! One rule runs through this crate: a block may be *cut* only if cutting it
 //! cannot change what the renderer opens. That is a question about the
-//! construct, not about the text's length, so the answer is settled here — the
-//! fence-aware splitter in `reflow-core` produced the blocks, and this module
-//! says which of them have structure of their own.
+//! construct, not the text's length, so it is settled here — `reflow-core`'s
+//! fence-aware splitter produced the blocks; this module says which have
+//! structure of their own.
 //!
-//! The check is deliberately conservative, and the conservatism is cheap: a
-//! false "not prose" costs one tighter page pack, while a false "prose" costs
-//! a broken construct. So anything that could open a block-level construct
-//! disqualifies a line, and a block is prose only when every one of its lines
-//! is.
+//! The check is deliberately conservative, and conservatism is cheap: a false
+//! "not prose" costs one tighter page pack; a false "prose" costs a broken
+//! construct. Anything that could open a block-level construct disqualifies a
+//! line, and a block is prose only when every one of its lines is.
 
 use reflow_core::block::{BlockKind, TextBlock};
 
@@ -36,14 +35,13 @@ enum MarkdownConstruct {
     Prose,
 }
 
-/// The construct `line` opens, or `None` when the line carries no block marker.
-///
-/// Only the first line can open a construct (the splitter already cut the
-/// block on blank lines), so this answers per line and [`classify`] folds a
-/// block's lines into one verdict. The scan is a MARKER sniff, deliberately
-/// coarser than CommonMark: a seventh `#` is not a heading and is still not
-/// prose, because the only thing this answers is whether a line break may be
-/// cut, and every syntax the reader does not model refuses the cut.
+/// The construct `line` opens, or `None` when it carries no block marker.
+/// Only the first line can open a construct (the splitter already cut on
+/// blank lines), so this answers per line and [`classify`] folds a block's
+/// lines into one verdict. The scan is a MARKER sniff, deliberately coarser
+/// than CommonMark: a seventh `#` is not a heading and is still not prose —
+/// the only question is whether a line break may be cut, and every syntax the
+/// reader does not model refuses the cut.
 fn construct_of_line(line: &str) -> Option<MarkdownConstruct> {
     let trimmed = line.trim_start();
     if trimmed.is_empty() {

@@ -1,31 +1,29 @@
 //! The measurement pipeline: the only way the DOM's real block heights reach
 //! the page cut.
 //!
-//! The old shape rendered the whole document a second time into a hidden
-//! twin so it could read every block's height — which put an entire book in
-//! RAM twice and restyled the twin on every theme tick. The reader's own
-//! rows already render the type; this module is the pipe that carries what
-//! they learn back into the shared model:
+//! The old shape rendered the whole document a second time into a hidden twin
+//! to read every block's height — an entire book in RAM twice, restyled on
+//! every theme tick. The reader's own rows already render the type; this
+//! module is the pipe carrying what they learn back into the shared model:
 //!
-//! * the STREAM and the PAGE HOSTS measure the blocks they mounted, divide
-//!   out the live scale (the store is scale-1 truth), and hand the batch to
+//! * the STREAM and the PAGE HOSTS measure their mounted blocks, divide out
+//!   the live scale (the store is scale-1 truth), and hand the batch to
 //!   [`ingest`];
-//! * ingest parks the batch and arms a DEBOUNCED flush — a heights write
-//!   bumps the stream's epoch (an `O(n)` layout rebuild), so one frame of a
-//!   fling must never cost one rebuild per frame;
-//! * the flush applies whatever moved more than [`INGEST_EPSILON`], then
-//!   re-cuts through [`crate::state::reader::document::reflow::ReflowContent::recut`]
-//!   and publishes the answer, holding the reader on the block they were
-//!   reading.
+//! * ingest parks the batch and arms a DEBOUNCED flush — a heights write bumps
+//!   the stream's epoch (an `O(n)` layout rebuild), so one frame of a fling
+//!   must never cost one rebuild per frame;
+//! * the flush applies whatever moved more than [`INGEST_EPSILON`], re-cuts
+//!   through
+//!   [`crate::state::reader::document::reflow::ReflowContent::recut`] and
+//!   publishes, holding the reader on the block they were reading.
 //!
 //! Beside the pipe sits the RE-ESTIMATE: typography and width-dial changes
-//! move every block's expected height, so the estimate is re-run and the
-//! store re-seeded. It is pure Rust math — never DOM — and it keys off a
-//! layout-relevance check, so paint-only knobs (the ink dial first among
-//! them) can never reach it. Estimates and measurements then converge on the
-//! same store: the estimate seeds, each mounted row corrects, and a
-//! correction only survives a layout change when the block's own estimate
-//! survived it.
+//! move every block's expected height, so the estimate re-runs and re-seeds
+//! the store. Pure Rust math, never DOM, keyed off a layout-relevance check
+//! so paint-only knobs (the ink dial first) can never reach it. Estimates and
+//! measurements converge on the same store: the estimate seeds, each mounted
+//! row corrects, and a correction survives a layout change only when the
+//! block's own estimate survived it.
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -44,9 +42,9 @@ use crate::state::AppState;
 
 /// A measured height within two pixels of the store's number is jitter, not
 /// news: subpixel rounding and font-hinting noise must not bump the stream's
-/// epoch (and with it the whole reflowable side) forever. The same gate the
+/// epoch (and the whole reflowable side with it) forever. The same gate the
 /// gloss measure applies to its own reports (`accepted_height` in
-/// `components::ai::gloss::hooks::use_content_size`), and the feedback loop
+/// `components::ai::gloss::hooks::use_content_size`); the feedback loop
 /// ingest → heights → re-measure → ingest terminates only through it.
 const INGEST_EPSILON: f64 = 2.0;
 
@@ -67,13 +65,13 @@ thread_local! {
 }
 
 /// Hand a batch of measured SCALE-1 heights — `(block index, height)` — to
-/// the shared store. The caller divides out the supplied live display scale
-/// first: the store is the scale-1 truth the estimate seeds, and a zoomed
-/// number written into it would poison every layout that reads it.
+/// the shared store. The caller divides out the live display scale first: the
+/// store is the scale-1 truth the estimate seeds, and a zoomed number written
+/// into it would poison every layout that reads it.
 ///
 /// `doc_id` is the block list's `Arc` pointer (see
-/// `crate::state::reader::document::reflow::ReflowContent::document_id`):
-/// the flush drops a batch whose document has since been swapped out.
+/// `crate::state::reader::document::reflow::ReflowContent::document_id`): the
+/// flush drops a batch whose document has since been swapped out.
 pub fn ingest(doc_id: usize, scale: f64, batch: &[(usize, f64)]) {
     if batch.is_empty() {
         return;
@@ -105,11 +103,11 @@ pub fn install_reflow_measure(state: AppState) {
     FLUSHER.with(|slot| *slot.borrow_mut() = Some(debouncer));
     on_cleanup(|| FLUSHER.with(|slot| *slot.borrow_mut() = None));
 
-    // The re-estimate. Tracked reads: the typography and the two width
-    // dials. A layout-relevant change re-runs the pure estimate and re-seeds
-    // the store, carrying measured corrections forward where they still
-    // apply; a paint-only knob (the ink dial) changes none of the numbers
-    // below and costs exactly one comparison.
+    // The re-estimate. Tracked reads: the typography and the two width dials.
+    // A layout-relevant change re-runs the pure estimate and re-seeds the
+    // store, carrying measured corrections forward where they still apply; a
+    // paint-only knob (the ink dial) changes none of the numbers below and
+    // costs one comparison.
     let typography = use_context::<TypographySignal>()
         .expect("TypographySignal must be provided by app bootstrap");
     let last: StoredValue<Option<(TextSettings, f64, f64)>, LocalStorage> =
@@ -201,8 +199,8 @@ fn flush(state: AppState) {
 /// The geometry the reader's two width dials resolve to — the one definition
 /// the estimate, the re-cut and the open flow share, so a dial move re-cuts
 /// through the same numbers everywhere. (The stream's column spends the
-/// margin differently — as an inset around the column, not inside it — and
-/// composes its own; see `components::formats::reflow::stream`.)
+/// margin differently — as an inset around the column — and composes its own;
+/// see `components::formats::reflow::stream`.)
 pub(crate) fn dialled_geometry(
     settings: &TextSettings,
     margin: f64,

@@ -22,12 +22,11 @@ pub fn placement_options(side: PlacementSide, gap: f64, margin: f64, viewport: S
 /// the viewport, optionally compensating a transformed/backdrop container.
 ///
 /// `coordinate_space` names an element whose viewport offset must be
-/// subtracted (WebKit treats `backdrop-filter` as a containing block for
+/// subtracted: WebKit treats `backdrop-filter` as a containing block for
 /// `position: fixed` descendants, so a panel anchored inside a
-/// `backdrop-blur` row would otherwise be positioned relative to that row,
-/// not the viewport). When the anchor is inside the named element, both axes
-/// are shifted so the coordinates become row-relative; otherwise the viewport
-/// placement stands.
+/// `backdrop-blur` row would otherwise be positioned relative to that row.
+/// When the anchor is inside the named element both axes shift to
+/// row-relative; otherwise the viewport placement stands.
 pub fn place_at_anchor(
     anchor: &web_sys::Element,
     panel_w: f64,

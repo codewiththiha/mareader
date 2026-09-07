@@ -40,11 +40,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // and effects (all field paths match the app-level state).
     let vs = state.reader;
 
-    // The shell's layout brain: one controller for the whole page, provided
-    // as context for the title bar, the traffic lights, the floating label
-    // and both rail mount points. It owns the open/close slide machine, so
-    // the chrome stays aligned with the rail's pixels for the whole length
-    // of a slide.
+    // The shell's layout brain: one controller for the whole page, provided as
+    // context for the title bar, the traffic lights, the floating label and
+    // both rail mount points. It owns the open/close slide machine, so the
+    // chrome stays aligned with the rail's pixels for the whole slide.
     let shell = ShellController::reader(state);
     provide_context(shell);
 
@@ -59,11 +58,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         rv.h_virtualizer.clone(),
     );
 
-    // The vertical text strip's size model: page units sized to the sum of
-    // their blocks, projected into the shared measurement store whenever the
-    // format, the mode or the cut moves (and reverted to A4 when any of
-    // those stop asking for it). Installed AFTER the gap effects so its
-    // relayout reads the gap they just resolved.
+    // The paged text modes' A4 page model upkeep: page-unit sizes projected
+    // into the shared measurement store whenever the format, the mode or the
+    // cut moves, and reverted when they stop asking for it (the vertical
+    // reading mode is the stream's, which virtualizes blocks directly).
+    // Installed AFTER the gap effects so its relayout reads the gap they just
+    // resolved.
     crate::effects::reader::reflow_layout::reflow_layout(state, rv.virtualizer.clone());
     // The reflowable measurement pipeline: the pipe the stream's and the
     // page hosts' block measurements flow through into the page cut, and the
@@ -79,47 +79,48 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     crate::effects::reader::mode_change::mode_change(state);
 
     let actuator = crate::zoom::actuator::ZoomActuator::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
-    // The zoom controller is created and driven here, and lives exactly as
-    // long as this page's reactive owner. Everything downstream only posts
+    // The zoom controller is created and driven here and lives exactly as long
+    // as this page's reactive owner. Everything downstream only posts
     // commands; nothing else writes a zoom scale or rescales a strip.
     let zoom = crate::zoom::ZoomController::new(actuator);
     zoom.drive(vs);
-    // BEFORE reading_progress, and that is a contract rather than a habit.
-    // Leptos runs effects in insertion order, so when a zoom transaction
-    // closes both wake in the same flush: this one replays its held jump
-    // first, and reading progress then persists the page the reader actually
-    // asked for instead of the stale dominant the strip still shows.
+    // Installed BEFORE reading_progress, and that is a contract rather than a
+    // habit: Leptos runs effects in insertion order, so when a zoom
+    // transaction closes both wake in the same flush — this one replays its
+    // held jump first, and reading progress then persists the page the reader
+    // actually asked for instead of the stale dominant the strip still
+    // shows.
     navigation_sync(vs, rv.virtualizer.clone(), rv.h_virtualizer.clone());
-    // The zoom sources come last, after the controller that consumes them:
-    // a container follow on every frame of a sidebar slide or a window drag
-    // (each of those two bursts has its own switch, and with its switch off the
-    // follow lands the end frame once instead of frame by frame), and a
-    // debounced refit when a fit's other inputs move (mode, and the page too —
-    // but only while the Auto Resize setting is on).
+    // The zoom sources come last, after the controller that consumes them: a
+    // container follow on every frame of a sidebar slide or window drag (each
+    // burst has its own switch; with it off the follow lands the end frame
+    // once instead of frame by frame), and a debounced refit when a fit's
+    // other inputs move (mode, and the page too — only while Auto Resize is
+    // on).
     crate::effects::reader::zoom_watchers::follow_watcher(state, state.ui.sidebar);
     crate::effects::reader::zoom_watchers::fit_watcher(state);
     crate::effects::reader::auto_scroll::auto_scroll(vs);
     reading_progress(state);
     // The blend backdrop's geometry half: the viewport's ladder position per
     // scroll tick (the engine owns the colours it drives). The backdrop
-    // carries no texture — each page's own `::before` paints the gutter (see
-    // textures.css BLEND BLEED), so there is nothing here to sync, only the
+    // carries no texture — each page's own ::before paints the gutter
+    // (textures.css, BLEND BLEED) — so there is nothing here to sync, only the
     // colour position the engine consumes. The SETTINGS half lives at the app
     // root, ahead of the first document open.
     crate::effects::reader::blend_backdrop::blend_backdrop(state);
 
     // The first-paint gate: an opaque cover the colour of the reader's own
     // paper masks the viewer from the moment the document is ready until the
-    // page the reader should see has actually PAINTED, so the first frames
-    // are never seen — the reader appears already settled on the saved page
-    // instead of racing toward it. The release is paint-driven, and each
-    // surface owns its own definition of painted: the PDF strip lifts the
-    // gate on a geometry report (a completed render — see
-    // `crate::components::formats::pdf::strip`), the text stream and text
-    // strip lift it when their mount anchor lands (DOM text paints
-    // synchronously — see `crate::components::viewer::shells::anchor_settle`).
-    // The anchor loops run under the
-    // cover, since the viewer is mounted, only masked.
+    // page the reader should see has actually PAINTED, so the first frames are
+    // never seen — the reader appears already settled on the saved page
+    // instead of racing toward it. The release is paint-driven and each
+    // surface owns its definition of painted: the PDF strip lifts the gate on
+    // a geometry report (a completed render,
+    // `crate::components::formats::pdf::strip`); the text stream and text
+    // pages lift it when their mount anchor lands (DOM text paints
+    // synchronously, `crate::components::viewer::shells::anchor_settle`). The
+    // anchor loops run under the cover: the viewer is mounted, only
+    // masked.
     {
         let r = state.reader;
         Effect::new(move |_| {
@@ -128,9 +129,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             }
             // Paginated modes are the one surface with no scroll anchor to
             // land and no render callback to wait on: their hosts mount
-            // synchronously, so the first frame after mount releases the
-            // gate — which also unsticks `awaiting_anchor` in Single/Spread,
-            // where nothing else would lower it.
+            // synchronously, so the first frame after mount releases the gate
+            // — which also unsticks `awaiting_anchor` in Single/Spread, where
+            // nothing else would lower it.
             if r.viewer.mode.get().is_paginated() {
                 if r.viewer.awaiting_anchor.get_untracked() {
                     r.viewer.awaiting_anchor.set(false);
@@ -145,9 +146,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         // Safety net: a first render that never reports (a settle loop that
         // cannot land, a surface that never binds) must never strand the
         // cover. The worst case is the cover lifting over a still-settling
-        // frame — never over the wrong page, which the strips' initial
-        // windows already open on, and never over the white invert, which
-        // the paper-ready gate stands down until a colour is sampled.
+        // frame — never over the wrong page (the strips' initial windows
+        // already open on it) and never over the white invert (the paper-ready
+        // gate stands down until a colour is sampled).
         let r = state.reader;
         let net: StoredValue<Option<TimeoutHandle>, LocalStorage> = StoredValue::new_local(None);
         let cleanup = net;
@@ -186,26 +187,25 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
     let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
-    // Continuous text reading has no meaningful page number: while the
-    // stream is live the badge is a percentage of the document whatever the
-    // indicator style says (the style selector stands disabled for exactly
-    // as long, so it cannot show a choice that is not being honoured).
+    // Continuous text reading has no meaningful page number: while the stream
+    // is live the badge is a percentage of the document whatever the indicator
+    // style says — and the style selector stands disabled for exactly as long,
+    // so it cannot show a choice that is not being honoured.
     let stream_live = Signal::derive(move || vs.reflow_streaming());
     let stream_percent = Signal::derive(move || vs.stream_percent());
 
-    // Left: sidebar toggle + Library. Title is centered; right is the 3-dash
-    // view menu + Appearance.
+    // Left: sidebar toggle + Library; title centered; right: the 3-dash view
+    // menu + Appearance.
     //
     // The sidebar toggle's visibility is the controller's rule: overlay mode
     // drops it (the rail opens by brushing the window's left edge and closes
     // from its own header, so a second switch in the bar only competes with
-    // both). The Library button stays exactly where it is — the rail floats
-    // above the bar and covers it while it is up, which is the rail's job,
-    // not this cluster's. The cluster is always mounted so the row keeps its
-    // left edge (and `#toolbar-leading`, the measurement anchor the library
-    // title uses) wherever the mode puts it. Reader settings have no button
-    // of their own here: they open from the 3-dash menu's Settings… item and
-    // the sidebar header's gear.
+    // both). The Library button stays put — the rail floats above the bar and
+    // covers it while up, which is the rail's job. The cluster is always
+    // mounted so the row keeps its left edge (and `#toolbar-leading`, the
+    // measurement anchor the library title uses) wherever the mode puts it.
+    // Reader settings have no button of their own: they open from the 3-dash
+    // menu's Settings item and the sidebar header's gear.
     let left = move || {
         view! {
             <div
@@ -258,11 +258,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             <div
                 class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
                 class=("blend", move || {
-                    // The blend ::after is the PDF paper pipeline (the
-                    // document's own paper through the canvas filter). A
-                    // text/Markdown page is its OWN paper — the surface
-                    // paints --tx-paper (see shell.css) — so the layer
-                    // must not run for it, or a second (filtered) backdrop
+                    // The blend class swaps the backdrop AND the page hosts
+                    // onto the engine's one computed paper colour
+                    // (styles/components/shell.css, styles/page_host.css),
+                    // killing the fractional-edge rim a second paper colour
+                    // under the canvas used to show. A text/Markdown page is
+                    // its OWN paper (the surface paints --tx-paper), so the
+                    // class must not run for it or a second paper colour
                     // stacks under the text page.
                     state.settings.with(|st| st.layout.blend_mode)
                         && !state.reader.reflowable()
@@ -289,12 +291,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             />
                         </Show>
                         // The first-paint cover (the gate effects above own
-                        // its timing): an opaque sheet of the paper the
-                        // reader is about to paint, over everything the
-                        // viewer slot stacks, until the reading surface has
-                        // landed on the resume point. Lifting it is seamless
-                        // in light, dark and tinted themes because it wears
-                        // the same paper token the surface underneath does.
+                        // its timing): an opaque sheet of the paper the reader
+                        // is about to paint, over everything the viewer slot
+                        // stacks, until the reading surface has landed on the
+                        // resume point. Lifting is seamless in every theme
+                        // because it wears the same paper token as the surface
+                        // underneath.
                         <Show when=move || is_ready() && !state.reader.viewer.first_paint.get()>
                             <div
                                 class=format!(
@@ -357,17 +359,15 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                     </main>
                 </div>
             </div>
-            // OVERLAY: `OverlayRail` mounts OUTSIDE `.reader-bg`, for the
-            // reason the modal below spells out. `.reader-bg` is a stacking
-            // context at z-index 0, so a rail inside it paints under the
-            // title bar's band and hands the band its whole 48px header —
-            // the close, search and More buttons live there, and so do the
-            // native traffic lights, which the header's 88px gutter reserves
-            // for them. Out here its own z-popover outranks the bar, so the
-            // rail covers the bar's left corner (the Library button
-            // included) and takes the lights with it, and the bar reads as
-            // one full-width surface either way. It renders nothing while
-            // the controller says the layout is docked.
+            // OVERLAY: `OverlayRail` mounts OUTSIDE `.reader-bg`, which is a
+            // stacking context at z-index 0 — a rail inside it would paint
+            // under the title bar's band and hand the band its whole 48px
+            // header (close, search, More, and the native traffic lights the
+            // header's 88px gutter reserves). Out here its own z-popover
+            // outranks the bar, so the rail covers the bar's left corner
+            // (Library button included) and takes the lights with it, and the
+            // bar reads as one full-width surface either way. Renders nothing
+            // while the controller says the layout is docked.
             <OverlayRail shell=shell>
                 <ReaderRail state=state shell=shell />
             </OverlayRail>

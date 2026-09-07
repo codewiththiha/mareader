@@ -44,11 +44,10 @@ pub fn set_paper(hex: Option<&str>) {
     bridge::set_paper(hex.unwrap_or(""));
 }
 
-/// Tell the engine whether the paper session wants frames at all: while
-/// blend mode is off, the renderer skips the per-render ≤96px downscale +
-/// readback that `stashPaperFrame` exists to pay. Called by
-/// `backdrop::configure` on every settings change — the engine-side flag is
-/// idempotent.
+/// Tell the engine whether the paper session wants frames at all: while blend
+/// mode is off, the renderer skips the per-render <=96px downscale + readback
+/// that `stashPaperFrame` exists to pay. Called by `backdrop::configure` on
+/// every settings change — the engine-side flag is idempotent.
 pub fn set_paper_active(on: bool) {
     if guard_pdf_reader() {
         bridge::set_paper_active(on);

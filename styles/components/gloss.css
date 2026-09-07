@@ -1,37 +1,22 @@
-/* =====================================================================
-   Gloss word-card: the in-page highlighter stroke (the persisted mark and
-   its "thinking" pulse) and the surface that springs open from it and
-   morphs back down onto it.
+/* Gloss word-card: the highlighter stroke (persisted mark + processing
+   pulse) and the surface that morphs open from it.
 
-   Position / size / radius are written PER FRAME by the spring effect in
-   Rust, so the geometry properties deliberately carry NO transition — a
-   transition here would fight the rAF loop and double-motion the card.
-
-   The look is deliberately quiet. The mark is ONE flat translucent pass of
-   the reader's chosen gloss colour (a real highlighter does not gradient),
-   and every state — resting, thinking, pressed, selected — is a static
-   on/off paint change, NEVER an animation or transition. The stroke is a
-   `mix-blend-mode` element over the page canvas; animating it re-composites
-   the canvas each frame, which is the page shake. Every colour is mixed
-   from the user's gloss colour (or the live accent), so the stroke suits
-   any tint, on any text.
-   ===================================================================== */
+   Geometry (position/size/radius) is written per frame by the Rust spring
+   effect, so it carries no transition here. The stroke is a mix-blend-mode
+   element over the page canvas: animating it re-composites the canvas every
+   frame (visible page shake), so every mark state is a static on/off paint
+   change. Animated processing feedback lives on a non-blended sibling
+   (.gloss-mark-pulse) instead. */
 
 :root {
-  /* One elevation for every floating surface — the card is a panel like the
-     menus, not a special object with its own heavier shadow. */
   --gloss-shadow-float: var(--shadow-float);
   --gloss-shadow-card: var(--shadow-float);
 }
 
-/* ---------------------------------------------------------------------
-   The morphing surface. Position/size/radius are written per-frame by the
-   spring effect; there is intentionally NO transition on geometry.
-   --------------------------------------------------------------------- */
+/* --- The morphing surface. No transition on geometry: the spring writes it
+   per frame. --- */
 .gloss-surface {
   position: fixed;
-  /* Layering aliases, one source: the token scale in tokens.css.
-     (Phase rules below always override this base value.) */
   z-index: var(--z-popover);
   overflow: hidden;
   box-sizing: border-box;
@@ -42,35 +27,18 @@
 .gloss-surface[data-phase="compact"] { z-index: var(--z-controls); }
 .gloss-surface[data-phase="expanded"] { z-index: var(--z-popover); }
 
-/* The card scrolls but must never show a scrollbar — it is a floating
-   surface, not a pane, and a gutter would break the morph's silhouette. */
+/* A floating surface shows no scrollbar gutter; it would break the morph's
+   silhouette. */
 .gloss-surface [data-gloss-scroll] {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .gloss-surface [data-gloss-scroll]::-webkit-scrollbar { display: none; }
 
-/* ---------------------------------------------------------------------
-Persisted gloss highlighter — one exact-fit stroke per mark in the
-gloss-layer (same trade-off as the link layer: above the text layer,
-pointer-events only on the strokes). One stroke per mark: a flat
-translucent pass of the gloss colour, exact-fit, small radius, with the
-page's own glyphs reading straight through it.
-
-One definition, shared by every format. The rules used to hang off
-`.pdf-page`, which meant a page of type could not have a highlight at
-all; nothing below is actually about a raster — `mix-blend-mode:
-multiply` over ink on paper reads exactly as it does over ink on a
-canvas, and the dark-theme `screen` swap is about the backdrop being
-dark, not about it being a bitmap.
-
-What a format supplies is the layer's positioning context and the
-coordinates its resolver returns, and one rule covers all three hosts:
-the layer is always `inset: 0` inside the element its resolver measured
-— a `.pdf-page`, a `.tx-page`, or the continuous stream's scroller box,
-where one layer serves the whole reading column because its blocks are
-virtualized individually rather than paginated.
---------------------------------------------------------------------- */
+/* --- Persisted highlighter marks. One flat translucent stroke per mark,
+   exact-fit, glyphs reading through. Format-agnostic: the layer is inset:0
+   in whatever host its resolver measured (.pdf-page, .tx-page, or the
+   stream scroller), so one definition serves all formats. --- */
 .gloss-layer {
   position: absolute;
   inset: 0;
@@ -90,15 +58,8 @@ virtualized individually rather than paginated.
     transparent
   );
   mix-blend-mode: multiply;
-  /* The stroke is a `mix-blend-mode` element sitting over the page canvas
-     (an opaque composited texture). ANIMATING it in any form — a pulse, a
-     fade, a box-shadow tween — forces the compositor to re-composite the
-     canvas under it on every frame, which reads as the page shivering. So
-     the stroke itself NEVER transitions or animates, in any state: every
-     state (hover, processing, pressing, selected, dimmed) is a plain on/off
-     paint change, applied once and then static. Animated processing
-     feedback lives on a sibling overlay instead — see `gloss-mark-pulse`
-     below. */
+  /* Never transitioned or animated in any state — see the header: the blend
+     over the canvas makes every animated frame a full re-composite. */
 }
 .gloss-layer .gloss-mark::selection { background: transparent; }
 :root.dark .gloss-layer .gloss-mark { mix-blend-mode: screen; }
@@ -107,37 +68,19 @@ virtualized individually rather than paginated.
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 40%, transparent);
   outline: none;
 }
-/* Processing: the stroke is being consulted. Two halves:
-
-   • A quiet static ring painted ON the stroke itself. That part must stay
-     static — a pulse on the blended stroke re-blends the canvas each frame
-     = the shake.
-   • A faint light lapping the stroke's INNER edge, on `.gloss-mark-pulse`,
-     a sibling overlay in the layer that is NOT mix-blended, so its motion
-     composites over the static canvas exactly like the card's and toast's
-     animations do. The overlay is the same rect as the stroke, so a ring
-     band at the overlay's own edge IS the mark's inner edge. mark_layer
-     mounts it only while this stroke waits on the model; the card itself
-     opens on the first chunk, so the state is fleeting.
-
-   Why an edge and not a glow: this overlay used to breathe an outer
-   box-shadow, and the ring it re-painted was the very ring the static
-   state already wears. On dim paper the only thing moving was a 30%-alpha
-   bloom OUTSIDE the word, so a processing mark read exactly like a resting
-   one. The light now sits on the edge of the highlight itself, where there
-   is no static twin to be mistaken for.
-
-   Deliberately barely-there: low opacity, one soft comet, no bloom. */
+/* Processing: a static ring on the stroke itself (a pulse here would
+   re-blend the canvas per frame) plus a faint comet lapping the inner edge
+   on the non-blended .gloss-mark-pulse sibling below. The light sits on the
+   highlight's own edge so it cannot be mistaken for the static hover ring. */
 .gloss-layer .gloss-mark-processing,
 :root.dark .gloss-layer .gloss-mark-processing {
   box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 68%, transparent);
 }
 
-/* The whole effect IS the mask, so it is gated on having one: without
-   mask-composite an unmasked rotating conic gradient would paint a full
-   wash over the word instead of a 2px rim. On an engine without it the
-   overlay stays an empty, invisible element and the static ring above is
-   the whole cue — which is also what both motion nets below reduce to. */
+/* The comet effect is entirely the ring mask, so it is gated on
+   mask-composite support: without it an unmasked conic gradient would wash
+   the whole word. Unsupported engines keep the static ring as the only cue
+   (same as both reduced-motion nets below). */
 @supports ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
   .gloss-layer .gloss-mark-pulse {
     position: absolute;
@@ -145,11 +88,8 @@ virtualized individually rather than paginated.
     pointer-events: none;
     border-radius: 3px;       /* same exact-fit shape as the stroke */
     overflow: hidden;
-    /* Ring mask: the whole box minus its content box, i.e. the padding
-       band. `padding` is what sets the band's thickness, and 2px reads as
-       a rim of light rather than as a second stroke. xor and exclude are
-       the same composite, prefixed and standard, so WebKit and everyone
-       else both get the ring. */
+    /* Ring mask = border box minus content box; padding sets the band
+       thickness. xor/exclude are the prefixed/standard same composite. */
     padding: 2px;
     -webkit-mask:
       linear-gradient(#000 0 0) content-box,
@@ -159,9 +99,7 @@ virtualized individually rather than paginated.
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0) border-box;
     mask-composite: exclude;
-    /* The comet's ceiling, one notch under half strength: it should be
-       caught in the corner of the eye, never watched on purpose. */
-    opacity: 0.55;
+    opacity: 0.55;            /* peripheral-vision ceiling */
   }
 
   .gloss-layer .gloss-mark-pulse::before {
@@ -169,19 +107,14 @@ virtualized individually rather than paginated.
     position: absolute;
     left: 50%;
     top: 50%;
-    /* A SQUARE, and a generous one. A conic gradient is radial about its
-       centre, so this box has exactly one job: still cover the ring at
-       every angle of the spin. A side >= the overlay's diagonal does that
-       for any word rect; a box sized in percentages of both axes is a
-       RECTANGLE, which falls short of the corners on the diagonal frames
-       and blinks the comet out once per lap. */
+    /* Square, side >= the overlay diagonal, so the radial conic gradient
+       still covers the ring at every spin angle. A percentage-sized
+       rectangle falls short on diagonal frames and blinks the comet out
+       once per lap. */
     width: 300%;
     aspect-ratio: 1;
-    /* One soft comet — dark for most of the turn, brightening to a peak
-       and fading out again — so what laps the rim reads as light with a
-       tail rather than as a hard edge going round. The gloss colour is
-       lifted toward white because this is light falling on the paper, not
-       more ink. */
+    /* One soft comet; the gloss colour is lifted toward white because this
+       is light on the paper, not more ink. */
     background: conic-gradient(
       from 0deg,
       transparent 0deg,
@@ -191,10 +124,8 @@ virtualized individually rather than paginated.
     );
     transform: translate(-50%, -50%) rotate(0deg);
     will-change: transform;
-    /* Slow enough to read as unhurried, quick enough that a two-second
-       wait still shows the reader several laps. Transform only, on an
-       unblended element: the compositor runs it without a repaint and
-       without ever re-blending the canvas under the stroke. */
+    /* Transform-only on an unblended element: compositor-driven, no repaint,
+       never re-blends the canvas under the stroke. */
     animation: gloss-edge-sweep 1.8s linear infinite;
   }
 }
@@ -204,21 +135,9 @@ virtualized individually rather than paginated.
   to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
-/* ---------------------------------------------------------------------
-   Multi-select mode (long-press initiated). No checkboxes: selection is
-   pure colour. Unselected marks dim; selected marks read as inked-in — a
-   solid accent pass, one hairline ring and a soft glow.
-
-   EVERY state change below is a STATIC on/off paint change with NO
-   transition. These are `mix-blend-mode` strokes over the page canvas; any
-   transition (or animation) re-composites the canvas each frame while it
-   runs, which is the page shake. A single instant change recomposites once
-   and settles — that is stable.
-
-   `pressing` is the instant feedback while the long-press is still
-   counting: a quiet dim of the same tint — no brightness flicker, no
-   inflate-then-deflate.
---------------------------------------------------------------------- */
+/* --- Multi-select (long-press). Selection is pure colour, every state a
+   static paint change (blend strokes must not animate — see header).
+   `pressing` is the instant feedback while the long-press counts. --- */
 .gloss-layer .gloss-mark-pressing {
     opacity: 0.8;
 }
@@ -230,8 +149,7 @@ virtualized individually rather than paginated.
     opacity: 0.92;
 }
 
-/* Defined AFTER the processing rules so it wins the tie (processing keeps
-   its ring). */
+/* After the processing rules so it wins the tie (processing keeps its ring). */
 .gloss-layer .gloss-mark-selected,
 :root.dark .gloss-layer .gloss-mark-selected {
     background: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 62%, transparent);
@@ -242,7 +160,7 @@ virtualized individually rather than paginated.
     opacity: 1;
 }
 
-/* Right-click menu, selection bar and undo toast entrances. */
+/* Context-menu, selection-bar and undo-toast entrances. */
 @keyframes gloss-menu-in {
     from { opacity: 0; transform: translateY(-4px) scale(0.97); }
     to   { opacity: 1; transform: translateY(0) scale(1); }
@@ -259,10 +177,9 @@ virtualized individually rather than paginated.
     animation: gloss-bar-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* The wrapper centers with `.toast-anchor` (flex), so the entrance only has
-   to lift the panel: no `translateX(-50%)` to double-count against the
-   utility that used to sit on this element, and nothing to re-center when the
-   reduced-motion nets below drop the animation outright. */
+/* The wrapper centers via .toast-anchor flex, so the entrance only lifts the
+   panel — no translateX(-50%) to double-count or re-center under the
+   reduced-motion nets. */
 @keyframes gloss-toast-in {
     from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -277,22 +194,16 @@ virtualized individually rather than paginated.
     .gloss-undo-toast {
         animation: none;
     }
-    /* The comet is motion for its own sake — nothing in the reader depends
-       on it — so both nets take the overlay out entirely rather than
-       freezing it. A frozen comet is a static arc of light parked on one
-       corner of the word, which reads as a smudge rather than as a
-       thinking mark; the static ring on the stroke is the whole cue, as
-       before. (The global net in animations.css shortens animations to
-       0.01ms instead of removing them, which for an infinite lap is
-       exactly that one settled frame — hence `display`, not `animation`.) */
+    /* Remove the comet entirely rather than freeze it: the global net in
+       animations.css shortens animations to 0.01ms, which for an infinite
+       lap parks a static arc of light on the word — a smudge, not a
+       thinking mark. The static ring remains the cue. */
     .gloss-layer .gloss-mark-pulse {
         display: none;
     }
 }
 
-/* The same for the reader's own master switch (Settings → Layout →
-   Animations), for the same reason: a promise that nothing interpolates
-   has to mean the comet does not sit still on the rim either. */
+/* Same for the app's own animations master switch. */
 html.animations-off .gloss-layer .gloss-mark-pulse {
     display: none;
 }

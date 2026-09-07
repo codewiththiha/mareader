@@ -1,10 +1,10 @@
 //! The appearance data model: the three structural modes (base / texture /
 //! noise) and the [`Appearance`] look they compose into.
 //!
-//! The old six hand-written themes were the same structure with a different
-//! hue, so the tint is now COMPUTED: three base modes (Light / Dark / Dim)
-//! decide the structural family, and a single {hue, strength} tint is applied
-//! by the same maths on top. Sepia / Green / Night survive as presets.
+//! The old six hand-written themes were one structure with different hues, so
+//! the tint is COMPUTED: three base modes decide the structural family and a
+//! {hue, strength} tint applies by the same maths on top. Sepia / Green /
+//! Night survive as presets.
 //!
 //! CONTRACT: the field names below are the serde schema persisted inside
 //! `pdfreader.settings.v1`. Do not rename them.
@@ -24,7 +24,7 @@ pub enum BaseMode {
     Light,
     /// Inverted canvas, textures lighten (screen).
     Dark,
-    /// NOT inverted — just dimmed. Keeps the document's real colours (figures,
+    /// NOT inverted — just dimmed: keeps the document's real colours (figures,
     /// photos, syntax highlighting) instead of hue-rotating them, which is the
     /// reason to pick it over Dark. Grain uses soft-light so it neither
     /// crushes nor blows out the midtones.
@@ -76,24 +76,11 @@ pub enum TextureMode {
 }
 
 impl TextureMode {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Paper => "paper",
-            Self::Lined => "lined",
-            Self::Grid => "grid",
-            Self::Dotted => "dotted",
-            Self::Cross => "cross",
-        }
-    }
-
     /// The CSS class a carrier element takes for this mode — the naming
     /// contract `styles/textures.css` keys its patterns off. `None` when the
     /// mode is off (the element carries no texture class). One definition,
     /// shared by the PDF page host, the reflowable scroller and the preset
     /// swatch, so the string is never re-assembled at several call sites.
-    /// (`as_str` is the bare mode word — the `data-texture` attribute and
-    /// the CSS `&[class*="texture-"]` scan; `css_class` is the whole token.)
     pub fn css_class(&self) -> Option<&'static str> {
         match self {
             Self::None => None,
@@ -130,12 +117,10 @@ impl TextureMode {
     }
 }
 
-/// Film grain: off, static, or animated.
-///
-/// Animated grain re-seeds the pattern every frame so it crawls like real film
-/// or sensor noise instead of sitting there as a fixed dirt layer. It is a
-/// separate MODE rather than a second boolean because "animated but disabled"
-/// is not a state worth persisting, and a 3-way enum makes that unrepresentable.
+/// Film grain: off, static, or animated. Animated grain re-seeds the pattern
+/// every frame so it crawls like real film or sensor noise instead of sitting
+/// as a fixed dirt layer. A 3-way MODE rather than two booleans because
+/// "animated but disabled" is not a state worth persisting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NoiseMode {
@@ -164,13 +149,12 @@ impl NoiseMode {
     }
 }
 
-/// A complete look. This is what a preset stores and what the DOM reflects.
-///
-/// Every field is independent on purpose: the tint does not silently change
-/// the texture, the texture opacity does not touch the grain. The only
-/// coupling is `base`, which selects the blend FAMILY for texture and grain —
-/// and that coupling is required, because "multiply a light tint" is a no-op
-/// and would render the grain invisible on dark paper.
+/// A complete look: what a preset stores and what the DOM reflects. Every
+/// field is independent — the tint never changes the texture, the texture
+/// opacity never touches the grain. The only coupling is `base`, which
+/// selects the blend FAMILY for texture and grain, and that coupling is
+/// required: multiplying a light tint is a no-op and would render grain
+/// invisible on dark paper.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
@@ -221,11 +205,11 @@ impl Appearance {
         self.tint_strength > 0
     }
 
-    /// The exact hex (or oklch literal) the UI accent currently has.
-    /// Computed directly so a theme tick does not allocate the seven-token
-    /// override vector just to pick one key: the base table is a Copy struct
-    /// of `&'static str`s, and only the untinted arm — the one answer that
-    /// lives there — reads it. A tinted look answers from its overrides.
+    /// The exact hex (or oklch literal) the UI accent currently has. Computed
+    /// directly so a theme tick does not allocate the seven-token override
+    /// vector to pick one key: the base table is a Copy struct of &'static
+    /// strs and only the untinted arm reads it; a tinted look answers from its
+    /// overrides.
     pub fn accent_hex(&self) -> String {
         if let Some(value) = self.tinted_accent() {
             return value;

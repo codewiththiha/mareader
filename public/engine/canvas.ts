@@ -38,22 +38,14 @@ export function acquirePooledCanvas(w: number, h: number): HTMLCanvasElement {
 }
 
 /** A fresh offscreen canvas sized to a viewport, with its opaque 2d context.
- *
- *  Three render entry points needed exactly this — the book cover, a thumbnail,
- *  and a thumbnail prefetch — and each spelled it out, including the
- *  `Math.max(1, Math.floor(...))` guard that keeps a degenerate viewport from
- *  handing pdf.js a zero-sized destination. `scale` multiplies the viewport for
- *  the callers that render supersampled.
- *
- *  `null` means the platform refused a context, which is a real failure mode
- *  once enough canvases are alive; the canvas is released before returning, so
- *  a caller has nothing to clean up on that path (one of the three copies used
- *  to throw straight past its own allocation).
- *
- *  Deliberately NOT the pool: these canvases become retained rasters — a cover
- *  is encoded from one, a thumbnail keeps one as its unthemed raw — so their
- *  lifetime belongs to the caller, not to a recycler.
- */
+ *  `scale` multiplies the viewport for supersampled callers; the
+ *  Math.max(1, floor) guard keeps a degenerate viewport from handing pdf.js a
+ *  zero-sized destination. `null` means the platform refused a context — a
+ *  real failure mode once enough canvases are alive; the canvas is released
+ *  before returning, so the caller has nothing to clean up. Deliberately NOT
+ *  the pool: these canvases become retained rasters (a cover is encoded from
+ *  one, a thumbnail keeps one as its unthemed raw), so their lifetime belongs
+ *  to the caller, not to a recycler. */
 export function offscreenFor(
   viewport: { width: number; height: number },
   scale = 1
@@ -83,16 +75,13 @@ export function releasePooledCanvas(c: HTMLCanvasElement | null | undefined): vo
 let scratch: HTMLCanvasElement | null = null;
 let scratchInUse = false;
 
-// The scratch is a single free/held tri-state, and it is safe as such by
-// construction: `acquireScratch` hands out the scratch to ONE caller (the
-// flag flips), every concurrent caller gets a POOLED canvas, and
-// `releaseScratch(owned)` only frees the scratch when the caller actually
-// owns it — so a second caller releasing its pooled canvas can never free
-// the scratch out from under the first. (A refcount would not change that:
-// the pooled fallback never touches the flag.)
-//
-// Concurrent bakes do happen: live pages re-bake on theme change via
-// rerenderLivePages (runLimited(2)), and thumbnail bakes run alongside.
+// The scratch is a single free/held tri-state, safe by construction:
+// acquireScratch hands the scratch to ONE caller (the flag flips), every
+// concurrent caller gets a POOLED canvas, and releaseScratch(owned) frees the
+// scratch only when the caller owns it — a second caller releasing its pooled
+// canvas can never free it out from under the first. Concurrent bakes do
+// happen: live pages re-bake on theme change (rerenderLivePages,
+// runLimited(2)) alongside thumbnail bakes.
 
 /** Borrow the shared bake scratchpad. Concurrent callers get a pooled canvas. */
 export function acquireScratch(w: number, h: number): HTMLCanvasElement {

@@ -1,11 +1,8 @@
-//! Appearance presets: the built-in looks, plus user-saved combinations
-//! organised into named groups.
-//!
-//! Sepia, Green and Night used to be hard-coded themes. They are now just
-//! points in the `Appearance` space, which is the whole argument for the
-//! refactor: if a preset can reproduce them exactly, then presets are
-//! expressive enough to be the only mechanism, and users can build their own
-//! Sepia-but-cooler without anyone writing CSS.
+//! Appearance presets: the built-in looks plus user-saved combinations in
+//! named groups. Sepia, Green and Night used to be hard-coded themes; they are
+//! now points in the `Appearance` space — the argument for the refactor: if a
+//! preset reproduces them exactly, presets are expressive enough to be the
+//! only mechanism, and users can build their own without anyone writing CSS.
 //!
 //! CONTRACT: `Preset`/`PresetGroup` field names are the serde schema persisted
 //! inside `pdfreader.settings.v1`.
@@ -42,14 +39,12 @@ fn preset(id: &str, name: &str, group: &str, appearance: Appearance) -> Preset {
     }
 }
 
-/// The presets that ship with the app.
-///
-/// The plain bases (Light / Dark / Dim) are deliberately NOT presets: the
-/// Mode & colour section's three buttons are the one home for that choice,
-/// and a second copy of it as swatches was a row that did nothing the
-/// buttons below it didn't. The tinted classics remain presets — Sepia,
-/// Green and Night reproduce the retired hard-coded themes, which is the
-/// compatibility guarantee that lets those CSS blocks stay deleted.
+/// The presets that ship with the app. The plain bases (Light / Dark / Dim)
+/// are deliberately NOT presets: the Mode section's three buttons are the one
+/// home for that choice, and a second copy as swatches was a row that did
+/// nothing the buttons did not. The tinted classics reproduce the retired
+/// hard-coded themes — the compatibility guarantee that lets those CSS blocks
+/// stay deleted.
 pub fn builtin_presets() -> Vec<Preset> {
     vec![
         // --- the retired themes, reconstructed -------------------------------
@@ -103,10 +98,9 @@ pub fn is_builtin(id: &str) -> bool {
 }
 
 /// Group presets for display, preserving first-seen group order so the menu
-/// does not reshuffle when a user renames or adds one.
-///
-/// Ungrouped presets collect under "Custom" rather than floating loose: a menu
-/// with a few headed sections and a pile of unheaded rows reads as broken.
+/// does not reshuffle when a user renames or adds one. Ungrouped presets
+/// collect under "Custom": a menu with headed sections and a pile of unheaded
+/// rows reads as broken.
 pub fn group_presets(presets: &[Preset]) -> Vec<PresetGroup> {
     let mut order: Vec<String> = Vec::new();
     let mut out: Vec<PresetGroup> = Vec::new();

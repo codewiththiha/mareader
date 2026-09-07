@@ -1,16 +1,11 @@
-// The CSS-filter pixel kernel: parse a filter string into a 3×3 matrix +
-// offset, and apply it to RGBA pixels with per-channel LUTs (16.16 fixed
-// point, no per-pixel multiply).
-//
-// This module is intentionally DOM-free: it is imported BOTH by the main
-// thread (the no-worker fallback) and by bake.worker.ts (the same math, in a
-// worker), so the two paths are byte-identical by construction and the
-// fallback — which the Node smoke test exercises — IS the reference
-// implementation.
-//
-// LUTs are memoized per filter string: a bake builds 9 × Int32Array(256) and
-// rebuilding them per page per theme change was 9 allocations each time, even
-// when the filter had not changed.
+// The CSS-filter pixel kernel: parse a filter string into a 3x3 matrix +
+// offset and apply it to RGBA pixels with per-channel LUTs (16.16 fixed
+// point, no per-pixel multiply). Intentionally DOM-free: imported BOTH by
+// the main thread (the no-worker fallback) and by bake.worker.ts, so the two
+// paths are byte-identical by construction and the fallback — which the Node
+// smoke test exercises — IS the reference implementation. LUTs are memoized
+// per filter string: a bake builds 9 x Int32Array(256), and rebuilding them
+// per page per theme change was 9 allocations even when nothing had moved.
 
 import type { FilterMatrix } from "../types";
 

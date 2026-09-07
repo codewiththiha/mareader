@@ -1,37 +1,33 @@
 //! The text-page palette: [`TextPalette::compute`] turns the shared
 //! [`Appearance`] into the concrete colours a text/Markdown page paints.
 //!
-//! WHY ITS OWN MATH. A PDF page is an always-light raster, so base mode and
-//! tint reach it through a CSS filter chain (see [`crate::appearance::raster`]) whose
-//! numbers are chosen for bitmaps. A text page owns its paper and ink
-//! outright, so it derives them directly — and deliberately NOT with the
-//! PDF maths, because the two formats need different things:
+//! WHY ITS OWN MATH. A PDF page is an always-light raster themed by a CSS
+//! filter chain ([`crate::appearance::raster`]) whose numbers are chosen for
+//! bitmaps; a text page owns its paper and ink outright and needs different
+//! things:
 //!
-//!   * Light: the paper is BRIGHT (L 0.98) wherever the tint slider sits,
-//!     and the ink stays mostly black (L 0.15) so it reads on it.
-//!   * Dark: the paper is a DARKISH GREY (L 0.24) — never pitch black —
-//!     and the ink mostly white (L 0.92).
-//!   * Dim: the paper sits in the PDF's dim family (L 0.22 — the same
-//!     depth as the dim chrome, which the raster pipeline dims but never
-//!     re-lights) with dark/black ink (L 0.12).
-//!   * The ink always picks up a whisper of the paper's hue, so the pair
-//!     reads as one look instead of black-on-coloured.
+//!   * Light: BRIGHT paper (L 0.98) wherever the tint slider sits, ink mostly
+//!     black (L 0.15).
+//!   * Dark: DARKISH GREY paper (L 0.24, never pitch black), ink mostly white
+//!     (L 0.92).
+//!   * Dim: paper in the PDF's dim family (L 0.22 — the depth of the dim
+//!     chrome, which the raster pipeline dims but never re-lights), dark ink
+//!     (L 0.12).
+//!   * The ink always picks up a whisper of the paper's hue, so the pair reads
+//!     as one look instead of black-on-coloured.
 //!
 //! THE RULES.
-//!   1. Every mode anchors the paper's lightness AND the ink's. The tint
-//!      moves hue and chroma only — a slider can never turn a light page
-//!      murky, a dark page glaring, or a dim page bright.
-//!   2. The slider hue is an sRGB angle (that is what the picker paints);
-//!      it is mapped into OKLCH before emission, so the paper lands on
-//!      the colour the swatch actually shows.
-//!   3. Light and Dark derive the neighbours (surface / line / muted)
-//!      TOWARD the ink, so the ladder follows the ink's own direction.
-//!      Dim derives them as small lifts off the dark paper instead — the
-//!      ink stays the darkest thing on the page, matching the PDF's
-//!      quiet dim look.
-//!   4. The accent keeps the base family untinted (links stay the
-//!      reader's accent), then walks onto the slider's colour as the tint
-//!      comes up.
+//!   1. Every mode anchors the paper's lightness AND the ink's; the tint moves
+//!      hue and chroma only — a slider can never turn a light page murky, a
+//!      dark page glaring, or a dim page bright.
+//!   2. The slider hue is an sRGB angle (what the picker paints), mapped into
+//!      OKLCH before emission, so the paper lands on the colour the swatch
+//!      shows.
+//!   3. Light and Dark derive the neighbours (surface / line / muted) TOWARD
+//!      the ink; Dim derives them as small lifts off the dark paper, keeping
+//!      the ink the darkest thing on the page — the PDF's quiet dim look.
+//!   4. The accent keeps the base family untinted (links stay the reader's
+//!      accent), then walks onto the slider's colour as the tint comes up.
 
 use crate::appearance::base::base_tokens;
 use crate::appearance::shared::oklch::{hex_to_oklch, hue_toward, oklch_css, parse_color};
@@ -74,10 +70,9 @@ impl TextPalette {
             BaseMode::Light => (0.98, 0.15, 0.08, 0.03),
             // Darkish grey paper — NOT pitch black — mostly-white ink.
             BaseMode::Dark => (0.24, 0.92, 0.10, 0.04),
-            // The PDF's dim family: the same depth as the dim chrome
-            // (#1a1c1f), never re-lit — the raster pipeline only dims the
-            // page, and the text page matches it instead of reading a
-            // stop brighter. The ink stays dark/black on it.
+            // The PDF's dim family: the depth of the dim chrome (#1a1c1f),
+            // never re-lit — the raster pipeline only dims the page, and the
+            // text page matches it. The ink stays dark/black on it.
             BaseMode::Dim => (0.22, 0.12, 0.08, 0.03),
         };
 
@@ -89,10 +84,9 @@ impl TextPalette {
                 lerp(paper_l, ink_l, 0.18),
                 lerp(paper_l, ink_l, 0.45),
             ),
-            // Dim: everything is a small lift OFF the dark paper —
-            // surface and line just above it, muted a soft grey — while
-            // the ink stays the darkest thing on the page. The PDF's
-            // quiet dim look.
+            // Dim: everything is a small lift OFF the dark paper while the
+            // ink stays the darkest thing on the page — the PDF's quiet dim
+            // look.
             BaseMode::Dim => (paper_l + 0.05, paper_l + 0.10, paper_l + 0.25),
         };
 
@@ -141,25 +135,22 @@ fn lerp(from: f64, to: f64, t: f64) -> f64 {
     from + (to - from) * t
 }
 
-/// Mix `color` toward `paper` by `1 - keep`: `keep` is the fraction of
-/// the colour retained (1.0 = the colour itself, 0.0 = the paper).
+/// Mix `color` toward `paper` by `1 - keep` (1.0 = the colour itself, 0.0 =
+/// the paper). Replaces the live `color-mix()` rules the text stylesheet used
+/// to evaluate at paint time (code chips, blockquote rules, table borders —
+/// each recomputed on every token write during a slider drag): the mixes are
+/// precomposed in Rust and painted flat, so a drag writes N plain custom
+/// properties.
 ///
-/// This replaces the live `color-mix()` rules the text stylesheet used
-/// to evaluate at paint time (code chips, blockquote rules, table
-/// borders — every one recomputed on every token write during a slider
-/// drag). The mixes are now precomposed in Rust and painted as flat
-/// colours, so a drag writes N plain custom properties.
-///
-/// Both inputs may be `#rrggbb` or `oklch(...)` literals — untinted
-/// palettes emit hex, tinted ones emit oklch. Lightness and chroma lerp
-/// in OKLCH; the colour's own hue is kept, so a tinted ink keeps its
-/// tint as it softens toward the paper.
+/// Both inputs may be `#rrggbb` or `oklch(...)` — untinted palettes emit hex,
+/// tinted ones oklch. Lightness and chroma lerp in OKLCH; the colour's own
+/// hue is kept, so a tinted ink keeps its tint as it softens.
 pub fn mix_toward_paper(color: &str, paper: &str, keep: f64) -> String {
     let keep = keep.clamp(0.0, 1.0);
     if keep >= 1.0 {
         // Full strength: the colour itself, byte for byte — an untinted
-        // palette keeps emitting its hex token instead of re-rounding
-        // through oklch.
+        // palette keeps emitting its hex token instead of re-rounding through
+        // oklch.
         return color.to_string();
     }
     let Some((l, c, h)) = parse_color(color) else {
@@ -180,8 +171,8 @@ mod tests {
     #[test]
     fn light_anchors_hold_at_every_slider_position() {
         // THE headline rule: Light mode's paper is BRIGHT at every hue and
-        // strength — the tint colours it, it never dims it — and the ink
-        // stays mostly black with a whisper of the paper's hue.
+        // strength — the tint colours it, never dims it — and the ink stays
+        // mostly black with a whisper of the paper's hue.
         for (hue, strength) in [(34u16, 35u8), (104, 100), (200, 60), (350, 100)] {
             let t = strength as f64 / 100.0;
             let p = TextPalette::compute(&tinted(BaseMode::Light, hue, strength));

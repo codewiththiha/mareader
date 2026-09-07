@@ -2,17 +2,15 @@
 //! colour.
 //!
 //! The backdrop follows the reader: a colour PER PAGE, blended along the
-//! scroll position so the backdrop arrives at the next page's paper at the
-//! same moment the page itself does. The only choice left to the reader is
-//! the detection area:
+//! scroll position so it arrives at the next page's paper when the page does.
+//! The reader's one choice is the detection area:
 //!
 //! * [`PaperArea::WholePage`] — every pixel of the sampled raster votes.
-//! * [`PaperArea::Edges`] — only a thin strip along the page's left and right
-//!   edges votes: the margins, where a scanned or decorated page still shows
-//!   its honest paper even when the middle is full of artwork.
+//! * [`PaperArea::Edges`] — only a thin band along the frame's four edges
+//!   votes: the margins, where a scanned or decorated page still shows its
+//!   honest paper even when the middle is full of artwork.
 //!
-//! Every knob is a plain field on [`PaperConfig`] — callers adjust the area
-//! and the strip width without touching any other layer.
+//! Every knob is a plain field on [`PaperConfig`].
 
 use serde::{Deserialize, Serialize};
 
@@ -68,9 +66,8 @@ impl Default for PaperConfig {
 }
 
 impl PaperConfig {
-    /// Clamp every knob into its legal range so a hand-edited settings blob
-    /// (or a stale one written by an older build) can never configure a
-    /// page-wide "edge".
+    /// Clamp every knob into its legal range so a hand-edited or stale
+    /// settings blob can never configure a page-wide "edge".
     pub fn sanitize(&mut self) {
         self.edge_width = self.edge_width.clamp(MIN_EDGE_WIDTH, MAX_EDGE_WIDTH);
     }

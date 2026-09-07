@@ -1,16 +1,14 @@
-// Raster baking: apply the CSS filter chain + paper blend to raw page
-// pixels on the CPU. Hardware `ctx.filter` is not byte-identical across
-// WebKit/Blink and would regress dark-mode inversion (the reason this
-// baker exists). Intermediates recycle the shared scratch canvas so a bake
-// never pins a second full-page buffer after it returns.
+// Raster baking: apply the CSS filter chain + paper blend to raw page pixels
+// on the CPU. Hardware ctx.filter is not byte-identical across WebKit/Blink
+// and would regress dark-mode inversion (the reason this baker exists).
+// Intermediates recycle the shared scratch canvas so a bake never pins a
+// second full-page buffer after it returns.
 //
-// The per-pixel loop itself runs in a Worker (public/engine/theme/
-// bake.worker.ts, bundled to public/bake.worker.js) when the webview
-// has one — a 4K page is ~8M iterations and they used to block the main
-// thread every render. Without a Worker (the Node smoke harness, exotic
-// webviews) the SAME kernel runs inline via ./filterKernel, so the two
-// paths are byte-identical by construction and the fallback is the tested
-// reference implementation.
+// The per-pixel loop runs in a Worker (theme/bake.worker.ts, bundled to
+// public/bake.worker.js) when the webview has one — a 4K page is ~8M
+// iterations. Without a Worker (the Node smoke harness, exotic webviews) the
+// SAME kernel runs inline via ./filterKernel, so both paths are
+// byte-identical by construction and the fallback is the tested reference.
 
 import type { PipelineCache } from "../types";
 import {
@@ -144,10 +142,10 @@ async function applyFilterPixels(
       changed = true;
     } catch (_) {
       // The worker vanished mid-flight (its onerror already rejected this
-      // promise): the transferred pixels are gone, so the bake degrades to
-      // the unfiltered raster for this frame only — the page still renders,
-      // and the worker failure is permanent (bakeWorkerFailed) so the next
-      // bake goes through the inline kernel.
+      // promise) and the transferred pixels are gone: degrade to the
+      // unfiltered raster for this frame only — the page still renders. The
+      // failure is permanent (bakeWorkerFailed), so the next bake goes
+      // through the inline kernel.
       return src;
     }
   } else {
@@ -157,9 +155,9 @@ async function applyFilterPixels(
   if (!changed) return src;
   if (src.width === 0 || src.height === 0) return src;
 
-  // Always write to a scratch copy. Mutating `src` in place destroyed the
-  // unbaked thumbnail raw, so the next theme change double-filtered and
-  // live thumbs could not be rebaked without a pdf.js re-render.
+  // Always write to a scratch copy: mutating `src` in place destroyed the
+  // unbaked thumbnail raw, so the next theme change double-filtered and live
+  // thumbs could not be rebaked without a pdf.js re-render.
   const out = acquireScratch(w, h);
   const octx = out.getContext("2d", { alpha: false });
   if (!octx) return src;

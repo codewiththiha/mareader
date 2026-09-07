@@ -1,33 +1,22 @@
-// DOM-contract sync check — the same cheap insurance as `check-events.ts`, for
-// the other half of the boundary between the app and the engine.
+// DOM-contract sync check — the same cheap insurance as `check-events.ts`,
+// for the other half of the boundary between the app and the engine.
 //
-// The app builds the page hosts; the engine under `public/engine/` paints into
-// them. They never call each other, so everything they share is a name in the
-// DOM: four attributes, two attribute values, two class names, and the shape of
-// the element ids. Both sides spell them:
+// The app builds the page hosts; the engine under `public/engine/` paints
+// into them. They never call each other, so everything they share is a name
+// in the DOM: attributes, attribute values, class names and the shape of the
+// element ids, spelled in src/dom_contract.rs (the names Rust uses as
+// values) and public/engine/dom-contract.ts (the names the engine reads). A
+// disagreement is not an error on either side — it is a `closest` that
+// returns null, a missing pill or a blank page, with a green build and a
+// clean console. Two attribute NAMES (`data-host-page`, `data-ai-popover`)
+// cross as view-macro literals rather than constants; the check reads them
+// out of the Rust source and requires some host to write them. Id shapes are
+// read out of the builders in src/components/viewer/page_host.rs (the
+// format! templates and the suffix swap) rather than compared against a
+// copy — a prefix on one side only is a rename half done.
 //
-//   - src/dom_contract.rs             the names Rust uses as values
-//   - public/engine/dom-contract.ts   the names the engine reads and parses
-//
-// A disagreement is not an error on either side. It is a `closest` that returns
-// null, so a selection stops producing an "Info" pill, or a canvas stops finding
-// its host and the page stays blank — with a green build and a clean console.
-//
-// Two names cross the boundary that Rust cannot hold as constants, because a
-// Leptos view takes an attribute's NAME from the markup and only its value from
-// an expression: `data-host-page` and `data-ai-popover`. For those the check
-// reads the literal out of the Rust source instead, and requires that some host
-// actually writes it.
-//
-// The id shapes are checked the same way — read out of the builders rather than
-// compared against a copy of them. `host_id_for_mode` in
-// `src/components/viewer/page_host.rs` is parsed for the four `format!`
-// templates it emits, `canvas_id_for_mode` for the suffix swap, and the strip's
-// wrapper rows for theirs. A prefix or suffix that appears on one side and not
-// the other is a rename half done.
-//
-// This is the TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-dom-contract.js` so CI can run it with plain `node`.
+// TypeScript source; Trunk's pre-build hook compiles it to
+// `scripts/check-dom-contract.js`.
 
 import { read, walk } from "./repo.js";
 
@@ -90,10 +79,9 @@ for (const file of RUST_SOURCES) RUST_TEXT.set(file, read(file));
 
 // ---------------------------------------------------------------------------
 // 1. Every name the engine declares must be the app's, spelled the same way.
+// The engine is the side that queries, so it must not invent; a name the app
+// declares but the engine never reads is fine — the app owns the vocabulary.
 // ---------------------------------------------------------------------------
-// The engine is the side that queries, so it is the side that must not invent.
-// A name the app declares but the engine has no use for is fine — the app owns
-// the vocabulary — but a name the engine reads has to be one the app writes.
 
 for (const [name, value] of engine) {
   // An id fragment is not spelled anywhere in Rust either: it is assembled by a
@@ -106,9 +94,9 @@ for (const [name, value] of engine) {
     }
     continue;
   }
-  // Not a Rust constant, so it can only be a view-macro literal. Require that
-  // some host actually writes it: a name nothing writes is a query that always
-  // comes back empty.
+  // Not a Rust constant, so it can only be a view-macro literal: require
+  // that some host actually writes it — a name nothing writes is a query
+  // that always comes back empty.
   const written =
     kindOf(name) === "attr"
       ? [...RUST_TEXT.values()].some((text) => text.includes(`${value}=`))
@@ -121,9 +109,8 @@ for (const [name, value] of engine) {
   }
 }
 
-// The other direction: a Rust constant nothing in the app references is a name
-// that was written down and then forgotten, which is how the two tables start
-// to disagree.
+// The other direction: a Rust constant nothing references is a name written
+// down and then forgotten — how the two tables start to disagree.
 for (const name of app.keys()) {
   const used = RUST_SOURCES.some(
     (file) => file !== APP_TABLE && new RegExp(`\\b${name}\\b`).test(RUST_TEXT.get(file) ?? ""),
@@ -234,10 +221,9 @@ if (wrapTemplates.length === 0) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Nothing outside the tables may spell a contract name.
+// 3. Nothing outside the tables may spell a contract name: a literal works
+// the day it is written and stops matching the day the table moves.
 // ---------------------------------------------------------------------------
-// This is what keeps the tables from becoming decoration: a literal works on
-// the day it is written and stops matching on the day the table moves.
 
 /** Strip line and block comments, respecting string literals. */
 function stripComments(text: string): string {
@@ -288,10 +274,10 @@ const forbidden: { name: string; pattern: RegExp }[] = [];
 for (const [name, value] of names) {
   const kind = kindOf(name);
   // A class name is a substring of the identifiers built from it
-  // (`TEXT_LAYER_CLASS` -> `st.textLayerEl`), and a host value is a substring of
-  // plenty of legitimate prose, so those are matched only inside a string
-  // literal, which is the only place a selector or a value can live. A prefix is
-  // matched with the hyphen that makes it a prefix.
+  // (`TEXT_LAYER_CLASS` -> `st.textLayerEl`) and a host value is a substring
+  // of plenty of prose, so both are matched only inside a string literal —
+  // the only place a selector or a value can live. A prefix is matched with
+  // the hyphen that makes it a prefix.
   const pattern =
     kind === "class" || kind === "value"
       ? new RegExp(`["'\`]\\.?${escapeRe(value)}["'\`]`)

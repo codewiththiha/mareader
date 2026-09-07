@@ -20,13 +20,12 @@ const DELAY_MS: u64 = 1500;
 /// (the same call the auto-center idle prefetch uses). Sequential awaits keep
 /// the engine queue from bursting.
 ///
-/// The page count is read by the CALLER, not by the fire. This timer is
-/// deliberately unowned — the warm-up belongs to the document that was just
-/// opened, not to whichever component happens to be alive in a moment — so
-/// the one thing the fire must not do is reach into the reader's signal
-/// graph: a document closed inside that window would leave it reading an
-/// arena that is gone. `prefetch_thumb` is an engine call and answers for
-/// whatever is open when it lands, which is all a warm-up is.
+/// The page count is read by the CALLER, not by the fire: this timer is
+/// deliberately unowned — the warm-up belongs to the document just opened, not
+/// to whichever component is alive in a moment — so the fire must not reach
+/// into the reader's signal graph (a document closed inside that window would
+/// leave it reading a disposed arena). `prefetch_thumb` is an engine call and
+/// answers for whatever is open when it lands, which is all a warm-up is.
 pub(super) fn prewarm_thumbs(num_pages: u32) {
     let pages = num_pages.min(WARM_PAGES);
     _ = set_timeout_with_handle(

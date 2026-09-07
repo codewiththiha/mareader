@@ -1,9 +1,8 @@
-//! Page → scroll: a page write commands the strip.
-//!
-//! One arm per axis; they differ only in the view mode they answer for and in
-//! where the page lands (the column starts pages at the top, the horizontal
-//! strip centres them). Everything interesting is in [`JumpGate`], which
-//! decides whether a given run is a navigation at all.
+//! Page → scroll: a page write commands the strip. One arm per axis; they
+//! differ only in the view mode they answer for and where the page lands (the
+//! column starts pages at the top, the horizontal strip centres them). The
+//! interesting decisions are [`JumpGate`]'s: whether a given run is a
+//! navigation at all.
 
 use std::rc::Rc;
 
@@ -47,26 +46,26 @@ pub(super) fn install(
         if mode.get() != axis {
             return;
         }
-        // A page write means a page-cut strip in this mode only for PDFs;
+        // A page write means a page-cut strip in this mode only for PDFs:
         // the continuous text stream scrolls blocks, and a page number
         // commanded at its (unbound) page virtualizer would be a no-op at
-        // best. The stream's own layout is placed by its anchor, its
-        // search reveal and its scrubber — none of which write the page.
+        // best. The stream's layout is placed by its anchor, its search
+        // reveal and its scrubber — none of which write the page.
         if axis == ViewMode::ScrollVertical && state.reflowable() {
             return;
         }
         // Scroll restoration is the transaction's job while one is open;
-        // letting a page write fight the anchor mid-zoom is the other half
-        // of the loop. The gate holds the write instead of losing it, and
-        // the tracked `zooming` read is what brings this effect back on
-        // the frame the transaction closes, to replay it.
+        // letting a page write fight the anchor mid-zoom is the other half of
+        // the loop. The gate holds the write instead of losing it, and the
+        // tracked `zooming` read brings this effect back on the frame the
+        // transaction closes, to replay it.
         let page_now = page.get();
         let zooming = zooming.get();
         let Some((target, reassert)) = gate.admit(page_now, zooming) else {
-            // A stand-down consumed the run. The echo flag's scroll event
-            // is never coming (both arms and the DOM echo stand down for
-            // the transaction's duration), so it must not survive to eat
-            // the replay either.
+            // A stand-down consumed the run. The echo flag's scroll event is
+            // never coming (both arms and the DOM echo stand down for the
+            // transaction's duration), so it must not survive to eat the
+            // replay either.
             if zooming {
                 suppress.set(false);
             }
@@ -86,11 +85,11 @@ pub(super) fn install(
         if target == 0 {
             return;
         }
-        // A strip that is still being placed on `viewer.page` by its shell
+        // A strip still being placed on `viewer.page` by its shell
         // (`ScrollShell::anchor_to_page`) will read the page itself, on a
-        // bound container and instantly; a glide commanded here on top of
-        // that would only fight it. UNTRACKED: the anchor landing is not a
-        // navigation, so it must not replay this arm.
+        // bound container and instantly; a glide commanded here on top would
+        // only fight it. UNTRACKED: the anchor landing is not a navigation,
+        // so it must not replay this arm.
         if state.viewer.awaiting_anchor.get_untracked() {
             return;
         }

@@ -1,11 +1,10 @@
 //! Sub-pixel units: the integer representation behind [`crate::Strip`]'s
 //! prefix sums.
 
-/// Number of sub-pixel units per logical pixel. `2^16 = 65536` gives an exact
-/// representation for every value whose denominator is a power of two up to
-/// `65536` — i.e. every common UI coordinate (`0.25`, `0.5`, `0.75`, sub-pixel
-/// `1/64` font hinting, etc.) — and keeps `i64` arithmetic exact for any
-/// total extent below ~4.2e9 CSS pixels (~4 200 km).
+/// Number of sub-pixel units per logical pixel. `2^16 = 65536` represents
+/// every value whose denominator is a power of two up to 65536 — every common
+/// UI coordinate — exactly, and keeps `i64` arithmetic exact for any total
+/// extent below ~4.2e9 CSS pixels.
 const SUBPIXEL_BITS: u32 = 16;
 
 /// `2 ** SUBPIXEL_BITS`. Multiply an `f64` pixel value by this to get its

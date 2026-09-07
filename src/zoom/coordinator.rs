@@ -1,36 +1,36 @@
-//! [`ZoomController`]: the single authority for what the effective zoom is
-//! and how every change of it runs.
+//! [`ZoomController`]: the single authority for what the effective zoom is and
+//! how every change of it runs.
 //!
 //! All zoom traffic arrives as commands on `viewer.zoom.commands` — toolbar
-//! buttons, keyboard steps, the fit watcher, the follow watcher — and is
-//! executed by exactly one effect here. The controller:
+//! buttons, keyboard steps, the fit watcher, the follow watcher — executed by
+//! exactly one effect here. The controller:
 //!
-//! 1. resolves the command to a target (fit and constraint maths live in
+//! 1. resolves the command to a target (fit and constraint maths in
 //!    super::target),
 //! 2. opens a transition from the scale on screen right now to that target,
 //! 3. tweens the live display scale (super::animation), relaying the layout
-//!    out through the actuator on every frame so the document resizes
+//!    out through the actuator every frame so the document resizes
 //!    continuously under the reader's eyes,
-//! 4. and on landing brings the render scale onto the target and releases
-//!    the freezes (render suspension, page/scroll synchronisation, geometry
-//!    feedback, scroll echo).
+//! 4. and on landing brings the render scale onto the target and releases the
+//!    freezes (render suspension, page/scroll sync, geometry feedback, scroll
+//!    echo).
 //!
 //! A container follow (`ZoomCommand::Follow`, one post per frame of a sidebar
-//! slide or a window drag) is the one command that does not commit when it
-//! lands. Its layout must move every frame or the page squishes, but a raster
+//! slide or window drag) is the one command that does not commit when it
+//! lands: its layout must move every frame or the page squishes, but a raster
 //! pass per frame would be a storm, so the transition stays open — holding the
-//! same freezes a gesture holds — and a deadline `FOLLOW_SETTLE_MS` after the
-//! burst goes quiet commits it once. Every post moves the deadline, so what the
-//! reader sees is a page that rides the slide and sharpens when it stops.
+//! gesture's freezes — and a deadline `FOLLOW_SETTLE_MS` after the burst goes
+//! quiet commits it once. Every post moves the deadline: the page rides the
+//! slide and sharpens when it stops.
 //!
-//! Around the transaction, the strips' zombie retention grace is raised so
-//! pages a moving window evicts keep their DOM (and their last bitmap)
-//! briefly — the bridge that keeps the zoom from popping pages out.
+//! Around the transaction the strips' zombie retention grace is raised, so
+//! pages a moving window evicts keep their DOM (and last bitmap) briefly —
+//! the bridge that keeps a zoom from popping pages out.
 //!
-//! Because the controller is created with the reader page and lives exactly
-//! as long as its reactive owner, there is no global registry to leak or
-//! race: the old thread-local `CUR_ZOOM` registration is gone, and the
-//! free-function `request_zoom` entry points with it.
+//! The controller is created with the reader page and lives exactly as long
+//! as its reactive owner: no global registry to leak or race (the old
+//! thread-local `CUR_ZOOM` and the free-function `request_zoom` entry points
+//! are gone).
 
 use std::time::Duration;
 
@@ -61,21 +61,20 @@ impl ZoomController {
     pub fn drive(&self, state: ReaderState) {
         let actuator = self.actuator.clone();
 
-        // While a transition is in flight, three feedback loops must stand
-        // down: the browser's per-frame scroll echo (stale by one frame —
-        // adopting it would fight the rescale anchor), size reports from the
-        // strips (the guard in `PdfPageStrip` already refuses to report
-        // mid-zoom; the suspension makes that airtight at the virtualizer
-        // too), and — on landing — the flush order, because the last
-        // relayout must finish before buffered measurements re-enter.
+        // While a transition is in flight three feedback loops stand down:
+        // the browser's per-frame scroll echo (stale by one frame — adopting
+        // it would fight the rescale anchor), size reports from the strips
+        // (the `PdfPageStrip` guard already refuses to report mid-zoom; the
+        // suspension makes that airtight at the virtualizer too), and — on
+        // landing — the flush order, because the last relayout must finish
+        // before buffered measurements re-enter.
         //
-        // The grace that bridges a commit's evictions outlives the transaction
-        // that raised it, so it is released on a timer rather than on the
-        // commit — and the timer belongs to THIS owner, not to whoever happened
-        // to be running when the transaction landed. An owner-scoped debounce
-        // gives that for free: a pending fire is cleared on cleanup, where an
-        // unowned `set_timeout` would let a fire land on a disposed reader, and
-        // re-arming postpones the reset instead of queueing a second one.
+        // The grace bridging a commit's evictions outlives the transaction
+        // that raised it, so it is released on a timer, not on the commit —
+        // and the timer belongs to THIS owner. An owner-scoped debounce gives
+        // that free: a pending fire is cleared on cleanup (an unowned
+        // `set_timeout` could land on a disposed reader) and re-arming
+        // postpones the reset instead of queueing a second one.
         let v = actuator.vertical.clone();
         let hv = actuator.horizontal.clone();
         let grace_v = v.clone();
@@ -84,11 +83,11 @@ impl ZoomController {
             Duration::from_millis(u64::from(config::ZOOM_GRACE_MS)),
             move || {
                 // Lower the grace back to its scroll default AND drop the
-                // zombies the zoom raised it for, in the same breath. The
-                // zoom's retained pages sit on large bitmaps; the per-item
-                // expiry timer can outlive the transaction, so this closes
-                // the window and releases their surfaces right after the
-                // commit instead of waiting for the next scroll.
+                // zombies the zoom raised it for, in the same breath: the
+                // retained pages sit on large bitmaps and the per-item expiry
+                // timer can outlive the transaction, so this releases their
+                // surfaces right after the commit instead of at the next
+                // scroll.
                 grace_v.reset_retention_grace();
                 grace_hv.reset_retention_grace();
                 grace_v.prune_retained_now();
@@ -116,10 +115,10 @@ impl ZoomController {
         let tween = Tween::new();
 
         // The held commit's deadline: a burst re-arms ONE fire rather than
-        // queueing one per frame, so the transaction commits once the container
-        // has gone quiet — and the newest post always owns that fire, which is
-        // what keeps a follow from stranding uncommitted (and the freezes with
-        // it, so nothing would render until the next zoom).
+        // queueing one per frame, so the transaction commits once the
+        // container has gone quiet — and the newest post always owns that
+        // fire, which is what keeps a follow from stranding uncommitted (and
+        // the freezes with it, nothing rendering until the next zoom).
         let settle = use_debounce(Duration::from_millis(config::FOLLOW_SETTLE_MS), move || {
             let zoom = state.viewer.zoom;
             if let Some(t) = zoom.transition.get_untracked() {
@@ -144,12 +143,12 @@ impl ZoomController {
             };
 
             let zoom = state.viewer.zoom;
-            // A follow rides the container, so its own commit is deferred. Move
-            // the deadline BEFORE deciding the frame is a no-op: while a burst
-            // is running the scale may well be pinned (a page clamped at the
+            // A follow rides the container, so its own commit is deferred.
+            // Move the deadline BEFORE deciding the frame is a no-op: while a
+            // burst runs the scale may be pinned (a page clamped at the
             // minimum, a hand-picked zoom capped at `desired` as the window
-            // widens), and a commit that lands on the frame the container is
-            // still moving rasterises at a width the reader is already past.
+            // widens), and a commit landing on a frame the container is still
+            // moving rasterises at a width the reader is already past.
             let following = holds_commit(cmd);
             if following {
                 settle.trigger();
@@ -162,10 +161,10 @@ impl ZoomController {
                 return;
             }
             // `from` is the visual scale RIGHT NOW, so a retarget continues
-            // from wherever the eye currently is instead of teleporting.
-            // Nothing about POSITION is captured: the layout relayouts
-            // continuously and the actuator holds the reader's view still
-            // itself, frame by frame.
+            // from wherever the eye is instead of teleporting. Nothing about
+            // POSITION is captured: the layout relayouts continuously and the
+            // actuator holds the reader's view still itself, frame by
+            // frame.
             let mode = state.viewer.mode.get_untracked();
             let transition = ZoomTransition {
                 from: display,
@@ -183,20 +182,21 @@ impl ZoomController {
             let retention = config::profile_for(mode).retention;
             actuator.vertical.set_retention_grace(retention.grace_ms);
             actuator.horizontal.set_retention_grace(retention.grace_ms);
-            // The transition goes up BEFORE anything moves, because the frames
-            // it holds are exactly the ones that must not feed a measurement or
-            // the browser's scroll echo back into the layout being resized.
+            // The transition goes up BEFORE anything moves: the frames it
+            // holds are exactly the ones that must not feed a measurement or
+            // the browser's scroll echo back into the layout being
+            // resized.
             zoom.transition.set(Some(transition));
             if following {
-                // A follow lands HERE rather than on the next animation frame.
-                // The browser runs `ResizeObserver` callbacks after that frame's
-                // rAF callbacks, so a landing handed to the tween loop would be
-                // painted one frame after the container shrank — and a page row
-                // the flex engine may not resize is by then a few pixels wider
-                // than the box it has to fit in, which reads as a scrollbar
-                // flickering along the whole length of a drag. Landing in this
-                // task puts the new size in the same frame as the new width,
-                // which is what a continuous follow has to mean.
+                // A follow lands HERE rather than on the next animation
+                // frame: the browser runs ResizeObserver callbacks after that
+                // frame's rAF callbacks, so a landing handed to the tween loop
+                // would paint one frame after the container shrank — a page
+                // row the flex engine may not resize is by then a few pixels
+                // wider than its box, which reads as a scrollbar flickering
+                // along the whole drag. Landing in this task puts the new size
+                // in the same frame as the new width, which is what a
+                // continuous follow has to mean.
                 land(&state, &actuator, &transition);
             } else {
                 tween.arm(state, actuator.clone());
@@ -208,17 +208,16 @@ impl ZoomController {
 /// Land a transition: bring the render scale onto the target and release the
 /// freezes.
 ///
-/// There is no geometry step left to run. The last tween frame (or the first
+/// There is no geometry step left to run — the last tween frame (or the first
 /// frame of an untweened landing) already relayed the layout out to exactly
-/// the target, so all that is left is for the rasters to catch up with the
-/// size the hosts are already showing.
+/// the target, so all that remains is for the rasters to catch up with the
+/// size the hosts already show.
 ///
-/// Every transaction ends here, and only the calls differ: a tween and a
-/// discrete refit commit on the frame they land, while a container follow is
-/// committed by the settle deadline above — once per burst, at the size the
-/// container stopped at. It schedules nothing, and that is deliberate: see the
-/// note on the grace bridge at the end. Setting the scales is a no-op write when a follow has
-/// been landing all along, so a held commit is quiet even when it moves nothing.
+/// Every transaction ends here; only the calls differ: a tween and a discrete
+/// refit commit on the frame they land, a container follow is committed by
+/// the settle deadline — once per burst, at the size the container stopped
+/// at. Setting the scales is a no-op write when a follow has been landing all
+/// along, so a held commit is quiet even when it moves nothing.
 pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     state.viewer.zoom.committed.set(t.to);
     state.viewer.zoom.display.set(t.to);
@@ -229,9 +228,9 @@ pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     // Nothing renders inside a transaction; sweep the rasters now that the
     // render scale has moved.
     pdf_engine::api::sweep();
-    // The raised zombie grace is NOT lowered here. The bridge timer in `drive`
-    // does that one grace window later, from the effect that watches this very
-    // signal — so this function only writes signals and returns, which is what
-    // lets both of its callers (the settle deadline, and the tween loop out of
-    // a rAF callback) reach it from outside any owner of their own.
+    // The raised zombie grace is NOT lowered here: the bridge timer in `drive`
+    // does that one grace window later, from the effect watching this very
+    // signal — so this function only writes signals and returns, which lets
+    // both callers (the settle deadline, and the tween loop out of a rAF
+    // callback) reach it from outside any owner of their own.
 }

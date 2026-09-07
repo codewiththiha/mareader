@@ -1,8 +1,7 @@
 //! Scroll anchoring: keeping the reader's view pinned while the layout
-//! changes underneath it (measurements landing, zoom rescales).
-//!
-//! These are pure functions over any [`Layout`] — the framework adapter
-//! applies their results as a single "set scroll" write per frame.
+//! changes underneath it (measurements landing, zoom rescales). Pure
+//! functions over any [`Layout`] — the framework adapter applies their
+//! results as a single "set scroll" write per frame.
 
 use crate::layout::Layout;
 
@@ -18,8 +17,8 @@ pub enum AnchorPolicy {
     ///
     /// The `0..=1` bound is enforced by the consumers ([`correct`] and
     /// [`pin_at`] clamp it), so the policy stays plain data; the debug
-    /// asserts below make a caller passing an out-of-range fraction fail
-    /// loudly in debug builds instead of silently reading as an edge-anchor.
+    /// asserts make an out-of-range fraction fail loudly in debug builds
+    /// instead of silently reading as an edge-anchor.
     Fractional {
         /// The anchor item.
         item: usize,
@@ -88,8 +87,8 @@ pub fn pin_at<L: Layout + ?Sized>(
 /// the same viewport-relative position.
 ///
 /// This is the zoom contract: the reader's eyes stay on the same content
-/// point while the whole column rescales. Round-trips exactly (out then
-/// back in returns the original scroll position) — see tests.
+/// point while the whole column rescales. Round-trips exactly (out then back
+/// in returns the original scroll position) — see tests.
 pub fn rescale_anchor<L: Layout + ?Sized>(
     layout: &L,
     scroll_top: f64,

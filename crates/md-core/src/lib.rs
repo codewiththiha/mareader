@@ -4,22 +4,21 @@
 //! things a Markdown file has and a plain-text file does not:
 //!
 //! * a top-level **construct** per block (heading, fence, list, table, quote,
-//!   rule, prose) — [`ast`], which is also what may and may not be split for a
-//!   tighter page;
+//!   rule, prose) — [`ast`], which is also what may and may not be split for
+//!   a tighter page;
 //! * an **outline** — [`outline`] lifts the `#` headings into the reader's
-//!   chapter tree, so a Markdown document gets the sidebar panel a PDF's
-//!   `/Outlines` dictionary gets, with the page numbers following the live
-//!   pagination instead of being baked into the file;
+//!   chapter tree, with page numbers following the live pagination instead of
+//!   being baked into the file;
 //! * **front matter** — [`metadata`] reads a leading `---` block for a title
-//!   and an author before falling back to the first heading.
+//!   and author before falling back to the first heading.
 //!
-//! Deliberately NOT here: rendering. The blocks hold their Markdown source and
-//! the interface hands each one to a CommonMark renderer; parsing them into
-//! HTML here would mean a second Markdown implementation, and the paginator
-//! only ever needs the *boundaries* and the *kind*, both of which it can settle
-//! with two rules (blank lines, and fences).
+//! Deliberately NOT here: rendering. Blocks hold their Markdown source and
+//! the interface hands each to a CommonMark renderer; parsing to HTML here
+//! would be a second Markdown implementation, and the paginator only needs
+//! the *boundaries* and the *kind* — settled by two rules (blank lines,
+//! fences).
 //!
-//! Pure computation: unit-testable on the host via `cargo test -p md-core`.
+//! Pure computation: `cargo test -p md-core`.
 
 #![forbid(unsafe_code)]
 

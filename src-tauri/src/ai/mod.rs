@@ -1,14 +1,12 @@
 //! AI provider wiring for the in-reader dictionary/assistant features.
 //!
-//! The AI backend lives entirely in this Tauri crate: the WASM frontend
-//! cannot spawn the Swift helper process, so it only sends selected text
-//! over `invoke` and receives [`AiChunk`] events back. Which provider runs
-//! is decided at build time:
-//!
-//!   * Apple Silicon + `ai` feature → the real Apple Intelligence provider
-//!     (talks to the on-device Foundation Models framework via `fm-bridge`).
-//!   * Everything else (Windows, Linux, Intel Macs, or `ai` disabled) → a
-//!     mock provider streaming canned data, so the UI stays testable.
+//! The backend lives entirely in this Tauri crate: the WASM frontend cannot
+//! spawn the Swift helper process, so it sends selected text over `invoke`
+//! and receives [`AiChunk`] events back. Which provider runs is a build-time
+//! choice: Apple Silicon + the `ai` feature get the real Apple Intelligence
+//! provider (Foundation Models via `fm-bridge`); everything else — Windows,
+//! Linux, Intel Macs, `ai` disabled — gets a mock provider streaming canned
+//! data, so the UI stays testable.
 
 // Only the Apple Silicon provider consumes the prompt text, so it is gated with
 // it: on every other target the prompts module is not compiled at all.

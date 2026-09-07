@@ -1,13 +1,13 @@
 //! Paints the reflowable formats' typography onto `<html>` whenever it
 //! changes — the text counterpart of `apply_theme`.
 //!
-//! The contract comes from `reflow_core::typography::css_variables`: every
-//! knob the settings own is written as a SCALE-1 custom property
-//! (`--tx-font-size`, `--tx-line-height`, …). The page hosts never read the
-//! settings for type — they set their own `--ts` multiplier and let the
-//! stylesheet resolve `calc(var(--tx-…) * var(--ts))`. That split is why a
-//! zoom never repaints typography (only `--ts` moves) and why a settings
-//! change repaints everywhere at once, pages and the stream alike.
+//! The contract is `reflow_core::typography::css_variables`: every knob the
+//! settings own is written as a SCALE-1 custom property (`--tx-font-size`,
+//! `--tx-line-height`, ...). Page hosts never read the settings for type —
+//! they set their own `--ts` multiplier and let the stylesheet resolve
+//! `calc(var(--tx-...) * var(--ts))`. That split is why a zoom never repaints
+//! typography (only `--ts` moves) and a settings change repaints everywhere
+//! at once.
 
 use leptos::prelude::*;
 

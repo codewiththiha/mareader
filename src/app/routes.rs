@@ -7,10 +7,9 @@ use leptos_router::hooks::{use_location, use_navigate};
 use pdf_engine::types::DocStatus;
 use crate::state::AppState;
 
-/// URL follows document state: Ready ⇒ /reader, otherwise /.
-///
-/// The guard compares the current pathname before navigating, so a completed
-/// navigation makes the effect a no-op and it can never loop.
+/// URL follows document state: Ready ⇒ /reader, otherwise /. The guard
+/// compares the current pathname before navigating, so a completed navigation
+/// makes the effect a no-op and it can never loop.
 #[component]
 pub(crate) fn RouteSync(state: AppState) -> impl IntoView {
     let navigate = use_navigate();

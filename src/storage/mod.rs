@@ -1,12 +1,11 @@
 //! Persisted app state (settings, library, covers) over localStorage.
 //!
-//! Deliberately plain functions — a trait + `Box<dyn>` + `OnceLock` global
-//! for a single localStorage backend was more architecture than the app
-//! needs. If a second backend ever lands it can come back as a trait; until
-//! then the boundary is simply "the app loads and saves here".
+//! Deliberately plain functions — a trait + `Box<dyn>` + `OnceLock` global for
+//! a single localStorage backend was more architecture than the app needs. If
+//! a second backend ever lands it can come back as a trait.
 //!
-//! Failures are NOT silent: loads warn about what was dropped, saves return
-//! a [`StorageError`] the caller decides how to handle.
+//! Failures are NOT silent: loads warn about what was dropped, saves return a
+//! [`StorageError`] the caller decides how to handle.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -24,25 +23,25 @@ const LIBRARY_KEY: &str = "pdfreader.library.v1";
 const COVERS_KEY: &str = "pdfreader.covers.v1";
 /// Gloss highlights, keyed by document path.
 ///
-/// Versioned like the rest: a PDF's mark is a page-space rect in CSS px, which
-/// is stable across zoom and sessions but NOT across a change in how a page is
+/// Versioned like the rest: a PDF's mark is a page-space rect in CSS px —
+/// stable across zoom and sessions, but NOT across a change in how a page is
 /// laid out. If page rendering metrics ever change, bump this to `v2` rather
-/// than letting old marks drift onto the wrong words.
+/// than let old marks drift onto the wrong words.
 ///
 /// A reflowable mark carries its identity in `context` instead — a tagged
-/// envelope holding a block index and a character range (see
-/// `components::ai::reflow_anchor`) — because its pages are re-cut whenever the
-/// typography or the column width moves. The envelope is versioned by its own
-/// tag, so a change there does not need a new storage key.
+/// envelope holding a block index and a character range
+/// (`components::ai::reflow_anchor`) — because its pages are re-cut whenever
+/// the typography or column width moves. The envelope is versioned by its own
+/// tag, so a change there needs no new storage key.
 const GLOSS_KEY: &str = "pdfreader.gloss.v1";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization
-/// error). The UI should never crash on these — but they must not vanish.
+/// error). The UI must never crash on these — but they must not vanish.
 ///
-/// Handling rule (one consistent decision, no per-call judgment): every
-/// save failure is reported through [`StorageError::report`] at the call
-/// site. Covers could arguably be dropped silently (they regenerate), but
-/// a single rule beats a case-by-case call.
+/// Handling rule (one consistent decision, no per-call judgment): every save
+/// failure is reported through [`StorageError::report`] at the call site.
+/// Covers could arguably be dropped silently (they regenerate), but a single
+/// rule beats a case-by-case call.
 #[derive(Debug)]
 pub struct StorageError {
     op: &'static str,
@@ -144,11 +143,10 @@ pub fn load_covers() -> CoverMap {
         .collect()
 }
 
-/// Save the cover-art map.
-///
-/// Serialized through a map of BORROWED covers: the images are the largest
-/// thing the app persists, and going through an owned `HashMap` to hand serde
-/// something it recognises would copy every data URL for no reason.
+/// Save the cover-art map. Serialized through a map of BORROWED covers: the
+/// images are the largest thing the app persists, and going through an owned
+/// `HashMap` to hand serde something it recognises would copy every data URL
+/// for no reason.
 pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     let borrowed: HashMap<&str, &CoverImage> = covers
         .iter()
@@ -161,28 +159,27 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     set(COVERS_KEY, &json)
 }
 
-/// Write the shelf's current books, reporting a failure instead of returning it.
+/// Write the shelf's current books, reporting a failure instead of returning
+/// it.
 ///
-/// The shelf is written from four moments, and three of them want exactly this:
-/// a document opening (the shelf record), a document closing (the last known
-/// page) and a book being removed from the shelf. None of the three can do
-/// anything with a `StorageError` — a shelf that will not write is still a shelf
-/// the reader can use, and the next write carries the same books again — so all
-/// three spelled the same `if let Err(e) = … { e.report() }` around the same
+/// The shelf is written from four moments and three want exactly this: a
+/// document opening (the shelf record), a document closing (the last known
+/// page), a book leaving the shelf. None can do anything with a
+/// `StorageError` — a shelf that will not write is still a shelf the reader
+/// can use, and the next write carries the same books again — so all three
+/// spelled the same `if let Err(e) = ... { e.report() }` around the same
 /// untracked read.
 ///
-/// The fourth moment is the reading-progress debounce, which keeps
-/// [`save_library`]: it snapshots the VALUE and hands it to a timer, because a
-/// timer that fired during teardown and reached back into a disposed signal
-/// would panic where a dropped save would not.
+/// The fourth is the reading-progress debounce, which keeps [`save_library`]:
+/// it snapshots the VALUE and hands it to a timer, because a timer firing
+/// during teardown that reached into a disposed signal would panic where a
+/// dropped save would not.
 ///
-/// The read here is untracked, and that is the only relationship this module
-/// has with the reactive graph: storage takes a value and writes it, and never
-/// subscribes to anything.
-///
-/// Writes here are immediate rather than debounced on purpose. Two of the three
-/// are the last thing that happens before a document is torn down or the window
-/// closes, and a debounced save is a save that may never land.
+/// The read here is untracked — the only relationship this module has with the
+/// reactive graph: storage takes a value and writes it, never subscribes.
+/// Writes are immediate rather than debounced on purpose: two of the three are
+/// the last thing before a teardown or window close, and a debounced save is a
+/// save that may never land.
 pub fn persist_library(library: LibraryState) {
     if let Err(e) = library.books.with_untracked(|books| save_library(books)) {
         e.report();
@@ -213,10 +210,9 @@ fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError>
 }
 
 /// Replace one document's marks and write the whole map back.
-///
 /// Read-modify-write rather than keeping the map in memory: marks change only
-/// when the reader explains a word (a human-paced action), and re-reading
-/// keeps a second window's marks from being clobbered.
+/// when the reader explains a word (human-paced), and re-reading keeps a
+/// second window's marks from being clobbered.
 pub fn persist_gloss(path: &str, marks: &[GlossMark]) {
     let mut all = load_gloss();
     all.insert(path.to_string(), marks.to_vec());

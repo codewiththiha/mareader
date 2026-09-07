@@ -1,10 +1,9 @@
-//! The AI word card's user-facing settings types.
-//!
-//! These ride on the persisted `Settings` struct (in `reader_core::settings`)
-//! as FLAT `gloss_*` fields — the field names are the serde schema saved to
-//! localStorage, so they stay flat and are not nested behind a new `ai`
-//! block (that would silently drop every install's saved values on load).
-//! This crate owns the types; the persisted struct owns the storage.
+//! The AI word card's user-facing settings types. These ride on the persisted
+//! `Settings` struct (`reader_core::settings`) as FLAT `gloss_*` fields — the
+//! names are the serde schema saved to localStorage, so they stay flat;
+//! nesting them behind a new `ai` block would silently drop every install's
+//! saved values on load. This crate owns the types; the persisted struct owns
+//! the storage.
 
 use serde::{Deserialize, Serialize};
 

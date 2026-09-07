@@ -1,19 +1,12 @@
-/* =====================================================================
-   Appearance system additions: the hue picker strip, the preset
-   thumbnails, and the clickable link layer.
-   ===================================================================== */
+/* Appearance system: the hue picker strip, the preset thumbnails, and the
+   clickable PDF link layer. */
 
-/* =====================================================================
-   10. Appearance system additions (task 11): hue picker, preset
-   thumbnails, and the clickable link layer.
-   ===================================================================== */
-
-/* --- hue strip ------------------------------------------------------------
-   The track paints the actual hue circle so the control previews its own
-   output. Authored in sRGB/HSL, NOT oklch: the tint is applied with
-   `hue-rotate()`, which works in sRGB, and the two spaces disagree badly —
-   oklch hue 34 is pink where sRGB 34 is the warm tan sepia wants. Matching the
-   space is what makes the swatch you click the colour you get. */
+/* Hue strip — the track paints the actual hue circle so the control
+   previews its own output. Authored in sRGB/HSL, NOT oklch: the tint
+   pipeline applies hue-rotate(), which works in sRGB, and the two spaces
+   disagree badly (oklch hue 34 is pink where sRGB 34 is sepia's warm tan).
+   Matching the space is what makes the swatch you click the colour you
+   get. */
 .hue-strip {
   background-image: linear-gradient(
     to right,
@@ -41,29 +34,19 @@
   cursor: pointer;
 }
 
-/* --- preset thumbnails (rock-solid, no filter/blend simulation hacks) -----
-   A miniature page rendered in the preset's OWN look. The swatch root carries
-   that appearance as inline custom properties under a private --ps-* namespace
-   (Appearance::preview_style), so the per-frame root writes during a tint drag
-   never invalidate these layers.
+/* Preset thumbnails — a miniature page rendered in the preset's OWN look.
+   The swatch root carries that appearance as inline custom properties in a
+   private --ps-* namespace (Appearance::preview_style), so the per-frame
+   root writes during a tint drag never invalidate these layers.
 
-   NO FILTER / NO MIX-BLEND-MODE. The previous version simulated a rendered PDF
-   page by giving .preset-canvas a CSS `filter: var(--ps-filter)` and
-   `mix-blend-mode: var(--ps-blend)` over a #ffffff background. On Dark/Dim/
-   Sepia/Green themes (without Noise), WebKit's compositor loses the
-   intermediate buffer for elements with both `filter` and `mix-blend-mode`
-   inside `isolation: isolate` during rapid style recalculations (slider
-   drags), rendering the "text" bars invisible. Light was immune because
-   `canvas_filter` is "none" (no GPU filter layer); Noise themes were immune
-   because `.preset-noise::after` (z-index 3, SVG background) forces a
-   persistent hardware-composited layer group.
-
-   The thumbnail is just a visual preview. The exact background and text
-   colours are already computed in --ps-color-paper and --ps-color-ink. By
-   rendering .preset-page with `background-color: var(--ps-color-paper)` and
-   .preset-line with `background-color: var(--ps-color-ink)`, we remove ALL
-   CSS filter and mix-blend-mode hacks — the swatch is impervious to GPU
-   compositing bugs because it has no GPU compositing layers to lose. */
+   NO filter and NO mix-blend-mode anywhere in a swatch, on purpose: an
+   earlier version simulated the page with filter + blend over white, and
+   WebKit's compositor drops the intermediate buffer for elements carrying
+   both inside isolation:isolate during rapid style recalculation (slider
+   drags), which rendered the "text" bars invisible on Dark/Dim/Sepia/Green.
+   The exact paper and ink colours are already computed in --ps-color-paper
+   / --ps-color-ink, so the swatch paints flat colours and has no
+   compositing layers to lose. */
 .preset-swatch {
   display: block;
   width: 100%;
@@ -83,8 +66,8 @@
   background-color: var(--ps-color-paper, #ffffff);
 }
 
-/* The stand-in "canvas": a flex column of dark "text" bars on the themed
-   paper. No filter, no blend — just solid colours from --ps-color-*. */
+/* The stand-in "canvas": a flex column of ink bars on the themed paper —
+   solid colours from --ps-color-*, no filter, no blend. */
 .preset-canvas {
   position: absolute;
   inset: 0;
@@ -95,13 +78,9 @@
   gap: 10%;
 }
 
-/* Stand-in text: coloured bars on the paper so tint/texture have something
-   to act on. Uses --ps-color-ink (the preset's own ink colour, including
-   tint) so the bars are visible on every base — dark ink on light paper,
-   light ink on dark paper. Deliberately NOT a fixed #24303f: that was
-   invisible on dark presets after the invert filter. With the filter removed,
-   the ink colour must be theme-appropriate or dark presets would show dark-
-   on-dark. */
+/* Stand-in text bars, in the preset's own ink (tint included) so they stay
+   visible on every base. NOT a fixed dark colour: with the invert filter
+   gone, a fixed ink would be dark-on-dark in dark presets. */
 .preset-line {
   display: block;
   height: 5.5%;
@@ -116,8 +95,8 @@
 
 /* The swatch re-declares .pdf-page's texture chain locally: .preset-page is
    not a .pdf-page, and making it one would drag in the host's shadow, flex
-   and sizing rules. z-index 2 keeps it above the stand-in canvas. All
-   variables consumed here are in the swatch's private --ps-* namespace. */
+   and sizing rules. z-index 2 keeps the texture above the stand-in canvas.
+   Everything consumed here lives in the private --ps-* namespace. */
 .preset-page::before {
   content: "";
   position: absolute;
@@ -126,10 +105,9 @@
   pointer-events: none;
   opacity: var(--ps-tex-opacity, 0.9);
   --tex-scale: var(--ps-tex-scale, 1);
-  /* Restated beside --tex-scale on purpose: a custom property resolves its own
-     var()s before the value is inherited, so the derived pair cannot live on
-     :root and still follow this swatch's scale. See the note in
-     styles/textures.css. */
+  /* Restated beside --tex-scale on purpose: a custom property resolves its
+     own var()s before inheriting, so the derived pair cannot live on :root
+     and still follow this swatch's scale (see styles/textures.css). */
   --tex-unit: calc(26px * var(--tex-scale));
   --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
   background-origin: border-box;
@@ -167,10 +145,10 @@
 }
 
 /* Grain preview, above the texture so the stack matches the real page.
-   OVERSIZED ON PURPOSE (inset: -100%): noise-crawl translates the tile by
-   up to 14px, and the swatch is only ~49x65px. At inset:0 the tile's own
-   EDGE would enter frame every few steps. The parent's overflow: hidden
-   clips the excess. */
+   Oversized (inset: -100%) on purpose: noise-crawl translates the tile up
+   to 14px and the swatch is only ~49x65px, so at inset:0 the tile's edge
+   would enter frame every few steps. The parent's overflow:hidden clips
+   the excess. */
 .preset-page.preset-noise::after {
   content: "";
   position: absolute;
@@ -191,17 +169,13 @@
   .preset-page.preset-noise-animated::after { animation: none; }
 }
 
-/* --- link layer -----------------------------------------------------------
-   Clickable annotation targets over the page.
-
-   Sits ABOVE the text layer (z-index 3 vs 2). The text layer covers the whole
-   page with transparent spans, so a link underneath it would never receive a
-   click; putting links on top and giving only the ANCHORS pointer-events means
-   text selection still works everywhere except the few pixels that are a link
-   — the same trade-off every PDF viewer makes.
-
-   Neither blended nor filtered: the affordance is UI, not page content, so it
-   must stay legible whatever the tint or base mode is doing to the canvas. */
+/* Link layer — clickable annotation targets over the page. Above the text
+   layer (z 3 vs 2): the text layer covers the page with transparent spans,
+   so a link underneath would never receive a click; only the anchors get
+   pointer-events, so selection still works everywhere except the few
+   pixels that are a link — the trade-off every PDF viewer makes. Neither
+   blended nor filtered: the affordance is UI, not page content, and must
+   stay legible under any tint or base mode. */
 .pdf-page .linkLayer {
   position: absolute;
   inset: 0;
@@ -213,9 +187,8 @@
   pointer-events: auto;
   cursor: pointer;
   border-radius: 2px;
-  /* Invisible until hovered. A PDF's own link styling (usually coloured text
-     or an underline) is already painted into the canvas, so a permanent box on
-     top would double it up on every well-made document. */
+  /* Invisible until hovered: the PDF's own link styling is already painted
+     into the canvas, so a permanent box would double it up. */
   background-color: transparent;
   outline: 1px solid transparent;
   transition: background-color 120ms ease, outline-color 120ms ease;
@@ -224,11 +197,10 @@
   background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
   outline-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
 }
-/* Keyboard users get the affordance permanently while focused — links are
-   reachable by Tab and an invisible focus target is a dead end. */
+/* Keyboard users get the affordance permanently while focused — an
+   invisible focus target is a dead end. */
 .pdf-page .linkLayer .pdf-link:focus-visible {
   background-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
-

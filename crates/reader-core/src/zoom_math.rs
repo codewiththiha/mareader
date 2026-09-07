@@ -40,13 +40,12 @@ pub fn fit_scale(
     }
 }
 
-/// One step along the preset ladder. `dir > 0` zooms in, `dir < 0` zooms out.
-///
-/// The step is taken from the preset CLOSEST to `current`, then clamped into
-/// the ladder — so a reader already at the top or bottom stays put instead of
-/// wrapping to the other end or falling off the array. A non-preset scale
-/// (a fit width of 137%, say) therefore rounds onto the ladder first and
-/// steps from there, which is what makes repeated presses feel even.
+/// One step along the preset ladder; `dir > 0` zooms in, `dir < 0` out. The
+/// step is taken from the preset CLOSEST to `current`, then clamped into the
+/// ladder, so a reader at the top or bottom stays put instead of wrapping or
+/// falling off. A non-preset scale (a 137% fit-width) rounds onto the ladder
+/// first and steps from there, which is what makes repeated presses feel
+/// even.
 pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
     if dir == 0 {
         return clamp_scale(current);
@@ -130,11 +129,8 @@ mod tests {
 }
 
 /// Hermite smoothstep: 0 below `edge0`, 1 above `edge1`, smooth between.
-///
-/// Pure easing math, not gloss-specific — it lived in `gloss` only because
-/// that was its first consumer (the card content's opacity/interactivity
-/// fade as the morph progresses). Any UI fade that must start and end with
-/// zero derivative belongs here.
+/// Pure easing math, not gloss-specific — any UI fade that must start and end
+/// with zero derivative belongs here.
 pub fn smoothstep(t: f64, edge0: f64, edge1: f64) -> f64 {
     let x = ((t - edge0) / (edge1 - edge0).max(0.0001)).clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)

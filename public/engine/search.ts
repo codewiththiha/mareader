@@ -1,14 +1,11 @@
 // Search support, engine side. Matching no longer happens here: the Rust
-// index (pdf-core::search::SearchIndex, fed by `extractPageText`) owns the
-// query. This module only:
-//
-//  * extracts one page's text runs for the index builder
-//    (`extractPageText` — the only JS work a search still does),
-//  * publishes the active query so the DOM text layers repaint their
-//    highlight boxes (`setSearchContext`), and
-//  * toggles the active-match emphasis / clears highlights (`setActiveMatch`,
-//    `clearHighlights`) — painting itself happens on the text layer spans
-//    in highlights.ts.
+// index (pdf-core's SearchIndex, fed by `extractPageText`) owns the query.
+// This module only extracts one page's text runs for the index builder (the
+// only JS work a search still does), publishes the active query so the DOM
+// text layers repaint their highlight boxes (`setSearchContext`), and
+// toggles the active-match emphasis or clears highlights (`setActiveMatch`,
+// `clearHighlights`) — painting itself happens on the text-layer spans in
+// highlights.ts.
 
 import type { TextItem } from "./types";
 import { fail, failFrom } from "./canvas";

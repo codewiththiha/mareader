@@ -3,33 +3,29 @@
 //! `pdf-paper` crate).
 //!
 //! The session owns every COLOUR decision — detection off raw frames, the
-//! per-page palette, the look-ahead. The shell owns the GEOMETRY,
-//! and reports it as ONE number: the viewport's position along the page
-//! ladder, the visible-paint-weighted mean page index. Resting on page N it
-//! is exactly `N.0`; straddling pages N and N+1 at 40/60 it is `N + 0.6`,
-//! carrying BOTH pages' shares.
+//! per-page palette, the look-ahead. The shell owns the GEOMETRY and reports
+//! it as ONE number: the viewport's position along the page ladder, the
+//! visible-paint-weighted mean page index — exactly `N.0` resting on page N,
+//! `N + 0.6` straddling N and N+1 at 40/60, carrying BOTH pages' shares.
 //!
-//! That one number is what the old page-pair blend lacked. A pair
-//! `(dominant, dominant + 1)` is blind to the page BEFORE the dominant one,
-//! so right after a handover — when the previous page still fills half the
-//! window — the backdrop snapped to the new page's colour while the eye
-//! still saw the old one: the "slightly mismatched" seam. The weighted
-//! position has no seam: it moves continuously through the handover and is
-//! exactly the dominant page's index at rest, so the palette's ladder
-//! interpolation meets the pages where they actually are.
+//! That one number is what the old page-pair blend lacked: a pair is blind to
+//! the page BEFORE the dominant one, so right after a handover — the previous
+//! page still filling half the window — the backdrop snapped to the new
+//! colour while the eye still saw the old one. The weighted position moves
+//! continuously through the handover and equals the dominant index at rest,
+//! so the palette's ladder interpolation meets the pages where they are.
 //!
 //! The position math uses the virtualizer's own coordinate convention
 //! (viewport = `[scroll, scroll + height]` against item offsets whose sizes
 //! fold in the trailing gap) — the same convention the dominant tracker
-//! uses, so the backdrop and the page counter always agree on which page is
-//! current.
+//! uses, so backdrop and page counter always agree on the current page.
 //!
-//! The two halves are wired at different levels on purpose:
-//! [`paper_settings`] at the APP root, because the session must know the
-//! real blend switch and detection area BEFORE the first document opens —
-//! the first book's first frame publishes only if the session already knows
-//! `blend_on`, and that happens before any reader mounts. [`blend_backdrop`]
-//! (geometry) stays with ReaderPage, where the virtualizer's scroll lives.
+//! The halves are wired at different levels on purpose: [`paper_settings`] at
+//! the APP root, because the session must know the blend switch and detection
+//! area BEFORE the first document opens (the first book's first frame
+//! publishes only if the session already knows `blend_on`);
+//! [`blend_backdrop`] (geometry) stays with ReaderPage, where the
+//! virtualizer's scroll lives.
 
 use leptos::prelude::*;
 
@@ -44,20 +40,19 @@ use crate::state::AppState;
 /// for the next book and idles otherwise.
 ///
 /// Wired at the APP root, not the reader: on a fresh launch this runs before
-/// the first `document_open`, so the first frame of the first book publishes
-/// against a session that already knows blend is on — the alternative (first
-/// wiring at reader mount) is why the first open of a session used to flash
-/// the theme paper first.
+/// the first `document_open`, so the first book's first frame publishes
+/// against a session that already knows blend is on. Wiring at reader mount
+/// instead is why the first open of a session used to flash the theme paper
+/// first.
 pub fn paper_settings(state: AppState) {
     let settings = state.settings;
     // Publish ONCE, synchronously, before anything is allowed to run. A
     // Leptos effect's first run is queued, not immediate, and the open flow
-    // this has to precede is itself asynchronous — an OS "Open with" launch
-    // hands the backend a path before the webview has finished mounting, so
-    // "installed earlier in the app root" is not on its own a guarantee that
-    // this landed first. A session that does not yet know blend is on drops
-    // the first book's first frame on the floor, so the seed does not wait
-    // for a flush.
+    // this must precede is itself asynchronous — an OS "Open with" launch
+    // hands the backend a path before the webview finishes mounting — so
+    // "installed earlier in the app root" alone does not guarantee this
+    // landed first. A session that does not yet know blend is on drops the
+    // first book's first frame, so the seed does not wait for a flush.
     publish(settings.with_untracked(|st| st.layout));
     // ...and then track, for every later change.
     Effect::new(move |_| publish(settings.with(|st| st.layout)));
@@ -83,11 +78,12 @@ pub fn blend_backdrop(state: AppState) {
 
     // The viewport's weighted position along the page ladder. Per scroll
     // tick, and only while blend mode is actually driving a backdrop — the
-    // session ignores the number otherwise, so there is nothing to compute.
+    // session ignores the number otherwise, so there is nothing to
+    // compute.
     Effect::new(move |_| {
-        // Text documents want for none of this: their pages are a colour
-        // the compositor already has, so the paper session is closed when
-        // one opens and never fed positions.
+        // Text documents want none of this: their pages are a colour the
+        // compositor already has, so the paper session is closed when one
+        // opens and never fed positions.
         if state.reader.reflowable() {
             return;
         }
@@ -171,8 +167,8 @@ mod tests {
     }
 
     /// The regression the old pair blend could not pass: JUST after the
-    /// dominant handover, the previous page still owns 45% of the window,
-    /// and the position — unlike the old pair flip — still carries it.
+    /// dominant handover the previous page still owns 45% of the window, and
+    /// the position — unlike the old pair flip — still carries it.
     #[test]
     fn just_after_the_handover_the_old_page_still_counts() {
         // Window [720, 1520]: page 1 shows 80px, page 2 shows 696px — page 2
@@ -204,8 +200,8 @@ mod tests {
     }
 
     /// Offsets count every preceding page's trailing gap: deep in a book the
-    /// window sits exactly where the strip laid it — and every visible sliver
-    /// carries its share, even a 20px corner of the page above.
+    /// window sits exactly where the strip laid it, and every visible sliver
+    /// carries its share — even a 20px corner of the page above.
     #[test]
     fn offsets_count_the_gaps_above() {
         // Pages of 100 with gap 20: page 2 paints [120, 220], page 3 [240,

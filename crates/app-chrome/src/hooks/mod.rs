@@ -2,20 +2,17 @@
 //! components read as wiring + view, and the raw pattern (closure parking,
 //! cleanup ordering, JS-reference lifetimes) is written once.
 //!
-//! Contract: nothing here may know what a PDF reader is. These are the
-//! layer-1 primitives the floating/interaction systems compose. The one
-//! hook that is NOT format-agnostic — the typed CustomEvent hook, which
-//! dispatches the app's own event protocol — stays in the app
+//! Contract: nothing here may know what a PDF reader is. The one hook that is
+//! NOT format-agnostic — the typed CustomEvent hook dispatching the app's own
+//! event protocol — stays in the app
 //! (`primitives::hooks::use_custom_event`).
 //!
-//! Two composites live here as well. [`hover_reveal`] sits on top of
-//! `use_timeout`'s hover primitive and owns the whole auto-hide surface —
-//! the shared `hovered` truth, the hold recheck, the pin — so the title
-//! bar, the bottom bar and the overlay rail wire one call each instead of
-//! twenty copied lines. [`verified_switch`] owns the other half of "the
-//! hide always lands": a switch driven by an async command re-checks the
-//! live truth once the command resolves, so a decision that moved
-//! mid-flight cannot leave the stale one settled last.
+//! Two composites live here as well. [`hover_reveal`] owns the whole
+//! auto-hide surface (shared `hovered` truth, hold recheck, pin) so the title
+//! bar, bottom bar and overlay rail wire one call each. [`verified_switch`]
+//! owns the other half of "the hide always lands": a switch driven by an async
+//! command re-checks the live truth once the command resolves, so a decision
+//! that moved mid-flight cannot leave the stale one settled last.
 
 pub mod dom;
 pub mod hover_reveal;

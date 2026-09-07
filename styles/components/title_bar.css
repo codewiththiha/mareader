@@ -1,138 +1,84 @@
-/* =====================================================================
-   Titlebar glass: the frosted overlay bar, the sidebar panel outro,
-   the one-frame glass rebuild on base-mode swaps, and the status bar.
-   ===================================================================== */
+/* Titlebar glass: the frosted overlay bar, the sidebar panel outro, the
+   one-frame glass rebuild on base-mode swaps, the status bar treatment and
+   the frameless caption buttons. */
 
-/* ---------------------------------------------------------------------
-   8. Toolbar glass — frosted overlay bar.
+/* TOOLBAR GLASS — the <header> in src/features/reader/page.rs is absolutely
+   stacked over the viewer and pages scroll underneath it, so the blur has
+   real content to sample (a bar with nothing behind it reads as a flat
+   fill, however translucent). The background lives here rather than in a
+   bg-surface/60 utility so blur radius, saturation boost and alpha stay one
+   coherent unit no utility can half-override, and the no-backdrop-filter
+   fallback below has something to attach to. saturate() is what sells it as
+   glass rather than fog: blur alone averages colour toward grey.
 
-   The `<header>` in features/reader/page.rs carries backdrop-blur + a theme-tinted
-   translucent bg (the "milky glass") and is absolutely stacked over the
-   viewer, so content scrolls underneath it, blurred.
-
-   AUTO-INVERTING GLYPHS, AND WHY THEY ARE OPT-IN.
-   Icons and labels used to be pure-white + mix-blend-difference across the
-   board, so they inverted against whatever scrolled beneath the glass. That
-   works for near-black or near-white ink, where difference lands far from the
-   backdrop. It FAILS for mid-grey: `--color-muted` (#6b7280) differenced
-   against the light glass resolves to a near-white, and the "/ 12" total in
-   the page navigator rendered at a measured luminance spread of 7/255 —
-   invisible — while the "1" input beside it (which has its own opaque
-   background, so it never blended) stayed properly dark.
-
-   Difference-blending is therefore applied ONLY where a glyph genuinely sits
-   over scrolling page content with no background of its own — those call
-   sites carry Tailwind's mix-blend-difference directly. Everything else
-   keeps its normal themed colour. That is not a downgrade: the header is
-   `bg-surface/60` over the page, and every themed token is already chosen
-   for contrast against surface. The tint keeps each token's OWN lightness
-   (see core/oklch.rs), so that contrast survives any hue.
-   --------------------------------------------------------------------- */
-/* THE GLASS ITSELF.
-   Previously the header carried Tailwind's `bg-surface/60 backdrop-blur-xl`
-   and still read as a flat light or flat dark bar, never as glass.
-
-   ROOT CAUSE: NOTHING WAS EVER BEHIND IT. The header is absolutely positioned
-   and therefore out of flow, but the content row below it carried `mt-12` —
-   exactly the header's own height (toolbar-row is h-12). The viewer began on
-   the first pixel after the bar ended, so no page content ever passed beneath
-   it. `backdrop-filter` had only the flat `bg-paper` fill to sample, and
-   blurring a solid colour returns that same solid colour. The translucency was
-   real the whole time; there was simply nothing behind it to see. The margin
-   is gone now (features/reader/page.rs) and each view pads its own scroller instead, so
-   pages genuinely travel under the bar.
-
-   Owning the background here (rather than via `bg-surface/60`) keeps the
-   blur radius, the saturation boost and the alpha as one coherent unit that a
-   utility class cannot half-override, and gives the no-backdrop-filter
-   fallback below something to attach to. A tint still tints the glass, because
-   the mix reads whatever `--color-surface` is live.
-
-   The saturate() is what sells it as glass rather than as fog: blurring alone
-   averages colour toward grey, and pushing saturation back up keeps the page
-   tint readable through the bar. */
+   Difference-blended glyphs are OPT-IN at the few call sites that genuinely
+   sit over scrolling content with no background of their own: mid-greys
+   (--color-muted) difference against light glass to near-white and vanish.
+   Everything else keeps its themed colour — the tint preserves each token's
+   own lightness, so contrast survives any hue. */
 .toolbar-glass {
   background-color: color-mix(in oklab, var(--color-surface) 72%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   backdrop-filter: blur(20px) saturate(180%);
 }
 
-/* Progressive enhancement: where backdrop-filter is unavailable the bar must
-   still be legible, so it falls back to a near-opaque surface. */
+/* Where backdrop-filter is unavailable the bar must stay legible: fall back
+   to a near-opaque surface. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .toolbar-glass {
     background-color: color-mix(in oklab, var(--color-surface) 96%, transparent);
   }
 }
 
-/* Sidebar panel outro — same 300ms ease-in-out as the aside width slide.
-   The rail labels (Thumbs / Outline) outro by being clipped as the aside
-   shrinks. The grid/list used to go `visibility:hidden` on the first frame
-   of that slide, so the thumbs popped off while the labels slid away.
-   `.is-outro` is toggled for the whole close, so the fade lands with the
-   clip and with the labels. */
+/* Sidebar panel outro/intro — same 300ms ease-in-out as the aside width
+   slide. `.is-outro` is held for the whole close so the fade lands with the
+   clip and the rail labels; `.is-intro` is a two-frame paint marker whose
+   removal starts the cells' opacity transition alongside the aside. */
 .sidebar-panel {
   transition: opacity 300ms ease-in-out;
 }
 .sidebar-panel.is-outro {
   opacity: 0;
 }
-/* Sidebar panel intro — a two-frame paint marker. Cells mount immediately;
-   removing this class starts their opacity transition alongside the aside. */
 .sidebar-panel.is-intro {
   opacity: 0;
 }
 
-/* Rebuild the glass ONLY on the one frame a base mode swaps. Dropping the
-   filter destroys WKWebView's cached backdrop layer; re-adding it next frame
-   re-samples the NEW page colours. Menus stay frosted the whole time. */
+/* Rebuild the glass ONLY on the one frame a base mode swaps: dropping the
+   filter destroys WKWebView's cached backdrop layer, and re-adding it next
+   frame re-samples the new page colours. Menus stay frosted throughout. */
 html.theme-switching .toolbar-glass {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   background-color: var(--color-surface);
 }
 
-/* One-frame mute of color transitions so a base/preset swap cannot leave
-   a button interpolated between the old and new tokens. Toggled from
-   effects/theme.rs around paint_appearance_now. */
+/* One-frame mute of color transitions so a base/preset swap cannot leave a
+   button interpolated between old and new tokens. Toggled from
+   src/effects/app/theme.rs around the appearance paint. */
 html.theme-switching,
 html.theme-switching * {
   transition: none !important;
 }
 
 /* The status bar keeps the auto-inverting treatment: it floats directly over
-   the page with no background at all, so the backdrop really is arbitrary. */
+   the page with no background at all, so its backdrop really is arbitrary. */
 
-
-/* ---------------------------------------------------------------------
-   9. Frameless caption buttons (Windows/Linux).
-
-   `tauri.windows.conf.json` / `tauri.linux.conf.json` strip the native
-   title bar, and the titlebar's `window-controls` cluster (rendered after
-   the right cluster, inside the toolbar row) replaces it: minimize /
-   maximize-restore / close. macOS never mounts the cluster — it keeps its
-   native traffic lights.
-
-   The two frameless desktops draw their platform's own shape for the same
-   three commands: Windows keeps its square, full-height caption buttons
-   (`.win-btn`), while Linux gets GNOME-style circles (`.gnome-btn`).
-   The dispatcher lives in `window_controls.rs`; the platform is fixed for
-   the process, so exactly one variant ever mounts.
-
-   Sizing follows the platform convention rather than the app's icon
-   buttons: 46px-wide full-height hit targets flush against the window
-   edge, no rounding, no borders, hover-only backgrounds. That is what a
-   caption row is supposed to feel like; the toolbar's 36px rounded ghosts
-   would read as app controls living in the wrong country.
-   --------------------------------------------------------------------- */
+/* FRAMELESS CAPTION BUTTONS — tauri.windows.conf.json /
+   tauri.linux.conf.json strip the native title bar; the toolbar's
+   window-controls cluster replaces it (macOS keeps its traffic lights and
+   never mounts it). Windows draws square full-height buttons (.win-btn),
+   Linux GNOME-style circles (.gnome-btn); the dispatcher is
+   crates/app-chrome/src/window/caption.rs and exactly one variant ever
+   mounts. Sizing follows the platform convention — 46px full-height hit
+   targets flush to the window edge, hover-only backgrounds — not the app's
+   36px rounded ghosts. */
 .window-controls {
   display: flex;
   align-items: stretch;
   height: 100%;
-  /* Cancel the row's `pr-2` so the close button's hit area runs flush to
-     the window edge — the last 8px belong to the caption, not to padding.
-     The cluster is in-flow after the right cluster, so nothing else ever
-     needs to reserve space for it. */
+  /* Cancel the row's pr-2 so the close button's hit area runs flush to the
+     window edge. */
   margin-right: -8px;
 }
 .win-btn {
@@ -144,8 +90,7 @@ html.theme-switching * {
   border: none;
   background: transparent;
   color: var(--color-ink);
-  /* Chrome, not a link target: caption buttons keep the native arrow. */
-  cursor: default;
+  cursor: default; /* chrome, not a link target */
 }
 .win-btn:hover {
   background: var(--color-line);
@@ -157,9 +102,8 @@ html.theme-switching * {
 .win-btn:active {
   opacity: 0.72;
 }
-/* The one Windows convention worth keeping everywhere: the close button
-   warns in red on hover, and its press is a darker red rather than the
-   neutral dim — users expect it, and it costs nothing on Linux. */
+/* The one Windows convention worth keeping everywhere: close warns red on
+   hover, darker red on press. */
 .win-btn-close:hover {
   background: #e81123;
   color: #fff;
@@ -170,14 +114,9 @@ html.theme-switching * {
   color: #fff;
 }
 
-/* ---------------------------------------------------------------------
-   9b. GNOME-style circular caption buttons (Linux only).
-
-   Same three commands as the Windows cluster; only the shape and fill
-   differ. The translucent circles are mixed from the theme ink, so they
-   adapt to light/dark/tinted themes without a per-theme rule, and the
-   close button warms to the GNOME red on hover.
-   --------------------------------------------------------------------- */
+/* GNOME-style circles (Linux): same three commands, translucent fills mixed
+   from the theme ink so they adapt to any light/dark/tinted theme without
+   per-theme rules; close warms to the GNOME red. */
 .window-controls.gnome {
   align-items: center;
   gap: 8px;
@@ -193,8 +132,7 @@ html.theme-switching * {
   border: none;
   background: color-mix(in oklab, var(--color-ink) 12%, transparent);
   color: var(--color-ink);
-  /* Chrome, not a link target: caption buttons keep the native arrow. */
-  cursor: default;
+  cursor: default; /* chrome, not a link target */
   transition: background-color 120ms ease;
 }
 .gnome-btn:hover {
@@ -207,7 +145,6 @@ html.theme-switching * {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
-/* Softer than Windows' #e81123 — the shade a GNOME header bar uses. */
 .gnome-btn-close:hover {
   background: #e0524f;
   color: #fff;

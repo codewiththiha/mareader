@@ -68,10 +68,10 @@ function withTimeout<T>(
   });
 }
 
-// The pdf.js worker URL is resolved ONCE: getDocument (and every text layer
-// construction) calls getPdfjs, and re-resolving URL + re-assigning
-// GlobalWorkerOptions every time is pure busywork — the src never changes
-// for the app's lifetime.
+// The pdf.js worker URL is resolved ONCE: getDocument and every text-layer
+// construction call getPdfjs, and re-resolving the URL plus re-assigning
+// GlobalWorkerOptions each time is pure busywork — the src never changes for
+// the app's lifetime.
 let workerSrcConfigured = false;
 
 /** Resolve pdf.js off globalThis at call time — never at module evaluate. */
@@ -124,13 +124,12 @@ export function TextLayer(opts: ConstructorParameters<TextLayerCtor>[0]) {
 }
 
 /** The pdf.js open parameters every entry point in this engine shares.
- *
  *  `isEvalSupported: false` is the CSP half: the app ships without
- *  `unsafe-eval`, so a function pdf.js would otherwise compile has to take the
- *  interpreter path instead of throwing at runtime. `disableAutoFetch` and
- *  `disableStream` are the memory half — a document opened for a cover
- *  thumbnail must not pull more bytes than it asked for. The c-map pair is what
- *  makes CID-keyed CJK fonts resolve at all. */
+ *  unsafe-eval, so functions pdf.js would compile take the interpreter path
+ *  instead of throwing. `disableAutoFetch` / `disableStream` are the memory
+ *  half: a document opened for a cover thumbnail must not pull more bytes
+ *  than it asked for. The c-map pair is what makes CID-keyed CJK fonts
+ *  resolve at all. */
 const BASE_PARAMS = {
   cMapUrl: "/vendor/pdfjs/cmaps/",
   cMapPacked: true,
@@ -140,8 +139,8 @@ const BASE_PARAMS = {
 };
 
 /** How long the worker may take to hand back a document before the open is
- *  declared dead. A worker that never initialises leaves `task.promise` pending
- *  forever, and the UI would sit on its spinner with nothing to report. */
+ *  declared dead. A worker that never initialises leaves task.promise pending
+ *  forever and the UI on its spinner with nothing to report. */
 const OPEN_TIMEOUT_MS = 8000;
 const OPEN_TIMEOUT_MSG = "Timed out opening this PDF (pdf.js worker failed to initialize)";
 
@@ -434,16 +433,12 @@ export async function resolveOutline(): Promise<{
 const COVER_QUALITY = 0.82;
 
 /**
- * Encode a canvas as a JPEG data URL without blocking the frame.
- *
- * `toDataURL` encodes AND base64-writes synchronously on the main thread —
- * for a cover that lands right as the reader is painting its first page, that
- * is a visible hitch. `toBlob` hands the encode to the browser off-thread and
- * FileReader does the base64 in a task of its own; the canvas stays untouched
- * until the blob is out.
- *
- * Falls back to the synchronous path where either API is missing (older
- * webviews, and the smoke-test harness's stub canvas).
+ * Encode a canvas as a JPEG data URL without blocking the frame. `toDataURL`
+ * encodes AND base64-writes synchronously on the main thread — a visible
+ * hitch for a cover that lands as the reader paints its first page. `toBlob`
+ * hands the encode to the browser off-thread and FileReader does the base64
+ * in a task of its own. Falls back to the synchronous path where either API
+ * is missing (older webviews, the smoke harness's stub canvas).
  */
 function encodeJpeg(canvas: HTMLCanvasElement): Promise<string> {
   const sync = () => canvas.toDataURL("image/jpeg", COVER_QUALITY);

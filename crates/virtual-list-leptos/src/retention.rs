@@ -1,19 +1,17 @@
 //! Zombie retention: the pure bookkeeping that lets freshly evicted items
 //! stay rendered for a short grace period.
 //!
-//! A virtualizer's window moves for two reasons that benefit from a bridge:
-//! fast scrolls (an item blinks out and back when the window jitters around
-//! a fling) and a zoom's geometry commit (the reader has been looking at a
-//! continuously scaled surface; the commit reinstalls geometry at the new
-//! scale and the window jumps, evicting pages that are still on screen).
-//! Retaining those items briefly — as [`RetainedItem`]s with an expiry —
-//! keeps their DOM alive across the change so nothing visibly pops.
+//! A window moves for two reasons that benefit from a bridge: fast scrolls
+//! (an item blinks out and back when the window jitters around a fling) and a
+//! zoom's geometry commit (the commit reinstalls geometry at the new scale
+//! and the window jumps, evicting pages still on screen). Retaining those
+//! items briefly — as [`RetainedItem`]s with an expiry — keeps their DOM
+//! alive across the change so nothing visibly pops.
 //!
-//! This module is pure (host-testable): the reactive adapter in
-//! [`crate::virtualizer`] owns the signals and the expiry timer, and only
-//! the merge/diff arithmetic lives here. The set is always BOUNDED —
-//! `max_retained` prunes the oldest first — so retention can never turn
-//! windowing into "mount everything".
+//! Pure and host-testable: the reactive adapter in [`crate::virtualizer`]
+//! owns the signals and expiry timer; only the merge/diff arithmetic lives
+//! here. The set is always BOUNDED — `max_retained` prunes oldest first — so
+//! retention can never turn windowing into "mount everything".
 
 use virtual_list::Window;
 

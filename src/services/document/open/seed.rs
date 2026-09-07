@@ -1,8 +1,7 @@
-//! Seeding the app state for a freshly opened document.
-//!
-//! One synchronous batch, in a deliberate order, run while the status is
-//! still `Opening` and nothing is mounted. The order is the interesting part
-//! and each step says why it is where it is.
+//! Seeding the app state for a freshly opened document. One synchronous batch,
+//! in a deliberate order, run while the status is still `Opening` and nothing
+//! is mounted. The order is the interesting part; each step says why it is
+//! where it is.
 
 use leptos::prelude::*;
 
@@ -29,12 +28,12 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     let num_pages = open.num_pages;
     let name = display_name(open.title.as_deref(), Some(path));
 
-    // Document identity, through the step both open tails share (see
-    // [`super::enter`]). The format flips BACK here: a PDF opening over a text
-    // document must shed the reflowable gates (blend, thumbnails, the Fonts
+    // Document identity, through the step both open tails share
+    // ([`super::enter`]). The format flips BACK here: a PDF opening over a
+    // text document sheds the reflowable gates (blend, thumbnails, the Fonts
     // tab) the same way a text open claims them. The chapter tree is `None`
-    // because a PDF's outline is resolved AFTER the open, and that is what
-    // keeps `outline_pending` true (see `super::outline`).
+    // because a PDF's outline resolves AFTER the open — which is what keeps
+    // `outline_pending` true (see `super::outline`).
     enter::identity(
         state,
         enter::DocumentIdentity {
@@ -71,16 +70,16 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     let resume = enter::resume_page(saved_page, num_pages);
 
     // The reading position is authored HERE, once, and the strip anchors
-    // itself to it when it mounts (`ScrollShell`). Until that anchor has
-    // landed the strip's own dominant page is whatever offset it last held,
-    // so the scroll→page sync is told to stand down first — before the page
-    // is written, so no effect can ever observe the new page against the
-    // old strip. Every other reader of `page` (the indicator, reading
-    // progress, the thumbnails) simply sees the resume point from the start;
-    // nothing passes through a transient page 1 any more.
+    // itself to it when it mounts (`ScrollShell`). Until that anchor lands the
+    // strip's dominant page is whatever offset it last held, so the
+    // scroll→page sync is told to stand down FIRST — before the page is
+    // written, so no effect can observe the new page against the old strip.
+    // Every other reader of `page` (indicator, reading progress, thumbnails)
+    // sees the resume point from the start; nothing passes through a transient
+    // page 1.
     //
-    // ALL of this lands BEFORE `status = Ready` flips the route to the
-    // reader, so the fresh mount reads a fully seeded state.
+    // ALL of this lands BEFORE `status = Ready` flips the route, so the fresh
+    // mount reads a fully seeded state.
     state.reader.viewer.awaiting_anchor.set(true);
     state.reader.viewer.page.set(resume);
     state.reader.viewer.scroll_top.set(0.0);
@@ -107,12 +106,10 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     }
 }
 
-/// Intrinsic (scale-1) size of every page, packed one `PageSize` each.
-///
-/// The engine sends the widths and heights as two parallel arrays; a book
-/// whose arrays do not both match the page count is not trustworthy per-page,
-/// so every page falls back to page 1's size rather than being read off by
-/// one.
+/// Intrinsic (scale-1) size of every page, packed one `PageSize` each. The
+/// engine sends widths and heights as two parallel arrays; a book whose arrays
+/// do not both match the page count is not trustworthy per-page, so every page
+/// falls back to page 1's size rather than being read off by one.
 fn intrinsic_sizes(
     widths: &[f64],
     heights: &[f64],

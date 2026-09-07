@@ -1,40 +1,37 @@
 //! The app-root effects, installed once and in the one order that works.
 //!
-//! These used to be a bare run of calls in `App`, with the ordering contract
-//! spelled out in comments beside them. Nothing enforced it: the compiler is
-//! perfectly happy with the lines in any order, and two of them are order
-//! -dependent in ways that fail silently rather than loudly. Collecting them
-//! behind one entry point means the contract has a home, and the one place
-//! that could break it is this file.
+//! These used to be a bare run of calls in `App` with the ordering contract in
+//! comments beside them — nothing enforced it, and two of the steps are
+//! order-dependent in ways that fail silently. One entry point gives the
+//! contract a home.
 //!
 //! THE ORDER, and why each step is where it is:
 //!
 //! 1. `apply_theme` + `apply_typography` — both page kinds paint from the
-//!    custom properties these write, so they have to be on `<html>` before
-//!    the first frame. Late, the reader flashes the stylesheet's untinted
-//!    palette (or a text document flashes the default type).
+//!    custom properties these write, so they must be on `<html>` before the
+//!    first frame; late, the reader flashes the untinted palette (or a text
+//!    document the default type).
 //! 2. `paper_settings` — the paper session's blend and detection settings must
-//!    land before the FIRST document opens. The open flow asks the engine's
-//!    per-document colour cache under the reader's real settings, and that
-//!    question is asked earlier than any reader mounts; asked under defaults,
-//!    the first book's backdrop is quietly the wrong colour.
+//!    land before the FIRST document opens: the open flow asks the engine's
+//!    per-document colour cache under the reader's real settings, earlier than
+//!    any reader mounts. Asked under defaults, the first book's backdrop is
+//!    quietly the wrong colour.
 //! 3. `publish_motion` — the reduced-motion projection, needed by the reader's
-//!    own pipeline and by the CSS the app does not model.
+//!    pipeline and by CSS the app does not model.
 //! 4. The input and selection arms, in any order among themselves.
 //! 5. The two app-lifetime Tauri listeners, in any order between them:
 //!    `install_ai_chunk_bridge` (AI chunks) and `install_window_state_bridge`
 //!    (the frameless maximize flag).
-//! 6. `init_open_file_handling` — LAST, and this is the step the ordering is
-//!    really for. It can open a document IMMEDIATELY (a double-clicked file
-//!    hands the backend a path before the webview finishes mounting), so
-//!    every step above has to have run by the time it does.
+//! 6. `init_open_file_handling` — LAST, and the step the ordering is really
+//!    for: it can open a document IMMEDIATELY (a double-clicked file hands the
+//!    backend a path before the webview finishes mounting), so every step
+//!    above must have run by then.
 //!
-//! INSTALLED ONCE. Each arm registers a window listener, a Tauri
-//! subscription, or both, and none of them unsubscribe: they are meant to
-//! live as long as the app. That is right for the app's one real mount and
-//! wrong for a second one — a hot reload, a hydration retry — where the
-//! listeners would stack and every keystroke would be handled twice. The
-//! guard below makes the second install a no-op instead.
+//! INSTALLED ONCE. Each arm registers a window listener, a Tauri subscription,
+//! or both, and none unsubscribe — they live as long as the app. That is wrong
+//! for a second mount (hot reload, hydration retry), where listeners would
+//! stack and every keystroke be handled twice; the guard below makes the
+//! second install a no-op.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

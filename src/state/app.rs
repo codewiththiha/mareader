@@ -14,12 +14,11 @@ use reader_core::settings::Settings;
 /// The appearance slice of the settings, as its own tracked value.
 ///
 /// Every DOM-writing appearance consumer subscribes to THIS rather than to
-/// `settings` directly. Reading the whole settings signal subscribes to the
-/// whole blob, and the blob is written for things that have nothing to do
-/// with the look — a layout toggle, a gloss colour, `last_path` on every
-/// single document open. Each of those used to repaint every custom property
-/// on `<html>` and re-bake the engine's rasters. A memo of the slice only
-/// notifies when the look actually changed.
+/// `settings`: reading the whole signal subscribes to the whole blob, and the
+/// blob is written for things that have nothing to do with the look — a layout
+/// toggle, a gloss colour, `last_path` on every open — each of which used to
+/// repaint every custom property on `<html>` and re-bake the engine's rasters.
+/// A memo of the slice notifies only when the look changed.
 pub type AppearanceSignal = Memo<Appearance>;
 
 /// Monotonic toast ids: the host's equality guard needs a per-toast identity
@@ -42,9 +41,9 @@ impl Toast {
     }
 }
 
-/// Which sidebar panel is open. UI chrome state, not viewer state: the
-/// reader-side rendering code receives it as a plain signal when it needs
-/// to know (e.g. which panel is being shown) and never owns it.
+/// Which sidebar panel is open. UI chrome state, not viewer state:
+/// reader-side rendering receives it as a plain signal when it needs to know
+/// and never owns it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidebarMode {
     None,
@@ -61,10 +60,10 @@ pub struct UiState {
     /// Current toast (if any), rendered by the app-root `ToastHost`.
     pub toast: RwSignal<Option<Toast>>,
     /// Whether the window is maximized — the frameless caption cluster's
-    /// maximize/restore glyph. Written by the app-lifetime window-state
-    /// bridge (services/window.rs), never by the cluster itself: the state
-    /// changes under it by more than its own button (snapping, taskbar
-    /// restores, drag-to-edge), all of which resize the window.
+    /// maximize/restore glyph. Written by the app-lifetime window-state bridge
+    /// (services/window.rs), never by the cluster itself: the state changes
+    /// under it by more than its own button (snapping, taskbar restores,
+    /// drag-to-edge), all of which resize the window.
     pub window_maximized: RwSignal<bool>,
 }
 

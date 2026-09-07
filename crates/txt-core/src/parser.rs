@@ -3,13 +3,12 @@
 use reflow_core::block::{BlockKind, TextBlock, split_blocks};
 use reflow_core::source::normalize;
 
-/// A plain-text file into blocks: runs of non-empty lines, separated by blank
+/// A plain-text file into blocks: runs of non-empty lines separated by blank
 /// lines. Internal single newlines are KEPT — the renderer preserves them
-/// (`pre-wrap`), which is what makes fixed-line prose and code-ish notes read
-/// as authored.
+/// (`pre-wrap`), so fixed-line prose and code-ish notes read as authored.
 ///
 /// No fence awareness, on purpose: a fence is Markdown syntax, and inside a
-/// plain-text file a blank line inside an indented code sample is a paragraph
+/// plain-text file a blank line in an indented code sample is a paragraph
 /// boundary like any other.
 pub fn parse_plain_text(raw: &str) -> Vec<TextBlock> {
     let text = normalize(raw);

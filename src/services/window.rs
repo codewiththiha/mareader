@@ -1,24 +1,23 @@
 //! App-lifetime window-state bridge: the live maximized flag.
 //!
-//! The frameless caption cluster (app_chrome::window::caption) shows
-//! maximize or restore per the window's REAL state, and that state changes
-//! under it by more than its own button: Win+Arrow snapping, drag-to-edge,
-//! taskbar restores, double-clicking the drag region. Every one of those
-//! resizes the window, so one `tauri://resize` subscription re-asks the
-//! question for all of them at once and publishes into
-//! `UiState::window_maximized`, which is all the cluster ever reads.
+//! The frameless caption cluster (app_chrome::window::caption) shows maximize
+//! or restore per the window's REAL state, and that state changes under it by
+//! more than its own button: Win+Arrow snapping, drag-to-edge, taskbar
+//! restores, double-clicking the drag region. Every one resizes the window, so
+//! one `tauri://resize` subscription re-asks the question for all of them and
+//! publishes into `UiState::window_maximized` — all the cluster ever reads.
 //!
-//! Installed from the app root (install_app_effects) like the other
-//! app-lifetime bridges, and for the same reason a page-scoped subscription
-//! would be wrong: the parked closure must never be dropped while Tauri's
-//! JS still holds the handler (see services/tauri_listen.rs), and a page
-//! owner dies on every route change. Probes are coalesced — one in flight
-//! plus one trailing probe — because an interactive resize fires an event
-//! per frame, far faster than the round trip completes. The trailing probe
-//! ensures a resize during the round trip cannot leave stale state behind.
+//! Installed from the app root like the other app-lifetime bridges, and for
+//! the same reason a page-scoped subscription would be wrong: the parked
+//! closure must never be dropped while Tauri's JS holds the handler
+//! (services/tauri_listen.rs), and a page owner dies on every route change.
+//! Probes are coalesced — one in flight plus one trailing — because an
+//! interactive resize fires an event per frame, far faster than the round
+//! trip; the trailing probe ensures a resize during the round trip cannot
+//! leave stale state behind.
 //!
-//! macOS skips the bridge: its windows are not frameless, nothing reads
-//! the flag, and there is no reason to spend an IPC per resize there.
+//! macOS skips the bridge: its windows are not frameless, nothing reads the
+//! flag, and there is no reason to spend an IPC per resize there.
 
 use leptos::prelude::*;
 

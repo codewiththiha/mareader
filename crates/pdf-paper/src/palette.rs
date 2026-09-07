@@ -3,18 +3,16 @@
 //! Continuous mode's question is "what colour is the reader looking at RIGHT
 //! NOW?", and the honest answer is a position along the book, not a page
 //! pair. The shell reports the viewport's visible-paint-weighted mean page
-//! index — resting on page N it is exactly `N.0`, straddling pages N and N+1
-//! at 40/60 it is `N + 0.6` — and [`PagePalette::colour_at`] resolves that
-//! against the known page colours like a ladder: piecewise-linear between
-//! neighbouring pages, held flat past either end.
+//! index — exactly `N.0` resting on page N, `N + 0.6` straddling N and N+1 at
+//! 40/60 — and [`PagePalette::colour_at`] resolves it like a ladder:
+//! piecewise-linear between neighbouring pages, held flat past either end.
 //!
-//! The ladder is what the old page-pair blend could not do. A pair
-//! `(dominant, dominant + 1)` is blind to the page BEFORE the dominant one,
-//! so right after a handover — when the previous page still fills half the
-//! window — the backdrop snapped to the new page's colour while the eye
-//! still saw the old one. A weighted position carries every visible page's
-//! share, so the backdrop meets the pages where they actually are, with no
-//! seam at the handover.
+//! The ladder is what the old page-pair blend could not do: a pair is blind
+//! to the page BEFORE the dominant one, so right after a handover — the
+//! previous page still filling half the window — the backdrop snapped to the
+//! new colour while the eye still saw the old one. A weighted position
+//! carries every visible page's share, so the backdrop meets the pages where
+//! they are, with no seam at the handover.
 
 use std::collections::BTreeMap;
 
@@ -58,13 +56,12 @@ impl PagePalette {
         self.pages.clear();
     }
 
-    /// The colour at a fractional page `position` (1-based): exactly page
-    /// N's colour at `N.0`, the linear blend of pages N and N+1 at `N + t`,
-    /// clamped to the first/last known page outside the palette's span.
-    ///
-    /// Pages whose colour is still unknown are skipped over, not treated as
-    /// blanks: the ladder simply runs between the nearest known pages on
-    /// either side. `None` only when no page's colour is known at all.
+    /// The colour at a fractional page `position` (1-based): exactly page N's
+    /// colour at `N.0`, the linear blend of N and N+1 at `N + t`, clamped to
+    /// the first/last known page outside the palette's span. Pages whose
+    /// colour is still unknown are skipped over, not treated as blanks — the
+    /// ladder runs between the nearest known pages on either side. `None`
+    /// only when no page's colour is known at all.
     pub fn colour_at(&self, position: f64) -> Option<Rgb> {
         if self.pages.is_empty() || !position.is_finite() {
             return None;

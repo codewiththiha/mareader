@@ -3,44 +3,37 @@
 //! Before this module existed, views, zoom, fit and navigation each reached
 //! into the virtualizers and the DOM directly, and zoom duplicating the
 //! axis-branching relayout across two code paths was the root of the races.
-//! The split that replaced it is the whole subsystem's contract: everything
-//! that must MOVE geometry (rescale a strip, hold the anchor, report a
-//! rendered size) goes through the actuator, and everything that DECIDES what
-//! the zoom should be goes through [`super::ZoomController`]. Nothing outside
-//! the two should touch a virtualizer's layout or a zoom scale.
+//! The contract that replaced it: everything that must MOVE geometry (rescale
+//! a strip, hold the anchor, report a rendered size) goes through the
+//! actuator; everything that DECIDES what the zoom should be goes through
+//! [`super::ZoomController`]. Nothing outside the two touches a virtualizer's
+//! layout or a zoom scale. The actuator is the *only* place layout is
+//! rescaled, so a gesture and a refit cannot diverge along separate paths.
+//! Non-rescale geometry reads (dominant page, scroll-to-page) still go
+//! through the virtualizers directly, in the per-mode navigation code.
 //!
-//! The core contract is that the actuator is the *only* place layout is
-//! rescaled. Zoom and fit compute a *target* and ask it to apply a scale
-//! factor; it owns the relayout so a gesture and a refit cannot diverge along
-//! separate code paths. Non-rescale geometry reads (dominant page,
-//! scroll-to-page) still go through the virtualizers directly, but only in the
-//! per-mode navigation code.
+//! It runs on EVERY frame of a zoom: the tween hands it the ratio between the
+//! scale about to be shown and the scale the layout has, and the layout
+//! follows continuously. Scaling the layout for real is what keeps a zoom
+//! stable — the alternative, one CSS transform over frozen geometry, scales
+//! the page gaps along with the pages while the layout deliberately does not
+//! (`virtual_list::anchor::rescale_anchor`), so every gap above the reader
+//! accumulates error through the tween and lands at once when the transform
+//! is swapped for real geometry: the document visibly jumps.
 //!
-//! It runs on EVERY frame of a zoom: the tween hands the actuator the ratio between
-//! the scale it is about to show and the scale the layout currently has, and
-//! the layout follows continuously. Scaling the layout for real is what
-//! keeps a zoom stable. The alternative — one CSS transform over a surface
-//! whose geometry is frozen — cannot work here, because a transform scales
-//! the page gaps along with the pages while the layout deliberately does
-//! not (see `virtual_list::anchor::rescale_anchor`). Every gap above the
-//! reader accumulates error through the tween and the whole sum lands at
-//! once when the transform is swapped for real geometry, which reads as the
-//! document jumping.
+//! Anchoring is explicit and gap-aware: work out which document point sits
+//! under the viewport centre, rescale, find where that point lands, put it
+//! back under the centre. Page interiors scale; the fixed gap does not.
 //!
-//! Anchoring is therefore explicit and gap-aware: the actuator works out which
-//! document point sits under the viewport centre, rescales, finds where that
-//! same point lands in the new geometry, and puts it back under the viewport
-//! centre. Page interiors scale; the fixed gap between pages does not.
-//!
-//! Because this runs every frame, the anchored page is resolved in `O(log n)`
-//! from the strip's own prefix sums (`index_at`) and the column is never
-//! copied: the anchor reads the pre-scale store once, the store is then scaled
-//! in place, and the strip rebuild reads the now-scaled values. The anchor
-//! cannot be left to the virtualizer either — that one scales item extents,
-//! and the strips fold the page gap *into* the item size (their `gap` is `0.0`
-//! and `report_size` is handed `height + gap`), so a uniform rescale there
-//! scales the chrome too. Nor can the scroll write be deferred a frame: layout
-//! and scroll have to move in the same tick.
+//! Per-frame budget: the anchored page resolves in `O(log n)` from the
+//! strip's prefix sums (`index_at`) and the column is never copied — the
+//! anchor reads the pre-scale store once, the store is scaled in place, and
+//! the strip rebuild reads the scaled values. The anchor cannot be left to
+//! the virtualizer either: it scales item extents, and the strips fold the
+//! page gap INTO the item size (`gap` is 0.0, `report_size` gets
+//! `height + gap`), so a uniform rescale there would scale the chrome too.
+//! Nor can the scroll write be deferred a frame: layout and scroll must move
+//! in the same tick.
 
 use leptos::prelude::*;
 use reader_core::view::{ViewMode, anchored_position};
@@ -75,22 +68,21 @@ impl ZoomActuator {
 
         self.relayout_vertical(state, factor);
 
-        // Horizontal strip: only the scroll-horizontal mode mounts it, so in
-        // every other mode rebuilding its widths — a per-frame `Vec` collect —
-        // would be dead work on every frame of a zoom. Gate it on the one mode
-        // that owns the horizontal strip.
+        // Horizontal strip: only scroll-horizontal mode mounts it, so in
+        // every other mode rebuilding its widths (a per-frame `Vec` collect)
+        // would be dead work on every frame of a zoom. Gate on the one mode
+        // that owns it.
         if state.viewer.mode.get_untracked() != ViewMode::ScrollHorizontal {
             return;
         }
 
-        // Widths are exact (intrinsic × scale + margin), so they are rebuilt
-        // from the intrinsic sizes at the scale this relayout lands on rather
-        // than from a scaled copy of the previous width — that keeps the
-        // running product free of drift across the many small factors a single
-        // tween applies. One copy of the widths is taken because the
-        // virtualizer reads the sizes once per item, and an array read beats a
-        // signal read per page. The virtualizer's own rescale anchor holds the
-        // cross-axis position.
+        // Widths are exact (intrinsic × scale + margin), rebuilt from the
+        // intrinsic sizes at the scale this relayout lands on rather than from
+        // a scaled copy of the previous width — that keeps the running product
+        // free of drift across the many small factors one tween applies. One
+        // copy is taken because the virtualizer reads sizes once per item and
+        // an array read beats a signal read per page. The virtualizer's own
+        // rescale anchor holds the cross-axis position.
         let margin = state.viewer.page_margin.get_untracked();
         let widths = state.document.content.metrics.intrinsic.with_untracked(|sizes| {
             sizes.iter().map(|s| s.width).collect::<Vec<f64>>()

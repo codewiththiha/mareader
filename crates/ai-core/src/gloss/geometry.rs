@@ -1,11 +1,10 @@
 //! Gloss card geometry: box math, the word-lookup gates, viewport placement
 //! and spring stepping.
 //!
-//! The card is one rectangle whose `left/top/width/height` and corner
-//! `radius` are all driven by a single damped spring
-//! ([`ui_geom::spring`]), so the chip's pill radius morphs into the card
-//! radius in the same motion that grows the box. Named `GlossBox` to avoid
-//! colliding with `std::boxed::Box`.
+//! The card is one rectangle whose `left/top/width/height` and corner `radius`
+//! are driven by a single damped spring ([`ui_geom::spring`]), so the chip's
+//! pill radius morphs into the card radius in the same motion that grows the
+//! box. Named `GlossBox` to avoid colliding with `std::boxed::Box`.
 
 use ui_geom::spring::spring_axis;
 
@@ -19,11 +18,10 @@ impl From<GlossBox> for ui_geom::floating::FloatBox {
     }
 }
 
-/// A positioned, sized, rounded rectangle — the five fields the spring drives.
-///
-/// Serializable because [`crate::gloss::mark::GlossMark`] persists one of
-/// these to localStorage (and ships one through a `CustomEvent` detail when a
-/// mark is clicked).
+/// A positioned, sized, rounded rectangle — the five fields the spring
+/// drives. Serializable because [`crate::gloss::mark::GlossMark`] persists one
+/// to localStorage and ships one through a `CustomEvent` detail on a mark
+/// click.
 #[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub struct GlossBox {
     pub x: f64,
@@ -44,13 +42,11 @@ const MAX_GLOSS_CHARS: usize = 60;
 /// still earn a (muted, explaining) Explain pill; past this it hides.
 const MAX_GLOSS_HINT_CHARS: usize = MAX_GLOSS_CHARS * 2;
 
-/// Whether `text` can be looked up as a word.
-///
-/// A dictionary look-up is a single token, not a phrase: the edges are
-/// trimmed, then the token must be non-empty, within the length cap, and free
-/// of ANY whitespace — an interior space means the reader selected several
-/// words (e.g. "quick brown"), which is not a word to explain. (Surrounding
-/// spaces the user grabbed by accident trim away and still count.)
+/// Whether `text` can be looked up as a word. A dictionary look-up is a
+/// single token, not a phrase: edges trimmed, then non-empty, within the
+/// length cap, and free of ANY whitespace — an interior space means the reader
+/// selected several words, which is not a word to explain. Spaces grabbed by
+/// accident trim away and still count.
 pub fn is_glossable(text: &str) -> bool {
     let t = text.trim();
     !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS && !t.chars().any(char::is_whitespace)
@@ -84,10 +80,10 @@ pub const MAX_CARD_H_FRAC: f64 = 0.8;
 /// the anchor has more free space (never covering the stroke), sits a little
 /// BELOW the mark's midline (`y_bias` — dead-centre reads as pasted onto the
 /// line; a hand's-width below reads as attached to it, the way a footnote
-/// hangs off its word), and clamped into the viewport margin. Shrinks the
-/// card when the viewport is too small to host it at the requested size.
+/// hangs off its word), clamped into the viewport margin, shrinking when the
+/// viewport cannot host the requested size.
 ///
-/// Pure: unit-testable on the host via `cargo test -p ai-core gloss`.
+/// Pure: `cargo test -p ai-core gloss`.
 #[allow(clippy::too_many_arguments)]
 pub fn place_card(
     anchor: GlossBox,

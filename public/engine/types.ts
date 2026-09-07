@@ -129,8 +129,8 @@ export type OpenResult = Result<{
   title: string | null;
   author: string | null;
   /** Deliberately empty: the chapter tree resolves via `resolveOutline`
-   * after the reader is up (flattening it blocks on one worker round trip
-   * per destination, and must not hold `open` hostage). */
+   * after the reader is up — flattening it would hold `open` hostage to a
+   * worker round trip per destination. */
   outline: { title: string; page: number; depth: number }[];
   page1Size: { width: number; height: number };
   pageHeights: number[];
@@ -182,10 +182,9 @@ export type PDFReaderApi = {
   setActiveMatch: (page: number, index: number) => void;
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
+  /** Enter/leave the scrub window's real-time compositing: raw rasters under
+   * the live CSS filter + blend, re-baked on exit. */
   setScrubMode: (on: boolean) => Promise<void>;
-  /** Switch between the live compositor pipeline and the baked-raster one. */
-  setLivePipeline: (on: boolean) => Promise<void>;
-  isLivePipeline: () => boolean;
   /** Publish (or, with "", clear) `--pdf-paper`. */
   setPaper: (hex: string) => void;
   /** The Rust paper session's blend switch — gates stashPaperFrame so idle

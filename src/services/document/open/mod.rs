@@ -1,17 +1,17 @@
 //! Opening a document: the dialog flow, the OS "Open with" handoff, and the
 //! shared open sequence.
 //!
-//! The sequence is one orchestration here plus a module per step —
-//! [`seed`] fills the app state, [`shelf`] records the book, [`outline`]
-//! resolves the chapter tree, [`cover`] renders the shelf art and [`warmup`]
-//! primes the thumbnail cache. Every step after the engine's answer is
-//! guarded by the session stamp (see [`super::session`]), because all of them
-//! can outlive the attempt that started them.
+//! One orchestration here plus a module per step — [`seed`] fills the app
+//! state, [`shelf`] records the book, [`outline`] resolves the chapter tree,
+//! [`cover`] renders the shelf art, [`warmup`] primes the thumbnail cache.
+//! Every step after the engine's answer is guarded by the session stamp
+//! ([`super::session`]): all of them can outlive the attempt that started
+//! them.
 //!
-//! [`enter`] is the part the two pipelines share: the identity write, the gloss
-//! marks, the resume clamp, the startup scale and the route flip. A tail owns
-//! its own content seeding and calls into [`enter`] for everything a reader
-//! would expect to behave the same whatever the file extension was.
+//! [`enter`] is the part the two pipelines share: the identity write, the
+//! gloss marks, the resume clamp, the startup scale and the route flip. A
+//! tail owns its own content seeding and calls [`enter`] for everything a
+//! reader expects to behave the same whatever the file extension was.
 
 mod cover;
 mod enter;
@@ -24,9 +24,9 @@ mod warmup;
 use leptos::prelude::*;
 // NOTE: the open flow spawns on the wasm-bindgen-futures executor, NOT
 // `leptos::task::spawn_local`. The latter ties the future to the reactive
-// owner it is spawned under, so an open initiated from a book-card click would
-// be CANCELLED the moment `status` flips to `Opening` (that unmounts the card,
-// disposing its owner) — leaving the app stuck on "Opening…" forever. The
+// owner it is spawned under, so an open started by a book-card click would be
+// CANCELLED the moment `status` flips to `Opening` (unmounting the card,
+// disposing its owner) — the app stuck on "Opening..." forever. The
 // wasm-bindgen executor runs the future to completion regardless of owner.
 use wasm_bindgen_futures::spawn_local;
 
@@ -42,15 +42,14 @@ use super::session;
 /// launch) into the shared open flow. Called once from the app root.
 ///
 /// Two paths, one handoff point:
-///   * PULL — `take_pending_file` collects whatever the OS handed to the
-///     backend before the webview finished mounting (initial-launch argv on
+///   * PULL — `take_pending_file` collects whatever the OS handed the backend
+///     before the webview finished mounting (initial-launch argv on
 ///     Windows/Linux, the macOS open-file event at launch). An event emitted
 ///     before mount would be lost, so the command is the source of truth.
-///   * PUSH — the backend emits `document-open-file` for files opened while the
-///     app is already running (single-instance forward on Windows/Linux,
-///     LaunchServices on macOS). The listener just re-runs the pull: the
-///     command clears itself, so an event + a stray second pull can never
-///     open the same file twice.
+///   * PUSH — the backend emits `document-open-file` for files opened while
+///     the app runs (single-instance forward, LaunchServices). The listener
+///     just re-runs the pull: the command clears itself, so an event plus a
+///     stray second pull can never open the same file twice.
 pub fn init_open_file_handling(state: AppState) {
     let st = state;
     spawn_local(async move {
@@ -102,16 +101,16 @@ pub fn open_dialog(state: AppState) {
 /// at the saved page if this book was opened before, and records it in the
 /// recent-books library. Drag-drop calls this directly.
 ///
-/// The pipeline fork happens here and only here: PDFs go to the pdf.js
-/// engine, the reflowable formats go to the reflow pipeline ([`reflow`]). Both
-/// tails converge on the same state contract, so everything downstream —
-/// the viewer, navigation, the shelf — is format-agnostic.
+/// The pipeline fork happens here and only here: PDFs go to the pdf.js engine,
+/// the reflowable formats to the reflow pipeline ([`reflow`]). Both tails
+/// converge on the same state contract, so everything downstream — viewer,
+/// navigation, shelf — is format-agnostic.
 pub fn open_path(state: AppState, path: String) {
     // Claim the document state for THIS attempt. Pick a second book while the
     // first is still resolving and the loser's tail would otherwise still run:
-    // it would write the old book's page count, geometry and scale over the
-    // new one's and flip `status` to Ready a second time, resuming the winner
-    // at the loser's page. Every hop below re-checks the stamp.
+    // writing the old book's page count, geometry and scale over the new one's
+    // and flipping `status` to Ready a second time, resuming the winner at the
+    // loser's page. Every hop below re-checks the stamp.
     let stamp = session::claim();
     state.reader.document.status.set(DocStatus::Opening);
     state.reader.document.error.set(None);
@@ -163,10 +162,10 @@ fn ready(
     let seeded = seed::seed(state, &path, open, saved_page);
 
     // The book is ready: flip the route LAST, after every signal the fresh
-    // mount reads (page, heights, scale) is already in its new-document
-    // state. The resume page is one of them: the strip scrolls to
-    // `viewer.page` as it binds its container (`ScrollShell`), so there is no
-    // second jump to schedule here.
+    // mount reads (page, heights, scale) is in its new-document state. The
+    // resume page is one of them: the strip scrolls to `viewer.page` as it
+    // binds its container (`ScrollShell`), so there is no second jump to
+    // schedule here.
     enter::enter_ready(state);
 
     // The engine's own highlight layer belongs to the previous book; the

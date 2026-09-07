@@ -4,11 +4,9 @@
 
 use crate::appearance::{Appearance, NoiseMode};
 
-/// The two `body` classes the grain overlay's CSS keys off, as `(name, on)`.
-///
-/// `noise-enabled` shows the layer; `noise-animated` makes it crawl (it
-/// re-seeds the pattern every frame like real film grain). Off clears both,
-/// Static enables the layer, Animated enables both.
+/// The two `body` classes the grain overlay's CSS keys off, as `(name, on)`:
+/// `noise-enabled` shows the layer, `noise-animated` makes it crawl. Off
+/// clears both, Static enables the layer, Animated enables both.
 pub fn body_class_state(mode: NoiseMode) -> [(&'static str, bool); 2] {
     [
         ("noise-enabled", mode.is_on()),

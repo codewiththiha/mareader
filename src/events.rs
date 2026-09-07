@@ -1,16 +1,16 @@
 //! The app's window-`CustomEvent` protocol: every event name in one table,
 //! plus the one typed dispatcher.
 //!
-//! Window CustomEvents are the app's one cross-cutting message mechanism —
-//! they cross layer boundaries (services → components, engine JS → Rust)
-//! without either side holding a signal from the other. Some of these names
-//! are also a protocol with the imperative engine under `public/engine/`,
-//! which dispatches `pdfreader:navigate`, `pdfreader:selection-pages` and
-//! `pdfreader:selection-detail` from plain JS. The engine declares those three
-//! in `public/engine/events.ts`, and `tools/check-events.ts` fails CI when
-//! the two tables disagree or when a name is written as a literal somewhere
-//! else — a mismatch is not a compile error on either side, only a dispatch
-//! into a window nobody is listening on.
+//! Window CustomEvents are the app's cross-cutting message mechanism — they
+//! cross layer boundaries (services → components, engine JS → Rust) without
+//! either side holding a signal from the other. Three of these names are also
+//! a protocol with the imperative engine, which dispatches
+//! `pdfreader:navigate`, `pdfreader:selection-pages` and
+//! `pdfreader:selection-detail` from plain JS and declares them in
+//! `public/engine/events.ts`. `tools/check-events.ts` fails CI when the two
+//! tables disagree or when a name is spelled as a literal elsewhere — a
+//! mismatch is not a compile error on either side, only a dispatch into a
+//! window nobody is listening on.
 
 use serde::Serialize;
 

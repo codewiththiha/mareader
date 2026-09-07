@@ -1,13 +1,11 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-// Minimal harness to smoke-test pdfEngine outside a browser.
-// Stubs: pdfjsLib, DOM (canvases), Tauri globals, rAF, getComputedStyle.
-//
-// Reads the COMPILED `public/pdfEngine.js` (the same IIFE artifact the
-// browser loads) and evaluates it in a vm sandbox. The bundle carries no
-// module syntax (esbuild IIFE), so it is evaluated as-is — no source
-// rewriting.
+// Minimal harness to smoke-test pdfEngine outside a browser. Stubs:
+// pdfjsLib, DOM (canvases), Tauri globals, rAF, getComputedStyle. Reads the
+// COMPILED public/pdfEngine.js (the same IIFE artifact the browser loads)
+// and evaluates it in a vm sandbox; the bundle carries no module syntax, so
+// it runs as-is with no source rewriting.
 
 
 const engineSrc = readFileSync(
@@ -268,10 +266,11 @@ const docEl: FakeCanvas & { id: string; width: number; height: number } = (() =>
   return el;
 })();
 
-/** Whether the engine is currently in live mode, read the way the browser
- * reads it: the class that turns the CSS filter path on. Smoke tests use it to
- * avoid pretending the fake canvas can run a browser compositor. */
-export function isLivePipelineActive(): boolean {
+/** Whether the engine is inside a scrub window (real-time compositing), read
+ * the way the browser reads it: the class that turns the CSS filter path on.
+ * Smoke tests use it to avoid pretending the fake canvas can run a browser
+ * compositor. */
+export function isScrubActive(): boolean {
   return docEl.classList.contains("appearance-scrubbing");
 }
 
@@ -360,9 +359,9 @@ export const fakeWindow: FakeWindow = {
 
 // ---------- pdf.js stub ----------
 // Per-page paint colours, defaulting to paper white. The blend-scope test
-// paints distinct pages so detection, the document scan and the continuous
-// interpolation have something to tell apart; every other scenario sees the
-// same all-white book it always did.
+// paints distinct pages so detection and the continuous interpolation have
+// something to tell apart; every other scenario sees the same all-white
+// book.
 const fakePageColors = new Map<number, string>();
 export function setFakePageColors(colors: Record<number, string>): void {
   fakePageColors.clear();
@@ -485,8 +484,6 @@ interface PDFReaderHandle {
   hasThumb(page: number, scale: number): boolean;
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
-  setLivePipeline(on: boolean): Promise<void>;
-  isLivePipeline(): boolean;
   setPaper(hex: string): void;
   setPaperActive(on: boolean): void;
   takePaperFrame(canvasId: string): {
@@ -519,7 +516,7 @@ export const PDFReader = sandbox.PDFReader as PDFReaderHandle;
 if (!PDFReader) throw new Error("PDFReader not defined after eval");
 
 // Independent re-implementation of the CSS Filter Effects math, used to
-// compute the pixel the bake MUST produce. Deliberately separate from the
+// compute the pixel the bake MUST produce — deliberately separate from the
 // engine's own code so the assertion is a real cross-check.
 export function expectedBakePixel(
   rgb: number[],

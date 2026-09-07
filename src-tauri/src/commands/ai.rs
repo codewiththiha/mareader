@@ -39,12 +39,11 @@ fn emit(app: &AppHandle, run: &str, chunk: AiChunk) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-/// Start a streaming explanation for `word`.
-///
-/// `run` is the caller's id for this request, echoed on every chunk. Runs are
-/// not cancelled when a newer one starts — the model is already working and
-/// the answer may still be wanted — so the frontend needs the id to tell an
-/// abandoned run's chunks from the live one's.
+/// Start a streaming explanation for `word`. `run` is the caller's id for
+/// this request, echoed on every chunk. Runs are not cancelled when a newer
+/// one starts — the model is already working and the answer may still be
+/// wanted — so the frontend needs the id to tell an abandoned run's chunks
+/// from the live one's.
 #[tauri::command]
 pub async fn explain_word(
     app: AppHandle,
@@ -69,7 +68,7 @@ pub async fn explain_word(
     let mut stream = provider().explain_word(word, context);
 
     // Coalesce Snapshot chunks so a 10k-token stream does not pay one IPC
-    // emit per ~100 characters. Flush after 4 snapshots or 64 ms, whichever
+    // emit per ~100 characters: flush after 4 snapshots or 64 ms, whichever
     // comes first; Done/Error always flush immediately.
     let mut pending: Option<AiChunk> = None;
     let mut batch = 0u8;

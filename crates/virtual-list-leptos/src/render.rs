@@ -3,19 +3,18 @@
 /// The lifecycle state of one rendered item.
 ///
 /// Items normally render because they sit inside the active mount window.
-/// When the window moves (a scroll fling, a zoom's geometry commit), an
-/// item that just left can be **retained** for a short grace period as a
-/// [`VirtualItemState::Zombie`]: it stays mounted at its laid-out position —
-/// bridging the virtualization lifecycle across the change — but it is no
-/// longer part of the window, never drives dominant-item selection, and a
-/// renderer should not start new expensive work for it.
+/// When the window moves (a scroll fling, a zoom's geometry commit), an item
+/// that just left can be **retained** for a short grace period as a
+/// [`VirtualItemState::Zombie`]: still mounted at its laid-out position,
+/// bridging the lifecycle across the change, but no longer part of the
+/// window, never driving dominant-item selection, and owed no new expensive
+/// work.
 ///
-/// A stream-mode virtualizer further splits the mount window in two: the
-/// **render band** around the viewport carries real content
-/// ([`VirtualItemState::Active`]); the rest of the window stays mounted as
-/// [`VirtualItemState::Blank`] placeholders at the layout's own sizes — the
-/// scrollbar and the anchors stay honest while the rows a fling is flying
-/// past cost nothing.
+/// A stream-mode virtualizer further splits the mount window: the **render
+/// band** around the viewport carries real content
+/// ([`VirtualItemState::Active`]); the rest stays mounted as
+/// [`VirtualItemState::Blank`] placeholders at the layout's own sizes —
+/// scrollbar and anchors honest, rows a fling flies past free.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VirtualItemState {
     /// Inside the active mount window, carrying real content.

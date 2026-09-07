@@ -24,11 +24,10 @@ pub struct WordInfo {
 }
 
 /// Bounds on a single answer, applied at ingestion. A well-behaved model
-/// answers in a sentence or two; these are the sizes past which a response is
-/// no longer an answer but a runaway generation, and the card holds it for the
-/// rest of the session (every mark's answer stays cached until its mark is
-/// removed). Clipping at the door keeps that ceiling flat instead of letting
-/// one pathological run set it.
+/// answers in a sentence or two; past these sizes a response is a runaway
+/// generation, and the card caches every answer for the session — clipping at
+/// the door keeps that ceiling flat instead of letting one pathological run
+/// set it.
 const MAX_MEANING_CHARS: usize = 1_200;
 const MAX_SYNONYMS: usize = 16;
 const MAX_SYNONYM_CHARS: usize = 80;
@@ -155,14 +154,13 @@ pub enum AiChunk {
 /// the run that produced it. Mirrors `AiStreamEvent` in
 /// `src-tauri/src/ai/traits.rs` — keep in sync.
 ///
-/// The run id is what makes concurrent glosses safe. Runs are never cancelled
-/// backend-side, so a reader who glosses a second word while the first is
-/// still thinking has two runs emitting on one event name; without the id the
-/// abandoned run's answer would be rendered against — and cached under — the
-/// word that is on screen now.
+/// The run id is what makes concurrent glosses safe: runs are never cancelled
+/// backend-side, so glossing a second word while the first still thinks puts
+/// two runs on one event name, and without the id the abandoned run's answer
+/// would render against — and cache under — the word now on screen.
 ///
 /// `Serialize` lets the app's chunk bridge park the same shape on a window
-/// CustomEvent detail so per-mount UI can subscribe without touching Tauri
+/// CustomEvent detail so per-mount UI subscribes without touching Tauri
 /// again.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiChunkEvent {

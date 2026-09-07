@@ -2,25 +2,20 @@
 //!
 //! [`use_hover_visibility`] is the timer primitive — `show` reveals and
 //! cancels a pending hide, `hide_later` schedules one unless a hold says
-//! otherwise. Every real surface then needs the same four lines on top of
-//! it, and the title bar and the bottom bar had written them out verbatim:
+//! otherwise. Every real surface needs the same four lines on top of it (the
+//! title bar and bottom bar had them verbatim):
 //!
-//!   - one `hovered` truth shared by the N elements that make up the
-//!     surface (a hover band plus the row it reveals, a bottom strip plus
-//!     the bar), so an enter on either counts and a leave on either counts;
-//!   - an effect that rechecks the moment a hold releases, because a hold
-//!     that ends while the pointer is already gone never produces another
-//!     `mouseleave` to hide on;
+//!   - one `hovered` truth shared by the N elements that make up the surface,
+//!     so an enter or leave on any of them counts;
+//!   - an effect that rechecks the moment a hold releases — a hold ending
+//!     while the pointer is already gone produces no further `mouseleave`;
 //!   - `visible = pinned || hovered`, where a pin exists.
 //!
-//! This module owns that composite so a new auto-hide surface is one call
-//! instead of another twenty copied lines (and another chance to re-invent
-//! the bottom-edge-exit and pointer-capture bugs). Three surfaces run it
-//! today: the title bar, the reader's bottom bar and the overlay rail.
+//! This module owns that composite, so a new auto-hide surface is one call.
+//! Three run it today: the title bar, the bottom bar, the overlay rail.
 //!
 //! Contract, same as the rest of `hooks`: nothing here knows what holds a
-//! surface open. A hold is a `Signal<bool>` — the title bar's open popovers
-//! and the bottom bar's scrubber drag are the callers' business.
+//! surface open — a hold is a `Signal<bool>` and the callers' business.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -94,12 +89,11 @@ pub fn use_hover_reveal(config: HoverConfig) -> HoverReveal {
 }
 
 /// Sugar for the common shape: a closure hold, no pin. Same machine as
-/// [`use_hover_reveal`] — the closure is only spared the `Signal::derive`
-/// at the call site (and stays `LocalStorage`-friendly, since a derived
-/// signal would demand `Send + Sync` this hook does not need). Read every
-/// signal the hold depends on unconditionally in it (`|`, not `||`): the
-/// recheck effect subscribes through this closure, and a short-circuited
-/// read is a hold whose release never settles the surface.
+/// [`use_hover_reveal`] — the closure only spares the `Signal::derive` at the
+/// call site (and stays `LocalStorage`-friendly). Read every signal the hold
+/// depends on unconditionally in it (`|`, not `||`): the recheck effect
+/// subscribes through this closure, and a short-circuited read is a hold whose
+/// release never settles the surface.
 pub fn use_hover_reveal_with(
     delay: Duration,
     hold: impl Fn() -> bool + Copy + 'static,
@@ -107,13 +101,11 @@ pub fn use_hover_reveal_with(
     reveal(delay, hold, None)
 }
 
-/// The one implementation both entry points funnel into.
-///
-/// `held` is `Copy` rather than `Rc`-wrapped because it has two readers
-/// that must agree — the primitive's postpone gate and the recheck effect
-/// below — and a closure over `Copy` signal handles is itself `Copy`. A
-/// hold that ever needs owned state should be lifted into a signal at the
-/// call site rather than boxed here.
+/// The one implementation both entry points funnel into. `held` is `Copy`
+/// rather than `Rc`-wrapped because it has two readers that must agree — the
+/// postpone gate and the recheck effect — and a closure over `Copy` signal
+/// handles is itself `Copy`. A hold needing owned state should be lifted into
+/// a signal at the call site rather than boxed here.
 fn reveal(
     delay: Duration,
     held: impl Fn() -> bool + Copy + 'static,
@@ -121,9 +113,9 @@ fn reveal(
 ) -> HoverReveal {
     let hover = use_hover_visibility(delay, held);
 
-    // `StoredValue`, not a signal: the flag is read inside the recheck
-    // effect (a tracked read there would re-run it on every hover) and
-    // cloned into as many element handlers as the surface has.
+    // `StoredValue`, not a signal: the flag is read inside the recheck effect
+    // (a tracked read there would re-run it on every hover) and cloned into as
+    // many element handlers as the surface has.
     let hovered = StoredValue::new_local(false);
     let enter: Rc<dyn Fn()> = Rc::new({
         let show = hover.show.clone();
@@ -141,10 +133,9 @@ fn reveal(
     });
 
     // The non-obvious edge: a hold released while the pointer is already
-    // elsewhere produces no `mouseleave`, so nothing would ever schedule
-    // the hide. This effect tracks the hold and settles it. The untracked
-    // `visible` read is the cheap guard that keeps a holdless surface (and
-    // every mount) from arming a timer that has nothing to hide.
+    // elsewhere produces no `mouseleave`, so nothing would schedule the hide.
+    // This effect tracks the hold and settles it; the untracked `visible` read
+    // keeps a holdless surface from arming a timer with nothing to hide.
     let recheck = hover.hide_later.clone();
     let shown = hover.visible;
     Effect::new(move |_| {
@@ -163,10 +154,9 @@ fn reveal(
 }
 
 /// Whether the point still lands on the surface. Pointer capture keeps a
-/// drag's events glued to the captured element — including releases that
-/// land outside — so after a drag the release coordinates are the only
-/// trustworthy answer to "is the pointer still over us?".
-/// `element_from_point` skips `pointer-events: none` decorations, so a
+/// drag's events glued to the captured element — including releases that land
+/// outside — so after a drag the release coordinates are the only trustworthy
+/// answer. `element_from_point` skips `pointer-events: none` decorations, so a
 /// release over an inert overlay still counts as on-surface.
 fn released_on(surface: &web_sys::Element, x: f32, y: f32) -> bool {
     web_sys::window()
@@ -175,15 +165,13 @@ fn released_on(surface: &web_sys::Element, x: f32, y: f32) -> bool {
         .is_some_and(|el| surface.contains(Some(&el)))
 }
 
-/// The pointer-capture half, opt-in: a drag inside the surface holds it
-/// open, and the release re-synchronises the hover truth.
-///
-/// Returns the `pointerup` / `pointercancel` handler to bind alongside a
-/// `on:pointerdown=move |_| dragging.set(true)`. `dragging` is the caller's
-/// so it can also be the [`HoverConfig::hold`] the reveal was built with —
-/// which is why it is passed in rather than created here. The reveal is
-/// taken by value (it is `Clone`): the returned handler outlives this call,
-/// and a borrow would tie it to the caller's stack frame.
+/// The pointer-capture half, opt-in: a drag inside the surface holds it open
+/// and the release re-synchronises the hover truth. Returns the `pointerup` /
+/// `pointercancel` handler to bind alongside
+/// `on:pointerdown=move |_| dragging.set(true)`. `dragging` is the caller's so
+/// it can also be the [`HoverConfig::hold`] the reveal was built with. The
+/// reveal is taken by value (it is `Clone`): the returned handler outlives
+/// this call.
 pub fn use_drag_hold<E>(
     surface: NodeRef<E>,
     dragging: RwSignal<bool>,
@@ -222,10 +210,10 @@ pub fn HoverRevealSurface(
     /// Classes the element always carries.
     #[prop(into)]
     class: String,
-    /// Classes added while the surface is hidden. Defaults to a plain fade
-    /// out; a bar that also travels passes its own (`"opacity-0
-    /// translate-y-3"` at the bottom edge, `"-translate-y-3"` at the top),
-    /// which is why this is not hard-coded.
+    /// Classes added while the surface is hidden. Defaults to a plain fade; a
+    /// bar that also travels passes its own (`"opacity-0 translate-y-3"` at
+    /// the bottom edge, `"-translate-y-3"` at the top), which is why this is
+    /// not hard-coded.
     #[prop(optional, into)]
     hidden_class: String,
     children: Children,

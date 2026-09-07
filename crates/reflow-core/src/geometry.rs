@@ -1,16 +1,16 @@
 //! The reflowable page's geometry: the one fixed point of a text document.
 //!
 //! Reflowable documents are cut into fixed-size pages — A4 at 96dpi — so the
-//! paginated modes (single, spread, horizontal strip) reuse the reader's whole
-//! page machinery: fit, zoom, navigation, progress. The page size is the one
-//! fixed point; everything inside it (type, margins) is the typography
-//! settings' job.
+//! paginated modes (single, spread, horizontal strip) reuse the reader's
+//! whole page machinery: fit, zoom, navigation, progress. The page size is
+//! the one fixed point; everything inside it (type, margins) is the
+//! typography settings' job.
 //!
 //! Book layout swaps the symmetric margins for a gutter: the facing edge
 //! carries extra air, and which side that is is [`SpineSide`]'s business —
-//! the parity of the page in a strip, or the half of a spread the host is
-//! standing in. Both rules live here so no component has to know the pair of
-//! paddings a spine implies.
+//! the parity of the page in a strip, or the half of a spread the host stands
+//! in. Both rules live here so no component has to know the pair of paddings
+//! a spine implies.
 
 /// Page width in CSS px at scale 1: A4 at 96dpi.
 pub const PAGE_WIDTH: f64 = 794.0;
@@ -106,7 +106,7 @@ impl PageGeometry {
     /// Spend `extra` CSS px of margin on BOTH inline sides, inside the same
     /// page box: the pads grow, the text column shrinks to match, and the
     /// paginator packs against the narrower column. The dial cannot push the
-    /// column under the readable floor. The card equation — width is
+    /// column under the readable floor, and the card equation — width is
     /// exactly the column plus its pads — holds whichever order the dials
     /// land in.
     pub fn with_extra_inline(mut self, extra: f64) -> Self {

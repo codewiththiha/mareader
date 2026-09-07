@@ -1,25 +1,25 @@
 //! Drag-and-drop file opening, and the feedback overlay that goes with it.
 //!
-//! The overlay is shown for exactly one thing: a drag that came from OUTSIDE
-//! the window and is carrying a document the reader can open. Two things
-//! used to fool it and are ruled out here —
+//! The overlay is shown for exactly one thing: a drag from OUTSIDE the window
+//! carrying a document the reader can open. Two things used to fool it and
+//! are ruled out here —
 //!
 //!   * A drag that STARTED inside the window (a text selection, a page image,
-//!     a book card). Both the DOM and Tauri report it as a drag entering the
-//!     window; the `dragstart`/`dragend` pair on the window is what tells the
-//!     two apart, and while it is open every enter is ignored.
-//!   * A drag of something else (a PNG, a folder, a URL). The DOM drag names
-//!     its items' kinds and MIME types up front; Tauri names the paths. Each
-//!     is checked against `reader_core::format`, the one registry of what the
-//!     reader opens, so a new format is a new row there and nothing here.
+//!     a book card): both the DOM and Tauri report it as entering, and the
+//!     window's `dragstart`/`dragend` pair is what tells the two apart —
+//!     while it is open every enter is ignored.
+//!   * A drag of something else (a PNG, a folder, a URL): the DOM drag names
+//!     its items' kinds and MIME types up front, Tauri names the paths, and
+//!     each is checked against `reader_core::format` — the one registry of
+//!     what the reader opens, so a new format is a new row there and nothing
+//!     here.
 //!
-//! Two transports feed the same decision:
-//!   1. DOM `dragenter` / `dragover` / `dragleave` / `drop` on `window` — the
-//!      plain-browser path (`trunk serve`), which also has to prevent the
-//!      default navigation on drop. Inside Tauri a native file drag never
-//!      reaches the DOM, so these only ever see internal drags there.
-//!   2. Tauri's `tauri://drag-enter` / `drag-leave` / `drag-drop`, the real
-//!      signals for a file dragged in from Finder / Explorer.
+//! Two transports feed the same decision: DOM drag events on `window` (the
+//! plain-browser path, which also prevents the default navigation on drop —
+//! inside Tauri a native file drag never reaches the DOM, so these only see
+//! internal drags there), and Tauri's `tauri://drag-enter` / `drag-leave` /
+//! `drag-drop` (the real signals for a file dragged in from Finder /
+//! Explorer).
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -31,9 +31,9 @@ use web_sys::Event;
 use crate::state::AppState;
 
 pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
-    // A drag that began in this window is never a drop candidate. `dragstart`
-    // fires for every internal drag, native or not, and `dragend` closes it
-    // even when the item is released outside the window.
+    // A drag that began in this window is never a drop candidate.
+    // `dragstart` fires for every internal drag, native or not, and `dragend`
+    // closes it even when the item is released outside the window.
     let internal = Rc::new(Cell::new(false));
     // DOM `dragenter`/`dragleave` fire for every child boundary crossed, not
     // just the window edge, so the overlay tracks a depth count rather than
@@ -119,9 +119,9 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
 
 /// Whether a DOM drag carries at least one FILE whose advertised type may be
 /// a supported document. Dragged text, links and markup have no file items
-/// and are refused outright; a file of a known-unsupported type (an image)
-/// is refused by its MIME type. The path is not known until the drop, so a
-/// blank type is admitted and the drop is what decides.
+/// and are refused outright; a known-unsupported type (an image) is refused by
+/// its MIME. The path is not known until the drop, so a blank type is
+/// admitted and the drop decides.
 fn carries_supported_file(ev: &leptos::ev::DragEvent) -> bool {
     let Some(items) = ev.data_transfer().map(|dt| dt.items()) else {
         return false;

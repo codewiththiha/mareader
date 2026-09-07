@@ -37,9 +37,9 @@ const PULSE_STOP_MS: u64 = 400;
 pub type ThumbRegistry = Arc<Mutex<HashSet<u32>>>;
 
 /// The render lifecycle of one cell, as a pure state machine: the DOM side
-/// (canvas blit, cover crossfade, pulse timer) reacts to the transitions,
-/// while the machine itself stays free of web types so its rules are
-/// unit-testable in the native test runs.
+/// (canvas blit, cover crossfade, pulse timer) reacts to the transitions while
+/// the machine stays free of web types, so its rules are unit-testable in the
+/// native test runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ThumbRenderState {
     /// Mounted, and no render has completed yet. A failed render returns
@@ -129,19 +129,17 @@ pub fn ThumbCell(
 ) -> impl IntoView {
     // SYNCHRONOUS cache probe, read while the view is being built — BEFORE the
     // cell's first frame is composited. When this page's bitmap is already in
-    // the engine's thumbnail cache the render will blit it in the same task the
+    // the engine's thumbnail cache, the render blits it in the same task the
     // cell mounts in, so the cell must mount ALREADY "loaded": cover
-    // transparent, no pulse animation, no opacity transition.
+    // transparent, no pulse, no opacity transition.
     //
-    // This is the fix for the residual subtle scroll flicker. The grid is
-    // virtualized, so scrolling up re-mounts rows that were rendered moments
-    // earlier. Every such remount used to replay the full skeleton→crossfade
-    // sequence over a bitmap that was about to be painted instantly, which read
-    // as a faint brightness blip on the row entering view — most visible on the
-    // 2nd row from the scroll edge (buffer row 1 mounts off-screen, so the row
-    // the user actually watches appear is the one that flickers) and on BOTH
-    // columns of it, because both cells remount together in the same row node.
-    // A cached cell now has no cover state to animate at all.
+    // This is the fix for the residual scroll flicker. The grid is virtualized,
+    // so scrolling up re-mounts rows rendered moments earlier; every such
+    // remount used to replay the full skeleton→crossfade over a bitmap about
+    // to be painted instantly — a faint brightness blip on the row entering
+    // view, most visible on the 2nd row from the scroll edge (buffer row 1
+    // mounts off-screen) and on both its columns, since both cells remount in
+    // the same row node. A cached cell now has no cover state to animate.
     let starts_cached = engine::has_thumb(page, THUMB_SCALE);
     let loaded = RwSignal::new(starts_cached);
     // A NodeRef onto the cover (the timer removes the pulse class from the

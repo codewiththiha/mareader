@@ -1,15 +1,15 @@
 //! Persist the reader's position in the current book.
 //!
-//! Watches `viewer.page` (which page-tracking keeps in sync with scrolling in
-//! both view modes) and, while a document is open, keeps the current path's
-//! `RecentBook.page` in the library up to date — so the next open of that book
-//! resumes where the reader left off. Persistence is debounced so a fast
-//! scroll through continuous mode is one localStorage write, not one per row.
+//! Watches `viewer.page` (kept in sync with scrolling in both view modes) and,
+//! while a document is open, keeps the current path's `RecentBook.page` in the
+//! library up to date, so the next open resumes where the reader left off.
+//! Persistence is debounced: a fast scroll through continuous mode is one
+//! localStorage write, not one per row.
 //!
-//! It stands down for the whole of a zoom transaction. The page counter is not
-//! trustworthy while one is open — navigation_sync's dominant arm is standing
-//! down and a held jump has not been replayed — and this is the one effect
-//! that writes that untrustworthy value somewhere permanent.
+//! Stands down for the whole of a zoom transaction: the page counter is not
+//! trustworthy while one is open — the dominant arm is standing down and a
+//! held jump has not replayed — and this is the one effect that writes that
+//! value somewhere permanent.
 
 use std::time::Duration;
 
@@ -38,11 +38,11 @@ pub fn reading_progress(state: AppState) {
         let path = state.reader.document.path.get();
         let page = state.reader.viewer.page.get();
         // The stream's fractional position rides along with the page: the
-        // page remains the paged modes' resume point, and the fraction is
-        // the same position at full precision for the next continuous
-        // read. Only the stream writes one — anything else clears a stale
-        // fraction an earlier streamed session left behind. The scroll
-        // mirror is the tracked input that moves it.
+        // page remains the paged modes' resume point, the fraction is the same
+        // position at full precision for the next continuous read. Only the
+        // stream writes one — anything else clears a stale fraction an earlier
+        // streamed session left behind. The scroll mirror is the tracked input
+        // that moves it.
         let streaming = state.reader.reflow_streaming();
         let _scroll = if streaming {
             state.reader.viewer.scroll_top.get()
@@ -50,12 +50,12 @@ pub fn reading_progress(state: AppState) {
             0.0
         };
         let fraction = if streaming { state.reader.stream_fraction() } else { None };
-        // A zoom transaction owns the geometry, and the page counter is not
-        // trustworthy while it does: the dominant arm stands down for the
-        // duration and a held navigation has not been replayed yet, so the
-        // page on show may be the pre-jump one. The read is TRACKED, so the
-        // effect re-runs — with the settled page — on the frame the
-        // transaction closes; nothing is lost by waiting.
+        // A zoom transaction owns the geometry and the page counter is not
+        // trustworthy while it does: the dominant arm stands down and a held
+        // navigation has not replayed, so the page on show may be the
+        // pre-jump one. The read is TRACKED, so the effect re-runs — with the
+        // settled page — on the frame the transaction closes; nothing is lost
+        // by waiting.
         if zooming.get() {
             return;
         }
@@ -74,10 +74,10 @@ pub fn reading_progress(state: AppState) {
         }
 
         // No-op write guard: only touch the library when the position
-        // actually moved, so the position-tracking syncs (which can re-write
-        // an equal page) never dirty the list or trigger a save. A fraction
-        // counts as moved past half a percent — finer steps are scroll
-        // noise, and the debounce would only coalesce them anyway.
+        // actually moved, so position-tracking syncs (which can re-write an
+        // equal page) never dirty the list or trigger a save. A fraction
+        // counts as moved past half a percent — finer steps are scroll noise
+        // the debounce would coalesce anyway.
         let mut changed = false;
         state.library.books.update(|books| {
             if let Some(b) = books.iter_mut().find(|b| b.path == path) {
@@ -104,7 +104,8 @@ pub fn reading_progress(state: AppState) {
 
         // Debounced persist. Capture the VALUE (not the signal) so the timer
         // can never read a disposed signal if it fires during teardown; a
-        // further page change clears and re-arms this handle with a fresh copy.
+        // further page change clears and re-arms this handle with a fresh
+        // copy.
         if let Some(h) = timer.get_value() {
             h.clear();
         }

@@ -1,19 +1,15 @@
-/* ---------------------------------------------------------------------
-   pdf.js's own layer, as this reader wants it: the text layer's position
+/* pdf.js's own layer, as this reader wants it: the text layer's position
    and transparency, selection handed back to the glyph spans, the
-   `.endOfContent` block pdf.js appends, and the engine's search
-   highlights.
+   .endOfContent block pdf.js appends, and the engine's search highlights.
+   All scoped under .pdf-page — a reflowable document paints real DOM type
+   and styles it in styles/text.css; the host itself is
+   styles/page_host.css. */
 
-   All of it is scoped under `.pdf-page`. A reflowable document paints
-   real DOM type and styles it in `styles/text.css` instead; the host
-   itself is `styles/page_host.css`.
-   --------------------------------------------------------------------- */
-/* THE HOST IS NOT TEXT. Everything a page paints — the canvas raster, the
-   themed paper and texture layers, the snapshot overlay — is decoration as far
-   as the selection engine is concerned, so a drag that starts anywhere on the
-   page would otherwise select the whole host box (and, on WebKit, sweep every
-   descendant in its path). Selection is handed back to the document text alone,
-   in the glyph spans of the text layer below (see SELECTION SCOPING). */
+/* THE HOST IS NOT TEXT. Everything a page paints (canvas raster, themed
+   paper, texture, snapshot) is decoration to the selection engine, so a
+   drag starting anywhere on the page would otherwise select the whole
+   host box — and on WebKit sweep every descendant in its path. Selection
+   belongs to the glyph spans alone (SELECTION SCOPING below). */
 .pdf-page,
 .pdf-page * {
   user-select: none;
@@ -26,43 +22,33 @@
   z-index: 2;
   color: transparent;
 
-  /* SELECTION SCOPING — fixes "selection snaps to the top over blank space".
-     The layer div is a full-page selectable surface. When a drag crosses a gap
-     (inter-paragraph space, right margin, list gutter) the pointer is over no
-     glyph span, and WKWebView resolves the focus to the container's FIRST text
-     position, re-anchoring the range to the top of the page and sweeping every
-     span in its path (including the isolated list-number spans). With the
-     container non-selectable and only the glyph spans selectable, a drag over
-     blank space holds the last sane range instead of re-anchoring. */
+  /* SELECTION SCOPING — the layer div is a full-page selectable surface;
+     when a drag crosses blank space (paragraph gaps, margins, list
+     gutters) the pointer is over no glyph span, and WKWebView re-anchors
+     the range to the container's FIRST text position, sweeping the whole
+     page. With the container non-selectable and only the glyph spans
+     selectable, a drag over blank space holds the last sane range. */
   user-select: none;
   -webkit-user-select: none;
 }
 
 /* The spans ARE the document text; re-enable selection exactly there.
-   Direct children are either glyph spans or .markedContent wrappers (the
-   vendored sheet keys `.textLayer > :not(.markedContent)`), so cover both
-   shapes. `user-select` is inherited, so the container's `none` above would
-   otherwise disable the spans too. */
+   Direct children are glyph spans or .markedContent wrappers (the vendored
+   sheet keys .textLayer > :not(.markedContent)), so cover both shapes.
+   user-select inherits, hence the explicit re-enable. */
 .pdf-page .textLayer > span,
 .pdf-page .textLayer .markedContent > span {
   user-select: text;
   -webkit-user-select: text;
 }
 
-/* Selection highlight.
-   The glyphs the user SEES are painted on the canvas; the text layer holds
-   transparent positional spans on top of it purely so text can be selected.
-   pdf.js's own spans are already glyph-accurate, so selecting must tint the
-   span box and NOT repaint the text — repainting draws the text-layer glyph
-   over the canvas glyph, and since the substituted layer font never matches
-   the embedded PDF font metrically, the two copies land a hair apart. That is
-   the "double / slightly offset text when selecting" — it is not a
-   misalignment of the highlight box, it is a second rendering of the text
-   appearing on top of the first.
-
-   `color: transparent` in ::selection keeps the text layer invisible during a
-   selection, so only the canvas glyphs show, under a translucent tint that
-   lets them read straight through. */
+/* Selection highlight. The visible glyphs are painted on the canvas; the
+   text layer holds transparent positional spans purely for selection.
+   Selecting must tint the span box and NOT repaint the text: the layer's
+   substituted font never matches the embedded font metrically, so repainted
+   glyphs land a hair off the canvas ones — the classic doubled/offset text.
+   color:transparent keeps the layer invisible under a translucent tint the
+   canvas glyphs read straight through. */
 .pdf-page .textLayer ::selection {
   background: color-mix(in srgb, var(--color-accent) 34%, transparent);
   color: transparent;
@@ -75,9 +61,9 @@
   text-shadow: none;
 }
 
-/* The dark themes invert the canvas, so a multiply-ish translucent accent would
-   muddy the inverted glyphs; a slightly stronger tint keeps the selection
-   obvious without hiding them. */
+/* Dark themes invert the canvas, where a multiply-ish translucent accent
+   would muddy the glyphs; a slightly stronger tint keeps the selection
+   obvious. */
 :root.dark .pdf-page .textLayer ::selection {
   background: color-mix(in srgb, var(--color-accent) 42%, transparent);
 }
@@ -85,50 +71,41 @@
   background: color-mix(in srgb, var(--color-accent) 42%, transparent);
 }
 
-/* pdf.js appends an `.endOfContent` block (inset:100% 0 0) that it moves to
-   `top:0` while selecting, to make drag-selection past the last line work. It
-   is not a text node, and in a `user-select` sweep it can pick up a selection
-   box spanning the whole page. Excluded from the selection painting above so
-   it can never draw a stray band over the page. */
+/* pdf.js appends an .endOfContent block (inset:100% 0 0, moved to top:0
+   while selecting) to make drag-selection past the last line work. It is
+   not a text node and can pick up a whole-page selection box in a sweep —
+   excluded from the selection painting above. */
 .pdf-page .textLayer .endOfContent::selection {
   background: transparent;
 }
 
-/* Belt-and-braces: the <canvas> is a full-page replaced element. Even if a
-   future engine change ever lands it inside a selection range, it must never
-   paint its box as a full-page tint. */
+/* Belt-and-braces: the canvas is a full-page replaced element and must
+   never paint its box as a selection tint. */
 .pdf-page canvas::selection {
   background: transparent;
 }
 
-/* The endOfContent block must not be a selection FOCUS either. The vendored
-   sheet already gives it `user-select:none`, but a blank-space hit can still
-   land on it and anchor the drag there; `pointer-events:none` lets that hit
-   fall straight through to the page, so the focus can never anchor on it and
-   start a whole-page sweep. The `user-select:none` is kept as belt-and-braces
-   alongside the `::selection` suppression above. */
+/* endOfContent must not be a selection FOCUS either: a blank-space hit can
+   anchor a drag there and start a whole-page sweep, so pointer-events:none
+   lets the hit fall through to the page. user-select:none kept alongside
+   the ::selection suppression. */
 .pdf-page .textLayer .endOfContent {
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
 }
 
-/* Search highlights: the box LOOK — tint, current-match hue, the dark-theme
-   blend swap — is shared with the reflowable formats in components/search.css,
-   because both painters emit the same `.highlight` / `.is-active` /
-   `data-match` markup. What stays here is only the part that is about THIS
-   subtree: undoing what the vendored sheet does to a div appended into a text
-   layer.
-
-   The vendored pdf_viewer.css `.textLayer .highlight` rule adds a 1px
-   margin/padding (for pdf.js's own merged highlights), and its
-   `.textLayer > :not(.markedContent)` rule applies a `rotate() scaleX()
-   scale()` transform and a computed `font-size` to EVERY direct child of the
-   text layer — including these boxes. The engine measures them with
-   getBoundingClientRect (already-transformed, final screen pixels), so letting
-   the inherited transform apply again scaled a box a second time and slid it
-   off the glyphs. Neutralising transform / font-size / line-height pins each
-   box exactly where it was measured. */
+/* Search highlights: the box LOOK (tint, current-match hue, dark blend
+   swap) is shared with the reflowable formats in components/search.css —
+   both painters emit the same .highlight/.is-active/data-match markup.
+   What stays here undoes what the vendored sheet does to a div appended
+   into a text layer: pdf_viewer.css gives .textLayer .highlight a 1px
+   margin/padding, and .textLayer > :not(.markedContent) applies a
+   rotate()/scale() transform and computed font-size to EVERY direct child
+   — including these boxes. The engine measures them with
+   getBoundingClientRect (already-transformed pixels), so letting the
+   inherited transform reapply scaled each box a second time and slid it
+   off the glyphs. Neutralising pins each box where it was measured. */
 .pdf-page .textLayer .highlight {
   margin: 0;
   padding: 0;

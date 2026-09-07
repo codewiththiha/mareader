@@ -1,22 +1,19 @@
-// The paper pipeline's EYES. Every colour decision — detection, the
-// per-page palette, the scroll interpolation — lives in the `pdf-paper`
-// crate behind the Rust paper session; this module only moves pixels across
-// the boundary:
+// The paper pipeline's EYES. Every colour decision — detection, the per-page
+// palette, the scroll interpolation — lives in the `pdf-paper` crate behind
+// the Rust paper session; this module only moves pixels across the boundary:
 //
 // * `stashPaperFrame` — the renderer parks each live raster's raw frame at
-//   the one pipeline moment the page's own paper is still unbaked; the Rust
-//   session drains it after each successful render via `takePaperFrame`.
-// * `samplePaperPage` — an offscreen render at a tiny scale, for the
-//   look-ahead. Resolves only after a yield, so a burst of samples never
+//   the one moment the page's own paper is still unbaked; the Rust session
+//   drains it after each successful render via `takePaperFrame`.
+// * `samplePaperPage` — an offscreen render at a tiny scale for the
+//   look-ahead; resolves only after a yield, so a burst of samples never
 //   starves live renders.
 // * `setPaper` — publish (or clear) `--pdf-paper`.
 //
-// Nothing is persisted: the palette is rebuilt from live frames every time
-// a book opens.
-//
-// Cost per frame: one ≤96×96 downscale and one pixel readback — and none
-// at all while blend mode is off, which is the common case: the session
-// gates the stash from the Rust side (setPaperActive).
+// Nothing is persisted: the palette is rebuilt from live frames every time a
+// book opens. Cost per frame: one <=96x96 downscale and one pixel readback —
+// and none while blend mode is off, the common case (the session gates the
+// stash from the Rust side, setPaperActive).
 
 import { session } from "./state";
 import type { PaperFrame } from "./types";
@@ -28,7 +25,7 @@ import { publishBakedPaper } from "./theme/paper";
  * survives the downscale. */
 const SAMPLE_EDGE = 96;
 
-/** At most this many undrained stashed frames: one per recently rendered
+/** At most this many undrained stashed frames — one per recently rendered
  * canvas. The Rust session drains after every render, so this is a safety
  * valve, not a working set. */
 const STASH_MAX = 8;

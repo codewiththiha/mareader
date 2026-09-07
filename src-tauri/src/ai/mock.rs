@@ -1,10 +1,8 @@
 //! Fallback provider: canned data so the UI stays testable on Windows,
-//! Linux, Intel Macs and builds without the `ai` feature — and whenever the
-//! Swift bridge fails to start.
-//!
-//! The `__fail` word is a deterministic error path: look it up to exercise
-//! the error card and the retry affordance on a machine without Apple
-//! Intelligence.
+//! Linux, Intel Macs, builds without the `ai` feature — and whenever the
+//! Swift bridge fails to start. The `__fail` word is a deterministic error
+//! path: look it up to exercise the error card and the retry affordance on a
+//! machine without Apple Intelligence.
 
 use async_stream::stream;
 use futures::Stream;
@@ -46,10 +44,10 @@ impl AiProvider for MockAiProvider {
             }
 
             // A short "thinking" beat so the stroke's processing pulse is
-            // still visible, then stream the answer out bit by bit the way
+            // still visible, then the answer streams out bit by bit the way
             // the real provider does: the card opens on the FIRST content
-            // chunk (the meaning), and the rest patches in as it lands —
-            // the exercise for growing / streaming, not a single late pop.
+            // chunk and the rest patches in — the exercise for streaming,
+            // not a single late pop.
             tokio::time::sleep(Duration::from_millis(320)).await;
 
             let meaning = format!("(Mock) A simulated, simplified meaning for the word '{}'.", word);

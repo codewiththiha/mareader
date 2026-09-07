@@ -1,20 +1,18 @@
 //! Search pipeline: build the index once, run the query as the reader types,
-//! and step through individual matches — scrolling each one into view rather
-//! than jumping to the top of its page.
+//! and step through matches — scrolling each into view rather than jumping to
+//! the top of its page.
 //!
 //! The pipeline forks by format at [`run_search`] and nowhere else: PDF
-//! indexes through the engine, text documents scan their own blocks in
-//! Rust. Both tails converge on the same flat `SearchMatch` list, so the
-//! results UI and the match-stepping maths below serve either.
+//! indexes through the engine, text documents scan their own blocks in Rust.
+//! Both tails converge on the same flat `SearchMatch` list, so the results UI
+//! and the match-stepping maths serve either.
 //!
-//! The two tails answer "where is this hit" differently, and each `SearchMatch`
-//! carries the half its format has: a PDF a rect in page space, which the engine
-//! multiplies by the scale and paints into the text layer; a reflowable document
-//! a block and an occurrence ordinal (`block_hit`), which the row that renders
-//! the block turns into boxes over its own rendered text
-//! ([`crate::components::formats::reflow::highlight`]). A text match therefore
-//! carries no rect, which the reveal path tolerates — a zero rect reveals the
-//! page's top.
+//! The tails answer "where is this hit" differently, and each `SearchMatch`
+//! carries the half its format has: a PDF a rect in page space (the engine
+//! multiplies by the scale and paints into the text layer); a reflowable
+//! document a block and an occurrence ordinal (`block_hit`), which the row
+//! rendering the block turns into boxes over its own text
+//! ([`crate::components::formats::reflow::highlight`]).
 
 use std::collections::HashMap;
 

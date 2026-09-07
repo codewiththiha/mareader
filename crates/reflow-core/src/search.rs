@@ -1,14 +1,14 @@
-//! In-document search for reflowable documents: the shared scan over the blocks.
+//! In-document search for reflowable documents: the shared scan over the
+//! blocks.
 //!
 //! The PDF side indexes through the engine; a text document already holds its
-//! whole content as Rust strings, so the index IS the document and a query is a
-//! scan. The scan and the snippet window are not this crate's — they are
-//! `reader_core::search`'s, shared with the PDF index and with the layer that
-//! paints hits over a block's rendered text, so an occurrence ordinal means the
-//! same thing everywhere it is counted. What is left here is the shape of the
-//! answer: a hit carries the block it sits in and which occurrence inside that
-//! block it is, and the caller maps blocks to pages (the cut changes with
-//! typography, so that map is the layout's, not the search's).
+//! content as Rust strings, so the index IS the document and a query is a
+//! scan. The scan and snippet window are `reader_core::search`'s, shared with
+//! the PDF index and the layer that paints hits over a block's rendered text,
+//! so an occurrence ordinal means the same thing everywhere. What is left
+//! here is the shape of the answer: a hit carries its block and which
+//! occurrence inside it, and the caller maps blocks to pages (the cut changes
+//! with typography).
 
 use reader_core::search::{occurrence_spans, snippet};
 

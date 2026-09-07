@@ -1,10 +1,8 @@
-//! Icon-only button: the toolbar's square ghost button. `pressed` renders
-//! the accent/ink toggle (titlebar pin); `disabled` is the plain
-//! disabled:opacity-50 the other controls use.
-//!
-//! The borderless look is deliberate and shared: toolbar icon buttons sit
-//! on glass/paper and only lift on hover, while the app's bordered `Button`
-//! variant is for labeled actions.
+//! Icon-only button: the toolbar's square ghost button. `pressed` renders the
+//! accent/ink toggle (titlebar pin); `disabled` is the plain disabled:opacity-50
+//! the other controls use. The borderless look is deliberate: toolbar icon
+//! buttons sit on glass/paper and only lift on hover, while the bordered
+//! `Button` variant is for labeled actions.
 
 use leptos::prelude::*;
 
@@ -45,12 +43,11 @@ pub fn IconButton(
 ) -> impl IntoView {
     let pressed_sig = pressed.unwrap_or_else(|| Signal::derive(|| false));
     let box_class = "btn-icon inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg";
-    // One base string for both branches — the toggle and plain buttons share
-    // every class. The only difference is the conditional colour swap the
-    // class closure below appends; plain (non-toggle) buttons carry no text
-    // colour class of their own so a caller's `class` passthrough can set the
-    // colour without fighting a conditional utility, while toggle buttons
-    // keep the accent/ink swap (only one branch is ever in the DOM).
+    // One base string for both branches — toggle and plain buttons share
+    // every class; only the conditional colour swap differs. Plain buttons
+    // carry no text colour class so a caller's `class` passthrough can set it
+    // without fighting a conditional utility; toggles keep the accent/ink
+    // swap (only one branch is ever in the DOM).
     let base = format!(
         "{box_class} border border-transparent bg-transparent transition-colors hover:bg-line \
          focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \

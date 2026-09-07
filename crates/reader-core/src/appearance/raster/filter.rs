@@ -1,12 +1,11 @@
 //! The raster filter pipeline: the CSS filter chain that turns the
 //! always-light PDF raster into the reader's base mode and tint, and the
-//! blend mode that composites it over the page backdrop.
+//! blend mode compositing it over the page backdrop.
 //!
 //! A translucent colour wash would muddy the text, so the tint is a
-//! `sepia() saturate() hue-rotate()` chain; the UI tokens ride along in
-//! OKLCH (see [`super::tint`]), emitted with each token's OWN lightness
-//! preserved — only hue and chroma move, so contrast ratios survive a
-//! 100% tint.
+//! `sepia() saturate() hue-rotate()` chain; the UI tokens ride along in OKLCH
+//! (see [`super::tint`]), each emitted with its OWN lightness preserved —
+//! only hue and chroma move, so contrast ratios survive a 100% tint.
 
 use crate::appearance::{Appearance, BaseMode};
 
@@ -53,13 +52,12 @@ impl Appearance {
         }
     }
 
-    /// Blend mode for the canvas against the page background.
-    ///
-    /// `multiply` keeps light themes paper-like. Inverted canvases need
-    /// `screen` (multiply can only darken, so it would crush the near-white
-    /// inverted text back into the dark page and destroy readability).
-    /// Dim is not inverted but is darkened, and soft-light preserves its
-    /// midtones where multiply would double up the darkening.
+    /// Blend mode for the canvas against the page background. `multiply`
+    /// keeps light themes paper-like; inverted canvases need `screen`
+    /// (multiply can only darken and would crush near-white inverted text
+    /// back into the dark page). Dim is darkened but not inverted, and
+    /// soft-light preserves its midtones where multiply would double up the
+    /// darkening.
     pub fn canvas_blend(&self) -> &'static str {
         match self.base {
             BaseMode::Light => "multiply",

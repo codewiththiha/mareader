@@ -1,15 +1,12 @@
-//! Small DOM lookups shared by the effects and views.
-//!
-//! `#page-list` (the continuous-scroll container) used to be resolved by an
-//! inlined `window -> document -> get_element_by_id` chain in nine places
-//! across five modules, each repeating the same three `and_then`s and each
-//! free to misspell the id. These helpers make the id a single constant and
-//! the lookup a single expression.
-//!
-//! Ids that anchor app chrome (the toolbar clusters, the viewer slot) are
-//! named constants here too, and looked up through [`by_id_warn`] when a
-//! miss can only be a bug — a renamed id then fails loudly (once) in the
-//! console instead of silently disabling whatever measured against it.
+//! Small DOM lookups shared by the effects and views. `#page-list` (the
+//! continuous-scroll container) used to be resolved by an inlined
+//! `window -> document -> get_element_by_id` chain in nine places across five
+//! modules, each free to misspell the id; these helpers make the id a single
+//! constant and the lookup a single expression. Ids that anchor app chrome
+//! (toolbar clusters, viewer slot) are named constants too, looked up through
+//! [`by_id_warn`] when a miss can only be a bug — a renamed id then fails
+//! loudly in the console instead of silently disabling whatever measured
+//! against it.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -52,16 +49,13 @@ thread_local! {
         RefCell::new(HashSet::new());
 }
 
-/// The client rects a `Range` covers, as pure `(left, top, right, bottom)`
-/// tuples in viewport CSS px.
-///
-/// One range can report several rects — a span that wraps a line, or that
-/// crosses inline boxes — and everything that paints over text needs all of
-/// them: a gloss stroke unions them into one box, a search hit paints one box
-/// per rect. Both format families call this, so it lives with the other shared
-/// DOM lookups rather than inside either subtree. An empty list (a range the
-/// browser will not give rects for) is a normal answer, and every caller reads
-/// it as "nothing to place".
+/// The client rects a `Range` covers, as `(left, top, right, bottom)` tuples
+/// in viewport CSS px. One range can report several rects (a span that wraps
+/// a line or crosses inline boxes) and everything painting over text needs
+/// all of them: a gloss stroke unions them, a search hit paints one box per
+/// rect. Both format families call this, so it lives with the shared lookups.
+/// An empty list (a range the browser will not give rects for) is a normal
+/// answer: "nothing to place".
 pub fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
     let Some(rects) = range.get_client_rects() else {
         return Vec::new();
@@ -83,11 +77,10 @@ pub fn by_id(id: &str) -> Option<web_sys::Element> {
 }
 
 /// [`by_id`] for chrome whose absence is a bug rather than a virtualization
-/// gap: a miss is reported to the console once per id, so renaming an id in
-/// the view shows up as a visible warning instead of the feature it anchors
-/// quietly degrading. Page hosts (`sp-N-pg` / `cont-N-pg`) must NOT go
-/// through this — they legitimately disappear whenever the virtualizer
-/// unmounts their page.
+/// gap: a miss is reported to the console once per id, so renaming an id
+/// shows up as a warning instead of the feature quietly degrading. Page hosts
+/// (`sp-N-pg` / `cont-N-pg`) must NOT go through this — they legitimately
+/// disappear whenever the virtualizer unmounts their page.
 pub fn by_id_warn(id: &'static str) -> Option<web_sys::Element> {
     let el = by_id(id);
     if el.is_none() {
@@ -115,25 +108,21 @@ pub fn h_page_list() -> Option<web_sys::Element> {
 /// Scroll `el`'s scroll parent so `el` is comfortably visible, but ONLY if it
 /// is currently out of view.
 ///
-/// WHY "only if out of view". The reader has two jobs here: following along as
-/// the reader scrolls the document, and landing somewhere sensible when the
-/// panel is opened. Unconditionally centring on every page change would yank
-/// the list under the cursor while someone is reading down it — the row they
-/// were about to click slides away. Scrolling only when the target is off
-/// screen keeps the list still during normal browsing and still guarantees the
-/// active row is reachable.
-///
-/// `margin` keeps the row off the very edge of the viewport, so there is
-/// visible context above/below it rather than the row being flush against the
-/// frame.
+/// The reader has two jobs here: following along as the document scrolls, and
+/// landing somewhere sensible when the panel opens. Unconditionally centring
+/// on every page change would yank the list under the cursor mid-read;
+/// scrolling only when the target is off screen keeps the list still during
+/// normal browsing and still guarantees the active row is reachable.
+/// `margin` keeps the row off the very edge so there is visible context
+/// above/below it.
 pub fn reveal_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element, margin: f64) {
     let parent_h = parent.client_height() as f64;
     if parent_h <= 0.0 {
         return;
     }
     // offset_top is relative to the offset parent, which is not necessarily
-    // the scroller, so measure through bounding rects instead — they share a
-    // viewport origin and therefore always subtract correctly.
+    // the scroller: measure through bounding rects instead — they share a
+    // viewport origin and always subtract correctly.
     let er = el.get_bounding_client_rect();
     let pr = parent.get_bounding_client_rect();
     let scroll_top = parent.scroll_top() as f64;
@@ -161,12 +150,11 @@ pub fn reveal_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element,
     }
 }
 
-/// Centre `el` within its scroll `parent`, unconditionally.
-///
-/// Used for the deliberate "take me to where I am" gesture (re-clicking the
-/// active sidebar tab), where the reader has explicitly asked to be moved and
-/// the gentler `reveal_in_scroll_parent` would do nothing if the row happened
-/// to already be barely on screen.
+/// Centre `el` within its scroll `parent`, unconditionally — the deliberate
+/// "take me to where I am" gesture (re-clicking the active sidebar tab),
+/// where the reader explicitly asked to be moved and the gentler
+/// `reveal_in_scroll_parent` would do nothing if the row were barely on
+/// screen already.
 pub fn center_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element) {
     let parent_h = parent.client_height() as f64;
     if parent_h <= 0.0 {

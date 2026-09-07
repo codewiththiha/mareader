@@ -1,14 +1,11 @@
 //! Continuous auto-scroll along the active strip (vertical or horizontal).
 //!
 //! The drift is a [`FrameLoop`]: one frame at a time, each frame deciding
-//! whether it needs another. It used to be a free `fn tick` that re-armed
-//! itself with its state parked in two `thread_local!` cells — a running flag
-//! and the previous frame's stamp. That worked, and it was the only loop in the
-//! app that could not be stopped from the outside: nothing owned it, so a
-//! document closed mid-drift left a queued frame callback reading signals whose
-//! reactive graph had already been disposed. The loop's own flag check could
-//! not help, because the flag lived in a thread-local that outlived the reader
-//! it belonged to, and the read that panicked was the one before it.
+//! whether it needs another. It used to be a free `fn tick` re-arming itself
+//! from two `thread_local!` cells — the only loop in the app that could not
+//! be stopped from the outside, so a document closed mid-drift left a queued
+//! frame reading signals whose reactive graph was already disposed (the flag
+//! that could have caught it lived in a thread-local outliving its reader).
 
 use leptos::prelude::*;
 

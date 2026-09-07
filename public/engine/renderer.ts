@@ -19,11 +19,11 @@ import { TextLayer } from "./loader";
 import { applyHighlights } from "./highlights";
 import { buildLinkLayer } from "./links";
 
-/** A page with nothing in flight: no render task, no text layer, no viewport,
- *  no raw raster, and both queue counters at zero. Two callers build one — a
- *  canvas found in the DOM, and a page registered before its canvas exists —
- *  and a field added to `PageState` should have exactly one place to be given
- *  its initial value. */
+/** A page with nothing in flight: no render task, no text layer, no
+ *  viewport, no raw raster, both queue counters at zero. Two callers build
+ *  one — a canvas found in the DOM, and a page registered before its canvas
+ *  exists — and a field added to PageState should have exactly one place to
+ *  be given its initial value. */
 function blankPage(
   page: number,
   canvas: HTMLCanvasElement | null,
@@ -70,10 +70,10 @@ function ensurePage(
     existing.textLayerEl = textLayerEl;
     return existing;
   }
-  // Prefer the caller's hint (registerPage passes the page number); fall back to
-  // parsing the id only when the mount never registered. An id this cannot parse
-  // is not a reader host at all, and page 1 is the least wrong guess for a
-  // canvas that is about to be told which page it is.
+  // Prefer the caller's hint (registerPage passes the page number); parse
+  // the id only when the mount never registered. An id this cannot parse is
+  // not a reader host at all, and page 1 is the least wrong guess for a
+  // canvas about to be told which page it is.
   const page = pageHint && pageHint > 0 ? pageHint : (pageFromCanvasId(canvasId) ?? 1);
   const st = blankPage(page, canvas, host, textLayerEl);
   session.stateByCanvasId.set(canvasId, st);
@@ -131,15 +131,12 @@ function pageOutputScale(cssW: number, cssH: number): number {
   const dpr = globalThis.devicePixelRatio || 1;
   if (!(cssW > 0) || !(cssH > 0)) return dpr;
 
-  // Cap so a single canvas never exceeds PAGE_MAX_PIXELS pixels.
-  //
-  // (The old code ALSO capped against one windowful of pixels —
-  // `vw * vh * CANVAS_AREA_FACTOR` — which was the soft-text bug: a US Letter
-  // page at 100% zoom on a 2x display needs 612*2 × 792*2 ≈ 1.48M pixels,
-  // more than a 1440×900 window's 1.30M, so the render was throttled to
-  // ~1.64x and the browser upscaled it. Dropping the window term lets a
-  // single page use its full native resolution; the per-page ceiling below
-  // bounds memory.)
+  // Cap so a single canvas never exceeds PAGE_MAX_PIXELS pixels. The old
+  // code ALSO capped against one windowful of pixels — the soft-text bug: a
+  // US Letter page at 100% zoom on a 2x display needs ~1.48M pixels, more
+  // than a 1440x900 window's 1.30M, so the render was throttled and the
+  // browser upscaled it. Dropping the window term lets a single page use its
+  // full native resolution; the per-page ceiling bounds memory.
   const capped = Math.sqrt(PAGE_MAX_PIXELS / (cssW * cssH));
   return Math.min(dpr, Math.max(0.5, capped));
 }
@@ -174,10 +171,10 @@ export async function renderPageInternal(
 
   // Where the render draws: a scratch when the pipeline in force at start is
   // non-identity (the visible canvas keeps its baked copy until the swap),
-  // the live canvas otherwise. pdf.js needs the destination NOW, so this
-  // half is start-time; the THEME decision itself is re-made at completion
-  // (see the generation guard below) — a render that spans a pipeline
-  // change must not bake against the palette it started under.
+  // the live canvas otherwise. pdf.js needs the destination NOW, so this half
+  // is start-time; the THEME decision itself is re-made at completion (the
+  // generation guard below) — a render that spans a pipeline change must not
+  // bake against the palette it started under.
   const pipeline0 = session.themeScrubActive ? null : readPipeline();
   const needsBake0 = !session.themeScrubActive && pipeline0 ? !pipelineIsIdentity(pipeline0) : false;
   const target = needsBake0 ? document.createElement("canvas") : st.canvas;
@@ -193,7 +190,7 @@ export async function renderPageInternal(
   // The text-extraction worker round trip is independent of the raster path:
   // start it before rendering so the two overlap instead of paying
   // getTextContent serially after the paint. A text failure degrades to a
-  // raster-only page (never to a failed render).
+  // raster-only page, never to a failed render.
   const textTask =
     renderText && st.host && st.textLayerEl ? page.getTextContent().catch(() => null) : null;
   const task = page.render({ canvasContext: ctx, viewport, transform });
@@ -225,15 +222,13 @@ export async function renderPageInternal(
   stashPaperFrame(canvasId, st.page, target);
 
   // GENERATION GUARD: settle under the pipeline CURRENT at landing, not the
-  // one in force when the render was issued. `readPipeline()` caches by the
-  // root style token, so a Rust appearance repaint (which bumps the cache
-  // generation and re-bakes through the theme queue) or a scrub / pipeline
-  // flip can land while this raster is still in flight; page renders are
-  // NOT serialized with the theme queue, so a spread's two pages — issued a
-  // beat apart — used to be able to bake against different theme states, or
-  // land one on `canvas-raw` and its sibling baked, which is exactly the
-  // half-theme seam. The raw pixels are in `target` either way, so the
-  // decision is free to move to here.
+  // one in force when the render was issued. readPipeline() caches by the
+  // root style token, so an appearance repaint, a scrub or a pipeline flip
+  // can land while this raster is in flight, and page renders are NOT
+  // serialized with the theme queue: a spread's two pages, issued a beat
+  // apart, could bake against different theme states or land one raw and one
+  // baked — the half-theme seam. The raw pixels are in `target` either way,
+  // so the decision is free to move here.
   const pipeline = session.themeScrubActive ? null : readPipeline();
   const needsBake = pipeline ? !pipelineIsIdentity(pipeline) : false;
 
@@ -241,7 +236,14 @@ export async function renderPageInternal(
     // Keep the unbaked `target` on the page. Slider scrub restores it and
     // lets live CSS filter/blend the raw pixels; dropping it made Dark
     // invert twice (flash to light) and Dim apply twice (go darker).
+    const bakeGen = pipeline.gen;
     const baked = await bakeRaster(target, pipeline);
+    if (readPipeline().gen !== bakeGen) {
+      if (baked !== target) releasePooledCanvas(baked);
+      if (target !== st.canvas) releaseCanvas(target);
+      try { page.cleanup(); } catch (_) { /* ignore */ }
+      return renderPageInternal(canvasId, scale, renderText);
+    }
     if (baked !== st.canvas) {
       showBaked(st.canvas, baked, "canvas-raw");
       if (baked !== target) releasePooledCanvas(baked);

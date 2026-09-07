@@ -2,25 +2,21 @@
 //! module that calls engine functions; views and effects never touch
 //! wasm-bindgen types.
 //!
-//! Every engine fn resolves to `{ok:true, ...}` or `{ok:false, error:{name,message}}`
-//! including the extraction calls behind the search index. We check `ok` here
-//! and surface a `Result<T, EngineError>`.
+//! Every engine fn resolves to `{ok:true, ...}` or
+//! `{ok:false, error:{name,message}}`; we check `ok` here and surface a
+//! `Result<T, EngineError>`.
 //!
-//! The module is split so each surface is independently readable:
-//!   - [`document`]  — open / outline / destroy / covers / pending OS files
-//!   - [`render`]    — page registration, live renders, thumbnails
-//!   - [`search`]    — the Rust-owned full-text index + engine-side painting
-//!   - [`paper`]     — the paper session's pixel plumbing
-//!   - [`dialog`]    — the native open-file dialog
-//!   - [`theme`]     — re-bake / scrub mode / advisory sweeps
+//! One focused module per surface: [`document`] (open / outline / destroy /
+//! covers / pending OS files), [`render`] (page registration, live renders,
+//! thumbnails), [`search`] (the Rust-owned full-text index + engine-side
+//! painting), [`paper`] (the paper session's pixel plumbing), [`dialog`] (the
+//! native open-file dialog), [`theme`] (re-bake / scrub mode / advisory
+//! sweeps). Window chrome and the AI kickoff are not engine surfaces — they
+//! live in the `app-chrome` and `ai-core` crates.
 //!
-//! (Window chrome — traffic lights, the frameless captions — and the AI
-//! word-explanation kickoff are not engine surfaces: they live in the
-//! `app-chrome` and `ai-core` crates.)
-//!
-//! [`resolve`] and the hoisted property keys live here: they are the one
-//! parser for the `{ok,...}` envelope and the hottest allocations in the
-//! crate, so they are shared rather than duplicated per surface.
+//! [`resolve`] and the hoisted property keys live here: the one parser for the
+//! `{ok,...}` envelope and the hottest allocations in the crate, shared rather
+//! than duplicated per surface.
 
 use serde::de::DeserializeOwned;
 use std::thread::LocalKey;
@@ -41,7 +37,7 @@ pub use render::{
     unregister_page,
 };
 pub use search::{build_search_index, clear_highlights, search, set_active_match};
-pub use theme::{refresh_theme, set_live_pipeline, set_scrub_mode, sweep};
+pub use theme::{refresh_theme, set_scrub_mode, sweep};
 
 /// Error returned by any engine call: the engine-side error `name` and
 /// `message`, or a local failure to parse/communicate.

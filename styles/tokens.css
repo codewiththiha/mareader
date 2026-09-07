@@ -1,10 +1,8 @@
-/* ---------------------------------------------------------------------
-   1. Design tokens (light defaults).
-   Emits utilities: bg-paper text-ink bg-surface text-muted border-line
-   bg-accent text-accent bg-accent-soft text-accent-soft.
-   Base modes rewrite the --base-* tokens under :root[data-base=...]; the
-   colour tint overrides --color-* inline from effects/theme.rs.
-   --------------------------------------------------------------------- */
+/* Design tokens (light defaults). The @theme block emits the utilities
+   (bg-paper, text-ink, bg-surface, text-muted, border-line, bg-accent,
+   text-accent, bg-accent-soft, text-accent-soft). Base modes rewrite the
+   --base-* tokens under :root[data-base=...]; the colour tint overrides
+   --color-* inline from src/effects/app/theme.rs. */
 @theme {
   --color-paper: #ffffff;
   --color-ink: #1f2937;
@@ -15,29 +13,17 @@
   --color-accent-soft: #dbeafe;
 }
 
-/* ---------------------------------------------------------------------
-   2. Runtime (non-utility) variables — defaults for light.
-   --------------------------------------------------------------------- */
+/* Runtime (non-utility) variables, light defaults. */
 :root {
   --canvas-filter: none;
   --canvas-blend: multiply;
   --noise-opacity: 0;
-  --app-radius: 8px;
-  /* The blend backdrop runs the canvas filter ONLY once the engine has
-     sampled the document's real paper colour into --pdf-paper — the flag
-     is raised next to that write and dropped when the session goes blank
-     (crates/pdf-engine's backdrop). Before it, filtering would run the
-     theme's invert over the dark UI paper token and paint a white field
-     (see .reader-bg.blend::after in components/shell.css). Undefined by
-     default: the backdrop's var() fallback reads `none`. */
 
-  /* Z-index scale — the ONE layering decision for floating UI. Components
-     embed these as `z-[var(--z-…)]` utilities (primitives/floating/types.rs
-     has the matching constants). Never reach for a raw `z-[60]` again:
-     layer intent is written here, not at the call site.
-     content 0 · controls 30 · bars 40 · popover 50 · selection bar 60 ·
+  /* Z-index scale — the one layering decision for floating UI, embedded as
+     z-[var(--z-…)] utilities via the constants in
+     crates/app-chrome/src/layers.rs. Layer intent lives here, not at call
+     sites: controls 30 · bars 40 · popover 50 · selection bar 60 ·
      context menu 70 · AI selection 80 · drag overlay 90 · toast 100 */
-  --z-content: 0;
   --z-controls: 30;
   --z-bar: 40;
   --z-popover: 50;
@@ -47,58 +33,37 @@
   --z-drag-overlay: 90;
   --z-toast: 100;
 
-  /* Elevation for floating surfaces (menus, context menus, action bars).
-     The gloss menus alias theirs to this one value. */
+  /* Elevation for floating surfaces (menus, context menus, action bars);
+     the gloss surfaces alias theirs to it. */
   --shadow-float:
     0 0 0 1px var(--color-line),
     0 8px 24px rgb(0 0 0 / 0.30);
-  /* Tint of the search match the reader is currently on. Deliberately NOT
-     derived from --color-accent: every other match already wears the accent,
-     and the current one has to be separable from them at a glance. Amber sits
-     far enough round the wheel from every built-in accent to stay distinct,
-     and it survives both blend directions (multiply on light paper, screen on
-     the inverted dark canvases). */
+  /* Tint of the current search match. NOT derived from --color-accent:
+     every other match already wears the accent and the current one must
+     stay separable at a glance. Amber is far enough round the wheel from
+     every built-in accent and survives both blend directions. */
   --match-current: #f59e0b;
 }
 
-:root[data-paper-ready="true"] {
-  --backdrop-filter: var(--canvas-filter);
-}
-/* Lifted and warmed for the dark canvases, where `screen` washes a mid amber
+/* Lifted and warmed for the dark canvases, where screen washes a mid amber
    toward the paper colour. */
 :root.dark {
   --match-current: #fbbf24;
 }
 
-/* NOTE: the former `--selection-text-color` is gone on purpose. It existed
-   because selection used a SOLID `--color-accent-soft` background, which hid
-   the canvas glyphs underneath, so the text layer had to paint readable glyphs
-   itself. Painting those glyphs is exactly what produced the doubled,
-   slightly-offset text on selection: the text layer's substituted font never
-   matches the PDF's embedded font metrically, so its glyphs sat a hair off the
-   canvas ones. Selection is now a TRANSLUCENT tint over transparent text (see
-   §4), so the canvas glyphs read straight through and there is only ever one
-   copy of the text on screen. */
+/* Reading themes — the ONLY place theme values live. Each base swaps the
+   seven colour tokens plus, for PDFs, a canvas filter pipeline and a blend
+   mode (multiply keeps light themes paper-like; screen suits inverted
+   canvases — it leaves near-white inverted text light over the dark page,
+   where multiply/soft-light would crush it back to dark).
 
-/* ---------------------------------------------------------------------
-   3. Eye-protection / reading themes — the ONLY place theme values live.
-   Each mode swaps the 7 color tokens + a canvas filter pipeline + a blend
-   mode (multiply keeps light themes paper-like; screen suits inverted canvases
-   — it leaves the near-white inverted text light over the dark page backdrop,
-   whereas multiply/soft-light would crush it back to dark and make the page
-   unreadable).
-   --------------------------------------------------------------------- */
-/* BASE PALETTES.
-   Only THREE now (light / dark / dim), and they are the STRUCTURE — the colour
-   tint is computed in Rust and pushed as inline custom properties on <html>
-   (see effects/theme.rs). Sepia, Green and Night are no longer CSS
-   blocks: they are presets, i.e. points in {base, hue, strength} space, which
-   is what lets a reader dial in ANY hue instead of the six we happened to
-   hand-write.
-
-   Each base defines --base-* and then aliases --color-* to it. The tint
-   overrides --color-* inline, mixing FROM the --base-* value, so the mix
-   always starts from the untinted palette and can never be applied twice. */
+   The three bases are the STRUCTURE; the tint is computed in Rust and
+   pushed as inline custom properties (src/effects/app/theme.rs). Sepia,
+   Green and Night are presets — points in {base, hue, strength} space —
+   not CSS blocks, which is what lets a reader dial any hue. Each base
+   defines --base-* and aliases --color-* to it; the tint overrides
+   --color-* inline, mixing FROM the --base-* value, so the mix always
+   starts untinted and can never apply twice. */
 :root {
   --base-paper: #ffffff;
   --base-ink: #1f2937;
@@ -117,8 +82,8 @@
   --base-accent: #60a5fa;
   --base-accent-soft: #1d2b3a;
 }
-/* Dim is NOT an inverted theme: it dims the page and keeps the document's own
-   colours, which is the reason to choose it over Dark. */
+/* Dim is NOT an inverted theme: it dims the page and keeps the document's
+   own colours — the reason to choose it over Dark. */
 :root[data-base="dim"] {
   --base-paper: #1a1c1f;
   --base-ink: #c3c6cb;
@@ -138,13 +103,11 @@
   --color-accent-soft: var(--base-accent-soft);
 }
 
-/* ---------------------------------------------------------------------
-   3b. Text-page tokens — the reflowable formats' own paper/ink pipeline.
-   The PDF filter pipeline never touches these; the reflowable appearance
-   module writes them (crates/reader-core/src/appearance/reflowable). The
-   defaults alias the global tokens so nothing breaks before the first paint,
-   and the precomposed ink tints fall back to the full ink.
-   --------------------------------------------------------------------- */
+/* Text-page tokens — the reflowable formats' own paper/ink pipeline,
+   written by crates/reader-core/src/appearance/reflowable. The PDF filter
+   pipeline never touches these. Defaults alias the global tokens so
+   nothing breaks before the first paint; the precomposed ink tints fall
+   back to the full ink. */
 :root {
   --tx-paper: var(--color-paper);
   --tx-ink: var(--color-ink);
@@ -153,9 +116,6 @@
   --tx-line: var(--color-line);
   --tx-accent: var(--color-accent);
   --tx-accent-soft: var(--color-accent-soft);
-  /* Precomposed ink tints (markdown rules). Flat fallbacks: the real
-     values are painted by appearance::reflowable before any document
-     renders. */
   --tx-ink-soft: var(--tx-ink);
   --tx-ink-border: var(--tx-ink);
   --tx-ink-code-bg: var(--tx-ink);
@@ -165,4 +125,3 @@
   --tx-ink-table-head: var(--tx-ink);
   --tx-ink-hr: var(--tx-ink);
 }
-

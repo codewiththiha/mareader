@@ -1,14 +1,12 @@
-//! What the reader can open — the one registry every entry point consults.
+//! What the reader can open — the one registry every entry point consults:
+//! the open dialog's filter, the drop target's feedback and the OS handoff
+//! all answer the same question. Adding a format is adding a row to
+//! [`SUPPORTED`].
 //!
-//! The open dialog's filter, the drop target's "is this worth showing feedback
-//! for" and the OS handoff all answer the same question, so the answer lives
-//! here once. Adding a format is adding a row to [`SUPPORTED`].
-//!
-//! Two declarations outside this crate are derived from that row and cannot see
+//! Two declarations outside this crate derive from that row and cannot see
 //! it: the Tauri shell's filesystem gate (`DOCUMENT_EXTENSIONS`) and the
-//! bundle's file associations (`tauri.conf.json`). `tools/check-formats.ts`
-//! reads all three and fails CI when they disagree, so the row here is the only
-//! one that needs thinking about — but it does still need adding there.
+//! bundle's file associations (`tauri.conf.json`). tools/check-formats.ts
+//! fails CI when the three disagree.
 
 /// One openable document kind: its file extensions (lower-case, no dot) and
 /// the MIME types a drag may advertise it under before its name is known.
@@ -38,14 +36,12 @@ pub const SUPPORTED: &[DocumentKind] = &[
     },
 ];
 
-/// The pipeline a path opens through.
-///
-/// PDF renders through the pdf.js engine; the two reflowable formats share
-/// `reflow-core`'s block, pagination and typography maths and differ only in
-/// how their source becomes blocks (`txt-core` and `md-core`). The page,
-/// zoom and navigation machinery above that is the same for all three, which
-/// is why this enum names pipelines rather than file types: adding a format is
-/// adding a row to [`SUPPORTED`] and a handler, not a branch in the viewer.
+/// The pipeline a path opens through. PDF renders through the pdf.js engine;
+/// the two reflowable formats share `reflow-core`'s block, pagination and
+/// typography maths and differ only in how source becomes blocks (`txt-core`,
+/// `md-core`). Page, zoom and navigation machinery is the same for all three,
+/// so this enum names pipelines rather than file types: adding a format is a
+/// row in [`SUPPORTED`] plus a handler, not a branch in the viewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Format {
     #[default]
@@ -56,12 +52,10 @@ pub enum Format {
 
 impl Format {
     /// True for the reflowable formats — the ones with typography settings,
-    /// measurement-driven pagination and no pdf.js involvement.
-    ///
-    /// Named for what they share rather than for not being a PDF, because
-    /// that is the answer the callers need: a reflowable document has a column
-    /// that re-measures, a stream that is not pages, and a raster it never
-    /// paints. A format that is neither (an epub) must not inherit "text".
+    /// measurement-driven pagination and no pdf.js involvement. Named for what
+    /// they share rather than for not being a PDF: a reflowable document has a
+    /// re-measured column, a stream that is not pages, and no raster. A format
+    /// that is neither (an epub) must not inherit "text".
     pub fn is_reflowable(self) -> bool {
         matches!(self, Self::Text | Self::Markdown)
     }
@@ -106,20 +100,16 @@ pub fn extensions() -> impl Iterator<Item = &'static str> {
 }
 
 /// Every supported kind's display name, in registry order ("PDF", "Text", ...).
-///
-/// For the sentences that tell the reader what may be dropped or opened. UI copy
-/// is generated from the registry rather than typed out because the registry is
-/// the one place a format is added: a fourth row then appears in the drop
-/// overlay, the open button's tooltip and the failure message with no edit to
-/// any of them.
+/// UI copy is generated from the registry rather than typed out: a fourth row
+/// appears in the drop overlay, the open tooltip and the failure message with
+/// no edit to any of them.
 pub fn kind_names() -> impl Iterator<Item = &'static str> {
     SUPPORTED.iter().map(|kind| kind.name)
 }
 
-/// The supported kinds as a reading list: "PDF, Text or Markdown".
-///
-/// Two kinds read "PDF or Text"; one reads just its name. The oxford comma is
-/// deliberately absent — this ends up inside short UI sentences.
+/// The supported kinds as a reading list: "PDF, Text or Markdown". Two kinds
+/// read "A or B", one reads its name alone. No oxford comma — this ends up
+/// inside short UI sentences.
 pub fn kind_list() -> String {
     let names: Vec<&str> = kind_names().collect();
     match names.len() {

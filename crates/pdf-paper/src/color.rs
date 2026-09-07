@@ -1,10 +1,10 @@
 //! The tiny colour algebra the paper pipeline needs: an RGB triple, the hex
 //! string it publishes as `--pdf-paper`, and linear interpolation.
 //!
-//! Hex goes one way, out. Parsing a colour back used to live here too, for the
-//! per-document cache this crate kept; that cache moved to the engine (which is
-//! where the pixels are), and a parser with nothing to parse is a guess about
-//! input nobody sends.
+//! Hex goes one way, out. The parser that used to live here served a
+//! per-document cache that has since moved to the engine (where the pixels
+//! are), and a parser with nothing to parse is a guess about input nobody
+//! sends.
 
 use serde::{Deserialize, Serialize};
 

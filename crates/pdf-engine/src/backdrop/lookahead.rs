@@ -1,7 +1,7 @@
 //! The look-ahead: resolve the pages the reader is approaching before the
 //! reader arrives.
 
-use super::{Session, feed_state, publish, spawn_engine, with};
+use super::{Session, feed_state, publish, slot, spawn_engine, with};
 use crate::api;
 
 /// The pages whose colour the session wants known: the pair the reader
@@ -15,7 +15,7 @@ pub(super) fn lookahead_wants(s: &Session) -> Vec<u32> {
     let mut wants = Vec::new();
     for page in [base, base + 1, base + 2] {
         if (1..=s.num_pages).contains(&page)
-            && !s.palette.contains(page)
+            && !s.palettes[slot(s.config.area)].contains(page)
             && !s.sampling.contains(&page)
         {
             wants.push(page);

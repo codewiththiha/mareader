@@ -188,7 +188,7 @@ async function renderThumbInternal(
     pg.cleanup();
 
     // Keep `off` as the unbaked raw for every later theme rebake. Never
-    // alias raw === display and never release `off` here — cacheDisplay /
+    // alias raw === display and never release `off` here: cacheDisplay /
     // createImageBitmap used to zero the only unthemed copy, so a theme
     // change could not update visible thumbs until a full pdf.js re-render.
     const raw = off;
@@ -244,12 +244,11 @@ export function cancelThumb(canvasId: string): void {
   releaseCanvas(el(canvasId) as HTMLCanvasElement | null);
 }
 
-/** Render a page into the cache with no DOM canvas (idle prefetch).
- *  A cell whose page is cache-warm asks `hasThumb` while it is still being
- *  built, mounts already loaded, and its first render call is a synchronous
- *  blit → zero skeleton, zero waiting. So render the pages AROUND the reader
- *  into the cache while idle; by the time the reader flings the grid to page
- *  N, pages N±k answer that probe true and every remount is instant. */
+/** Render a page into the cache with no DOM canvas (idle prefetch). A
+ *  cache-warm cell asks `hasThumb` while it is still being built, mounts
+ *  already loaded, and its first render call is a synchronous blit — zero
+ *  skeleton, zero waiting. Rendering the pages AROUND the reader while idle
+ *  means every remount after a fling to page N answers that probe true. */
 export async function prefetchThumb(page: number, scale: number): Promise<void> {
   if (!session.pdf) return;
   const hit = session.thumbCache.get(page);

@@ -1,16 +1,15 @@
 //! Which desktop OS the webview is running on.
 //!
 //! The frontend is ONE wasm binary for all three desktops, so compile-time
-//! `cfg` cannot tell it which window chrome exists: macOS owns native
-//! traffic lights (hidden/shown and guttered by the app), while Windows and
-//! Linux run frameless (`tauri.windows.conf.json` / `tauri.linux.conf.json`
-//! strip the decorations) and get the app's own caption cluster. The user
-//! agent settles it — each webview engine ships a stable platform token
-//! (WKWebView "Macintosh", WebView2 "Windows NT", WebKitGTK "Linux").
+//! `cfg` cannot tell it which window chrome exists: macOS owns native traffic
+//! lights, while Windows and Linux run frameless (their tauri conf files strip
+//! the decorations) and get the app's caption cluster. The user agent settles
+//! it — each webview engine ships a stable platform token (WKWebView
+//! "Macintosh", WebView2 "Windows NT", WebKitGTK "Linux").
 //!
-//! Probed once per process and parked in a `OnceLock`: the answer never
-//! changes at runtime, so chrome reads it without re-entering JS, and host
-//! `cargo test` (no webview at all) gets a truthful `Other`.
+//! Probed once per process into a `OnceLock`: the answer never changes, chrome
+//! reads it without re-entering JS, and host `cargo test` (no webview) gets a
+//! truthful `Other`.
 
 use std::sync::OnceLock;
 
@@ -39,8 +38,8 @@ fn detect() -> DesktopPlatform {
         return DesktopPlatform::Other;
     };
     // Order matters only in that "Macintosh" must win over the rest — the
-    // tokens are mutually exclusive in practice (WebView2 never says Linux,
-    // WebKitGTK never says Windows), so this is a partition, not a priority.
+    // tokens are mutually exclusive in practice, so this is a partition, not a
+    // priority.
     if ua.contains("Macintosh") || ua.contains("Mac OS X") {
         DesktopPlatform::MacOs
     } else if ua.contains("Windows") {
@@ -68,10 +67,9 @@ pub fn is_linux() -> bool {
 }
 
 /// True where the window is frameless and the app owes the user its own
-/// caption buttons (minimize / maximize / close at the bar's far edge).
-/// Also true in a plain browser on those hosts — the cluster renders (its
-/// styling stays testable under `trunk serve`) and every call it can make
-/// is a no-op there, exactly like every other Tauri surface.
+/// caption buttons. Also true in a plain browser on those hosts — the cluster
+/// renders (styling stays testable under `trunk serve`) and every call it can
+/// make is a no-op there, like every other Tauri surface.
 pub fn uses_frameless_controls() -> bool {
     matches!(platform(), DesktopPlatform::Windows | DesktopPlatform::Linux)
 }

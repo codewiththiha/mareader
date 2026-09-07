@@ -1,14 +1,11 @@
 // Selection page-range tracking for virtualization pinning, plus the rich
-// selection detail (text / context / bounding rect) the AI explain feature
-// anchors its floating pill to.
-// See the original pdfEngine.ts commentary: no clamp mid-drag, preserve
-// last-known pages across inter-page gaps.
-//
-// Lives outside `public/engine/` because nothing here is the PDF engine's:
-// it reads the host protocol from `../engine/dom-contract` and answers for
-// every format that tags a page host. Bundled on its own (see
-// `public/readerEngine.ts`) so the reader layer is not carried in by the
-// bundle that also drags pdf.js along.
+// selection detail (text / context / bounding rect) the AI explain pill
+// anchors to: no clamp mid-drag, last-known pages preserved across
+// inter-page gaps. Lives outside public/engine/ because nothing here is the
+// PDF engine's — it reads the host protocol from ../engine/dom-contract and
+// answers for every format that tags a page host. Bundled on its own (see
+// public/readerEngine.ts) so the reader layer is not carried in by the
+// bundle that drags pdf.js along.
 
 import {
   AI_POPOVER_SELECTOR,
@@ -30,29 +27,29 @@ let lastKnownAnchorPage: number | null = null;
 let lastKnownFocusPage: number | null = null;
 let lastSelectionRangeKey: string | null = null;
 
-// Detail side: debounced so a drag doesn't fire one event per selectionchange,
-// and deduped on text+position so the Rust side only sees real transitions
-// (a `.set()` there always notifies, even on unchanged values).
+// Detail side: debounced so a drag fires one event, not one per
+// selectionchange, and deduped on text+position so Rust only sees real
+// transitions (a `.set()` there notifies even on unchanged values).
 let detailDebounce: ReturnType<typeof setTimeout> | null = null;
 let lastDetailKey: string | null = null;
-// Plain clicks (no drag) produce NO selectionchange when the selection is
-// already collapsed — exactly the state the AI UI leaves behind after it
-// suppresses a clear. Any press outside the AI UI therefore schedules one
-// recheck, so a stale detail (ghost "Explain" pill) cannot linger.
+// Plain clicks produce NO selectionchange when the selection is already
+// collapsed — exactly the state the AI UI leaves behind after suppressing a
+// clear — so any press outside the AI UI schedules one recheck and a stale
+// detail (ghost "Explain" pill) cannot linger.
 let clickClearTimer: ReturnType<typeof setTimeout> | null = null;
-// Set by every mousedown: true when the press landed inside the AI UI
-// (the Explain pill and its popover, marked [data-ai-popover]). Pressing the
-// "Explain" button collapses the document selection, but that collapse must
-// NOT clear the detail state — the button click fires right after and still needs the
-// detail (and its anchor rect) to be there. Kept until the next mousedown
+// Set on every mousedown: true when the press landed inside the AI UI (the
+// Explain pill and its popover, marked [data-ai-popover]). Pressing
+// "Explain" collapses the document selection, but that collapse must NOT
+// clear the detail state — the button click fires right after and still
+// needs the detail and its anchor rect. Kept until the next mousedown
 // rather than cleared on mouseup: the debounced clear runs after mouseup.
 let pointerDownInAiUi = false;
 
-// Every reader page host advertises itself with the format family that painted
-// it and the 1-based page it is showing (both in `./dom-contract`). Asking for
-// those two instead of for `.pdf-page` is what lets a selection inside a page of
-// type be a selection like any other: no selector here grows a second class when
-// a format arrives.
+// Every reader page host advertises the format family that painted it and
+// the 1-based page it is showing (both in `./dom-contract`). Asking for
+// those instead of `.pdf-page` keeps a selection inside a page of type a
+// selection like any other: no selector here grows a second class when a
+// format arrives.
 
 function hostOf(node: Node | null): Element | null {
   if (!node) return null;
@@ -70,9 +67,9 @@ function findPageNumber(node: Node | null): number | null {
     const page = parseInt(declared, 10);
     if (Number.isFinite(page) && page > 0) return page;
   }
-  // A host that does not declare its page still carries it in its id, and so
-  // do the wrappers around a strip's pages (a selection in the gap between two
-  // pages lands on a wrapper). Kept as the fallback it has always been.
+  // A host that does not declare its page still carries it in its id, as do
+  // the wrappers around a strip's pages (a selection in the gap between two
+  // pages lands on a wrapper). The fallback it has always been.
   if (host.id) {
     const fromId = pageFromHostId(host.id);
     if (fromId !== null) return fromId;
@@ -86,12 +83,12 @@ function findPageNumber(node: Node | null): number | null {
   return null;
 }
 
-// A reflowable document has no fixed page grid, so a page-space rect cannot be
-// what a gloss mark remembers there: a font-size change, a window resize or the
+// A reflowable document has no fixed page grid, so a page-space rect cannot
+// be what a gloss mark remembers there: a font-size change, a resize or the
 // measure pass settling all re-cut the pages and the rect drifts onto other
-// words. What survives every re-flow is the BLOCK the words sit in and how far
-// into that block's rendered text they start, so that is what this reports and
-// what the app persists (see `components/ai/reflow_anchor.rs`).
+// words. What survives every re-flow is the BLOCK the words sit in and how
+// far into its rendered text they start — what this reports and the app
+// persists (see components/ai/reflow_anchor.rs).
 type ReflowSpot = { block: number; start: number; end: number };
 
 function findReflowSpot(range: Range): ReflowSpot | null {
@@ -108,15 +105,12 @@ function findReflowSpot(range: Range): ReflowSpot | null {
 
   // Offsets count CHARACTERS (Unicode code points) of the block's rendered
   // text, in the text nodes under the row in document order — the same
-  // coordinate system the app walks when it projects the spot back to pixels
-  // (`components/ai/reflow_anchor.rs`). Counting code points rather than UTF-16
-  // units is what keeps an emoji or a mathematical alphanumeric ONE character
-  // on both sides of the wire.
-  //
-  // `Range.toString()` is defined as the concatenation of the Text nodes the
-  // range partially contains, in tree order, with no filtering — so a range
-  // from the row's start to the selection's start counts exactly the characters
-  // before it, for an element container as readily as for a text one.
+  // coordinate system the app walks when projecting the spot back to pixels
+  // (components/ai/reflow_anchor.rs). Code points rather than UTF-16 units
+  // keep an emoji ONE character on both sides of the wire. Range.toString()
+  // concatenates the partially-contained Text nodes in tree order, so a
+  // range from the row's start to the selection's start counts exactly the
+  // characters before it.
   const full = row.textContent ?? "";
   if (!full) return null;
   const before = range.cloneRange();
@@ -171,21 +165,13 @@ function dispatchSelectionPages(): void {
   );
 }
 
-// ~120 chars of surrounding text from the same layer of the document, giving
-// the model enough context to disambiguate the selected word. The layer is a
-// PDF's text layer or a reflowable block's content column — whichever the
-// selection is actually in, so the context is the reader's own words and not
-// the whole page.
-// The text a sentence of context is cut out of, for whichever format painted
-// the selection. Nothing here names a format's classes: a PDF's text layer and
-// a reflowable document's BLOCK ROW are both "the element this selection is
-// inside", found by the attributes the hosts publish.
-//
-// Scoping a reflowable selection to its block row rather than to the page is
-// also the better sentence: a page of type is thousands of characters, and the
-// model disambiguates a word from the clause around it, not from the chapter.
-// A selection that starts in one block and ends in another still gets its
-// start's row, which is the row its spot counts characters in.
+// ~120 chars of surrounding text from the same layer of the document — a
+// PDF's text layer or a reflowable block row, whichever the selection is
+// actually in — giving the model the clause around the word rather than the
+// chapter. Nothing here names a format's classes: both layers are "the
+// element this selection is inside", found by the attributes the hosts
+// publish. A selection spanning two blocks takes its start's row, which is
+// the row its spot counts characters in.
 function contextLayer(node: Node | null): Element | null {
   const el = node && (node.nodeType === Node.TEXT_NODE
     ? node.parentElement
@@ -254,9 +240,9 @@ function dispatchSelectionDetail(): void {
           width: rect.width,
           height: rect.height,
         },
-        // Which format family the selection is in. Absent (null) when it is in
-        // neither — chrome, the library — and the app then treats it as the
-        // PDF path it has always been.
+        // Which format family the selection is in; null when it is in
+        // neither (chrome, the library), which the app treats as the PDF
+        // path it has always been.
         host: kind,
         spot,
       },
@@ -267,10 +253,9 @@ function dispatchSelectionDetail(): void {
 export function installSelectionTracker(): void {
   document.addEventListener("mousedown", (e) => {
     const t = e.target as HTMLElement | null;
-    // A drag inside any reader host (a PDF's text layer, a page of type, the
-    // continuous stream) coalesces the detail pass onto mouseup: per-move
-    // `getClientRects()` is a layout read, and a paragraph of text is worth
-    // exactly as much protection as a page of pixels.
+    // A drag inside any reader host coalesces the detail pass onto mouseup:
+    // per-move getClientRects() is a layout read, and a paragraph of text is
+    // worth exactly as much protection as a page of pixels.
     if (t && t.closest && t.closest(HOST_SELECTOR)) {
       selDragging = true;
     }

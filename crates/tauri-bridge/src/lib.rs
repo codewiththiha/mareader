@@ -2,18 +2,17 @@
 //!
 //! Tauri v2 with `withGlobalTauri: true` publishes its API as a global:
 //! `__TAURI__.core.invoke` (IPC), `__TAURI__.event.listen` (events),
-//! `__TAURI__.window.getCurrentWindow` (the window-method handle) and the
-//! plugin namespaces (`__TAURI__.dialog`, …). Every frontend crate that
-//! touches that global — `app-chrome` for the window commands, `pdf-engine`
-//! for the file dialog and the AI kickoff — declares those externs here
-//! instead of in its own bridge, so the wasm-bindgen declarations (whose
-//! attribute spellings are load-bearing) live in exactly one place, and no
-//! format crate needs to own chrome's IPC surface.
+//! `__TAURI__.window.getCurrentWindow` and the plugin namespaces
+//! (`__TAURI__.dialog`, ...). Every frontend crate that touches that global —
+//! `app-chrome` for the window commands, `pdf-engine` for the file dialog and
+//! the AI kickoff — declares its externs here, so the wasm-bindgen
+//! declarations (whose attribute spellings are load-bearing) live in exactly
+//! one place and no format crate owns chrome's IPC surface.
 //!
 //! Every caller must probe [`has_tauri`] BEFORE any call: the wasm-bindgen
 //! shim dereferences the `window.__TAURI__` chain eagerly and throws a
-//! TypeError when the global is absent (a plain browser under `trunk
-//! serve`), which would panic whatever future awaited it.
+//! TypeError when the global is absent (a plain browser under `trunk serve`),
+//! which would panic whatever future awaited it.
 //!
 //! CONTRACT: do not change these signatures.
 
@@ -44,13 +43,12 @@ extern "C" {
     pub async fn open(options: JsValue) -> Result<JsValue, JsValue>;
 }
 
-/// True when the app runs inside Tauri (`window.__TAURI__` is present).
-///
-/// Must be checked BEFORE any `window.__TAURI__.*` call: the wasm-bindgen
-/// shim evaluates the global chain directly and throws a TypeError when the
-/// global is absent (e.g. `trunk serve` in a plain browser). The non-wasm
-/// short-circuit keeps the probe callable from host `cargo test`; on the
-/// host there is no Tauri, so `false` is also the truthful answer.
+/// True when the app runs inside Tauri (`window.__TAURI__` is present). Must
+/// be checked BEFORE any `window.__TAURI__.*` call: the wasm-bindgen shim
+/// evaluates the global chain directly and throws a TypeError when it is
+/// absent (e.g. `trunk serve` in a plain browser). The non-wasm short-circuit
+/// keeps the probe callable from host `cargo test`, where `false` is also the
+/// truthful answer.
 pub fn has_tauri() -> bool {
     if !cfg!(target_arch = "wasm32") {
         return false;

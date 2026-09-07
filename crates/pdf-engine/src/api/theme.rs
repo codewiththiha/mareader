@@ -14,29 +14,17 @@ pub fn refresh_theme() {
     bridge::refresh_theme();
 }
 
-/// Enter/leave appearance-scrub mode. While a slider drag repaints the theme
-/// variables every frame, the engine shows the RAW rasters under the live
-/// CSS filter/blend (the pre-baking pipeline) so the page re-colours per
-/// frame; leaving re-bakes from the raws. The engine swaps canvas contents
-/// and the CSS class in the same task, so no frame is ever double-filtered
-/// or unfiltered.
+/// Enter/leave the scrub window's real-time compositing. While a slider drag
+/// repaints the theme variables every frame, the engine shows the RAW rasters
+/// under the live CSS filter/blend so the page re-colours per frame; leaving
+/// re-bakes the pre-themed rasters from the raws. The engine swaps canvas
+/// contents and the CSS class in the same task, so no frame is ever
+/// double-filtered or unfiltered.
 pub fn set_scrub_mode(on: bool) {
     if !guard_pdf_reader() {
         return;
     }
     bridge::set_scrub_mode(on);
-}
-
-/// Choose how the appearance reaches the pixels: live (the compositor filters
-/// and blends the raw rasters every frame, so pages and the backdrop share one
-/// pass) or baked (the filter is burned into each raster once per appearance
-/// change, leaving plain opaque textures on screen). The engine swaps the
-/// rasters for the new mode; the caller only states the preference.
-pub fn set_live_pipeline(on: bool) {
-    if !guard_pdf_reader() {
-        return;
-    }
-    bridge::set_live_pipeline(on);
 }
 
 /// Release rasters/caches the engine no longer needs (advisory

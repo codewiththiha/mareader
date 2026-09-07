@@ -1,12 +1,11 @@
 //! The frontend half of the AI word-explanation feature.
 //!
 //! Owns the app-lifetime side of the wire protocol:
-//! [`install_ai_chunk_bridge`] registers ONE Tauri listener that
-//! re-broadcasts each chunk as a window `CustomEvent` (`pdfreader:ai-chunk`),
-//! and [`invoke_explain_word`] starts a run through `ai_core::bridge` (the
-//! format-agnostic kickoff). The gloss popover (and anything else) listens
-//! on the window, so document switches never stack dead Tauri handlers or
-//! drop the live one.
+//! [`install_ai_chunk_bridge`] registers ONE Tauri listener that re-broadcasts
+//! each chunk as a window `CustomEvent` (`pdfreader:ai-chunk`), and
+//! [`invoke_explain_word`] starts a run through `ai_core::bridge`. The gloss
+//! popover (and anything else) listens on the window, so document switches
+//! never stack dead Tauri handlers or drop the live one.
 
 pub use ai_core::types::{AiChunk, AiChunkEvent};
 use leptos::task::spawn_local;
@@ -29,22 +28,19 @@ pub fn invoke_explain_word(word: String, context: String, run: String) {
 /// re-broadcast every chunk as a window [`AI_CHUNK_EVENT`]. Survives every
 /// document switch; per-mount UI only adds/removes a plain window listener.
 ///
-/// This is deliberately the ONLY Tauri-side registration: a per-mount
-/// listener would stack handlers whose closures die with the owner,
-/// poisoning the dispatch chain on later document switches.
+/// Deliberately the ONLY Tauri-side registration: a per-mount listener would
+/// stack handlers whose closures die with the owner, poisoning the dispatch
+/// chain on later document switches.
 ///
-/// Must be called from inside the app reactive owner (e.g. `App`):
-/// `tauri_listen` parks the JS closure in that owner, so the listener lives
-/// exactly as long as the app does.
+/// Must be called inside the app reactive owner (e.g. `App`): `tauri_listen`
+/// parks the JS closure in that owner, so the listener lives exactly as long
+/// as the app does.
 ///
-/// Outside Tauri (`trunk serve` in a plain browser) this is a no-op: there is
-/// no `window.__TAURI__`, and the wasm-bindgen shim for `__TAURI__.event.listen`
-/// walks that global chain eagerly, so calling it throws a TypeError. Because
-/// this runs from the app root, that throw took the whole mount down with it —
-/// the probe is the same one every other Tauri surface uses (see
-/// `tauri_bridge::has_tauri` and `services::document::open::init_open_file_handling`).
-/// With no backend there are no chunks to bridge, so skipping is the correct
-/// behaviour, not a degraded one.
+/// Outside Tauri (`trunk serve`) this is a no-op: the wasm-bindgen shim for
+/// `__TAURI__.event.listen` walks the global chain eagerly and would throw a
+/// TypeError — from the app root, taking the whole mount down. With no backend
+/// there are no chunks to bridge, so skipping is correct, not degraded (same
+/// probe as every other Tauri surface, `tauri_bridge::has_tauri`).
 pub fn install_ai_chunk_bridge() {
     if !tauri_bridge::has_tauri() {
         return;

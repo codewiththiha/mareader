@@ -1,9 +1,8 @@
 //! Scroll → page: the strip's dominant item names the page the reader is on.
-//!
-//! One arm per axis, both the same shape — only the view mode they answer for
-//! differs. Each stands down while a freshly mounted strip is still anchoring
-//! itself, for an open zoom transaction, and for a held navigation that has
-//! not replayed yet; the reasoning for each stand-down is at its guard.
+//! One arm per axis, both the same shape. Each stands down while a freshly
+//! mounted strip is still anchoring, during an open zoom transaction, and for
+//! a held navigation that has not replayed yet; each guard carries its own
+//! reasoning.
 
 use std::rc::Rc;
 
@@ -16,12 +15,11 @@ use super::{Arms, JumpGate};
 
 /// The page a strip's dominant item (0-based index) corresponds to, SAFELY.
 ///
-/// The naive `dominant as u32 + 1` is a real footgun: a strip that has not
-/// yet resolved a window (a freshly-mounted mode flip, a mid-fit measure)
-/// can report a sentinel or out-of-range index, and if that index is
-/// `usize::MAX` the `as u32 + 1` WRAPS to 0 — so a view-mode change would
-/// reset the reader to page 0, which reading-progress then persisted over
-/// the real position. Clamping to `[1, page_count]` makes a momentary
+/// The naive `dominant as u32 + 1` is a footgun: a strip that has not yet
+/// resolved a window (fresh mode flip, mid-fit measure) can report a sentinel
+/// or out-of-range index, and `usize::MAX` WRAPS to 0 — a view-mode change
+/// would reset the reader to page 0, which reading-progress then persisted
+/// over the real position. Clamping to `[1, page_count]` makes a momentary
 /// no-window read harmless instead of destructive.
 fn page_from_dominant(dominant: usize, num_pages: u32) -> u32 {
     let raw = dominant.saturating_add(1) as u64;
@@ -41,38 +39,36 @@ pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpG
         if mode.get() != axis {
             return;
         }
-        // The continuous text stream owns the page bookkeeping for itself:
-        // it virtualizes BLOCKS, so this arm's page-cut dominant would be
-        // reading a virtualizer that has no container and no window — and
-        // its one honest write (page 1) would clobber the resume position.
-        // The stream maps its dominant block to the page cut directly.
+        // The continuous text stream owns its own page bookkeeping: it
+        // virtualizes BLOCKS, so this arm's page-cut dominant would read a
+        // virtualizer with no container and no window — and its one honest
+        // write (page 1) would clobber the resume position. The stream maps
+        // its dominant block to the page cut directly.
         if axis == ViewMode::ScrollVertical && state.reflowable() {
             return;
         }
-        // A strip that has just mounted (document open, back from the
-        // library, a mode switch) is still being placed on `viewer.page`
-        // by `ScrollShell`; until then it sits at whatever offset it last
-        // held and its dominant is not the reader's page. Reading it now is
-        // exactly what used to reset a resumed book to page 1. TRACKED, so
-        // the arm re-runs on the frame the anchor lands and adopts the true
-        // dominant from there.
+        // A strip that just mounted (document open, back from the library, a
+        // mode switch) is still being placed on `viewer.page` by
+        // `ScrollShell`; until then its dominant is not the reader's page —
+        // reading it now is what used to reset a resumed book to page 1.
+        // TRACKED, so the arm re-runs on the frame the anchor lands and
+        // adopts the true dominant.
         if state.viewer.awaiting_anchor.get() {
             return;
         }
         let dominant = page_from_dominant(v.dominant().get(), state.document.num_pages.get());
-        // During a zoom transaction the virtualizer's window is frozen,
-        // but a mid-zoom wheel can still rewindow and move the dominant
-        // item through no fault of the reader. The zoom anchor already
-        // knows the page; syncing it here is what made the page number
-        // flicker to a neighbour mid-gesture.
+        // During a zoom transaction the virtualizer's window is frozen, but
+        // a mid-zoom wheel can still rewindow and move the dominant item
+        // through no fault of the reader; the zoom anchor already knows the
+        // page, and syncing here made the number flicker to a neighbour
+        // mid-gesture.
         //
-        // TRACKED, because a container follow holds a transaction open for
-        // the whole burst of a sidebar slide or a window drag: shrinking the
-        // page fits more of the book on screen, so the dominant item
-        // legitimately moves while the flag is up, and an untracked guard
-        // would drop that page and leave the counter on the old one until
-        // the reader scrolled again. Landing on the commit is the same one
-        // write, at the moment the scale is final.
+        // TRACKED, because a container follow holds a transaction open for a
+        // whole sidebar-slide or window-drag burst: shrinking the page fits
+        // more of the book on screen, so the dominant legitimately moves
+        // while the flag is up, and an untracked guard would drop that page
+        // and leave the counter stale until the next scroll. Landing on the
+        // commit is the same one write, at the moment the scale is final.
         if zooming.get() {
             return;
         }

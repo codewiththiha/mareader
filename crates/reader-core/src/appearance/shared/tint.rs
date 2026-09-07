@@ -1,19 +1,17 @@
-//! The tint maths BOTH pipelines share: the sRGB->OKLCH hue mapping and
-//! the per-token OKLCH shift that preserves each token's lightness.
-//!
-//! The PDF pipeline feeds these numbers into the CSS filter chain and the
-//! UI-token overrides; the text pipeline writes them straight into its
-//! page tokens. Keeping the mapping and the per-token chroma ceilings here
-//! — and nowhere else — is what makes one slider drive both formats onto
-//! the same hue at the same strength.
+//! The tint maths BOTH pipelines share: the sRGB->OKLCH hue mapping and the
+//! per-token OKLCH shift that preserves each token's lightness. The PDF
+//! pipeline feeds these numbers into the CSS filter chain and the UI-token
+//! overrides; the text pipeline writes them into its page tokens. Keeping the
+//! mapping and the chroma ceilings here — and nowhere else — is what makes
+//! one slider drive both formats onto the same hue at the same strength.
 
 use crate::appearance::shared::oklch::{hex_to_oklch, hue_toward, oklch_css};
 
 /// Map an sRGB hue angle (`tint_hue`, applied via `hue-rotate()`) to the
 /// corresponding OKLCH hue angle (what the tokens are emitted in). The two
-/// circles are rotated relative to each other, so converting a fully saturated
-/// sRGB colour at the requested angle recovers the right OKLCH hue and one
-/// slider drives both consistently.
+/// circles are rotated relative to each other, so converting a saturated sRGB
+/// colour at the requested angle recovers the right OKLCH hue and one slider
+/// drives both consistently.
 pub fn ui_hue_oklch(srgb_hue: f64) -> f64 {
     let h = srgb_hue.rem_euclid(360.0) / 60.0;
     let i = h.floor() as i32;
@@ -36,14 +34,11 @@ pub fn ui_hue_oklch(srgb_hue: f64) -> f64 {
     hex_to_oklch(&hex).map(|(_, _, h)| h).unwrap_or(srgb_hue)
 }
 
-/// The chroma ceiling a token may reach at a 100% tint.
-///
-/// Large flat areas (paper, surface) need restraint — the strength that
-/// looks right on a page is overwhelming across a whole window — while
-/// accents are supposed to be saturated. Ink is deliberately near-zero:
-/// text carries the reading contrast and a coloured ink on coloured paper
-/// is what makes tinted themes feel murky; it picks up a whisper of the
-/// hue and nothing more.
+/// The chroma ceiling a token may reach at a 100% tint. Large flat areas
+/// (paper, surface) need restraint — what looks right on a page is
+/// overwhelming across a window — while accents are supposed to be saturated.
+/// Ink is deliberately near-zero: text carries the reading contrast, and a
+/// coloured ink on coloured paper is what makes tinted themes feel murky.
 pub fn chroma_ceiling(token: &str) -> f64 {
     match token {
         "paper" => 0.055,
@@ -57,21 +52,18 @@ pub fn chroma_ceiling(token: &str) -> f64 {
     }
 }
 
-/// Shift one token colour toward the tint at strength `t` (0..=1).
-///
-/// The tint preserves the token's OWN lightness — which encodes the
-/// hierarchy: page brighter than chrome, chrome brighter than its borders —
-/// and moves only hue (rotated the SHORT way toward `target_h`, so a hue
-/// near 350 does not sweep the whole spectrum on its way to 10) and chroma
-/// (lifted toward the token's ceiling). Because L never moves, contrast
-/// ratios survive a 100% tint.
+/// Shift one token colour toward the tint at strength `t` (0..=1). Preserves
+/// the token's OWN lightness — which encodes the hierarchy — and moves only
+/// hue (the SHORT way toward `target_h`) and chroma (lifted toward the
+/// token's ceiling). Because L never moves, contrast ratios survive a 100%
+/// tint.
 pub fn tinted_token(hex: &str, target_h: f64, t: f64, max_c: f64) -> Option<String> {
     let (l, c0, h0) = hex_to_oklch(hex)?;
     let h = hue_toward(h0, target_h, t);
 
-    // Near-neutral bases (white paper, gray line) have a meaningless hue,
-    // so blend from their own chroma up to the ceiling rather than
-    // preserving a hue that was never really there.
+    // Near-neutral bases (white paper, gray line) have a meaningless hue:
+    // blend from their own chroma up to the ceiling rather than preserving a
+    // hue that was never there.
     let c = c0 + (max_c - c0).max(0.0) * t;
 
     Some(oklch_css(l, c, h))
@@ -84,11 +76,10 @@ mod tests {
 
     #[test]
     fn the_srgb_hue_maps_onto_the_oklch_circle_not_identity() {
-        // COLOUR-SPACE TRAP: `hue-rotate()` works in sRGB, so `tint_hue` is an
-        // sRGB angle. The tokens are emitted in OKLCH, whose hue circle is
-        // rotated relative to sRGB — sRGB 34 (a warm tan) sits near 60 on the
-        // OKLCH circle, NOT 34. Feeding the raw number straight in made the
-        // page go warm tan while the chrome went pink at hue 34.
+        // COLOUR-SPACE TRAP: `hue-rotate()` works in sRGB, so `tint_hue` is
+        // an sRGB angle, but the tokens are emitted in OKLCH, whose hue circle
+        // is rotated — sRGB 34 (warm tan) sits near OKLCH 60, not 34. Feeding
+        // the raw number in made the page tan while the chrome went pink.
         let h = ui_hue_oklch(34.0);
         assert!(h > 40.0, "a warm tan must not be emitted as OKLCH 34 (pink)");
         assert!(h < 90.0, "sanity: tan should sit below the green corner");

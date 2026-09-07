@@ -4,27 +4,26 @@
 //! The shape mirrors the PDF open (claim the session, read, seed, flip the
 //! status), but the content never touches the pdf.js engine: the file is read
 //! through the shell's `read_file_text` command and handed to its format's
-//! parser, which returns the blocks the shared machinery lays out. From here on
-//! a text document and a PDF are the same object — pages of the same A4 sheet,
-//! the same scale pipeline, the same strip, the same virtualizer — and the one
-//! difference is what paints inside a page (see `components::formats::reflow`).
+//! parser, which returns the blocks the shared machinery lays out. From here
+//! a text document and a PDF are the same object — pages of the same A4
+//! sheet, the same scale pipeline, strip and virtualizer — and the one
+//! difference is what paints inside a page (`components::formats::reflow`).
 //!
 //! Two things make this the whole format-specific surface of the open flow:
 //!
-//! * the PARSER is a match on the format, not a second pipeline. A third
-//!   reflowable format adds one arm here (and a block view, and a renderer);
-//!   it does not copy this file.
+//! * the PARSER is a match on the format, not a second pipeline: a third
+//!   reflowable format adds one arm here (and a block view and renderer), not
+//!   a copy of this file;
 //! * pagination starts from the pure estimate — character counts against the
-//!   column width — so the reader is up the instant the file is read. The
-//!   measurement pipeline then refines the estimate block by block, as the
-//!   reader's own rows render and report their heights (see
-//!   `crate::effects::reader::reflow_measure`).
+//!   column width — so the reader is up the instant the file is read; the
+//!   measurement pipeline then refines it block by block as the reader's rows
+//!   report heights (`crate::effects::reader::reflow_measure`).
 //!
 //! Markdown also gets an outline, and it is seeded rather than resolved: the
-//! headings are already in the text, so this file hands the reader the block
-//! indices and `effects::reader::reflow_outline` turns them into pages against the
-//! live cut. There is no `outline::resolve` tail to race, which is why
-//! `outline_pending` goes false here.
+//! headings are already in the text, so this file hands over the block indices
+//! and `effects::reader::reflow_outline` turns them into pages against the
+//! live cut. There is no resolver tail to race, which is why `outline_pending`
+//! goes false here.
 
 use std::sync::Arc;
 
@@ -57,7 +56,6 @@ struct Parsed {
 }
 
 /// The document's bytes as text, through the shell's gated read command.
-///
 /// Outside the desktop shell there is no filesystem to read from — the
 /// plain-browser build answers with the same "desktop only" error the open
 /// dialog gives, rather than a platform failure.
@@ -116,16 +114,16 @@ pub(super) fn open_reflowable(
     });
 }
 
-/// The format's own step, and nothing else: normalise, parse, then cut oversized
-/// blocks so a page can be packed tightly.
+/// The format's own step, and nothing else: normalise, parse, then cut
+/// oversized blocks so a page can be packed tightly.
 ///
 /// The subdivision runs BEFORE anything downstream sees the blocks, so block
 /// identities are stable for the whole session and every consumer (pages,
-/// stream, search, outline) works in the same atoms. Plain text cuts at 40 lines
-/// — its hard breaks are natural boundaries and a fixed-line paragraph (ASCII
-/// tables, poetry) must not be chopped; Markdown cuts prose only, at
-/// [`reflow_core::block::SPLIT_MAX_LINES`], because a split inside a list, a
-/// fence, a table or a quote re-opens that construct mid-page.
+/// stream, search, outline) works in the same atoms. Plain text cuts at 40
+/// lines — its hard breaks are natural boundaries and a fixed-line paragraph
+/// (ASCII tables, poetry) must not be chopped; Markdown cuts prose only, at
+/// [`reflow_core::block::SPLIT_MAX_LINES`], because a split inside a list,
+/// fence, table or quote re-opens that construct mid-page.
 fn parse(format: Format, raw: &str) -> Parsed {
     match format {
         Format::Markdown => {
@@ -155,11 +153,11 @@ fn parse(format: Format, raw: &str) -> Parsed {
 /// The document read and parsed: seed the state, flip the route, and let the
 /// measurement pipeline refine the cut.
 ///
-/// The steps this shares with the PDF tail — identity, gloss marks, the resume
+/// The steps shared with the PDF tail — identity, gloss marks, the resume
 /// clamp, the startup scale, the route flip, the shelf record — are
 /// [`super::enter`]'s, so the two cannot drift on what "open" means. What is
 /// left here is the reflowable half of the seeding: release the engine, parse
-/// into blocks, estimate the cut, and publish it.
+/// into blocks, estimate the cut, publish it.
 fn ready(
     state: AppState,
     path: String,
@@ -170,11 +168,11 @@ fn ready(
 ) {
     let settings = state.settings.get_untracked();
     // The geometry the first cut is estimated against — resolved through the
-    // same two dials the measurement pipeline will resolve (the reader's
-    // margin and column-width runtime signals, which the layout prefs have
-    // already seeded from the persisted settings), so the seed and the
-    // refine agree and the dialled document never opens against numbers it
-    // immediately re-cuts away from.
+    // same two dials the measurement pipeline resolves (the reader's margin
+    // and column-width runtime signals, already seeded from the persisted
+    // settings by the layout prefs), so the seed and the refine agree and the
+    // dialled document never opens against numbers it immediately re-cuts away
+    // from.
     let geo = geometry(settings.text.book_layout)
         .with_extra_inline(state.reader.viewer.page_margin.get_untracked())
         .with_column_pct(state.reader.viewer.column_width_pct.get_untracked());
@@ -182,8 +180,8 @@ fn ready(
     let Parsed { blocks, title, author, headings } = parsed;
 
     // Document identity, through the shared handshake. A text page is the
-    // sheet `reflow_core::geometry` cuts into — as wide as the column and
-    // its pads say, which the dials above already answered — and the outline
+    // sheet `reflow_core::geometry` cuts into — as wide as the column and its
+    // pads say, which the dials above already answered — and the outline
     // starts SEEDED rather than pending: the headings are already in the
     // blocks, so `effects::reader::reflow_outline` re-projects them against
     // the live cut and there is no resolver tail to race.
@@ -208,12 +206,12 @@ fn ready(
 
     // The other pipeline's model is released at the same moment, and this
     // document's gloss highlights are loaded before anything mounts — exactly
-    // where the PDF open loads them, so the first page (or the first stream
-    // window) already paints them. A reflowable mark is a block and a
-    // character range rather than a rect, so it is `set_initial_heights`
-    // below — which publishes the block→page map — that makes it
-    // projectable; loading first and paginating second is what puts a mark
-    // on the right page at first paint instead of a frame later.
+    // where the PDF open loads them, so the first page (or stream window)
+    // already paints them. A reflowable mark is a block and a character range,
+    // so it is `set_initial_heights` below — which publishes the block→page
+    // map — that makes it projectable; loading first and paginating second
+    // puts a mark on the right page at first paint instead of a frame
+    // later.
     state.reader.document.content.reflow.reset();
     super::enter::load_marks(state, &path);
 

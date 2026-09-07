@@ -1,26 +1,15 @@
-/* =====================================================================
-   AI Feature: content styling for the word card.
-   The card is a plain panel on the app's tokens: neutral surface fill,
-   standard floating elevation, dictionary-style header (word + part of
-   speech), small quiet section labels. What lives here is only what sits
-   INSIDE that shell: the entrance reveal, the word/POS/synonym/usage
-   section styling, and the loading shimmer.
-   ===================================================================== */
+/* AI word-card content styling. The card is a plain panel on the app's
+   tokens (neutral surface, standard floating elevation, dictionary-style
+   header); what lives here is only what sits INSIDE that shell: the
+   entrance reveal, section styling, and the loading shimmer. */
 
-/* ---------------------------------------------------------------------
-   5. Text reveal.
-
-   Each section that arrives from the AI stream gets this class. The
-   animation is opacity + a two-pixel rise ONLY: both properties composite
-   on the GPU, so the reveal stays smooth while the card's spring is
-   writing its geometry every frame. (It used to animate a blur filter,
-   which re-rasterises the text on every frame — the jitter.)
-
-   Applied once per element via `both` fill. The sections render from
-   SIGNALS, so a streamed snapshot patches text in place instead of
-   remounting the tree — the entrance plays once, on mount, never per
-   chunk.
-   --------------------------------------------------------------------- */
+/* Text reveal — each section that arrives from the AI stream gets this
+   class. Opacity + a two-pixel rise ONLY: both composite on the GPU, so
+   the reveal stays smooth while the card's spring writes geometry every
+   frame (an earlier blur filter re-rasterised the text per frame — the
+   jitter). Applied once via `both` fill; sections render from signals, so
+   streamed snapshots patch text in place and the entrance plays once on
+   mount, never per chunk. */
 .ai-text-reveal {
   animation: ai-rise-in 0.3s cubic-bezier(0.25, 1, 0.35, 1) both;
 }
@@ -36,16 +25,14 @@
   }
 }
 
-/* Staggered delays so the sections cascade rather than appearing at once. */
+/* Staggered delays so the sections cascade rather than appear at once. */
 .ai-reveal-delay-1 { animation-delay: 0.02s; }
 .ai-reveal-delay-2 { animation-delay: 0.07s; }
 .ai-reveal-delay-3 { animation-delay: 0.12s; }
 
-/* ---------------------------------------------------------------------
-   6. Selection pill entrance — the "Explain" pill floats up from below the
-   selection. The X translate stays -50% in both keyframes because the
-   pill is centered via translateX(-50%).
-   --------------------------------------------------------------------- */
+/* "Explain" pill entrance — floats up from below the selection. The X
+   translate stays -50% in both keyframes because the pill is centered via
+   translateX(-50%). */
 @keyframes ai-pill-in {
   from {
     opacity: 0;
@@ -60,12 +47,9 @@
   animation: ai-pill-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* ---------------------------------------------------------------------
-   7. Card content sections.
-   --------------------------------------------------------------------- */
+/* Card content sections. */
 
-/* Part of speech, printed beside the word in the header the way a
-   dictionary prints it. */
+/* Part of speech, printed beside the word dictionary-style. */
 .ai-pos {
   font-size: 0.75rem;
   font-style: italic;
@@ -106,7 +90,7 @@
   background: var(--color-line);
 }
 
-/* Section labels inside the card: small, quiet, sentence case. */
+/* Section labels: small, quiet, sentence case. */
 .ai-section-label {
   font-size: 0.7rem;
   font-weight: 500;
@@ -114,10 +98,8 @@
   margin-bottom: 3px;
 }
 
-/* ---------------------------------------------------------------------
-   8. Loading shimmer — shown inside the card body while waiting for
-   the first AI chunk.
-   --------------------------------------------------------------------- */
+/* Loading shimmer — inside the card body while waiting for the first AI
+   chunk. */
 .ai-shimmer-line {
   height: 10px;
   border-radius: 4px;

@@ -1,25 +1,24 @@
 //! Text-selection page-range tracking.
 //!
 //! The engine's selectionchange listener walks the DOM from the selection's
-//! anchor and focus up to the nearest `.pdf-page` host, parses the page index
-//! from its id (`cont-{i}-pg`), and dispatches a `pdfreader:selection-pages`
-//! CustomEvent with `{ first, last }` (1-based, inclusive) — or `null` to
-//! clear.
+//! anchor and focus up to the nearest page host, parses the page index from
+//! its id, and dispatches a `pdfreader:selection-pages` CustomEvent with
+//! `{ first, last }` (1-based, inclusive) — or `null` to clear.
 //!
-//! This effect is the single place that turns that event into a write on
-//! `state.reader.viewer.selected_pages`, which `features::reader::virtualizers`
-//! merges into the virtualizer's PINNED window, so those pages stay mounted.
+//! This effect is the single place that turns the event into a write on
+//! `state.reader.viewer.selected_pages`, which
+//! `features::reader::virtualizers` merges into the virtualizer's PINNED
+//! window so those pages stay mounted.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
 use crate::state::AppState;
 
-/// The JS protocol of the `pdfreader:selection-pages` event detail:
-/// `null` (clear) or `{ first, last }` — 1-based, inclusive.
-///
-/// One typed decoder for the whole protocol, so the effect below stays
-/// about reactivity, not about picking fields off a `JsValue`.
+/// The JS protocol of the `pdfreader:selection-pages` event detail: `null`
+/// (clear) or `{ first, last }` — 1-based, inclusive. One typed decoder for
+/// the whole protocol, so the effect below stays about reactivity, not about
+/// picking fields off a `JsValue`.
 fn parse_selection(detail: &JsValue) -> Option<(u32, u32)> {
     if detail.is_null() || detail.is_undefined() {
         return None;

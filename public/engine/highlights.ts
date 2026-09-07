@@ -1,12 +1,10 @@
-// Search-match highlight painting, split out of renderer.ts.
-//
-// Two halves, on purpose. `occurrences` is the pure scan — which characters of
-// a span's text the query covers — and `applyHighlights` is the DOM work: a
-// Range per occurrence, a box per rect the Range reports. The Rust side of
-// search is split the same way (`reader_core::search::occurrence_spans`, and
-// the reflowable layer that paints its spans) because the scan's rules are the
-// part that has to agree across both pipelines: an occurrence ordinal is how a
-// painted box and a row in the results list recognise each other.
+// Search-match highlight painting, split out of renderer.ts. Two halves, on
+// purpose: `occurrences` is the pure scan (which characters of a span's text
+// the query covers) and `applyHighlights` is the DOM work (a Range per
+// occurrence, a box per rect). The Rust side of search splits the same way,
+// because the scan's rules are the part that must agree across both
+// pipelines: an occurrence ordinal is how a painted box and a row in the
+// results list recognise each other.
 
 import type { PageState } from "./types";
 import { session } from "./state";
@@ -24,19 +22,17 @@ type Occurrence = { start: number; end: number };
 /** Every occurrence of `query` in `text`, and whether those offsets may be
  *  handed to a Range over the RAW text node.
  *
- * `query` arrives folded and trimmed (`setSearchContext` does both), matching
- * case-insensitively and advancing by the query's length, so `"aa"` in `"aaa"`
- * is one occurrence — the rules the Rust scan keeps, and the ones the ordinal
- * numbering depends on.
+ *  `query` arrives folded and trimmed (`setSearchContext` does both),
+ *  matching case-insensitively and advancing by the query's length, so "aa"
+ *  in "aaa" is one occurrence — the rules the Rust scan keeps and the
+ *  ordinal numbering depends on.
  *
- * The offsets are counted in the FOLDED copy, which is also what the scan of a
- * page's extracted text runs over. They transfer to the raw text only while
- * folding preserves length, and `toLowerCase` does not always: 'İ' is one code
- * unit and folds to two, so every offset after it would point one character
- * early — a box over text nobody searched for. `offsetsUsable` is false in that
- * case, and the caller counts the ordinals without painting, which is the same
- * call the Rust scan makes ("a missed hit is a smaller lie").
- */
+ *  The offsets are counted in the FOLDED copy. They transfer to the raw text
+ *  only while folding preserves length, and `toLowerCase` does not always
+ *  ('İ' is one code unit and folds to two, shifting every later offset one
+ *  character early — a box over text nobody searched for). `offsetsUsable`
+ *  is false then and the caller counts the ordinals without painting — the
+ *  same call the Rust scan makes: a missed hit is a smaller lie. */
 function occurrences(
   text: string,
   query: string,
@@ -66,10 +62,10 @@ export function applyHighlights(st: PageState): void {
     const node = span.firstChild;
     const textNode = node && node.nodeType === Node.TEXT_NODE ? (node as Text) : null;
     const { spans, offsetsUsable } = occurrences(text, query);
-    // A span whose text is not one addressable text node cannot be boxed, but
-    // its occurrences still consume ordinals: the numbering has to match the
-    // index's, which counts every occurrence in the page whether or not a box
-    // landed on it.
+    // A span whose text is not one addressable text node cannot be boxed,
+    // but its occurrences still consume ordinals: the numbering must match
+    // the index's, which counts every occurrence in the page whether or not
+    // a box landed on it.
     const paintable = !!textNode && textNode.length >= query.length && offsetsUsable;
     for (const { start, end } of spans) {
       const mine = ord;

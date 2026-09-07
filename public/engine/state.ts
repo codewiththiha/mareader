@@ -1,12 +1,10 @@
 // Mutable engine session state, one instance. A document open/teardown
 // resets it; every module reaches it through the exported `session` object
-// rather than drifting `export let` bindings that each import site could
-// shadow. One object makes the lifetime explicit: `destroy()` in
-// public/pdfEngine.ts is the single place everything is torn down.
-//
-// The maps below are window-bound (the virtualizer keeps `budget` pages
-// live) or LRU-bounded (thumbCache ≤ THUMB_CACHE_MAX), so the session never
-// grows with document length.
+// rather than `export let` bindings each import site could shadow, and
+// destroy() in public/pdfEngine.ts is the single place everything is torn
+// down. The maps below are window-bound (the virtualizer keeps `budget`
+// pages live) or LRU-bounded (thumbCache <= THUMB_CACHE_MAX), so the session
+// never grows with document length.
 
 import type {
   ActiveMatch,
@@ -25,18 +23,14 @@ export const ENGINE_VERSION = "0.5.0"; // 0.5.0: search fully ported to Rust (ex
  *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
 export const THUMB_CACHE_MAX = 16;
 
-/** Max pixels per canvas layer. The base ceiling is 16M ≈ 64 MB RGBA — the
- *  ceiling, not the target. A US-Letter page at 100% zoom on a 2x display is
- *  ~1.5M px; at 200% on 2x it's ~7.8M; on a 3x display at 100% it's ~4.4M.
- *  16M keeps the FULL native devicePixelRatio through ~200% zoom on any
- *  display, and only the 3-page mounted ceiling (RENDER_BUDGET max_items: 3)
- *  bounds total GPU memory (≤3 × 16M × 2 copies × 4B ≈ 384 MB worst case;
- *  typical usage is a fraction of that).
- *
- *  The ceiling scales with the device's reported memory so a 4 GB machine
- *  still gets the full 16M at 100% while a 16 GB one can push ~200% on a
- *  3x display without hitting the cap (navigator.deviceMemory is
- *  Chromium-only; elsewhere the base ceiling applies). */
+/** Max pixels per canvas layer. The 16M base (~64 MB RGBA) is the ceiling,
+ *  not the target: US-Letter at 100% zoom on a 2x display is ~1.5M px, at
+ *  200% ~7.8M. 16M keeps the FULL native devicePixelRatio through ~200% zoom
+ *  on any display; total GPU memory is bounded by the 3-page mounted ceiling
+ *  (RENDER_BUDGET), not by this. The ceiling scales with the device's
+ *  reported memory (navigator.deviceMemory, Chromium-only; elsewhere the
+ *  base applies) so a 16 GB machine can push ~200% on a 3x display without
+ *  hitting the cap. */
 const PAGE_MAX_PIXELS_BASE = 16 * 1024 * 1024;
 
 function memoryScaledPixelCeiling(): number {
@@ -66,12 +60,12 @@ class EngineSession {
   currentPath: string | null = null;
 
   /** The dominant raster colour of the open document — the PDF's own paper —
-   *  or null until the paper session (the Rust side of the pipeline)
-   *  resolves one. Under the live pipeline the blend backdrop paints this
-   *  through the same filter + blend the raw canvases use; under the baked
-   *  pipeline it paints the pre-themed twin the engine derives from it
-   *  (--pdf-paper-baked, theme/paper.ts), so backdrop and page are the same
-   *  composite by construction in either mode. */
+   *  or null until the paper session (the Rust side of the pipeline) resolves
+   *  one. During a scrub the blend backdrop re-derives from this through the
+   *  same live CSS filter + blend the raw canvases use; settled, it paints
+   *  the pre-rendered twin the engine derives from it (--pdf-paper-baked,
+   *  theme/paper.ts), so backdrop and page are the same composite by
+   *  construction either way. */
   detectedPaper: string | null = null;
 
   /** Live page surfaces, keyed by canvas id. Bounded by the virtualizer's

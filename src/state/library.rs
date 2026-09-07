@@ -1,18 +1,17 @@
-//! The "recent books" library: which documents the reader has opened, where they
-//! left off in each, and the persisted cover art for the shelf.
+//! The "recent books" library: which documents the reader has opened, where
+//! they left off in each, and the persisted cover art for the shelf.
 //!
-//! Kept OUT of `Settings` on purpose. Reading position changes on every page
-//! turn (and every scroll-row boundary in continuous mode), while `Settings`
-//! is the appearance/zoom blob that repaints and re-serialises on every write.
-//! Coupling the two would make each page turn re-run the appearance paint
-//! effect and re-serialise the whole settings JSON. The library therefore lives
-//! in its own signal and its own localStorage key, and written on its own
-//! schedule: reading progress — the hot path, a write per page turn — is saved
-//! on a debounce by `crate::effects::reader::reading_progress`, while the
-//! moments that are the last thing before a teardown — a document closing, a
-//! book leaving the shelf — write immediately through
-//! `crate::storage::persist_library`, because a debounced save there is a save
-//! that may never land.
+//! Kept OUT of `Settings` on purpose: reading position changes on every page
+//! turn (every scroll-row boundary in continuous mode), while `Settings` is
+//! the appearance/zoom blob that repaints and re-serialises on every write.
+//! Coupling them would make each page turn re-run the appearance paint and
+//! re-serialise the whole settings JSON. So the library lives in its own
+//! signal and localStorage key, written on its own schedule: reading progress
+//! — the hot path — saves on a debounce via
+//! `crate::effects::reader::reading_progress`, while the last moments before a
+//! teardown (a document closing, a book leaving the shelf) write immediately
+//! through `crate::storage::persist_library`, because a debounced save there
+//! is a save that may never land.
 
 use serde::{Deserialize, Serialize};
 
@@ -41,10 +40,10 @@ pub struct RecentBook {
     #[serde(default)]
     pub num_pages: u32,
     /// Fractional position (0..=1) inside the continuous reading of a
-    /// reflowable document — where the stream was between the very top and
-    /// the very bottom of the text. Written only while the stream mode is
-    /// the live one; `None` everywhere else (a page is the whole truth
-    /// there, and the page field above is the resume point).
+    /// reflowable document — where the stream was between top and bottom.
+    /// Written only while stream mode is live; `None` everywhere else (a page
+    /// is the whole truth there, and the page field above is the resume
+    /// point).
     #[serde(default)]
     pub fraction: Option<f64>,
 }
@@ -181,12 +180,11 @@ mod tests {
     }
 }
 
-/// The library domain: the recent-books shelf and the cover-art cache.
-///
-/// Covers are grouped WITH the books list on purpose: the recent-book cap
-/// (`RECENT_CAP`) is only a real memory cap if covers are evicted together
-/// with their books, and owning both in one struct makes that invariant
-/// visible at the type level.
+/// The library domain: the recent-books shelf and the cover-art cache. Covers
+/// are grouped WITH the books list on purpose: the recent-book cap
+/// (`RECENT_CAP`) is only a real memory cap if covers are evicted together with
+/// their books, and one struct makes that invariant visible at the type
+/// level.
 #[derive(Clone, Copy, Default)]
 pub struct LibraryState {
     /// Recent books, most-recent first.
@@ -195,11 +193,9 @@ pub struct LibraryState {
     pub covers: RwSignal<CoverMap>,
 }
 
-/// The cover-art cache: page-1 JPEG data URLs keyed by document path.
-///
-/// Behind an `Arc` because a cover is a base64 data URL — tens of kilobytes
-/// of `String` each, a shelf's worth of them megabytes in total — and the map
-/// is read out of a signal on every shelf render and cloned whole before
-/// every save. Sharing the images makes those reads pointer copies; only the
-/// (small) map spine is ever duplicated.
+/// The cover-art cache: page-1 JPEG data URLs keyed by document path. Behind
+/// an `Arc` because a cover is a base64 data URL — tens of kilobytes each, a
+/// shelf's worth megabytes — and the map is read out of a signal on every
+/// shelf render and cloned whole before every save. Sharing the images makes
+/// those reads pointer copies; only the (small) map spine duplicates.
 pub type CoverMap = HashMap<String, Arc<CoverImage>>;

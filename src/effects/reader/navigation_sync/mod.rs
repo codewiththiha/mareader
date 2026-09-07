@@ -1,30 +1,22 @@
 //! Navigation sync: keeps `viewer.page` and the continuous/horizontal scroll
 //! position in sync around the virtualizers. Wired once from ReaderPage.
 //!
-//! - scroll -> page: the virtualizer's dominant-page signal
-//! - page -> scroll: `scroll_to_index(Start, Auto)` — `Auto` resolves to a glide,
-//!   and the reader's scroll switch is what decides whether it may (see
-//!   `scroll_mode`)
-//! - mount -> scroll: NOT here. A strip that mounts — on a document open, a
-//!   return from the library, a switch into its mode — anchors itself to
-//!   `viewer.page` in `ScrollShell`, and raises `viewer.awaiting_anchor` until
-//!   it has landed. The scroll → page arm stands down for exactly that window,
-//!   so the strip's pre-anchor offset (usually the top) can never be read back
-//!   as "the reader is on page 1".
+//! - scroll → page: the virtualizer's dominant-page signal ([`dominant`]);
+//! - page → scroll: `scroll_to_index(Start, Auto)` — `Auto` resolves to a
+//!   glide, and the reader's scroll switch decides whether it may
+//!   ([`page_to_scroll`]);
+//! - mount → scroll: NOT here. A mounting strip anchors itself to
+//!   `viewer.page` in `ScrollShell` and raises `viewer.awaiting_anchor` until
+//!   landed; the scroll → page arm stands down for exactly that window, so
+//!   the strip's pre-anchor offset can never be read back as "page 1".
 //!
 //! Both directions stand down while a zoom transaction is in flight: a zoom
 //! moves the geometry, and the transaction's anchor — not a window churn's
 //! idea of the dominant item — decides where the reader lands. Sync resumes
-//! against the committed geometry when the transition ends.
-//!
-//! A page write that arrives WHILE a transaction holds the geometry (an
-//! outline click during a fit slide, a search hit mid-gesture) is not
-//! dropped, though — it is held by [`JumpGate`] and replayed on the frame the
-//! transaction closes.
-//!
-//! The wiring lives here; the pieces live beside it —
-//! [`jump_gate`] holds a navigation across a transaction, [`dominant`] is the
-//! scroll → page direction and [`page_to_scroll`] the reverse.
+//! against the committed geometry when the transition ends. A page write that
+//! arrives WHILE a transaction holds the geometry (an outline click during a
+//! fit slide, a search hit mid-gesture) is not dropped: [`JumpGate`] holds it
+//! and replays it on the frame the transaction closes.
 //!
 //! INSTALLATION ORDER MATTERS, and it is `page.rs`'s to keep: this must be
 //! installed BEFORE `reading_progress`. Leptos runs effects in insertion

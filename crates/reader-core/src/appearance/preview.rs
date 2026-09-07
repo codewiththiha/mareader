@@ -1,11 +1,9 @@
-//! The preset-thumbnail preview: an inline `style` + class list that render
-//! a swatch in ITS OWN look rather than the one currently applied.
-//!
-//! Every variable the swatch consumes is emitted under a private `--ps-*`
-//! namespace (WKWebView's custom-property invalidation is name-based, not
-//! scope-based); the `.preset-canvas` itself uses solid colours, no CSS
-//! filter/blend, so it has zero GPU compositing layers to lose during a
-//! slider drag.
+//! The preset-thumbnail preview: an inline `style` + class list that render a
+//! swatch in ITS OWN look rather than the one currently applied. Every
+//! variable the swatch consumes is emitted under a private `--ps-*` namespace
+//! (WKWebView's custom-property invalidation is name-based, not scope-based);
+//! the `.preset-canvas` uses solid colours — no CSS filter/blend — so it has
+//! zero GPU compositing layers to lose during a slider drag.
 
 use crate::appearance::{Appearance, NoiseMode};
 
@@ -13,31 +11,19 @@ impl Appearance {
     /// Inline `style` for a preset thumbnail, so the swatch renders in its own
     /// look rather than the one currently applied.
     ///
-    /// **PRIVATE NAMESPACE (`--ps-*`)**. Every variable the swatch consumes is
-    /// emitted under a `--ps-*` name that is NEVER written on `<html>`. This is
-    /// the fix for the "preset text bars vanish during a tint drag" bug:
-    /// WKWebView's custom-property invalidation is NAME-BASED, not scope-based.
-    /// `paint_appearance_now()` rewrites `--canvas-filter`, `--canvas-blend`,
-    /// the seven `--color-*` tokens, `--texture-*`, `--noise-*` on `<html>`
-    /// once per frame during a slider drag — and every declaration in the
-    /// document that consumes those NAMES gets invalidated, including the
-    /// ones inside swatches that shadow the names inline. The swatch is
-    /// repainted against a mid-rebuild backdrop (the live page canvases are
-    /// being swapped raw↔baked, `--color-paper` under the popover is moving),
-    /// and the `.preset-canvas`'s `filter` + `mix-blend-mode` layer samples a
-    /// wrong backdrop: the dark `#24303f` "text" bars get multiplied toward
-    /// the *live* paper colour and collapse into it (light preset) or screen
-    /// into the backdrop (dark preset). The three bars vanish for the whole
-    /// drag, only reappearing on hover (which forces a correct repaint).
-    ///
-    /// By renaming every consumed variable to `--ps-*`, the per-frame root
-    /// writes invalidate NOTHING inside the swatch — the swatch is simply never
-    /// repainted during the drag, so its blend can never sample a wrong
-    /// backdrop. The `contain: layout paint` on `.preset-swatch` (see
-    /// styles/components/appearance.css) is a second isolation layer: even if
-    /// a descendant did somehow depend on a root name, the repaint would be
-    /// caged to the swatch's own subtree and couldn't sample the popover's
-    /// moving backdrop.
+    /// PRIVATE NAMESPACE (`--ps-*`): every variable the swatch consumes is
+    /// emitted under a name NEVER written on `<html>`. This is the fix for the
+    /// "preset text bars vanish during a tint drag" bug — WKWebView's
+    /// custom-property invalidation is NAME-BASED, not scope-based, so the
+    /// per-frame root writes during a drag invalidated even swatch-local
+    /// declarations that shadowed the names, repainting the swatch against a
+    /// mid-rebuild backdrop where its `filter` + `mix-blend-mode` layer sampled
+    /// the wrong paper and the bars dissolved into it. With every consumed
+    /// variable renamed `--ps-*`, the root writes invalidate NOTHING inside
+    /// the swatch. The `contain: layout paint` on `.preset-swatch`
+    /// (styles/components/appearance.css) is a second isolation layer: any
+    /// stray root-name dependency would have its repaint caged to the swatch's
+    /// own subtree.
     pub fn preview_style(&self) -> String {
         let mut out = String::new();
 

@@ -1,9 +1,8 @@
-//! The real provider: Apple Intelligence via the `fm-bridge` helper.
-//!
-//! Every `fm_bridge::Error` is mapped onto a typed [`AiError`] before it
-//! crosses the wire, so the frontend can branch on the *cause* (and show a
-//! retry affordance exactly when `fm_bridge` says retrying might help)
-//! instead of string-matching on prose that may change between OS releases.
+//! The real provider: Apple Intelligence via the `fm-bridge` helper. Every
+//! `fm_bridge::Error` is mapped onto a typed [`AiError`] before it crosses
+//! the wire, so the frontend branches on the *cause* — and shows a retry
+//! affordance exactly when retrying might help — instead of string-matching
+//! prose that may change between OS releases.
 
 use async_stream::stream;
 use fm_bridge::Bridge;
@@ -25,12 +24,11 @@ pub struct AppleAiProvider {
 
 impl AppleAiProvider {
     pub fn new() -> Result<Self, String> {
-        // Reads FM_BRIDGE_BIN from the .env file.
-        //
-        // Concurrency stays small on purpose: the on-device model is one
-        // shared resource and each slot is its own helper process. The
-        // timeout covers queue wait AND generation, so a stuck or saturated
-        // model surfaces as a retryable Timeout instead of hanging the UI.
+        // Reads FM_BRIDGE_BIN from the .env file. Concurrency stays small on
+        // purpose: the on-device model is one shared resource and each slot
+        // is its own helper process. The timeout covers queue wait AND
+        // generation, so a stuck or saturated model surfaces as a retryable
+        // Timeout instead of hanging the UI.
         let bridge = Bridge::from_env()
             .map_err(|e| e.to_string())?
             .max_concurrency(2)
@@ -139,21 +137,18 @@ impl AiProvider for AppleAiProvider {
 
         Box::pin(stream! {
             let mut stream = Box::pin(bridge.stream(request));
-            // The UI wants a card to open the MOMENT the first real content
-            // arrives, not a run later. Structured streaming hands us the
-            // object as it is written, so the early snapshots are partial —
-            // a field or two, nothing that parses as a whole `WordInfo`.
-            // Instead of dropping those until the object happens to be
+            // The UI opens the card the MOMENT the first real content
+            // arrives. Structured streaming hands over partial snapshots, so
+            // instead of dropping them until the object happens to be
             // complete (which deferred the card until the model was nearly
-            // finished), we accumulate the partial fields and surface the
+            // finished), accumulate the partial fields and surface the
             // running answer on the FIRST chunk that carries a `meaning`,
-            // then re-publish it as each later chunk fills in more. The
-            // frontend patches the sections in place, so the card streams.
+            // re-publishing as later chunks fill in. The frontend patches
+            // sections in place, so the card streams.
             let mut acc = WordInfo::default();
-            // The FINAL structured payload must still carry real content: if
-            // the stream ends before a `meaning` ever landed, that is a
-            // shape failure — the UI would otherwise show an empty card
-            // with no recourse.
+            // The FINAL structured payload must still carry real content: a
+            // stream that ends before a `meaning` ever landed is a shape
+            // failure — the UI would show an empty card with no recourse.
             let mut saw_usable = false;
 
             while let Some(event) = stream.next().await {

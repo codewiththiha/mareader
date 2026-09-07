@@ -15,7 +15,6 @@ use crate::state::AppState;
 const COVER_WIDTH: f64 = 240.0;
 
 /// Render and store this book's cover, unless the shelf already has one.
-///
 /// Regenerating on every open re-rendered page 1 through the worker — against
 /// the reader's own first paint — and re-encoded and re-saved the whole cover
 /// store on the main thread, right when the reader was fighting for both. A

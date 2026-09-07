@@ -1,25 +1,16 @@
-// Doc-path check — the third piece of cheap insurance in this pipeline, after
-// `check-versions.ts` and `check-formats.ts`.
+// Doc-path check — the third piece of cheap insurance in this pipeline,
+// after `check-versions.ts` and `check-formats.ts`.
 //
-// This repo's comments carry a lot of weight: module docs explain why a design
-// is the way it is, and they name the other modules that make it work. Those
-// names rot silently. A rename or a move leaves the prose pointing at a module
-// that no longer exists, nothing fails, and the next reader follows the sign to
-// an empty field — a `cargo doc` link would warn, but most of these are plain
-// backticked prose, which no tool reads.
+// Comments in this repo name the modules and files that make a design work,
+// and a rename leaves that prose pointing at nothing. So every module path
+// (`crate::a::b`, `super::x`) and every file path with a slash
+// (`effects/reader/zoom.rs`) in a Rust comment must resolve, and so must
+// every backticked path in README.md and ARCHITECTURE.md. Resolution is
+// deliberately shallow — the module exists and the last name is declared or
+// re-exported there — and conservative: an unknown first segment is assumed
+// external and skipped, and a glob re-export passes anything.
 //
-// So: every module path (`crate::a::b`, `super::x`, `ai_core::gloss::y`) and
-// every file path with a slash in it (`effects/reader/zoom.rs`) that appears in
-// a Rust comment must resolve, and so must every path the two prose documents
-// put in backticks — README.md and ARCHITECTURE.md send readers to files, and
-// those references rot the same way a comment's do. Resolution is deliberately shallow — it checks
-// that the MODULE exists and that the last name is declared or re-exported
-// there, which is all a comment promises — and deliberately conservative: a path
-// whose first segment is not one of ours is assumed to be an external crate and
-// skipped, and a module that re-exports with a glob passes whatever it is asked
-// about.
-//
-// This is the TypeScript source; Trunk's pre-build hook compiles it to
+// TypeScript source; Trunk's pre-build hook compiles it to
 // `scripts/check-doc-paths.js` so CI can run it with plain `node`.
 
 import fs from "node:fs";
@@ -50,9 +41,9 @@ for (const cargo of ALL_FILES.filter((file) => file.endsWith("Cargo.toml"))) {
 }
 
 /**
- * First segments that are never ours: Rust's own primitives and the external
- * crates this workspace builds against. A path starting with anything else
- * unknown is skipped too — the check only speaks for names it can resolve.
+ * First segments that are never ours: Rust's primitives and the external
+ * crates this workspace builds against. Unknown first segments are skipped
+ * too — the check only speaks for names it can resolve.
  */
 const SKIP_FIRST = new Set(
   `i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 usize isize bool char str
@@ -217,14 +208,10 @@ for (const file of RUST_FILES) {
 }
 
 // ---------------------------------------------------------------------------
-// Stylesheet comments: the same claim, in files the Rust pass never reads.
-//
-// A stylesheet names the module that writes its tokens ("painted by
-// `appearance::reflowable`", "see src/zoom"), and those references are
-// directories, or extension-less module paths, as often as they are files —
-// which is why they need their own pattern: `FILE_PATH` above only matches a
-// token that ends in a known extension. Six of them had rotted before this
-// pass existed, all naming modules that a rename had moved.
+// Stylesheet comments: the same claim, in files the Rust pass never reads. A
+// stylesheet names the module that writes its tokens, as often a directory
+// or extension-less path as a file — which FILE_PATH above cannot match — so
+// styles/*.css gets its own root-prefixed pattern.
 // ---------------------------------------------------------------------------
 
 /** Every directory in the tree, so an extension-less module path resolves. */
@@ -272,24 +259,18 @@ for (const file of CSS_FILES) {
 }
 
 // ---------------------------------------------------------------------------
-// The two prose documents: the NAMES they put in backticks.
-//
-// A path is one kind of claim and a component name is another, and the second
-// is what a rename leaves behind most often: `PageList` and `SinglePageView`
-// outlived the components they named by several refactors, in prose no compiler
-// reads, and the README documented two engine methods that do not exist.
-//
-// Only README.md and ARCHITECTURE.md are checked. A Rust doc comment names
-// external types constantly (`Closure`, `TreeWalker`, `NSWindow`), and an
-// allowlist long enough to cover those is one nobody maintains; these two
-// documents describe this app, so a capitalised name in them is ours until
-// proven otherwise.
+// The two prose documents: the NAMES they put in backticks. Component names
+// are what a rename leaves behind most often, in prose no compiler reads.
+// Only README.md and ARCHITECTURE.md are checked: a Rust doc comment names
+// external types constantly (`Closure`, `NSWindow`) and an allowlist for
+// those is unmaintainable, while these two documents describe this app — a
+// capitalised name in them is ours until proven otherwise.
 // ---------------------------------------------------------------------------
 
-/** Capitalised names the documents use that are not declarations anywhere in
- *  the workspace: keyboard keys a shortcut table has to spell, and the platform
- *  types the app talks to but does not define. Add to this only for one of
- *  those, never for something the tree should be declaring. */
+/** Capitalised names the documents use that are not workspace declarations:
+ *  keyboard keys a shortcut table has to spell, and platform types the app
+ *  talks to but does not define. Add only for those, never for something the
+ *  tree should be declaring. */
 const PROSE_NAMES = new Set(["Shift", "Space", "Escape", "Range"]);
 
 const DECLARED = new Set<string>();
@@ -323,14 +304,10 @@ for (const file of ["README.md", "ARCHITECTURE.md"].filter(isFile)) {
 }
 
 // ---------------------------------------------------------------------------
-// The documented engine surface.
-//
-// `window.PDFReader` is written down three times: the TypeScript type, the Rust
-// bridge (which `crates/pdf-engine/tests/engine_contract.rs` holds against the
-// built facade), and the README's "Engine API" table. Only the third was
-// unchecked, and it had drifted — it advertised `buildSearchIndex` and `search`
-// for a search index that lives in Rust, and omitted the appearance and paper
-// methods entirely.
+// The documented engine surface. `window.PDFReader` is written down three
+// times: the TypeScript type, the Rust bridge (pinned against the built
+// facade by crates/pdf-engine/tests/engine_contract.rs), and the README's
+// Engine API table. This checks the third against the first.
 // ---------------------------------------------------------------------------
 
 /** The member names of the facade's type, as declared. */
@@ -366,20 +343,13 @@ if (apiAt >= 0) {
 }
 
 // ---------------------------------------------------------------------------
-// The two prose documents: the PATHS they put in backticks.
-//
-// ARCHITECTURE.md describes the tree by module path — `anchor::stroke_resolver`,
-// `components::formats::reflow::stream` — and README.md points at files. Neither
-// document is compiled, and a module path in prose carries no crate prefix to
-// anchor it, so the pass above cannot read them: `anchor::x` in a Rust file means
-// "a neighbour of mine", and in a document it means "wherever `anchor` lives".
-//
-// Resolution therefore starts from the NAME: every module in the tree is indexed
-// by the name a document would call it, and a path is tried against each module
-// that could be its first segment (plus the crate root, when the name is a
-// crate). `block_view` is the drift this catches — the renderer dispatch was
-// renamed `block_render`, and both documents kept sending readers to a module
-// that did not exist.
+// The two prose documents: the PATHS they put in backticks. A module path in
+// prose carries no crate prefix to anchor it — `anchor::x` in a document
+// means "wherever anchor lives" — so resolution starts from the NAME: every
+// module is indexed by the name a document would call it, and a path is
+// tried against each module that could be its first segment (plus the crate
+// root when the name is a crate). An ambiguous name is not an error: the
+// path is good if ANY reading holds.
 // ---------------------------------------------------------------------------
 
 /** Every Rust module in the tree, by the name a document would call it. */
@@ -394,12 +364,11 @@ for (const file of RUST_FILES) {
 }
 
 /**
- * A document's module path, resolved against every base its first segment could
- * mean. `anchor` is both `crates/virtual-list/src/anchor.rs` and
- * `src/components/ai/anchor/`, so an ambiguous name is not an error: the path is
- * good if ANY reading of it holds, and the near-miss is only reported when none
- * does. `prefix` is how many of the caller's segments the base itself consumed
- * (one, for a crate name).
+ * A document's module path, resolved against every base its first segment
+ * could mean (`anchor` is two modules here, so ambiguity is not an error).
+ * The near-miss is reported from the reading that got FURTHEST; `prefix` is
+ * how many of the caller's segments the base itself consumed (one, for a
+ * crate name).
  */
 function resolveDocModules(
   segs: string[],

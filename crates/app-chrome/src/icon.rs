@@ -50,10 +50,9 @@ pub enum IconName {
     /// The settings tab for motion: a rail that eases, a page that follows.
     Motion,
     Minus,
-    // The frameless caption glyphs (Windows/Linux titlebar): minimize,
-    // maximize, restore. Their own family on purpose — the minimize glyph
-    // is `Minus`'s twin but lives in window chrome, not in control
-    // clusters, so swapping one must never silently re-skin the other.
+    // The frameless caption glyphs (Windows/Linux titlebar). Their own family
+    // on purpose: the minimize glyph is `Minus`'s twin but lives in window
+    // chrome, so swapping one must never silently re-skin the other.
     WindowMinimize,
     WindowMaximize,
     WindowRestore,

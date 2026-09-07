@@ -2,23 +2,17 @@
 //! loop that keeps its own next frame.
 //!
 //! [`raf_coalesce`] is for high-rate EVENTS. `scroll`, `pointermove` and
-//! `resize` can all fire several times between two paints, and a handler that
-//! reads layout (`getBoundingClientRect`, `innerHeight`) forces a synchronous
-//! style + layout pass on each one. The extra passes buy nothing: nothing is
-//! drawn until the next frame, so every result but the last is discarded. The
-//! coalescer wraps such a handler so it runs at most once per frame, on the
-//! frame itself — where the layout it reads is the layout that is about to be
-//! painted.
+//! `resize` fire several times between paints, and a handler that reads layout
+//! forces a synchronous style + layout pass per event — passes whose results
+//! are all discarded but the last, since nothing draws until the next frame.
+//! The coalescer runs such a handler at most once per frame, ON the frame,
+//! where the layout it reads is the layout about to be painted.
 //!
 //! [`FrameLoop`] is for animations, which have no event to hang off: the frame
-//! itself decides whether another one is needed. It owns the machinery every
-//! such loop in the app was hand-rolling — a slot the running step re-arms
-//! itself through, a flag a queued frame checks before it touches anything
-//! reactive, the pending frame's id so a stop can cancel it, and the owner
-//! cleanup that stops it all when the surface goes away. Two loops were built
-//! out of that machinery twice over (the zoom tween and the floating-surface
-//! spring, the second with a comment admitting it was "the same shape as" the
-//! first), which is two places for a lifetime bug to live.
+//! decides whether another is needed. It owns the machinery every loop in the
+//! app was hand-rolling — the re-arm slot, the alive flag, the cancellable
+//! frame id, owner cleanup — which the zoom tween and the floating-surface
+//! spring had each built separately: two places for a lifetime bug to live.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -27,16 +21,12 @@ use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
-/// Wrap `f` so that calling it any number of times before the next animation
-/// frame schedules exactly one call, on that frame.
-///
-/// The returned closure is cheap to clone, so one coalescer can serve several
-/// listeners (scroll and resize feeding the same recompute, say) and they will
-/// share the frame rather than each getting one.
-///
-/// Must be called from inside a reactive scope: the pending flag is owned by
-/// it, and a frame that lands after the owner is gone is dropped instead of
-/// running `f` against disposed state.
+/// Wrap `f` so any number of calls before the next animation frame schedule
+/// exactly one call, on that frame. The returned closure is cheap to clone, so
+/// several listeners (scroll and resize feeding one recompute) share the frame
+/// rather than each getting one. Must be called inside a reactive scope: the
+/// pending flag is owner-scoped, and a frame landing after the owner is gone
+/// is dropped instead of running `f` against disposed state.
 pub fn raf_coalesce(f: impl Fn() + 'static) -> impl Fn() + Clone + 'static {
     let pending = StoredValue::new_local(false);
     let f = Rc::new(f);
@@ -87,31 +77,23 @@ fn queue(raf: &RafId, f: impl FnOnce() + 'static) {
     }
 }
 
-/// One self-rearming animation-frame loop.
-///
-/// [`arm`](Self::arm) hands it a step and makes sure exactly one frame is
-/// queued; the step returns `true` for "another frame, please" and `false` for
-/// "I am done". Arming a loop that is already running does NOT stack a second
-/// frame — it replaces the step, and the live loop picks the new one up on the
-/// frame it already has queued. That is what makes a retarget cheap: a loop
-/// whose step reads its target from a signal adopts the new target with no
-/// teardown at all, and a loop whose step closes over the old one starts
-/// running the new closure instead.
+/// One self-rearming animation-frame loop. [`arm`](Self::arm) hands it a step
+/// and queues exactly one frame; the step returns `true` for "another frame"
+/// and `false` for "done". Arming a running loop does NOT stack a second frame
+/// — it replaces the step and the live loop picks it up on the frame already
+/// queued, which is what makes a retarget cheap.
 ///
 /// ## Why the flag and the id, not one or the other
 ///
-/// A frame callback cannot always be cancelled — it is already queued, and the
-/// owner that would cancel it may be gone — so the callback checks
-/// `alive` BEFORE it reads anything reactive. Reading a signal whose owner has
-/// been cleaned up does not hand back `None`; it unwinds through a callback
-/// nobody owns. The flag lives in the loop's own `Rc`, so it is the one piece
-/// of evidence still safe to read. The id is the cheaper half: a `stop` that
-/// can cancel does, and the flag then only has to catch the frames it could
-/// not.
+/// A queued frame callback cannot always be cancelled (the owner that would
+/// cancel it may be gone), so the callback checks `alive` BEFORE reading
+/// anything reactive: reading a signal whose owner was cleaned up unwinds
+/// through a callback nobody owns. The flag lives in the loop's own `Rc` — the
+/// one evidence still safe to read. The id is the cheaper half: a `stop` that
+/// can cancel does, and the flag catches the frames it could not.
 ///
-/// Build it inside a reactive scope. Cleanup is registered at construction, so
-/// a loop dies with the surface that armed it rather than stepping once more
-/// against disposed state.
+/// Build inside a reactive scope: cleanup is registered at construction, so a
+/// loop dies with the surface that armed it.
 #[derive(Clone)]
 pub struct FrameLoop {
     /// The step, parked where the frame callback can find it. The callback
@@ -159,8 +141,8 @@ impl FrameLoop {
                 cancel(&raf);
                 return;
             }
-            // Re-arm through the slot, not through this closure: whatever is in
-            // the slot NOW is the step that runs next, which is how a retarget
+            // Re-arm through the slot, not through this closure: whatever is
+            // in the slot NOW is the step that runs next — how a retarget
             // mid-flight is adopted without a second loop.
             if let Some(next) = weak.upgrade().and_then(|s| s.borrow().clone()) {
                 queue(&raf, move || next());

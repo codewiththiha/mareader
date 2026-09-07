@@ -25,16 +25,13 @@ pub mod shared;
 
 pub use model::{Appearance, BaseMode, NoiseMode, TextureMode};
 
-/// Fixtures the appearance tests share.
-///
-/// Every pipeline test starts from the same place — an [`Appearance`] with
-/// only the tint dial set — and every assertion reads a colour back out of an
-/// emitted string. Both were written per module (five copies of `tinted`, four
-/// hand-rolled `oklch(` parsers), so a change to the model or to the emitted
-/// format meant finding them all. The reader here goes through
-/// [`parse_color`], the production parser, which is the point: a test that
-/// parses a colour with its own private grammar can agree with itself while
-/// the real one disagrees.
+/// Fixtures the appearance tests share. Every pipeline test starts from the
+/// same [`Appearance`] with only the tint dial set, and every assertion reads
+/// a colour back out of an emitted string — both were written per module (five
+/// copies of `tinted`, four hand-rolled oklch parsers). The reader here goes
+/// through [`parse_color`], the production parser: a test that parses colours
+/// with its own private grammar can agree with itself while the real one
+/// disagrees.
 #[cfg(test)]
 pub(crate) mod fixture {
     use super::shared::oklch::parse_color;

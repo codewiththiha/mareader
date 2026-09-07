@@ -1,22 +1,20 @@
 //! The shared maths of laying reflowable text out, whatever wrote it.
 //!
 //! A raw file becomes [`block`](block)s — that part belongs to the format, so
-//! it lives in `txt-core` and `md-core` — and from there everything is common:
-//! the blocks are packed into fixed-size [`page`](pager)s by a greedy cutter,
-//! the [geometry](geometry) says how wide a page's text column is and where a
-//! book's gutter falls, [`typography`](typography) resolves the reader's
-//! persisted knobs into the CSS the interface paints and into the one number
-//! the height estimate needs, and [`search`](search) is the substring index
-//! over the same blocks.
+//! it lives in `txt-core` and `md-core` — and from there everything is
+//! common: blocks are packed into fixed-size [`page`](pager)s by a greedy
+//! cutter, [geometry](geometry) says how wide a page's column is and where a
+//! book's gutter falls, [`typography`](typography) resolves the persisted
+//! knobs into the CSS the interface paints and the one number the height
+//! estimate needs, and [`search`](search) is the substring index over the
+//! same blocks.
 //!
-//! Nothing here knows what Markdown *is*. That is the seam: a format crate
+//! Nothing here knows what Markdown *is* — that is the seam: a format crate
 //! parses and classifies, this crate measures, paginates and paints. A third
-//! reflowable format (epub's HTML, once there is one) brings a parser and
-//! reuses all of this.
+//! reflowable format brings a parser and reuses all of this.
 //!
-//! Pure computation, as the other cores are: no wasm, no DOM, no leptos, and
-//! unit-testable on the host via `cargo test -p reflow-core`. The one
-//! `reader-core` dependency is the persisted typography schema, whose
+//! Pure computation: no wasm, no DOM, no leptos; `cargo test -p reflow-core`.
+//! The one `reader-core` dependency is the persisted typography schema, whose
 //! resolution this crate owns.
 
 #![forbid(unsafe_code)]

@@ -1,11 +1,11 @@
 //! Page navigation and the continuous-scroll hold engine: arrows turn pages
-//! in single/dual mode and glide the scrollport in continuous/horizontal mode;
-//! PageUp/Down and Space page the column.
+//! in single/dual mode and glide the scrollport in continuous/horizontal
+//! mode; PageUp/Down and Space page the column.
 //!
-//! What a key MEANS is not decided here — that is [`super::keymap`], which is
-//! pure and covered by tests. This file is the doing: the scroll helpers, the
-//! rAF hold engine behind a held arrow, and the small bridge that reads an
-//! event into the keymap's inputs and performs its answer.
+//! What a key MEANS is not decided here — that is [`super::keymap`], pure and
+//! tested. This file is the doing: the scroll helpers, the rAF hold engine
+//! behind a held arrow, and the bridge that reads an event into the keymap's
+//! inputs and performs its answer.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -20,13 +20,12 @@ use crate::state::ReaderState;
 use super::is_chrome_scroll_target;
 use super::keymap::{NavAction, self};
 
-/// One Arrow Up/Down tap is a reading nudge, not a page jump.
-///
-/// The first owner-scroll used 15% of the viewport (48–140px). Native
-/// browser line-scroll is ~40px, so a hold felt like paging: each
-/// key-repeat teleported a sixth of the screen with no glide. 8%
-/// clamped to a native-ish band matches the old feel without giving
-/// the keys back to a text-layer span that virtualization will unmount.
+/// One Arrow Up/Down tap is a reading nudge, not a page jump. The first
+/// owner-scroll used 15% of the viewport (48–140px); native browser
+/// line-scroll is ~40px, so a hold felt like paging — each key-repeat
+/// teleported a sixth of the screen with no glide. 8% clamped to a
+/// native-ish band matches the old feel without giving the keys back to a
+/// text-layer span that virtualization will unmount.
 pub(crate) fn line_scroll_px(viewport_h: f64) -> f64 {
     (viewport_h * 0.08).clamp(40.0, 80.0)
 }
@@ -37,10 +36,10 @@ pub(crate) fn page_scroll_px(viewport_h: f64) -> f64 {
     (viewport_h * 0.9).max(1.0)
 }
 
-/// Native-like delay before a held arrow starts repeating, then a
-/// continuous glide (px/s) instead of discrete jumps. 350ms sits
-/// between macOS (~250) and Windows (~500). 1000 px/s is roughly a
-/// viewport a second — reading speed, not a flick.
+/// Native-like delay before a held arrow starts repeating, then a continuous
+/// glide (px/s) instead of discrete jumps. 350ms sits between macOS (~250)
+/// and Windows (~500); 1000 px/s is roughly a viewport a second — reading
+/// speed, not a flick.
 const HOLD_DELAY_MS: f64 = 350.0;
 const HOLD_PX_PER_SEC: f64 = 1000.0;
 
@@ -79,9 +78,9 @@ fn page_next(state: ReaderState) {
     }
 }
 
-/// Keep keyboard focus on the active scroll strip itself (not a text-layer
-/// span the virtualizer is about to unmount). `preventScroll` so focusing
-/// does not fight the scroll we are about to apply.
+/// Keep keyboard focus on the active scroll strip itself, not a text-layer
+/// span the virtualizer is about to unmount. `preventScroll` so focusing does
+/// not fight the scroll we are about to apply.
 fn focus_scroll_list(horizontal: bool) {
     let Some(list) = (if horizontal { h_page_list() } else { page_list() }) else {
         return;
@@ -223,10 +222,9 @@ fn hold_tick() {
 }
 
 /// The plain-key navigation arms: arrows (page turn in single/dual mode,
-/// scroll hold in continuous/horizontal), PageUp/Down and Space.
-///
-/// The DECISION lives in [`keymap::resolve`], which is pure and tested; this
-/// reads the event into its inputs and performs the answer.
+/// scroll hold in continuous/horizontal), PageUp/Down and Space. The DECISION
+/// lives in [`keymap::resolve`], pure and tested; this reads the event into
+/// its inputs and performs the answer.
 pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::KeyboardEvent) {
     let key = ev.key();
     let outcome = keymap::resolve(keymap::NavKey {
@@ -292,8 +290,8 @@ mod tests {
     #[test]
     fn a_line_step_is_a_reading_nudge_not_a_page_jump() {
         // A 900px viewer used to jump 135px (15%) per key — three native
-        // lines at once, which is what made arrows feel like they were
-        // paging rather than scrolling.
+        // lines at once, which made arrows feel like paging rather than
+        // scrolling.
         assert!((line_scroll_px(900.0) - 72.0).abs() < 0.01);
         assert_eq!(
             line_scroll_px(200.0),

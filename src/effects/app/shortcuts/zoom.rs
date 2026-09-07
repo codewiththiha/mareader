@@ -3,7 +3,7 @@
 use crate::state::reader::ZoomCommand;
 use crate::state::ReaderState;
 
-/// Applies a manual zoom step. A plain command post: the controller resolves
+/// Applies a manual zoom step — a plain command post: the controller resolves
 /// the step (chaining from an in-flight transition's target so a fast `+ +`
 /// advances two presets, never swallowing the second press), clears the fit
 /// mode and runs the one transition pipeline.

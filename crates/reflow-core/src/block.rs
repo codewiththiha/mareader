@@ -3,13 +3,13 @@
 //! A block is one layout atom: a paragraph of plain text, or one top-level
 //! Markdown construct (heading, paragraph, list, code fence, table, quote,
 //! rule). Blocks are what the paginator packs into pages and what the vertical
-//! reader streams, so every reflowable format shares this shape — while the
-//! *parsing* of each format lives in its own crate (`txt-core`, `md-core`).
+//! reader streams, so every reflowable format shares this shape while the
+//! *parsing* of each lives in its own crate (`txt-core`, `md-core`).
 //!
 //! Two rules are shared too, because both formats want them and neither owns
-//! them: [`split_blocks`] cuts a normalised source into blocks (blank lines are
-//! the boundary, with code fences as the one exception a Markdown parser has to
-//! honour), and [`subdivide_with`] cuts oversized blocks on line boundaries so
+//! them: [`split_blocks`] cuts a normalised source into blocks (blank lines
+//! are the boundary, code fences the one exception a Markdown parser must
+//! honour) and [`subdivide_with`] cuts oversized blocks on line boundaries so
 //! the paginator can fill a page without splitting a construct's render. Each
 //! format passes its own predicate for what may be cut — plain text cuts
 //! anywhere, Markdown only in running prose.
@@ -139,17 +139,17 @@ fn fence_marker_of(trimmed: &str) -> &'static str {
     }
 }
 
-/// One shared fence state machine — the open/close rules
-/// [`split_blocks`] follows, extracted so every scanner over Markdown lines
-/// (the block splitter, the outline's heading scan, the metadata reader's
-/// title fallback) answers the fence question identically instead of each
-/// carrying its own copy of the rules.
+/// One shared fence state machine — the open/close rules [`split_blocks`]
+/// follows — extracted so every scanner over Markdown lines (the block
+/// splitter, the outline's heading scan, the metadata reader's title
+/// fallback) answers the fence question identically instead of carrying its
+/// own copy.
 ///
-/// A fence OPENS on ``` or ~~~ (three or more, optionally followed by an
-/// info string) when no fence is open, and CLOSES on a line that is nothing
-/// but the SAME marker characters (possibly longer, possibly spaced). An
-/// opener-looking line inside a fence is info-string noise, not a close —
-/// the splitter's own rule, which a plain startswith toggle gets wrong.
+/// A fence OPENS on ``` or ~~~ (three or more, optionally followed by an info
+/// string) when no fence is open, and CLOSES on a line that is nothing but the
+/// SAME marker characters (possibly longer, possibly spaced). An opener-looking
+/// line inside a fence is info-string noise, not a close — the rule a plain
+/// startswith toggle gets wrong.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FenceTracker {
     /// The marker of the open fence (``` or ~~~), "" while outside.
@@ -188,21 +188,21 @@ impl FenceTracker {
     }
 }
 
-/// Cut oversized blocks into line-bounded chunks, so the paginator never has
-/// to choose between splitting a block's render and leaving a near-empty page
+/// Cut oversized blocks into line-bounded chunks, so the paginator never
+/// chooses between splitting a block's render and leaving a near-empty page
 /// above it.
 ///
-/// `splittable` is the format's own answer to "may this block be cut?": for
-/// plain text it is every block (its hard breaks are the natural cut points),
-/// for Markdown only running prose (a split there falls on a soft break, so
-/// the two chunks render exactly as the one paragraph did, with the second
-/// marked [`continuation`](TextBlock::continuation) so it carries no paragraph
-/// space of its own). Constructs with structure of their own — headings,
-/// fences, lists, tables, quotes — pass through whole.
+/// `splittable` is the format's answer to "may this block be cut?": plain
+/// text cuts every block (its hard breaks are the natural cut points);
+/// Markdown only running prose (a split there falls on a soft break, so the
+/// chunks render exactly as the one paragraph did, the second marked
+/// [`continuation`](TextBlock::continuation) so it carries no paragraph space
+/// of its own). Constructs with structure — headings, fences, lists, tables,
+/// quotes — pass through whole.
 ///
 /// Runs once, right after parsing: the split depends only on the source (line
-/// count), never on the live typography, so block identities are stable for
-/// the whole session however the settings move.
+/// count), never the live typography, so block identities are stable for the
+/// whole session however the settings move.
 pub fn subdivide_with(
     blocks: Vec<TextBlock>,
     max_lines: usize,

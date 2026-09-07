@@ -1,26 +1,25 @@
 //! Selection detail tracking for the AI explain feature, in every format.
 //!
 //! The engine's selectionchange listener debounces the native selection,
-//! measures its bounding rect and grabs the surrounding sentence, then
-//! dispatches a `pdfreader:selection-detail` CustomEvent with
-//! `{ text, context, rect, host, spot }` (the rect in viewport CSS px, the
-//! host the format family that painted it, the spot a reflowable selection's
-//! durable identity) — or `null` to clear.
-//! Collapses caused by pressing inside the AI UI itself are suppressed
-//! engine-side, so the "Explain" button survives its own click.
+//! measures its bounding rect, grabs the surrounding sentence, and dispatches
+//! a `pdfreader:selection-detail` CustomEvent with
+//! `{ text, context, rect, host, spot }` (rect in viewport CSS px, host the
+//! format family that painted it, spot a reflowable selection's durable
+//! identity) — or `null` to clear. Collapses caused by pressing inside the AI
+//! UI are suppressed engine-side, so the "Explain" button survives its own
+//! click.
 //!
-//! This effect is the single place that turns that event into writes on
+//! This effect is the single place that turns the event into writes on
 //! `state.reader.ai_selection`: `detail` carries the text/context, `anchor`
-//! is the origin the floating pill follows, and a genuine clear also closes an
-//! open popover.
+//! is the origin the floating pill follows, and a genuine clear also closes
+//! an open popover.
 //!
-//! It is also the one place that decides WHICH pipeline anchors a selection,
-//! and it decides from the event rather than from the open document: the
-//! tracker reports the host family the selection is actually in, so a
-//! selection that outlives a document switch cannot be projected through the
-//! wrong format's maths. A PDF's anchor is its page-space rect; a reflowable
-//! one is a block and a character range that has to be asked of the DOM
-//! again (see `crate::components::ai::reflow_anchor`).
+//! It also decides WHICH pipeline anchors a selection — from the event, not
+//! the open document: the tracker reports the host family the selection is
+//! actually in, so a selection outliving a document switch cannot be
+//! projected through the wrong format's maths. A PDF's anchor is its
+//! page-space rect; a reflowable one is a block and character range asked of
+//! the DOM again (`crate::components::ai::reflow_anchor`).
 
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
@@ -34,8 +33,8 @@ use crate::state::reader::SelectionDetail;
 
 /// The JS protocol of the event detail: `null` (clear) or a full
 /// `SelectionDetail`. The engine already debounces and dedupes, so every
-/// event that arrives here is a genuine change (a `.set()` always notifies,
-/// even on unchanged values).
+/// event arriving here is a genuine change (a `.set()` always notifies, even
+/// on unchanged values).
 fn parse_selection_detail(detail: &JsValue) -> Option<SelectionDetail> {
     if detail.is_null() || detail.is_undefined() {
         return None;
@@ -62,8 +61,8 @@ fn anchor_for(detail: &SelectionDetail, state: AppState) -> Option<PageAnchor> {
 
     // No spot to project. For a reflowable selection that means the tracker
     // could not walk the offsets (a selection inside something that is not
-    // document text, or one that has already collapsed): do the same walk
-    // app-side, which is the bridge's own capture path.
+    // document text, or one already collapsed): do the same walk app-side —
+    // the bridge's own capture path.
     if reflow {
         let bridge = ReflowAnchorBridge { state: reader, spot: None, mode };
         return bridge.capture(scale);

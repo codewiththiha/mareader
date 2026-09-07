@@ -1,15 +1,12 @@
-//! Texture mode -> the two custom properties the textures stylesheet
-//! resolves: the opacity dial and the user pitch multiplier. Shared by both
-//! carriers on purpose — the PDF page's per-page pattern (`.pdf-page::before`)
-//! and the reflowable scroller's background pattern resolve the same two, so
-//! the dials feed both formats.
+//! Texture mode -> the two custom properties the textures stylesheet resolves:
+//! the opacity dial and the user pitch multiplier. Shared by both carriers —
+//! the PDF page's per-page pattern (`.pdf-page::before`) and the reflowable
+//! scroller's background pattern — so the dials feed both formats.
 //!
 //! The `texture-*` carrier class is NOT emitted here:
-//! [`TextureMode::css_class`](crate::appearance::TextureMode::css_class)
-//! owns that naming, and the class rides on the carrier element (the PDF page
-//! host, the reflowable scroller) rather than on `<html>`. The bare mode word
-//! — `as_str` — is what the `data-texture` attribute and the CSS
-//! `&[class*="texture-"]` scan read.
+//! [`TextureMode::css_class`](crate::appearance::TextureMode::css_class) owns
+//! that naming, and the class rides on the carrier element rather than on
+//! `<html>`.
 
 use crate::appearance::Appearance;
 

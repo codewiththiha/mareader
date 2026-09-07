@@ -9,62 +9,40 @@
 //! - [`Strip::window`] — which items should stay mounted right now?
 //! - [`Strip::dominant`] — which item is the reader actually looking at?
 //!
-//! The crate is pure arithmetic: no DOM, no framework, `no_std`-compatible (`std` enabled by default).
-//! Everything is `f64` in whatever unit your app already uses.
+//! Pure arithmetic: no DOM, no framework, `no_std`-compatible (`std` enabled
+//! by default). Everything is `f64` in whatever unit the app uses.
 //!
 //! # Layout layer
 //!
-//! Above [`Strip`], the crate exposes one shared geometry contract for higher
-//! level virtualized surfaces:
-//!
-//! - [`Layout`] — common queries for item count, offsets, windowing, and
-//!   dominant-item selection;
-//! - [`ListLayout`] — a variably-sized list backed by [`Strip`];
-//! - [`GridLayout`] — a uniform multi-column grid that windows by row while
-//!   still answering per-item offsets.
-//!
-//! This lets a framework adapter hold one layout handle while the app chooses
-//! whether the surface is a list or a grid.
+//! Above [`Strip`], one shared geometry contract for higher-level surfaces:
+//! [`Layout`] (common queries for item count, offsets, windowing and
+//! dominant-item selection), [`ListLayout`] (a variably-sized list backed by
+//! [`Strip`]) and [`GridLayout`] (a uniform multi-column grid that windows by
+//! row while still answering per-item offsets). A framework adapter holds one
+//! layout handle whichever the surface is.
 //!
 //! # Anchoring
 //!
-//! The [`anchor`] helpers keep the reader's place stable when geometry changes:
-//!
-//! - [`correct`] adjusts scroll after one measured item changes size;
-//! - [`pin_at`] records the content point under a viewport anchor;
-//! - [`rescale_anchor`] reapplies that anchor after a uniform rescale.
-//!
-//! The math stays pure, so adapters can use it from browser, desktop, or test
-//! code without any runtime coupling.
+//! The [`anchor`] helpers keep the reader's place stable when geometry
+//! changes: [`correct`] adjusts scroll after one measured item changes size,
+//! [`pin_at`] records the content point under a viewport anchor, and
+//! [`rescale_anchor`] reapplies that anchor after a uniform rescale.
 //!
 //! # Performance
 //!
-//! The obvious implementation walks the size array to find an item's offset,
-//! which is `O(n)` per query and `O(n²)` for a list that positions every
-//! mounted item each frame. [`Strip`] stores a prefix-sum table instead,
-//! making [`Strip::offset`] `O(1)` and every positional query an `O(log n)`
-//! binary search. Building the table is `O(n)`, done once when the sizes
-//! change.
-//!
-//! Internally the prefix-sum is held as `i64` in sub-pixel units (factor
-//! `SUBPIXEL_FACTOR`, 1/65536 px). This gives three wins over the equivalent
-//! `Vec<f64>`:
-//!
-//! - `partition_point` runs over integers, which branch-predict better and
-//!   avoid NaN edge cases;
-//! - sums cannot drift over long lists;
-//! - the storage footprint is identical (`8 * (n + 1)` bytes).
-//!
-//! For typical continuous scrolling the index is the same as the last frame's,
-//! or one step away. [`Strip::index_at_hinted`] takes a `&mut usize` hint and
-//! checks the neighbour first, falling back to a galloping search for big
-//! jumps (scrollbar drag). That makes smooth scrolling amortized `O(1)`.
-//!
-//! When items change size at runtime, [`Strip::set_size`] re-runs the suffix of
-//! the prefix-sum in `O(n)` time. A surface that resizes items far more often
-//! than this one does can supply its own tree by implementing
-//! [`StripBackend`]; the windowing above is written against the trait, not
-//! against `Strip`.
+//! [`Strip`] stores a prefix-sum table instead of walking the size array:
+//! [`Strip::offset`] is `O(1)`, every positional query an `O(log n)` binary
+//! search, the table built `O(n)` once when sizes change — where the naive
+//! walk is `O(n)` per query and `O(n²)` per frame. The sums are held as `i64`
+//! in sub-pixel units (`SUBPIXEL_FACTOR`, 1/65536 px): integer
+//! `partition_point` branch-predicts better and avoids NaN edge cases, sums
+//! cannot drift over long lists, and the footprint equals a `Vec<f64>`.
+//! Smooth scrolling keeps the index at last frame's or one step away, so
+//! [`Strip::index_at_hinted`] checks the neighbour first and falls back to a
+//! galloping search for big jumps (scrollbar drag) — amortized `O(1)`.
+//! Runtime resizes re-run the prefix-sum suffix in `O(n)`; a surface that
+//! resizes far more often can supply its own tree via [`StripBackend`] — the
+//! windowing is written against the trait, not against `Strip`.
 //!
 //! # Example
 //!

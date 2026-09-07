@@ -1,77 +1,63 @@
 //! The shell's single source of truth for layout state.
 //!
-//! Before this module existed, the answers to "is the rail overlay or
-//! docked?", "does the bar still owe the traffic lights a gutter?", "may the
-//! sidebar toggle show?" and "is the rail painted right now?" were recomputed
-//! wherever they happened to be needed — `features/reader/page.rs` derived
-//! `overlay_sb` and re-spelled `!overlay && mode == None` per mount point,
-//! `app_title_bar.rs` rebuilt `rail_painted` / `band_inset` /
-//! `lights_gutter` / `bar_gutter` from a chrome context, and the floating
-//! label carried its own fallback for the same question. Changing one rule
-//! meant finding every spelling of it.
+//! "Is the rail overlay or docked?", "does the bar owe the traffic lights a
+//! gutter?", "may the sidebar toggle show?", "is the rail painted right now?"
+//! used to be recomputed wherever they were needed — the page derived
+//! `overlay_sb` per mount point, `app_title_bar.rs` rebuilt `rail_painted` /
+//! `band_inset` / `lights_gutter` / `bar_gutter` from a chrome context, the
+//! floating label carried its own fallback. Changing one rule meant finding
+//! every spelling of it.
 //!
-//! Now the page builds ONE [`ShellController`] and provides it as context.
-//! Components do not recompute layout facts; they ask the controller:
+//! Now the page builds ONE [`ShellController`] and provides it as context;
+//! components ask instead of recomputing:
 //!
 //! ```text
-//! let shell = use_context::<ShellController>().expect(…);
+//! let shell = use_context::<ShellController>().expect(...);
 //! shell.is_overlay().get()      // rail floats over the page?
 //! shell.rail_present().get()    // rail on screen, close motion included?
-//! shell.titlebar_left_gutter()  // px the bar's row must inset for the lights
+//! shell.titlebar_left_gutter()  // px the bar's row insets for the lights
 //! ```
 //!
-//! The controller also OWNS the open/close bookkeeping (the machine the
-//! deleted `SidebarPaint` state machine used to carry) and the remembered
-//! last panel, so "reopen what was open" is one call (`open_last_panel`)
-//! instead of a second `last_mode` tracker in the page.
+//! The controller also OWNS the open/close bookkeeping and the remembered last
+//! panel, so "reopen what was open" is one call (`open_last_panel`).
 //!
-//! THE CLOSE MACHINE, TWO GEOMETRIES. The two layouts do not share a motion:
-//! the DOCKED rail slides (the aside tweens its width over
-//! [`SIDEBAR_SLIDE_MS`]), while the FLOATING rail fades in and out over
-//! [`SIDEBAR_FADE_MS`] — a transform slide off the window's edge would
-//! travel under the native traffic lights, which can only appear and
-//! disappear, so the overlay keeps to what the lights can do and the two
-//! read as one unit. Chrome must stay aligned with the pixels for the whole
-//! length of either direction: the raw mode flips to `None` on the close
-//! click, before the rail is out of the way. `rail_present` is therefore
-//! "open OR the close animation is still running" — whatever yields to the
-//! rail (the bar's band inset, the traffic lights' host, the floating
-//! label's corner) derives from it so it releases when the motion lands,
-//! not on frame one of the close.
+//! THE CLOSE MACHINE, TWO GEOMETRIES. The layouts do not share a motion: the
+//! DOCKED rail slides (the aside tweens its width over [`SIDEBAR_SLIDE_MS`]);
+//! the FLOATING rail fades over [`SIDEBAR_FADE_MS`] — a transform slide off
+//! the window edge would travel under the native traffic lights, which can
+//! only appear and disappear. Chrome must stay aligned with the pixels for the
+//! whole motion: the raw mode flips to `None` on the close click, before the
+//! rail is out of the way, so `rail_present` means "open OR the close animation
+//! is still running" — and whatever yields to the rail (the bar's band inset,
+//! the lights' host, the floating label's corner) derives from it, releasing
+//! when the motion lands, not on frame one.
 //!
-//! OPEN mounts thumbnail cells immediately so warm bitmaps can paint while
-//! the rail is moving. `panel_intro` is the DOCKED open's paint-only marker —
-//! a two-frame flag that starts the panel opacity transition without
-//! delaying the cell DOM — and is deliberately skipped in overlay: the
-//! wrapper's own fade is the reveal there, and a second fade inside it
-//! would double-dim the panels. CLOSE is the only timer-gated direction:
-//! it keeps the last panel painted through the motion (`collapsing`) and
-//! releases the live thumbnail canvases at the same instant the motion
-//! lands — one timer that waits out whichever duration the layout's rail
-//! is actually running. A reopen inside that window never unmounts, never
-//! re-renders, never reallocates.
+//! OPEN mounts thumbnail cells immediately so warm bitmaps paint while the rail
+//! moves; `panel_intro` is the DOCKED open's paint-only marker (a two-frame
+//! flag starting the panel opacity transition without delaying the cell DOM),
+//! skipped in overlay where the wrapper's own fade is the reveal. CLOSE is the
+//! only timer-gated direction: it keeps the last panel painted through the
+//! motion (`collapsing`) and releases the live thumbnail canvases the instant
+//! the motion lands — one timer waiting out whichever duration the layout's
+//! rail runs, so a reopen inside that window never unmounts, re-renders or
+//! reallocates. Settings → Animations can freeze the motion (`no_slide`): the
+//! docked rail jumps to its end width, the floating rail appears at full
+//! opacity, and the close hold releases on the spot.
 //!
-//! Settings → Animations can freeze the rail's motion (`no_slide`): the
-//! docked rail then jumps to its end width, the floating rail appears at
-//! full opacity, and the close hold is released on the spot, because
-//! nothing is left waiting on a motion that never runs.
-//!
-//! THE ANSWERS ARE PURE. Every question this module answers is decided by a
-//! rule in [`rules`]: mode, collapsing flag and last panel in, a bool out, with
-//! no signal and no owner to set up — which is why the cases that matter (a
-//! close caught mid-slide, a tab switch, a reopen before the cells ever mounted)
-//! are written down as tests there rather than reasoned about here. This file is
-//! the machine that feeds them and holds the state they read.
+//! THE ANSWERS ARE PURE: every question is decided by a rule in [`rules`] —
+//! mode, collapsing flag and last panel in, a bool out, no signal and no owner
+//! — which is why the cases that matter (a close caught mid-slide, a tab
+//! switch, a reopen before the cells mounted) are tests there, not prose here.
 //!
 //! TWO PAGES, ONE RULEBOOK. The reader builds the controller with
-//! [`ShellController::reader`] (rail + titlebar); the library builds it with
-//! [`ShellController::titlebar_only`], which answers every rail question
-//! with "no rail": the bar keeps the full window width, its 88px gutter and
-//! its lights. That keeps the no-rail answers in the same rulebook, instead of
-//! an `Option`-shaped fork in every consumer. The traffic-light questions are
-//! macOS-only at heart (`app_chrome::platform`): Windows and Linux run
-//! frameless, so both gutter answers are constant `false` there and the
-//! row's leading control starts at the resting padding.
+//! [`ShellController::reader`] (rail + titlebar); the library with
+//! [`ShellController::titlebar_only`], which answers every rail question "no
+//! rail" — the bar keeps the full window width, its 88px gutter and its
+//! lights. The no-rail answers stay in the same rulebook instead of an
+//! `Option`-shaped fork in every consumer. The traffic-light questions are
+//! macOS-only at heart (`app_chrome::platform`): frameless Windows/Linux
+//! answer constant `false` and the row's leading control starts at the resting
+//! padding.
 
 use std::time::Duration;
 
@@ -104,9 +90,8 @@ pub(crate) const SIDEBAR_SLIDE_MS: u64 = 300;
 
 /// How long the FLOATING rail's fade takes. The overlay wrapper carries the
 /// matching `duration-200`, and the close hold uses this so the rail, its
-/// shadow and the native traffic lights all land on the same frame — 200ms
-/// is the system-standard window for a fade, which is why it is not simply
-/// the slide's duration under a different name.
+/// shadow and the native traffic lights land on the same frame. 200ms is the
+/// system-standard fade window — not simply the slide's duration renamed.
 pub(crate) const SIDEBAR_FADE_MS: u64 = 200;
 
 /// The close hold for a layout's rail: docked waits out the width slide,
@@ -202,16 +187,15 @@ impl ShellController {
         // the open path, while a real None → panel transition does.
         let was_closed = StoredValue::new_local(true);
         // The end of the outro: hold the panel and its canvases for one
-        // slide, then release. A debounce rather than a hand-rolled handle,
-        // because `on_cleanup` then clears a fire that is still pending —
-        // which a stored handle only did if the NEXT close arrived first,
-        // leaving a reader that was gone writing to signals that were.
-        // Re-arming postpones the release instead of queueing a second one,
-        // which is what a burst of toggles should do. The WAIT is read per
-        // trigger, untracked, so one timer serves both geometries: a close in
-        // the docked layout holds for the width slide, a close in the overlay
-        // layout holds for the fade — and the lights under the floating rail
-        // release on the frame it finishes disappearing.
+        // slide, then release. A debounce rather than a hand-rolled handle, so
+        // `on_cleanup` clears a still-pending fire — a stored handle only did
+        // that if the NEXT close arrived first, leaving a reader that was gone
+        // writing to signals that were. Re-arming postpones the release
+        // instead of queueing a second one, which is what a burst of toggles
+        // should do. The WAIT is read per trigger, untracked, so one timer
+        // serves both geometries: docked holds for the width slide, overlay
+        // for the fade — and the lights under the floating rail release on the
+        // frame it finishes disappearing.
         let outro = use_debounce_for(
             move || Duration::from_millis(outro_hold_ms(layout.get_untracked())),
             move || {
@@ -241,15 +225,14 @@ impl ShellController {
                     if !matches!(layout.get_untracked(), SidebarLayout::Overlay) {
                         intro.set(true);
                     }
-                    // Keep the marker through one COMMITTED frame, then
-                    // remove it so the CSS opacity transition runs alongside
-                    // the rail. Two rAFs, not one: the first callback fires
-                    // BEFORE the frame with `intro` painted has been
-                    // composited, so clearing there would change the class
-                    // in the same paint the marker appeared in — no
-                    // transition. The second callback runs strictly after
-                    // that frame is on screen, which is the earliest point
-                    // the fade can actually animate from.
+                    // Keep the marker through one COMMITTED frame, then remove
+                    // it so the CSS opacity transition runs alongside the rail.
+                    // Two rAFs, not one: the first callback fires BEFORE the
+                    // frame with `intro` painted has composited, so clearing
+                    // there would change the class in the same paint the marker
+                    // appeared in — no transition. The second runs strictly
+                    // after that frame is on screen: the earliest point the
+                    // fade can animate from.
                     request_animation_frame(move || {
                         request_animation_frame(move || intro.set(false));
                     });
@@ -346,11 +329,10 @@ impl ShellController {
     }
 
     /// Does the bar's row reserve the 88px traffic-light gutter? Off when a
-    /// docked rail has taken that corner over, and off in overlay mode —
-    /// where there are no lights in the bar to clear, so the leading
-    /// control moves left into the space they would have occupied. Also
-    /// off wholesale on Windows and Linux: frameless windows have no native
-    /// lights, so the row never owes the corner anything.
+    /// docked rail has taken that corner over, and off in overlay mode — no
+    /// lights in the bar to clear, so the leading control moves left into the
+    /// space they would have occupied. Off wholesale on Windows and Linux:
+    /// frameless windows have no native lights.
     fn lights_gutter(&self) -> Signal<bool> {
         let this = *self;
         Signal::derive(move || {
@@ -360,14 +342,12 @@ impl ShellController {
         })
     }
 
-    /// Could the bar host the lights AT ALL in this layout mode, regardless
-    /// of what is covering it? Not the same question as `lights_gutter`:
-    /// overlay mode answers no — the bar keeps its full width and its
-    /// leading control sits in the space the lights would have taken, so a
-    /// hover must not put them back on top of it. The rail still hosts
-    /// them from its own header while it is up, which is `rail_present`'s
-    /// job and not this signal's. macOS only for the same platform reason
-    /// as `lights_gutter`.
+    /// Could the bar host the lights AT ALL in this layout mode, regardless of
+    /// what is covering it? Not `lights_gutter`'s question: overlay answers no
+    /// — the bar keeps its full width and its leading control sits where the
+    /// lights would be, so a hover must not put them back on top of it. The
+    /// rail still hosts them from its own header while up — `rail_present`'s
+    /// job, not this signal's. macOS only, for the same platform reason.
     pub fn bar_gutter(&self) -> Signal<bool> {
         let this = *self;
         Signal::derive(move || app_chrome::platform::is_macos() && !this.is_overlay().get())

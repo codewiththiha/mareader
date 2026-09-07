@@ -1,13 +1,9 @@
-//! The preset thumbnail in the TEXT palette — what a text/Markdown page
-//! will actually get when the preset is applied.
-//!
-//! The PDF swatch previews the raster pipeline (base palette + tinted
-//! UI-token overrides); this one previews [`TextPalette`], so a preset
-//! read while a text document is open shows the page the reader would
-//! paint for it — bright light paper in Light mode, dark in Dark, grey
-//! with dark ink in Dim. Same `--ps-*` private namespace, same
-//! texture/noise tail as the PDF swatch (see `appearance::preview`); only
-//! the colour tokens differ.
+//! The preset thumbnail in the TEXT palette — what a text/Markdown page will
+//! actually get when the preset is applied. The PDF swatch previews the raster
+//! pipeline; this one previews [`TextPalette`], so a preset read while a text
+//! document is open shows the page the reader would paint. Same `--ps-*`
+//! private namespace and texture/noise tail as the PDF swatch (see
+//! `appearance::preview`); only the colour tokens differ.
 
 use crate::appearance::preview::ps_surface_tail;
 use crate::appearance::Appearance;

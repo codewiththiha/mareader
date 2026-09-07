@@ -1,11 +1,11 @@
 //! The wire protocol between the Tauri backend and the frontend: the chunk
 //! stream ([`AiChunk`]) and the typed error it can carry ([`AiError`]).
 //!
-//! The frontend's half of the contract is `crates/ai-core/src/types.rs` for
-//! the error and the word payload — the app imports that crate, so there is
-//! nothing to keep in step — and `src/services/ai.rs` for the chunk envelope it
-//! deserializes off the Tauri event. Keep THAT one's serde shape in sync; the
-//! test below pins this crate's half.
+//! The frontend's half is crates/ai-core/src/types.rs for the error and word
+//! payload — shared as a crate, so nothing to keep in step — and
+//! src/services/ai.rs for the chunk envelope it deserializes off the Tauri
+//! event. Keep THAT one's serde shape in sync; the test below pins this
+//! crate's half.
 
 use futures::Stream;
 use std::pin::Pin;
@@ -14,7 +14,6 @@ use super::schema::WordInfo;
 
 /// Machine-readable cause of an [`AiError`]. Branch on this, never on the
 /// human-facing `message`, whose wording may change between OS releases.
-///
 /// Serializes flat — unit variants as `"snake_case"` strings — so the wire
 /// shape stays `{"kind":"model_not_ready"}` rather than nesting tags.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -47,7 +46,7 @@ pub enum AiErrorKind {
 }
 
 /// A typed error from the AI pipeline, serialized across the wire so the
-/// frontend can show the right message and a retry affordance exactly when
+/// frontend shows the right message and a retry affordance exactly when
 /// retrying might help.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct AiError {
@@ -73,15 +72,13 @@ pub enum AiChunk {
     Error(AiError),
 }
 
-/// What actually goes over the `ai-stream-chunk` event: a chunk plus the id
-/// of the run that produced it.
-///
-/// The frontend can have more than one run in flight — a reader who glosses a
-/// second word before the first answer lands — and every run emits on the same
-/// event name. Without the id, a late chunk from the abandoned run is
-/// indistinguishable from the live one's, so it gets rendered (and cached)
-/// against the wrong word. The id is chosen by the caller and echoed verbatim;
-/// the backend never interprets it.
+/// What goes over the `ai-stream-chunk` event: a chunk plus the id of the
+/// run that produced it. The frontend can have more than one run in flight —
+/// a reader who glosses a second word before the first answer lands — and
+/// every run emits on the same event name; without the id, a late chunk from
+/// the abandoned run is indistinguishable from the live one's and gets
+/// rendered (and cached) against the wrong word. The id is chosen by the
+/// caller and echoed verbatim; the backend never interprets it.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AiStreamEvent {
     /// The run id passed to `explain_word`.

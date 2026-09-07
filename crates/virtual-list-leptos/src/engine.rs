@@ -1087,12 +1087,10 @@ mod tests {
     fn rescale_keeps_the_viewport_center_stable() {
         // The zoom contract from the reader's side: whatever content point
         // sits at the viewport CENTER before a rescale must still sit at the
-        // center afterwards. A top-anchored rescale would hold the top pixel
-        // fixed instead and let the focal point walk — which reads as the
-        // page sliding under the reader while it scales. A sidebar slide
-        // rescales per frame, so any per-frame drift compounds into the
-        // visible mid-slide misalignment; this pins the invariant that
-        // prevents it.
+        // center after. A top-anchored rescale lets the focal point walk —
+        // the page slides under the reader while it scales — and a sidebar
+        // slide rescales per frame, so per-frame drift compounds into the
+        // visible mid-slide misalignment. This pins the invariant.
         let vh = 500.0;
         let scroll = 10_000.0;
         let mut core = list_core(200, 100.0, vh);

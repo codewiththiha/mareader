@@ -1,24 +1,18 @@
-//! sRGB <-> OKLCH conversion, used to tint the UI palette without destroying it.
+//! sRGB <-> OKLCH conversion, used to tint the UI palette without destroying
+//! it.
 //!
-//! WHY THIS EXISTS. The first tint implementation used CSS
-//! `color-mix(in oklch, <base>, <tint> N%)`. Mixing *toward* a mid-lightness
-//! colour drags every token toward THAT lightness, so in light mode paper
-//! (L=1.00), surface (0.97) and line (0.93) all landed at ~0.88 — they
-//! converged. The page, the sidebar, the toolbar and the thumbnail cards
-//! became one flat slab of colour with no edges between them.
+//! The first tint implementation mixed toward the tint colour in CSS
+//! (`color-mix(in oklch, ...)`), which drags every token toward the tint's
+//! lightness: in light mode paper (L=1.00), surface (0.97) and line (0.93)
+//! converged at ~0.88 and page, sidebar, toolbar and thumbnails became one
+//! flat slab. Dark mode hid it (its bases start low). The fix keeps each
+//! token's OWN lightness — which encodes the hierarchy — and moves only hue
+//! and chroma. `color-mix` cannot express that and relative-colour syntax
+//! would push untestable work into the browser, so the conversion happens
+//! here and emits `oklch(L C H)` literals.
 //!
-//! Dark mode hid the problem: its bases start low, so pulling them up left
-//! them dark enough to still read as chrome.
-//!
-//! The fix is to keep each token's OWN lightness — which is what encodes the
-//! visual hierarchy — and only move hue and chroma. That cannot be expressed
-//! with `color-mix`, and CSS relative-colour syntax would push the work into
-//! the browser where it cannot be unit-tested, so the conversion happens here
-//! and the result is emitted as an `oklch(L C H)` literal.
-//!
-//! The module lives in the shared kernel because BOTH format pipelines
-//! compute in this space: the PDF tint emits OKLCH UI tokens, and the text
-//! palette derives its page colours in OKLCH.
+//! Shared kernel because BOTH pipelines compute in this space: the PDF tint
+//! emits OKLCH UI tokens, the text palette derives its page colours in OKLCH.
 
 /// sRGB gamma -> linear.
 fn srgb_to_linear(c: f64) -> f64 {
@@ -69,13 +63,11 @@ pub fn hex_to_oklch(hex: &str) -> Option<(f64, f64, f64)> {
 }
 
 /// (L, C, H) out of a colour this reader emits: an `oklch(...)` literal or an
-/// `#rrggbb` hex.
-///
-/// The inverse of [`oklch_css`], and the only place the literal's grammar is
-/// written down. Untinted palettes emit hex and tinted ones emit oklch, so
-/// anything that reads a palette back — [`crate::appearance::reflowable::palette`]'s
-/// precomposed mixes, and the tests that hold every emitted number to account
-/// — has to accept both.
+/// `#rrggbb` hex. The inverse of [`oklch_css`] and the only place the
+/// literal's grammar is written down. Untinted palettes emit hex and tinted
+/// ones oklch, so anything reading a palette back —
+/// [`crate::appearance::reflowable::palette`]'s precomposed mixes and the
+/// tests — must accept both.
 pub fn parse_color(value: &str) -> Option<(f64, f64, f64)> {
     let v = value.trim();
     if let Some(inner) = v.strip_prefix("oklch(").and_then(|s| s.strip_suffix(')')) {
@@ -86,13 +78,10 @@ pub fn parse_color(value: &str) -> Option<(f64, f64, f64)> {
 }
 
 /// Hue `from` rotated a fraction `t` of the way to `to`, the SHORT way round
-/// the circle.
-///
-/// The trap this exists for: hue is an angle, so 350 -> 10 is a 20 degree step
-/// forward and not a 340 degree sweep backwards through the whole spectrum. A
-/// tint that took the long way turned a warm paper green on its way to red.
-/// Both the UI-token tint and the text palette's accent ride it, so one slider
-/// moves every colour the same direction.
+/// the circle: 350 -> 10 is a 20 degree step, not a 340 degree sweep through
+/// the spectrum (a tint that took the long way turned warm paper green on its
+/// way to red). Both the UI-token tint and the text palette's accent ride it,
+/// so one slider moves every colour the same direction.
 pub fn hue_toward(from: f64, to: f64, t: f64) -> f64 {
     let mut delta = to - from;
     while delta > 180.0 {
@@ -144,7 +133,7 @@ mod tests {
     fn the_light_palette_has_the_lightness_ladder_the_ui_depends_on() {
         // This ordering IS the visual hierarchy: page brighter than chrome,
         // chrome brighter than its borders. The tint must preserve it — losing
-        // it is exactly the bug this module exists to fix.
+        // it is the bug this module exists to fix.
         let paper = l_of("#ffffff");
         let surface = l_of("#f3f4f6");
         let line = l_of("#e5e7eb");

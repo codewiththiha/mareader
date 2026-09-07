@@ -1,23 +1,20 @@
 //! The reader's search model, the scan both pipelines run, and the maths the
 //! search UI runs on.
 //!
-//! Both pipelines answer in this shape: the PDF side builds it from the
-//! engine's page-text index (`pdf_core::search`), a reflowable document from
-//! `reflow_core::search`, and the results list, the cycling and the scroll
-//! reveal are the same code for either. That is why it lives here rather than
-//! beside either parser.
+//! Both pipelines answer in this shape — the PDF side from the engine's
+//! page-text index (`pdf_core::search`), a reflowable document from
+//! `reflow_core::search` — and the results list, the cycling and the scroll
+//! reveal are the same code for either.
 //!
-//! The SCAN lives here for the same reason, and a sharper one: a match carries
-//! an ordinal — which occurrence of the query this is — and the thing that
-//! paints a box over the hit counts occurrences again, independently, to find
-//! which of its boxes that ordinal names. Two scanners are two chances to
-//! disagree about what an occurrence is, so there is one ([`occurrence_spans`]),
-//! and the snippet window next to it ([`snippet`]) for the same reason.
+//! The SCAN lives here because a match carries an ordinal and the painter
+//! counts occurrences again, independently, to find which of its boxes that
+//! ordinal names. Two scanners are two chances to disagree about what an
+//! occurrence is, so there is one ([`occurrence_spans`]), with the snippet
+//! window ([`snippet`]) beside it.
 //!
 //! The engine returns ONE ENTRY PER OCCURRENCE in document order, not one per
-//! page: "next result" means the next match, which is usually still on the
-//! current page. A match's rect is in scale-1 CSS px relative to its page's
-//! top-left; the UI multiplies by the current scale to place it.
+//! page. A match's rect is in scale-1 CSS px relative to its page's top-left;
+//! the UI multiplies by the current scale to place it.
 
 use std::sync::Arc;
 
@@ -27,17 +24,15 @@ use serde::{Deserialize, Serialize};
 /// page grid.
 ///
 /// The two halves of a [`SearchMatch`] answer "where is this hit" for the two
-/// kinds of document the reader opens. A page of pixels has a fixed grid, so a
-/// box in page space IS an identity, and `x`/`y`/`w`/`h` carry it. A document the
-/// reader lays out itself has no such grid — every typography knob re-cuts its
-/// pages, and a stored box would point at whatever moved underneath — so its
-/// answer is the block and the occurrence inside it, which is the same identity
-/// its gloss marks keep.
-///
-/// The painter that covers a block's row re-finds the query in that row's
-/// rendered text and numbers the occurrences in reading order, so this pair
-/// names one box on screen without any geometry being exchanged — exactly the
-/// deal the engine's text-layer painter makes with `page` + `index`.
+/// kinds of document. A page of pixels has a fixed grid, so a box in page
+/// space IS an identity (`x`/`y`/`w`/`h`). A document the reader lays out
+/// itself has no grid — every typography knob re-cuts its pages and a stored
+/// box would point at whatever moved underneath — so its answer is the block
+/// and the occurrence inside it, the same identity its gloss marks keep. The
+/// painter re-finds the query in the block row's rendered text and numbers
+/// occurrences in reading order, so the pair names one box on screen without
+/// geometry — the same deal the engine's text-layer painter makes with
+/// `page` + `index`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct BlockHit {
     /// Index of the block the hit sits in, in document order.
@@ -78,33 +73,31 @@ pub struct SearchResponse {
     pub matches: Vec<SearchMatch>,
 }
 
-/// Characters of context on each side of a hit in a results-list snippet.
-///
-/// One number for both families, because one dropdown shows both: the row clips
-/// at 80 characters anyway (`components/search/result_list.rs`), so a wider
-/// window is text the reader never sees, and two windows are two shapes of the
-/// same row.
+/// Characters of context on each side of a hit in a results-list snippet. One
+/// number for both families, because one dropdown shows both: the row clips
+/// at 80 characters anyway (components/search/result_list.rs), so a wider
+/// window is text the reader never sees.
 pub const SNIPPET_RADIUS: usize = 32;
 
 /// Every occurrence of `needle` in `haystack`, as character spans in reading
 /// order: the one scan, called by the PDF's page-text index, by a reflowable
-/// document's blocks, and by the layer that paints hits over a block's rendered
-/// text.
+/// document's blocks, and by the layer that paints hits over a block's
+/// rendered text.
 ///
-/// `folded` is `haystack.to_lowercase()`. It is a parameter rather than a call
-/// here because the hot caller already holds it: the PDF index folds every page's
-/// text once when it builds and rescans it on every keystroke.
+/// `folded` is `haystack.to_lowercase()`, passed in because the hot caller
+/// already holds it: the PDF index folds each page once at build and rescans
+/// on every keystroke.
 ///
-/// Matching is case-insensitive and non-overlapping, advancing by the needle's
-/// length — `"aa"` in `"aaa"` is one hit, at 0 — which is what
-/// `str::match_indices` does and what the engine's painter has always done. An
-/// empty or whitespace-only needle matches nothing.
+/// Matching is case-insensitive and non-overlapping, advancing by the
+/// needle's length — "aa" in "aaa" is one hit, at 0 — matching
+/// `str::match_indices` and the engine's painter. An empty or whitespace-only
+/// needle matches nothing.
 ///
-/// Case folding can change a string's LENGTH: 'İ' lowercases to two characters.
-/// A span counted in the folded copy would then not be a span of the text the
-/// reader is looking at, so when folding changed the character count the scan
-/// runs over the ORIGINAL, case-sensitively. A missed hit is a smaller lie than
-/// a box over characters nobody searched for.
+/// Case folding can change LENGTH ('İ' lowercases to two characters), and a
+/// span counted in the folded copy would then not be a span of the text the
+/// reader sees: when folding changed the character count the scan runs over
+/// the ORIGINAL, case-sensitively. A missed hit is a smaller lie than a box
+/// over characters nobody searched for.
 pub fn occurrence_spans(haystack: &str, folded: &str, needle: &str) -> Vec<(usize, usize)> {
     let needle = needle.trim();
     if needle.is_empty() {
@@ -147,14 +140,13 @@ pub fn occurrence_spans(haystack: &str, folded: &str, needle: &str) -> Vec<(usiz
     out
 }
 
-/// The context window around a hit, for one results-list row: [`SNIPPET_RADIUS`]
-/// characters either side of `[start, end)`, elided at the edges the window does
-/// not reach, newlines folded to spaces because a row is one line.
-///
-/// The offsets are CHARACTERS — the spans [`occurrence_spans`] reports — so the
-/// window needs no byte-boundary walking and reads the same in a document of
-/// Latin prose and one of emoji. Casing is the original's: the scan runs over a
-/// folded copy, the reader reads this.
+/// The context window around a hit for one results-list row:
+/// [`SNIPPET_RADIUS`] characters either side of `[start, end)`, elided at the
+/// edges the window does not reach, newlines folded to spaces (a row is one
+/// line). Offsets are CHARACTERS — the spans [`occurrence_spans`] reports —
+/// so no byte-boundary walking, and Latin prose and emoji read the same.
+/// Casing is the original's: the scan runs over a folded copy, the reader
+/// reads this.
 pub fn snippet(text: &str, start: usize, end: usize) -> String {
     let chars: Vec<char> = text.chars().collect();
     let from = start.saturating_sub(SNIPPET_RADIUS).min(chars.len());
@@ -195,19 +187,16 @@ const MATCH_VIEW_BIAS: f64 = 0.35;
 
 /// Scroll offset that brings a match into view, or `None` if it already is.
 ///
-/// WHY A RANGE AND NOT A PAGE TOP. Jumping to `page_top` put the match anywhere
-/// on the page — a hit near the bottom of a tall page landed off-screen, and
-/// the reader had to hunt for it. This targets the MATCH.
+/// Targets the MATCH, not the page top: jumping to the page put a hit near
+/// the bottom of a tall page off-screen. Deliberately lazy — while the match
+/// is comfortably inside the reading area the view does not move, so stepping
+/// through hits on one screen highlights in place instead of jerking.
 ///
-/// It is also deliberately lazy: while the match is comfortably inside the
-/// reading area the view does not move at all, so stepping through several hits
-/// on one screen highlights them in place instead of jerking the page for each.
-///
-/// Arguments are in the scroll container's coordinates: `match_top`/`match_bot`
-/// are the match's edges within the column, `scroll_top` the current offset,
-/// `viewport_h` the container height, and `inset_top`/`inset_bottom` the parts
-/// of the container hidden behind the floating toolbar / covered by the search
-/// bar. `margin` keeps the match clear of those edges.
+/// Arguments are in the scroll container's coordinates: `match_top`/
+/// `match_bot` are the match's edges within the column, `scroll_top` the
+/// current offset, `viewport_h` the container height, `inset_top`/
+/// `inset_bottom` the parts hidden behind the toolbar / search bar, and
+/// `margin` keeps the match clear of those edges.
 pub fn scroll_to_reveal(
     match_top: f64,
     match_bot: f64,
@@ -359,8 +348,8 @@ mod tests {
     }
 
     /// 'İ' folds to two characters, so the folded copy's offsets are not the
-    /// original's. The scan refuses to guess: it drops back to a case-sensitive
-    /// read of the text the reader actually sees.
+    /// original's. The scan refuses to guess: it drops back to a
+    /// case-sensitive read of the text the reader actually sees.
     #[test]
     fn a_fold_that_changes_length_never_reports_a_moved_offset() {
         let text = "İstanbul dune";

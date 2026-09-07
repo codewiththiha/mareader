@@ -4,11 +4,10 @@
 use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
 
-/// The persisted gloss highlights of the OPEN document.
-///
-/// One flat list rather than a per-page map: a document has a handful of
-/// marks, every page host filters the list itself, and a `Vec` is what both
-/// localStorage and the `<For>` in the mark layer want.
+/// The persisted gloss highlights of the OPEN document. One flat list rather
+/// than a per-page map: a document has a handful of marks, every page host
+/// filters the list itself, and a `Vec` is what both localStorage and the
+/// `<For>` in the mark layer want.
 #[derive(Clone, Copy, Default)]
 pub struct GlossState {
     pub marks: RwSignal<Vec<GlossMark>>,
@@ -16,11 +15,10 @@ pub struct GlossState {
     pub selection_active: RwSignal<bool>,
     /// Ids of the marks currently selected while in multi-select mode.
     pub selected_marks: RwSignal<std::collections::HashSet<String>>,
-    /// id of the mark whose "processing" highlighter animation is live, if any.
-    ///
-    /// Lives here, not in the popover, because the animation is painted by the
-    /// in-page mark layer: while the model is working there is NO surface at
-    /// all, so the stroke itself has to carry the thinking state.
+    /// Id of the mark whose "processing" highlighter animation is live, if
+    /// any. Lives here, not in the popover, because the animation is painted
+    /// by the in-page mark layer: while the model works there is NO surface at
+    /// all, so the stroke itself carries the thinking state.
     pub processing_id: RwSignal<Option<String>>,
 }
 

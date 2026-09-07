@@ -1,15 +1,15 @@
-//! The window commands: minimize, maximize/restore, close, the maximized
-//! probe that picks the caption's glyph, and the macOS traffic-light
-//! visibility switch.
+//! The window commands: minimize, maximize/restore, close, the maximized probe
+//! that picks the caption's glyph, and the macOS traffic-light visibility
+//! switch.
 //!
-//! `tauri.windows.conf.json` / `tauri.linux.conf.json` remove the native
-//! title bar (`decorations: false`), and the caption cluster
-//! ([`super::caption`]) replaces it. macOS keeps its native traffic lights,
-//! which [`set_traffic_lights`] shows and hides.
+//! `tauri.windows.conf.json` / `tauri.linux.conf.json` remove the native title
+//! bar (`decorations: false`) and the caption cluster ([`super::caption`])
+//! replaces it; macOS keeps its traffic lights, which [`set_traffic_lights`]
+//! shows and hides.
 //!
-//! Everything is defensive like the rest of the chrome: outside Tauri
-//! (`trunk serve`) the calls are silent no-ops, and a window object without
-//! the expected method resolves to `None` instead of unwinding the caller.
+//! Defensive like the rest of the chrome: outside Tauri (`trunk serve`) the
+//! calls are silent no-ops, and a window object without the expected method
+//! resolves to `None` instead of unwinding the caller.
 
 use wasm_bindgen::JsValue;
 
@@ -38,11 +38,10 @@ fn window() -> Option<JsValue> {
 }
 
 /// Call a no-arg method on the window handle and return its RESOLVED value.
-///
 /// Tauri v2 window methods return Promises, so the await is load-bearing:
-/// handing the Promise itself back would make `isMaximized` read as
-/// `as_bool() == None` — always false — and the caption would never swap
-/// to its restore glyph.
+/// handing the Promise back would make `isMaximized` read as
+/// `as_bool() == None` — always false — and the caption would never swap to
+/// its restore glyph.
 async fn invoke_method(win: &JsValue, name: &str) -> Option<JsValue> {
     let method = js_sys::Reflect::get(win, &JsValue::from_str(name)).ok()?;
     if !method.is_function() {
@@ -54,9 +53,9 @@ async fn invoke_method(win: &JsValue, name: &str) -> Option<JsValue> {
         return Some(result);
     }
     // The cast is unchecked by design: js-sys's `Promise::try_from` cannot
-    // fail either (its error type is `Infallible`), and a Tauri v2 window
-    // method that returns a non-Promise is not a shape the API ships — if
-    // one ever did, the await below surfaces it as `None`, not a panic.
+    // fail (its error type is `Infallible`), and a Tauri v2 window method
+    // returning a non-Promise is not a shape the API ships — if one ever did,
+    // the await below surfaces it as `None`, not a panic.
     let promise = js_sys::Promise::from(result);
     wasm_bindgen_futures::JsFuture::from(promise).await.ok()
 }
@@ -68,10 +67,10 @@ pub async fn minimize_window() {
     }
 }
 
-/// Maximize ↔ restore. The drag region's built-in double-click runs the
-/// same toggle (`internal_toggle_maximize`, in Tauri's injected script) —
-/// one command behind two triggers, so the bar and the caption can never
-/// disagree about what a double-click does.
+/// Maximize ↔ restore. The drag region's built-in double-click runs the same
+/// toggle (Tauri's injected `internal_toggle_maximize`) — one command behind
+/// two triggers, so the bar and the caption can never disagree about what a
+/// double-click does.
 pub async fn toggle_maximize_window() {
     if let Some(win) = window() {
         invoke_method(&win, "toggleMaximize").await;
@@ -86,8 +85,8 @@ pub async fn close_window() {
 }
 
 /// Whether the window is maximized — drives the maximize/restore glyph.
-/// `false` whenever the answer cannot be had (browser, missing method),
-/// which is also the correct pre-maximize default.
+/// `false` whenever the answer cannot be had (browser, missing method), which
+/// is also the correct pre-maximize default.
 pub async fn is_window_maximized() -> bool {
     let Some(win) = window() else {
         return false;

@@ -1,10 +1,10 @@
-//! Global keyboard shortcuts: the keydown/keyup/blur listeners, the
-//! target guards, and the routing to the per-intent handlers
-//! (`window` combos, `zoom` steps, `navigation` + the scroll-hold engine).
+//! Global keyboard shortcuts: the keydown/keyup/blur listeners, the target
+//! guards, and the routing to the per-intent handlers (`window` combos,
+//! `zoom` steps, `navigation` + the scroll-hold engine).
 //!
-//! Must be called once from the app root. The listener callback runs
-//! OUTSIDE the reactive owner, so everything it touches is a Copy signal
-//! handle / ReaderState captured by value.
+//! Called once from the app root. The listener callback runs OUTSIDE the
+//! reactive owner, so everything it touches is a Copy signal handle /
+//! ReaderState captured by value.
 
 mod keymap;
 mod navigation;
@@ -58,17 +58,18 @@ pub fn shortcuts(
     // state passed in explicitly).
     sidebar: RwSignal<SidebarMode>,
 ) {
-    // Handles are parked and removed on cleanup. In practice the app root
-    // installs these once for the process lifetime, but a dropped handle does
-    // NOT unregister the listener — so an owner that ever went away would
-    // leave a keydown handler behind, still holding its state signals and
-    // still driving the scroll-hold engine.
+    // Handles are parked and removed on cleanup. The app root installs these
+    // once for the process lifetime, but a dropped handle does NOT unregister
+    // the listener — an owner that went away would leave a keydown handler
+    // behind, still holding its signals and driving the scroll-hold
+    // engine.
     let keydown = window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
         let key = ev.key();
 
         // Escape is a dismiss action, never text input, so it must work even
-        // while a search input is focused — handle it before the form-target
-        // guard. Closes the floating search overlay first, then the sidebar.
+        // with a search input focused — handle it before the form-target
+        // guard. Closes the floating search overlay first, then the
+        // sidebar.
         if key == "Escape" {
             if state.search.visible.get() {
                 // Closes the bar but leaves the muted highlights behind; the

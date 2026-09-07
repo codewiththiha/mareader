@@ -1,14 +1,12 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-// The READER bundle: the format-agnostic half of the browser side, today the
-// selection tracker that answers "what did the reader select, and where?".
-//
-// This scenario deliberately does NOT import ./harness.js. The harness boots
-// `public/pdfEngine.js` with a stubbed pdf.js, and the whole point here is the
-// opposite: the reader bundle must install and report with no engine and no
-// pdf.js in the sandbox at all, because a TXT or Markdown document selects
-// through exactly this code and loads neither.
+// The READER bundle: the format-agnostic half of the browser side, today
+// the selection tracker. This scenario deliberately does NOT import
+// ./harness.js — the point is the opposite: the reader bundle must install
+// and report with no engine and no pdf.js in the sandbox at all, because a
+// TXT or Markdown document selects through exactly this code and loads
+// neither.
 
 const readerSrc = readFileSync(
   new URL("../../public/readerEngine.js", import.meta.url),
@@ -78,8 +76,8 @@ function matchesSelector(el: FakeEl, sel: string): boolean {
   return have.endsWith(value); // "$="
 }
 
-// One text node per row keeps the range arithmetic honest without modelling a
-// tree: `toString()` is the row's text between the offsets, which is what a
+// One text node per row keeps the range arithmetic honest without modelling
+// a tree: toString() is the row's text between the offsets, which is what a
 // real Range returns when the row holds a single Text node.
 class FakeRange {
   private row: FakeEl;
@@ -272,9 +270,9 @@ export async function run(): Promise<void> {
   docListeners.get("selectionchange")!({});
   const cleared = take(PAGES);
   if (cleared !== null) throw new Error("selection smoke: clear sent " + JSON.stringify(cleared));
-  // The debounced detail pass reports the collapse as a null detail, which is
-  // what dismisses the pill; waiting for it here also drains the tracker's
-  // timer so nothing fires during a later scenario.
+  // The debounced detail pass reports the collapse as a null detail, which
+  // dismisses the pill; waiting for it here also drains the tracker's timer
+  // so nothing fires during a later scenario.
   await wait(220);
   const clearedDetail = take(DETAIL);
   if (clearedDetail !== null) {

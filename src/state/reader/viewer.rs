@@ -11,15 +11,16 @@ use reader_core::settings::AnimationSettings;
 use super::zoom::ZoomState;
 
 /// Which of the reader's motions animate. Projected from the persisted
-/// [`AnimationSettings`] by the app root (`effects::app::motion::publish_motion`)
-/// and read by everything that moves a page, so no consumer has to know that a
-/// master switch exists: the projection already applied it.
+/// [`AnimationSettings`] by the app root
+/// (`effects::app::motion::publish_motion`) and read by everything that moves
+/// a page, so no consumer has to know a master switch exists — the projection
+/// already applied it.
 ///
-/// Read TRACKED by views (the rail's transition class has to change when the
+/// Read TRACKED by views (the rail's transition class must change when the
 /// reader flips a switch) and UNTRACKED by effects and scroll calls: a flag
 /// that stops something animating must not be what triggers the animation.
 ///
-/// Nothing here skips a change. Off renders the end frame in the frame the
+/// Nothing here skips a change: off renders the end frame in the frame the
 /// change arrives, which is why freezing the reader loses no fit, no follow
 /// and no scroll target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,9 +29,9 @@ pub struct Motion {
     /// (`SIDEBAR_SLIDE_MS`), the floating rail fades (`SIDEBAR_FADE_MS`).
     pub sidebar_slide: bool,
     /// The page rides a window drag: the canvas flexes on every frame of it.
-    /// Riding the RAIL is not in here on purpose — a container that was
-    /// measured is answered in the same frame, animation or no animation, and
-    /// deferring it is what cropped the page for a visible instant.
+    /// Riding the RAIL is not in here on purpose — a measured container is
+    /// answered in the same frame, animation or not, and deferring it cropped
+    /// the page for a visible instant.
     pub canvas_resize: bool,
     /// A zoom eases to its target over the profile's duration.
     pub zoom: bool,
@@ -80,14 +81,13 @@ pub struct ViewerSignals {
     /// Inclusive `(first, last)` 1-based page range of the reader's current
     /// text selection, or `None` when no text is selected.
     ///
-    /// The `pdfEngine.ts` selectionchange listener walks the DOM from the
-    /// selection's anchor and focus up to the nearest `.pdf-page` host, parses
-    /// the page index from its id (`cont-{i}-pg`), and dispatches a
-    /// `pdfreader:selection-pages` CustomEvent with `{ first, last }` (or
-    /// `null` to clear). This effect listens for that event and writes the
-    /// range here so `features::reader::virtualizers` can PIN those pages in
-    /// the virtualization window — otherwise scrolling evicts them, orphaning
-    /// the selection's DOM nodes and breaking copy of multi-page selections.
+    /// The engine's selectionchange listener walks the DOM from the
+    /// selection's anchor and focus up to the nearest page host, parses the
+    /// page from its id, and dispatches `pdfreader:selection-pages`;
+    /// `effects::reader::page_selection` is the single writer of this signal,
+    /// and `features::reader::virtualizers` merges the range into the
+    /// virtualizer's PINNED window so the selected pages stay mounted while
+    /// the selection lives.
     pub selected_pages: RwSignal<Option<(u32, u32)>>,
     /// Continuous auto-scroll along the active strip (Continuous / Horizontal).
     pub auto_scroll: RwSignal<bool>,

@@ -1,34 +1,33 @@
 //! Where a reflowable gloss mark lives, and how its pixels are found again.
 //!
 //! A PDF mark stores a rect against a page host and is done: the page is fixed
-//! pixels, so the rect is the identity. A plain-text or Markdown document has
-//! no such fixed grid — a font-size change, a window resize, a re-measure
-//! settling onto real heights, all of them re-cut the pages — so a page-space
-//! rect would drift onto whatever text moved under it. The identity that
-//! survives every re-flow is the BLOCK the words sit in and how far into that
-//! block's rendered text they start ([`ReflowSpot`]).
+//! pixels. A plain-text or Markdown document has no fixed grid — a font-size
+//! change, a resize or a re-measure settling all re-cut the pages — so a
+//! page-space rect would drift onto whatever moved under it. The identity that
+//! survives every re-flow is the BLOCK the words sit in and how far into its
+//! rendered text they start ([`ReflowSpot`]).
 //!
 //! This module owns the two halves of that deal:
 //!
-//! * the ENVELOPE — a spot, and the sentence that was around it, serialized
-//!   into [`GlossMark::context`] behind a version tag, so the persisted schema
-//!   stays the one `PageAnchor` shape and a PDF's plain-sentence context can
-//!   never be mistaken for a spot;
-//! * the PROJECTION — `block + [start, end)` back to viewport pixels, by
-//!   asking the DOM: block → the row element rendering it (by id, and in the
-//!   paginated modes only if that row is mounted under its page's host), then a
-//!   real `Range` over the row's text nodes.
+//! * the ENVELOPE — a spot plus the sentence around it, serialized into
+//!   [`GlossMark::context`] behind a version tag, so the persisted schema stays
+//!   the one `PageAnchor` shape and a PDF's plain-sentence context can never be
+//!   mistaken for a spot;
+//! * the PROJECTION — `block + [start, end)` back to viewport pixels by asking
+//!   the DOM: block → the row element rendering it (by id; in the paginated
+//!   modes only if mounted under its page's host), then a real `Range` over the
+//!   row's text nodes.
 //!
-//! Projection is deliberately never cached. It runs on the watcher's frame and
-//! on the stroke layer's memo, both of which already re-run for scroll and
-//! zoom, and a cached rect is exactly the thing a re-flow invalidates. The
-//! ENVELOPE is the opposite case: it is persisted content that only ever
-//! changes by being replaced, and it is re-read on every one of those frames,
-//! so its parse is memoized ([`parse_spot`]) against the string it came from.
+//! Projection is deliberately never cached: it runs on the watcher's frame and
+//! the stroke layer's memo, both of which already re-run for scroll and zoom,
+//! and a cached rect is exactly what a re-flow invalidates. The ENVELOPE is the
+//! opposite case — persisted, write-once content re-read on every one of those
+//! frames — so its parse is memoized ([`parse_spot`]) against the string it
+//! came from.
 //!
-//! The walk itself — a block's text nodes, the character offsets that address
-//! them, and the `Range` a span becomes — is shared with everything else that
-//! paints over a reflowable document's type, and lives in
+//! The walk itself (a block's text nodes, the character offsets addressing
+//! them, the `Range` a span becomes) is shared with everything that paints over
+//! a reflowable document's type and lives in
 //! [`crate::components::formats::reflow::spot`]. What stays here is the mark's
 //! own arithmetic: [`union_box`] (client rects → one stroke box) and the
 //! envelope above it.
@@ -90,13 +89,12 @@ fn parse_envelope(context: &str) -> Option<SpotEnvelope> {
 /// How far outside the viewport a stream row may sit and still be walked, as a
 /// fraction of the viewport's height.
 ///
-/// A row's box is the slot the virtualizer reserved for it, not a tight bound
-/// on its text: the slot is sized from measured heights, but a row can still be
-/// re-laid after its measurement (a font arriving, an image decoding) and its
-/// last line can hang below the slot. A quarter screen of slack keeps the cull
-/// from ever hiding a stroke that is actually on screen, which is the one
-/// failure this could have, while still skipping every row the reader cannot
-/// see.
+/// A row's box is the slot the virtualizer reserved, not a tight bound on its
+/// text: a row can be re-laid after its measurement (a font arriving, an image
+/// decoding) and its last line can hang below the slot. A quarter screen of
+/// slack keeps the cull from ever hiding a stroke that is actually on screen —
+/// the one failure this could have — while still skipping rows the reader
+/// cannot see.
 const OFFSCREEN_SLACK: f64 = 0.25;
 
 /// How many contexts are remembered before the memo is dropped whole.
@@ -113,10 +111,10 @@ const SPOT_CACHE_CAP: usize = 512;
 // on a macro invocation to, and `-D warnings` says so.)
 //
 // Keying on content is what makes this safe: a `context` is write-once —
-// `spot_envelope` produces it at capture and nothing edits it in place — so the
-// same string always parses to the same spot, and a mark whose context is
-// replaced simply arrives under a different key. `None` is cached too: a legacy
-// or malformed context is exactly as stable as a good one, and re-testing it
+// `spot_envelope` produces it at capture and nothing edits it in place — so
+// the same string always parses to the same spot, and a replaced context
+// simply arrives under a different key. `None` is cached too: a legacy or
+// malformed context is exactly as stable as a good one, and re-testing it
 // every frame is what the memo is here to stop.
 thread_local! {
     static PARSED_SPOTS: RefCell<HashMap<String, Option<ReflowSpot>>> =
@@ -132,10 +130,9 @@ thread_local! {
 /// [`super::anchor::ReflowAnchorBridge`].
 ///
 /// This sits on the per-frame path: the stroke layer re-resolves every mark on
-/// every scroll and zoom frame, and the mark-list watcher asks it once per mark
-/// per tick, so it answers from a memo instead of re-parsing the JSON each
-/// time. What is NOT memoized is the projection below it — that one has to
-/// stay honest about the layout as it is right now.
+/// every scroll and zoom frame, so it answers from a memo instead of
+/// re-parsing the JSON each time. The projection below it is NOT memoized —
+/// that one must stay honest about the layout as it is right now.
 pub fn parse_spot(context: &str) -> Option<ReflowSpot> {
     if let Some(hit) = PARSED_SPOTS.with(|cache| cache.borrow().get(context).copied()) {
         return hit;
@@ -177,19 +174,19 @@ pub fn page_of_block(reflow: ReflowContent, block: usize) -> Option<u32> {
 /// away — the same answer a PDF gives for an unmounted page, with the same
 /// consequence: the mark hides until the reader scrolls back to it.
 ///
-/// The lookup is one id read. In the paginated modes it is answered only when
-/// the row is mounted under the host this mode puts its page in, so a stale row
-/// elsewhere in the document cannot speak for a block the reader is not looking
-/// at; the continuous stream has no page hosts at all, so its rows answer
-/// wherever they are mounted.
+/// The lookup is one id read. In the paginated modes it answers only when the
+/// row is mounted under the host this mode puts its page in, so a stale row
+/// elsewhere cannot speak for a block the reader is not looking at; the
+/// continuous stream has no page hosts, so its rows answer wherever they are
+/// mounted.
 ///
-/// Both halves are special-cased rather than left to a general search, and the
-/// reason is cost: this runs once per mark per refresh, and the stream's layer
-/// refreshes on every scroll frame. The version this replaced built an
-/// `[data-block-index='n']` selector per call, resolved the page's host id, and
-/// ran a scoped `querySelector` that — in the stream, where no host exists —
-/// always failed and was followed by a document-wide one. Two DOM searches and
-/// two allocations per mark per frame, to reach the answer one id read gives.
+/// Both halves are special-cased rather than left to a general search, for
+/// cost: this runs once per mark per refresh, and the stream's layer refreshes
+/// on every scroll frame. The version this replaced built an
+/// `[data-block-index='n']` selector per call and ran a scoped `querySelector`
+/// that — in the stream, where no host exists — always failed and was followed
+/// by a document-wide one: two DOM searches and two allocations per mark per
+/// frame, for an answer one id read gives.
 fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sys::Element> {
     // An id lookup, not a formatted attribute selector: this runs once per mark
     // per refresh, the stream's layer refreshes on every scroll frame, and
@@ -280,17 +277,17 @@ pub fn spot_screen_box_in(
     mode: ViewMode,
 ) -> Option<GlossBox> {
     let el = block_node(state, spot.block, mode)?;
-    // The stream keeps its whole window's worth of rows mounted and asks this
-    // of every mark on every scroll frame, so the walk below is skipped for a
-    // block that is nowhere near the viewport. That walk is the expensive half
-    // of placing a mark — it clones out every text node's contents to count
-    // characters, builds a `Range` and reads its client rects — and for a mark
-    // a screenful away its answer was always `None`.
+    // The stream keeps its whole window's rows mounted and asks this of every
+    // mark on every scroll frame, so the walk below is skipped for a block
+    // nowhere near the viewport. That walk is the expensive half of placing a
+    // mark — it clones every text node's contents to count characters, builds
+    // a `Range` and reads its client rects — and for a mark a screenful away
+    // its answer was always `None`.
     //
-    // Stream only. A paginated mode's rows are clipped and positioned by their
-    // page host, where a row's own box does not bound its text, and only a
-    // handful of hosts are mounted at a time anyway — there is nothing to win
-    // and a wrong `None` to lose.
+    // Stream only: a paginated mode's rows are clipped and positioned by their
+    // page host, a row's own box does not bound its text, and only a handful
+    // of hosts are mounted at a time — nothing to win and a wrong `None` to
+    // lose.
     if mode == ViewMode::ScrollVertical {
         if let Some(document) = web_sys::window().and_then(|w| w.document()) {
             let viewport = document
@@ -312,8 +309,8 @@ pub fn spot_screen_box_in(
 /// A live selection's spot and the page it sits on, for a reflowable document.
 ///
 /// The engine's tracker does the same walk in TypeScript and ships the spot
-/// with the selection event, which is the path a normal selection takes: it
-/// already has the range, and doing it once keeps the two from disagreeing.
+/// with the selection event — the path a normal selection takes, since it
+/// already has the range and doing it once keeps the two from disagreeing.
 /// This is the app-side capture, for the paths that need a spot without an
 /// event to hand.
 pub fn capture_selection(state: ReaderState) -> Option<(ReflowSpot, PageAnchor)> {

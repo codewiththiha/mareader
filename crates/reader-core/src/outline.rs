@@ -1,16 +1,11 @@
-//! The document's chapter tree, in the shape the reader displays.
-//!
-//! One node type for every format, which is the point: the outline panel, the
-//! floating label and the reveal-on-page-turn memo all take a
-//! `Vec<OutlineNode>` and never ask whether the chapters came from a PDF's
-//! `/Outlines` dictionary (resolved through the engine, in
-//! `pdf_core::outline`) or from a Markdown file's `#` headings (derived while
-//! the blocks are paginated, in `md_core::outline`). A format that can name
-//! where its sections start can fill the sidebar.
-//!
-//! The nodes are stored flattened, in document order, with the nesting depth
-//! as a field — the panel indents rather than recurses, and a page change only
-//! needs the last entry whose page is at or before it.
+//! The document's chapter tree, in the shape the reader displays. One node
+//! type for every format: the outline panel, the floating label and the
+//! reveal-on-page-turn memo all take a `Vec<OutlineNode>` and never ask
+//! whether chapters came from a PDF's `/Outlines` dictionary
+//! (`pdf_core::outline`) or Markdown headings (`md_core::outline`). Nodes are
+//! stored flattened in document order with depth as a field — the panel
+//! indents rather than recurses, and a page change only needs the last entry
+//! whose page is at or before it.
 
 /// One chapter of the open document.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,23 +35,16 @@ pub fn clamp_depth(depth: u32) -> u32 {
     depth.min(MAX_OUTLINE_DEPTH)
 }
 
-/// The entry the reader is currently inside, for the sidebar to highlight and
-/// the floating label to show.
+/// The entry the reader is currently inside (the sidebar highlight and the
+/// floating label). A chapter owns every page from its own up to the next
+/// chapter that starts later, so the answer is the LAST entry whose page is
+/// at or before `page`; on ties the later — more specific — entry wins.
+/// `None` before the first chapter's page: a cover or preface belongs to no
+/// section.
 ///
-/// A chapter owns every page from its own up to (but not including) the next
-/// chapter that starts later, so the answer is the LAST entry whose page is at
-/// or before `page`. Ties matter: a chapter and its first section can open on the
-/// same page, and the later — i.e. more specific — one wins.
-///
-/// `None` before the first chapter's page: a cover or a preface belongs to no
-/// section, and highlighting chapter 1 there would be a lie.
-///
-/// Both producers sort their output by page — a PDF flattens in document order
-/// (`loader.ts:flattenOutline`), a Markdown outline is read off the blocks in
-/// order — so one binary search answers it. A malformed file that flattens out of
-/// order takes the linear path, which stays correct. A malformed file can reach
-/// that path, so it is handled rather than asserted: an outline is document
-/// input, and document input gets no panic.
+/// Both producers sort by page, so one binary search answers it; a malformed
+/// file that flattens out of order takes the linear path and stays correct.
+/// An outline is document input, and document input gets no panic.
 pub fn active_entry(nodes: &[OutlineNode], page: u32) -> Option<usize> {
     if !nodes.is_sorted_by_key(|node| node.page) {
         return nodes.iter().rposition(|node| node.page <= page);

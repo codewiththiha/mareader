@@ -37,17 +37,10 @@ pub fn refresh_theme() {
     pdf_engine::api::refresh_theme();
 }
 
-/// Enter/leave appearance-scrub mode: while a slider drag repaints the
-/// variables every frame, the engine shows the RAW rasters under the live
-/// CSS filter/blend so the page re-colours per frame; leaving re-bakes
-/// from the raws.
+/// Enter/leave the scrub window's REAL-TIME COMPOSITING: while a slider drag
+/// repaints the variables every frame, the engine shows the RAW rasters under
+/// the live CSS filter/blend so the page re-colours per frame; leaving
+/// re-renders the pre-themed (baked) rasters from the raws.
 pub fn set_scrub_mode(on: bool) {
     pdf_engine::api::set_scrub_mode(on);
-}
-
-/// Choose how the appearance reaches the pixels: live (the compositor
-/// filters and blends the raw rasters every frame) or baked (the filter
-/// is burned into each raster once per appearance change).
-pub fn set_live_pipeline(on: bool) {
-    pdf_engine::api::set_live_pipeline(on);
 }

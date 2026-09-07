@@ -1,10 +1,8 @@
-/* ---------------------------------------------------------------------
-   Library bookshelf — the empty-state "recent books" shelf.
-   Each book is a closed volume: a page-1 cover, a spine gradient on the
-   left, a fore-edge of stacked pages peeking past the right, and a drop
-   shadow that lifts on hover. Colours come from the themed tokens so the
-   shelf sits correctly in light / dark / dim / tinted modes.
-   --------------------------------------------------------------------- */
+/* Library bookshelf — the empty-state "recent books" shelf. Each book is a
+   closed volume: a page-1 cover, a spine gradient on the left, a fore-edge
+   of stacked pages peeking past the right, and a shadow that lifts on
+   hover. Colours come from the themed tokens so the shelf sits correctly
+   in every base mode and tint. */
 .library-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
@@ -55,8 +53,8 @@
   border-radius: 3px 7px 7px 3px;
 }
 
-/* Spine: a vertical shading down the left edge that turns the flat image
-   into a book's rounded binding. */
+/* Spine: vertical shading down the left edge that turns the flat image into
+   a rounded binding. */
 .book-cover::before {
   content: "";
   position: absolute;
@@ -86,7 +84,7 @@
   z-index: 2;
 }
 
-/* The fore-edge itself: stacked page sheets peeking past the cover's right. */
+/* Fore-edge: stacked page sheets peeking past the cover's right. */
 .book-pages {
   position: absolute;
   top: 2px;
@@ -104,7 +102,7 @@
   z-index: 1;
 }
 
-/* Fallback cover when no page-1 render is cached: a themed, generated cover
+/* Fallback when no page-1 render is cached: a themed generated cover
    carrying the title, so a book is never a bare rectangle. */
 .book-cover-fallback {
   position: absolute;
@@ -153,7 +151,7 @@
   color: var(--color-muted);
 }
 
-/* A thin reading-progress bar under the title. */
+/* Thin reading-progress bar under the title. */
 .book-progress {
   display: block;
   height: 3px;
@@ -200,14 +198,10 @@
   color: var(--color-ink);
 }
 
-/* ---------------------------------------------------------------------
-   Drag-and-drop feedback overlay.
-   Full-screen while a file drag is over the window. Themed entirely
-   through the design tokens (--color-accent / --color-paper / --color-
-   surface / --color-ink / --color-muted), so it follows the active base
-   mode and tint with no extra wiring. `pointer-events: none` so the
-   window-level drop handlers keep receiving the drag.
-   --------------------------------------------------------------------- */
+/* Drag-and-drop feedback overlay — full-screen while a file drag is over
+   the window. Themed entirely through the design tokens, so it follows the
+   active base mode and tint. pointer-events: none so the window-level drop
+   handlers keep receiving the drag. */
 .drag-overlay {
   position: fixed;
   inset: 0;
@@ -236,7 +230,7 @@
   text-align: center;
 }
 
-/* Soft accent glow behind the card that gently breathes. */
+/* Soft accent glow behind the card. */
 .drag-dropzone::before {
   content: "";
   position: absolute;
@@ -276,10 +270,3 @@
   from { opacity: 0; }
   to   { opacity: 1; }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .drag-dropzone::before,
-  .drag-dropzone-icon {
-  }
-}
-

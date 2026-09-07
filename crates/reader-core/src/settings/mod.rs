@@ -3,11 +3,11 @@
 //! CONTRACT: field names below are the serde schema persisted to localStorage
 //! under `pdfreader.settings.v1`. Do not rename fields.
 //!
-//! SCHEMA EVOLUTION. The storage key outlives every schema change on purpose:
-//! bumping it would silently reset everyone's last-opened file and zoom too.
-//! Fields this model no longer knows are simply ignored on the way in, and
-//! every field carries a default, so a blob written by any older build loads
-//! cleanly — unknown keys fall away on the first write-back.
+//! SCHEMA EVOLUTION: the storage key outlives every schema change on purpose
+//! — bumping it would reset everyone's last-opened file and zoom. Unknown
+//! fields are ignored on the way in and every field carries a default, so a
+//! blob from any older build loads cleanly and stale keys fall away on the
+//! first write-back.
 
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +31,7 @@ pub mod typography;
 pub use animation::AnimationSettings;
 pub use layout::{
     DEFAULT_COLUMN_WIDTH_PCT, FloatingLabelStyle, LayoutSettings, MAX_COLUMN_WIDTH_PCT,
-    MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle, RenderPipeline,
+    MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
 };
 pub use typography::TextSettings;
 
@@ -54,10 +54,9 @@ pub(crate) fn on_true() -> bool { true }
 pub struct Settings {
     /// The live look. Edited directly by the appearance controls.
     pub appearance: Appearance,
-    /// Id of the preset currently selected, if the live look still matches it.
-    /// Cleared as soon as the user nudges any slider, which is what lets the
-    /// menu show "Custom" honestly instead of claiming a preset is active when
-    /// it has been modified.
+    /// Id of the preset currently selected, if the live look still matches
+    /// it. A manual edit selects another preset when the resulting appearance
+    /// matches it, and clears the selection only when no preset matches.
     pub active_preset: Option<String>,
     /// User-saved presets (built-ins are code, not storage).
     pub user_presets: Vec<Preset>,
@@ -78,19 +77,15 @@ pub struct Settings {
     #[serde(default = "default_custom_gloss")]
     pub gloss_custom: String,
     /// The AI word card's spacing. Blobs saved before the field existed
-    /// deserialize as Compact — the card had grown visibly airy and the
-    /// denser layout is the better default even for readers who never open
+    /// deserialize as Compact — the card had grown visibly airy and the denser
+    /// layout is the better default even for readers who never open
     /// Settings.
     #[serde(default)]
     pub gloss_density: GlossDensity,
-    /// Live compositor pipeline vs baked rasters. Blobs saved before the
-    /// field existed load as `Live`, which is the behaviour they had.
-    #[serde(default)]
-    pub render_pipeline: RenderPipeline,
-    /// Typography of the reflowable formats (plain text and Markdown):
-    /// fonts, spacing, justification, the book layout. PDFs never read
-    /// this — their type is baked into the page. Blobs saved before the
-    /// text formats existed load the defaults.
+    /// Typography of the reflowable formats (plain text and Markdown): fonts,
+    /// spacing, justification, the book layout. PDFs never read this — their
+    /// type is baked into the page. Blobs saved before the text formats
+    /// existed load the defaults.
     #[serde(default)]
     pub text: TextSettings,
 }
@@ -113,7 +108,6 @@ impl Default for Settings {
             gloss_opacity: default_gloss_opacity(),
             gloss_custom: default_custom_gloss(),
             gloss_density: GlossDensity::default(),
-            render_pipeline: RenderPipeline::default(),
             text: TextSettings::default(),
         }
     }
@@ -265,10 +259,9 @@ mod tests {
     #[test]
     fn a_stale_plain_base_selection_is_dropped_not_dangled() {
         // Settings persisted while Light/Dark/Dim were presets carry their
-        // ids as `active_preset`; the sanitizer must clear the selection
-        // (the look itself lives in `appearance` and survives untouched)
-        // rather than leave the menu highlighting a swatch that no longer
-        // exists.
+        // ids as `active_preset`; the sanitizer clears the selection (the look
+        // itself lives in `appearance` and survives) rather than leave the
+        // menu highlighting a swatch that no longer exists.
         let mut s = Settings {
             active_preset: Some("light".to_string()),
             ..Settings::default()
@@ -309,10 +302,10 @@ mod tests {
         // Startup fit defaults to Fit Page.
         assert_eq!(s.default_fit, crate::zoom_math::FitMode::Page);
 
-        // Deserializing empty JSON layout object fills in the defaults. A
+        // Deserializing an empty JSON layout object fills in the defaults. A
         // blob saved BEFORE `auto_resize` existed is exactly this shape, so
-        // the assertion below is also the promise that an existing install
-        // keeps the behaviour it had rather than losing its refit.
+        // the assertion is also the promise that an existing install keeps the
+        // behaviour it had.
         let s: LayoutSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.page_margin, 0.0);
         assert!(s.auto_scale);
@@ -366,9 +359,8 @@ mod tests {
         assert!(a.sidebar_slide && a.canvas_resize);
         assert!(a.zoom && a.scroll_jumps);
 
-        // A blob saved before this group existed is `Settings` with the key
-        // missing, so it deserialises exactly like `{}`: the reader must keep
-        // animating across an update rather than freeze.
+        // A blob saved before this group existed deserialises like `{}`: the
+        // reader must keep animating across an update rather than freeze.
         let s: Settings = serde_json::from_str("{}").unwrap();
         assert!(s.animations.enabled && s.animations.zoom);
         // A half-written group defaults the fields it does not carry, one by

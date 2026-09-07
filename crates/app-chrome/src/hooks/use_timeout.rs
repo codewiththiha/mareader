@@ -1,20 +1,17 @@
 //! Timeout / debounce / hide-delay primitives. The two families in use —
 //! debounced triggers and hover-reveal + hide-after-grace — used to be
-//! re-implemented in the title bar, bottom bar, floating search and
-//! thumbnail panel, each with its own `StoredValue<Option<TimeoutHandle>>`
-//! and cleanup dance.
+//! re-implemented per surface, each with its own pending-handle slot and
+//! cleanup dance.
 
 use std::rc::Rc;
 use std::time::Duration;
 
 use leptos::prelude::*;
 
-/// A debounced trigger: calling it repeatedly postpones the fire; calling it
-/// after the last postponed window fires `on_fire` (or the pending fire is
-/// cancelled on cleanup).
-///
-/// `Copy`: the handle fields are owner-scoped storage, so consumers can move
-/// this into event closures and cleanup hooks freely.
+/// A debounced trigger: repeated calls postpone the fire; a call after the
+/// last postponed window fires `on_fire` (or the pending fire is cancelled on
+/// cleanup). `Copy` — the handle fields are owner-scoped storage, so consumers
+/// move it into event closures and cleanup hooks freely.
 #[derive(Clone, Copy)]
 pub struct Debouncer {
     trigger: StoredValue<Rc<dyn Fn()>, LocalStorage>,
@@ -49,17 +46,15 @@ pub fn use_debounce(duration: Duration, on_fire: impl Fn() + 'static) -> Debounc
     use_debounce_for(move || duration, on_fire)
 }
 
-/// A single pending-timer slot owned by the current reactive scope.
+/// A single pending-timer slot owned by the current reactive scope, handed
+/// back with the cleanup already registered: clear the pending fire and drop
+/// the slot so a timer can never fire on a detached node. (The thumbnail
+/// cell's pulse-stop timer and the outline panel's reveal retry each
+/// re-implemented this dance.)
 ///
-/// The thumbnail cell's pulse-stop timer and the outline panel's reveal
-/// retry each parked their `TimeoutHandle` in a `StoredValue<Option<…>>` and
-/// re-implemented the same cleanup dance: clear the pending fire and drop
-/// the slot so a timer can never fire on a detached node. This hands back
-/// the slot with that cleanup already registered on the current owner.
-///
-/// Call it from a component body, not from an effect: an effect's owner
-/// scope is disposed after each run, which would clear the slot out from
-/// under a timer the component still owns.
+/// Call from a component body, not an effect: an effect's owner scope is
+/// disposed after each run, which would clear the slot out from under a timer
+/// the component still owns.
 pub fn use_timeout_slot() -> StoredValue<Option<TimeoutHandle>, LocalStorage> {
     let handle = StoredValue::new_local(None::<TimeoutHandle>);
     let cleanup = handle;
@@ -73,11 +68,11 @@ pub fn use_timeout_slot() -> StoredValue<Option<TimeoutHandle>, LocalStorage> {
 }
 
 /// The duration-getter flavour of [`use_debounce`]: the wait is read at every
-/// trigger, so one debouncer can land different fires at different delays
-/// (the shell controller's close hold is one timer that waits out a slide or
-/// a fade depending on the rail's layout). The getter runs synchronously
-/// inside whatever context calls `trigger` — read signals UNTRACKED in it if
-/// the caller must not gain a dependency.
+/// trigger, so one debouncer can land different fires at different delays (the
+/// shell controller's close hold waits out a slide or a fade depending on the
+/// rail's layout). The getter runs synchronously inside whatever calls
+/// `trigger` — read signals UNTRACKED in it if the caller must not gain a
+/// dependency.
 pub fn use_debounce_for(duration: impl Fn() -> Duration + 'static, on_fire: impl Fn() + 'static) -> Debouncer {
     let on_fire = Rc::new(on_fire);
     let handle = StoredValue::new_local(None::<TimeoutHandle>);

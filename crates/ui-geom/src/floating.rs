@@ -1,19 +1,15 @@
 //! Floating UI geometry: generic placement / clamping math for anchored
 //! panels, context menus, toasts and floating cards. Pure — no DOM, no
-//! leptos — so it is unit-testable on the host via
-//! `cargo test -p ui-geom floating`.
+//! leptos — unit-testable via `cargo test -p ui-geom floating`.
 //!
-//! This is the "mechanism" half of the floating system whose views live in
-//! the app (`src/components/primitives/floating`) and whose DOM adapters live
-//! in `app-chrome`: placement *policy* (which side a panel prefers, what it
-//! contains) is decided by the callers; the math here only answers "given this
-//! anchor and this panel, where does it go, and is it inside the viewport?"
-//!
-//! The spring itself (stiffness / damping / the Euler step) lives in
-//! [`crate::spring`]: the gloss card steps the same integrator, and one
-//! shared physics is what keeps the two surfaces feeling identical. The gloss
-//! card's own box type converts into [`FloatBox`] in `ai-core`, next to the
-//! type it converts FROM — this module never names a feature crate.
+//! The "mechanism" half of the floating system, whose views live in the app
+//! (src/components/primitives/floating) and whose DOM adapters live in
+//! `app-chrome`: placement *policy* (which side a panel prefers, what it
+//! contains) belongs to the callers; the math here only answers "given this
+//! anchor and this panel, where does it go, and is it inside the viewport?".
+//! The spring itself (stiffness / damping / Euler step) lives in
+//! [`crate::spring`] — one shared physics keeps the gloss card and the
+//! anchored surfaces feeling identical.
 
 /// A plain 2-D size in CSS px.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

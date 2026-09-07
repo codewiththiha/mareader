@@ -51,17 +51,15 @@ impl<A> std::ops::Deref for GlossMark<A> {
 /// The id of a mark captured on `page` at `stamp_ms`.
 ///
 /// The scheme lives here rather than at the capture sites because an id is
-/// load-bearing twice over: it is the key a mark is persisted under
+/// load-bearing twice over: the key a mark is persisted under
 /// (`pdfreader.gloss.v1`) and the key a re-click on its stroke toggles by.
-/// Three call sites used to format it identically, which is three chances for
-/// one of them to drift and for a mark to become unreachable by the code that
-/// saved it.
+/// Three call sites used to format it identically — three chances for one to
+/// drift and a mark to become unreachable by the code that saved it.
 ///
-/// The page is in the id for a human reading storage; the stamp is what keeps
-/// two marks captured on one page apart. The clock itself is NOT read here —
-/// this crate's gloss half is pure and host-tested, so the caller supplies the
-/// stamp (the app's `components::ai::anchor::captured_mark` is the one place
-/// that takes it).
+/// The page is in the id for a human reading storage; the stamp keeps two
+/// marks on one page apart. The clock is NOT read here — this crate's gloss
+/// half is pure and host-tested, so the caller supplies the stamp (the app's
+/// `components::ai::anchor::captured_mark` is the one place that takes it).
 pub fn mark_id(page: u32, stamp_ms: u64) -> String {
     format!("g{page}-{stamp_ms}")
 }
@@ -69,19 +67,18 @@ pub fn mark_id(page: u32, stamp_ms: u64) -> String {
 /// Where a gloss mark sits in the document — format-specific.
 ///
 /// The trait owns the *identity* of a spot: given two anchors, is this the
-/// same place in the document? Projection onto the screen is deliberately
-/// NOT part of the trait — it needs live layout (the page host's current
-/// position and scale, the display mode), which only the format's renderer
-/// layer has, and each format projects its own anchors (for PDF, the app's
-/// `components::ai::anchor`).
+/// same place in the document? Projection onto the screen is deliberately NOT
+/// part of it — that needs live layout (the host's position and scale, the
+/// display mode) which only the format's renderer layer has, and each format
+/// projects its own anchors (for PDF, the app's `components::ai::anchor`).
 ///
 /// [`PageAnchor`] is the PDF implementation: an identity as durable as pixels.
-/// The reflowable formats did NOT add a second implementation — a spot there is
-/// a block index and a character range, and it rides in [`GlossMark::context`]
-/// as a tagged envelope because the pages under it are re-cut whenever the
+/// The reflowable formats did NOT add a second implementation — a spot there
+/// is a block index and a character range riding in [`GlossMark::context`] as
+/// a tagged envelope, because the pages under it are re-cut whenever the
 /// typography moves (the app's `components::ai::reflow_anchor` owns that
-/// envelope). [`ReflowSpot`] still implements the trait so a future format whose
-/// identity IS durable can be flattened into the schema the same way.
+/// envelope). [`ReflowSpot`] still implements the trait so a future format
+/// whose identity IS durable can flatten into the schema the same way.
 pub trait MarkAnchor: Clone + Debug + PartialEq + Serialize + DeserializeOwned {
     /// Whether two anchors denote the same logical spot in the document.
     ///
@@ -91,12 +88,11 @@ pub trait MarkAnchor: Clone + Debug + PartialEq + Serialize + DeserializeOwned {
 }
 
 /// The PDF implementation of [`MarkAnchor`]: a page number plus a rect in
-/// *page* space (unscaled page coordinates).
-///
-/// Unlike a screen rect it survives scroll, zoom and view-mode flips: the
-/// live screen box is re-derived from the page host element whenever anything
-/// moves. Shared by the selection Explain pill and the gloss card so both glue
-/// to the page without each inventing its own coordinate system.
+/// *page* space (unscaled page coordinates). Unlike a screen rect it survives
+/// scroll, zoom and view-mode flips: the live screen box is re-derived from
+/// the page host element whenever anything moves. Shared by the selection
+/// Explain pill and the gloss card so both glue to the page without inventing
+/// their own coordinate systems.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct PageAnchor {
     pub page: u32,
@@ -117,31 +113,27 @@ impl PageAnchor {
     }
 }
 
-/// The reflowable formats' *durable* identity for a spot: a block index plus a
-/// character range inside that block.
+/// The reflowable formats' *durable* identity for a spot: a block index plus
+/// a character range inside that block.
 ///
-/// A page number and a rect are the right answer for a PDF, whose pages are
-/// fixed pixels. They are the wrong answer for a document that re-lays itself
-/// out: a font-size change, a window resize or a re-measure settling all
-/// re-cut the pages, and a page-space rect then points at whatever text happens
-/// to have moved under it. What survives every re-flow is the block the words
-/// live in and how far into it they start — so that is what a reflowable mark
-/// remembers.
+/// A page number and a rect are the right answer for a PDF's fixed pixels and
+/// the wrong one for a document that re-lays itself out: a font-size change,
+/// a resize or a re-measure settling all re-cut the pages, and a page-space
+/// rect then points at whatever moved under it. What survives every re-flow
+/// is the block the words live in and how far into it they start.
 ///
-/// Offsets are in the RENDERED text of the block (what the DOM shows, so for
-/// Markdown the source syntax is not part of them), counted in CHARACTERS —
-/// Unicode code points, not the UTF-16 units a DOM `Range` speaks. One
-/// character is one character on both sides of the wire, and the conversion to
-/// code units happens once, at the projection's `set_start`/`set_end` boundary.
+/// Offsets are in the RENDERED text of the block (for Markdown the source
+/// syntax is not part of them), counted in CHARACTERS — Unicode code points,
+/// not the UTF-16 units a DOM `Range` speaks. One character is one character
+/// on both sides of the wire; the conversion to code units happens once, at
+/// the projection's `set_start`/`set_end` boundary. Pixels are never stored:
+/// the format's own projection re-derives them from the live DOM at watch
+/// time (the app's `components::ai::reflow_anchor`), which is also what lets
+/// one mark follow its words onto another page.
 ///
-/// Pixels are never stored: they are re-derived from the live DOM at watch time
-/// by the format's own projection (the app's `components::ai::reflow_anchor`),
-/// which is also what lets one mark follow its words onto another page.
-///
-/// This type is the payload only. It travels inside the generic
-/// [`GlossMark::context`] as a tagged envelope rather than as a second anchor
-/// type on the wire, so the persisted schema — and every consumer of it — stays
-/// the one [`PageAnchor`] shape.
+/// Payload only: it travels inside the generic [`GlossMark::context`] as a
+/// tagged envelope rather than as a second anchor type on the wire, so the
+/// persisted schema stays the one [`PageAnchor`] shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ReflowSpot {
     /// Index of the block the spot lives in, in document order.
@@ -172,12 +164,11 @@ impl ReflowSpot {
 }
 
 // NOTE: nothing instantiates `GlossMark<ReflowSpot>`. A reflowable mark keeps
-// `PageAnchor` as its flattened anchor and carries the spot in `context`, so the
-// comparison that actually runs is `commands::same_glossed_spot` in the app,
-// which parses both envelopes and falls back to `same_spot` on the anchors. This
-// impl is the trait's answer for a spot made of characters — kept because it is
-// the definition a future durable-character format would reuse, not because the
-// current one calls it.
+// `PageAnchor` as its flattened anchor and carries the spot in `context`; the
+// comparison that runs is `commands::same_glossed_spot` in the app, which
+// parses both envelopes and falls back to `same_spot` on the anchors. This
+// impl is kept as the trait's definition for a future durable-character
+// format, not because the current one calls it.
 impl MarkAnchor for ReflowSpot {
     /// Character identity is exact: there is no sub-pixel drift to tolerate
     /// when nothing was ever measured in pixels.

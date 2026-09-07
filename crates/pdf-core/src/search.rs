@@ -1,18 +1,18 @@
 //! The PDF page-text index: the engine extracts, this crate searches.
 //!
-//! pdf.js can only extract text in the browser; everything after that is string
-//! work that belongs here, off the JS heap. The engine hands pages over as
-//! [`PageText`] (geometry already normalised to scale-1 CSS px), [`SearchIndex`]
-//! stores them per page with a folded copy of every run, and `query` scans those
-//! strings per keystroke with no pdf.js round trip at all.
+//! pdf.js can only extract text in the browser; everything after that is
+//! string work that belongs here, off the JS heap. The engine hands pages over
+//! as [`PageText`] (geometry already normalised to scale-1 CSS px),
+//! [`SearchIndex`] stores them per page with a folded copy of every run, and
+//! `query` scans those strings per keystroke with no pdf.js round trip.
 //!
-//! What this crate owns is the index and the geometry: a run's rect interpolated
-//! to the characters a hit covers. The result shape ([`SearchMatch`] /
-//! [`SearchResponse`]), the scan that finds occurrences and the snippet window
-//! that quotes them are format-agnostic and live in `reader_core::search` — a
-//! reflowable document searches its own blocks with the same two functions and
-//! answers in the same shape, so the UI never learns which pipeline produced a
-//! hit, and an occurrence ordinal means the same thing in both.
+//! What this crate owns is the index and the geometry: a run's rect
+//! interpolated to the characters a hit covers. The result shape
+//! ([`SearchMatch`] / [`SearchResponse`]), the occurrence scan and the snippet
+//! window are format-agnostic and live in `reader_core::search` — a reflowable
+//! document searches its blocks with the same functions and answers in the
+//! same shape, so the UI never learns which pipeline produced a hit and an
+//! occurrence ordinal means the same thing in both.
 
 use std::sync::Arc;
 
@@ -110,12 +110,11 @@ impl SearchIndex {
                 if item.w <= 0.0 {
                     continue;
                 }
-                // The index stores one rect per extracted RUN, not per glyph, so
-                // a hit's box is the run's slice proportional to where its
+                // The index stores one rect per extracted RUN, not per glyph,
+                // so a hit's box is the run's slice proportional to where its
                 // characters sit. The scan reports character spans and the
-                // denominator counts characters, in the original text because
-                // that is the text the spans are offsets into — which is also
-                // the text the snippet quotes.
+                // denominator counts characters of the ORIGINAL text — the
+                // text the spans are offsets into and the snippet quotes.
                 let chars = item.text.chars().count().max(1) as f64;
                 for (start, end) in occurrence_spans(&item.text, &item.lower, query) {
                     let span = (end - start).max(1) as f64;
@@ -253,9 +252,9 @@ mod index_tests {
 
     #[test]
     fn overlapping_occurrences_advance_by_query_length() {
-        // "aaaa" with query "aa": the scan advances by the needle's length → 2
-        // matches, not 3. The engine's painter has always done the same, and a
-        // box ordinal has to line up with a result ordinal.
+        // "aaaa" with query "aa": the scan advances by the needle's length →
+        // 2 matches, not 3. The engine's painter has always done the same, and
+        // a box ordinal has to line up with a result ordinal.
         let mut index = SearchIndex::new();
         index.add_page(page(1, vec![item("aaaa", 0.0, 100.0)]));
         let resp = index.query("aa");

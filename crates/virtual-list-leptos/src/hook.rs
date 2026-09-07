@@ -84,21 +84,17 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
 
     let virtualizer = Virtualizer::from_inner(inner);
 
-    // MATERIALIZE THE DERIVED SIGNALS HERE, IN THIS OWNER.
-    //
-    // The reader's effects (navigation_sync's scroll→page sync, the pinned
-    // window in ReaderPage) call `v.dominant()`, and other components call
-    // `items()`/`rows()`/`total_size()`/... lazily through these accessors.
-    // `Signal::derive_local` registers the memo with the CURRENT reactive
-    // owner, and a Leptos effect runs its callback inside a per-run temporary
-    // owner that is disposed the moment the run ends. A signal first created
-    // inside such a run would therefore be DISPOSED before the next effect
-    // run could read it — every subsequent `dominant().get()` panics with
-    // "already been disposed", which kills the scroll→page sync, the zoom
-    // window pinning and the thumbnail page tracking all at once. Creating
-    // them eagerly here (use_virtualizer runs in the component's stable
-    // owner) makes their lifetime the component's, not a single effect run's.
-    // Memos are lazy, so this is node registration only — no computation.
+    // MATERIALIZE THE DERIVED SIGNALS HERE, IN THIS OWNER. The reader's
+    // effects (navigation_sync's scroll->page sync, ReaderPage's pinned
+    // window) call `v.dominant()`, and components call items()/rows()/
+    // total_size() lazily through these accessors. `Signal::derive_local`
+    // registers with the CURRENT owner, and a Leptos effect runs inside a
+    // per-run temporary owner disposed when the run ends — a signal first
+    // created there would be DISPOSED before the next run could read it,
+    // panicking "already been disposed" and killing the scroll->page sync,
+    // zoom pinning and thumbnail tracking at once. Created eagerly here,
+    // their lifetime is the component's. Memos are lazy: this is node
+    // registration only, no computation.
     let _ = virtualizer.items();
     let _ = virtualizer.rows();
     let _ = virtualizer.total_size();

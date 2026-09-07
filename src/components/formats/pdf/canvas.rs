@@ -1,28 +1,26 @@
 //! The shared page host: a `.pdf-page` div containing a `<canvas>` and a
 //! `.textLayer` div, driven by the JS engine. Used by BOTH view modes.
 //!
-//! Contract:
-//!  - ids are Rust-chosen unique strings; the engine resolves elements by id.
-//!  - renders (page, scale) via engine.renderPage; reports the rendered
-//!    CSS-px size — snapped to the device-pixel grid, which is also the size
-//!    written to the host — through `on_geometry`.
-//!  - registers on first render, unregisters (cancels) when disposed.
+//! Contract: ids are Rust-chosen unique strings and the engine resolves
+//! elements by id; renders (page, scale) via engine.renderPage and reports the
+//! rendered CSS-px size — snapped to the device-pixel grid, the same size
+//! written to the host — through `on_geometry`; registers on first render,
+//! unregisters (cancels) when disposed.
 //!
 //! TWO EFFECTS, deliberately separated (see the zoom controller):
 //!
-//!   * the STRETCH effect follows the `scale` prop — which callers wire to
-//!     `viewer.zoom.display`, the live VISUAL scale. It only ever resizes the
-//!     host so the bitmap we already have CSS-stretches to the new size. It
-//!     runs every frame of a zoom and never triggers a render; the crisp
-//!     rasterisation is a separate effect on the committed scale.
+//!   * the STRETCH effect follows the `scale` prop (wired to
+//!     `viewer.zoom.display`, the live VISUAL scale). It only resizes the host
+//!     so the bitmap we already have CSS-stretches to the new size; it runs
+//!     every frame of a zoom and never renders.
 //!   * the RENDER effect follows `viewer.zoom.committed` and is suspended
-//!     while a zoom transition is in flight (the `zoom_animating` prop). It
-//!     produces the one crisp rasterisation at the end of a gesture.
+//!     while a zoom transition is in flight (`zoom_animating`). It produces
+//!     the one crisp rasterisation at the end of a gesture.
 //!
 //! Keeping these in ONE effect was the ghost/double-image bug: a scale change
 //! resized the host and kicked off a render in the same run, so every
-//! intermediate frame of a zoom cancelled and restarted a rasterisation, and
-//! the half-drawn results were what flashed.
+//! intermediate frame cancelled and restarted a rasterisation, and the
+//! half-drawn results flashed.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -126,11 +124,11 @@ pub fn PdfPageCanvas(
     #[prop(optional)]
     dormant: Option<Signal<bool, LocalStorage>>,
     /// True while a real zoom *gesture* owns the layout. Distinct from
-    /// `zoom_animating`, which is also held by every resize-driven animation — a
-    /// fit slide, or a window drag carrying a hand-picked zoom — for the whole
+    /// `zoom_animating`, which every resize-driven animation also holds — a
+    /// fit slide, a window drag carrying a hand-picked zoom — for the whole
     /// burst of container sizes. Those follow the window; they are not a
-    /// gesture, and rendering at their mid-burst display scale would only
-    /// produce a bitmap that the next frame has already superseded.
+    /// gesture, and rendering at their mid-burst display scale would produce a
+    /// bitmap the next frame has already superseded.
     #[prop(into)]
     gesture_owns: Signal<bool>,
     /// The page texture mode (from the app shell, derived from settings).
@@ -165,11 +163,11 @@ pub fn PdfPageCanvas(
     let registered = Rc::new(Cell::new(false));
     // PAINTED FLAG. True after a successful render; false after a
     // cancelled/error render (which leaves the canvas wiped by pdf.js's
-    // `canvas.width = ...` on render start). The no-op fast path below
-    // requires `painted == true` so a wiped canvas always re-renders even
-    // at unchanged scale — otherwise a page whose render was cancelled
-    // mid-flight during a sidebar slide (remount race) would sit blank
-    // until a scroll re-triggered the effect.
+    // `canvas.width = ...` at render start). The no-op fast path below
+    // requires `painted`, so a wiped canvas always re-renders even at
+    // unchanged scale — otherwise a page cancelled mid-flight during a
+    // sidebar slide (remount race) would sit blank until a scroll
+    // re-triggered the effect.
     let painted = Rc::new(Cell::new(false));
 
     // Owned clones for the side-effect closures so the originals stay for view!.
@@ -237,9 +235,9 @@ pub fn PdfPageCanvas(
         let anim = zoom_animating.get();
         let s_render = render_scale.get();
         // A zombie never starts a new render: its bitmap stays (the stretch
-        // effect resized the host at the commit), and the page unmounts when
+        // effect resized the host at the commit) and the page unmounts when
         // its retention grace expires. Rendering here would rasterise a page
-        // that is on its way out.
+        // on its way out.
         if dormant.as_ref().is_some_and(|d| d.get()) {
             return;
         }
@@ -248,33 +246,30 @@ pub fn PdfPageCanvas(
         }
         let (gw, gh, gs) = geo.get_value();
         let has_geo = gw > 0.0 && gh > 0.0 && gs > 0.0;
-        // A zoom or a sidebar slide is in flight: stay out of the way entirely.
+        // A zoom or sidebar slide is in flight: stay out of the way entirely.
         //
         // With a bitmap, rendering here would relayout mid-animation — the
-        // teleport/flicker this whole design removes. WITHOUT one (a page that
-        // just scrolled into the window, which happens constantly during a
-        // slide because the shrinking scale fits more pages on screen), the
-        // render would be at a scale that is already obsolete: it resolves,
-        // reports geometry, and is immediately superseded by the commit pass.
-        // Measured on one sidebar toggle, that was 3 of 11 renders — wasted
-        // work whose only visible effect is a page popping in at the wrong
-        // size. The thumbnail underlay below covers the gap, and the commit
-        // pass (~120ms later) renders it once, correctly.
+        // teleport/flicker this design removes. WITHOUT one (a page that just
+        // scrolled into the window, constant during a slide because the
+        // shrinking scale fits more pages), the render would be at an already
+        // obsolete scale: it resolves, reports geometry, and is superseded by
+        // the commit pass — measured at 3 of 11 renders on one sidebar toggle,
+        // whose only visible effect was a page popping in at the wrong size.
+        // The thumbnail underlay covers the gap; the commit pass (~120ms
+        // later) renders once, correctly.
         //
-        // COLD-CACHE FIRST PAINT. If the page has NO bitmap yet
-        // (`!has_geo`) AND the thumbnail cache misses (`blit_thumb` returns
-        // false — e.g. the sidebar was never opened this session), the page
-        // would sit as an EMPTY TRANSPARENT CANVAS for the whole slide
-        // + the transaction's commit. That is why "the one in view just
-        // disappeared" and the stretch animation was invisible: the node
-        // that was supposed to stretch had no bitmap to stretch. Fix: fall
-        // through to the masked-render path below, but at the DISPLAY scale
-        // (read untracked so we don't subscribe to per-frame display_scale
-        // changes — the effect must NOT re-run every frame of the slide).
-        // `on_geometry` already ignores writes while a zoom transition is
-        // in flight, and the transaction's commit re-renders crisply at the
-        // committed scale when the gesture settles. The stretch effect keeps tracking `display_scale`
-        // afterwards, so the first-paint bitmap CSS-stretches with the slide.
+        // COLD-CACHE FIRST PAINT. If the page has NO bitmap (`!has_geo`) AND
+        // the thumbnail cache misses (`blit_thumb` false — the sidebar was
+        // never opened this session), the page would sit an EMPTY TRANSPARENT
+        // CANVAS for the whole slide plus the commit: "the one in view just
+        // disappeared", and the stretch was invisible because the node had no
+        // bitmap to stretch. Fix: fall through to the masked-render path
+        // below, but at the DISPLAY scale — read untracked so the effect does
+        // NOT re-run every frame of the slide. `on_geometry` ignores writes
+        // while a transition is in flight and the commit re-renders crisply at
+        // the settled scale; the stretch effect keeps tracking `display_scale`
+        // afterwards, so the first-paint bitmap CSS-stretches with the
+        // slide.
         if anim {
             if has_geo {
                 return; // stretch effect owns it
@@ -282,19 +277,19 @@ pub fn PdfPageCanvas(
             if engine::blit_thumb(&cid_effect, page) {
                 return; // cached thumbnail is fine
             }
-            // A sidebar slide (fit-driven) is NOT a zoom gesture: the page's
-            // display scale is still moving and the commit pass renders once
-            // at the settled scale ~480ms later. Rendering here would produce
-            // a bitmap at a scale that is already obsolete — 2–3 wasted
-            // full-size RGBA bitmaps per toggle. Only a REAL zoom gesture
-            // (which owns the layout) gets a live first render at the display
-            // scale; the thumbnail underlay covers the gap for the slide.
+            // A sidebar slide (fit-driven) is NOT a zoom gesture: the display
+            // scale is still moving and the commit renders once at the settled
+            // scale ~480ms later. Rendering here produces a bitmap at an
+            // obsolete scale — 2-3 wasted full-size RGBA bitmaps per toggle.
+            // Only a REAL zoom gesture (which owns the layout) gets a live
+            // first render at the display scale; the thumbnail underlay covers
+            // the slide.
             //
-            // But a mode flip starts a fit animation at the same time the new
-            // view's pages mount. If an UN-PAINTED page bails here and the
-            // commit lands on an unchanged scale, nothing ever re-triggers
-            // this effect and the page stays blank until you leave and come
-            // back. Gate only pages that already have pixels.
+            // But a mode flip starts a fit animation as the new view's pages
+            // mount: if an UN-PAINTED page bailed here and the commit landed
+            // on an unchanged scale, nothing would re-trigger this effect and
+            // the page would stay blank until a remount. Gate only pages that
+            // already have pixels.
             if !gesture_owns.get_untracked() && painted.get() {
                 return;
             }
@@ -419,11 +414,11 @@ pub fn PdfPageCanvas(
                     if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
-                    // Cancelled / transient errors are logged, not fatal; never
-                    // leave a stale mask behind (a cancelled render also leaves
-                    // the canvas wiped, so the next scale change re-marks).
-                    // Mark the canvas as NOT painted so the no-op fast path
-                    // does not skip the re-render (Fix C).
+                    // Cancelled / transient errors are logged, not fatal;
+                    // never leave a stale mask behind (a cancelled render also
+                    // leaves the canvas wiped, so the next scale change
+                    // re-marks). Mark the canvas NOT painted so the no-op fast
+                    // path does not skip the re-render.
                     painted_async.set(false);
                     if let Some(host) = app_chrome::hooks::dom::by_id(&hid) {
                         remove_snapshots(&host);
@@ -446,12 +441,12 @@ pub fn PdfPageCanvas(
             <canvas id=canvas_id />
             // Placeholder text layer. The engine REPLACES this node on each
             // text render: it builds the spans in a detached `.textLayer` and
-            // swaps it in atomically (in one step), so a superseded render's late-arriving
-            // spans can never land on top of the current ones (that overlap was
-            // the doubled text visible when selecting). Leptos does not own the
+            // swaps it in atomically, so a superseded render's late spans can
+            // never land on top of the current ones (that overlap was the
+            // doubled text visible when selecting). Leptos does not own the
             // node's contents, so the swap is safe — but keep the class name
             // and position (immediately after the canvas) in sync with
-            // `renderPageInternal` in public/pdfEngine.js.
+            // `renderPageInternal` in public/engine/renderer.ts.
             <div class=TEXT_LAYER_CLASS aria-hidden="true"></div>
             // Persisted gloss highlights. Rendered by Leptos INSIDE the host,
             // so every remount repaints them from the page-space rects — the

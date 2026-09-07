@@ -1,18 +1,18 @@
 //! The reflowable page model behind the paged view modes.
 //!
 //! The three paged modes (single, spread, horizontal) lay text pages out as
-//! real A4 sheets: hosts are `A4 × scale` and the size model is
-//! `PAGE_HEIGHT`. Vertical reading is NOT one of them anymore — the
-//! continuous stream virtualizes blocks directly (see
-//! `components::formats::reflow::stream`), so the flow-sized page units this effect
-//! used to project for the vertical strip are gone with the strip itself.
+//! real A4 sheets: hosts are `A4 × scale`, the size model is `PAGE_HEIGHT`.
+//! Vertical reading is not one of them — the continuous stream virtualizes
+//! blocks directly (`components::formats::reflow::stream`), so the
+//! flow-sized page units this effect used to project for the vertical strip
+//! are gone with the strip.
 //!
-//! What stays is the A4 model's upkeep: whenever the cut or the settled
-//! scale moves while a text document is open in a paged mode, the shared
+//! What stays is the A4 model's upkeep: whenever the cut or the settled scale
+//! moves while a text document is open in a paged mode, the shared
 //! measurement store (`css_heights`, which the zoom engine anchors against
-//! and rescales in place every frame) is re-projected from the page count.
-//! It never tracks the zoom scale itself: it writes at the settled scale,
-//! and the engine's per-frame factors do the scaling afterwards.
+//! and rescales in place every frame) is re-projected from the page count. It
+//! never tracks the zoom scale itself: it writes at the settled scale and the
+//! engine's per-frame factors scale afterwards.
 
 use leptos::prelude::*;
 use virtual_list_leptos::Virtualizer;

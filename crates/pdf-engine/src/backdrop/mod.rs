@@ -1,46 +1,37 @@
 //! The paper-session state machine, wired to the engine's eyes — named
-//! `backdrop` for what it drives. The pure colour math it leans on is the
-//! `pdf-paper` crate (the brain); this module is its live half, and the two
-//! no longer share a name one namespace apart.
+//! `backdrop` for what it drives. The pure colour math lives in the
+//! `pdf-paper` crate (the brain); this module is its live half.
 //!
 //! Every colour decision — what a page's paper is, what the backdrop should
-//! show right now — lives in the pure crate and in this state machine. The
-//! TS engine keeps only the pixel plumbing: it stashes a raw frame per live
+//! show right now — lives in the pure crate and in this state machine. The TS
+//! engine keeps only the pixel plumbing: it stashes a raw frame per live
 //! render, renders offscreen samples on request, and paints whatever
 //! `--pdf-paper` it is told to.
 //!
 //! The backdrop is a colour PER PAGE, blended along the reader's scroll
-//! position so it arrives at the next page's paper at the same moment the
-//! page itself does. Nothing is persisted: the palette is rebuilt from the
-//! frames the reader paints (and a small look-ahead) every time a book
-//! opens, which is cheap — one ≤96px frame per page.
+//! position so it arrives at the next page's paper at the same moment the page
+//! itself does. Nothing is persisted: the palette is rebuilt from the frames
+//! the reader paints (and a small look-ahead) every time a book opens — cheap,
+//! one <=96px frame per page.
 //!
-//! The lifecycle, in one breath:
+//! The lifecycle, in one breath: [`configure`] (blend on/off, detection
+//! area — a flip is a lookup, since every feed detects through both areas
+//! and the other ladder is already warm), [`document_open`] (reset; publish
+//! nothing until a colour is known), [`live_frame`] (drain each successful
+//! render's stashed frame into the per-page ladders), [`document_close`]
+//! (drop the backdrop back to the theme paper), [`position`] (per scroll
+//! tick: the viewport's visible-paint-weighted mean page index, where the
+//! ladder interpolates so the backdrop meets the pages where they are).
 //!
-//! * [`configure`] — the reader's settings (blend on/off, detection area).
-//!   A detection-area change invalidates everything, because a histogram fed
-//!   through one area says nothing about the other.
-//! * [`document_open`] — a fresh book: reset, publish nothing until a colour
-//!   is known.
-//! * [`live_frame`] — after every successful render, the one stashed raw
-//!   frame feeds the per-page palette (and the interim colour that holds the
-//!   backdrop until the palette can answer).
-//! * [`document_close`] — forget the book and drop the backdrop back to the
-//!   theme paper.
-//! * [`position`] — per scroll tick: the viewport's visible-paint-weighted
-//!   mean page index. The palette interpolates along its ladder at exactly
-//!   that point, so the backdrop meets the pages where they are — no seam at
-//!   the dominant-page handover.
-//!
-//! Every spawned task carries the session's generation token and re-checks
-//! it after each `await`, so a sample started for one book can never land
-//! in the next.
+//! Every spawned task carries the session's generation token and re-checks it
+//! after each `await`, so a sample started for one book can never land in the
+//! next.
 
 use std::cell::RefCell;
 
 use wasm_bindgen_futures::spawn_local;
 
-use pdf_paper::{PAPER_SHARE, PagePalette, PaperConfig, PaperDetector, Rgb};
+use pdf_paper::{PAPER_SHARE, PagePalette, PaperArea, PaperConfig, PaperDetector, Rgb};
 
 use crate::{api, bridge};
 
@@ -59,12 +50,16 @@ pub(super) struct Session {
     blend_on: bool,
     doc_path: Option<String>,
     num_pages: u32,
-    /// Per-page colours, fed by every frame (the ladder the backdrop
-    /// interpolates along).
-    palette: PagePalette,
-    /// The first live page's colour — the fallback at book open, while the
-    /// palette has nothing near the reader's position yet.
-    interim: Option<Rgb>,
+    /// Per-page colours, one ladder PER DETECTION AREA, fed by every frame:
+    /// a feed runs the detector through both areas at once (raw pixels are
+    /// area-agnostic, and two ≤96px histograms cost less than the round trip
+    /// of re-detecting the other one later), so an area flip resolves from
+    /// the other ladder on the spot — at any scroll position, in either
+    /// direction, with nothing to invalidate.
+    palettes: [PagePalette; 2],
+    /// Per-area first live colour — the fallback at book open, while the
+    /// ladder has nothing near the reader's position yet.
+    interim: [Option<Rgb>; 2],
     /// The last colour handed to the engine. Unknown resolutions HOLD it
     /// (the backdrop must not flash), so it is cleared only deliberately.
     published: Option<String>,
@@ -72,8 +67,16 @@ pub(super) struct Session {
     position: f64,
     /// Pages whose offscreen look-ahead sample is in flight.
     sampling: std::collections::HashSet<u32>,
-    /// Generation token: bumped on document open/close and area change.
+    /// Generation token: bumped on document open/close.
     epoch: u64,
+}
+
+/// The ladder index a detection area resolves from.
+pub(super) fn slot(area: PaperArea) -> usize {
+    match area {
+        PaperArea::WholePage => 0,
+        PaperArea::Edges => 1,
+    }
 }
 
 impl Default for Session {
@@ -83,8 +86,8 @@ impl Default for Session {
             blend_on: false,
             doc_path: None,
             num_pages: 0,
-            palette: PagePalette::new(),
-            interim: None,
+            palettes: [PagePalette::new(), PagePalette::new()],
+            interim: [None, None],
             published: None,
             position: 1.0,
             sampling: std::collections::HashSet::new(),
@@ -114,31 +117,6 @@ pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: imp
     }
 }
 
-/// The root attribute the blend backdrop's filter gate reads. The canvas
-/// filter — `invert(1)` in dark themes — is only correct over the engine's
-/// SAMPLED paper colour: while `--pdf-paper` still holds nothing, the
-/// backdrop's fallback is the UI paper token (dark in dark mode), and
-/// running the filter over it paints a full-screen white field. So the
-/// attribute rises exactly when a colour publishes, and drops whenever the
-/// session goes deliberately blank — the gate itself lives in
-/// `styles/tokens.css`, read by `.reader-bg.blend::after`.
-fn set_paper_ready(on: bool) {
-    if !cfg!(target_arch = "wasm32") {
-        return;
-    }
-    let Some(root) = web_sys::window()
-        .and_then(|window| window.document())
-        .and_then(|document| document.document_element())
-    else {
-        return;
-    };
-    if on {
-        let _ = root.set_attribute("data-paper-ready", "true");
-    } else {
-        let _ = root.remove_attribute("data-paper-ready");
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -146,34 +124,31 @@ fn set_paper_ready(on: bool) {
 /// The reader's paper settings changed (or are being restated on mount).
 ///
 /// `blend_on` gates the engine-side frame stash: while it is off, live
-/// renders skip the ≤96px downscale + readback entirely, so a mid-book
-/// switch back on re-seeds the session with one tiny offscreen sample of
-/// the page under the reader (no frames were stashed while it was off, and
-/// pages do not re-render on a settings flip).
+/// renders skip the ≤96px downscale + readback entirely.
+///
+/// An area flip needs no re-detection and invalidates nothing: every feed
+/// already answered through both areas, so the other ladder holds the
+/// answer and `publish` moves the colour old → new in one step — either
+/// direction, at any scroll position, with no gap between. The one cold
+/// case is a session that holds nothing for this book (blend was off, so
+/// nothing was stashed or fed): it samples the page under the cursor once.
 pub fn configure(blend_on: bool, mut config: PaperConfig) {
     config.sanitize();
-    let (area_changed, reseed_page) = with(|s| {
-        let area_changed = s.config.area != config.area;
-        // A colour-affecting setting flipped while a book is already open:
-        // turning blend on, or changing the detection AREA. In each case the
-        // session's current answer is stale or gone — an area change clears
-        // everything (so the backdrop would fall back to the theme paper),
-        // and a blend-on flip comes in cold. Sample the page under the
-        // reader's cursor NOW, so the backdrop re-detects and repaints on the
-        // spot instead of waiting for the next scroll tick or page render.
-        let reseed_page = if s.doc_path.is_some() && blend_on && (area_changed || !s.blend_on) {
-            Some(s.position.floor().max(1.0) as u32)
-        } else {
-            None
-        };
+    with(|s| {
+        if s.config.edge_width != config.edge_width {
+            let edge_slot = slot(PaperArea::Edges);
+            s.palettes[edge_slot].clear();
+            s.interim[edge_slot] = None;
+        }
         s.blend_on = blend_on;
         s.config = config;
-        (area_changed, reseed_page)
     });
     api::set_paper_active(blend_on);
-    if let Some(page) = reseed_page {
+    publish();
+    if with(|s| s.doc_path.is_some() && s.blend_on && s.published.is_none()) {
         spawn_engine(move || async move {
             let epoch = with(|s| s.epoch);
+            let page = with(|s| s.position.floor().max(1.0) as u32);
             if let Some(frame) = api::sample_paper_page(page).await.ok().flatten() {
                 let changed = with(|s| {
                     if s.epoch != epoch {
@@ -187,22 +162,6 @@ pub fn configure(blend_on: bool, mut config: PaperConfig) {
             }
         });
     }
-    if area_changed {
-        // Everything colour-shaped was computed through the old area: drop
-        // it all and let the frames re-detect. The published colour goes
-        // too — the backdrop falls back to the theme paper for the moment
-        // it takes the first new frame to land.
-        with(|s| {
-            s.palette.clear();
-            s.interim = None;
-            s.published = None;
-            s.sampling.clear();
-            s.epoch += 1;
-        });
-        api::set_paper(None);
-        set_paper_ready(false);
-    }
-    publish();
     ensure_lookahead();
 }
 
@@ -213,14 +172,15 @@ pub fn document_open(path: &str, num_pages: u32) {
         s.epoch += 1; // abandon the previous book's in-flight samples
         s.doc_path = Some(path.to_string());
         s.num_pages = num_pages;
-        s.palette.clear();
-        s.interim = None;
+        for palette in &mut s.palettes {
+            palette.clear();
+        }
+        s.interim = [None, None];
         s.published = None;
         s.position = 1.0;
         s.sampling.clear();
     });
     api::set_paper(None); // the previous book's colour must not linger
-    set_paper_ready(false); // ...and neither may its paper-ready gate
 }
 
 /// The document closed (or the app is tearing down): forget everything and
@@ -234,7 +194,6 @@ pub fn document_close() {
         };
     });
     api::set_paper(None); // the shelf shows the theme paper
-    set_paper_ready(false);
 }
 
 /// A live render of `canvas_id` just completed: drain its stashed raw frame
@@ -287,31 +246,41 @@ pub(super) fn feed_state(s: &mut Session, frame: &api::PaperFrame) -> bool {
     if s.doc_path.is_none() || frame.width == 0 || frame.height == 0 {
         return false;
     }
-    let mut page = PaperDetector::new();
-    page.feed(
-        s.config.area,
-        frame.width as usize,
-        frame.height as usize,
-        &frame.data,
-        s.config.edge_width as usize,
-    );
-    let Some(colour) = page.dominant(PAPER_SHARE) else {
-        return false; // an artwork page has no paper to contribute
-    };
-    let mut changed = s.palette.get(frame.page) != Some(colour);
-    s.palette.set(frame.page, colour);
-    if s.interim.is_none() {
-        s.interim = Some(colour);
-        changed = true;
+    // Detect through BOTH areas at once: the frame is raw pixels, the area
+    // only chooses which of them vote, and a second ≤96px histogram is far
+    // cheaper than re-detecting the other area when the setting flips.
+    let (w, h) = (frame.width as usize, frame.height as usize);
+    let edge = s.config.edge_width as usize;
+    let mut whole = PaperDetector::new();
+    whole.feed(PaperArea::WholePage, w, h, &frame.data, edge);
+    let mut edges = PaperDetector::new();
+    edges.feed(PaperArea::Edges, w, h, &frame.data, edge);
+    let colours = [whole.dominant(PAPER_SHARE), edges.dominant(PAPER_SHARE)];
+
+    let slot = slot(s.config.area);
+    let changed = s.palettes[slot].get(frame.page) != colours[slot];
+    let had_interim = s.interim[slot].is_some();
+    if let Some(colour) = colours[0] {
+        s.palettes[0].set(frame.page, colour);
     }
-    changed
+    if let Some(colour) = colours[1] {
+        s.palettes[1].set(frame.page, colour);
+    }
+    if s.interim[0].is_none() {
+        s.interim[0] = colours[0];
+    }
+    if s.interim[1].is_none() {
+        s.interim[1] = colours[1];
+    }
+    changed || (!had_interim && s.interim[slot].is_some())
 }
 
-/// The colour the session resolves right now, if any: the palette's ladder
-/// at the reader's position, with the first live colour as the book-open
-/// fallback.
+/// The colour the session resolves right now, if any: the current area's
+/// ladder at the reader's position, with its first live colour as the
+/// book-open fallback.
 fn resolve(s: &Session) -> Option<Rgb> {
-    s.palette.colour_at(s.position).or(s.interim)
+    let slot = slot(s.config.area);
+    s.palettes[slot].colour_at(s.position).or(s.interim[slot])
 }
 
 /// Hand the resolved colour to the engine — or clear it, but only when the
@@ -337,12 +306,10 @@ pub(super) fn publish() {
     match outcome {
         (Some(hex), _) => {
             api::set_paper(Some(hex.as_str()));
-            set_paper_ready(true);
         }
         // Deliberate blank: no book / blend off — clear the backdrop.
         (None, Some(_)) => {
             api::set_paper(None);
-            set_paper_ready(false);
         }
         _ => {}
     }
@@ -373,6 +340,7 @@ mod tests {
     const CREAM: [u8; 3] = [0xfa, 0xf4, 0xe8];
     const INK: [u8; 3] = [0x40, 0x40, 0x40];
     const WHITE: [u8; 3] = [0xff, 0xff, 0xff];
+    const MAROON: [u8; 3] = [0x80, 0x00, 0x00];
 
     fn reset_session(config: PaperConfig, blend_on: bool) {
         with(|s| {
@@ -448,11 +416,11 @@ mod tests {
         }
         feed_frame(&art);
         assert_eq!(published().as_deref(), Some("#faf4e8"));
-        assert!(!with(|s| s.palette.contains(2)));
+        assert!(!with(|s| s.palettes[0].contains(2) || s.palettes[1].contains(2)));
     }
 
     #[test]
-    fn an_area_change_invalidates_everything() {
+    fn an_area_flip_on_a_uniform_page_hands_over_without_a_gap() {
         reset_session(PaperConfig::default(), true);
         document_open("/fake/book.pdf", 10);
         feed_frame(&uniform(1, 32, 32, CREAM));
@@ -465,11 +433,101 @@ mod tests {
                 ..PaperConfig::default()
             },
         );
-        assert_eq!(published(), None); // cleared: re-detect through the new area
-        assert!(with(|s| s.palette.is_empty()));
-        // The first frame under the NEW area repaints.
+        // One frame fed both ladders: the flip resolves from the other one
+        // on the spot — same colour for a uniform page, no gap, and no
+        // re-detection anywhere.
+        assert_eq!(published().as_deref(), Some("#faf4e8"));
+        assert!(with(|s| s.palettes[slot(PaperArea::Edges)].contains(1)));
+        // A live frame under the new area keeps agreeing.
         feed_frame(&uniform(1, 32, 32, CREAM));
         assert_eq!(published().as_deref(), Some("#faf4e8"));
+    }
+
+    /// A 40×44 frame: cream centre that dominates by area under a maroon 5px
+    /// margin — the two areas answer different colours for the same raster.
+    fn split(page: u32) -> api::PaperFrame {
+        let (w, h) = (40usize, 44usize);
+        let mut data = vec![255u8; w * h * 4];
+        for i in (0..data.len()).step_by(4) {
+            data[i] = CREAM[0];
+            data[i + 1] = CREAM[1];
+            data[i + 2] = CREAM[2];
+        }
+        for y in 0..h {
+            for x in 0..w {
+                if y < 5 || y + 5 >= h || x < 5 || x + 5 >= w {
+                    let i = (y * w + x) * 4;
+                    data[i] = MAROON[0];
+                    data[i + 1] = MAROON[1];
+                    data[i + 2] = MAROON[2];
+                }
+            }
+        }
+        api::PaperFrame { page, width: w as u32, height: h as u32, data }
+    }
+
+    #[test]
+    fn an_area_flip_hands_over_in_both_directions_without_a_scroll() {
+        // THE regression: the flip used to clear everything and wait on an
+        // offscreen round trip, so once a scroll had moved the session's
+        // window the backdrop sat on the stale colour until scrolling re-
+        // fed live frames. Every feed now answers through both areas, so
+        // the ladder a flip resolves from is warm wherever the reader
+        // rests — the scroll-shaped feed order below is the old repro.
+        reset_session(
+            PaperConfig {
+                area: PaperArea::Edges,
+                ..PaperConfig::default()
+            },
+            true,
+        );
+        document_open("/fake/book.pdf", 10);
+        feed_frame(&split(1));
+        assert_eq!(published().as_deref(), Some("#800000"));
+        feed_frame(&split(2)); // the scroll: other pages feed, position moves
+        position(2.0);
+
+        configure(true, PaperConfig::default()); // → WholePage
+        assert_eq!(published().as_deref(), Some("#faf4e8"));
+
+        configure(
+            true,
+            PaperConfig {
+                area: PaperArea::Edges,
+                ..PaperConfig::default()
+            },
+        );
+        assert_eq!(published().as_deref(), Some("#800000"));
+    }
+
+    #[test]
+    fn changing_edge_width_invalidates_only_the_edge_cache() {
+        reset_session(
+            PaperConfig {
+                area: PaperArea::Edges,
+                ..PaperConfig::default()
+            },
+            true,
+        );
+        document_open("/fake/book.pdf", 3);
+        feed_frame(&split(1));
+
+        let mut config = with(|s| s.config);
+        config.edge_width += 1;
+        configure(true, config);
+
+        with(|s| {
+            assert!(s.palettes[slot(PaperArea::WholePage)].contains(1));
+            assert!(s.interim[slot(PaperArea::WholePage)].is_some());
+            assert!(s.palettes[slot(PaperArea::Edges)].is_empty());
+            assert!(s.interim[slot(PaperArea::Edges)].is_none());
+            assert!(resolve(s).is_none());
+
+            // `configure` already queued these samples. Clear that bookkeeping
+            // to inspect the pure look-ahead decision against the new cache.
+            s.sampling.clear();
+            assert_eq!(lookahead_wants(s), vec![1, 2, 3]);
+        });
     }
 
     #[test]
@@ -497,7 +555,8 @@ mod tests {
         feed_frame(&uniform(1, 32, 32, CREAM));
         document_close();
         assert_eq!(published(), None);
-        assert!(with(|s| s.palette.is_empty() && s.doc_path.is_none()));
+        assert!(with(|s| s.palettes[0].is_empty() && s.palettes[1].is_empty()));
+        assert!(with(|s| s.doc_path.is_none()));
     }
 
     #[test]

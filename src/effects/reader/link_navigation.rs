@@ -3,13 +3,13 @@
 //! The engine's link layer cannot navigate by itself: page position is Rust
 //! state (`viewer.page`), and the scroll/settle machinery in `navigation_sync`
 //! is what makes a jump land cleanly instead of fighting the scroll observer.
-//! So an internal link dispatches a `pdfreader:navigate` CustomEvent and this
+//! An internal link dispatches a `pdfreader:navigate` CustomEvent and this
 //! effect is the single place that turns it into a page change — the same
-//! entry point the outline and thumbnails already use.
+//! entry point the outline and thumbnails use.
 //!
-//! External links are NOT handled here. They are real `<a href target=_blank>`
-//! elements, so the browser (or Tauri's shell) opens them with no Rust
-//! involvement.
+//! External links are NOT handled here: they are real `<a href
+//! target=_blank>` elements, opened by the browser (or Tauri's shell) with no
+//! Rust involvement.
 
 use leptos::prelude::*;
 

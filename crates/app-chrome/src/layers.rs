@@ -1,15 +1,10 @@
 //! Z-index layer tokens. The numeric values live in `styles/tokens.css` as
 //! `--z-*` custom properties; these class-name constants are what components
-//! embed, so layering is one decision instead of ten scattered numbers.
-//!
-//! The Tailwind compiler scans source text: keep every token a static literal
-//! (they are, via these constants) so `z-[var(--z-popover)]` etc. ship in
-//! `styles.css`.
-//!
-//! Owned here because the chrome surfaces (the bar, the caption cluster) are
-//! the layering's anchor; every floating surface, toast and overlay in the
-//! app reads the table from `app_chrome::layers`, so layering is one
-//! decision instead of ten scattered numbers.
+//! embed, so layering is one decision instead of ten scattered numbers. The
+//! Tailwind compiler scans source text, so every token stays a static literal
+//! and `z-[var(--z-popover)]` etc. ship in `styles.css`. Owned here because
+//! the chrome surfaces are the layering's anchor; every floating surface,
+//! toast and overlay reads the table from `app_chrome::layers`.
 
 pub const CONTENT: &str = "z-0";
 pub const CONTROLS: &str = "z-[var(--z-controls)]";

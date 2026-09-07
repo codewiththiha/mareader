@@ -6,9 +6,9 @@ use crate::types::{RenderResult, ThumbResult};
 use super::{EngineError, guard_pdf_reader, require_pdf_reader, resolve};
 
 /// Register a page's canvas with the engine (virtualized rows call this on
-/// mount). Typed end to end: the bridge takes `(page, canvas_id, host_id)`
-/// primitives, so a mount allocates no serde payload — on a fast scroll a
-/// windowful of mounts used to build one `{ok:…}`-shaped object each.
+/// mount). Typed end to end: the bridge takes primitives, so a mount allocates
+/// no serde payload — on a fast scroll a windowful of mounts used to build one
+/// `{ok:...}`-shaped object each.
 ///
 /// `host_id` is optional: `None` means the canvas id derives the host id, and
 /// travels as `""` (which the engine treats exactly like `undefined`).
@@ -36,11 +36,10 @@ pub async fn render_page(
     resolve::<RenderResult>(value, "render")
 }
 
-/// Render one thumbnail through the engine's cached thumbnail lane.
-///
-/// Unlike `render_page` this needs no `register_page` (the engine resolves the
-/// canvas by id per call) and never builds a text layer. When the page's bitmap
-/// is already cached the engine blits it synchronously, so the canvas is painted
+/// Render one thumbnail through the engine's cached thumbnail lane. Unlike
+/// `render_page` this needs no `register_page` (the engine resolves the canvas
+/// by id per call) and never builds a text layer. When the page's bitmap is
+/// already cached the engine blits it synchronously, so the canvas is painted
 /// on the first mounted frame — a caller that needs to know BEFORE that frame
 /// asks [`has_thumb`] instead of waiting on this promise.
 pub async fn render_thumb(
@@ -76,8 +75,8 @@ pub fn blit_thumb(canvas_id: &str, page: u32) -> bool {
 
 /// Render a page into the thumbnail cache with no DOM canvas (idle prefetch).
 /// Best-effort: fires and forgets — the cache entry lands whenever the raster
-/// is ready. Callers use it to warm pages AROUND the reader while idle so a
-/// later grid jump mounts every cell as a synchronous cache blit.
+/// is ready. Callers warm pages AROUND the reader while idle so a later grid
+/// jump mounts every cell as a synchronous cache blit.
 pub async fn prefetch_thumb(page: u32, scale: f64) {
     if !guard_pdf_reader() {
         return;

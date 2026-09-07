@@ -1,15 +1,13 @@
-//! ResizeObserver plumbing: one install, one teardown, no closure leaks.
-//!
-//! `DocumentTitle`, the thumbnail panel and the gloss card's content-size hook
-//! each carried an identical ~45-line block for this: two `StoredValue`s, a run-once guard, a
-//! `Closure::wrap`, a `ResizeObserver`, and an `on_cleanup` that MUST
-//! disconnect before the closure is dropped. Only the observed elements
+//! ResizeObserver plumbing: one install, one teardown, no closure leaks. Three
+//! consumers each carried an identical ~45-line block (two `StoredValue`s, a
+//! run-once guard, a `Closure::wrap`, the observer, and an `on_cleanup` that
+//! MUST disconnect before the closure is dropped); only the observed elements
 //! differed.
 //!
-//! The disconnect is load-bearing, not tidiness: unmounting the view removes
-//! the observed element, which queues a resize notification into a closure
-//! that is about to be freed. Without the explicit `disconnect()` the wasm
-//! runtime aborts with "closure invoked recursively or after being dropped".
+//! The disconnect is load-bearing: unmounting removes the observed element,
+//! which queues a resize notification into a closure about to be freed —
+//! without the explicit `disconnect()` the wasm runtime aborts with "closure
+//! invoked recursively or after being dropped".
 
 use std::rc::Rc;
 
@@ -91,9 +89,9 @@ pub fn use_resize_observer(target: NodeRef<html::Div>, on_resize: impl Fn(Resize
             return;
         };
         // Compare/observe through the base Element type (the NodeRef is typed
-        // as Div; the observer takes web_sys::Element). Unchecked is sound:
-        // an HtmlDivElement *is* an Element (same JS object), just viewed
-        // through the base interface.
+        // Div; the observer takes web_sys::Element). Unchecked is sound: an
+        // HtmlDivElement IS an Element — the same JS object through the base
+        // interface.
         let el: web_sys::Element = el.unchecked_into::<web_sys::Element>();
         if callback_handle.with_value(|c| c.is_some()) {
             // Same node still mounted: nothing to do.

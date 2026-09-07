@@ -1,18 +1,15 @@
-//! The reader's view model, for any format.
+//! The reader's view model, for any format: which view mode is on, which axis
+//! a strip scrolls, the gap between pages, how far ahead to mount, and the
+//! two maths every strip shares with the zoom coordinator (spread arithmetic,
+//! and holding the point under the reader's eyes still across a rescale). A
+//! reflowable document is laid out through exactly the same model as a PDF,
+//! so none of this may name a format.
 //!
-//! Which view mode is on, which axis a strip scrolls, the gap between pages,
-//! how far ahead to mount, and the two maths every strip shares with the
-//! zoom coordinator (spread arithmetic, and holding the point under the
-//! reader's eyes still across a rescale). A reflowable document is laid out
-//! through exactly the same model as a PDF, so none of this may name a format
-//! — that is the whole point of it living here rather than beside the page
-//! canvas.
-//!
-//! The windowing arithmetic itself lives in `virtual-list` and
-//! `virtual-list-leptos`; this module carries the reader's policy and re-exports
-//! [`Budget`] so a caller sizes a strip without naming two crates. The PDF
-//! page frame's own constant (the toolbar band the search reveal must clear)
-//! stays at `pdf_core`'s root.
+//! The windowing arithmetic lives in `virtual-list` / `virtual-list-leptos`;
+//! this module carries the reader's policy and re-exports [`Budget`] so a
+//! caller sizes a strip without naming two crates. The PDF page frame's own
+//! constant (the toolbar band the search reveal must clear) stays at
+//! `pdf_core`'s root.
 
 pub use virtual_list::Budget;
 
@@ -55,15 +52,14 @@ impl ViewMode {
 }
 
 /// Where the document point that was under the viewport centre lands once
-/// the item it sits in has been scaled by `factor` and the gaps between
-/// items have been left alone.
+/// the item it sits in has been scaled by `factor`, gaps left alone.
 ///
-/// `index` is the anchored item, already resolved in `O(log n)` by the
-/// strip's `index_at`; `height` is that item's pre-scale height,
-/// `above_with_gap` the extent of the items above it (gaps included) and
-/// `height_sum` their heights alone — the part that scales. Shared by the
-/// PDF page strip and the text column: both rescale layout, not transforms,
-/// and both hold the point under the reader's eyes while they do.
+/// `index` is the anchored item (resolved O(log n) by the strip's
+/// `index_at`); `height` is its pre-scale height; `above_with_gap` the extent
+/// of the items above it including gaps; `height_sum` their heights alone —
+/// the part that scales. Shared by the PDF page strip and the text column:
+/// both rescale layout, not transforms, and both hold the point under the
+/// reader's eyes.
 pub fn anchored_position(
     height: f64,
     above_with_gap: f64,

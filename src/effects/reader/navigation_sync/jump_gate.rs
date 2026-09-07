@@ -1,11 +1,9 @@
 //! The gate that keeps a navigation from being lost to a zoom.
 //!
-//! A page write that lands while a zoom transaction holds the geometry cannot
-//! be acted on — the transaction's anchor decides where the reader ends up,
-//! and a scroll issued into it fights that. Dropping the write is worse: an
-//! outline click or a search hit that lands inside a fit slide would simply
-//! never happen.
-//!
+//! A page write landing while a zoom transaction holds the geometry cannot be
+//! acted on — the transaction's anchor decides where the reader ends up, and
+//! a scroll issued into it fights that. Dropping the write is worse: an
+//! outline click or search hit inside a fit slide would simply never happen.
 //! So the write is HELD, with its value, and replayed on the first run after
 //! the transaction closes. Pure and `Cell`-based, so the whole contract is
 //! testable on the host without a browser.
@@ -15,22 +13,22 @@ use std::cell::Cell;
 /// Decides whether a run of the page→scroll effect may command the strip, in
 /// a form pure enough to unit-test on the host.
 ///
-/// The two inputs it distinguishes are "the page signal changed" and "the
-/// zoom transaction flag changed" — the effect re-runs for both, and only the
-/// first is a navigation intent. A write that lands while a transaction holds
-/// the geometry is HELD, with its value; the first run after the transaction
-/// closes replays it. A transaction that closes with no held write moves
-/// nothing, which is what keeps a zoom commit from scrolling the top of the
-/// current page back under the reader's eyes.
+/// The two inputs it distinguishes are "the page signal changed" and "the zoom
+/// transaction flag changed" — the effect re-runs for both and only the first
+/// is a navigation intent. A write landing while a transaction holds the
+/// geometry is HELD with its value; the first run after the close replays it.
+/// A transaction closing with no held write moves nothing, which keeps a zoom
+/// commit from scrolling the top of the current page back under the reader's
+/// eyes.
 ///
 /// Holding the VALUE (not just a flag) is what lets the replay survive the
 /// dominant arm: both effects re-run in the same flush when a transaction
-/// closes, and if the dominant arm runs first it reads the not-yet-jumped
-/// strip and "corrects" the page back to the stale dominant item — a replay
-/// that only remembered "something was held" would then scroll to the
-/// clobbered page. So the dominant arm DEFERS to [`JumpGate::pending`] for
-/// exactly that flush, and a replay whose page signal was clobbered anyway
-/// RE-ASSERTS the held page alongside the scroll.
+/// closes, and if the dominant arm ran first it would read the not-yet-jumped
+/// strip and "correct" the page back to the stale dominant item — a
+/// flag-only replay would then scroll to the clobbered page. So the dominant
+/// arm DEFERS to [`JumpGate::pending`] for exactly that flush, and a replay
+/// whose page signal was clobbered anyway RE-ASSERTS the held page alongside
+/// the scroll.
 #[derive(Debug, Default)]
 pub(super) struct JumpGate {
     /// The page the last `admit` saw, so a real write can be told apart from
@@ -44,9 +42,9 @@ pub(super) struct JumpGate {
 impl JumpGate {
     /// The page the strip should be scrolled to on this run, if any — as
     /// `(page, reassert)`, where `reassert` says the page SIGNAL no longer
-    /// names that page (it was clobbered after the hold) and must be written
-    /// back before the scroll, or the next scroll event would correct the
-    /// strip right back off the jumped-to page.
+    /// names that page (clobbered after the hold) and must be written back
+    /// before the scroll, or the next scroll event would correct the strip
+    /// right back off the jumped-to page.
     pub(super) fn admit(&self, page: u32, zooming: bool) -> Option<(u32, bool)> {
         let changed = page != self.last_page.get();
         self.last_page.set(page);

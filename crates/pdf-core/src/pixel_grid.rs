@@ -1,41 +1,29 @@
-//! Device-pixel grid snapping for page geometry.
+//! Device-pixel grid snapping for page geometry — the PDF pipeline's
+//! presentation boundary, living beside the canvas it protects. Both page
+//! strips (raster and reflowable) snap through it, so the joint between two
+//! sheets is the same arithmetic whichever painted them.
 //!
-//! This is the PDF pipeline's presentation boundary, and it lives beside the
-//! canvas it protects: the crate that owns the page frame owns the rule that a
-//! page frame's edges are whole device pixels. Both page strips (the raster one
-//! and the reflowable one) snap through it, so the joint between two sheets is
-//! the same arithmetic whichever painted them.
+//! Every page is a stack of independently rasterized compositor layers (the
+//! canvas with its blend/filter, the texture `::before`, the backdrop), and
+//! the compositor snaps each layer's paint rect to the DEVICE pixel grid.
+//! Page geometry, though, is `intrinsic_size × zoom_scale` — almost never a
+//! whole number of device pixels once `devicePixelRatio` is fractional (125% /
+//! 150% / 175% scaling, any browser zoom). When two adjacent rects round in
+//! opposite directions the result is a one-device-pixel GAP (dark backdrop as
+//! a hairline) or OVERLAP (two blended paper surfaces composing on one row as
+//! a near-black line) — the thin line at page joints and page sides that comes
+//! and goes with zoom level.
 //!
-//! Every page is a stack of independently rasterized compositor layers: the
-//! canvas (which carries `mix-blend-mode`, plus `filter` in live mode), the
-//! texture `::before` overlay, and the backdrop behind them (`.reader-bg`, or
-//! its blend `::after`). The compositor snaps each layer's paint rect to the
-//! DEVICE pixel grid, but page geometry is `intrinsic_size × zoom_scale` — a
-//! product that is almost never a whole number of device pixels once the
-//! display's `devicePixelRatio` is fractional (125% / 150% / 175% scaling on
-//! Windows, and any browser zoom).
-//!
-//! When two adjacent rects round in opposite directions the result is either
-//! a one-device-pixel GAP — the dark backdrop showing through as a hairline —
-//! or a one-device-pixel OVERLAP, where two blended paper surfaces compose on
-//! the same row and read as a near-black line. That is the thin line seen at
-//! the joint between two pages in no-gap mode and along the sides of a page
-//! against the gutter, and it is why it comes and goes with the zoom level:
-//! at some scales the fractional part happens to vanish.
-//!
-//! The cure is to write no fractional geometry in the first place. Every
-//! value that ends up as a page's CSS size or position goes through
-//! [`snap_px`] at the boundary, so neighbouring layers always resolve to the
-//! same device-pixel edge. Internal maths (scale ratios, anchoring, the
-//! virtualizer's own model) keeps working in raw values — the snap is a
-//! presentation concern, and at under one device pixel per page the rounding
-//! never accumulates into a visible offset.
+//! The cure is to write no fractional geometry in the first place: every
+//! value that becomes a page's CSS size or position goes through [`snap_px`]
+//! at the boundary, so neighbouring layers resolve to the same device-pixel
+//! edge. Internal maths (scale ratios, anchoring, the virtualizer's model)
+//! keeps raw values — the snap is a presentation concern, and at under one
+//! device pixel per page the rounding never accumulates visibly.
 
 /// Round `v` (CSS px) to the nearest whole device pixel for a display whose
-/// device-pixel ratio is `dpr`.
-///
-/// Split from [`snap_px`] so the arithmetic is testable off the browser: the
-/// only thing the wasm-only half adds is the ratio itself.
+/// device-pixel ratio is `dpr`. Split from [`snap_px`] so the arithmetic is
+/// testable off the browser: the wasm-only half adds nothing but the ratio.
 fn snap_to(v: f64, dpr: f64) -> f64 {
     // A non-finite or nonsensical ratio (some headless environments report 0)
     // would turn a good coordinate into NaN; pass the value through instead.
@@ -46,13 +34,10 @@ fn snap_to(v: f64, dpr: f64) -> f64 {
 }
 
 /// The display's current device-pixel ratio, defaulting to 1.0 off-browser.
-///
-/// Read live rather than cached: dragging the window to a second monitor, or
-/// changing the browser's own zoom, changes it without any event this module
-/// subscribes to.
-///
-/// `snap_to` above is the arithmetic and stays pure, so the host test suite can
-/// prove the rule without a browser; only this read is wasm-only.
+/// Read live rather than cached: dragging to a second monitor or changing the
+/// browser's zoom changes it without any event this module subscribes to.
+/// `snap_to` above stays pure, so the host suite proves the rule without a
+/// browser; only this read is wasm-only.
 #[cfg(target_arch = "wasm32")]
 fn device_pixel_ratio() -> f64 {
     web_sys::window()

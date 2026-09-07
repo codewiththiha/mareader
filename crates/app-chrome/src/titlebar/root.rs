@@ -1,18 +1,16 @@
-//! Generic hover/grab titlebar shell. `left`/`right` are render-prop slots
-//! so each page composes whatever controls it needs; the shell owns the
-//! hover/pin state, the hide timers, the drag/hover band, and the center
-//! slot's resolved box — the whole row while the center content fits at
-//! exact center, the free stretch between the clusters once it does not
-//! (`resolve_center_slot`).
+//! Generic hover/grab titlebar shell. `left`/`right` are render-prop slots so
+//! each page composes its own controls; the shell owns the hover/pin state,
+//! the hide timers, the drag/hover band, and the center slot's resolved box —
+//! the whole row while the center content fits at exact center, the free
+//! stretch between the clusters once it does not (`resolve_center_slot`).
 //!
 //! It WRAPS its children so descendants (the floating doc title, the slot
-//! menus' popovers) can read the shared [`TitleBarCtx`] — leptos context
-//! flows down the reactive tree, so a sibling overlay would not see it.
+//! menus' popovers) can read the shared [`TitleBarCtx`] — leptos context flows
+//! down the reactive tree, so a sibling overlay would not see it.
 //!
 //! The shell knows nothing about the application: pin state, the native
-//! traffic lights, the frameless caption cluster (`end`), sidebar insets
-//! and search holds arrive as props/signals computed by `app_title_bar.rs`
-//! from the shell controller.
+//! traffic lights, the caption cluster (`end`), sidebar insets and search
+//! holds arrive as props/signals computed by `app_title_bar.rs`.
 
 use leptos::children::ViewFn;
 use leptos::html;
@@ -37,17 +35,15 @@ const MIN_CENTER_SLOT: f64 = 60.0;
 /// The box the center content renders in, in row coordinates `(start,
 /// width)`, centered inside. Two tiers:
 ///
-/// 1. The content fits at the row's EXACT center — its center ± w/2 span
-///    clears both clusters — so the slot is the whole row and the content
-///    sits dead center of the full width.
-/// 2. Otherwise (no room at center, or no center content at all) the slot
-///    is the free stretch between the clusters, where the content centers
-///    and truncates.
+/// 1. The content fits at the row's EXACT center (its center ± w/2 clears both
+///    clusters): the slot is the whole row and the content sits dead center.
+/// 2. Otherwise the slot is the free stretch between the clusters, where the
+///    content centers and truncates.
 ///
-/// Pure geometry, so the tiers stay unit-testable; [`measure_center_slot`]
-/// feeds it live DOM. Platform-agnostic by construction: the cluster edges
-/// already reserve whatever sits on either side (the frameless caption
-/// cluster and pin on Windows/Linux, the traffic-light gutter on macOS).
+/// Pure geometry so the tiers stay unit-testable; [`measure_center_slot`]
+/// feeds it live DOM. Platform-agnostic: the cluster edges already reserve
+/// whatever sits on either side (caption cluster and pin on Windows/Linux,
+/// the traffic-light gutter on macOS).
 fn resolve_center_slot(
     row_width: f64,
     left: f64,
@@ -68,10 +64,9 @@ fn resolve_center_slot(
 }
 
 /// The live measurement behind [`resolve_center_slot`]: the row rect, both
-/// cluster edges (row coordinates, breathing gap already applied) and the
-/// title's natural, untruncated width — `scroll_width` on the truncate
-/// span, which reports the full content even while clipped. `None` while
-/// any anchor is still absent.
+/// cluster edges (row coordinates, breathing gap applied) and the title's
+/// natural width — `scroll_width` on the truncate span reports the full
+/// content even while clipped. `None` while any anchor is absent.
 fn measure_center_slot() -> Option<(f64, f64)> {
     let row = by_id(TOOLBAR_ROW_ID)?;
     let row_rect = row.get_bounding_client_rect();
@@ -103,9 +98,9 @@ fn schedule_slot_measure(center_slot: RwSignal<Option<(f64, f64)>>) {
 }
 
 /// Wires the center slot's resolved box: a signal kept current by observing
-/// the row, both clusters and the title (any size change among them
-/// re-measures), a window-resize re-measure, and an immediate first pass.
-/// See [`resolve_center_slot`] for the box itself.
+/// the row, both clusters and the title (any size change re-measures), a
+/// window-resize re-measure, and an immediate first pass. See
+/// [`resolve_center_slot`] for the box itself.
 fn use_center_slot(center_title_ref: NodeRef<html::Span>) -> RwSignal<Option<(f64, f64)>> {
     let center_slot = RwSignal::new(None::<(f64, f64)>);
     Effect::new(move |_| {
@@ -159,21 +154,19 @@ pub fn TitleBar(
     /// controller's `titlebar_left_gutter`, which owns the rule.
     #[prop(into)] left_gutter: Signal<f64>,
     #[prop(into)] left: ViewFn,
-    /// Center slot (e.g. the document title). The shell centers it on the
-    /// row's EXACT middle while the content's natural width clears the
-    /// leading and trailing clusters, and falls back to the free stretch
-    /// between them (centered, truncated) once it does not — so the caption
-    /// cluster, the pin and the traffic-light gutter are reserved on every
-    /// platform. Defaults to empty.
+    /// Center slot (e.g. the document title). Centered on the row's EXACT
+    /// middle while the content's natural width clears both clusters; falls
+    /// back to the free stretch between them (centered, truncated) once it
+    /// does not — so the caption cluster, pin and traffic-light gutter are
+    /// reserved on every platform. Defaults to empty.
     #[prop(into, default = ViewFn::from(|| ()))]
     center: ViewFn,
     #[prop(into)] right: ViewFn,
     /// The row's far-edge cluster — the frameless caption buttons on
     /// Windows/Linux, rendered AFTER the right cluster and flush to the
     /// window's right edge (its own CSS cancels the row's `pr-2`). Empty
-    /// wherever the OS still draws its own window controls. Defaults to
-    /// empty so the shell stays platform-agnostic; `app_title_bar.rs`
-    /// decides what (if anything) runs here.
+    /// wherever the OS draws its own controls, so the shell stays
+    /// platform-agnostic; `app_title_bar.rs` decides what runs here.
     #[prop(into, default = ViewFn::from(|| ()))]
     end: ViewFn,
     children: Children,
@@ -182,11 +175,10 @@ pub fn TitleBar(
     let is_held = Signal::derive(move || held_count.get() > 0);
     let center_title_ref = NodeRef::<html::Span>::new();
     // Show on enter, hide after a grace period unless something holds the bar
-    // open (an open popover, the floating search) or the pin is on. The
-    // shared reveal owns the timer, the shared `hovered` truth for the band
-    // and the row, and the recheck when a hold releases; the shell owns the
-    // hold definition. Non-short-circuiting `|`: the effect inside must
-    // track BOTH holds, or a release of the untracked one never settles.
+    // open (an open popover, the floating search) or the pin is on. The shared
+    // reveal owns the timer, the `hovered` truth and the hold-release recheck;
+    // the shell owns the hold definition. Non-short-circuiting `|`: the effect
+    // must track BOTH holds, or a release of the untracked one never settles.
     let hover = use_hover_reveal(HoverConfig {
         delay: DEFAULT_HOVER_DELAY,
         hold: Some(Signal::derive(move || is_held.get() | extra_hold.get())),
@@ -240,14 +232,13 @@ pub fn TitleBar(
                     {left.run()}
                     <div
                         // pointer-events-none is load-bearing: in the
-                        // exact-center tier this overlay spans the whole
-                        // row, and a positioned element paints above the
-                        // in-flow controls — left interactive it would
-                        // swallow the clicks of every non-positioned
-                        // button it covers (the Settings and Pin icon
-                        // buttons). The title span re-enables pointer
-                        // events for its drag region + tooltip; the row
-                        // behind stays the drag region for the rest.
+                        // exact-center tier this overlay spans the whole row
+                        // and a positioned element paints above the in-flow
+                        // controls — left interactive it would swallow the
+                        // clicks of every non-positioned button it covers. The
+                        // title span re-enables pointer events for its drag
+                        // region + tooltip; the row behind stays the drag
+                        // region for the rest.
                         class="absolute inset-y-0 flex items-center justify-center overflow-hidden pointer-events-none"
                         style=move || {
                             match center_slot.get() {
@@ -269,10 +260,10 @@ pub fn TitleBar(
                         </Show>
                     </div>
                     <div
-                        // #toolbar-trailing: the trailing cluster group (right slot +
-                        // pin) and the centered slot's right anchor. Everything right of
-                        // this edge — the caption cluster in `end` included — is outside
-                        // the slot.
+                        // #toolbar-trailing: the trailing cluster group (right
+                        // slot + pin) and the centered slot's right anchor.
+                        // Everything right of this edge — the caption cluster
+                        // in `end` included — is outside the slot.
                         id=TOOLBAR_TRAILING_ID
                         class="ml-auto flex shrink-0 items-center gap-1"
                     >

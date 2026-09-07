@@ -1,29 +1,19 @@
 // Window-event protocol sync check — the same cheap insurance as
-// `check-versions.ts` and `check-formats.ts`, for the fact that is written
-// down in two languages.
+// `check-versions.ts`, for the fact written down in two languages.
 //
 // The app and the imperative engine under `public/engine/` talk through
-// CustomEvents on `window`, because the engine is a bundled IIFE that cannot
-// hold a Leptos signal and the app cannot be called from inside it. Three
-// names cross that boundary. They are declared twice:
+// CustomEvents on `window` (the engine is a bundled IIFE that cannot hold a
+// Leptos signal and cannot be called from inside). The names cross that
+// boundary declared twice: src/events.rs (the app's whole table, and the
+// only place a Rust listener may take a name from) and
+// public/engine/events.ts (the engine's dispatched half). A disagreement is
+// not a compile error on either side — it is a dispatch into a window nobody
+// listens on, and the only symptom is silence. This script fails CI when the
+// tables drift, when a declared event lacks a dispatcher or listener, or
+// when a literal bypasses the tables entirely.
 //
-//   - src/events.rs                 the app's whole table, and the only place
-//                                   a Rust listener may take a name from
-//   - public/engine/events.ts       the engine's half: the three it dispatches
-//
-// A name that disagrees is not a compile error on either side. It is a
-// dispatch into a window nobody is listening on: internal links stop
-// navigating, or the selection pill stops appearing, and the only symptom is
-// silence. Both tables exist so that neither side has to invent a string, and
-// this script exists so that the strings cannot drift apart, or be bypassed by
-// a literal that never joined a table.
-//
-// It also checks the tables are load-bearing: an event constant that nothing
-// references is a name that was declared and then forgotten, which is the same
-// quiet failure one step earlier.
-//
-// This is the TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-events.js` so CI can run it with plain `node`.
+// TypeScript source; Trunk's pre-build hook compiles it to
+// `scripts/check-events.js`.
 
 import { isFile, read, walk } from "./repo.js";
 
@@ -33,13 +23,12 @@ const APP_TABLE = "src/events.rs";
 const ENGINE_TABLE = "public/engine/events.ts";
 
 // ---------------------------------------------------------------------------
-// The two tables.
+// The two tables — parsed rather than imported, for the same reason as
+// check-formats.ts: the app's table is a const in a wasm-targeted crate, and
+// emitting JSON from it would be more machinery than the strings it guards.
+// Both patterns throw rather than return empty when the shape moves, so a
+// refactor cannot silently empty the check.
 // ---------------------------------------------------------------------------
-// Parsed rather than imported, for the same reason as `check-formats.ts`: the
-// app's table is a `const` in a wasm-targeted crate, and a build step that
-// emitted JSON from it would be more machinery than the seven strings it
-// guards. Both patterns throw rather than returning an empty list when the
-// shape moves, so a refactor of either table cannot silently empty this check.
 
 type Table = Map<string, string>;
 
@@ -113,11 +102,10 @@ for (const [name, value] of app) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Every declared event must have both a dispatcher and a listener.
+// 2. Every declared event must have both a dispatcher and a listener: an
+// unused constant is a name written down and then forgotten, and the table
+// advertises a protocol the app does not speak.
 // ---------------------------------------------------------------------------
-// An unused constant is a name that was written down and then forgotten: the
-// event it stands for either never existed or stopped being wired up, and the
-// table now advertises a protocol the app does not speak.
 
 function referenced(name: string, files: string[], except: string): boolean {
   const pattern = new RegExp(`\\b${name}\\b`);
@@ -137,11 +125,10 @@ for (const name of engine.keys()) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. No event name may be written as a literal anywhere but the two tables.
+// 3. No event name may be written as a literal anywhere but the two tables:
+// a literal works the day it is written and stops matching the day the table
+// moves, and looking at the table will not find it.
 // ---------------------------------------------------------------------------
-// This is the rule that keeps the tables from becoming decoration. A literal
-// compiles and works on the day it is written; it is the day the table moves
-// that it stops matching, and it will not be found by looking at the table.
 
 const LITERAL = /["']pdfreader:[A-Za-z0-9._-]+["']/g;
 

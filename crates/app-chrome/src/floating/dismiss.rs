@@ -1,22 +1,18 @@
-//! Shared dismissal mechanics: Escape + outside-press handling with
-//! exclusion selectors, a suspend signal (dragging), and a "topmost overlay
-//! only" registry so two stacked surfaces don't both eat one Escape.
-//!
-//! This is the consolidation of the dismissal behaviour that used to be
-//! duplicated in the primitive popover, the gloss surface, gloss selection
-//! mode, the gloss context menu and the floating search — each with its own
-//! window listeners, its own `.closest(...)` exclusions and its own cleanup.
+//! Shared dismissal mechanics: Escape + outside-press handling with exclusion
+//! selectors, a suspend signal (dragging), and a "topmost overlay only"
+//! registry so two stacked surfaces don't both eat one Escape. Consolidates
+//! the behaviour that used to be duplicated across the primitive popover, the
+//! gloss surface, gloss selection mode, the gloss context menu and the
+//! floating search.
 //!
 //! Rules baked in:
-//! * outside events that land inside the surface's own refs are ignored
-//!   (via the `is_inside` closure);
-//! * outside events that land on an excluded selector are ignored (a search
-//!   input does not dismiss when its own result list is clicked; a mark click
-//!   does not exit selection mode);
+//! * outside events landing inside the surface's own refs are ignored
+//!   (`is_inside`);
+//! * outside events landing on an excluded selector are ignored (a search
+//!   input does not dismiss when its own result list is clicked);
 //! * `enabled` suspends dismissal entirely (a drag in flight never collapses
 //!   the card under the pointer);
-//! * `topmost_only` gives Escape to the most recently opened surface only —
-//!   press Escape with a context menu over a popover and only the menu goes.
+//! * `topmost_only` gives Escape to the most recently opened surface only.
 
 use std::cell::RefCell;
 
@@ -51,13 +47,11 @@ pub struct DismissPolicy {
     pub topmost_only: bool,
 }
 
-// The topmost-overlay registry. Deliberately `thread_local!` — in WASM the
-// UI is single-threaded, so this is an application-global that every
-// dismissable surface shares WITHOUT threading a registry handle through
-// each component's props (it is exactly the kind of ambient bookkeeping a
-// prop would force onto surfaces that never care about stacking). The cost
-// is that tests touching it must tolerate shared per-thread state, which
-// the tests below do by pushing and popping symmetrically.
+// The topmost-overlay registry. Deliberately `thread_local!`: the WASM UI is
+// single-threaded, so this is an application-global every dismissable surface
+// shares WITHOUT threading a registry handle through props. The cost is that
+// tests must tolerate shared per-thread state — they push and pop
+// symmetrically.
 thread_local! {
     /// Stack of open dismissable ids, most recent last.
     static DISMISS_STACK: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
@@ -77,11 +71,11 @@ fn is_topmost(id: u64) -> bool {
     DISMISS_STACK.with(|s| s.borrow().last() == Some(&id))
 }
 
-/// Whether any dismissable surface (a dropdown, a card, a context menu) is
-/// currently open. Windows that are themselves dismissable-but-not-stacked —
-/// the settings modal, which listens for Escape on its own — read this to
-/// defer to the layer above them: one press of Escape peels one layer, the
-/// dropdown first and the modal only once nothing sits on top of it.
+/// Whether any dismissable surface (dropdown, card, context menu) is open.
+/// Windows that are dismissable-but-not-stacked — the settings modal, which
+/// listens for Escape itself — read this to defer to the layer above: one
+/// press peels one layer, the dropdown first and the modal only once nothing
+/// sits on top.
 pub fn has_open_dismissable() -> bool {
     DISMISS_STACK.with(|s| !s.borrow().is_empty())
 }
@@ -104,10 +98,9 @@ fn pop_stack(id: u64) {
     });
 }
 
-/// Dismiss a surface while `visible`, forwarding to `on_dismiss`.
-///
-/// `is_inside` answers "is this node part of the surface itself?" (its
-/// anchors, its panel, its scroll area) — presses there never dismiss.
+/// Dismiss a surface while `visible`, forwarding to `on_dismiss`. `is_inside`
+/// answers "is this node part of the surface itself?" (anchors, panel, scroll
+/// area) — presses there never dismiss.
 pub fn use_dismiss(
     visible: Signal<bool>,
     on_dismiss: Callback<()>,

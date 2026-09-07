@@ -1,28 +1,22 @@
 // Format-list sync check — the same cheap insurance as `check-versions.ts`,
-// for the other thing that is written down more than once.
+// for the other thing written down more than once. What the reader opens is
+// declared in THREE places, in two languages, none of which can see the
+// others:
 //
-// What the reader opens is declared in THREE places, in two languages, and
-// none of them can see the others:
+//   - crates/reader-core/src/format.rs   `SUPPORTED`             — the
+//     registry the frontend consults (dialog filters, drop feedback, copy)
+//   - src-tauri/src/lib.rs               `DOCUMENT_EXTENSIONS`   — the
+//     shell's filesystem gate for OS handoffs and `read_file_*`
+//   - src-tauri/tauri.conf.json          `bundle.fileAssociations` — what
+//     the installer registers with the OS
 //
-//   - crates/reader-core/src/format.rs   `SUPPORTED`      <- the registry the
-//     frontend actually consults (dialog filters, drop-target feedback, UI copy)
-//   - src-tauri/src/lib.rs               `DOCUMENT_EXTENSIONS` <- the shell's
-//     filesystem gate: what an OS handoff or a `read_file_*` command may open
-//   - src-tauri/tauri.conf.json          `bundle.fileAssociations` <- what the
-//     installer registers with the OS
+// The registry is the source of truth; the other two are derived facts. The
+// failure mode on drift is quiet and one-sided: the app opens the format
+// from its own dialog while the OS refuses the handoff and the shell's gate
+// rejects the path. This script fails CI when they disagree.
 //
-// They agree today because someone kept them in step by hand, and the comment
-// on `DOCUMENT_EXTENSIONS` asks the next reader to do the same. The failure
-// mode is quiet and one-sided: add a format to the registry and the app opens
-// it from its own dialog, while the OS refuses to hand the file over and the
-// shell's gate rejects the path it did manage to pass — so the format looks
-// supported everywhere except where the user actually meets it.
-//
-// The registry is the source of truth; the other two are derived facts about
-// it. This script fails CI when they drift.
-//
-// This is the TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-formats.js` so CI can run it with plain `node`.
+// TypeScript source; Trunk's pre-build hook compiles it to
+// `scripts/check-formats.js`.
 
 import { read } from "./repo.js";
 
@@ -34,15 +28,13 @@ const SHELL_GATE = "src-tauri/src/lib.rs";
 const BUNDLE_CONF = "src-tauri/tauri.conf.json";
 
 // ---------------------------------------------------------------------------
-// The registry: parse the `SUPPORTED` table.
+// The registry: parse the `SUPPORTED` table. Parsed rather than imported —
+// it is a const in a wasm-targeted crate, and a build step emitting JSON
+// from Rust would be more machinery than the three lists it guards. The
+// patterns match the table's literal shape (`.+?`, not `[^=]*`: the type
+// annotation contains an `=` of its own) and throw rather than return empty
+// when the shape moves, so a refactor cannot silently empty the check.
 // ---------------------------------------------------------------------------
-// Parsed rather than imported: it is a `const` in a wasm-targeted crate, and
-// the alternative — a build step that emits JSON from Rust — would be more
-// machinery than the three lists it guards. The patterns are written against
-// the literal shape of that table (`.+?` and not `[^=]*`, because the type
-// annotation `&[DocumentKind]` contains an `=` of its own), and every one of
-// them throws rather than returning nothing when the shape moves, so a refactor
-// of the registry cannot silently empty this check.
 function parseRegistry(): Kind[] {
   const text = read(REGISTRY);
   const table = /pub const SUPPORTED.+?=\s*&?\[([\s\S]*?)\n\];/.exec(text);
@@ -148,7 +140,7 @@ for (const kind of registry) {
     continue;
   }
   // The registry lists every MIME a drag may advertise the kind under; the
-  // bundle wants the one the OS should show. That has to be one the format
+  // bundle wants the one the OS should show — which has to be one the format
   // actually answers to, or the association lies about what it opens.
   if (kind.mimes.length > 0 && entry.mimeType && !kind.mimes.includes(entry.mimeType)) {
     problems.push(

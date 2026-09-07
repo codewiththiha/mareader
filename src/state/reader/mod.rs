@@ -1,15 +1,12 @@
 //! Reader-level reactive state, one file per domain: the document, the viewer
 //! signals, the zoom pipeline's shape, search, the AI text selection and the
-//! gloss marks. Pure UI chrome (sidebar, toast) lives in `state::app`;
-//! pure domain logic in `reader-core` and the format crates.
+//! gloss marks. Pure UI chrome (sidebar, toast) lives in `state::app`; pure
+//! domain logic in `reader-core` and the format crates.
 //!
-//! This module is the barrel. Everything below used to be one 650-line file,
-//! which meant a page that only wanted `ViewerSignals` read the document, the
-//! search state and the gloss marks to find it, and any change to any of them
-//! touched the same file. The domains have nothing to say to each other beyond
-//! the struct at the bottom that owns one of each — with the single exception
-//! of the format questions the chrome keeps asking, which is exactly why they
-//! are answered here, once, as [`ReaderState::reflowable`].
+//! This module is the barrel. The domains have nothing to say to each other
+//! beyond the struct at the bottom that owns one of each — with the single
+//! exception of the format questions the chrome keeps asking, which is why
+//! they are answered here, once, as [`ReaderState::reflowable`].
 
 pub mod ai;
 pub mod document;
@@ -25,9 +22,9 @@ use reader_core::format::Format;
 use reader_core::view::ViewMode;
 use reflow_core::typography::TextSettings;
 
-// Only the names the app actually reaches for by their short path are
-// re-exported; the rest are reached through their own module, which is the
-// point of the split.
+// Only the names the app reaches for by their short path are re-exported;
+// the rest are reached through their own module, which is the point of the
+// split.
 pub use ai::{AiSelectionState, SelectionDetail};
 pub use document::{DEFAULT_PAGE_ASPECT, DocumentState, NO_DOCUMENT, ReflowContent};
 pub use gloss::GlossState;
@@ -60,13 +57,12 @@ pub struct ReaderState {
 
 impl ReaderState {
     /// True while a reflowable document (plain text, Markdown) is open.
-    ///
-    /// TRACKED: a document of the other kind swapping in re-renders the caller,
-    /// which is what lets a page host, a `<Show>` and a disabled settings row
-    /// all answer the same question without any of them learning what a file
-    /// extension is. This is the only yes/no the reader answers about format; a
-    /// new format means one more arm on `Format::is_reflowable`, not one more
-    /// `if` in the viewer.
+    /// TRACKED: a document of the other kind swapping in re-renders the
+    /// caller, so a page host, a `<Show>` and a disabled settings row all
+    /// answer the same question without learning what a file extension is.
+    /// The only yes/no the reader answers about format — a new format means
+    /// one more arm on `Format::is_reflowable`, not one more `if` in the
+    /// viewer.
     pub fn reflowable(&self) -> bool {
         self.document.format.get().is_reflowable()
     }
@@ -94,9 +90,9 @@ impl ReaderState {
 
     /// The stream's reading position as a rounded percentage of the whole
     /// document. Reads `scroll_top` and `container_size` TRACKED, so a derived
-    /// signal around it updates with every scroll tick; the extent itself is
-    /// read once, off the stream's own total (the scroll offset is the thing
-    /// that moves, and it moves through `scroll_top`).
+    /// signal around it updates with every scroll tick; the extent is read
+    /// once off the stream's own total — the scroll offset is the thing that
+    /// moves.
     pub fn stream_percent(&self) -> u32 {
         let top = self.viewer.scroll_top.get();
         let (_, viewport_h) = self.viewer.container_size.get();

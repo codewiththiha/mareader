@@ -1,19 +1,16 @@
-//! The persisted typography of the reflowable formats.
+//! The persisted typography of the reflowable formats — the SCHEMA half. It
+//! sits with the rest of the persisted settings because the field names below
+//! ARE the storage contract: additive only, every field defaulted through the
+//! struct-level default, so a blob saved before a field existed loads with
+//! that field's default.
 //!
-//! This is the SCHEMA half of the text formats' typography, and it sits with
-//! the rest of the persisted settings for one reason: the field names below ARE
-//! the storage contract, so they are additive only — every field carries
-//! `#[serde(default)]` semantics through the struct-level default, and a blob
-//! saved before a field existed loads with that field's default.
-//!
-//! The RESOLUTION half (choices becoming CSS font stacks, and the whole
-//! setting becoming the custom properties the stylesheet reads) lives in
-//! `reflow_core::typography`, which re-exports everything here so a caller can
-//! import the type and its maths from one place. Fonts are chosen from the
-//! system's faces today; [`BuiltInFont`] / [`builtin_fonts`] are the
-//! deliberately-empty extension point a future release fills with faces shipped
-//! inside the app — the schema already serialises them (`builtin:<name>`), so
-//! adding one is adding a row to the table, not a migration.
+//! The RESOLUTION half (choices becoming CSS font stacks and the `--tx-*`
+//! custom properties) lives in `reflow_core::typography`, which re-exports
+//! everything here so a caller imports the type and its maths from one place.
+//! Fonts are chosen from the system's faces today; [`BuiltInFont`] /
+//! [`builtin_fonts`] are the deliberately-empty extension point for faces
+//! shipped inside the app — the schema already serialises them
+//! (`builtin:<name>`), so adding one is a table row, not a migration.
 
 use serde::{Deserialize, Serialize};
 
@@ -209,7 +206,7 @@ impl SystemFont {
     }
 
     /// Average glyph advance as a fraction of the font size. Feeds the
-    /// pagination ESTIMATE (before the DOM measures real heights); a
+    /// pagination ESTIMATE (before the DOM measures real heights): a
     /// proportional face packs ~2 glyphs per em, a monospace face exactly
     /// 0.6em per cell.
     pub fn avg_char_width(self) -> f64 {
@@ -221,13 +218,11 @@ impl SystemFont {
     }
 }
 
-/// One font choice, as persisted and as the pickers express it.
-///
-/// The string encoding is the storage contract:
-/// * `default` — resolve through the surrounding context (the reading font
-///   for the body slot, the family's own stack for a family slot);
-/// * `system:<id>` — a [`SystemFont`];
-/// * `builtin:<id>` — a [`BuiltInFont`] (future: fonts shipped in the app).
+/// One font choice, as persisted and as the pickers express it. The string
+/// encoding is the storage contract: `default` resolves through the
+/// surrounding context (the reading font for the body slot, the family's own
+/// stack for a family slot); `system:<id>` a [`SystemFont`]; `builtin:<id>` a
+/// [`BuiltInFont`] (future: fonts shipped in the app).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum FontChoice {
     /// Follow the context: the reader's default font in the body slot, or
@@ -298,9 +293,9 @@ pub const DEFAULT_LINE_HEIGHT: f64 = 1.7;
 pub const DEFAULT_INK_CONTRAST: f64 = 100.0;
 
 /// Where the reading column sits inside the viewport while a reflowable
-/// document streams continuously (the vertical scroll mode). The text
-/// itself keeps its natural alignment — this positions the COLUMN, exactly
-/// the way a narrower book page sits left, centre or right on a desk.
+/// document streams continuously. The text keeps its natural alignment — this
+/// positions the COLUMN, the way a narrower book page sits left, centre or
+/// right on a desk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum TextColumnAlign {
     Left,
@@ -329,11 +324,10 @@ impl TextColumnAlign {
     }
 }
 
-/// The persisted typography of the reflowable formats.
-///
-/// Every knob is independent and additive; a blob missing any of them loads
-/// the defaults above. The ranges are enforced by [`sanitize`], which the
-/// app runs on load AND on every write path.
+/// The persisted typography of the reflowable formats. Every knob is
+/// independent and additive; a blob missing any of them loads the defaults.
+/// The ranges are enforced by [`sanitize`], which the app runs on load AND on
+/// every write path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TextSettings {
@@ -377,9 +371,9 @@ pub struct TextSettings {
     /// streams continuously. The paginated modes ignore it — their pages
     /// centre themselves the way every fixed sheet does.
     pub column_align: TextColumnAlign,
-    /// Body-ink intensity, 0–100. 100 is the theme's full ink; below that
-    /// the ink mixes toward the paper colour. A comfort dial for long
-    /// reading, not a tint — the paper stays whatever the theme says.
+    /// Body-ink intensity, 0–100. 100 is the theme's full ink; below that the
+    /// ink mixes toward the paper colour. A comfort dial for long reading, not
+    /// a tint — the paper stays whatever the theme says.
     pub ink_contrast: f64,
 }
 

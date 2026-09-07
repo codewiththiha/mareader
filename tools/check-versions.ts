@@ -1,19 +1,14 @@
-// Version-sync check — the cheapest insurance in the release pipeline.
+// Version-sync check — the cheapest insurance in the release pipeline. The
+// app version lives in FOUR places: package.json (.version),
+// src-tauri/tauri.conf.json (.version — what Tauri bundles), Cargo.toml
+// (pdf-reader, [package].version) and src-tauri/Cargo.toml (pdf,
+// [package].version). Release tags and artifact filenames derive from it, so
+// any drift breaks releases invisibly; this script fails CI when they
+// disagree. Tag-vs-version agreement is validated by the release workflow's
+// metadata job, the only place a tag is in hand.
 //
-// The app version lives in FOUR places in this repo (the workspace root plus
-// the Tauri shell crate):
-//   - package.json            (.version)
-//   - src-tauri/tauri.conf.json (.version)   <- what Tauri bundles
-//   - Cargo.toml              (pdf-reader, [package].version)
-//   - src-tauri/Cargo.toml    (pdf,        [package].version)
-//
-// Release tags and artifact filenames are derived from it, so if any of the
-// four drift, releases break invisibly. This script fails CI when they
-// disagree. (Tag-vs-version agreement is validated by the release workflow's
-// metadata job, which is the only place a tag is in hand.)
-//
-// This is the TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-versions.js` so CI can run it with plain `node`.
+// TypeScript source; Trunk's pre-build hook compiles it to
+// `scripts/check-versions.js`.
 
 import { isFile, read } from "./repo.js";
 
@@ -51,22 +46,21 @@ const version = sources[0]![1];
 console.log(`versions agree: ${version}`);
 
 // ---------------------------------------------------------------------------
-// Engine facade vs. Rust bridge contract
+// Engine facade vs Rust bridge contract. crates/pdf-engine/src/bridge.rs is
+// the sole place `window.PDFReader.*` is declared; a rename on either side
+// fails at RUNTIME with no build error (the wasm shim just gets undefined),
+// so this cross-checks the compiled facade (public/pdfEngine.js, from the
+// build:ts step) against every extern the bridge declares under the
+// PDFReader namespace.
 // ---------------------------------------------------------------------------
-// crates/pdf-engine/src/bridge.rs is the sole place `window.PDFReader.*` is
-// declared. A rename on either side fails at RUNTIME with no build error
-// (the wasm shim just gets `undefined`), so this step cross-checks the
-// compiled facade (public/pdfEngine.js, produced by the build:ts step above)
-// against every extern the bridge declares under the PDFReader namespace.
 const BRIDGE = "crates/pdf-engine/src/bridge.rs";
 const FACADE = "public/pdfEngine.js";
 
 function bridgePdfReaderNames(bridgeSrc: string): string[] {
-  // Only `extern "C"` declarations: `listen`/`has_pdf_reader` are plain pub
-  // fns and must not be counted as window.PDFReader surface. The attribute
-  // comes on its own line before the fn, so carry it until the fn it
-  // decorates, then consume it (an unused attribute would misattribute the
-  // NEXT fn).
+  // Only `extern "C"` declarations are window.PDFReader surface
+  // (`listen`/`has_pdf_reader` are plain pub fns). The attribute comes on
+  // its own line before the fn: carry it until the fn it decorates, then
+  // consume it — an unused attribute would misattribute the NEXT fn.
   const names: string[] = [];
   const lines = bridgeSrc.split(/\r?\n/);
   let inExtern = false;

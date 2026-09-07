@@ -151,12 +151,12 @@ pub fn ReflowStreamLayout(
         if height > 1.0 { height } else { 800.0 }
     };
     // Start on the resume position rather than the top of the document: the
-    // first window mounts around the saved fraction (or the saved page)
-    // instead of painting the file's opening for the few frames the mount
-    // anchor needs to land. Computed under the same numbers the layout is
-    // built from, and agreeing with what the anchor aims at — `anchor_stream`
-    // re-asserts the same spot a moment later and consumes the fraction, so
-    // nothing downstream changes; the aim simply agrees on its first frame.
+    // first window mounts around the saved fraction (or saved page) instead of
+    // painting the file's opening for the few frames the mount anchor needs to
+    // land. Computed under the same numbers the layout is built from and
+    // agreeing with what the anchor aims at — `anchor_stream` re-asserts the
+    // same spot a moment later and consumes the fraction, so nothing
+    // downstream changes; the aim simply agrees on its first frame.
     let initial_offset = {
         let scale = state.viewer.zoom.visual_scale();
         let total = state
@@ -253,11 +253,11 @@ pub fn ReflowStreamLayout(
         Effect::new(move |_| mirror.set(total.get()));
     }
 
-    // Zoom: the stream owns its relayout. The page strips are unbound in
-    // this mode, so the engine's rescale reaches nothing the reader can
-    // see; this effect follows the display scale instead, rescaling the
-    // block heights through the same anchored factor the engine uses for
-    // pages, so the point under the viewport centre holds still.
+    // Zoom: the stream owns its relayout. The page strips are unbound in this
+    // mode, so the engine's rescale reaches nothing the reader can see; this
+    // effect follows the display scale instead, rescaling block heights
+    // through the same anchored factor the engine uses for pages, so the point
+    // under the viewport centre holds still.
     {
         let v = v.clone();
         let applied = StoredValue::new_local(state.viewer.zoom.display.get_untracked());
@@ -274,12 +274,12 @@ pub fn ReflowStreamLayout(
         });
     }
 
-    // A zoom transaction freezes the stream's scroll echo and measurements
-    // for the same reasons the zoom coordinator freezes the page strips
-    // (see `crate::zoom::coordinator`): a rescale's scroll write echoes one
-    // frame late, and adopting that echo mid-tween pins the next anchored
-    // rescale from a stale offset. The coordinator owns the page strips and
-    // cannot reach this one, so the stream freezes itself for exactly the
+    // A zoom transaction freezes the stream's scroll echo and measurements for
+    // the same reasons the coordinator freezes the page strips
+    // (`crate::zoom::coordinator`): a rescale's scroll write echoes one frame
+    // late, and adopting that echo mid-tween pins the next anchored rescale
+    // from a stale offset. The coordinator owns the page strips and cannot
+    // reach this one, so the stream freezes itself for exactly the
     // transaction's duration.
     {
         let v = v.clone();
@@ -294,21 +294,20 @@ pub fn ReflowStreamLayout(
         });
     }
 
-    // The rendered truth: whatever the window actually mounted, measured
-    // and reported back — two ways at once. `report_size` keeps the
-    // virtualizer's OWN layout live (the immediate half); the same numbers,
-    // divided by the display scale back to scale-1 truth, also feed the
-    // shared height store (`effects::reader::reflow_measure::ingest`), which
-    // debounces them into the page cut. The model above is measured at the
-    // PAGE column width; when the reading column is narrower (a small
-    // window, a fat margin), the real blocks run taller, and this pass is
-    // what keeps the stream's geometry honest without a second offscreen
-    // column. It runs one frame after any input that can move a rendered
-    // height — window churn, typography, margin, container, zoom commits —
-    // and reports nothing while a zoom transaction is open (a mid-tween
-    // height belongs to a geometry that is already being replaced). Blanks
-    // are skipped: a placeholder reports the layout's own size back, which
-    // is nothing the store does not already know.
+    // The rendered truth: whatever the window actually mounted, measured and
+    // reported back — two ways at once. `report_size` keeps the virtualizer's
+    // OWN layout live (the immediate half); the same numbers, divided by the
+    // display scale back to scale-1 truth, also feed the shared height store
+    // (`effects::reader::reflow_measure::ingest`), which debounces them into
+    // the page cut. The model above is measured at the PAGE column width; when
+    // the reading column is narrower (a small window, a fat margin) the real
+    // blocks run taller, and this pass keeps the stream's geometry honest
+    // without a second offscreen column. It runs one frame after any input
+    // that can move a rendered height — window churn, typography, margin,
+    // container, zoom commits — and reports nothing while a zoom transaction
+    // is open (a mid-tween height belongs to a geometry already being
+    // replaced). Blanks are skipped: a placeholder reports the layout's own
+    // size back, which the store already knows.
     let column_ref: NodeRef<html::Div> = NodeRef::new();
     {
         let v = v.clone();
@@ -372,8 +371,8 @@ pub fn ReflowStreamLayout(
 
     // Scroll → page bookkeeping: the dominant block names the page cut it
     // belongs to, which is what progress persistence resumes through. The
-    // page→scroll arm is standing down for this mode, so this write can
-    // never bounce back as a scroll command.
+    // page→scroll arm stands down for this mode, so this write can never
+    // bounce back as a scroll command.
     {
         let v = v.clone();
         Effect::new(move |_| {
@@ -402,13 +401,13 @@ pub fn ReflowStreamLayout(
     let scale = state.viewer.zoom.display.read_only();
     let margin = state.viewer.page_margin.read_only();
     let column_pct = state.viewer.column_width_pct.read_only();
-    // The reading column: as wide as a page's content at the live scale,
-    // never wider than the viewport minus the page margin, and positioned
-    // by the alignment setting (left / center / right). The column-width
-    // dial rides the same `content_width` the paginated cut was made
-    // against — here WITHOUT the margin's second half: in the stream the
-    // margin is spent as the inset around the column, not inside it, so
-    // adding it to the pads too would charge the dial twice.
+    // The reading column: as wide as a page's content at the live scale, never
+    // wider than the viewport minus the page margin, positioned by the
+    // alignment setting. The column-width dial rides the same `content_width`
+    // the paginated cut was made against — here WITHOUT the margin's second
+    // half: in the stream the margin is spent as the inset AROUND the column,
+    // not inside it, so adding it to the pads too would charge the dial
+    // twice.
     let column_class = move || {
         format!(
             "tx-stream-col {}",
@@ -494,16 +493,14 @@ pub fn ReflowStreamLayout(
                                         class="tx-content"
                                         lang="en"
                                         // The row IS the block here: one text
-                                        // node tree, one virtual item, and so
-                                        // the row carries the block's handles
-                                        // itself rather than leaving them to the
-                                        // `BlockView` inside it — the id the gloss
-                                        // projection resolves a mark's block by,
-                                        // the index the selection tracker walks up
-                                        // to, and the page for that tracker's page
-                                        // range (which in this mode is
-                                        // bookkeeping, since nothing here is
-                                        // paginated).
+                                        // node tree, one virtual item, so the
+                                        // row carries the block's handles
+                                        // itself — the id the gloss projection
+                                        // resolves a mark's block by, the index
+                                        // the selection tracker walks up to,
+                                        // and the page for that tracker's range
+                                        // (bookkeeping in this mode; nothing
+                                        // here is paginated).
                                         id=block_row_id(index)
                                         data-block-index=index
                                         data-host-page=move || {
@@ -527,19 +524,17 @@ pub fn ReflowStreamLayout(
                                                     // (or retained across a
                                                     // window change): real
                                                     // type, and its hits with
-                                                    // it. Outside the band:
-                                                    // an empty box at the
-                                                    // virtualizer's own height,
-                                                    // so the window slides
-                                                    // without laying out a
-                                                    // single paragraph the
-                                                    // reader is flying past.
-                                                    // The height rides its own
-                                                    // reactive style so a
-                                                    // relayout while blanked
-                                                    // patches one attribute
-                                                    // rather than rebuilding
-                                                    // the box.
+                                                    // it. Outside: an empty box
+                                                    // at the virtualizer's own
+                                                    // height, so the window
+                                                    // slides without laying out
+                                                    // a paragraph the reader is
+                                                    // flying past. The height
+                                                    // rides its own reactive
+                                                    // style so a relayout while
+                                                    // blanked patches one
+                                                    // attribute rather than
+                                                    // rebuilding the box.
                                                     {move || {
                                                         if row_state.get() == VirtualItemState::Blank {
                                                             view! {

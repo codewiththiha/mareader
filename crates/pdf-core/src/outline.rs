@@ -1,16 +1,16 @@
 //! The chapter tree a PDF carries, and how it becomes the reader's outline.
 //!
-//! A PDF's `/Outlines` dictionary is a tree of destinations, and resolving what
-//! each one points at is a round trip through the pdf.js worker — seconds for a
-//! textbook, and the reason the reader asks for the tree only after page 1 is
-//! on screen. By the time it answers, the engine has already flattened it in
-//! document order (see `resolveOutline` in `public/pdfEngine.ts`), so what
-//! arrives is [`OutlineEntry`]: a title, a 1-based page, and the depth it sat at
-//! in the tree.
+//! Resolving a PDF's `/Outlines` destinations is a round trip through the
+//! pdf.js worker — seconds for a textbook — which is why the reader asks for
+//! the tree only after page 1 is on screen. By the time it answers, the
+//! engine has already flattened it in document order (`resolveOutline` in
+//! public/pdfEngine.ts), so what arrives is [`OutlineEntry`]: title, 1-based
+//! page, tree depth.
 //!
-//! [`to_nodes`] is the last PDF-shaped step. From here the reader holds
-//! `reader_core::outline::OutlineNode`s, exactly the type a Markdown document's
-//! headings become, and nothing downstream asks which kind of file it came from.
+//! [`to_nodes`] is the last PDF-shaped step: from here the reader holds
+//! `reader_core::outline::OutlineNode`s — exactly the type a Markdown
+//! document's headings become — and nothing downstream asks which kind of
+//! file it came from.
 
 use reader_core::outline::{OutlineNode, clamp_depth};
 use serde::{Deserialize, Serialize};
@@ -29,13 +29,11 @@ pub struct OutlineEntry {
     pub depth: u32,
 }
 
-/// The engine's entries as the reader's outline.
-///
-/// Two rules are enforced here rather than trusted from the file: a chapter
-/// whose destination never resolved (`page` 0) cannot be jumped to and is
-/// dropped, and every title is trimmed because an outline is the one place a
-/// document's whitespace shows up as a UI bug. Depths are clamped to what the
-/// panel indents.
+/// The engine's entries as the reader's outline. Two rules are enforced here
+/// rather than trusted from the file: a chapter whose destination never
+/// resolved (`page` 0) cannot be jumped to and is dropped, and every title is
+/// trimmed — an outline is the one place a document's whitespace shows up as a
+/// UI bug. Depths are clamped to what the panel indents.
 pub fn to_nodes(entries: Vec<OutlineEntry>, page_count: u32) -> Vec<OutlineNode> {
     entries
         .into_iter()

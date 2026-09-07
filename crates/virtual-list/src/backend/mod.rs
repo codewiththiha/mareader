@@ -1,12 +1,10 @@
 //! Shared backend trait: `StripBackend` defines the primitives every geometry
 //! engine provides (`offset_sub`, `size_sub`, `total_sub`, `index_at_sub`,
 //! `set_size_sub`). All windowing logic (`overlapping`, `visible`, `window`,
-//! `dominant`) is written once against this trait, so a new backend — a
-//! tree, a chunked column, whatever a surface needs — only has to implement
-//! the primitives.
-//!
-//! The math stays in `i64` sub-pixels (`to_sub` / `from_sub`) so boundary
-//! behavior is bit-for-bit identical across backends.
+//! `dominant`) is written once against this trait, so a new backend — a tree,
+//! a chunked column — only implements the primitives. The math stays in `i64`
+//! sub-pixels (`to_sub` / `from_sub`) so boundary behavior is bit-for-bit
+//! identical across backends.
 
 use crate::units::{from_sub, to_sub};
 use crate::window::{Budget, Window};
@@ -89,12 +87,11 @@ pub trait StripBackend {
     }
 
     /// [`index_at`](Self::index_at) with a per-frame hint — the previous
-    /// frame's answer, checked first.
-    ///
-    /// The default ignores the hint as a search seed and simply records the
-    /// unhinted answer into it, so a custom backend that does not opt into
-    /// the fast path still gets correct answers AND honest hint bookkeeping;
-    /// [`Strip`] overrides it with the neighbour-then-gallop search.
+    /// frame's answer, checked first. The default ignores the hint as a
+    /// search seed and simply records the unhinted answer into it, so a
+    /// custom backend that does not opt into the fast path still gets
+    /// correct answers AND honest hint bookkeeping; [`Strip`] overrides it
+    /// with the neighbour-then-gallop search.
     fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
         let index = self.index_at(pos);
         *hint = index;

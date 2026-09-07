@@ -1,8 +1,7 @@
 //! Display-name derivation for the open document. Pure — no wasm deps.
-//!
-//! A PDF's `/Title` metadata is free-form and frequently garbage (producers
-//! write source paths, percent-encoded URLs, or placeholders). Use it only
-//! when it looks like a real title; otherwise fall back to the file name.
+//! A PDF's `/Title` is free-form and frequently garbage (source paths,
+//! percent-encoded URLs, placeholders): use it only when it looks like a
+//! real title, else fall back to the file name.
 
 const MAX_TITLE_LEN: usize = 200;
 

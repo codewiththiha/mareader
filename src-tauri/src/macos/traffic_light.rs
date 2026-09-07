@@ -1,10 +1,10 @@
-//! Dynamic traffic-light layout — port of `readest/.../traffic_light.rs` to `objc2`.
+//! Dynamic traffic-light layout — port of `readest/.../traffic_light.rs` to
+//! `objc2`.
 //!
-//! `tauri.conf.json:trafficLightPosition` is only the pre-mount fallback
-//! (`{x:20,y:25}`). After the webview mounts, the frontend measures the
-//! real header height (`h-12` = 48px, via `ResizeObserver` on `#toolbar-row`)
-//! and invokes `set_traffic_lights {visible, headerHeight}`. Rust then
-//! owns the *vertical* position:
+//! `tauri.conf.json:trafficLightPosition` is only the pre-mount fallback.
+//! After the webview mounts, the frontend measures the real header height
+//! (ResizeObserver on `#toolbar-row`) and invokes `set_traffic_lights`; Rust
+//! then owns the vertical position:
 //!
 //! ```text
 //! y = ((header_height - button_height) / 2 + natural_origin_y).max(0)
@@ -13,22 +13,15 @@
 //! button.origin = (x_inset + i*spacing, natural_origin_y) // AppKit's rest
 //! ```
 //!
-//! The last requested state is kept process-wide and re-applied on
-//! `Resized` and `ThemeChanged` (AppKit re-lays out the button container on
-//! both), and a hide also hides the buttons themselves, so a relayout can
-//! never surface them on its own.
-//!
-//! `natural_origin_y` is cached in `OnceLock` on first read (~5pt on
-//! Sonoma/Sequoia, ~7pt on Tahoe/26). Re-reading after AppKit autoresizes
-//! the container would feed back and drift `y` — caching makes the formula
-//! a fixed-point. Mirrors `readest` `measure_close_button` + `compute…`.
-//!
-//! `objc2` is kept (not `cocoa`/`objc` `msg_send!`) because the rest of
-//! this crate already depends on `objc2-app-kit 0.3` and `cocoa` is frozen.
-//! The geometry types are `objc2_core_foundation::{CGPoint,CGRect,CGSize}`
-//! (aliased as `NSPoint/NSRect/NSSize` by `objc2-foundation`'s `geometry`
-//! module when `objc2-core-foundation` is enabled — here we use the
-//! core-foundation names directly to avoid feature gating).
+//! The last requested state is kept process-wide and re-applied on `Resized`
+//! and `ThemeChanged` (AppKit re-lays out the button container on both), and
+//! a hide also hides the buttons themselves. `natural_origin_y` is cached in
+//! `OnceLock` on first read (~5pt on Sonoma/Sequoia, ~7pt on Tahoe):
+//! re-reading after AppKit autoresizes the container would feed back and
+//! drift `y`, so caching makes the formula a fixed point. `objc2` is kept
+//! (not the frozen `cocoa` crate) because this crate already depends on
+//! `objc2-app-kit`; the geometry types are the `objc2_core_foundation` names
+//! used directly, to avoid feature gating.
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -75,12 +68,11 @@ mod imp {
     }
 
     /// The close button's height, caching its rest `origin.y` along the way.
-    ///
-    /// Only a laid-out frame is remembered: this runs on every `Resized`,
-    /// and the first can arrive before AppKit has placed the buttons at all
+    /// Only a laid-out frame is remembered: this runs on every `Resized`, and
+    /// the first can arrive before AppKit has placed the buttons at all
     /// (origin 0). The rest position is cached for the life of the process,
-    /// so a bogus read would pin the lights off-centre for good — a real
-    /// rest is a small positive inset, anything else keeps the fallback.
+    /// so a bogus read would pin the lights off-centre for good — a real rest
+    /// is a small positive inset, anything else keeps the fallback.
     fn measure_close_button(close: &NSView) -> (f64, f64) {
         let frame: CGRect = close.frame();
         let laid_out = frame.size.height > 0.0;
@@ -116,10 +108,10 @@ mod imp {
         let Some(container) = container else { return };
 
         // A hide also hides the buttons themselves: collapsing the container
-        // alone is not durable, because AppKit re-lays it out on every
-        // window resize and hands its natural height back — which used to
-        // pop the lights onto a hidden bar with nothing left to hide them
-        // again. Toggle BEFORE measuring: a hidden button is no ruler.
+        // alone is not durable — AppKit re-lays it out on every window resize
+        // and hands back its natural height, which used to pop the lights
+        // onto a hidden bar. Toggle BEFORE measuring: a hidden button is no
+        // ruler.
         for v in views {
             v.setHidden(!visible);
         }

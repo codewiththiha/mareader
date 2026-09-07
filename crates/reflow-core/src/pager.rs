@@ -1,15 +1,14 @@
 //! The page cutter: which blocks land on which page.
 //!
-//! The cut is block-granular — a paragraph is never split across a page —
-//! and it runs over BLOCK HEIGHTS. Heights come from two places: a pure
-//! ESTIMATE here (character counts against the column width, good enough
-//! to seed the layout the instant a file opens) and the DOM's real
-//! MEASUREMENT once the text has rendered. Both feed the same
-//! [`paginate`], so the layout only ever re-cuts when real numbers arrive,
-//! never twice for the same truth.
+//! The cut is block-granular — a paragraph is never split across a page — and
+//! runs over BLOCK HEIGHTS. Heights come from two places: a pure ESTIMATE
+//! here (character counts against the column width, enough to seed the layout
+//! the instant a file opens) and the DOM's real MEASUREMENT once the text has
+//! rendered. Both feed the same [`paginate`], so the layout only re-cuts when
+//! real numbers arrive, never twice for the same truth.
 //!
-//! Zoom never re-cuts: every length on the page scales by the same factor,
-//! so the cut computed at scale 1 is exactly the cut at any scale.
+//! Zoom never re-cuts: every length scales by the same factor, so the cut
+//! computed at scale 1 is exactly the cut at any scale.
 
 use crate::block::{BlockKind, TextBlock};
 
@@ -43,15 +42,15 @@ impl BlockMetrics {
 
 /// The estimated height of one block at scale 1.
 ///
-/// Text blocks honour their hard line breaks (each source line wraps on
-/// its own); Markdown blocks flow as one run — markup characters overstate
-/// the rendered length slightly, which the 0.85 factor takes back. An
-/// estimate is a SEED: the measurement pass replaces it with the real
-/// number as soon as the block has rendered once.
+/// Text blocks honour their hard line breaks (each source line wraps on its
+/// own); Markdown blocks flow as one run — markup overstates the rendered
+/// length slightly, which the 0.85 factor takes back. An estimate is a SEED:
+/// the measurement pass replaces it with the real number once the block has
+/// rendered.
 ///
-/// A continuation chunk (the tail of a paragraph `subdivide` cut) carries
-/// no paragraph space — the paragraph's one share of it belongs to its
-/// first chunk — so its estimate skips the margin term to match the render.
+/// A continuation chunk (the tail of a paragraph `subdivide` cut) carries no
+/// paragraph space — the paragraph's one share belongs to its first chunk —
+/// so its estimate skips the margin term to match the render.
 pub fn estimate_block_height(block: &TextBlock, m: &BlockMetrics) -> f64 {
     let per_line = m.chars_per_line();
     let lines: f64 = match block.kind {
@@ -91,12 +90,11 @@ impl PageCut {
     }
 }
 
-/// Greedily pack block heights into pages of `content_height`.
-///
-/// Blocks are never split; a block taller than a page gets the page to
-/// itself and overflows it (the renderer clips, which is the honest
-/// reading of a paragraph no page can hold). An empty document still cuts
-/// to one blank page — a document is never zero pages.
+/// Greedily pack block heights into pages of `content_height`. Blocks are
+/// never split; a block taller than a page gets the page to itself and
+/// overflows it (the renderer clips — the honest reading of a paragraph no
+/// page can hold). An empty document still cuts to one blank page: a document
+/// is never zero pages.
 pub fn paginate(heights: &[f64], content_height: f64) -> Vec<PageCut> {
     if heights.is_empty() {
         return vec![PageCut { start: 0, count: 0 }];

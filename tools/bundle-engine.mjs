@@ -18,9 +18,9 @@ await esbuild.build({
 });
 
 // The reader bundle: the format-agnostic browser side (the selection
-// tracker). Separate from the engine so that a document which never touches
-// pdf.js is not carrying the engine's bundle, and so the boundary stays
-// honest — nothing in here may import the pdf.js-facing modules.
+// tracker). Separate from the engine so a document that never touches pdf.js
+// does not carry it, and so nothing in here can import the pdf.js-facing
+// modules.
 await esbuild.build({
   absWorkingDir: root,
   entryPoints: ["public/readerEngine.ts"],
@@ -32,11 +32,10 @@ await esbuild.build({
 });
 
 // The theme bake worker: a separate classic worker file so the per-pixel
-// filter loop runs off the main thread. It shares the filter kernel module
-// with the main bundle, so worker and fallback cannot drift. Emitted to the
-// repo root of the public dir (next to pdfEngine.js) so index.html can
-// copy-file it to the dist root — copying the whole public/engine/ dir
-// would ship the TypeScript sources.
+// filter loop runs off the main thread. Shares the filter kernel module with
+// the main bundle, so worker and inline fallback cannot drift. Emitted next
+// to pdfEngine.js so index.html can copy-file it to the dist root — copying
+// public/engine/ wholesale would ship the TypeScript sources.
 await esbuild.build({
   absWorkingDir: root,
   entryPoints: ["public/engine/theme/bake.worker.ts"],

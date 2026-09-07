@@ -105,14 +105,13 @@ pub(crate) struct VirtualizerInner {
     pub scroll_armed: Rc<Cell<bool>>,
     pub flush_armed: Rc<Cell<bool>>,
 
-    /// While false, the DOM scroll echo must not touch the core. A programmatic
-    /// scroll burst (a zoom tween, a sidebar slide, a resize drag) writes the
-    /// surface every frame; the browser fires the corresponding scroll events
-    /// a frame late, so echoing them back overwrites the core's anchor position
-    /// with a stale value and the next anchored rescale oscillates around the
-    /// true path — the content visibly jitters during the animation. The app
-    /// flips this off for the duration of such a gesture and back on when the
-    /// gesture commits.
+    /// While false, the DOM scroll echo must not touch the core. A
+    /// programmatic scroll burst (zoom tween, sidebar slide, resize drag)
+    /// writes the surface every frame and the browser echoes a frame late, so
+    /// feeding the echo back would overwrite the core's anchor with a stale
+    /// value and the next anchored rescale would oscillate — visible jitter
+    /// during the animation. The app flips this off for the gesture and back
+    /// on at its commit.
     pub scroll_feedback: Cell<bool>,
 
     pub container_ro: RefCell<Option<ObserverBinding>>,
@@ -323,12 +322,10 @@ impl VirtualizerInner {
     }
 
     /// Drop listeners and observers associated with the bound container.
-    ///
-    /// The removal happens with the SAME closure identity that was added
-    /// (the JS `removeEventListener` matches by function reference), and the
-    /// closure is dropped immediately after — so a rebound container can
-    /// never leak a WASM closure, and a disposed virtualizer releases every
-    /// DOM handle it took.
+    /// Removal happens with the SAME closure identity that was added (JS
+    /// `removeEventListener` matches by function reference) and the closure
+    /// is dropped immediately after — a rebound container never leaks a WASM
+    /// closure, and a disposed virtualizer releases every DOM handle.
     pub(crate) fn teardown_bindings(&self) {
         for binding in self.listeners.borrow_mut().drain(..) {
             let _ = binding.element.remove_event_listener_with_callback(
@@ -370,13 +367,12 @@ where
     }
 }
 
-/// The retention clock, in milliseconds.
-///
-/// `performance.now()` is monotonic (time origin) and sub-millisecond, so a
-/// zombie's `expires_at` is a true duration — a wall-clock NTP step or a DST
-/// switch cannot extend or cut a grace period short mid-zoom. `Date::now()`
-/// is the fallback for the webviews where `performance` is unavailable. (The
-/// pure retention maths in `retention.rs` stays host-testable without this.)
+/// The retention clock, in milliseconds. `performance.now()` is monotonic
+/// and sub-millisecond, so a zombie's `expires_at` is a true duration — a
+/// wall-clock NTP step or DST switch cannot stretch or cut a grace period
+/// mid-zoom. `Date::now()` is the fallback where `performance` is
+/// unavailable. (The pure retention maths in `retention.rs` stays
+/// host-testable without this.)
 fn now_ms() -> f64 {
     web_sys::window()
         .and_then(|w| w.performance())
@@ -562,12 +558,11 @@ impl Virtualizer {
     }
 
     /// The bound container's scroll offset as the DOM reports it right now,
-    /// in content coordinates (padding removed); `None` while unbound.
-    ///
-    /// The core's own offset (`scroll_offset`) is what the last command or
-    /// echo made it; this is what the browser actually holds, which differs
-    /// when a write was clamped against a box that had not been laid out
-    /// yet. A mount-time anchor compares the two to know whether it landed.
+    /// in content coordinates (padding removed); `None` while unbound. The
+    /// core's own offset is what the last command or echo made it; this is
+    /// what the browser actually holds, which differs when a write was
+    /// clamped against a box not yet laid out. A mount-time anchor compares
+    /// the two to know whether it landed.
     pub fn surface_offset(&self) -> Option<f64> {
         let el = self.inner.surface.element()?;
         let html = el.dyn_into::<web_sys::HtmlElement>().ok()?;

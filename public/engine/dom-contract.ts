@@ -1,23 +1,18 @@
-// The engine's half of the DOM contract.
+// The engine's half of the DOM contract. The app builds the page hosts; the
+// engine paints into them. They never call each other — they meet in the DOM
+// through attribute names and values, two class names, and the shape of
+// element ids. A name that disagrees is not an error anywhere: it is a
+// `closest` that returns null — a selection stops producing an "Explain"
+// pill, or a canvas stops finding its host — and the only symptom is a
+// reader that quietly does nothing.
 //
-// The app builds the hosts; the engine paints into them. The two sides never
-// call each other — they meet in the DOM, through attribute names, the values
-// those attributes carry, two class names, and the shape of element ids. A
-// name that disagrees is not an error anywhere: it is a `closest` that returns
-// null, so a selection inside a page stops producing an "Explain" pill, or a
-// canvas stops finding the host it was registered against, and the only symptom
-// is a reader that quietly does nothing.
-//
-// The app's half is `src/dom_contract.rs`, which holds the names Rust uses as
-// values. Two of them — `data-host-page` and `data-ai-popover` — cannot live
-// there, because a Leptos view takes an attribute's name from the markup and
-// only its value from an expression, so the hosts write them as literals; the
-// check below reads those literals out of the Rust source instead.
-//
-// `tools/check-dom-contract.ts` fails CI when the halves disagree. It also
-// reads the id shapes out of the Rust builders' `format!` strings rather than
-// trusting a copy of them, so a rename on either side is caught by the other.
-// Nothing outside this file should spell any of these names.
+// The app's half is `src/dom_contract.rs`. Two attribute NAMES
+// (`data-host-page`, `data-ai-popover`) cannot live there — a Leptos view
+// takes an attribute's name from the markup, only its value from an
+// expression — so the hosts write them as literals and the check reads those
+// out of the Rust source, as it reads the id shapes out of the builders'
+// format! strings. `tools/check-dom-contract.ts` fails CI when the halves
+// disagree. Nothing outside this file should spell any of these names.
 
 // --- attributes every reader host carries ---------------------------------
 
@@ -37,9 +32,10 @@ export const AI_POPOVER_ATTR = "data-ai-popover";
 
 /**
  * The engine only ever branches on `reflow`: a PDF host is the path it has
- * always taken, and the app decides what to do with a `host` value it does not
- * recognise. `HOST_PDF` is therefore the app's to declare (`src/dom_contract.rs`),
- * and the check forbids spelling either value as a literal all the same.
+ * always taken, and the app decides what to do with a `host` value it does
+ * not recognise. `HOST_PDF` is therefore the app's to declare
+ * (`src/dom_contract.rs`), and the check forbids spelling either value as a
+ * literal all the same.
  */
 export const HOST_REFLOW = "reflow";
 
@@ -52,10 +48,9 @@ export const TEXT_LAYER_CLASS = "textLayer";
 export const PAGE_SNAPSHOT_CLASS = "page-snapshot";
 
 // --- element id shapes ----------------------------------------------------
-//
 // `components/viewer/page_host.rs` builds these. Three of the four prefixes
 // number their pages from 1; the continuous strip indexes its window from 0,
-// and so do its ids, which is the one asymmetry a caller has to know.
+// and so do its ids — the one asymmetry a caller has to know.
 
 export const ID_PREFIX_SINGLE = "sp";
 export const ID_PREFIX_SPREAD = "dp";

@@ -17,12 +17,11 @@ pub struct WordInfo {
     pub usages: Vec<String>, // Example sentences
 }
 
-/// Forces the Apple Intelligence model into constrained decoding.
-/// It will ONLY generate valid JSON that matches this exact shape.
-///
-/// Gated to the same targets as the `fm-bridge` dependency itself: schema
-/// construction is only ever needed by the Apple provider, and importing
-/// the crate elsewhere would break fallback builds.
+/// Forces the Apple Intelligence model into constrained decoding: it will
+/// ONLY generate valid JSON matching this exact shape. Gated to the same
+/// targets as the `fm-bridge` dependency itself — schema construction is
+/// only ever needed by the Apple provider, and importing the crate elsewhere
+/// would break fallback builds.
 #[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]
 pub fn word_info_schema() -> Schema {
     Schema::new(

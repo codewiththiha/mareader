@@ -8,13 +8,12 @@ use crate::state::reader::TypographySignal;
 use crate::state::{AppState, AppearanceSignal, TextureSignal};
 use crate::storage::{load_covers, load_library, load_settings};
 
-/// App state seeded from the persisted settings/library/covers.
-///
-/// The three loads are synchronous localStorage reads plus a `serde_json`
-/// parse, deliberately: they are on the order of a millisecond for a library
-/// at its twenty-book cap, and every one of them has to be in hand before the
-/// first paint — a theme that arrives a frame late is a visible flash of the
-/// wrong palette, and a shelf that arrives late is a visible empty state.
+/// App state seeded from the persisted settings/library/covers. The three
+/// loads are synchronous localStorage reads plus a `serde_json` parse,
+/// deliberately: ~a millisecond for a library at its twenty-book cap, and all
+/// three must be in hand before the first paint — a theme a frame late is a
+/// visible flash of the wrong palette, a shelf a frame late a visible empty
+/// state.
 pub(crate) fn create_app_state() -> AppState {
     AppState {
         settings: RwSignal::new(load_settings()),
@@ -27,13 +26,13 @@ pub(crate) fn create_app_state() -> AppState {
 }
 
 /// Provide the app-level contexts: the app state (done by the caller), the
-/// viewer slice of it, the appearance/texture signals the page hosts need,
-/// and the text typography signal (all derived from settings; the viewer
-/// never touches settings itself).
+/// viewer slice, the appearance/texture signals the page hosts need, and the
+/// text typography signal — all derived from settings; the viewer never
+/// touches settings itself.
 ///
-/// Returns the appearance and typography memos so the app root can hand them
-/// to the effects that paint from them — one memo for the whole app, rather
-/// than one per consumer each re-deriving the same slice.
+/// Returns the appearance and typography memos so the app root hands them to
+/// the effects that paint from them: one memo for the whole app rather than
+/// one per consumer re-deriving the same slice.
 pub(crate) fn provide_app_contexts(state: AppState) -> (AppearanceSignal, TypographySignal) {
     // The look, narrowed out of the settings blob once. See
     // [`AppearanceSignal`] for why every DOM-writing consumer subscribes here

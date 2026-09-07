@@ -1,20 +1,18 @@
 //! The page geometry every format publishes: how big each page is.
 //!
 //! This used to be the PDF half of the document, and the name said so
-//! (`PdfContent`, reached as `content.pdf`). But nothing in it is PDF's. A page
-//! size is known twice over — the intrinsic (scale-1) box the document declares,
-//! and the CSS-px height the laid-out page actually took — and both drive things
-//! that must not be asked about the format they are sizing: the strip
-//! virtualizer seeds from them, the zoom coordinator anchors against them, the
-//! blend backdrop reads the heights, and the thumbnails' row pitch is derived
-//! from the first sheet.
+//! (`PdfContent`). But nothing in it is PDF's: a page size is known twice over
+//! — the intrinsic (scale-1) box the document declares, and the CSS-px height
+//! the laid-out page took — and both drive things that must not be asked about
+//! the format they size: the strip virtualizer seeds from them, the zoom
+//! coordinator anchors against them, the blend backdrop reads the heights, and
+//! the thumbnails' row pitch derives from the first sheet.
 //!
-//! A PDF fills them from the file (`services::document::open::seed`, refined by
-//! the engine's geometry callback as pages render). A reflowable document fills
-//! them from its page cut, with A4 as the one fixed point, through
-//! [`PageMetrics::publish_uniform`] — which is exactly why the field cannot keep
-//! a format's name: the reader's paged modes, its zoom ladder and its progress
-//! chrome all read this and none of them may care who counted.
+//! A PDF fills them from the file (`services::document::open::seed`, refined
+//! by the engine's geometry callback as pages render). A reflowable document
+//! fills them from its page cut, A4 the one fixed point, through
+//! [`PageMetrics::publish_uniform`] — exactly why the field cannot keep a
+//! format's name.
 //!
 //! `page1_size` is the answer every fixed-geometry surface uses before a page
 //! has rendered, which is why the fallback policy sits on the document rather
@@ -37,7 +35,7 @@ pub struct PageMetrics {
 }
 
 impl PageMetrics {
-    /// Back to "no pages". Called by [`super::DocumentState::reset`], and by
+    /// Back to "no pages". Called by [`super::DocumentState::reset`] and by
     /// nothing else: the two vectors must move together, or a strip lays out
     /// against heights from the book that was just closed.
     pub fn reset(&self) {
@@ -49,18 +47,18 @@ impl PageMetrics {
     /// Publish a page count whose pages are all one size — a reflowable cut,
     /// where A4 is the one fixed point.
     ///
-    /// Both vectors are written only when they would actually change.
+    /// Both vectors are written only when they would actually change:
     /// `intrinsic` is an input to the virtualizers' geometry epoch, so handing
-    /// them a fresh (but identical) A4 column on every re-measure rebuilt both
-    /// page layouts — the second, redundant rewindow a reader saw right after a
-    /// text document settled onto its measured cut. A re-cut that keeps the page
-    /// count has nothing to tell them, and a zoom never reaches this at all (the
-    /// stream rescales itself, the paged modes go through
+    /// them a fresh-but-identical A4 column on every re-measure rebuilt both
+    /// page layouts — the redundant rewindow a reader saw right after a text
+    /// document settled onto its measured cut. A re-cut that keeps the count
+    /// has nothing to tell them, and a zoom never reaches this at all (the
+    /// stream rescales itself; the paged modes go through
     /// `crate::effects::reader::reflow_layout`).
     ///
-    /// The height tolerance is half a CSS pixel: these are laid-out heights at a
-    /// fractional scale, and re-measuring the same cut must not read as a change
-    /// because the scale rounded differently.
+    /// The height tolerance is half a CSS pixel: these are laid-out heights at
+    /// a fractional scale, and re-measuring the same cut must not read as a
+    /// change because the scale rounded differently.
     pub fn publish_uniform(&self, count: u32, size: &PageSize, css_height: f64) {
         let pages = count as usize;
         let sizes_current = self
@@ -82,16 +80,15 @@ impl PageMetrics {
     ///
     /// One definition because four moments read it and must agree — the no-gap
     /// pref, the page-margin pref, a reflowable re-cut and a zoom rescale. A
-    /// strip that sized its pages one way and then re-sized them another on the
-    /// next rescale would walk the reader's position by a gap per page, which is
-    /// the kind of drift no single call site can see.
+    /// strip that sized its pages one way and re-sized them another on the
+    /// next rescale would walk the reader's position by a gap per page — drift
+    /// no single call site can see.
     ///
-    /// The heights are read live per item rather than snapshotted into the
-    /// closure: the store is what a rescale has just written, and copying a
-    /// whole book's heights only to hand them straight back is the allocation
-    /// the zoom path was written to avoid. The horizontal strip has its own
-    /// model (intrinsic widths times scale, plus margin on the scroll axis) and
-    /// deliberately does not share this one.
+    /// Heights are read live per item rather than snapshotted into the
+    /// closure: the store is what a rescale just wrote, and copying a whole
+    /// book's heights only to hand them straight back is the allocation the
+    /// zoom path was written to avoid. The horizontal strip has its own model
+    /// (intrinsic widths times scale, plus margin on the scroll axis).
     pub fn strip_sizes(&self, gap: f64) -> impl Fn(usize) -> f64 {
         let heights = self.css_heights;
         move |index: usize| {

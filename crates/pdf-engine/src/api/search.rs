@@ -1,19 +1,17 @@
 //! Full-text search, Rust side: an in-process index over the document's
 //! extracted text.
 //!
-//! The pdf.js worker can only extract text in the browser, so the engine (JS)
-//! hands each page over via `bridge::extract_page_text` and everything after
-//! that — lowercasing, occurrence matching, snippet building, result ordering
-//! — happens here, on the wasm heap. The index is rebuilt on document open
-//! (and lazily by the search effect if it isn't), after which a query is a
-//! pure in-Rust scan: no pdf.js round trip, no per-query text extraction.
+//! The pdf.js worker can only extract text in the browser, so the engine hands
+//! each page over via `bridge::extract_page_text` and everything after that —
+//! lowercasing, occurrence matching, snippet building, result ordering —
+//! happens here, on the wasm heap. The index is rebuilt on document open (and
+//! lazily by the search effect if it isn't), after which a query is a pure
+//! in-Rust scan: no pdf.js round trip, no per-query extraction.
 //!
-//! Extraction is concurrent in bounded batches: [`SEARCH_PAGE_CONCURRENCY`]
-//! pages in flight per turn, so the pdf.js worker is never flooded and live
-//! page renders keep their share of it. Between turns the builder's future
-//! falls back to Pending awaiting the next pdf.js round trip, so the event
-//! loop (and the reader's own renders) runs between turns without a busy
-//! wait — a textbook-sized index build stays responsive.
+//! Extraction is concurrent in bounded batches ([`SEARCH_PAGE_CONCURRENCY`]
+//! pages in flight per turn), so the worker is never flooded and live renders
+//! keep their share; between turns the builder falls back to Pending, so the
+//! event loop (and the reader's renders) runs without a busy wait.
 
 use std::cell::RefCell;
 
@@ -28,8 +26,7 @@ use crate::bridge;
 
 /// Pages extracted concurrently per turn while the index is built. Three is
 /// enough to hide the per-page worker round trip without starving live
-/// renders (the caller reads "3 pages per turn" as the feel of the build);
-/// this is deliberately a plain const, not a setting.
+/// renders; deliberately a plain const, not a setting.
 pub const SEARCH_PAGE_CONCURRENCY: usize = 3;
 
 thread_local! {
@@ -60,13 +57,11 @@ struct ItemPayload {
     h: f64,
 }
 
-/// Extract every page (concurrently, [`SEARCH_PAGE_CONCURRENCY`] per turn)
-/// and build the in-process index. Returns the number of pages indexed; the
-/// caller usually ignores it, the `{ok:true, count}` envelope shape is kept
-/// for the engine contract.
-///
-/// Unreadable pages are skipped, never fatal — the old streaming search did
-/// the same (a corrupted page must not kill a search).
+/// Extract every page (concurrently, [`SEARCH_PAGE_CONCURRENCY`] per turn) and
+/// build the in-process index. Returns the number of pages indexed; the caller
+/// usually ignores it — the `{ok:true, count}` envelope shape is kept for the
+/// engine contract. Unreadable pages are skipped, never fatal: a corrupted
+/// page must not kill a search.
 pub async fn build_search_index(num_pages: u32) -> Result<u32, EngineError> {
     require_pdf_reader()?;
     with(|i| i.clear());
@@ -75,11 +70,10 @@ pub async fn build_search_index(num_pages: u32) -> Result<u32, EngineError> {
     }
 
     // One TURN = [`SEARCH_PAGE_CONCURRENCY`] pages extracted concurrently,
-    // then the builder yields to the event loop before the next turn. The
-    // whole document never floods the pdf.js worker, and between turns the
-    // reader's own renders get the main thread (buffer_unordered over the
-    // whole stream would also cap in-flight work, but never let the UI run
-    // until the LAST page's promise settled).
+    // then the builder yields to the event loop. The document never floods the
+    // pdf.js worker, and between turns the reader's renders get the main
+    // thread (buffer_unordered over the whole stream would cap in-flight work
+    // but never let the UI run until the LAST page settled).
     let mut indexed = 0u32;
     let mut cursor = 1u32;
     while cursor <= num_pages {
@@ -112,9 +106,9 @@ pub async fn build_search_index(num_pages: u32) -> Result<u32, EngineError> {
 /// computed from the extracted text this crate already holds.
 ///
 /// After the query, the active query is published to the engine's text layers
-/// (`setSearchContext`) so already-mounted pages repaint their highlight
-/// boxes — they paint from the DOM text layer, not from the match list, so
-/// without this the results list would fill while the page stayed unmarked.
+/// (`setSearchContext`) so mounted pages repaint their highlight boxes — they
+/// paint from the DOM text layer, not from the match list, so without this the
+/// results list would fill while the page stayed unmarked.
 pub async fn search(query: &str) -> Result<SearchResponse, EngineError> {
     let response = with(|i| i.query(query));
     bridge::set_search_context(query);

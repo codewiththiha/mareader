@@ -1,15 +1,13 @@
 //! Wire-contract guard for the `window.PDFReader` facade.
 //!
 //! `bridge.rs` is the only place the JS engine surface is declared, and a
-//! rename on either side fails at RUNTIME (the wasm shim resolves
-//! `undefined`) with no build error. The browser-side smoke test covers the
-//! runtime behaviour; this test keeps the two surfaces textually in sync so
-//! the contract is checked on every `cargo test` too.
+//! rename on either side fails at RUNTIME (the wasm shim resolves `undefined`)
+//! with no build error. The browser-side smoke test covers runtime behaviour;
+//! this test keeps the two surfaces textually in sync on every `cargo test`.
 //!
-//! The facade is the esbuild output `public/pdfEngine.js`, which is only
-//! produced by the `build:ts` step — when it is missing (a bare `cargo test`
-//! on a fresh clone) the check reports and skips rather than failing; CI
-//! runs it with the artifact present, right before this job's test step.
+//! The facade is the esbuild output `public/pdfEngine.js`, produced only by
+//! `build:ts` — when it is missing (a bare `cargo test` on a fresh clone) the
+//! check reports and skips; CI runs it with the artifact present.
 
 use std::path::PathBuf;
 

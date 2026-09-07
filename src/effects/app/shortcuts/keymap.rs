@@ -1,17 +1,16 @@
 //! What a navigation key MEANS, as a pure function.
 //!
-//! The dispatch used to be a chain of `match ev.key()` arms with the view
-//! mode, the chrome-scroller check, the key-repeat flag and the Shift state
-//! tested inline against `web_sys` types. Every one of those decisions is
-//! interesting — Space pages the column but must still click a focused
-//! button; arrows turn pages in the paginated modes and scroll in the
-//! continuous ones; a chrome scroller owns its own arrows — and none of them
-//! were reachable from a test without a browser and a synthesised event.
+//! The dispatch used to be a chain of `match ev.key()` arms testing the view
+//! mode, the chrome-scroller check, the key-repeat flag and Shift inline
+//! against `web_sys` types — decisions that were all interesting (Space pages
+//! the column but must still click a focused button; arrows turn pages in the
+//! paginated modes and scroll in the continuous ones; a chrome scroller owns
+//! its own arrows) and none reachable from a test without a browser.
 //!
-//! So the decision is separated from the doing. [`resolve`] takes a plain
+//! So the decision is separated from the doing: [`resolve`] takes a plain
 //! description of the keypress and the world it landed in and answers with an
-//! outcome; `navigation.rs` reads the event, calls this, and performs it.
-//! Should the reader ever get a custom keymap, this is the table it edits.
+//! outcome; `navigation.rs` reads the event, calls this, and performs it. A
+//! future custom keymap edits this table.
 
 use reader_core::view::ViewMode;
 
@@ -51,14 +50,12 @@ pub(super) struct NavKey<'a> {
     pub on_button: bool,
 }
 
-/// What to do about a keypress: whether the browser's own handling has to be
-/// suppressed, and which action (if any) to run.
-///
-/// The two are genuinely independent. An arrow inside a horizontal strip is
-/// claimed by the reader even when nothing comes of it — letting the browser
-/// scroll the page as well would move the strip twice — while a repeat of the
-/// same key is claimed and then deliberately dropped, because the hold engine
-/// is already gliding.
+/// What to do about a keypress: whether the browser's own handling must be
+/// suppressed, and which action (if any) to run. The two are genuinely
+/// independent — an arrow inside a horizontal strip is claimed even when
+/// nothing comes of it (letting the browser scroll as well would move the
+/// strip twice), while a repeat of the same key is claimed and deliberately
+/// dropped because the hold engine is already gliding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct NavOutcome {
     pub prevent_default: bool,

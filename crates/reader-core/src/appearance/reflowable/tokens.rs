@@ -1,19 +1,17 @@
 //! The `--tx-*` CSS custom properties for the text page palette — what
-//! `styles/text.css` resolves the paper, ink, accents and chrome of a
-//! text/Markdown page through.
+//! styles/text.css resolves a text/Markdown page's paper, ink, accents and
+//! chrome through.
 //!
-//! Written on `<html>` alongside the PDF pipeline's `--canvas-*` /
-//! `--color-*` variables; the two namespaces are disjoint, so painting
-//! both every appearance change costs nothing and lets a format swap
-//! repaint with no extra wiring.
+//! Written on `<html>` alongside the PDF pipeline's `--canvas-*` / `--color-*`
+//! variables; the namespaces are disjoint, so painting both every appearance
+//! change costs nothing and a format swap repaints with no extra wiring.
 //!
 //! The ink dial resolves HERE, not in the stylesheet: `--tx-ink` is the
 //! palette ink mixed toward the paper by the dial's percentage, and the
-//! markdown ink tints (blockquote rule, code chips, table borders…)
-//! are precomposed over the paper at their fixed percentages. A slider
-//! drag therefore writes N flat custom properties — the stylesheet no
-//! longer re-evaluates a chain of live `color-mix()` rules across every
-//! mounted block on every tick.
+//! markdown ink tints are precomposed over the paper at their fixed
+//! percentages. A slider drag writes N flat custom properties instead of
+//! re-evaluating a chain of live `color-mix()` rules across every mounted
+//! block per tick.
 
 use crate::appearance::Appearance;
 use super::palette::{TextPalette, mix_toward_paper};

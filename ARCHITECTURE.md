@@ -250,7 +250,7 @@ format-agnostic.
   answer and none of them knows what Markdown is.
 - Text never enters blend mode and never touches the paper session: a text page is recoloured by
   its own tokens, so the backdrop's colour machine is gated off for the format (the Theme tab
-  hides the Paper and Rendering sections accordingly). Body ink has its own comfort dial —
+  hides the Paper section accordingly). Body ink has its own comfort dial —
   `ink_contrast`, a `color-mix` of the theme's ink toward its paper, exposed as the "Text ink
   intensity" slider while a text document is open. Search scans the blocks in-process (the
   document is its own index), mapping hits through the current page cut, and a reveal scrolls to

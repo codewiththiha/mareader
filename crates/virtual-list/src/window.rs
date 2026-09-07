@@ -17,10 +17,10 @@ impl Window {
     /// Number of items in the range.
     ///
     /// No `is_empty` companion: a `Window` is a non-empty range token, not a
-    /// collection — it is only ever produced when at least one item qualifies,
-    /// so an `is_empty` that answered `false` unconditionally was a branch
-    /// callers could write but never take. The clippy lint that asks for the
-    /// pair is suppressed here on purpose.
+    /// collection — only ever produced when at least one item qualifies, so
+    /// an `is_empty` answering `false` unconditionally was a branch callers
+    /// could write but never take. The clippy lint is suppressed on
+    /// purpose.
     #[allow(clippy::len_without_is_empty)]
     #[inline]
     pub const fn len(&self) -> usize {
@@ -104,10 +104,10 @@ impl From<f64> for Viewport {
 /// The policy is deliberately blind to *which* items it warms: it produces a
 /// symmetric pixel padding, and the window builder decides membership with
 /// two hard invariants — every partly-visible item is always mounted, and
-/// trimming evicts the item furthest from the viewport first (preferring to
-/// keep the item below, in reading direction). Callers never say "render N
-/// above and M below"; they say how much slack they can afford, and the
-/// top/below split falls out of wherever the reader is scrolled.
+/// trimming evicts the item furthest from the viewport first (preferring the
+/// item below, in reading direction). Callers say how much slack they can
+/// afford; the top/below split falls out of wherever the reader is
+/// scrolled.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Overscan {
     /// A multiple of the viewport extent (zoom-invariant). The right default
@@ -115,7 +115,7 @@ pub enum Overscan {
     /// the same thing at any item size or zoom.
     Screenfuls(f64),
     /// A fixed number of items — or, for row-windowed grids, rows. The right
-    /// choice for cheap, uniform cells (thumbnails): "pre-mount exactly two
+    /// choice for cheap uniform cells (thumbnails): "pre-mount exactly two
     /// rows" regardless of viewport height.
     Items(usize),
     /// A fixed pixel distance.
@@ -134,9 +134,8 @@ impl Overscan {
     }
 }
 
-/// How much to keep mounted around the viewport.
-///
-/// Two knobs, orthogonal by design:
+/// How much to keep mounted around the viewport. Two knobs, orthogonal by
+/// design:
 ///
 /// - [`overscan`](Self::overscan) — how much slack around the visible range;
 /// - [`max_items`](Self::max_items) — a hard ceiling on mounted count, which

@@ -1,14 +1,12 @@
 //! Wasm-bindgen interop with the imperative PDF engine.
 //!
-//! This module is the ONLY place that declares the `window.PDFReader`
-//! externs (public/pdfEngine.js, the imperative pdf.js wrapper). Callers go
-//! through `crate::api`, never here directly (except the probes re-exported
-//! at the crate root). The `window.__TAURI__` externs do not live here —
-//! they belong to the `tauri-bridge` crate, so no format crate owns
-//! chrome's IPC surface.
-//!
-//! The async fns mirror the existing `invoke` pattern: wasm-bindgen awaits
-//! the underlying Promise and yields the resolved JsValue.
+//! The ONLY place that declares the `window.PDFReader` externs
+//! (public/pdfEngine.js). Callers go through `crate::api`, never here
+//! directly (except the probes re-exported at the crate root). The
+//! `window.__TAURI__` externs belong to the `tauri-bridge` crate, so no
+//! format crate owns chrome's IPC surface. The async fns mirror the `invoke`
+//! pattern: wasm-bindgen awaits the underlying Promise and yields the
+//! resolved JsValue.
 //!
 //! CONTRACT: do not change these signatures.
 
@@ -33,11 +31,11 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub async fn destroy() -> JsValue;
 
-    /// Register a page's canvas with the engine. Typed on purpose: the
-    /// caller passes primitives, so a virtualized row's mount allocates no
-    /// serde payload object (that was one JsValue build per mount on fast
-    /// scrolls). `host_id` is the page host element id, or "" when the
-    /// caller has none — the engine treats "" exactly like undefined.
+    /// Register a page's canvas with the engine. Typed on purpose: the caller
+    /// passes primitives, so a virtualized row's mount allocates no serde
+    /// payload object (one JsValue build per mount on fast scrolls, before).
+    /// `host_id` is the page host element id, or "" when the caller has none —
+    /// the engine treats "" exactly like undefined.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "registerPage")]
     pub fn register_page(page: u32, canvas_id: &str, host_id: &str);
 
@@ -108,37 +106,29 @@ extern "C" {
 
     // --- Engine: theme re-bake + scrub mode ---
     // The engine bakes the theme (filter + paper blend) into every page and
-    // thumbnail raster so canvases are plain opaque textures. On an appearance
-    // change it must re-bake the rasters it already holds; the theme applier
-    // calls `refresh_theme` after writing the new CSS variables. During a
-    // slider scrub the variables change every frame, so the theme applier
-    // switches the engine into scrub mode instead: raw rasters + the live
-    // CSS pipeline, exactly like the pre-baking behaviour, for the duration
-    // of the drag.
+    // thumbnail raster so canvases are plain opaque textures; on an appearance
+    // change it must re-bake the rasters it holds, and the theme applier calls
+    // `refresh_theme` after writing the new CSS variables. During a slider
+    // scrub the variables change every frame, so the applier switches the
+    // engine into scrub mode instead: raw rasters + the live CSS pipeline for
+    // the duration of the drag.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "refreshTheme")]
     pub fn refresh_theme();
 
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
 
-    // The reader's rendering-pipeline choice. `true` keeps the compositor's
-    // filter + blend on the raw rasters (one floating-point pass shared with
-    // the backdrop); `false` bakes the pipeline into each raster instead. The
-    // engine performs the raster swap inside its own theme queue.
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setLivePipeline")]
-    pub fn set_live_pipeline(on: bool);
-
     // --- Engine: paper pipeline (the `pdf-paper` crate's eyes) ---
     // The engine owns the CANVASES; the crate (via this crate's `paper`
     // session) owns every colour decision. Four calls carry the whole
-    // contract, all in the established Rust→engine direction:
+    // contract, all in the Rust->engine direction:
     //
     // * `setPaper` publishes (or, with "", clears) `--pdf-paper`.
     // * `setPaperActive` gates the per-render frame stash on the blend switch.
-    // * `takePaperFrame` drains the raw frame a live render stashed at the
-    //   one pipeline moment the page's own paper is still unbaked.
-    // * `samplePaperPage` renders `page` offscreen at a tiny scale and
-    //   resolves its frame — the look-ahead samples through it.
+    // * `takePaperFrame` drains the raw frame a live render stashed at the one
+    //   pipeline moment the page's own paper is still unbaked.
+    // * `samplePaperPage` renders `page` offscreen at a tiny scale and resolves
+    //   its frame — the look-ahead samples through it.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPaper")]
     pub fn set_paper(hex: &str);
 
@@ -163,13 +153,12 @@ extern "C" {
 }
 
 /// True when `window.PDFReader` exists. Must be checked before any engine
-/// call: a missing global makes the wasm-bindgen shim throw, which panics
-/// the reactive owner and freezes menus / theme / open.
+/// call: a missing global makes the wasm-bindgen shim throw, which panics the
+/// reactive owner and freezes menus / theme / open.
 ///
-/// The non-wasm short-circuit keeps the check callable from host `cargo
-/// test` (the paper session's tests drive code paths that reach this
-/// guard); on the host there is no engine, so `false` is also the truthful
-/// answer.
+/// The non-wasm short-circuit keeps the check callable from host `cargo test`
+/// (the paper session's tests reach this guard); on the host there is no
+/// engine, so `false` is also the truthful answer.
 pub fn has_pdf_reader() -> bool {
     if !cfg!(target_arch = "wasm32") {
         return false;

@@ -1,36 +1,34 @@
 //! Applies the persisted appearance to the DOM whenever it changes.
 //!
-//! Three layers, painted on every change (they write DISJOINT property
-//! sets, so the pipelines never fight over a token):
+//! Three layers, painted on every change (they write DISJOINT property sets,
+//! so the pipelines never fight over a token):
 //!   shared     — `data-base`, the `.dark` class, `color-scheme`, the texture
 //!     and noise variables (identical for every format),
 //!   raster     — `--canvas-filter` / `--canvas-blend` plus the seven tinted
-//!     `--color-*` overrides, read by the pages that arrive as bitmaps
+//!     `--color-*` overrides read by pages that arrive as bitmaps
 //!     (`effects::appearance::raster`),
 //!   reflowable — the seven `--tx-*` tokens a reflowable page reads
-//!     (`effects::appearance::reflow`, over reader-core's
-//!     `reader_core::appearance::reflowable`). Such a page paints its own paper and ink
-//!     directly, so no filter ever reaches it.
+//!     (`effects::appearance::reflow`, over
+//!     `reader_core::appearance::reflowable`). Such a page paints its own
+//!     paper and ink directly, so no filter ever reaches it.
 //!
-//! WHY INLINE PROPERTIES RATHER THAN CSS BLOCKS. The old design had one
-//! `:root[data-theme=...]` block per theme, so every look needed hand-written
-//! CSS and only the six that existed were reachable. The tint is now continuous
-//! — any hue, any strength — which cannot be enumerated in a stylesheet. The
+//! Inline properties rather than CSS blocks because the tint is continuous —
+//! any hue, any strength — which a stylesheet cannot enumerate. The
 //! stylesheet keeps the STRUCTURE (which var drives what) and the base
-//! palettes; the computed values are pushed here. Setting a property to the
-//! empty string removes the override and lets the stylesheet's own value win
-//! again, which is how a tint is cleanly un-applied.
+//! palettes; computed values are pushed here. Setting a property to the empty
+//! string removes the override and lets the stylesheet's own value win again,
+//! which is how a tint is cleanly un-applied.
 //!
-//! SLIDER RAM. Writing `settings` on every `input` event made
-//! WKWebView allocate a fresh filter intermediate for every visible page,
-//! every tick — that is the 1.2GB spike while dragging Colour / Tint
-//! strength. Sliders now live-paint CSS at most once per animation frame and
-//! commit the Settings signal (and localStorage) only after the gesture
-//! pauses. The filter STRING is unchanged, so the look is byte-identical.
+//! Slider RAM: writing `settings` on every `input` event made WKWebView
+//! allocate a fresh filter intermediate per visible page per tick — the 1.2GB
+//! spike while dragging Colour / Tint strength. Sliders now live-paint CSS at
+//! most once per animation frame and commit the Settings signal (and
+//! localStorage) only after the gesture pauses. The filter STRING is
+//! unchanged, so the look is byte-identical.
 //!
-//! The scrub/commit scheduler for the sliders lives in the sibling
-//! `appearance` module; this file keeps the painting itself, the
-//! format attribute the CSS keys off, and the app effects.
+//! The scrub/commit scheduler lives in the sibling `appearance` module; this
+//! file keeps the painting itself, the format attribute the CSS keys off, and
+//! the app effects.
 
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
@@ -39,7 +37,6 @@ use reader_core::appearance::shared::{noise, texture};
 use reader_core::appearance::Appearance;
 use reader_core::format::Format;
 use reader_core::settings::GlossColor;
-use reader_core::settings::RenderPipeline;
 use crate::state::{AppState, AppearanceSignal};
 
 use crate::effects::appearance::{is_scrubbing, raster, reflow, schedule_save};
@@ -77,10 +74,6 @@ fn paint_shared(a: &Appearance) {
     let kick = prev_base.as_deref() != Some(a.base.as_str());
 
     _ = el.set_attribute("data-base", a.base.as_str());
-    // Publish the texture too: in blend mode the backdrop bleeds the same
-    // paper texture past the page body (styles/components/shell.css), and
-    // the CSS keys off this attribute.
-    let _ = el.set_attribute("data-texture", a.texture.as_str());
     let class = el.class_list();
     if a.base.is_dark() {
         _ = class.add_1("dark");
@@ -152,29 +145,28 @@ pub fn paint_appearance_now(a: Appearance, ink_contrast: f64) {
 }
 
 pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
-    // One effect, one paint: hue / texture / grain all live on Appearance,
-    // and the live-preview path writes the same properties, so splitting
-    // them into three effects just tripled the work on every settings write.
-    // The blend backdrop needs nothing from here: it is pure CSS over the
-    // same variables this effect paints (--canvas-filter / --canvas-blend)
-    // plus --pdf-paper, which the engine publishes on the first render of
-    // each document.
+    // One effect, one paint: hue / texture / grain all live on Appearance and
+    // the live-preview path writes the same properties, so splitting them
+    // into three effects tripled the work per settings write. The blend
+    // backdrop needs nothing from here: it is pure CSS over the variables
+    // this effect paints plus --pdf-paper, which the engine publishes on the
+    // first render of each document.
     //
-    // It subscribes to the appearance MEMO, not to `settings`. Reading the
-    // whole blob had a layout toggle, a gloss colour and `last_path` on every
-    // document open all repainting eight custom properties and re-baking the
-    // engine's rasters for a look that had not moved.
+    // Subscribes to the appearance MEMO, not `settings`: reading the whole
+    // blob had a layout toggle, a gloss colour and `last_path` on every open
+    // repainting eight properties and re-baking the rasters for a look that
+    // had not moved.
 
     // What the engine's rasters are baked against: the filter, the blend mode
     // and the base palette. Texture, grain and the UI tokens are CSS layers
     // over the canvas, so they repaint without touching a single bitmap.
     let baked = StoredValue::new_local(None::<(String, String, String)>);
 
-    // The reflowable formats' ink dial: resolved in Rust (into a flat
-    // --tx-ink), so the appearance paint needs it alongside the look. Its
-    // own memo keeps a dial nudge from subscribing the paint to the whole
-    // settings blob — and the engine rebake signature below ignores it, so
-    // an ink nudge never re-bakes a single raster.
+    // The reflowable formats' ink dial, resolved in Rust into a flat --tx-ink,
+    // so the appearance paint needs it alongside the look. Its own memo keeps
+    // a dial nudge from subscribing the paint to the whole settings blob —
+    // and the engine rebake signature below ignores it, so an ink nudge never
+    // re-bakes a raster.
     let ink_contrast: Memo<f64> = Memo::new(move |_| state.settings.with(|s| s.text.ink_contrast));
 
     // Warm the style pipeline once after the first paint: the first slider
@@ -187,15 +179,14 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
         let a = appearance.get();
         paint_appearance_now(a, ink_contrast.get());
         // The engine bakes the theme into its rasters (pages + thumbnails);
-        // re-bake them at the freshly painted variables. Skipped while a
-        // scrub is in flight (scrub mode owns the canvases then, and its exit
-        // bakes once at the settled values) and a no-op before the first
-        // document opens — and for a text document, whose pages repaint from
-        // the tokens alone.
-        // Only when the BAKE changed, though: dragging the grain or texture
-        // slider moves an overlay, not the pixels underneath, and re-baking
-        // every mounted page and thumbnail for it was the most expensive
-        // thing an appearance tick could do.
+        // re-bake them at the freshly painted variables. Skipped while a scrub
+        // is in flight (scrub mode owns the canvases; its exit bakes once at
+        // the settled values), and a no-op before the first document opens and
+        // for a text document, whose pages repaint from the tokens alone.
+        // Only when the BAKE changed, though: grain and texture sliders move an
+        // overlay, not the pixels underneath, and re-baking every mounted page
+        // and thumbnail for them was the most expensive thing an appearance
+        // tick could do.
         let signature = (
             a.canvas_filter(),
             a.canvas_blend().to_string(),
@@ -203,12 +194,12 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
         );
         if baked.try_get_value().flatten().as_ref() != Some(&signature) {
             baked.set_value(Some(signature));
-            // Not while a slider scrub is in flight: the drag has been
-            // repainting these very variables every frame, and the scrub exit
-            // performs the one final bake at the settled values. Queueing a
-            // refresh here too would only hand the engine's serialized theme
-            // queue a no-op per commit — and per structural click that lands
-            // mid-drag, which is exactly when the gesture needs the frame.
+            // Not while a slider scrub is in flight: the drag repaints these
+            // variables every frame and the scrub exit performs the one final
+            // bake at the settled values. Queueing a refresh here too would
+            // hand the engine's serialized theme queue a no-op per commit —
+            // and per structural click landing mid-drag, exactly when the
+            // gesture needs the frame.
             if !is_scrubbing() {
                 raster::refresh_theme();
             }
@@ -217,29 +208,6 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
         if !warmed.get_value() {
             warmed.set_value(true);
             let _ = body_el().map(|b| b.offset_height());
-        }
-    });
-
-    // The rendering pipeline is a one-field choice with an expensive
-    // consequence (every mounted raster is swapped), so it gets its own
-    // narrow effect: no other settings write may trigger it, and the engine
-    // is told only when the reader actually flips it. The first run also
-    // pushes the persisted choice into an engine that always boots live.
-    let pipeline: Memo<RenderPipeline> = Memo::new(move |_| state.settings.with(|st| st.render_pipeline));
-
-    Effect::new(move || {
-        let p = pipeline.get();
-        raster::set_live_pipeline(p.is_live());
-        // CSS keys the blend backdrop off the same choice: under the live
-        // pipeline the backdrop re-derives the paper with the compositor's
-        // filter + blend, but a baked page already carries the themed
-        // paper, so the backdrop must paint it directly instead of running
-        // the pipeline twice (styles/components/shell.css). The attribute
-        // lands synchronously; the raster swap follows through the engine's
-        // serialized theme queue, and the scrub class keeps the backdrop on
-        // the live treatment for as long as raw pixels are actually shown.
-        if let Some(el) = document_element() {
-            let _ = el.set_attribute("data-pipeline", if p.is_live() { "live" } else { "baked" });
         }
     });
 
@@ -271,10 +239,10 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
     });
 
     // The reading surface resolves its paper from the OPEN FORMAT: the PDF
-    // blend backdrop paints --color-paper (see shell.css), text/Markdown
-    // pages paint the surface with --tx-paper. `data-format` is the one
-    // CSS switch, and it also gates the dim text pages' texture family —
-    // paint it here so it lands with the appearance it rides on.
+    // blend backdrop paints the engine's computed paper (shell.css),
+    // text/Markdown pages paint --tx-paper. `data-format` is the one CSS
+    // switch and also gates the dim text pages' texture family — painted here
+    // so it lands with the appearance it rides on.
     Effect::new(move || {
         let name = match state.reader.format() {
             Format::Pdf => "pdf",
