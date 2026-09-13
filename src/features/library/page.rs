@@ -40,6 +40,7 @@ use crate::features::library::import_modal::{ImportModal, ImportSheet, drain_she
 use crate::features::library::progress_dock::ProgressDock;
 use crate::features::library::relink_modal::RelinkModal;
 use crate::features::library::remove_modal::{RemoveBookModal, RemoveSheet};
+use crate::features::library::rename_modal::{RenameModal, RenameSheet};
 use crate::features::library::shelf_conflict_modal::ShelfConflictModal;
 use crate::features::library::titlebar_search::TitlebarSearch;
 use crate::features::library::view_menu::ViewMenu;
@@ -65,6 +66,9 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     // The remove sheet's handles, for the same reason: a card and a list row both
     // ask, and neither should have to be told where the sheet lives.
     let remove_sheet = RemoveSheet::provide();
+    // The rename sheet's: the ask is the right-click's menu, which is nobody's
+    // component child either.
+    let rename_sheet = RenameSheet::provide();
     // And the right-click's: a card, a row, a folder and the empty shelf all ask,
     // and one host is what makes the answer the same menu wherever it was asked
     // from. Provided here and rendered by the content, which is where the level's
@@ -124,6 +128,10 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             <DragLayer />
             <ImportModal state=state sheet=sheet />
             <RemoveBookModal state=state sheet=remove_sheet />
+            // The display name's sheet: a right-click's Rename for a book, a
+            // link or a shelf, and the second door beside the crumb's inline
+            // field.
+            <RenameModal state=state sheet=rename_sheet />
             // The shelf-already-has-it question. No handle to provide: the
             // sheet opens off a signal on the library state, because the
             // services that raise it — a drop, an import's spawned run — are

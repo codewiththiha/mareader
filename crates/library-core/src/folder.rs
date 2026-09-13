@@ -391,6 +391,16 @@ impl WatchedFolder {
         self.tracking.resolve(key)
     }
 
+    /// Whether this folder is watched ANYWHERE: its root, or any rung the
+    /// reader turned on under a root they turned off. The walk question —
+    /// which folders a focus rescan owes a pass — where [`WatchedFolder::tracked`]
+    /// is the root's own answer: a tree only a subfolder of is watched still
+    /// owes the walk, and the ledger's per-rung gate is what keeps the quiet
+    /// rungs quiet inside it.
+    pub fn tracks_anything(&self) -> bool {
+        self.tracking.tracked() || self.tracking.any_on()
+    }
+
     /// Turn tracking on or off for one rung of this tree, and mirror the root's
     /// answer back onto [`FolderOpts::watch`] so the import sheet's switch and
     /// every surface that reads the flag agree with the tree.
@@ -502,7 +512,12 @@ impl Tombstone {
     pub fn of(book: &Book, shelf_id: Option<String>, now_ms: u64) -> Self {
         Self {
             fp: book.fp,
-            title: book.title.clone(),
+            // The name the SHELF showed (`Book::title`), not the raw title
+            // field: a stored book the reader never opened has no title of its
+            // own, and a log that kept `None` would label itself from
+            // `last_path` — the store's `source.pdf` for a copy, which is the
+            // layout's word for the book rather than the reader's.
+            title: Some(book.title()),
             format: book.format,
             last_path: book.path().to_string(),
             shelf_id,
@@ -535,83 +550,6 @@ pub fn find<'a>(folders: &'a [WatchedFolder], id: &str) -> Option<&'a WatchedFol
 /// tombstone is lifted and a shelf map is cut.
 pub fn find_mut<'a>(folders: &'a mut [WatchedFolder], id: &str) -> Option<&'a mut WatchedFolder> {
     folders.iter_mut().find(|f| f.id == id)
-}
-
-/// The watched read-at-place tree whose ground covers `ground`, when one does.
-///
-/// One question with two askers, and the two are the reason it lives here rather
-/// than in either of them: the import sheet asks it before offering the watch
-/// switch, and a folder run asks it before writing the sheet's answers over a
-/// standing ledger. Ground a tree already watches is watched, and an import of it
-/// is the reader asking for its books again rather than asking the library to
-/// stop looking — so the switch is not the reader's to set on that ground, and a
-/// run that let a stale `false` through would un-track a folder by importing it.
-/// Turning the watch off is the shelf's own menu, which asks nothing of a walk.
-///
-/// The standing half of the condition is a question about the GROUND and not
-/// about the folder: a tree answers for a ground when the run this import
-/// starts would land inside that tree, which is `governs` below. A folder whose
-/// shelves the reader has taken apart is a watch nobody can see, and a lock
-/// nobody can see is a switch that is simply broken — so such a folder's ground
-/// goes back to the sheet, and an import of it with the switch off is how the
-/// invisible watch ends. A folder keeps watching with no shelf on purpose (a
-/// shelf comes back when the folder next places a book); what it stops doing is
-/// answering for ground it no longer stands on.
-///
-/// The DEEPEST covering tree answers, because a nested read-at-place import is
-/// the closer family — [`crate::shelf::family_for`]'s own rule for a fold. The
-/// folder itself is its own deepest cover, which is what makes a re-pick of a
-/// watched root the case the sheet locks on.
-///
-/// `None` when no read-at-place tree covers the ground, the covering tree is
-/// not watched, or the ground is free of every tree that stands: an unwatched
-/// or unseated folder's switch is the reader's, here and on the menu. A COPYING
-/// folder is never an answer, because the sheet does not offer the watch beside
-/// a copy either — the two switches are nested in the sheet and nested here, so
-/// the ground the sheet can ask about is the ground this names.
-pub fn watching_over<'a>(
-    folders: &'a [WatchedFolder],
-    shelves: &[Shelf],
-    ground: &str,
-) -> Option<&'a WatchedFolder> {
-    folders
-        .iter()
-        .filter(|f| f.opts.in_place && f.tracked())
-        .filter(|f| governs(f, shelves, ground))
-        .max_by_key(|f| f.root.trim_end_matches(['/', '\\']).chars().count())
-}
-
-/// Whether a watched tree is SEATED on `ground`: the ground is under the tree's
-/// root, and a standing shelf of that tree wears a rung the ground's own rung
-/// hangs on — the ground itself, or an ancestor of it. The standing half of
-/// [`watching_over`]'s condition, asked of the GROUND rather than of the
-/// folder.
-///
-/// Seated is the right question because it is the one the run answers. A seated
-/// ground is the tree's root re-picked, a rung of it, or a directory under a
-/// rung that still hangs, and every one of those imports continues the tree on
-/// a seat the reader can see — so the tree's watch is the answer the import
-/// lands on, and a sheet that offered the switch would be offering to un-track
-/// a folder by importing it.
-///
-/// What is NOT a seat is the case this rule exists for: a rung that still hangs
-/// BELOW the ground. Taking a folder's shelf apart lifts the shelves inside it
-/// to the level it was on ([`crate::shelf::lift_children`]) and cuts the map's
-/// pointer at the shelf that went, so the folder keeps shelves the reader can
-/// see while the ground they took one off is nobody's seat any more. The next
-/// import of that ground mints a fresh shelf there with the sheet's own options,
-/// and the import gate agrees — its covered question reads the map and finds no
-/// standing shelf for a rung the map no longer names. Answering "locked" for it
-/// was a switch stuck on for a folder the reader had just taken apart, on the
-/// one ground the removal had freed: a sheet and a ledger disagreeing about
-/// whose answer the watch was, and the reader's own removal unable to end it.
-fn governs(folder: &WatchedFolder, shelves: &[Shelf], ground: &str) -> bool {
-    let Some(rel) = rel_under(ground, &folder.root) else {
-        return false;
-    };
-    shelves.iter().any(|s| {
-        s.kind.folder_id() == Some(folder.id.as_str()) && key_in_zone(&rel, s.kind.rung())
-    })
 }
 
 /// Make a persisted folder list internally valid: drop rows with no id or no
@@ -1101,15 +1039,13 @@ mod tests {
         assert!(find(&folders, "f2").is_some_and(|f| f.tracked() && f.opts.watch));
     }
 
-    /// A folder with the two mode switches set explicitly: the fixture the
-    /// watch-cover rule is asked about, where the default fixture's `false`
-    /// watch would answer every case the same way.
-    /// A folder with the two mode switches set explicitly.
+    /// A folder with the two mode switches set explicitly, where the default
+    /// fixture's `false` watch would answer every case the same way.
     ///
     /// The watch arrives as a TREE rather than as the flag alone, because the
-    /// flag is now the root rung's mirror: a fixture that set only the flag would
-    /// be a folder this build never writes, and `watching_over` — which reads the
-    /// tree — would answer `false` for a folder the test meant to be watched.
+    /// flag is now the root rung's mirror: a fixture that set only the flag
+    /// would be a folder this build never writes, and a reader of the tree
+    /// would answer `false` for a folder the test meant to be watched.
     fn mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedFolder {
         let mut folder = WatchedFolder {
             id: id.into(),
@@ -1124,134 +1060,5 @@ mod tests {
             folder.set_tracking("", true);
         }
         folder
-    }
-
-    #[test]
-    fn the_watch_a_folder_already_holds_is_not_the_sheets_to_take_off() {
-        let folders = vec![mode("f1", "/books", true, true)];
-        let shelves = vec![standing("s1", "f1", None)];
-        // The tree's own root, re-picked: the case the sheet locks on.
-        assert_eq!(
-            watching_over(&folders, &shelves, "/books").map(|f| f.id.as_str()),
-            Some("f1")
-        );
-        // And a rung of it: importing a subfolder of a watched tree joins the
-        // watch the tree holds rather than starting a second opinion about it.
-        assert_eq!(
-            watching_over(&folders, &shelves, "/books/scifi").map(|f| f.id.as_str()),
-            Some("f1")
-        );
-        // A trailing separator is the same directory, and a name that merely
-        // starts with the root is not inside it — `rel_under`'s directory edge.
-        assert!(watching_over(&folders, &shelves, "/books/").is_some());
-        assert!(watching_over(&folders, &shelves, "/bookshelf").is_none());
-        assert!(watching_over(&folders, &shelves, "/other").is_none());
-    }
-
-    #[test]
-    fn only_a_watched_read_at_place_tree_covers_ground() {
-        // An unwatched tree leaves the switch to the reader...
-        assert!(watching_over(
-            &[mode("f1", "/books", true, false)],
-            &[standing("s1", "f1", None)],
-            "/books"
-        )
-        .is_none());
-        // ...and so does a copying one, whatever its watch says: the sheet does
-        // not offer the watch beside a copy, so it has no lock to honour there.
-        assert!(watching_over(
-            &[mode("f2", "/books", false, true)],
-            &[standing("s2", "f2", None)],
-            "/books"
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn the_deeper_of_two_watched_trees_answers_for_a_rung() {
-        let folders = vec![
-            mode("outer", "/books", true, true),
-            mode("inner", "/books/scifi", true, true),
-        ];
-        let shelves = vec![standing("s1", "outer", None), standing("s2", "inner", None)];
-        assert_eq!(
-            watching_over(&folders, &shelves, "/books/scifi/deep").map(|f| f.id.as_str()),
-            Some("inner"),
-            "the nested import is the closer family"
-        );
-        assert_eq!(
-            watching_over(&folders, &shelves, "/books/poetry").map(|f| f.id.as_str()),
-            Some("outer"),
-            "and the outer tree still answers for the ground only it covers"
-        );
-    }
-
-    /// A shelf of folder `id`'s tree at rung `rel`: a seat the lock can be
-    /// about, when the rung is the ground's own or an ancestor of it.
-    fn standing(id: &str, folder_id: &str, rel: Option<&str>) -> Shelf {
-        crate::testkit::folder_shelf(id, id, folder_id, rel, &[], None)
-    }
-
-    #[test]
-    fn a_folder_with_no_shelf_standing_holds_no_lock() {
-        // The shape a removal of the shelf leaves behind: the folder row keeps
-        // watching — a shelf comes back when it next places a book — but there
-        // is nothing on screen the lock could be about, so the ground is the
-        // sheet's again and an import of it with the switch off ends the watch.
-        let folders = vec![mode("f1", "/books", true, true)];
-        assert!(
-            watching_over(&folders, &[], "/books").is_none(),
-            "no shelf of the folder stands, so nothing covers the ground"
-        );
-        assert!(
-            watching_over(&folders, &[standing("s1", "f2", None)], "/books").is_none(),
-            "and a shelf of ANOTHER folder is not this folder standing"
-        );
-    }
-
-    #[test]
-    fn a_rung_below_a_ground_is_not_a_seat_for_it() {
-        // What taking a folder's ROOT shelf apart leaves behind: the shelves
-        // inside it are lifted to the level it was on and still stand, and the
-        // map's pointer at the root is the one the removal cut. The folder is a
-        // tree the reader can still see, but not on the ground they took it off
-        // — that ground mints a fresh shelf with the sheet's own options, so the
-        // switch is the reader's and the run honours what it says. A lock here
-        // was the switch stuck on for a folder that had just been taken apart.
-        let folders = vec![mode("f1", "/books", true, true)];
-        let lifted = [standing("s1", "f1", Some("scifi"))];
-        assert!(
-            watching_over(&folders, &lifted, "/books").is_none(),
-            "the ground the removal freed is the sheet's again"
-        );
-        // The rung's OWN ground is still the tree's: the shelf that stands is
-        // the seat that import names, and the run continues the tree on it.
-        assert!(
-            watching_over(&folders, &lifted, "/books/scifi").is_some(),
-            "a rung re-picked is the tree's own ground"
-        );
-        // And so is ground UNDER the rung, which the chain mints on the way
-        // down: a seat above a ground is a seat for it.
-        assert!(
-            watching_over(&folders, &lifted, "/books/scifi/deep").is_some(),
-            "a directory below a seat is seated"
-        );
-        // A SIBLING of the standing rung is seated by nothing: the rung that
-        // hangs is not an ancestor of it, so the ground is the sheet's.
-        assert!(
-            watching_over(&folders, &lifted, "/books/poetry").is_none(),
-            "a rung is not a seat for the ground beside it"
-        );
-        // And the seat a whole tree answers from is its root shelf, which
-        // seats every rung below it — the case the lock is for.
-        let whole = [standing("s0", "f1", None), standing("s1", "f1", Some("scifi"))];
-        assert!(
-            watching_over(&folders, &whole, "/books").is_some(),
-            "the tree's own root, standing, seats its root"
-        );
-        assert!(
-            watching_over(&folders, &whole, "/books/poetry").is_some(),
-            "and every directory inside it"
-        );
     }
 }

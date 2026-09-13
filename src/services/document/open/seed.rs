@@ -6,7 +6,7 @@
 use leptos::prelude::*;
 
 use reader_core::format::Format;
-use reader_core::filename::display_name;
+use reader_core::filename::document_title;
 use pdf_engine::types::{OpenResult, PageSize};
 
 use super::enter;
@@ -26,7 +26,7 @@ pub(super) struct Seeded {
 pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u32) -> Seeded {
     let page1 = open.page1_size;
     let num_pages = open.num_pages;
-    let name = display_name(open.title.as_deref(), Some(path));
+    let name = document_title(open.title.as_deref());
 
     // Document identity, through the step both open tails share
     // ([`super::enter`]). The format flips BACK here: a PDF opening over a

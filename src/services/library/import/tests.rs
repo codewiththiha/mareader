@@ -238,12 +238,11 @@ fn a_run_the_reader_started_is_the_one_an_ask_is_refused_by() {
     );
 }
 
-/// A read-at-place folder with the two mode switches set: the fixture the watch
-/// lock is asked about, where [`folder`]'s defaults answer every case the same.
-/// A folder in an explicit mode. The watch arrives as the tree's root decision
-/// and not as the flag alone, because the flag is now that decision's mirror: a
-/// fixture that set only the flag would be a folder this build never writes, and
-/// every surface that reads the tree would answer `false` for it.
+/// A folder in an explicit mode, where [`folder`]'s defaults answer every case
+/// the same. The watch arrives as the tree's root decision and not as the flag
+/// alone, because the flag is now that decision's mirror: a fixture that set
+/// only the flag would be a folder this build never writes, and every surface
+/// that reads the tree would answer `false` for it.
 fn folder_in_mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedFolder {
     let mut folder = WatchedFolder {
         opts: FolderOpts {
@@ -259,56 +258,71 @@ fn folder_in_mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedF
     folder
 }
 
-/// A shelf of folder `id`'s tree, at the rung its root files onto: a seat for
-/// every ground in the tree, which is the standing half of the watch lock's
-/// condition.
+/// A shelf of folder `id`'s tree, at the rung its root files onto: the seat
+/// every ground in the tree hangs under.
 fn standing(shelf_id: &str, folder_id: &str) -> Shelf {
     standing_at(shelf_id, folder_id, None)
 }
 
-/// The same shelf at a rung of the tree's own: [`standing`]'s root seat, and a
-/// seat for the ground it names and the ground below it — but not for the ground
-/// above it, which is what a removal of the shelf that seated that ground leaves
-/// behind.
+/// The same shelf at a rung of the tree's own: the shape a removal of the root
+/// shelf leaves standing, lifted to the level the root was on.
 fn standing_at(shelf_id: &str, folder_id: &str, rel: Option<&str>) -> Shelf {
     library_core::testkit::folder_shelf(shelf_id, shelf_id, folder_id, rel, &[], None)
 }
 
 #[test]
-fn an_import_of_a_watched_folder_does_not_un_watch_it() {
+fn a_continuation_run_keeps_the_tree_s_own_root_decision() {
+    // A re-pick of ground the tree covers arrives as a CONTINUATION, and the
+    // sheet's switch answered for the rung the pick named before the run
+    // started: the tree's root is not this run's to rewrite. A run that wrote
+    // the sheet's options over the root would turn the whole tree on — or off —
+    // from a switch that promised to answer for one subfolder alone, which is
+    // what the seated-ground force did while the sheet still had a lock.
     let folders = vec![folder_in_mode("f1", "/books", true, true)];
     let shelves = vec![standing("s1", "f1")];
-    // The sheet locks its own switch on this ground, and the routes that never
-    // pass the sheet answer the same way: a folder dropped on the window wears
-    // the defaults, whose watch is off, and an import that un-tracked the tree
-    // it was importing would be a side effect no reader asked for.
     let reimported = resolve_folder(
         &folders,
         &shelves,
         "/books",
         FolderOpts::default(),
-        &RootPlan::default(),
+        &RootPlan {
+            continuation: Some(("s1".into(), "Books".into())),
+            ..RootPlan::default()
+        },
     );
-    assert!(reimported.opts.watch, "the tree's own root, re-picked");
-    assert_eq!(reimported.id, "f1", "and it is still the same ledger row");
-    // A rung of the tree is the tree's ground, and its run mints a row of its
-    // own — which the fold at the end of that run retires into the tree.
+    assert!(reimported.tracked(), "the tree keeps watching its own root");
+    assert!(
+        reimported.opts.watch,
+        "and the flag re-mirrors the tree rather than the sheet"
+    );
+    assert_eq!(reimported.id, "f1", "it is still the same ledger row");
+    // An OFF tree's root survives a rung re-pick whose switch is on: the On is
+    // the rung's own decision, written before the run, and the root keeps its
+    // Off — the subfolder control the single flag could not express.
+    let off = vec![folder_in_mode("f2", "/music", true, false)];
     let rung = resolve_folder(
-        &folders,
-        &shelves,
-        "/books/scifi",
-        FolderOpts::default(),
-        &RootPlan::default(),
+        &off,
+        &[],
+        "/music",
+        FolderOpts {
+            watch: true,
+            ..FolderOpts::default()
+        },
+        &RootPlan {
+            continuation: Some(("s2".into(), "Music".into())),
+            ..RootPlan::default()
+        },
     );
-    assert!(rung.opts.watch, "a subfolder of a watched tree joins the watch");
+    assert!(!rung.tracked(), "the switch answered for the rung, not the root");
+    assert!(!rung.opts.watch, "and the flag mirrors the tree it did not rewrite");
 }
 
 #[test]
-fn a_watched_folder_no_shelf_of_stands_holds_no_lock() {
+fn a_watched_folder_no_shelf_of_stands_takes_the_sheets_answer() {
     // The shape taking a folder's shelf apart leaves behind: the row keeps
-    // watching, but there is nothing on screen the lock could be about — so
-    // the ground is the sheet's, and an import of it with the switch off is
-    // how the invisible watch ends rather than a switch stuck for good.
+    // watching, but there is nothing on screen the watch could be read on —
+    // so the ground is the sheet's, and an import of it with the switch off
+    // is how the invisible watch ends rather than a watch stuck for good.
     let folders = vec![folder_in_mode("f1", "/books", true, true)];
     let resolved = resolve_folder(
         &folders,
@@ -391,13 +405,14 @@ fn the_sheet_s_watch_answer_lands_in_the_tree_and_not_only_on_the_flag() {
 }
 
 #[test]
-fn a_rung_left_standing_by_a_removal_does_not_lock_the_ground_above_it() {
+fn a_rung_left_standing_by_a_removal_leaves_the_ground_to_the_sheet() {
     // What taking a watched folder's ROOT shelf apart leaves behind: the shelves
     // inside it are lifted to the level it was on and still stand, and the map's
-    // pointer at the root is the one the removal cut. The ground the reader freed
-    // is the sheet's again in both directions — an import of it with the switch
-    // off ends the watch rather than being overruled by a rung hanging somewhere
-    // below it, which was a switch stuck on for a folder just taken apart.
+    // pointer at the root is the one the removal cut. The freed ground takes the
+    // sheet's answer in both directions, and so does every ground beside it: the
+    // sheet opens seeded with the tree's own answer for the ground it is on, so
+    // what lands is the reader's rather than a stale default — and a rung left
+    // hanging is a fold the gate arranges, not a force this resolver owes.
     let folders = vec![folder_in_mode("f1", "/books", true, true)];
     let lifted = vec![standing_at("s1", "f1", Some("scifi"))];
     let freed = resolve_folder(
@@ -409,34 +424,33 @@ fn a_rung_left_standing_by_a_removal_does_not_lock_the_ground_above_it() {
     );
     assert_eq!(freed.id, "f1", "the ledger row is still the one standing");
     assert!(
-        !freed.opts.watch,
-        "the ground a removal freed takes the sheet's answer"
+        !freed.tracked(),
+        "an import with the switch off ends the watch a removal freed"
     );
-    // The rung's own ground is still the tree's, and so is ground under it: both
-    // are imports the tree answers on a seat the reader can see.
-    for ground in ["/books/scifi", "/books/scifi/deep"] {
-        let seated = resolve_folder(
+    // The same ground with the switch on re-watches it.
+    let asked = resolve_folder(
+        &folders,
+        &lifted,
+        "/books",
+        FolderOpts {
+            watch: true,
+            ..FolderOpts::default()
+        },
+        &RootPlan::default(),
+    );
+    assert!(asked.tracked(), "and the switch on re-watches it");
+    // Ground the lifted rung names, ground under it, and ground beside it all
+    // answer the same way: the sheet's.
+    for ground in ["/books/scifi", "/books/scifi/deep", "/books/poetry"] {
+        let resolved = resolve_folder(
             &folders,
             &lifted,
             ground,
             FolderOpts::default(),
             &RootPlan::default(),
         );
-        assert!(seated.opts.watch, "{ground} is seated by the rung that stands");
+        assert!(!resolved.opts.watch, "{ground} takes the sheet's answer");
     }
-    // A SIBLING of the standing rung is seated by nothing either: the rung that
-    // hangs is not an ancestor of the ground beside it.
-    let beside = resolve_folder(
-        &folders,
-        &lifted,
-        "/books/poetry",
-        FolderOpts::default(),
-        &RootPlan::default(),
-    );
-    assert!(
-        !beside.opts.watch,
-        "a rung is not a seat for the ground beside it"
-    );
 }
 
 #[test]

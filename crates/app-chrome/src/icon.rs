@@ -64,6 +64,10 @@ pub enum IconName {
     Eye,
     /// The same eye, struck through — the row that turns a folder's watch OFF.
     EyeOff,
+    /// A pencil — the row that renames the thing under the pointer: a name is
+    /// written rather than a document edited, which is the whole of what the
+    /// row does.
+    Pencil,
     Settings,
     Layout,
     /// The settings tab for the reflowable formats' typography.
@@ -103,6 +107,7 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Eye => ("0 0 24 24", "<path d='M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0'/><circle cx='12' cy='12' r='3'/>"),
         IconName::EyeOff => ("0 0 24 24", "<path d='M10.73 5.08A10.75 10.75 0 0 1 12 5a10.75 10.75 0 0 1 9.94 6.65 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-4.43 5.14'/><path d='M6.61 6.61A10.75 10.75 0 0 0 2.06 11.65a1 1 0 0 0 0 .7 10.75 10.75 0 0 0 15.31 5.04'/><path d='M14.12 14.12a3 3 0 1 1-4.24-4.24'/><path d='m2 2 20 20'/>"),
         IconName::Check => ("0 0 24 24", "<path d='M20 6 9 17l-5-5'/>"),
+        IconName::Pencil => ("0 0 24 24", "<path d='M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/>"),
         IconName::SinglePage => ("0 0 24 24", "<rect x='4' y='3' width='16' height='18' rx='2'/><path d='M4 9h16'/>"),
         IconName::DualPage => ("0 0 24 24", "<rect x='3' y='4' width='8.5' height='16' rx='1.5'/><rect x='12.5' y='4' width='8.5' height='16' rx='1.5'/>"),
         IconName::Continuous => ("0 0 24 24", "<rect x='4' y='3' width='16' height='4' rx='1'/><rect x='4' y='10' width='16' height='4' rx='1'/><rect x='4' y='17' width='16' height='4' rx='1'/>"),

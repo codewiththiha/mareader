@@ -103,6 +103,15 @@ impl TrackingTree {
         self.resolve("")
     }
 
+    /// Whether ANY rung carries an explicit [`Track::On`]: the question a focus
+    /// rescan asks of a folder — "is there anything here to watch" — which is
+    /// not the root's question. A tree whose root the reader turned off while
+    /// one subfolder stayed on still owes a walk, and the walk's own per-rung
+    /// gate (`crate::ledger::decide`) is what keeps the off rungs quiet.
+    pub fn any_on(&self) -> bool {
+        self.overrides.values().any(|track| *track == Track::On)
+    }
+
     /// Record a decision for one rung. [`Track::Inherit`] removes the override,
     /// so the rung falls back to whatever its ancestors say — there is no stored
     /// "inherit", only the absence of a decision.
@@ -266,5 +275,24 @@ mod tests {
         let tree: TrackingTree = serde_json::from_str("{}").unwrap();
         assert!(tree.is_empty());
         assert!(!tree.tracked());
+    }
+
+    #[test]
+    fn any_on_is_the_walk_question_the_root_alone_cannot_answer() {
+        // A tree the reader turned off at the root while one subfolder stayed
+        // on still owes a walk, and a tree of nothing but Offs does not.
+        let empty = TrackingTree::new();
+        assert!(!empty.any_on());
+        let root = TrackingTree::tracking_root();
+        assert!(root.any_on(), "the root's own On is an On somewhere");
+        let mut off_root = TrackingTree::new();
+        off_root.set("", Track::Off);
+        assert!(!off_root.any_on(), "an Off nowhere is an Off everywhere");
+        off_root.set("Fiction", Track::On);
+        assert!(
+            off_root.any_on(),
+            "one rung kept on is a folder the rescan still owes a walk"
+        );
+        assert!(!off_root.tracked(), "and the root's own answer is still Off");
     }
 }

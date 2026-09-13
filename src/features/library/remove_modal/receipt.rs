@@ -328,7 +328,11 @@ pub(super) fn receipt(
     let watched = measured
         && state.library.folders.with_untracked(|folders| {
             folders.iter().any(|f| {
-                f.tracked()
+                // Watched anywhere in the tree, which is what the note
+                // promises: a folder that still walks — root or one rung the
+                // reader kept on — is a folder that can place this book again
+                // and offer it back.
+                f.tracks_anything()
                     && fingerprints
                         .iter()
                         .any(|fp| f.placed.contains(fp) || f.is_ignored(fp))

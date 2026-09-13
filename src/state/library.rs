@@ -554,15 +554,26 @@ impl LibraryState {
     }
 
     /// Give a row a new name: a book's title, a link's own. What the sheet's
-    /// *add as new* answer does to a row it is moving, and the only rename the
-    /// library performs on a reader's behalf.
+    /// *add as new* answer does to a row it is moving, and what the shelf's
+    /// rename sheet does to a row the reader pointed at.
+    ///
+    /// A book's new title is LOCKED, and the lock is the difference between a
+    /// name the reader chose and a name a document supplied: the load-time
+    /// sweep drops a title shaped like a filename because that shape is
+    /// download debris wearing a title's clothes, and a name typed at the
+    /// shelf is not debris whatever it looks like
+    /// (`library_core::book::Book::title_locked`). The persist is the caller's,
+    /// which is why the two callers each write the blob right after.
     pub fn rename_row(&self, row_id: &str, name: &str) {
         self.books.update(|rows| {
             let Some(row) = library_core::book::find_row_mut(rows, row_id) else {
                 return;
             };
             match row {
-                Row::Book(b) => b.title = Some(name.to_string()),
+                Row::Book(b) => {
+                    b.title = Some(name.to_string());
+                    b.title_locked = true;
+                }
                 Row::Link { name: own, .. } => *own = name.to_string(),
             }
         });

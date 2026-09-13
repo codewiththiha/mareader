@@ -33,7 +33,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use md_core::MarkdownHeading;
 use pdf_engine::types::PageSize;
-use reader_core::filename::display_name;
+use reader_core::filename::document_title;
 use reader_core::format::Format;
 use reader_core::view::ViewMode;
 use reflow_core::block::TextBlock;
@@ -176,7 +176,7 @@ fn ready(
     let geo = geometry(settings.text.book_layout)
         .with_extra_inline(state.reader.viewer.page_margin.get_untracked())
         .with_column_pct(state.reader.viewer.column_width_pct.get_untracked());
-    let name = display_name(parsed.title.as_deref(), Some(&path));
+    let name = document_title(parsed.title.as_deref());
     let Parsed { blocks, title, author, headings } = parsed;
 
     // Document identity, through the shared handshake. A text page is the

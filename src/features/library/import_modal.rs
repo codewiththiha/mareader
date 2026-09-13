@@ -13,11 +13,14 @@
 //! The watch switch is the reader's on every ground, and what changes is which
 //! rung their answer lands on. Tracking is a tree rather than one flag for the
 //! whole import (`library_core::tracking`), so ground an existing read-at-place
-//! tree already covers is a rung of THAT tree: the switch reads the tree's own
-//! answer for the rung and writes back to it, which is what lets a subfolder be
-//! tracked differently from the import it stands inside. Ground nothing covers is
-//! a fresh folder's root, and the switch writes the options the sheet already
-//! holds.
+//! tree already covers is a rung of THAT tree: the sheet opens with the tree's
+//! own answer for the rung already on the switch, and the click writes back to
+//! that rung, which is what lets a subfolder be tracked differently from the
+//! import it stands inside. Ground nothing covers is a fresh folder's root, and
+//! the switch writes the options the sheet already holds. Either way the switch
+//! is the sheet's own signal — what it shows is what lands, and a covered
+//! ground seeds the signal rather than owning the display, because a switch
+//! that reads one place and writes another is a switch that cannot be clicked.
 //!
 //! This used to be a lock. Ground a watched tree was seated on got a disabled
 //! switch and a sentence telling the reader to go and right-click the shelf
@@ -33,12 +36,15 @@
 //! because a store copy is the app's own file from the moment it lands and
 //! rescanning the source afterwards would be a second opinion about a book that
 //! already exists. Hiding is the honest answer there — the mode has no tracking
-//! question — where disabling never was.
+//! question — where disabling never was. A copies run therefore lands no
+//! tracking answer at all: an `Off` written to a standing tree's rung by a mode
+//! that never showed the switch would be a decision the reader was never asked.
 //!
-//! Turning tracking off by hand from the shelf's own right-click is still
-//! `crate::services::library::set_folder_watch`, and it is the whole tree's root
-//! it answers for: a shelf of a watched folder is a seat in that folder's tree,
-//! and "stop watching" from there means the folder, not the rung.
+//! Turning tracking off by hand from the shelf's own right-click is
+//! `crate::services::library::set_shelf_watch`, and it answers for the SEAT the
+//! shelf stands on: a rung's shelf turns that rung, the root shelf turns the
+//! whole tree, and a shelf a hand made inside a tree turns the closest rung the
+//! disk named for it.
 
 use leptos::prelude::*;
 
@@ -131,14 +137,28 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
             .flatten()
             .and_then(|root| ground_tracking(state, &root))
     });
-    // What the switch shows, which is the value that lands. On ground a tree
-    // already covers the answer is that tree's own at that rung, and the options
-    // signal — left holding whatever the last folder imported said — is not
-    // consulted; everywhere else the switch is the sheet's own.
-    let watching_on = Signal::derive(move || {
-        ground
-            .get()
-            .map_or_else(|| watching.get(), |(_, _, on)| on)
+    // The switch is the sheet's own on EVERY ground, and what it shows —
+    // `opts.watch` — is the value that lands. Ground an existing tree covers
+    // SEEDS the option rather than owning the display: an effect reads the
+    // tree's own answer for the rung into the options when the sheet opens
+    // onto that ground, so the switch starts at the state the tree is in and a
+    // click moves it. The display used to read the tree and the click to write
+    // the options, which is a switch that shows one value and stores another:
+    // on covered ground it could be clicked all day without the knob moving.
+    Effect::new(move |_| {
+        if !sheet.open.get() {
+            return;
+        }
+        let Some(root) = sheet.root.get() else {
+            return;
+        };
+        // The lists under `ground_tracking` are read untracked, so the effect
+        // re-runs on an open and on a changed folder and on nothing else: a
+        // seed that re-fired on every folder write would undo the toggle the
+        // reader just made with the state it is toggling.
+        if let Some((_, _, on)) = ground_tracking(state, &root) {
+            opts.update(|o| o.watch = on);
+        }
     });
     let include = Signal::derive(move || opts.with(|o| o.include_selected));
     let grouped = Signal::derive(move || opts.with(|o| o.groups));
@@ -297,18 +317,23 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                 <Switch
                                     checked=in_place
                                     on_change=Callback::new(move |on| {
+                                        // The ground's own answer, read before the write: a
+                                        // mode turned back on restores the state the tree is
+                                        // in rather than the `false` the mode-off took with it.
+                                        let ground_on =
+                                            ground.get_untracked().map(|(_, _, gon)| gon);
                                         opts.update(|o| {
                                             o.in_place = on;
                                             // Watching a copy is a question the
                                             // sheet does not ask, so turning the
                                             // mode off takes the answer with it —
-                                            // a lock included, because the lock is
-                                            // about ground the library READS, and
-                                            // a run that copies instead is a
-                                            // different mode rather than the same
-                                            // folder watched harder.
+                                            // the row hides, and a hidden switch
+                                            // that remembered an answer would
+                                            // land one nobody can see.
                                             if !on {
                                                 o.watch = false;
+                                            } else if let Some(gon) = ground_on {
+                                                o.watch = gon;
                                             }
                                         });
                                     })
@@ -358,7 +383,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                             };
                                             view! {
                                                 <Switch
-                                                    checked=watching_on
+                                                    checked=watching
                                                     on_change=Callback::new(move |on| {
                                                         opts.update(|o| o.watch = on);
                                                     })
@@ -424,19 +449,17 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                     return;
                                 };
                                 // The value that lands is the value the switch
-                                // showed. On ground an existing tree covers the
-                                // switch read that tree's own answer for the rung,
-                                // so the options signal — which may still be
-                                // holding the last folder's `false` — is not what
-                                // the reader was looking at, and the decision goes
-                                // to that tree at that rung rather than to a fresh
-                                // folder's root.
-                                let track = ground
-                                    .get_untracked()
-                                    .map(|(tree, rung, _)| (tree, rung, options.watch));
-                                if options.in_place {
-                                    options.watch = watching_on.get_untracked();
-                                }
+                                // showed, and the switch is the options signal on
+                                // every ground — so one read carries both halves of
+                                // the answer. Ground an existing tree covers sends
+                                // the decision to that tree at the rung the pick
+                                // names; ground nothing covers sends it to a fresh
+                                // folder's root through `options.watch` itself.
+                                let track = options.in_place.then(|| {
+                                    ground.get_untracked().map(|(tree, rung, _)| {
+                                        (tree, rung, options.watch)
+                                    })
+                                }).flatten();
                                 sheet.open.set(false);
                                 import_folder(state, root, options, track);
                             }

@@ -211,6 +211,12 @@ async fn duplicate_book(state: AppState, book: Book) -> Option<String> {
         now_ms(),
     );
     dup.title = Some(title.clone());
+    // A counter name is a name the library minted at the reader's ask, so it
+    // wears the reader's lock: the load-time sweep spares a trailing counter by
+    // convention, but a base the file itself carried underscores in
+    // ("harry_potter_1" → "harry_potter_2") reads as snake-case debris to the
+    // rule, and a name the reader just asked for is not debris.
+    dup.title_locked = true;
     // The copy's own measurement is the row's identity; a copy that could not
     // be weighed keeps the pending mark the startup sweep finishes, which is
     // every stored landing's rule and not a duplicate's own.

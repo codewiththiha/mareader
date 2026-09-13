@@ -234,8 +234,17 @@ pub fn decide(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> 
             // does not, and the reader's arrangement is the one that survives.
             if folder.placed.contains(&file.fp) {
                 ScanAction::Skip
-            } else {
+            } else if folder.tracks_rung(&folder.shelf_key(file)) {
                 ScanAction::Add(file.clone())
+            } else {
+                // A rung nobody watches adds nothing: tracking is a tree
+                // (`crate::tracking`), so a subfolder the reader turned off
+                // under a watched root is off for the walk too — the quiet
+                // half of what the shelf's menu and the sheet's switch mean
+                // when they say so. An EXPLICIT import is the other half and
+                // answers through [`decide_import`], which is the reader
+                // asking for this ground by name and adds what it finds.
+                ScanAction::Skip
             }
         }
         Some(known) => known_action(folder, known, file),
@@ -471,8 +480,9 @@ pub enum Recovered {
     /// as well, or to go and look at where it went.
     Moved {
         book_id: String,
-        /// The document's own title, when it had one. `None` is common (a book
-        /// imported and never opened), and the menu falls back to the file stem.
+        /// The name the shelf shows for it (`Book::title` — the document's own
+        /// title when it had one, else the stem of the file the reader knows:
+        /// a stored book's SOURCE, never the store's own `source.pdf`).
         title: Option<String>,
         path: String,
         /// The first shelf the book is on, by name, for the "now in Fiction" half
@@ -537,7 +547,11 @@ pub fn recoverables(
         }
         out.push(Recovered::Moved {
             book_id: book.id.clone(),
-            title: book.title.clone(),
+            // The DISPLAY name rather than the raw field: a stored book the
+            // reader never opened has no title of its own, and the menu's
+            // fallback reads `path` — which for a stored book is the store's
+            // `source.pdf`, a layout artifact rather than a name.
+            title: Some(book.title()),
             path: path.clone(),
             home_shelf: on.first().map(|shelf| shelf.name.clone()),
         });
@@ -686,7 +700,11 @@ mod tests {
             shelf_map: BTreeMap::new(),
             last_seen: Vec::new(),
             scanned_ms: 0,
-            tracking: TrackingTree::default(),
+            // The ledger's tables answer for a folder the walk is ON — which
+            // since tracking became a tree means a tree that tracks from its
+            // root, the drop-in for the old `watch: true` the rescan filter
+            // asks for. A rung turned off under it is its own test.
+            tracking: TrackingTree::tracking_root(),
         }
     }
 
@@ -743,6 +761,37 @@ mod tests {
     fn an_unknown_fingerprint_is_added() {
         let f = folder(&[], &[]);
         assert_eq!(decide(&f, &registry(&[]), &file(1, "/books/a.pdf")), ScanAction::Add(file(1, "/books/a.pdf")));
+    }
+
+    /// The tracking tree's quiet half: a rung the reader turned off under a
+    /// watched root adds nothing on a RESCAN — while an explicit import of the
+    /// same ground still adds what it finds, because that walk is the reader
+    /// asking for this folder by name and the watch is about the walks nobody
+    /// asked for.
+    #[test]
+    fn a_rung_nobody_watches_adds_nothing_on_a_rescan() {
+        let mut f = folder(&[], &[]);
+        f.set_tracking("Fiction", false);
+        let reg = registry(&[]);
+        // The root still tracks, so a file at the root is an add...
+        assert_eq!(
+            decide(&f, &reg, &file(1, "/books/a.pdf")),
+            ScanAction::Add(file(1, "/books/a.pdf"))
+        );
+        // ...a sibling rung inherits the root and adds too...
+        assert_eq!(
+            decide(&f, &reg, &file(4, "/books/Poetry/d.pdf")),
+            ScanAction::Add(file(4, "/books/Poetry/d.pdf"))
+        );
+        // ...while the rung turned off — and everything below it — is quiet.
+        assert_eq!(decide(&f, &reg, &file(2, "/books/Fiction/b.pdf")), ScanAction::Skip);
+        assert_eq!(decide(&f, &reg, &file(3, "/books/Fiction/SciFi/c.pdf")), ScanAction::Skip);
+        // The explicit table answers the same file with the add it has always
+        // answered with: the setting gates the quiet walk, not the reader's ask.
+        assert_eq!(
+            decide_import(&f, &reg, &file(2, "/books/Fiction/b.pdf")),
+            ScanAction::Add(file(2, "/books/Fiction/b.pdf"))
+        );
     }
 
     /// Row 2: nothing moved, nothing to do.
@@ -1563,6 +1612,23 @@ mod tests {
         assert_eq!(entry.shelf_id.as_deref(), Some("s2"));
         assert_eq!(entry.removed_ms, 999);
         assert_eq!(entry.label(), "Dune");
+    }
+
+    #[test]
+    fn a_tombstone_of_a_stored_book_names_the_file_it_came_from() {
+        // The log labels itself with the name the SHELF showed, and a stored
+        // book the reader never opened shows its source's stem — never the
+        // store's own "source.pdf", which is the layout's word for the book.
+        let mut b = book_value(
+            "b1",
+            Origin::Stored {
+                src: Some("/downloads/dune.pdf".into()),
+                store: "/app/Library/items/b1/source.pdf".into(),
+            },
+            false,
+        );
+        b.title = None;
+        assert_eq!(Tombstone::of(&b, None, 1).label(), "dune");
     }
 
     #[test]

@@ -9,7 +9,7 @@ use leptos::prelude::*;
 
 use library_core::book::{add_book, book_rows, book_rows_mut, Book, Fingerprint, Origin, Row};
 use library_core::conflict::Arrival;
-use library_core::folder::{self as folder_ops, FolderOpts, WatchedFolder};
+use library_core::folder::{FolderOpts, WatchedFolder};
 use library_core::tracking::TrackingTree;
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
@@ -150,9 +150,12 @@ pub(super) struct Snapshot<'a> {
 /// the library has never seen is minted here, and a minted row carries no
 /// history for any rule to misread.
 ///
-/// The options are the sheet's, except the watch on ground a watched tree is
-/// SEATED on: that one belongs to the folder, and the shelf's menu is where a
-/// hand turns it off (`crate::services::library::set_folder_watch`).
+/// The options are the sheet's. The watch is too, and where its answer LANDS
+/// is the run's: a fresh folder's root for an ordinary import, the picked rung
+/// for a continuation of a standing tree (written before the run, by
+/// `import_folder`), and nowhere at all for a copies run, which the sheet never
+/// asks. Turning a standing tree's watch by hand is the shelf's own menu
+/// (`crate::services::library::set_shelf_watch`).
 pub(super) fn resolve_folder(
     folders: &[WatchedFolder],
     shelves: &[Shelf],
@@ -173,45 +176,41 @@ pub(super) fn resolve_folder(
         tracking: TrackingTree::default(),
     });
     // The sheet's answers are this import's truth, and the next scan's — with
-    // one answer the ground has already given. A watched read-at-place tree
-    // that is still SEATED on this ground stays watched through an import of
-    // itself or of a rung of itself, because an import of a folder is the reader
-    // asking for its books again and not asking the library to stop looking. The
-    // sheet locks its own switch on that ground and this is the same rule behind
-    // it, so the two cannot drift: an import that arrived with the defaults —
-    // whose watch is off — would otherwise un-track the tree it was importing, as
-    // a side effect no reader asked for and none could see happen. A tree whose
-    // seat on this ground the reader took apart is not seated here, however many
-    // rungs below it still hang, and the ground is the sheet's: the lock is for a
-    // watch the reader can see on the ground they are importing, and an import of
-    // a ground nothing seats with the switch off is how an invisible watch ends.
+    // one run that does not own the root's answer. A CONTINUATION of a standing
+    // tree is a re-pick of ground the tree already covers, and the sheet's
+    // switch on covered ground answered for the RUNG the pick names — an
+    // answer `import_folder` wrote on that rung (`set_rung_tracking`) before
+    // this run started. The tree's root is not this run's to rewrite: a rung
+    // re-picked with the switch on is a question about that subfolder, and
+    // writing the sheet's value over the root would turn the WHOLE tree on —
+    // or off — from a sheet that promised it answers for the subfolder alone.
     //
-    // A run that COPIES is exempt, and the exemption is the sheet's own: the
-    // watch is not offered beside a copy, so there is no locked switch here to
-    // honour, and a watched copy would be a folder no surface can turn off.
-    let ground_is_watched =
-        opts.in_place && folder_ops::watching_over(folders, shelves, root).is_some();
+    // The root force this replaced — a seated ground forced watched whatever
+    // the sheet said — was the lock era's rule, from when the sheet's switch
+    // was DISABLED on covered ground and an arriving `false` was a stale
+    // default to defend against. The sheet now opens SEEDED with the tree's own
+    // answer for the ground, so what arrives is the reader's rather than a
+    // leftover: a re-import with the switch off is the reader turning the watch
+    // off, and forcing it back on was a switch that did not work.
+    //
+    // A run that COPIES writes no root decision either, because the watch is
+    // not offered beside a copy: a copying folder's tree is left for the shelf's
+    // menu to answer for. The mode is read off the folder rather than off the
+    // parameter, which was moved into it a line above.
     folder.opts = opts;
     // The sheet's switch is a question about the ROOT RUNG, and the tree is what
     // answers it from here on — so the sheet's answer is written into the tree
     // rather than left on the flag alone. The two stay agreed because
     // `set_tracking` mirrors the root's answer back onto the flag the sheet and
-    // the older surfaces read.
-    //
-    // An import of ground a watched tree is SEATED on forces the root ON whatever
-    // the sheet said: an import of a folder is the reader asking for its books
-    // again rather than asking the library to stop looking, and a run that arrived
-    // with the defaults would otherwise un-track the tree it was importing. A
-    // rung the sheet turned off below that ground keeps its own `Off`, which is
-    // the subfolder control the single flag could not express.
-    //
-    // A run that COPIES writes the flag the sheet gave and no root decision,
-    // because the watch is not offered beside a copy: a copying folder's flag
-    // stays whatever it was, exactly as before, and its tree is left for the
-    // shelf's menu to answer for. The mode is read off the folder rather than off
-    // the parameter, which was moved into it a line above.
+    // the older surfaces read. A continuation re-mirrors the flag from the tree
+    // it did not rewrite, so a folder's persisted flag cannot drift from its
+    // tree whichever kind of run touched it last.
     if folder.opts.in_place {
-        folder.set_tracking("", ground_is_watched || folder.opts.watch);
+        if plan.continuation.is_none() {
+            folder.set_tracking("", folder.opts.watch);
+        } else {
+            folder.opts.watch = folder.tracking.tracked();
+        }
     }
     // A pointer at a shelf that is gone is a rung the walk reuses instead of
     // minting, and every placement that rides it lands on no shelf at all. Cut

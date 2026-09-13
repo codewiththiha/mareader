@@ -127,6 +127,7 @@ pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
                 missing: false,
                 fp_pending: true,
                 independent: false,
+                title_locked: false,
             }
         })
         .map(Row::Book)

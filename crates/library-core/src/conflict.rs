@@ -190,25 +190,36 @@ pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> 
         })
 }
 
-/// The next free name for `name` on one level: `1` → `1_1` → `1_2`, the
-/// counter a file manager appends, counted against the names that level
-/// already shows rather than against the whole library.
+/// The next free name for `name` on one level — and a level that does not hold
+/// the name has it free outright, so the answer is `name` itself. Only a level
+/// that DOES hold it gets the counter a file manager appends: `1` → `1_1` →
+/// `1_2`, counted against the names that level already shows rather than
+/// against the whole library.
 ///
 /// A level's own names are the right pool because the collision was a level's:
 /// `1` on "Fiction" and `1` on "Sci-Fi" are two rows a reader never sees
 /// together, and renaming the second of them would be an answer to a question
-/// nobody asked. The counter itself is [`duplicate_title`]'s — it steps rather
+/// nobody asked. The two halves of the rule are the two halves of a file
+/// manager's copy: a name nobody there wears lands as it is, and a name
+/// somebody wears gets the next number nobody does. A library-wide pool was
+/// neither — it numbered an arrival against a name held on a level the reader
+/// was not looking at, so importing the same file into a second folder arrived
+/// as `dune_2` in a folder that had never heard of `dune`.
+///
+/// "Holds it" is [`same_name`]'s question, the one [`collide`] asks, so the
+/// namer and the collision cannot disagree about whether there was something to
+/// number around. The counter itself is [`duplicate_title`]'s — it steps rather
 /// than stacks (`1_1` becomes `1_2`, not `1_1_1`), it fills gaps, and the name
 /// it mints survives [`crate::book::sanitize`]'s rule about titles that look
 /// like file names.
 pub fn next_name(rows: &[Row], shelves: &[Shelf], shelf_id: &str, name: &str) -> String {
     let index = crate::book::index_by_id(rows);
-    let in_use: HashSet<String> = crate::shelf::members_of(rows, shelves, shelf_id)
+    let in_use: Vec<String> = crate::shelf::members_of(rows, shelves, shelf_id)
         .iter()
         .filter_map(|member| index.get(*member).copied())
         .map(Row::display_name)
         .collect();
-    duplicate_title(name, &in_use)
+    free_name(name, &in_use)
 }
 
 /// The shelf already at one level whose name an arriving folder carries, when
@@ -228,17 +239,35 @@ pub fn collide_shelf(shelves: &[Shelf], parent: Option<&str>, name: &str) -> Opt
         .map(|shelf| shelf.id.clone())
 }
 
-/// The next free shelf name on one level: `Books` → `Books_1` → `Books_2`, the
-/// counter [`duplicate_title`] mints, counted against the SHELF names that
-/// level holds rather than against its rows — a shelf and a book of one name
-/// are two different doors, and only a second door of the same kind is a
-/// second door too many.
+/// The next free shelf name on one level: the name itself when that level
+/// holds no shelf wearing it, and `Books` → `Books_1` → `Books_2` when it does
+/// — the counter [`duplicate_title`] mints, counted against the SHELF names
+/// that level holds rather than against its rows, because a shelf and a book of
+/// one name are two different doors and only a second door of the same kind is
+/// a second door too many.
 pub fn next_shelf_name(shelves: &[Shelf], parent: Option<&str>, name: &str) -> String {
-    let in_use: HashSet<String> = crate::shelf::children_of(shelves, parent)
+    let in_use: Vec<String> = crate::shelf::children_of(shelves, parent)
         .into_iter()
         .map(|shelf| shelf.name.clone())
         .collect();
-    duplicate_title(name, &in_use)
+    free_name(name, &in_use)
+}
+
+/// The name a level has free: `name` itself when nothing there wears it, and
+/// the first counter nobody wears when something does.
+///
+/// One spelling for the book level and the shelf level, because the two are the
+/// file manager's one rule about a copy landing in a directory and only differ
+/// about whose names the directory holds. The emptiness guard is
+/// [`duplicate_title`]'s own — a blank base falls back to a word there, and a
+/// blank name is never "free" here.
+fn free_name(name: &str, in_use: &[String]) -> String {
+    let trimmed = name.trim();
+    if !trimmed.is_empty() && !in_use.iter().any(|held| same_name(held, trimmed)) {
+        return trimmed.to_string();
+    }
+    let pool: HashSet<String> = in_use.iter().cloned().collect();
+    duplicate_title(name, &pool)
 }
 
 // ---------------------------------------------------------------------------
@@ -762,10 +791,13 @@ mod tests {
         // On t only `1` is, so the same arrival is `1_1` there: the pool is the
         // level's, because the collision was.
         assert_eq!(next_name(&rows, &shelves, "t", "1"), "1_1");
-        // A level with nothing on it needs no counter at all — the namer still
-        // answers with one, and the caller that asked is the one that knows a
-        // collision happened.
-        assert_eq!(next_name(&rows, &shelves, "empty", "1"), "1_1");
+        // A level that holds nothing holds no NAME either, and the file
+        // manager's answer to a free name is the name: an arrival the level has
+        // never seen lands as itself rather than as a counter of a collision
+        // that never happened.
+        assert_eq!(next_name(&rows, &shelves, "empty", "1"), "1");
+        // "Holds it" is the collision's own case-insensitive question.
+        assert_eq!(next_name(&rows, &shelves, "t", " 1 "), "1_1");
         // And a counter does not stack on a counter.
         assert_eq!(next_name(&rows, &shelves, "s", "1_1"), "1_2");
     }
@@ -846,6 +878,9 @@ mod tests {
         // level's business.
         assert_eq!(next_shelf_name(&shelves, None, "Books"), "Books_2");
         assert_eq!(next_shelf_name(&shelves, Some("s1"), "Books"), "Books_1");
+        // A level with no shelves in it holds no name, and a free name lands
+        // as itself — the shelf half of the book namer's rule.
+        assert_eq!(next_shelf_name(&shelves, Some("s2"), "Books"), "Books");
     }
 
     #[test]

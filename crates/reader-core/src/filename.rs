@@ -8,10 +8,27 @@ const MAX_TITLE_LEN: usize = 200;
 /// The display name for the open document: a trustworthy `/Title`, else the
 /// file name derived from `path`, else `None`.
 pub fn display_name(title: Option<&str>, path: Option<&str>) -> Option<String> {
-    if let Some(t) = title.map(str::trim).filter(|t| is_usable_title(t)) {
-        return Some(t.to_string());
+    if let Some(t) = document_title(title) {
+        return Some(t);
     }
     path.and_then(file_stem_from_path).filter(|s| !s.is_empty())
+}
+
+/// The document's own title, when it is one worth showing: the metadata half
+/// of [`display_name`] WITHOUT the path fallback.
+///
+/// Its own function because a persisted name and a displayed name are not the
+/// same question. A shelf record that filled a blank title with the stem of
+/// whatever address the open ran on wrote the store's own `source.pdf` stem
+/// over a stored book — a layout artifact as a name — where the display's own
+/// fallback chain knows to read the source the bytes came from. What a
+/// document supplied is worth persisting; what an address happens to end with
+/// is the fallback's business, at the moment it is shown.
+pub fn document_title(title: Option<&str>) -> Option<String> {
+    title
+        .map(str::trim)
+        .filter(|t| is_usable_title(t))
+        .map(str::to_string)
 }
 
 /// True when a title is worth showing instead of the file name: short enough,
@@ -211,6 +228,16 @@ mod tests {
         assert!(!super::looks_like_file_name("Dune_12"));
         // A counter on a mangled name does not launder the mangling.
         assert!(super::looks_like_file_name("harry_potter_goblet_1"));
+    }
+
+    #[test]
+    fn the_document_title_is_the_metadata_half_alone() {
+        // The half of `display_name` a persisted name is made of: what the
+        // document supplied, trimmed, and nothing borrowed from an address.
+        assert_eq!(super::document_title(Some("  Dune  ")), Some("Dune".to_string()));
+        assert_eq!(super::document_title(Some("dune.pdf")), None);
+        assert_eq!(super::document_title(Some("")), None);
+        assert_eq!(super::document_title(None), None);
     }
 
     #[test]

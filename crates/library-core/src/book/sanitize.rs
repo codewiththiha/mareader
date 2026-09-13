@@ -5,7 +5,7 @@
 //! sharing an id, or a row past the cap. Sanitizing is what makes the reader's own
 //! guard enough: it runs once on load and again after every migration.
 
-use super::{BOOKS_CAP, Row, drop_dangling_links};
+use super::{BOOKS_CAP, Origin, Row, drop_dangling_links, stem_of};
 
 /// Make a persisted list internally valid: drop rows with no id, books with no
 /// address and links with no name or no target, dedupe by id (first wins — the
@@ -46,8 +46,25 @@ pub fn sanitize(rows: &mut Vec<Row>) {
         // manager. This is also the heal for rows stored before the rule
         // existed, on the load that first knows better. A name a duplicate
         // namer minted survives it, through the trailing-counter exemption in
-        // `reader_core::filename`.
-        if b.title.as_deref().is_some_and(|t| !reader_core::filename::is_usable_title(t)) {
+        // `reader_core::filename` — and a name the READER chose survives it
+        // outright (`title_locked`): the rule hunts debris a document
+        // supplied, and what a person typed at the shelf's rename is not
+        // debris whatever it looks like.
+        if !b.title_locked && b.title.as_deref().is_some_and(|t| !reader_core::filename::is_usable_title(t)) {
+            b.title = None;
+        }
+        // A stored book whose title IS its store address's stem is a burn-in
+        // rather than a name: the open pipeline used to seed the shelf's record
+        // with the stem of the address it opened, and for a stored book that
+        // address is the store's own file — "source" for every copy this
+        // layout stores, "<stem>_<id>" for one the flat store kept. Dropping it
+        // lets the source's stem show again (`Book::title`'s fallback), which
+        // is the name the reader imported. A locked title is the reader's and
+        // stays: "source" is a name a person may genuinely choose.
+        if !b.title_locked
+            && let Origin::Stored { store, .. } = &b.origin
+            && b.title.as_deref() == Some(stem_of(store).as_str())
+        {
             b.title = None;
         }
     }

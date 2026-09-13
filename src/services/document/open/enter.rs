@@ -62,7 +62,26 @@ pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
     let document = &state.reader.document;
     document.format.set(doc.format);
     document.path.set(Some(doc.path));
-    document.title.set(doc.title);
+    // The title the reader's surfaces show. The document's own when it
+    // supplied one worth showing; otherwise the LIBRARY's name for the book
+    // this open belongs to, when it belongs to one — and that name is never
+    // the address's stem for a stored book, because the address a copy opens
+    // at is the store's own `source.pdf`, a layout artifact rather than a
+    // name (`library_core::book::Book::title` falls back to the source the
+    // bytes came from). A title bar reading "source" for every book the
+    // library copied is the sentence this write exists to prevent.
+    let title = match doc.title.as_deref().map(str::trim) {
+        Some(own) if reader_core::filename::is_usable_title(own) => doc.title.clone(),
+        _ => state
+            .reader
+            .document
+            .book_id
+            .get_untracked()
+            .and_then(|id| state.library.row(&id))
+            .map(|row| row.display_name())
+            .or(doc.title.clone()),
+    };
+    document.title.set(title);
     document.author.set(doc.author);
     document.outline.set(doc.outline.clone().unwrap_or_else(|| Arc::new(Vec::new())));
     document.outline_pending.set(doc.outline.is_none());

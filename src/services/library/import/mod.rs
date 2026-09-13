@@ -90,7 +90,7 @@ pub use replace::replace_rows_of_tree;
 pub use restore::restore_deleted_book;
 pub use tasks::dismiss_task;
 pub use verify::{
-    rescan_watched, set_folder_watch, shelf_watch, verify_library, verify_one, ShelfWatch,
+    rescan_watched, set_shelf_watch, shelf_watch, verify_library, verify_one, ShelfWatch,
 };
 
 pub(crate) use files::{land_stored_copy, land_stored_copy_settling, settle_ledger};

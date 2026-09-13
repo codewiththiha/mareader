@@ -27,6 +27,9 @@
 //!     two doors that point it at the file it is now, and the Cancel that
 //!     leaves the missing book exactly as missing as it was
 //!   * [`remove_modal`] — what a removal costs, itemised
+//!   * [`rename_modal`] — the name the shelf shows, retyped: one field for a
+//!     book, a link or a shelf, and a display name is all it writes — the id,
+//!     the address and the file on disk keep what they have
 //!   * [`conflict_modal`] — the shelf already holds that book: the
 //!     duplicate/replace/merge question, and the second ask a replace owes;
 //!     a folder merge's per-file asks wear its compact sheet, and a loose
@@ -90,6 +93,7 @@ pub mod page;
 pub mod progress_dock;
 pub mod relink_modal;
 pub mod remove_modal;
+pub mod rename_modal;
 pub mod search_suggest;
 pub mod selection;
 pub mod shelf_conflict_modal;

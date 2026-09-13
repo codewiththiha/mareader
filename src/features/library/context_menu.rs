@@ -3,9 +3,10 @@
 //! A card used to answer a right-click with the removal receipt and nothing else,
 //! which is one row of a menu wearing the whole gesture. The receipt is still what
 //! a removal costs and still asks first — it is just reached from a row now, beside
-//! the things a right-click is actually for: opening, selecting, duplicating the
-//! thing under the pointer as a second instance beside itself, revealing the file in
-//! the OS's own manager, finding a book whose address died, taking a shelf apart.
+//! the things a right-click is actually for: opening, selecting, renaming the name
+//! the shelf shows, duplicating the thing under the pointer as a second instance
+//! beside itself, revealing the file in the OS's own manager, finding a book whose
+//! address died, taking a shelf apart.
 //!
 //! One host and one signal, for the reason the removal sheet is one: a right-click
 //! can land on a card, a row, a folder or the empty shelf, and four surfaces each
@@ -34,6 +35,7 @@ use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
 use crate::features::library::content::{FolderOrder, ShelfOrder};
 use crate::features::library::remove_modal::RemoveSheet;
+use crate::features::library::rename_modal::RenameSheet;
 use crate::features::library::selection::{
     ask_remove_selection, enter_selection, exit_selection, file_selection_on_new_shelf,
     select_on_screen,
@@ -41,7 +43,7 @@ use crate::features::library::selection::{
 use crate::services::document;
 use crate::services::library::{
     create_shelf_and_enter, delete_shelf, duplicate_row, duplicate_rows, duplicate_shelf,
-    path_of_row, path_of_shelf, relink_dialog, reveal_in_folder, set_folder_watch, shelf_watch,
+    path_of_row, path_of_shelf, relink_dialog, reveal_in_folder, set_shelf_watch, shelf_watch,
     ShelfWatch,
 };
 use crate::state::AppState;
@@ -112,6 +114,7 @@ impl LibraryMenuHost {
 pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
     let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
+    let rename_sheet = use_context::<RenameSheet>().expect("the library page provides the sheet");
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
     let folders = use_context::<FolderOrder>().expect("the library content provides the folders");
     let request = menu.request;
@@ -134,11 +137,21 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
                 };
                 match at.target {
                     MenuTarget::Book { id, missing } => {
-                        view! { <BookMenu state=state id=id missing=missing close=close /> }
+                        view! {
+                            <BookMenu
+                                state=state
+                                id=id
+                                missing=missing
+                                rename_sheet=rename_sheet
+                                close=close
+                            />
+                        }
                             .into_any()
                     }
                     MenuTarget::Folder { id } => {
-                        view! { <FolderMenu state=state id=id close=close /> }
+                        view! {
+                            <FolderMenu state=state id=id rename_sheet=rename_sheet close=close />
+                        }
                             .into_any()
                     }
                     MenuTarget::Selection => {
@@ -168,7 +181,13 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
 /// mean, and a menu that explains itself on every line is one that has to be
 /// read before it can be used.
 #[component]
-fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> impl IntoView {
+fn BookMenu(
+    state: AppState,
+    id: String,
+    missing: bool,
+    rename_sheet: RenameSheet,
+    close: Callback<()>,
+) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
     // Where the file manager would go, read at the build rather than at the
     // click: the store's own copy for a book the library copied, the file
@@ -180,6 +199,7 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
     // `move` takes what it captures.
     let open_id = id.clone();
     let select_id = id.clone();
+    let rename_id = id.clone();
     let dup_id = id.clone();
     let relink_id = id.clone();
     let remove_id = id;
@@ -204,6 +224,19 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
                 on_click=move || {
                     close.run(());
                     enter_selection(state, &select_id);
+                }
+            />
+            <MenuItem
+                icon=IconName::Pencil
+                label="Rename…"
+                // The sheet renames what the shelf SHOWS — a book's title or a
+                // link's own name — which is a fact every row has, address or
+                // no address: a book whose file died is exactly the book a
+                // reader may want to rename before hunting the file down.
+                title="The name the library shows — the file on disk keeps its own".to_string()
+                on_click=move || {
+                    close.run(());
+                    rename_sheet.ask_row(state, &rename_id);
                 }
             />
             <MenuItem
@@ -278,30 +311,38 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
 /// the reader's own too rather than a second door to one directory
 /// (`crate::services::library::duplicate`).
 ///
-/// It is also the one place a folder's WATCH is turned on and off, and the reason
-/// it lives here rather than on the import sheet is the sheet's own lock: ground a
-/// watched tree already covers is not the sheet's to un-watch, because an import of
-/// a folder is a question about its books and not about whether the library keeps
-/// looking at it. So the switch that can only be set once — at the import that made
-/// the folder — has its answer changed here, from any rung of the tree, by a hand
-/// that means it.
+/// It is also the one place a folder's WATCH is turned by hand, and the row is
+/// the SEAT's rather than the tree's: tracking is a tree
+/// (`library_core::tracking`), so a right-click on a rung shelf turns that rung —
+/// an explicit decision at that rung, with the tree above keeping its own — and
+/// a right-click on the root shelf turns the whole tree, which is the root's
+/// seat. The import sheet's switch asks the same per-rung question of the
+/// ground being imported; this row is the answer for a shelf that already
+/// stands (`crate::services::library::set_shelf_watch`).
 #[component]
-fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView {
+fn FolderMenu(
+    state: AppState,
+    id: String,
+    rename_sheet: RenameSheet,
+    close: Callback<()>,
+) -> impl IntoView {
     // The directory this shelf represents, when it represents one: the ground
     // its watched folder's tree cut it from. A shelf the reader owns has no
     // ground and gets no row.
     let reveal = path_of_shelf(state, &id);
-    // The watch this shelf's ground answers for, when it answers for one: a
+    // The watch this shelf's seat answers for, when it answers for one: a
     // shelf of a folder the library reads in place, at its root or at any rung
-    // of its tree, and a shelf a hand made inside one. The flag is the FOLDER's,
-    // so every one of them offers the same row — and the row says which folder
-    // it is about, so a reader three shelves deep is TOLD that the whole tree
-    // stopped being watched rather than finding out at the next focus.
+    // of its tree, and a shelf a hand made inside one. The decision is the
+    // SEAT's — the rung this shelf stands on — so the row toggles the ground
+    // the reader is looking at, and the sublabel says which ground that is:
+    // the whole folder at the root, only the subfolder at a rung.
     let watch: Option<ShelfWatch> = shelf_watch(state, &id);
     let open_id = id.clone();
     let select_id = id.clone();
+    let rename_id = id.clone();
     let dup_id = id.clone();
     let inside_id = id.clone();
+    let watch_id = id.clone();
     let remove_id = id;
 
     view! {
@@ -320,6 +361,18 @@ fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView
                 on_click=move || {
                     close.run(());
                     enter_selection(state, &select_id);
+                }
+            />
+            <MenuItem
+                icon=IconName::Pencil
+                label="Rename…"
+                // The shelf's DISPLAY name: the crumb's inline field renames the
+                // same fact, and neither touches a directory on disk — a folder
+                // shelf keeps the name its ground has.
+                title="The name the library shows — a folder on disk keeps its own".to_string()
+                on_click=move || {
+                    close.run(());
+                    rename_sheet.ask_shelf(state, &rename_id);
                 }
             />
             <MenuItem
@@ -348,24 +401,32 @@ fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView
                 }
             })}
             {watch.map(|watch| {
-                let folder_id = watch.folder_id.clone();
-                let folder_name = watch.label.clone();
                 let on = watch.on;
-                let (icon, label) = if on {
-                    (IconName::EyeOff, "Stop watching for new books")
-                } else {
-                    (IconName::Eye, "Watch for new books")
+                // The row toggles the SEAT this shelf stands on — the whole
+                // tree from the watched root, and only a subfolder and the
+                // ground inside it from a rung. The second line is what says
+                // which: from three shelves deep, "stop watching" without a
+                // named ground is a surprise rather than a toggle.
+                let deep = watch.rung_label.is_some();
+                let (icon, label) = match (on, deep) {
+                    (true, true) => (IconName::EyeOff, "Stop watching this subfolder"),
+                    (true, false) => (IconName::EyeOff, "Stop watching for new books"),
+                    (false, true) => (IconName::Eye, "Watch this subfolder for new books"),
+                    (false, false) => (IconName::Eye, "Watch for new books"),
                 };
-                let label = label.to_string();
-                // The second line is what says the flag is the FOLDER's: from a
-                // rung three shelves deep, "stop watching" is a sentence about a
-                // tree the reader is not looking at, and naming it is the
-                // difference between a toggle and a surprise.
-                let sublabel = format!("The whole “{folder_name}” folder");
-                let title = if on {
-                    "Stop checking this folder; the books already here stay"
-                } else {
-                    "Check this folder for new books when the app opens or you come back to it"
+                let sublabel = match &watch.rung_label {
+                    Some(rung) => format!("Only “{rung}” and the folders inside it"),
+                    None => format!("The whole “{}” folder", watch.label),
+                };
+                let title = match (on, deep) {
+                    (true, true) => {
+                        "Stop checking this subfolder for new books; the books already here \
+                         stay, and the rest of the tree keeps watching its own"
+                    }
+                    (true, false) => "Stop checking this folder; the books already here stay",
+                    (false, _) => {
+                        "Check this folder for new books when the app opens or you come back to it"
+                    }
                 }
                 .to_string();
                 view! {
@@ -376,7 +437,7 @@ fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView
                         title=title
                         on_click=move || {
                             close.run(());
-                            set_folder_watch(state, &folder_id, !on);
+                            set_shelf_watch(state, &watch_id, !on);
                         }
                     />
                 }

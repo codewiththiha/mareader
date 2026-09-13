@@ -44,6 +44,23 @@ pub struct Coverage {
     pub shelf_id: String,
 }
 
+/// The seat a SHELF stands on in a read-at-place tree: which folder's ground it
+/// wears, and which rung of that folder's tree it is — `""` at the watched root,
+/// the rung's rel for a shelf the tree cut, and the closest folder shelf's rung
+/// for a shelf the reader made inside the tree.
+///
+/// The shelf-shaped twin of [`Coverage`], which answers the same question from a
+/// path's side: the two facts the watch dot, the menu row and the toggle all
+/// read, in one value so they cannot transpose them differently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Seat {
+    /// The tree the shelf stands in.
+    pub folder_id: String,
+    /// The rung of that tree the shelf wears — the rung whose tracking
+    /// decision a toggle from this shelf writes.
+    pub rung: String,
+}
+
 /// The "who owns this path" questions, asked of one immutable snapshot of the
 /// two lists every caller already holds.
 pub struct Governance<'a> {
@@ -143,21 +160,21 @@ impl<'a> Governance<'a> {
     /// "which folders placed this content, and where does each say it lives now"
     /// — so the rule about a book leaving its ground reads the same resolver the
     /// import gate does rather than re-walking the folder list itself.
-    /// Whether the tree a shelf was cut from tracks the rung that shelf stands
-    /// on — the question every watch dot asks, and the one a single flag for the
-    /// whole import could only answer about the root.
+    /// The folder and the rung of its tree that answer for a shelf: the shelf's
+    /// OWN seat when the folder's tree cut it — its `rel`, the empty string at
+    /// the watched root — and the closest folder shelf above it when the reader
+    /// made it inside such a tree. A made shelf is not a rung the disk names,
+    /// but it is standing inside the tree, and every question about "the watch
+    /// this shelf wears" — the dot, the menu row, the toggle — is the same
+    /// question about the seat it stands on.
     ///
-    /// A shelf of a folder answers with that folder's own decision for the rung
-    /// the shelf's `rel` names, so a subfolder turned off under a tracked root
-    /// stops showing a dot while the tree above it keeps watching. A shelf the
-    /// reader made inside such a tree answers with the closest folder shelf above
-    /// it: it is not a rung the disk names, but it is standing inside a tracked
-    /// tree, and "is this shelf watched" asked from there is the same question.
-    ///
-    /// `None` for a shelf no read-at-place folder answers for — the reader's own
+    /// `None` for a shelf no read-at-place folder answers for: the reader's own
     /// shelf on the reader's own ground, or a shelf of a COPYING folder, whose
-    /// import sheet does not offer the watch either, so there is no dot to draw.
-    pub fn shelf_tracked(&self, shelf_id: &str) -> Option<bool> {
+    /// import sheet does not offer the watch either. One walk for the three
+    /// readers that used to spell it each for themselves, so the dot a card
+    /// draws, the state a menu row shows and the rung a toggle writes cannot
+    /// disagree about which seat they asked.
+    pub fn seat_of(&self, shelf_id: &str) -> Option<Seat> {
         let shelf = find_shelf(self.shelves, shelf_id)?;
         let (folder_id, rung) = match &shelf.kind {
             ShelfKind::Folder { folder_id, rel } => {
@@ -177,7 +194,29 @@ impl<'a> Governance<'a> {
                 })?,
         };
         let folder = crate::folder::find(self.folders, folder_id)?;
-        folder.opts.in_place.then(|| folder.tracks_rung(rung))
+        folder.opts.in_place.then(|| Seat {
+            folder_id: folder_id.to_string(),
+            rung: rung.to_string(),
+        })
+    }
+
+    /// Whether the tree a shelf was cut from tracks the rung that shelf stands
+    /// on — the question every watch dot asks, and the one a single flag for
+    /// the whole import could only answer about the root.
+    ///
+    /// The seat is [`seat_of`]'s answer, so a subfolder turned off under a
+    /// tracked root stops showing a dot while the tree above it keeps watching,
+    /// and a shelf the reader made inside such a tree shows the closest folder
+    /// shelf's rung — the seat it stands on.
+    ///
+    /// `None` for a shelf no read-at-place folder answers for — the reader's
+    /// own shelf on the reader's own ground, or a shelf of a COPYING folder,
+    /// whose import sheet does not offer the watch either, so there is no dot
+    /// to draw.
+    pub fn shelf_tracked(&self, shelf_id: &str) -> Option<bool> {
+        let seat = self.seat_of(shelf_id)?;
+        let folder = crate::folder::find(self.folders, &seat.folder_id)?;
+        Some(folder.tracks_rung(&seat.rung))
     }
 
     pub fn placing_rungs(&self, fp: &Fingerprint, path: &str) -> Vec<Option<String>> {
@@ -423,5 +462,36 @@ mod tests {
         // The address sits in a subfolder the map never named: the folder placed
         // the content, so it is in the list, but it gives this path no rung.
         assert_eq!(g.placing_rungs(&fp, "/books/Deep/x.pdf"), vec![None]);
+    }
+
+    #[test]
+    fn the_seat_a_shelf_stands_on_is_the_rung_a_toggle_writes() {
+        let (folders, mut shelves) = tree();
+        shelves.push(crate::testkit::shelf("mine2", "Mine", &[], Some("fic")));
+        let g = Governance::new(&folders, &shelves);
+        // The root shelf sits on the tree's own rung...
+        assert_eq!(
+            g.seat_of("r"),
+            Some(Seat { folder_id: "f1".into(), rung: "".into() })
+        );
+        // ...a rung shelf on the rung its rel names, however deep...
+        assert_eq!(
+            g.seat_of("sf"),
+            Some(Seat { folder_id: "f1".into(), rung: "Fiction/SciFi".into() })
+        );
+        // ...and a shelf the reader made inside the tree on the closest folder
+        // shelf's rung, which is the seat it stands on.
+        assert_eq!(
+            g.seat_of("mine2"),
+            Some(Seat { folder_id: "f1".into(), rung: "Fiction".into() })
+        );
+        // A shelf no read-at-place folder answers for has no seat: the
+        // reader's own at the root, a shelf that is gone, and a COPYING
+        // folder's all answer `None`, exactly as the dot does.
+        assert_eq!(g.seat_of("mine"), None);
+        assert_eq!(g.seat_of("gone"), None);
+        let copying = vec![folder("c1", "/dvds", false, &[("", "x")])];
+        let copy_shelves = vec![folder_shelf("x", "DVDs", "c1", None, &[], None)];
+        assert_eq!(Governance::new(&copying, &copy_shelves).seat_of("x"), None);
     }
 }

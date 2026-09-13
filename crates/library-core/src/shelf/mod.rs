@@ -106,10 +106,10 @@ impl ShelfKind {
     ///
     /// One spelling of the question "which rung of its tree is this", for the
     /// callers that ask it of a standing shelf rather than of a ledger — the
-    /// seat a ground is covered by ([`crate::folder::watching_over`]) among
-    /// them. The two empty answers are the same answer on purpose: a reader's
-    /// shelf is a seat for nothing below it, and a folder's root shelf is the
-    /// seat every rung of that folder's tree hangs under.
+    /// move's seat check ([`crate::shelf::departs_on_move`]) among them. The
+    /// two empty answers are the same answer on purpose: a reader's shelf is a
+    /// seat for nothing below it, and a folder's root shelf is the seat every
+    /// rung of that folder's tree hangs under.
     pub fn rung(&self) -> &str {
         match self {
             ShelfKind::Virtual => "",

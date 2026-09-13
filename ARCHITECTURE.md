@@ -376,7 +376,16 @@ behaviour you discover by pointing the app at a real folder.
 - `Origin::Stored { src, store }` — the app copied the bytes into its own data directory. `src`
   survives as provenance, which is what a relink offers to copy from again. `Origin::path` answers
   `store`, never `src`: repointing a stored book at its source would quietly turn "the app keeps
-  its own copy" back into "the app reads your folder again".
+  its own copy" back into "the app reads your folder again". The store is ONE FOLDER PER BOOK,
+  keyed by the id that never changes (`library_core::store`: `<Library>/items/<id>/source.<ext>`),
+  so nothing on disk wears a title that can be renamed and two books both called `report.pdf`
+  cannot collide — and nothing READS the store file as a name either: the display fallback for a
+  copy is the stem of the source it was made from (`Book::title`'s `name_source`), because the
+  address's own stem is the layout's word for the book, "source". A removal takes the folder with
+  the file
+  (`commands::library::delete_stored` sweeps the book's own item folder whole, and a directory of
+  the old flat store only when the file was the last thing in it): a book that is gone leaving a
+  directory behind is a directory no sweep would ever collect.
 
 Which variant a book arrives as is the arrival's own fact. A folder import answers per its own
 `in_place` option; a LOOSE file — picked from the dialog or dropped on the library — is always the
@@ -468,7 +477,8 @@ of one file are allowed, so the sanitizer dedupes by *id* rather than by fingerp
 path-keyed writer treats the twins as the twins they are: a read and a path check update *all* the
 rows at an address (the reading position is a fact about the file, not about the row), and a
 removal sweeps the address's gloss, cover and store copy only when no remaining row reads from it
-(`services::library::arrange`'s `sweep_path`). The ledger's registry is first-wins per fingerprint,
+(`services::library::arrange`'s `sweep_path` — and the copy's deletion takes the book's own item
+folder with it, because the folder is the book's and not the store's). The ledger's registry is first-wins per fingerprint,
 which is a safe answer while every row of one fingerprint reads one address — and the reason a
 relink is dropped when the address it would write is one another row already reads, which is what
 keeps it safe now that two folders can each hold a copy.
@@ -643,7 +653,8 @@ An **import** asks what to put on this level, and nothing it offers is destructi
 - **Already imported** places nothing and reveals the row that is already there
   (`services::library::reveal` — its shelf, then its card, lit). It is the answer that means *I did
   not intend to add anything*, and it is what the old silence should have been.
-- **Add as new** places the arrival under the next free name (`conflict::next_name`, counted
+- **Add as new** places the arrival under the next free name (`conflict::next_name` — the name
+  itself when this level holds nothing wearing it, the file manager's counter when it does, counted
   against that level's own names and promised on the row before the click) as the library's own
   stored copy — and as a second book of the address marked `Book::independent` when the address is
   one the library already reads, so its highlights and its resume point are its own rather than
@@ -752,32 +763,45 @@ its copies being the library's own second instance, unrelated to any tree:
 A read-at-place tree has no *as new* and needs no *replace*: its re-import is a merge by nature,
 because its books are the files themselves.
 
-The watch itself has two doors and one lock. The import sheet's switch is the first door, and it is
-the only one that can set a watch on ground the library has not seen. Ground a watched read-at-place
-tree is SEATED on — the folder re-picked, a rung of it, or a directory under a rung that still hangs
-— is watched, and there the switch is locked on and says why
-(`library_core::folder::watching_over`): an import of a folder is the reader asking for its books
-again, not asking the library to stop looking, and a sheet whose defaults are "not watched" would
-otherwise un-track a folder by importing it. The seat is the GROUND's and not the folder's, and the
-difference is what a removal leaves behind: taking a folder's shelf apart lifts the shelves inside it
-to the level it was on, so the folder keeps shelves the reader can see while the ground they took one
-off is seated by nothing. That ground holds no lock — the row keeps watching, because a shelf comes
-back when the folder next places a book, but a watch nobody can see on the ground they are importing
-is not one the sheet may enforce, and an import of that ground with the switch off is how it ends. A
-rung below a ground is not a seat for it, and reading the lock as "this folder still has shelves
-somewhere" was a switch stuck on for a folder the reader had just taken apart, on the one ground the
-removal had freed. The folder run reads the same function before it writes the sheet's answers over a
-standing ledger, so a route that never passed the sheet cannot do it either — and a run that COPIES is
-exempt, because the sheet does not offer the watch beside a copy, so there is no lock to honour and a
-watched copy would be a folder with no door left on it. The second door is the shelf's own
-right-click, which is where a watch is turned off
-(`services::library::set_folder_watch`): the flag is the FOLDER's, one answer about one ground, so
-the folder's root shelf and every rung of its tree ask the same question, and so does a shelf the
-reader made inside that tree — the row names the folder it is about, because "stop watching" from
-three shelves deep is a sentence about a tree the reader is not looking at. Turning it on owes a
-walk and gets the rescan's, quietly: a hand that just asked the library to look at a folder should
-not wait for a focus to see what it finds, and the rescan's table is the one that honours a
-tombstone, so a watch turned on is not an ask for the books the reader took out.
+The watch itself is a TREE of decisions and has two doors, and both doors answer per rung
+(`library_core::tracking`). A `TrackingTree` is a set of per-rung overrides keyed the way a folder's
+`shelf_map` keys its rungs, and a rung nobody wrote inherits the nearest ancestor that has an
+opinion — so the old root-level flag is exactly the tree's root rung, and "watch this subfolder but
+not the tree it stands in" is a decision the data can finally hold.
+
+The import sheet's switch is the first door. It is the reader's on every ground, and what changes is
+which rung the answer lands on: ground an existing read-at-place tree already covers is a rung of
+THAT tree, and the sheet opens SEEDED with the tree's own answer for the rung, so the switch shows
+the state the ground is in and a click moves it — a switch that read the tree and wrote the options
+was a switch that could be clicked all day without the knob moving, and the seed is what makes what
+it shows the value that lands. Ground nothing covers is a fresh folder's root. A run that COPIES
+lands no tracking answer at all, because the sheet hides the row beside a copy: an `Off` written to
+a standing tree's rung by a mode that never showed the switch would be a decision the reader was
+never asked. And a re-pick of covered ground arrives as a CONTINUATION, which is the run that does
+not own the tree's root: the switch answered for the rung the pick names, that answer was written
+before the run (`import::gate::set_rung_tracking`), and the run re-mirrors the legacy flag from the
+tree rather than writing the sheet's options over the root — a rung re-picked with the switch on is
+a question about that subfolder, and the force that once answered it by turning the whole tree on
+was the lock era's rule, from when the sheet had a lock to honour.
+
+The second door is the shelf's own right-click (`services::library::set_shelf_watch`), and it
+answers for the SEAT the shelf stands on: a rung's shelf turns that rung — an explicit decision at
+that rung, with the tree above keeping its own — the root shelf turns the whole tree, and a shelf a
+hand made inside a tree turns the closest rung the disk named for it. The seat is one resolver's
+answer (`library_core::governance::Governance::seat_of`), and the dot a card draws, the state the
+menu row shows and the rung the toggle writes all read it, so the three cannot disagree. The row
+names the ground it is about — the whole folder at the root, only the subfolder at a rung — because
+"stop watching" from three shelves deep is a sentence about a tree the reader is not looking at.
+Turning a watch on owes a walk and gets the rescan's, quietly: a hand that just asked the library to
+look at a ground should not wait for a focus to see what it finds, and the rescan's table is the one
+that honours a tombstone, so a watch turned on is not an ask for the books the reader took out.
+
+The rescan reads the same tree both doors write. A focus walks every folder watched ANYWHERE — its
+root or any rung a reader kept on under a root they turned off (`WatchedFolder::tracks_anything`) —
+and the ledger's rescan table skips an unknown file whose rung resolves off
+(`library_core::ledger::decide`), which is the quiet half of what a rung turned off means. An
+EXPLICIT import is the loud half and adds what it finds whatever the tracking says: the reader asked
+for that ground by name, and the watch is about the walks nobody asked for.
 
 A STORED arrival's question is the level's name alone, and its three answers are the level's own:
 *Show it* imports nothing and goes and looks — the shelf that is here lit where it stands, the
@@ -1206,6 +1230,20 @@ shelf the reader owns has no ground and gets no row, a book whose address died g
 one, and the shell's verb is per platform — the item selected on macOS and Windows, the
 containing folder on Linux, which has no standard select (`commands::library::reveal_in_folder`).
 
+One right-click renames the thing under the pointer, whichever kind of thing it was: *Rename…*
+opens the shelf's rename sheet (`features::library::rename_modal`), one field seeded with the name
+the row or shelf shows, Enter commits and Escape leaves the name alone. The name is a DISPLAY name
+and nothing else — a book's `title`, a link's own name, a shelf's `name` — and the write is the
+primitives the rest of the app already had (`LibraryState::rename_row`,
+`services::library::rename_shelf`): the row keeps its id, its address, its resume point and every
+shelf it is filed on, and a file on disk keeps the name it has. A book's renamed title is LOCKED
+(`library_core::book::Book::title_locked`), and the lock is a provenance line the load-time sweep
+reads: the rule that drops a title shaped like a filename hunts download debris a document
+supplied, and a name a person typed is not debris whatever it looks like. No collision question is
+asked, and that is the level rule rather than an omission — the counter a collision mints answers
+an ARRIVAL, and a rename is not an arrival; two rows of one name on one level are two books the
+reader named that way.
+
 One right-click makes a second instance of what was pointed at, whichever kind of thing it was:
 *Duplicate* (`services::library::duplicate`). A book read AT ITS PLACE gets a second file beside the first —
 the shell's `commands::library::copy_beside` creates it inside the original's own directory under
@@ -1244,4 +1282,6 @@ the LEVEL's menu under the finger that was busy selecting.
 The current shelf's crumb carries the shelf's own popover: a rename in place — the thing being
 named is the thing being typed over, so no dialog has to describe a shelf the reader can already
 see — a duplicate, and the removal, with the watched-folder note when one applies. It is the second
-door to those acts beside the right-click's folder menu, and the only door to a rename.
+door to those acts beside the right-click's folder menu, and both renames — the crumb's field and
+the sheet — commit through the one service, so two doors to one act cannot differ about what it
+means.

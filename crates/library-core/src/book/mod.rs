@@ -178,9 +178,11 @@ pub struct Book {
     pub id: String,
     /// Content identity — what a rescan matches against. See [`Fingerprint`].
     pub fp: Fingerprint,
-    /// Display name captured at open time (a trustworthy `/Title`, else the
-    /// file stem). `None` until the book has been opened once, which is why
-    /// [`Book::title`] falls back to the stem rather than storing a guess.
+    /// The display name: the reader's own when they renamed the book
+    /// ([`Book::title_locked`]), else the one captured at open time (a
+    /// trustworthy `/Title`, else the file stem). `None` until one of the two
+    /// happens, which is why [`Book::title`] falls back to the stem rather
+    /// than storing a guess.
     #[serde(default)]
     pub title: Option<String>,
     /// Author, when the document or the import supplied one.
@@ -236,6 +238,15 @@ pub struct Book {
     ///
     #[serde(default)]
     pub independent: bool,
+    /// The title is the reader's own words rather than the document's: a name
+    /// typed into the shelf's rename, or one the conflict sheet minted and the
+    /// reader accepted. [`crate::book::sanitize`] reads it as a promise — the
+    /// rule that drops a title shaped like a filename exists to heal download
+    /// debris a document supplied, and a name a person chose is not debris,
+    /// whatever it looks like. A title the open pipeline captured from the
+    /// document leaves the flag off and keeps answering to the rule.
+    #[serde(default)]
+    pub title_locked: bool,
 }
 
 fn default_page() -> u32 {
@@ -409,6 +420,7 @@ impl Book {
             missing: false,
             fp_pending: false,
             independent: false,
+            title_locked: false,
         }
     }
 
@@ -420,16 +432,35 @@ impl Book {
     /// The name to show: the document's own title, else the file stem, else
     /// the address. Never empty — a card with no name is a card the reader
     /// cannot tell from its neighbour.
+    ///
+    /// The stem a STORED book falls back to is its SOURCE's — the file the
+    /// reader imported — and not its store address's: the store names every
+    /// book's bytes `source.<ext>` inside the folder keyed by the id
+    /// (`library_core::store`), so a fallback that read the address would call
+    /// every imported book "source", which is a layout artifact rather than a
+    /// name. A copy whose provenance is unknown has nothing better and keeps
+    /// the address's own stem.
     pub fn title(&self) -> String {
-        crate::text::display_or_stem(self.title.as_deref(), self.path())
+        crate::text::display_or_stem(self.title.as_deref(), self.name_source())
     }
 
     /// The human-readable stem of this book's address — the file's own name
     /// without its extension, which is the name a book with no title of its
-    /// own shows and the name a collision compares. [`stem_of`] over
-    /// [`Book::path`].
+    /// own shows and the name a collision compares. [`stem_of`] over the same
+    /// address [`Book::title`] falls back to.
     pub fn stem(&self) -> String {
-        stem_of(self.path())
+        stem_of(self.name_source())
+    }
+
+    /// The address whose stem is this book's display fallback: the source the
+    /// bytes came from for a stored book that knows one, its own address
+    /// everywhere else. One spelling so [`Book::title`] and [`Book::stem`]
+    /// cannot fall back to different names.
+    fn name_source(&self) -> &str {
+        match &self.origin {
+            Origin::Stored { src: Some(src), .. } => src,
+            origin => origin.path(),
+        }
     }
 
     /// The author line, when there is one to show.
@@ -570,6 +601,7 @@ mod tests {
             missing: false,
             fp_pending: false,
             independent: false,
+            title_locked: false,
         }
     }
 
@@ -1255,6 +1287,103 @@ mod tests {
     }
 
     #[test]
+    fn a_title_the_reader_chose_survives_the_debris_rule() {
+        // The rule that drops a filename-shaped title hunts what a document
+        // supplied; a name the reader typed at the shelf's rename wears the
+        // lock and is nobody's debris — however much it looks like a file.
+        let mut books = rows([
+            Book {
+                title: Some("0321894073.pdf".into()),
+                ..linked("doc", "/books/one.pdf")
+            },
+            Book {
+                id: "ren".into(),
+                title: Some("my_report_final.pdf".into()),
+                title_locked: true,
+                ..linked("ren", "/books/two.pdf")
+            },
+        ]);
+        sanitize(&mut books);
+        assert_eq!(
+            at(&books, 0).title, None,
+            "a document's download debris still goes"
+        );
+        assert_eq!(
+            at(&books, 1).title.as_deref(),
+            Some("my_report_final.pdf"),
+            "the reader's own name stays, whatever it looks like"
+        );
+    }
+
+    #[test]
+    fn a_stored_book_is_named_by_the_file_it_came_from() {
+        // The store names every book's bytes `source.pdf` inside the folder its
+        // id keys, so the address's own stem is a layout artifact: the display
+        // fallback reads the SOURCE the copy was made from.
+        let stored = Book {
+            origin: Origin::Stored {
+                src: Some("/downloads/dune.pdf".into()),
+                store: "/app/Library/items/b1/source.pdf".into(),
+            },
+            ..linked("b1", "/app/Library/items/b1/source.pdf")
+        };
+        assert_eq!(stored.title(), "dune");
+        assert_eq!(stored.stem(), "dune");
+        // A copy whose provenance is unknown has nothing better than its own
+        // address, and keeps it.
+        let orphan = Book {
+            origin: Origin::Stored {
+                src: None,
+                store: "/app/Library/items/b2/source.pdf".into(),
+            },
+            ..linked("b2", "/app/Library/items/b2/source.pdf")
+        };
+        assert_eq!(orphan.title(), "source");
+        // And a title of its own outranks every fallback.
+        let named = Book {
+            title: Some("Dune".into()),
+            ..stored
+        };
+        assert_eq!(named.title(), "Dune");
+    }
+
+    #[test]
+    fn a_store_stem_burnt_into_a_title_is_healed_and_a_readers_own_is_not() {
+        // The open pipeline used to seed the shelf's record with the stem of
+        // the address it opened, which for a stored book is the store's own
+        // "source": a burn-in the load drops, so the source's stem shows
+        // again. A title the reader typed is locked, and "source" is a name a
+        // person may genuinely choose.
+        let mut books = rows([
+            Book {
+                title: Some("source".into()),
+                origin: Origin::Stored {
+                    src: Some("/downloads/dune.pdf".into()),
+                    store: "/app/Library/items/b1/source.pdf".into(),
+                },
+                ..linked("b1", "/app/Library/items/b1/source.pdf")
+            },
+            Book {
+                title: Some("source".into()),
+                title_locked: true,
+                origin: Origin::Stored {
+                    src: Some("/downloads/foundation.pdf".into()),
+                    store: "/app/Library/items/b2/source.pdf".into(),
+                },
+                ..linked("b2", "/app/Library/items/b2/source.pdf")
+            },
+        ]);
+        sanitize(&mut books);
+        assert_eq!(at(&books, 0).title, None, "the burn-in goes");
+        assert_eq!(at(&books, 0).title(), "dune", "and the source's stem shows");
+        assert_eq!(
+            at(&books, 1).title.as_deref(),
+            Some("source"),
+            "the reader's own name stays, however plain"
+        );
+    }
+
+    #[test]
     fn a_link_to_a_shelf_survives_the_row_sweep() {
         // The row sweep can only ask the row list, and a shelf id is never a
         // book id: a folder link is kept, and which shelves still exist is the
@@ -1369,6 +1498,7 @@ mod tests {
             missing: true,
             fp_pending: false,
             independent: true,
+            title_locked: false,
         };
         let json = serde_json::to_string(&book).unwrap();
         assert!(json.contains("\"kind\":\"stored\""), "{json}");

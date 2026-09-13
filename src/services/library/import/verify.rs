@@ -22,7 +22,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{apply_check, book_rows};
 use library_core::folder::{self as folder_ops, FolderOpts};
-use library_core::shelf::{self as shelves_ops};
+use library_core::governance::Governance;
 use library_core::wire::PathCheck;
 
 use super::claim::claim_root;
@@ -88,7 +88,11 @@ fn run_watched(state: AppState) {
         .folders
         .get_untracked()
         .iter()
-        .filter(|f| f.tracked())
+        // Watched ANYWHERE, not only at the root: a tree the reader turned off
+        // at the root while one subfolder stayed on still owes the walk, and
+        // the ledger's per-rung gate is what keeps the off rungs quiet inside
+        // it. A folder nothing watches is the one that owes nothing.
+        .filter(|f| f.tracks_anything())
         .map(|f| (f.root.clone(), f.opts.clone()))
         .collect();
     for (root, opts) in watched {
@@ -171,72 +175,90 @@ pub(super) fn apply_checks(state: AppState, checks: &[PathCheck]) {
 // The watch a hand turns.
 // ---------------------------------------------------------------------------
 
-/// The watch a shelf answers for: which folder owns it, whether it is on, and
-/// what that folder is called wherever the library names one.
+/// The watch a shelf answers for: which folder's tree it stands in, which rung
+/// of that tree its menu row turns, whether that rung is watched, and what the
+/// folder and the rung are called wherever the library names one.
 ///
 /// A value rather than a `bool` because the menu row that asks is a label and a
 /// sentence, and a caller that fetched the folder a second time to spell them
 /// would be a second reader of a ledger the first one just read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShelfWatch {
-    /// The folder the flag belongs to, which is the whole tree rather than the
-    /// rung that was asked: `watch` is one answer about one ground.
+    /// The folder whose tracking tree holds the decision.
     pub folder_id: String,
+    /// The rung this shelf stands on — the rung a toggle from its menu writes.
+    /// The shelf's own `rel` for a shelf the tree cut (`""` at the watched
+    /// root), and the closest folder shelf's rung for a shelf the reader made
+    /// inside the tree: a made shelf is no rung the disk names, but it stands
+    /// on a seat, and the seat is what answers — the same seat the watch dot
+    /// on the card reads (`library_core::governance::Governance::seat_of`),
+    /// so the row and the dot cannot disagree about the state they show.
+    pub rung: String,
+    /// The effective answer at that rung: the rung's own decision, or the
+    /// closest ancestor that has one.
     pub on: bool,
+    /// What the folder's root is called. A watch sentence from three shelves
+    /// deep names the tree it is about, so the reader is told what stops
+    /// being watched rather than finding out at the next focus.
     pub label: String,
+    /// What the rung itself is called — the last segment of the subfolder's
+    /// path — for a seat deeper than the root, and `None` at the watched root,
+    /// where the folder's own name is the whole sentence.
+    pub rung_label: Option<String>,
 }
 
 /// The watch a SHELF answers for, when it answers for one: the shelf stands on
-/// ground a folder the library reads in place owns, so the folder's watch is a
-/// fact about the ground under this shelf rather than about the shelf itself.
+/// ground a folder the library reads in place owns, so the watch is a fact
+/// about the seat under this shelf rather than about the shelf itself.
 ///
-/// Two shelves answer, and the second is the reason this is a walk and not a
-/// lookup. A shelf the folder's own tree cut — its root, or any rung of it,
-/// however deep — answers with that folder. A shelf the reader MADE inside such
-/// a tree answers with the closest folder shelf above it: it is not a rung, and
-/// the directory it holds is not one the folder walks, but it is standing inside
-/// a watched tree, and "stop watching" asked from there is the same ask as from
-/// the rung at the top. The row names the folder it is about, so the two cannot
-/// be mistaken for a watch of one shelf.
+/// The seat is [`library_core::governance::Governance::seat_of`]'s answer, and
+/// the walk that used to be here is that resolver's: a shelf the folder's own
+/// tree cut answers with its own rung, however deep, and a shelf the reader
+/// MADE inside such a tree answers with the closest folder shelf's rung — it
+/// is not a rung the disk names, but it is standing inside the tree, and
+/// "stop watching" asked from there is a decision at the seat it stands on.
 ///
-/// `None` for a shelf with no read-at-place folder above it — the reader's own
-/// shelf on the reader's own ground, which has no watch to turn — and for a
-/// shelf of a COPYING folder: the import sheet does not offer the watch beside a
-/// copy, so the shelf's menu does not either, and the two surfaces that can set
-/// the flag stay one rule.
+/// `None` for a shelf with no read-at-place seat — the reader's own shelf on
+/// the reader's own ground, which has no watch to turn — and for a shelf of a
+/// COPYING folder: the import sheet does not offer the watch beside a copy, so
+/// the shelf's menu does not either, and the two surfaces that can set the
+/// flag stay one rule.
 pub fn shelf_watch(state: AppState, shelf_id: &str) -> Option<ShelfWatch> {
-    let folder_id = state.library.shelves.with_untracked(|shelves| {
-        let own = shelves_ops::find(shelves, shelf_id).and_then(|s| s.kind.folder_id());
-        own.or_else(|| {
-            // Root first, so the LAST of them is the closest: the tree a hand
-            // made its shelf inside, rather than one it happens to hang under.
-            shelves_ops::ancestors(shelves, shelf_id)
-                .iter()
-                .rev()
-                .find_map(|shelf| shelf.kind.folder_id())
-        })
-        .map(str::to_string)
-    })?;
-    let folder = state.library.folder(&folder_id)?;
-    if !folder.opts.in_place {
-        return None;
-    }
+    let (folders, shelves) = (
+        state.library.folders.get_untracked(),
+        state.library.shelves.get_untracked(),
+    );
+    let seat = Governance::new(&folders, &shelves).seat_of(shelf_id)?;
+    let folder = folder_ops::find(&folders, &seat.folder_id)?;
+    let rung_label = (!seat.rung.is_empty())
+        .then(|| folder_label(&folder_ops::dir_of_rung(&folder.root, &seat.rung)));
     Some(ShelfWatch {
-        on: folder.tracked(),
+        on: folder.tracks_rung(&seat.rung),
         label: folder_label(&folder.root),
-        folder_id,
+        rung_label,
+        folder_id: seat.folder_id,
+        rung: seat.rung,
     })
 }
 
-/// Turn a folder's watch on or off, from the shelf's own menu.
+/// Turn the watch of the ground a shelf stands on, from the shelf's own menu.
 ///
-/// The flag is the whole of the write, and it is the FOLDER's rather than the
-/// shelf's: every card, breadcrumb and menu row that draws the watch dot reads
-/// the folder, so one write answers for the whole tree without being told which
-/// rungs it has.
+/// The write is the SEAT's rung rather than the tree's root, because tracking
+/// is a tree (`library_core::tracking`) and a shelf is a seat in it: "stop
+/// watching" asked of a rung is an explicit Off at that rung while the tree
+/// above keeps watching its own, and asked of the root shelf it is the whole
+/// tree, which is the root's seat. A shelf the reader made inside the tree
+/// writes the closest rung the disk named for it — the seat its dot already
+/// showed. The rescan honours the same tree the write lands on: a rung turned
+/// off adds nothing on a quiet walk (`library_core::ledger::decide`), which is
+/// what makes the row mean what it says.
+///
+/// A folder that already answers this way is not a write, and is not a walk
+/// either: toggling it on again would be a second rescan of a ground the first
+/// one has just covered.
 ///
 /// Turning it ON owes a walk, and owes it quietly: the reader just asked the
-/// library to look at this folder, so a file that arrived while nobody was
+/// library to look at this ground, so a file that arrived while nobody was
 /// watching should show up now rather than at the next focus. The walk is the
 /// rescan's own, which is the point of it being [`walk_one`] rather than an
 /// import — the tombstones a removal wrote still hold, because turning a watch
@@ -244,37 +266,37 @@ pub fn shelf_watch(state: AppState, shelf_id: &str) -> Option<ShelfWatch> {
 /// over would be the resurrection a tombstone exists to prevent. Turning it OFF
 /// writes nothing else: the ledger stays exactly as it was, so the books this
 /// folder placed are still the books it placed if the watch ever comes back.
-pub fn set_folder_watch(state: AppState, folder_id: &str, on: bool) {
-    let Some((root, opts, label)) = state.library.folders.with_untracked(|folders| {
-        folder_ops::find(folders, folder_id).and_then(|folder| {
-            // A folder that already answers this way is not a write, and is not
-            // a walk either: toggling it on again would be a second rescan of a
-            // ground the first one has just covered.
-            (folder.tracked() != on).then(|| {
-                let mut folder = folder.clone();
-                folder.set_tracking("", on);
-                (folder.root.clone(), folder.opts.clone(), folder_label(&folder.root))
-            })
-        })
+pub fn set_shelf_watch(state: AppState, shelf_id: &str, on: bool) {
+    let Some(watch) = shelf_watch(state, shelf_id) else {
+        return;
+    };
+    if watch.on == on {
+        return;
+    }
+    let Some((root, opts)) = state.library.folders.with_untracked(|folders| {
+        folder_ops::find(folders, &watch.folder_id).map(|f| (f.root.clone(), f.opts.clone()))
     }) else {
         return;
     };
     state.library.folders.update(|folders| {
-        if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
-            // The whole tree, which is the rung the shelf's menu asks about: a
-            // shelf of a watched folder is a seat in that folder's tree, and
-            // "stop watching" from there is the root's answer rather than the
-            // rung's.
-            folder.set_tracking("", on);
+        if let Some(folder) = folder_ops::find_mut(folders, &watch.folder_id) {
+            folder.set_tracking(&watch.rung, on);
         }
     });
     crate::storage::persist_library(state.library);
+    // The sentence names the ground the decision was about: a rung says which
+    // subfolder, in which tree, because a "no longer watched" that read as the
+    // whole tree would be a surprise three shelves deep.
+    let ground = match &watch.rung_label {
+        Some(rung) => format!("“{rung}” in {}", watch.label),
+        None => watch.label.clone(),
+    };
     toast(
         state,
         if on {
-            format!("Watching {label} for new books.")
+            format!("Watching {ground} for new books.")
         } else {
-            format!("{label} is no longer watched for new books.")
+            format!("{ground} is no longer watched for new books.")
         },
     );
     if on {

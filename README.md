@@ -302,18 +302,26 @@ touches a file you own.
   app ever had — the book is the path it was opened from, and the app never moves, renames or
   deletes it. *Copy into the store* puts the bytes under the app's own data directory, so a book
   survives its source folder being renamed or deleted, and keeps the source path as provenance for
-  a relink. A file imported on its own — picked from the dialog or dropped on the library — is
+  a relink. Each stored book owns one folder under the id that never changes, so no name that can
+  be renamed is ever on disk and two books called `report.pdf` cannot collide — and removing a
+  stored book takes its folder with it, so a book that is gone leaves no directory behind. A file imported on its own — picked from the dialog or dropped on the library — is
   always a store copy: there is no folder behind it to rescan or answer for it, and a copy is a
   book the library owns outright, with its own highlights and its own place in it.
 - **Import a folder.** The sheet asks five questions and nothing else: which formats (as an include
   or an exclude list), how large a file has to be to count as a book, whether to read in place or
   copy, whether to watch for new books, and whether subfolders become shelves. Every answer is
-  stored with the folder, so a later rescan honours the import it came from.
+  stored with the folder, so a later rescan honours the import it came from. The watch answer
+  belongs to the folder being imported: when it is part of a tree the library already reads, the
+  switch opens on the state that tree is in and answers for this subfolder alone — the tree above
+  keeps watching its own — and what the switch shows is always the value that lands.
 - **Watched folders rescan when the app opens or returns to the foreground**, not through a
   filesystem watcher — a watcher fires while you are still copying files in, which is exactly when a
   half-written PDF is most likely to be measured. Only genuinely new files are ever added: a book
   you dragged to another shelf keeps its fingerprint in that folder's ledger, and a book you removed
-  leaves a tombstone, so neither comes back on the next pass.
+  leaves a tombstone, so neither comes back on the next pass. Watching is a per-subfolder decision:
+  a folder shelf's right-click turns its own rung — the whole tree from the root shelf, and only
+  that subfolder from a rung of it, with the rest of the tree keeping its own answer — and a
+  rescan adds files only under the rungs that are watched.
 - **A shelf is a level, not a row.** In the grid a shelf is a folder card — one cell of the same
   grid the books are cells of, wearing a 2×2 plate of what is inside it (covers for its books,
   plates of their own for its folders, recursively) and a count of both halves — which is what
@@ -375,9 +383,10 @@ touches a file you own.
   chain with nothing measured and nothing listening. ArrowDown opens it too, since those levels are on
   no other surface. Every crumb is a drop target, which is what makes a deep level reachable with a
   hand full of books; the ellipsis itself is a place to rest and not a place to drop.
-- **A right-click is a menu, per kind of thing.** A book gets Open, Select, Duplicate, Reveal in
-  folder, Find again when its address died, and Remove; a folder gets Open, Select, Duplicate,
-  Reveal in folder, the watch toggle for the folder its shelf belongs to, a New shelf filed inside
+- **A right-click is a menu, per kind of thing.** A book gets Open, Select, Rename…, Duplicate,
+  Reveal in folder, Find again when its address died, and Remove; a folder gets Open, Select,
+  Rename…, Duplicate, Reveal in folder, the watch toggle for the seat its shelf stands on — the
+  whole tree from the root shelf, only that subfolder from a rung of it — a New shelf filed inside
   the one you asked whichever level the page is on, and Take shelf apart; a card already in a selection
   gets the set's menu — New shelf from these, Duplicate, Remove, Clear — because a right-click on
   one of several things means all of them; and the empty shelf gets New shelf and Select all.
@@ -385,6 +394,14 @@ touches a file you own.
   reveals the copy in the library's store, a book read at its place reveals the file where it
   stands, a link reveals what it points at, and a folder shelf reveals the directory its tree cut
   it from — with no row at all for a shelf the reader owns, which has no directory to show.
+  **Rename…** opens one field, seeded with the name the thing already shows, and commits on Enter.
+  It renames what the library SHOWS and nothing on disk: the file a book reads keeps the name it
+  has, which is what makes the row safe to rename at all — its id, its address, its resume point,
+  its highlights and every shelf it is filed on all stay put, and only the label changes. A link
+  renames its own name, and a shelf renames the shelf, both the same gesture from the same menu.
+  A name you type is yours and survives as-is: a title that looks like a filename is dropped when
+  it came from a document's own metadata, which is where such titles are download debris, but not
+  when a reader typed it at this sheet.
   **Duplicate** makes a second instance of the thing under the pointer: a book read at its place
   gets a second FILE beside the first, in the file manager's counter name (`dune_1.pdf`, and a
   duplicate of a duplicate steps rather than stacks); a book the library copied gets a second copy

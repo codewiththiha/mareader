@@ -17,7 +17,8 @@
 //!     directory this module ever writes to, and stamps each copy with its own
 //!     modification time so it measures as the file it is rather than as the
 //!     one it came from ([`own_stamp`]);
-//!   * [`delete_stored`] removes a copy, and refuses anything outside it;
+//!   * [`delete_stored`] removes a copy and the book's own folder with it, and
+//!     refuses anything outside the store;
 //!   * [`relocate_stored`] moves a copy out of the old flat store into the
 //!     book's own item folder, refusing either end that is not inside it;
 //!   * [`copy_beside`] copies ONE document beside itself — the read-at-place
@@ -416,7 +417,7 @@ fn own_stamp(target: &Path) {
     }
 }
 
-/// Remove a file the app itself stored.
+/// Remove a file the app itself stored, and the book's folder with it.
 ///
 /// The containment check is the whole safety story: the argument arrives from
 /// the webview, and a delete primitive that trusted it would be `rm` with an IPC
@@ -425,6 +426,16 @@ fn own_stamp(target: &Path) {
 /// same rule [`relocate_stored`] answers with ([`inside_store`]), because a move
 /// that could be talked into leaving the store would be a delete that could be
 /// talked into anywhere.
+///
+/// The directory the file stood in goes with it. A stored book owns one folder
+/// end to end ([`store::item_dir`]) — its bytes and whatever else the app keeps
+/// beside them — and a removal that took only the file left a directory per
+/// removed book under `items/` that no sweep would ever collect. A direct child
+/// of `items/` is therefore removed whole; anything else in the store — a file
+/// an older build left in the flat bucket — takes its directory only when it was
+/// the last thing in it, so a bucket two books still share survives the first
+/// one's removal. The store's own two directories are never a leaf's parent to
+/// begin with.
 #[tauri::command]
 pub fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
     let root = store_root(&app)?;
@@ -437,9 +448,46 @@ pub fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
         return Err(format!("refusing to delete a file outside the store: {path}"));
     };
     match fs::remove_file(&target) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("could not delete {path}: {e}")),
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("could not delete {path}: {e}")),
+    }
+    sweep_the_books_folder(&root, &target);
+    Ok(())
+}
+
+/// Take the directory a just-deleted store file stood in, by the two rules the
+/// command's doc owns: a book's own item folder goes whole, and any other
+/// directory goes only when the file was the last thing in it.
+///
+/// Best-effort and silent: a directory the host will not release is an empty
+/// folder, not a removal that failed — the file the reader asked about is gone
+/// either way, and there is no version of this where they should see an error
+/// for it.
+fn sweep_the_books_folder(root: &Path, deleted: &Path) {
+    let Some(dir) = deleted.parent() else {
+        return;
+    };
+    let Ok(root) = root.canonicalize() else {
+        return;
+    };
+    if dir == root {
+        return;
+    }
+    // `deleted` arrived out of `contained_in`, so it — and the parent this
+    // reads — is a resolved path; the items root is resolved the same way
+    // before the comparison, because a symlinked app-data directory would
+    // otherwise fail a match the containment just proved.
+    let items = PathBuf::from(store::items_root(&path_to_string(&root)));
+    let is_item_dir = dir.parent().is_some_and(|grandparent| {
+        items
+            .canonicalize()
+            .map_or(*grandparent == items, |real| *grandparent == real)
+    });
+    if is_item_dir {
+        let _ = fs::remove_dir_all(dir);
+    } else if fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_none()) {
+        let _ = fs::remove_dir(dir);
     }
 }
 
@@ -855,6 +903,7 @@ fn ensure_walkable(root: &Path) -> Result<(), String> {
 mod tests {
     use super::{
         copy_beside_sync, extension_of, inside_store, own_stamp, relative_to, same_file,
+        sweep_the_books_folder,
     };
     use std::fs;
     use std::path::Path;
@@ -1022,5 +1071,57 @@ mod tests {
     #[test]
     fn a_stamp_nobody_can_set_is_not_an_error() {
         own_stamp(Path::new("/this/path/is/not/there/book.pdf"));
+    }
+
+    /// The folder a removed store book stood in goes with it — whole, when it
+    /// is the book's own item folder, and only when empty for anything else —
+    /// while the store's own two directories outlive every leaf. The paths are
+    /// resolved before the sweep the way the command resolves them, because
+    /// the containment the sweep trusts is `contained_in`'s answer, and a
+    /// temp directory under a symlinked `/tmp` is exactly where an unresolved
+    /// comparison would pass on one platform and fail on the next.
+    #[test]
+    fn a_removed_book_takes_its_own_folder_and_nothing_above_it() {
+        let root = std::env::temp_dir().join(format!("pdf-reader-sweep-{}", std::process::id()));
+        let item = root.join("items").join("b1");
+        let legacy = root.join("pdf");
+        fs::create_dir_all(&item).expect("an item folder");
+        fs::create_dir_all(&legacy).expect("a legacy bucket");
+        let source = item.join("source.pdf");
+        let one = legacy.join("one.pdf");
+        let two = legacy.join("two.pdf");
+        let loose = root.join("loose.pdf");
+        for path in [&source, &one, &two, &loose] {
+            fs::write(path, b"%PDF-1.7 a book").expect("a scratch file");
+        }
+
+        // The item folder goes whole, cover debris and all: the book owns it.
+        // The resolution happens while the file exists, the way the command's
+        // containment resolves it before the removal.
+        fs::write(item.join("cover.webp"), b"art").expect("a stand-in cover");
+        let resolved = source.canonicalize().expect("a resolution");
+        fs::remove_file(&source).expect("a removal");
+        sweep_the_books_folder(&root, &resolved);
+        assert!(!item.exists(), "the book's folder left with the book");
+        assert!(root.join("items").exists(), "the items root is the store's own");
+
+        // A shared legacy bucket survives the first of its two files...
+        let resolved = one.canonicalize().expect("a resolution");
+        fs::remove_file(&one).expect("a removal");
+        sweep_the_books_folder(&root, &resolved);
+        assert!(legacy.exists(), "a bucket two books shared keeps the second");
+        // ...and goes when the second was the last thing in it.
+        let resolved = two.canonicalize().expect("a resolution");
+        fs::remove_file(&two).expect("a removal");
+        sweep_the_books_folder(&root, &resolved);
+        assert!(!legacy.exists(), "an empty bucket is nobody's");
+
+        // A file at the store root leaves the root itself alone.
+        let resolved = loose.canonicalize().expect("a resolution");
+        fs::remove_file(&loose).expect("a removal");
+        sweep_the_books_folder(&root, &resolved);
+        assert!(root.exists(), "the store root is never a leaf's folder to take");
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

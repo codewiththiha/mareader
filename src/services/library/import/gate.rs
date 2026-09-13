@@ -269,7 +269,7 @@ pub fn ground_tracking(state: AppState, root: &str) -> Option<(String, String, b
 /// The sheet's switch is the reader's answer about the ground they picked, and
 /// the ground belongs to a rung of an existing tree whenever one covers it — so
 /// the write is at that rung rather than at a fresh folder's root. Turning it ON
-/// owes the quiet walk the shelf's own menu owes (`set_folder_watch`), because a
+/// owes the quiet walk the shelf's own menu owes (`set_shelf_watch`), because a
 /// reader who just asked the library to look at this ground should see the file
 /// that arrived while nobody was watching, now rather than at the next focus.
 /// It is the rescan's own walk, so the tombstones a removal wrote still hold.
