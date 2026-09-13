@@ -272,9 +272,17 @@ fn CoverCell(state: AppState, book: Book) -> impl IntoView {
     let path = book.path().to_string();
     let empty_path = path.clone();
     let alt = book.title();
+    // A book whose address died wears the card's own grey on the plate too:
+    // the plate is the folder's answer to "what is inside it", and a dead file
+    // inside is a fact the preview should not paint in full colour. Read at
+    // the build rather than tracked here — the plate's items signal re-fires
+    // on every change to the books list, a path check's among them, and the
+    // cell this rebuilds is the cell that knows.
+    let missing = book.missing;
     view! {
         <span
             class="folder-thumb-cell"
+            class=("folder-thumb-missing", missing)
             class=("folder-thumb-empty", move || {
                 state
                     .library

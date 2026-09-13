@@ -60,6 +60,7 @@
 //! | [`files`] | the loose-file run, and the single-file landings every sheet's answer rides |
 //! | [`verify`] | the startup measurement, the focus rescan, and the watch a hand turns |
 //! | [`restore`] | the books a folder's own log gives back, and the files a log REPRESENTS |
+//! | [`copies`] | the copies run that touches no ledger: a copies import of ground a read-at-place tree still reads |
 //! | [`copy`] | the store batch and its per-file failure sentence |
 //! | [`replace`] | the sheet's *replace*: the sweep out and the walk back in |
 //! | [`migrate`] | the one-time move of every stored copy into its own item folder |
@@ -70,6 +71,7 @@
 //! stages rather than as a scroll.
 
 mod claim;
+mod copies;
 mod copy;
 mod files;
 mod folder;
@@ -93,6 +95,7 @@ pub use verify::{
     rescan_watched, set_shelf_watch, shelf_watch, verify_library, verify_one, ShelfWatch,
 };
 
+pub(crate) use copies::{copies_beside_tree, copies_over_standing_tree, CopiesDest};
 pub(crate) use files::{land_stored_copy, land_stored_copy_settling, settle_ledger};
 pub(crate) use gate::{proceed_folder, reclaim_rung, RootPlan};
 pub(crate) use replace::{replace_folder_with_copies, replace_shelf_with_folder};

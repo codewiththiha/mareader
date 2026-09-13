@@ -62,6 +62,22 @@ fn sweep_and_walk_into(
     if !doomed.is_empty() {
         arrange::purge_books(state, &doomed, PurgeOpts::default());
     }
+    if super::copies::copies_over_standing_tree(state, &root, &opts) {
+        // A copies run over ground a read-at-place tree still reads: the
+        // unbound walk files the copies into the shelf the sweep just emptied
+        // and leaves the tree's ledger alone — the bound run would resolve
+        // onto that ledger and flip into a copies folder the very tree the
+        // reader did NOT ask to convert.
+        super::copies::copies_beside_tree(
+            state,
+            root,
+            opts,
+            super::copies::CopiesDest::Into {
+                shelf_id: existing_id,
+            },
+        );
+        return;
+    }
     proceed_folder(
         state,
         root,

@@ -786,8 +786,10 @@ was the lock era's rule, from when the sheet had a lock to honour.
 
 The second door is the shelf's own right-click (`services::library::set_shelf_watch`), and it
 answers for the SEAT the shelf stands on: a rung's shelf turns that rung — an explicit decision at
-that rung, with the tree above keeping its own — the root shelf turns the whole tree, and a shelf a
-hand made inside a tree turns the closest rung the disk named for it. The seat is one resolver's
+that rung, with the tree above keeping its own — the root shelf turns the WHOLE tree, every rung's
+separate decision swept with the root's, because a reader turning the folder back on is not asking
+which subfolders a previous hand turned off, and a shelf a hand made inside a tree turns the
+closest rung the disk named for it. The seat is one resolver's
 answer (`library_core::governance::Governance::seat_of`), and the dot a card draws, the state the
 menu row shows and the rung the toggle writes all read it, so the three cannot disagree. The row
 names the ground it is about — the whole folder at the root, only the subfolder at a rung — because
@@ -812,7 +814,16 @@ folder's OWN read-at-place tree, the sweep is the import module's log-spending o
 come back in the names the shelves showed); of any other shelf it is the removal's receipt over
 the shelf's members and the merge's filing of the copies into it
 (`import::replace_shelf_with_folder`). The row promises the count before the click either way.
-*As new* mints the counter-named second shelf and imports into its own tree. And of ground the
+*As new* mints the counter-named second shelf — and when the ground is one a read-at-place tree
+still reads, the run that fills it is the UNBOUND one (`import::copies`): one directory is one
+ledger row, so a copies run there cannot ride the bound walk, which would resolve onto the
+standing tree's row, flip its mode and clear the map its seats hang on. The unbound run diffs
+against the library instead of a ledger (`ledger::unbound_copies` — every file but the copy the
+library already made, one book per fingerprint), and files the copies onto shelves of the
+reader's own, `ShelfKind::Virtual` and bound to nothing, while the tree keeps its ledger, its
+mode and its watch. The *replace* of a shelf the tree does not own — a second door wearing the
+folder's name — files its copies into the swept shelf through the same walk, for the same reason.
+And of ground the
 library already reads in place, EVERY explicit copies run holds copies of its own — a nested
 folder picked with the switch off while the outer tree stands is the shape this exists for: the
 ledger's own table answers Skip for a file the library already holds, which is a rescan's answer

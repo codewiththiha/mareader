@@ -123,6 +123,20 @@ impl TrackingTree {
         }
     }
 
+    /// The root's decision made as the WHOLE tree's: every rung's override goes
+    /// with it, and the tree answers uniformly from the root again.
+    ///
+    /// What the shelf menu's root row means by "the whole folder" — and a
+    /// sentence, not a default. A reader who turns the tree back on is not
+    /// asking which subfolders a previous hand turned off, and a tree that
+    /// kept them would be a toggle that visibly did nothing below the rung
+    /// they stand on; a reader who turns it off is not leaving one subfolder
+    /// secretly watching after a row that said the whole folder stopped.
+    pub fn set_root(&mut self, on: bool) {
+        self.overrides.clear();
+        self.set("", if on { Track::On } else { Track::Off });
+    }
+
     /// The explicit decision a rung carries, or [`Track::Inherit`] when it has
     /// none of its own. What a context-menu toggle reads to show the state it is
     /// about to flip, as distinct from the effective [`resolve`] it inherits.
@@ -294,5 +308,30 @@ mod tests {
             "one rung kept on is a folder the rescan still owes a walk"
         );
         assert!(!off_root.tracked(), "and the root's own answer is still Off");
+    }
+
+    #[test]
+    fn the_root_decision_is_the_whole_tree_s() {
+        // "The whole folder" is a sentence about every rung in it: a root
+        // turned off leaves no subfolder secretly watching, and a root turned
+        // back on activates every rung again — the subfolder a previous hand
+        // decided separately is not a decision the whole-tree row keeps.
+        let mut tree = TrackingTree::tracking_root();
+        tree.set("Fiction", Track::Off);
+        tree.set("Poetry", Track::On);
+        tree.set_root(false);
+        assert!(!tree.resolve(""));
+        assert!(!tree.resolve("Fiction"), "the rung's own Off went with it");
+        assert!(!tree.resolve("Poetry"), "and so did its On");
+        assert!(!tree.any_on(), "no rung is left watching");
+        tree.set_root(true);
+        assert!(tree.resolve(""), "the root watches");
+        assert!(tree.resolve("Fiction"), "every rung inherits it again");
+        assert!(tree.resolve("Poetry/deep"), "however deep");
+        assert_eq!(
+            tree.track_at("Fiction"),
+            Track::Inherit,
+            "the overrides are gone, not overruled"
+        );
     }
 }

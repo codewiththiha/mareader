@@ -94,6 +94,15 @@
   object-fit: cover;
 }
 
+/* A book on the plate whose address died wears the same grey its card wears
+   (`.book-missing` in grid.css): the plate is the folder's answer to "what is
+   inside it", and a dead file inside is a fact the preview should not hide in
+   colour. The img and not the cell, so the empty cell's recessed tone stays
+   the empty cell's own. */
+.folder-thumb-missing > .folder-thumb-img {
+  filter: grayscale(1) opacity(0.62);
+}
+
 /* A cell with no cover in it is a flat quarter recessed a touch toward the
    paper: no texture, just a panel plainly emptier than the covers beside it,
    held in place by the seam around it. Toward the PAPER rather than toward the

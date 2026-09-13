@@ -377,6 +377,57 @@ pub fn copy_over_paths(found: &[FoundFile], registry: &Registry, rows: &[Row]) -
         .collect()
 }
 
+/// The files an UNBOUND copies run owes a book of its own: one per
+/// fingerprint, first found wins.
+///
+/// "Unbound" is the copies run that must not touch a standing tree's ledger —
+/// a copies import of the very ground a read-at-place tree still reads, whose
+/// *as new* answer is a second shelf of the library's own beside the tree
+/// rather than a rewrite of it. The rules are the copies half of the explicit
+/// table asked of a ledger with nothing in it: no placements to skip and no
+/// tombstones to lift, because those belong to the tree this run leaves alone.
+/// Per file, against the registry:
+///
+///   * content the library has never seen is owed a copy;
+///   * a file whose fingerprint the library already holds AS ITS OWN COPY of
+///     this very file — the provenance names it — is not: the copy the reader
+///     would ask for is the one that stands, and a second would be an orphan
+///     in the store nothing removes;
+///   * a file a LINKED row reads at this address is owed a copy — the
+///     [`copy_over_paths`] answer folded in, because the explicit table's Skip
+///     for known content is a rescan's answer and not a copies import's;
+///   * a book the library holds at ANOTHER address is owed a copy, which is
+///     the explicit table's own "a byte-identical file this folder has is a
+///     book on this folder's shelf" — unless that book is MISSING, which the
+///     bound table answers with a relink, a heal this run has no ledger to
+///     make and leaves to the walk that owns the row.
+///
+/// Pure over the walk, the registry and the rows, so the rule is a host test
+/// rather than something discovered by re-importing a real folder.
+pub fn unbound_copies(found: &[FoundFile], registry: &Registry, rows: &[Row]) -> Vec<FoundFile> {
+    let copy_paths = copy_over_paths(found, registry, rows);
+    let mut seen: HashSet<Fingerprint> = HashSet::new();
+    let mut out = Vec::new();
+    for file in found {
+        let owed = match registry.get(&file.fp) {
+            None => true,
+            Some(known) => {
+                if known.source.as_deref() == Some(file.path.as_str()) {
+                    false
+                } else if known.path == file.path {
+                    copy_paths.contains(&file.path)
+                } else {
+                    !known.missing
+                }
+            }
+        };
+        if owed && seen.insert(file.fp) {
+            out.push(file.clone());
+        }
+    }
+    out
+}
+
 /// The living linked rows a folder's `placed` set answers for — the books its
 /// tree reads in place. What a *replace* of that tree puts through the
 /// removal's sweep first, so the copies that land spend the logs the sweep
@@ -1129,6 +1180,68 @@ mod tests {
             paths,
             vec!["/one/a.md".to_string(), "/one/c.md".to_string()],
             "which folder placed the linked row is nobody's question: a copies run              owes a book of its own for every file the library reads in place. A              stored row is already a copy, and a file the library does not hold is              an ordinary add."
+        );
+    }
+
+    /// The unbound copies run's own table: what the bound explicit run owes,
+    /// minus everything a ledger would have answered — no placements, no
+    /// tombstones, no relinks — because the tree whose ledger holds those is
+    /// the tree this run leaves alone.
+    #[test]
+    fn an_unbound_copies_run_owes_every_file_but_the_copy_the_library_made() {
+        let linked = |id: &str, path: &str, n: u32| {
+            Row::Book(Book::new(
+                id.into(),
+                fp(n),
+                Format::Markdown,
+                Origin::Linked { src: path.into() },
+                0,
+            ))
+        };
+        let stored = |id: &str, path: &str, n: u32| {
+            Row::Book(Book::new(
+                id.into(),
+                fp(n),
+                Format::Markdown,
+                Origin::Stored {
+                    src: Some(path.into()),
+                    store: format!("/store/{id}.md"),
+                },
+                0,
+            ))
+        };
+        let rows = vec![
+            linked("b1", "/one/a.md", 1), // a tree reads in place: owed a copy
+            stored("b2", "/one/b.md", 2), // the library's own copy of this very file
+            linked("b3", "/one/c.md", 3), // read in place: owed a copy
+            Row::Book(Book {
+                missing: true,
+                ..Book::new(
+                    "b9".into(),
+                    fp(9),
+                    Format::Markdown,
+                    Origin::Linked { src: "/gone/x.md".into() },
+                    0,
+                )
+            }),
+        ];
+        let found = vec![
+            file(1, "/one/a.md"),
+            file(2, "/one/b.md"),
+            file(3, "/one/c.md"),
+            file(4, "/one/d.md"), // content nobody holds: an ordinary add
+            file(1, "/one/a-copy.md"), // a second file of the first one's bytes
+            file(9, "/one/x.md"), // a missing book's content, at a new address
+        ];
+        let registry = registry_of(&rows);
+        let owed = unbound_copies(&found, &registry, &rows);
+        let paths: Vec<&str> = owed.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec!["/one/a.md", "/one/c.md", "/one/d.md"],
+            "the copy the library already made is not owed a second, one book \
+             per fingerprint inside the walk, and a missing book's heal is the \
+             walk that owns the row's rather than this run's"
         );
     }
 

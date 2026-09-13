@@ -415,6 +415,16 @@ impl WatchedFolder {
         self.opts.watch = self.tracking.tracked();
     }
 
+    /// Turn the WHOLE tree on or off — the root's decision, and the only one
+    /// left standing: every rung's override goes with it, because the row that
+    /// asks this is the shelf menu's root row, and "the whole folder" is a
+    /// sentence about every rung in it ([`TrackingTree::set_root`]). The flag
+    /// mirrors the root, as every tracking write keeps it.
+    pub fn set_tracking_whole(&mut self, on: bool) {
+        self.tracking.set_root(on);
+        self.opts.watch = on;
+    }
+
     /// Drop the map's pointers at shelves that are no longer standing, and
     /// answer whether it dropped any.
     ///

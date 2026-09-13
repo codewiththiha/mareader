@@ -101,21 +101,23 @@ pub fn answer_shelf(state: AppState, answer: Placement) {
         ask.existing_name.clone(),
         offers(&ask),
     );
-    // Dismissed AFTER the ask is read into a value of its own and BEFORE the
-    // apply runs, and the order is load-bearing rather than tidy: the three
-    // answers that import read the interrupted run's root and options off the
-    // sheet's ask, so dismissing first would hand them nothing, and dismissing
-    // last would leave the sheet up over a shelf the answer already moved.
-    cancel_shelf(state);
     if answer == Placement::Open {
         // The one answer that places nothing: import no folder and light the
         // shelf that holds the name, wherever it hangs — the stored arrival's
         // "oh, that one", answered the way the family gate answers a pick of
         // ground the library already reads.
+        cancel_shelf(state);
         reveal::reveal_shelf(state, &ask.existing_id);
         return;
     }
+    // The apply runs BEFORE the sheet comes down, and the order is load-bearing
+    // rather than tidy: the three answers that import read the interrupted
+    // run's root and options off the sheet's ask, so a dismissal first would
+    // hand them nothing — an *as new* the reader clicked and a dock that never
+    // moved, the sheet closing as the whole of the answer. Both writes land in
+    // one tick, so nothing renders between the answer and the dismissal.
     super::apply_placement(state, &placement, answer);
+    cancel_shelf(state);
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +151,30 @@ pub(super) fn as_new_shelf(state: AppState, _ask: &PlacementAsk) {
     let name = state.library.shelves.with_untracked(|shelves| {
         next_shelf_name(shelves, None, &pending.incoming_name)
     });
+    if crate::services::library::import::copies_over_standing_tree(
+        state,
+        &pending.root,
+        &pending.opts,
+    ) {
+        // A copies run over ground a read-at-place tree still reads is the
+        // library's own second instance and no ledger's business: the bound
+        // run would resolve onto the tree's row and flip it to copies, which
+        // is the *replace*'s conversion rather than the second shelf this
+        // answer promised. The unbound run copies the ground onto a shelf of
+        // the reader's own, under the counter name, and leaves the tree — its
+        // mode, its map, its watch — exactly as the reader's first import made
+        // it.
+        crate::services::library::import::copies_beside_tree(
+            state,
+            pending.root,
+            pending.opts,
+            crate::services::library::import::CopiesDest::NewShelf {
+                name,
+                after: Some(pending.existing_id),
+            },
+        );
+        return;
+    }
     crate::services::library::import::proceed_folder(
         state,
         pending.root,

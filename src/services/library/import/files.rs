@@ -460,7 +460,7 @@ pub(crate) fn land_stored_copy_settling(
 /// of it. A copy that could not be measured leaves the pending flag rather
 /// than blocking the landing; the startup sweep re-measures the store path
 /// and finishes the job.
-fn adopt_copy_measurement(state: AppState, row_id: &str, measured: Option<Fingerprint>) {
+pub(super) fn adopt_copy_measurement(state: AppState, row_id: &str, measured: Option<Fingerprint>) {
     state.library.books.update(|rows| {
         if let Some(book) = find_book_mut(rows, row_id) {
             book.adopt_measurement(measured);

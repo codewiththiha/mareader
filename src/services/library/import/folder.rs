@@ -98,7 +98,7 @@ fn chain_for(
 /// pass could not. Answers the addresses it healed, which is the count the card
 /// reports and the set the merge stage passes by: a healed row's membership is
 /// the reader's business, exactly as the landing's own heal leaves it.
-fn heal_by_address(
+pub(super) fn heal_by_address(
     books: &mut [Row],
     adds: &mut Vec<FoundFile>,
     skip: &HashSet<String>,

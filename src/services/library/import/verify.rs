@@ -247,11 +247,14 @@ pub fn shelf_watch(state: AppState, shelf_id: &str) -> Option<ShelfWatch> {
 /// is a tree (`library_core::tracking`) and a shelf is a seat in it: "stop
 /// watching" asked of a rung is an explicit Off at that rung while the tree
 /// above keeps watching its own, and asked of the root shelf it is the whole
-/// tree, which is the root's seat. A shelf the reader made inside the tree
-/// writes the closest rung the disk named for it — the seat its dot already
-/// showed. The rescan honours the same tree the write lands on: a rung turned
-/// off adds nothing on a quiet walk (`library_core::ledger::decide`), which is
-/// what makes the row mean what it says.
+/// tree — every rung's override swept with the root's decision, because the
+/// row says "the whole folder" and a tree that kept one subfolder off under a
+/// root just turned on is a toggle that visibly did nothing. A shelf the
+/// reader made inside the tree writes the closest rung the disk named for it —
+/// the seat its dot already showed. The rescan honours the same tree the write
+/// lands on: a rung turned off adds nothing on a quiet walk
+/// (`library_core::ledger::decide`), which is what makes the row mean what it
+/// says.
 ///
 /// A folder that already answers this way is not a write, and is not a walk
 /// either: toggling it on again would be a second rescan of a ground the first
@@ -273,17 +276,27 @@ pub fn set_shelf_watch(state: AppState, shelf_id: &str, on: bool) {
     if watch.on == on {
         return;
     }
+    state.library.folders.update(|folders| {
+        if let Some(folder) = folder_ops::find_mut(folders, &watch.folder_id) {
+            if watch.rung.is_empty() {
+                folder.set_tracking_whole(on);
+            } else {
+                folder.set_tracking(&watch.rung, on);
+            }
+        }
+    });
+    crate::storage::persist_library(state.library);
+    // The walk's options are read AFTER the write, and the order is
+    // load-bearing: the run the walk starts resolves the folder against the
+    // flag it carries, so a walk handed the flag from BEFORE the toggle would
+    // resolve the tree straight back to the state the reader just turned off —
+    // a watch that never activated, which is exactly what a root turned on
+    // under rungs the tree still remembered did.
     let Some((root, opts)) = state.library.folders.with_untracked(|folders| {
         folder_ops::find(folders, &watch.folder_id).map(|f| (f.root.clone(), f.opts.clone()))
     }) else {
         return;
     };
-    state.library.folders.update(|folders| {
-        if let Some(folder) = folder_ops::find_mut(folders, &watch.folder_id) {
-            folder.set_tracking(&watch.rung, on);
-        }
-    });
-    crate::storage::persist_library(state.library);
     // The sentence names the ground the decision was about: a rung says which
     // subfolder, in which tree, because a "no longer watched" that read as the
     // whole tree would be a surprise three shelves deep.

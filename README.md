@@ -321,7 +321,9 @@ touches a file you own.
   leaves a tombstone, so neither comes back on the next pass. Watching is a per-subfolder decision:
   a folder shelf's right-click turns its own rung — the whole tree from the root shelf, and only
   that subfolder from a rung of it, with the rest of the tree keeping its own answer — and a
-  rescan adds files only under the rungs that are watched.
+  rescan adds files only under the rungs that are watched. The root's row is the whole folder's
+  decision: turning it back on brings every subfolder on with it, and turning it off leaves none
+  secretly watching.
 - **A shelf is a level, not a row.** In the grid a shelf is a folder card — one cell of the same
   grid the books are cells of, wearing a 2×2 plate of what is inside it (covers for its books,
   plates of their own for its folders, recursively) and a count of both halves — which is what
@@ -367,7 +369,8 @@ touches a file you own.
   and not a moment else.
 - **A missing book stays on the shelf.** An address that stops resolving is a badge and a Relink
   affordance, never a silent removal: the row keeps its resume point and every shelf it is on, so
-  finding the file again puts you back on the page you were on.
+  finding the file again puts you back on the page you were on. It greys where the library shows
+  it — its card, its list row, and the plate of any folder that previews it.
 - **Shelves you make yourself.** The view menu's *New shelf* row creates one and drills into it.
   Taking a shelf apart is the selection bar's receipt: select the folder and *Remove* itemises what
   survives it — every book stays in the library, the shelves inside it move up a level, and a shelf
@@ -553,7 +556,10 @@ touches a file you own.
   subfolder of a read-at-place tree is no different: it is not related to the tree, only the
   level's names can ask, and the ground the tree still reads is no obstacle — every file the
   library reads in place becomes a book of its own on the copies shelf, an independent copy of
-  its own bytes beside the linked book the tree keeps, never a silent "Imported 0 books".
+  its own bytes beside the linked book the tree keeps, never a silent "Imported 0 books". The tree
+  itself is untouched by a copies run — still linked, still watched, its ledger its own — because a
+  copies answer asks for a second instance, not a conversion; only **Replace** of the tree's own
+  shelf converts.
 - **Importing a FOLDER whose name the level already holds asks its own question**, before the walk
   rather than after it, and which answers it asks is the arrival's mode: a copies import gets the
   three above — **Show it**, **Replace**, **Add as new** (`Books_1`, promised on the row) — and a
