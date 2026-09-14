@@ -40,10 +40,10 @@ pub fn import_folder(
     state: AppState,
     root: String,
     opts: FolderOpts,
-    track: Option<(String, String, bool)>,
+    watch: Option<GroundWatch>,
 ) {
-    if let Some((tree_id, rung, on)) = &track {
-        set_rung_tracking(state, tree_id, rung, *on);
+    if let Some(watch) = watch {
+        set_rung_tracking(state, &watch);
     }
     if opts.mode().reads_in_place() {
         if let Some(covered) = covered_shelf(state, &root) {
@@ -124,44 +124,65 @@ pub fn import_folder(
 pub(super) struct Covered {
     pub shelf_id: String,
     pub shelf_name: String,
+    /// The ledger row of the tree that covers the ground. A tracking decision is written at THIS
+    /// and never at `tree_root`, which is the directory the run reconciles: a row is found by id.
+    pub tree_id: String,
     pub tree_root: String,
     /// `""` when the ground IS the tree's root, which is what makes the sheet's switch a decision about this rung rather than about the whole import.
     pub rel: String,
 }
 
-/// `None` when no read-at-place tree covers the ground: nothing is tracking it, so the switch writes the folder's own root when the import lands.
-pub fn ground_tracking(state: AppState, root: &str) -> Option<(String, String, bool)> {
-    let covered = covered_shelf(state, root)?;
-    let on = state.library.folders.with_untracked(|folders| {
-        folder_ops::find(folders, &covered.tree_root)
-            .map(|f| f.tracks_rung(&covered.rel))
-            .unwrap_or(false)
-    });
-    Some((covered.tree_root, covered.rel, on))
+/// The sheet's tracking switch as the write it becomes: the tree covering the ground the reader
+/// picked, the rung that ground IS or stands on in it, and the answer itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroundWatch {
+    pub tree_id: String,
+    pub rung: String,
+    pub on: bool,
 }
 
-/// The sheet's switch is the reader's answer about the ground they picked, and the ground
-/// belongs to a rung of an existing tree whenever one covers it, so the write is at that rung
-/// rather than at a fresh folder's root.
-fn set_rung_tracking(state: AppState, folder_id: &str, rung: &str, on: bool) {
+/// The rung a pick of `root` stands on when a read-at-place tree already covers it, and the
+/// decision that rung carries now — the state the sheet's switch opens seeded with. `None` when no
+/// tree covers the ground: nothing is tracking it, so the switch writes the landing folder's own
+/// root.
+pub fn ground_tracking(state: AppState, root: &str) -> Option<GroundWatch> {
+    let covered = covered_shelf(state, root)?;
+    let on = state.library.folders.with_untracked(|folders| {
+        folder_ops::find(folders, &covered.tree_id)
+            .map(|folder| folder.tracks_rung(&covered.rel))
+            .unwrap_or(false)
+    });
+    Some(GroundWatch {
+        tree_id: covered.tree_id,
+        rung: covered.rel,
+        on,
+    })
+}
+
+/// The write the sheet owes when a tree covers the ground its switch answered about: the rung the
+/// pick names rather than the tree's root, because the tree's other rungs keep their own answers.
+/// Answers whether the tree's decision changed.
+pub(super) fn write_rung_tracking(folders: &mut [WatchedFolder], watch: &GroundWatch) -> bool {
+    let Some(folder) = folder_ops::find_mut(folders, &watch.tree_id) else {
+        return false;
+    };
+    if folder.tracks_rung(&watch.rung) == watch.on {
+        return false;
+    }
+    folder.set_tracking(&watch.rung, watch.on);
+    true
+}
+
+/// The walk a new decision owes is the import's own: every door into [`import_folder`] goes on to a
+/// run on that ground, which reads the tree as this write left it — so the write owes no walk of
+/// its own.
+fn set_rung_tracking(state: AppState, watch: &GroundWatch) {
     let mut changed = false;
     state.library.folders.update(|folders| {
-        if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
-            folder.set_tracking(rung, on);
-            changed = true;
-        }
+        changed = write_rung_tracking(folders, watch);
     });
-    if !changed {
-        return;
-    }
-    crate::storage::persist_library(state.library);
-    if on {
-        let Some((root, opts)) = state.library.folders.with_untracked(|folders| {
-            folder_ops::find(folders, folder_id).map(|f| (f.root.clone(), f.opts.clone()))
-        }) else {
-            return;
-        };
-        super::verify::walk_one(state, root, opts);
+    if changed {
+        crate::storage::persist_library(state.library);
     }
 }
 
@@ -185,6 +206,7 @@ pub(super) fn covered_of(
     let folder = folder_ops::find(folders, &coverage.folder_id)?;
     Some(Covered {
         shelf_name: shelf.name.clone(),
+        tree_id: coverage.folder_id,
         tree_root: folder.root.clone(),
         rel: coverage.rel,
         shelf_id: coverage.shelf_id,
@@ -340,6 +362,9 @@ pub(crate) fn reclaim_rung(
     for (id, key) in &rungs {
         tree.shelf_map.insert(key.clone(), id.clone());
     }
+    // The answer the folded row carried for its own root becomes the rung it becomes: the row that
+    // answer was written on is the one this fold retires.
+    tree.set_tracking(rel, gone.opts.watch);
     tree.placed.extend(gone.placed.iter().copied());
     for stone in gone.ignored.iter() {
         if !tree.is_ignored(&stone.fp) {

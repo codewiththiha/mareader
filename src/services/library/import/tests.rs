@@ -6,7 +6,10 @@ use super::claim::{claim_root, root_is_claimed, when_root_is_free};
 use super::files::{land_file, screen_content};
 use super::folder::{
     mint_walked_row, resolve_folder, returned_memberships, Landing, Minted, Snapshot,
-};use super::gate::{covered_shelf, displaced_member, reclaim_rung, run_fold, RootPlan};
+};use super::gate::{
+    covered_shelf, displaced_member, ground_tracking, reclaim_rung, run_fold, write_rung_tracking,
+    GroundWatch, RootPlan,
+};
 use super::replace::{purge_folder_linked_books, replace_rows_of_tree};
 use super::restore::{covered_fate, restore_covered_file, CoveredFate};
 use super::{rel_of, shelf_name, Asked};
@@ -1158,6 +1161,104 @@ fn the_gate_answers_by_the_rung_the_pick_names() {
         .shelves
         .update(|shelves| shelves.retain(|each| each.id != "sub"));
     assert!(covered_shelf(state, "/books/scifi").is_none());
+}
+
+#[test]
+fn covered_ground_names_the_tree_by_its_row_and_the_walk_by_its_root() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    let mut one = folder("f1", "/books", &[], Vec::new());
+    one.shelf_map.insert(String::new(), "fs".to_string());
+    one.shelf_map.insert("scifi".to_string(), "sub".to_string());
+    state.library.folders.set(vec![one]);
+    state.library.shelves.set(vec![plain("fs"), plain("sub")]);
+
+    let covered = covered_shelf(state, "/books/scifi").expect("covered");
+    assert_eq!(covered.tree_id, "f1", "the row a tracking write goes to");
+    assert_eq!(covered.tree_root, "/books", "the directory a run reconciles");
+    assert_eq!(covered.rel, "scifi");
+    assert_eq!(covered.shelf_id, "sub");
+}
+
+#[test]
+fn the_sheet_s_switch_reads_the_rung_it_answers_about() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    let mut one = folder("f1", "/books", &[], Vec::new());
+    one.shelf_map.insert(String::new(), "fs".to_string());
+    one.shelf_map.insert("scifi".to_string(), "sub".to_string());
+    one.set_tracking("", true);
+    state.library.folders.set(vec![one]);
+    state.library.shelves.set(vec![plain("fs"), plain("sub")]);
+
+    let watch = ground_tracking(state, "/books/scifi").expect("the tree covers the ground");
+    assert_eq!(watch.tree_id, "f1");
+    assert_eq!(watch.rung, "scifi");
+    assert!(watch.on, "the rung inherits the tree's own answer");
+
+    // A rung turned off under a watching root: the switch opens on the rung's answer, not the tree's.
+    state.library.folders.update(|folders| {
+        folders[0].set_tracking("scifi", false);
+    });
+    let off = ground_tracking(state, "/books/scifi").expect("still covered");
+    assert!(!off.on);
+    assert!(
+        ground_tracking(state, "/music").is_none(),
+        "ground no tree covers opens on the folder's own root instead"
+    );
+}
+
+#[test]
+fn the_sheet_s_switch_writes_the_rung_it_answered_about() {
+    let mut folders = vec![folder_in_mode("f1", "/books", true, false)];
+    let asked = GroundWatch {
+        tree_id: "f1".to_string(),
+        rung: "scifi".to_string(),
+        on: true,
+    };
+    assert!(write_rung_tracking(&mut folders, &asked));
+    assert!(folders[0].tracks_rung("scifi"), "the rung the pick names");
+    assert!(!folders[0].tracks_rung("fiction"), "and not its siblings");
+    assert!(!folders[0].tracked(), "nor the tree's own root");
+    assert!(
+        !write_rung_tracking(&mut folders, &asked),
+        "a tree that already agrees is left alone"
+    );
+
+    let stopped = GroundWatch { on: false, ..asked };
+    assert!(write_rung_tracking(&mut folders, &stopped));
+    assert!(!folders[0].tracks_rung("scifi"), "and the same rung stops");
+}
+
+#[test]
+fn a_folded_row_s_watch_becomes_the_rung_it_becomes() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    let mut tree = folder_in_mode("f1", "/books", true, false);
+    tree.shelf_map.insert(String::new(), "fs".to_string());
+    state
+        .library
+        .folders
+        .set(vec![tree, folder_in_mode("f2", "/books/scifi", true, true)]);
+    state
+        .library
+        .shelves
+        .set(vec![standing("fs", "f1"), standing("sub", "f2")]);
+
+    assert!(
+        reclaim_rung(state, "f1", "f2", "scifi", "sub"),
+        "the member goes home"
+    );
+    let folders = state.library.folders.get_untracked();
+    assert_eq!(folders.len(), 1, "and its ledger row is the tree's now");
+    assert!(
+        folders[0].tracks_rung("scifi"),
+        "carrying the watch the folded row answered for its own root"
+    );
+    assert!(!folders[0].tracked(), "while the tree's root keeps its own answer");
 }
 
 #[test]

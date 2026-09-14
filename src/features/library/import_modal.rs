@@ -18,7 +18,7 @@ use crate::components::primitives::controls::option_button::OptionButton;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
-use crate::services::library::{ground_tracking, import_folder, pick_folder};
+use crate::services::library::{ground_tracking, import_folder, pick_folder, GroundWatch};
 use crate::state::AppState;
 
 /// A context rather than props because three surfaces can open it — the shelf's `+` card, the empty state's button and a folder dropped on the window — and threading two signals through all of them would put the sheet's plumbing in every component between.
@@ -89,8 +89,8 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
             return;
         };
         // The lists under `ground_tracking` are read untracked, so the effect re-runs on an open and on a changed folder and nothing else: a seed that re-fired on every folder write would undo the toggle the reader just made.
-        if let Some((_, _, on)) = ground_tracking(state, &root) {
-            opts.update(|o| o.watch = on);
+        if let Some(watch) = ground_tracking(state, &root) {
+            opts.update(|o| o.watch = watch.on);
         }
     });
     let include = Signal::derive(move || opts.with(|o| o.include_selected));
@@ -340,17 +340,20 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                 ) else {
                                     return;
                                 };
-                                let track = options
+                                // The switch answers for the ground the pick names — the rung a
+                                // tree covers it with — and not for that tree's root: the run
+                                // resolves the uncovered half from the options itself.
+                                let watch = options
                                     .mode()
                                     .reads_in_place()
-                                    .then(|| {
-                                        ground.get_untracked().map(|(tree, rung, _)| {
-                                            (tree, rung, options.watch)
-                                        })
-                                    })
-                                    .flatten();
+                                    .then(|| ground.get_untracked())
+                                    .flatten()
+                                    .map(|watch| GroundWatch {
+                                        on: options.watch,
+                                        ..watch
+                                    });
                                 sheet.open.set(false);
-                                import_folder(state, root, options, track);
+                                import_folder(state, root, options, watch);
                             }
                             variant=ButtonVariant::Primary
                             disabled=Signal::derive(move || !chosen.get())

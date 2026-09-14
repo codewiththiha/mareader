@@ -21,7 +21,7 @@ mod verify;
 mod tests;
 
 pub use files::{import_files, land_file};
-pub use gate::{ground_tracking, import_folder};
+pub use gate::{ground_tracking, import_folder, GroundWatch};
 pub use migrate::migrate_store_layout;
 pub use replace::replace_rows_of_tree;
 pub use restore::restore_deleted_book;

@@ -754,9 +754,11 @@ its copies being the library's own second instance, unrelated to any tree:
 - The same fold runs at the end of any explicit walk whose tree has a MEMBER standing outside
   it (`import::gate::displaced_member`) — the rung removed and the subfolder imported on its own, or
   left standing by an older build: the fold puts it back, folds the folder that was reading it
-  into the tree's ledger and retires it, and the note that rises is the report of the shelf that
-  went home (`NoteKind::Returned`). An import is an ask, and a member outside its family is an
-  ask answered rather than a second question.
+  into the tree's ledger and retires it — the watch that row answered for its own root becoming
+  the watch of the rung it becomes, since the row the answer was written on is the one the
+  fold retires — and the note that rises is the report of the shelf that went home
+  (`NoteKind::Returned`). An import is an ask, and a member outside its family is an ask answered
+  rather than a second question.
 - A tree whose root rung a hand took OUT — the shelf's own departure — arrives with no shelf
   and no family slot to name, and simply walks: the copy wears the level's counter name, so the
   folder's own name is free, the walk re-mints the tree on the seats the disk names, and the

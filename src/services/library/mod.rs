@@ -20,6 +20,7 @@ pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reve
 pub use import::{
     dismiss_task, ground_tracking, import_files, import_folder, migrate_store_layout,
     rescan_watched, restore_deleted_book, set_shelf_watch, shelf_watch, verify_library, verify_one,
+    GroundWatch,
 };
 
 pub(super) fn file_name(path: &str) -> String {
