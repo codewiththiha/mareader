@@ -341,8 +341,8 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                     return;
                                 };
                                 // The switch answers for the ground the pick names — the rung a
-                                // tree covers it with — and not for that tree's root: the run
-                                // resolves the uncovered half from the options itself.
+                                // tree answers for it with, which the run mints when that tree has
+                                // not taken the folder in yet — and never for the tree's root.
                                 let watch = options
                                     .mode()
                                     .reads_in_place()

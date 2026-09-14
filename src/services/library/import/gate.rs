@@ -141,22 +141,22 @@ pub struct GroundWatch {
     pub on: bool,
 }
 
-/// The rung a pick of `root` stands on when a read-at-place tree already covers it, and the
-/// decision that rung carries now — the state the sheet's switch opens seeded with. `None` when no
-/// tree covers the ground: nothing is tracking it, so the switch writes the landing folder's own
-/// root.
+/// The rung a pick of `root` answers for, and the decision that rung carries now — the state the
+/// sheet's switch opens seeded with. A tree whose shelf stands on the ground answers with that
+/// rung, and a tree that has not walked the ground in yet answers with the rung the directory
+/// names for it, because the run the sheet starts folds the picked folder in as exactly that rung.
+/// `None` when no ledger row answers for the ground: nothing there is tracking it, so the switch
+/// writes the landing folder's own root.
 pub fn ground_tracking(state: AppState, root: &str) -> Option<GroundWatch> {
-    let covered = covered_shelf(state, root)?;
-    let on = state.library.folders.with_untracked(|folders| {
-        folder_ops::find(folders, &covered.tree_id)
-            .map(|folder| folder.tracks_rung(&covered.rel))
-            .unwrap_or(false)
-    });
-    Some(GroundWatch {
-        tree_id: covered.tree_id,
-        rung: covered.rel,
-        on,
-    })
+    // One snapshot answers both, so the rung is never read off a tree list the family answer missed.
+    let folders = state.library.folders.get_untracked();
+    let shelves = state.library.shelves.get_untracked();
+    let (tree_id, rung) = match covered_of(&folders, &shelves, root) {
+        Some(covered) => (covered.tree_id, covered.rel),
+        None => shelves_ops::family_for(&folders, &shelves, root)?,
+    };
+    let on = folder_ops::find(&folders, &tree_id)?.tracks_rung(&rung);
+    Some(GroundWatch { tree_id, rung, on })
 }
 
 /// The write the sheet owes when a tree covers the ground its switch answered about: the rung the

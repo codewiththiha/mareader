@@ -778,7 +778,9 @@ which rung the answer lands on: ground an existing read-at-place tree already co
 THAT tree, and the sheet opens SEEDED with the tree's own answer for the rung, so the switch shows
 the state the ground is in and a click moves it — a switch that read the tree and wrote the options
 was a switch that could be clicked all day without the knob moving, and the seed is what makes what
-it shows the value that lands. Ground nothing covers is a fresh folder's root. A run that COPIES
+it shows the value that lands. A ground a tree has NOT taken in yet answers with the rung the run
+folds the pick in as, so the switch and the walk agree about which rung the answer was about; ground
+no tree answers for at all is a fresh folder's root. A run that COPIES
 lands no tracking answer at all, because the sheet hides the row beside a copy: an `Off` written to
 a standing tree's rung by a mode that never showed the switch would be a decision the reader was
 never asked. And a re-pick of covered ground arrives as a CONTINUATION, which is the run that does

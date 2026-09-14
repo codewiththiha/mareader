@@ -1211,6 +1211,39 @@ fn the_sheet_s_switch_reads_the_rung_it_answers_about() {
 }
 
 #[test]
+fn ground_a_tree_will_take_in_answers_for_the_rung_it_becomes() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    let mut tree = folder_in_mode("f1", "/books", true, true);
+    tree.shelf_map.insert(String::new(), "fs".to_string());
+    state.library.folders.set(vec![tree]);
+    state.library.shelves.set(vec![standing("fs", "f1")]);
+
+    // A subfolder the tree has not taken in yet is still the tree's answer to give: the run the
+    // sheet starts folds the picked folder in as the rung its directory names.
+    let watch = ground_tracking(state, "/books/scifi").expect("the tree takes the pick in");
+    assert_eq!(watch.tree_id, "f1");
+    assert_eq!(watch.rung, "scifi", "the rung the folder becomes");
+    assert!(watch.on, "seeded with the answer that rung inherits");
+
+    // And the switch's write lands on that rung whether or not a shelf wears it yet.
+    let mut folders = state.library.folders.get_untracked();
+    assert!(write_rung_tracking(
+        &mut folders,
+        &GroundWatch {
+            on: false,
+            ..watch
+        }
+    ));
+    assert!(!folders[0].tracks_rung("scifi"), "the rung the pick names");
+    assert!(
+        folders[0].tracked(),
+        "while the tree's own root keeps its answer"
+    );
+}
+
+#[test]
 fn the_sheet_s_switch_writes_the_rung_it_answered_about() {
     let mut folders = vec![folder_in_mode("f1", "/books", true, false)];
     let asked = GroundWatch {
