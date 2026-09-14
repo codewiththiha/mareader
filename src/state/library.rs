@@ -20,7 +20,7 @@ use library_core::text::plural;
 use library_core::view::LibraryView;
 use library_core::wire::{ImportPhase, ImportProgress};
 
-use crate::services::library::arrange::ShelfDepartureAsk;
+use crate::services::library::arrange::{ShelfApartAsk, ShelfDepartureAsk};
 use crate::services::library::conflict::{ConflictAsk, ShelfConflictAsk};
 use crate::time::now_ms;
 
@@ -246,6 +246,8 @@ pub struct LibraryState {
     pub already_imported: Sheet<AlreadyNote>,
     /// Its own sheet rather than a variant of the name sheet because nothing collides — no membership arrives on any level — and the question is the move's COST.
     pub shelf_departure: Sheet<ShelfDepartureAsk>,
+    /// Its own sheet rather than a variant of [`Self::shelf_departure`] because nothing moves: the level goes away, and the question is what its read-at-place books become.
+    pub shelf_apart: Sheet<ShelfApartAsk>,
     pub relink: Sheet<RelinkAsk>,
 }
 
@@ -268,6 +270,7 @@ impl Default for LibraryState {
             shelf_conflict: Sheet::new(),
             already_imported: Sheet::new(),
             shelf_departure: Sheet::new(),
+            shelf_apart: Sheet::new(),
             relink: Sheet::new(),
         }
     }

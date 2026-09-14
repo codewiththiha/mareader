@@ -20,7 +20,7 @@ use crate::features::library::selection::{
 };
 use crate::services::document;
 use crate::services::library::{
-    create_shelf_and_enter, delete_shelf, duplicate_row, duplicate_rows, duplicate_shelf,
+    ask_shelf_apart, create_shelf_and_enter, duplicate_row, duplicate_rows, duplicate_shelf,
     path_of_row, path_of_shelf, relink_dialog, reveal_in_folder, set_shelf_watch, shelf_watch,
 };
 use crate::state::AppState;
@@ -459,7 +459,7 @@ fn FolderMenu(
             "Take shelf apart",
             Callback::new(move |_| {
                 close.run(());
-                delete_shelf(state, &id);
+                ask_shelf_apart(state, &id);
             }),
         )
         .danger()

@@ -13,7 +13,8 @@ mod tree;
 pub use family::{departing_moves, departs_on_move, family_for};
 pub use members::{containing, forget, forget_everywhere, members_of, place, shelf_add};
 pub use tree::{
-    ancestors, can_nest, children_of, lift_children, reparent, rehang_moves, rungs_of, subtree_ids,
+    ancestors, can_nest, children_of, lift_children, rehang_moves, reparent, rung_above, rungs_of,
+    subtree_ids,
 };
 
 /// The pseudo-shelf holding every book: the library's root, and the order the
@@ -629,13 +630,53 @@ mod tests {
     }
 
     #[test]
-    fn a_stale_rung_that_names_the_shelf_itself_is_not_a_move_onto_itself() {
-        // The self-edge is filtered, and what is left is the honest answer: the shelf
-        // belongs on the rung above, and with no "2" in the list that is a re-hang to the
-        // root.
+    fn a_stale_rung_that_names_the_shelf_itself_rehangs_on_the_rung_above_it() {
+        // The shelf's own key is a spelling of itself and never a seat: the rung above it is
+        // the answer, and with no root rung in the list that is the library's own top level.
         let shelves = vec![cut("loop", "f1", Some("loop"), Some("r"))];
         let moves = rehang_moves(&shelves, "f1");
         assert_eq!(moves, vec![("loop".to_string(), None)]);
+    }
+
+    #[test]
+    fn a_rung_under_a_level_that_was_taken_apart_hangs_inside_the_tree() {
+        // `2nd` stood inside `1st` and `1st` is gone: its books come up to the rung the tree
+        // still stands on, never out of the tree onto the library's own top level.
+        let shelves = vec![
+            cut("r", "f1", None, None),
+            cut("second", "f1", Some("1st/2nd"), None),
+        ];
+        assert_eq!(
+            rehang_moves(&shelves, "f1"),
+            vec![("second".to_string(), Some("r".to_string()))]
+        );
+    }
+
+    #[test]
+    fn the_rung_a_key_hangs_on_is_the_nearest_one_still_standing() {
+        let shelves = vec![
+            cut("r", "f1", None, None),
+            cut("first", "f1", Some("1st"), Some("r")),
+            cut("deep", "f1", Some("1st/2nd/books"), Some("first")),
+        ];
+        assert_eq!(
+            rung_above(&shelves, "f1", "1st/2nd"),
+            Some("first".to_string()),
+            "the level between them is gone, so one rung up is the answer"
+        );
+        assert_eq!(
+            rung_above(&shelves, "f1", "1st/2nd/books"),
+            Some("first".to_string()),
+            "and a shelf two levels under a hole comes up to the same rung"
+        );
+        assert_eq!(rung_above(&shelves, "f1", "1st"), Some("r".to_string()));
+        assert_eq!(
+            rung_above(&shelves, "f1", ""),
+            None,
+            "the root rung is the one key with nothing above it"
+        );
+        let bare: Vec<Shelf> = Vec::new();
+        assert_eq!(rung_above(&bare, "f1", "1st"), None);
     }
 
     use crate::folder::{FolderOpts, WatchedFolder};

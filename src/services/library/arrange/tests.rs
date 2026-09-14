@@ -575,3 +575,144 @@ fn an_off_seat_rung_goes_home_by_the_reseat_and_a_seated_one_is_home() {
         _ => panic!("the root's seat is the library's own level"),
     }
 }
+
+/// `home/root/1st/2nd`: a read-at-place tree with a rung per folder, its books on the lowest one.
+fn deep_tree() -> (Vec<Shelf>, Vec<Row>, WatchedFolder) {
+    let mut folder = reading_folder();
+    folder.shelf_map = BTreeMap::from([
+        (String::new(), "root".to_string()),
+        ("1st".to_string(), "one".to_string()),
+        ("1st/2nd".to_string(), "two".to_string()),
+    ]);
+    let shelves = vec![
+        rung("root", "f1", None, None, &["b0"]),
+        rung("one", "f1", Some("1st"), Some("root"), &[]),
+        rung("two", "f1", Some("1st/2nd"), Some("one"), &["b1", "b2"]),
+    ];
+    let books = vec![
+        linked_at("b0", "/books/notes.md", 8),
+        linked_at("b1", "/books/1st/2nd/a.md", 7),
+        linked_at("b2", "/books/1st/2nd/b.md", 9),
+    ];
+    (shelves, books, folder)
+}
+
+fn set_deep_tree(state: AppState) {
+    let (shelves, books, folder) = deep_tree();
+    state.library.shelves.set(shelves);
+    state.library.books.set(books);
+    state.library.folders.set(vec![folder]);
+}
+
+#[test]
+fn taking_a_rung_apart_brings_its_books_up_one_level_inside_the_tree() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    set_deep_tree(state);
+
+    delete_shelf(state, "two");
+
+    let shelves = state.library.shelves.get_untracked();
+    assert!(shelves.iter().all(|s| s.id != "two"), "one level, and only that one");
+    let one = shelves.iter().find(|s| s.id == "one").expect("the level above it stands");
+    assert_eq!(
+        one.books,
+        vec!["b1".to_string(), "b2".to_string()],
+        "the books come up exactly one level"
+    );
+    assert_eq!(
+        state.library.folder("f1").expect("the row").shelf_map.get("1st/2nd"),
+        None,
+        "and the folder's map lets the rung go"
+    );
+}
+
+#[test]
+fn the_level_below_a_hole_still_hangs_inside_the_tree() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    set_deep_tree(state);
+
+    delete_shelf(state, "one");
+    delete_shelf(state, "two");
+
+    let shelves = state.library.shelves.get_untracked();
+    let root = shelves.iter().find(|s| s.id == "root").expect("the tree's own rung");
+    assert_eq!(
+        root.books,
+        vec!["b0".to_string(), "b1".to_string(), "b2".to_string()],
+        "the repro: `2nd` comes up to `1st`, and `1st` comes up to the root"
+    );
+    assert_eq!(
+        shelves.iter().filter(|s| s.is_folder()).count(),
+        1,
+        "one level left, and no shelf standing beside the tree"
+    );
+}
+
+#[test]
+fn a_level_holding_books_read_in_place_asks_before_it_comes_apart() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    set_deep_tree(state);
+
+    ask_shelf_apart(state, "two");
+
+    let ask = state.library.shelf_apart.ask.get_untracked().expect("the question");
+    assert_eq!(ask.books, 2);
+    assert_eq!(ask.home.as_deref(), Some("one"), "named for where the books come up to");
+    assert!(
+        state.library.shelves.get_untracked().iter().any(|s| s.id == "two"),
+        "nothing is gone before the reader answers"
+    );
+
+    take_shelf_apart(state);
+
+    assert!(state.library.shelf_apart.ask.get_untracked().is_none(), "the sheet closes");
+    let shelves = state.library.shelves.get_untracked();
+    assert!(shelves.iter().all(|s| s.id != "two"));
+    assert!(shelves.iter().any(|s| s.id == "one" && s.books.contains(&"b1".to_string())));
+}
+
+#[test]
+fn a_level_with_nothing_read_in_place_asks_nothing() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    set_deep_tree(state);
+
+    // `1st` holds nothing, and the reader's own shelf is nobody's ground: neither leaves a book
+    // answering to a folder.
+    ask_shelf_apart(state, "one");
+    assert!(state.library.shelf_apart.ask.get_untracked().is_none());
+    assert!(state.library.shelves.get_untracked().iter().all(|s| s.id != "one"));
+
+    state.library.shelves.set(tree());
+    ask_shelf_apart(state, "mine");
+    assert!(state.library.shelf_apart.ask.get_untracked().is_none());
+    assert!(state.library.shelves.get_untracked().iter().all(|s| s.id != "mine"));
+}
+
+#[test]
+fn the_root_rung_has_nothing_above_it_to_come_up_to() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    set_deep_tree(state);
+
+    delete_shelf(state, "root");
+
+    // The tree's own root going leaves no rung of the folder's above its books: they stay in the
+    // library at the top level, and the levels below keep the shape the tree gave them.
+    let shelves = state.library.shelves.get_untracked();
+    assert!(
+        shelves.iter().all(|s| !s.books.contains(&"b0".to_string())),
+        "the root's books stand on no rung"
+    );
+    let two = shelves.iter().find(|s| s.id == "two").expect("the rung below stands");
+    assert_eq!(two.books, vec!["b1".to_string(), "b2".to_string()]);
+    assert_eq!(two.parent.as_deref(), Some("one"), "and still hangs inside the tree");
+}

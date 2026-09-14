@@ -104,21 +104,34 @@ pub fn rungs_of<'a>(
         .collect()
 }
 
-/// The parent the folder's own SHELVES name for a folder shelf: the rung above
-/// its `rel`, or the library's root for a top-level rung. `None` for a shelf that
-/// is no folder's rung, where there is no disk answer to compare against.
+/// The rung a key hangs on: the nearest rung standing above it. A level taken
+/// apart leaves everything under it inside the tree — a key whose own rung is
+/// gone would otherwise answer the library's top level, where the folder's next
+/// scan cannot see the shelf and the reader never put it. `None` only for a key
+/// with nothing above it, the folder's root rung, or a tree whose rungs have all
+/// gone.
+pub fn rung_above(shelves: &[Shelf], folder_id: &str, key: &str) -> Option<String> {
+    let rungs = rungs_of(shelves, folder_id);
+    let mut above = crate::folder::parent_key(key)?;
+    loop {
+        if let Some(id) = rungs.get(above) {
+            return Some(id.to_string());
+        }
+        above = crate::folder::parent_key(above)?;
+    }
+}
+
+/// The parent the folder's own SHELVES name for a folder shelf: the nearest rung
+/// still standing above its `rel`, or the library's root for a top-level rung.
+/// `None` for a shelf that is no folder's rung, where there is no disk answer to
+/// compare against.
 fn folder_seat(shelves: &[Shelf], shelf_id: &str) -> Option<Option<String>> {
     let shelf = find(shelves, shelf_id)?;
     let ShelfKind::Folder { folder_id, rel } = &shelf.kind else {
         return None;
     };
     let key = rel.clone().unwrap_or_default();
-    let rungs = rungs_of(shelves, folder_id);
-    Some(
-        crate::folder::parent_key(&key)
-            .and_then(|rung| rungs.get(rung))
-            .map(|id| id.to_string()),
-    )
+    Some(rung_above(shelves, folder_id, &key))
 }
 
 
@@ -164,8 +177,6 @@ pub fn lift_children(shelves: &mut [Shelf], folder_id: &str) {
 /// tree is a VIEW of that tree, so the disk's shape wins for the shelves the
 /// folder owns.
 pub fn rehang_moves(shelves: &[Shelf], folder_id: &str) -> Vec<(String, Option<String>)> {
-    // The folder's rungs: the one map the seat question reads too, so the re-hang and the hand's mark cannot disagree.
-    let rungs = rungs_of(shelves, folder_id);
     let mut moved = Vec::new();
     for shelf in shelves.iter() {
         // The reader's placement wins over the disk's shape.
@@ -182,11 +193,7 @@ pub fn rehang_moves(shelves: &[Shelf], folder_id: &str) -> Vec<(String, Option<S
         if owner != folder_id {
             continue;
         }
-        let key = rel.clone().unwrap_or_default();
-        let want = crate::folder::parent_key(&key)
-            .and_then(|rung| rungs.get(rung).copied())
-            .filter(|w| *w != shelf.id.as_str())
-            .map(str::to_string);
+        let want = rung_above(shelves, folder_id, rel.as_deref().unwrap_or(""));
         if shelf.parent != want {
             moved.push((shelf.id.clone(), want));
         }

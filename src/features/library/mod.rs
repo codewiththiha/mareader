@@ -32,6 +32,7 @@ pub mod remove_modal;
 pub mod rename_modal;
 pub mod search_suggest;
 pub mod selection;
+pub mod shelf_apart_modal;
 pub mod shelf_item;
 pub mod titlebar_search;
 pub mod view_menu;

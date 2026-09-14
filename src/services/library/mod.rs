@@ -9,10 +9,11 @@ pub mod import;
 pub mod reveal;
 
 pub use arrange::{
-    ReadingData, SeamSide, also_show, answer_departure_return, ask_relink, cancel_departure,
-    cancel_relink, confirm_departure, create_shelf_and_enter, create_shelf_here, delete_shelf,
-    file_many, memberships, move_many_to_shelf, nest_many, nest_shelf, purge_books, relink_dialog,
-    relink_search_folder, rename_shelf, reorder_shelves_to_anchor, unfile_books,
+    ReadingData, SeamSide, also_show, answer_departure_return, ask_relink, ask_shelf_apart,
+    cancel_departure, cancel_relink, cancel_shelf_apart, confirm_departure, create_shelf_and_enter,
+    create_shelf_here, delete_shelf, file_many, memberships, move_many_to_shelf, nest_many,
+    nest_shelf, purge_books, relink_dialog, relink_search_folder, rename_shelf,
+    reorder_shelves_to_anchor, take_shelf_apart, take_shelf_apart_as_copies, unfile_books,
 };
 pub use covers::backfill_missing;
 pub use duplicate::{duplicate_row, duplicate_rows, duplicate_shelf};

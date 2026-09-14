@@ -166,33 +166,63 @@ pub fn rename_shelf(state: AppState, shelf_id: &str, name: &str) {
     crate::storage::persist_library(state.library);
 }
 
-/// The books stay in the library — a shelf is a list of ids and never held a byte — and the page steps back out a level. The shelves inside it move up, for the same reason: a child left pointing at a parent that is gone renders on no level at all.
+/// The books stay in the library — a shelf is a list of ids and never held a byte — and the page
+/// steps back out a level. The shelves inside it, and the books standing on it, come up exactly one
+/// level too, onto the nearest rung the folder's tree still stands on: a shelf a level was taken out
+/// from under is a shelf the folder's next scan cannot see, and the reader never put its books on
+/// the library's own top level.
 pub fn delete_shelf(state: AppState, shelf_id: &str) {
     let was_inside = state.library.shelf.get_untracked() == shelf_id;
-    // One read of the shelf list answers both facts about the shelf that is going: the level to step out to, and — cut as well — which watched folder filed onto it.
-    let (stepped_out, detached) =
-        state
-            .library
-            .shelves
-            .with_untracked(|shelves| {
-                shelf::find(shelves, shelf_id)
-                    .map_or((ALL_SHELF.to_string(), None), |gone| {
-                        (
-                            gone.parent
-                                .clone()
-                                .unwrap_or_else(|| ALL_SHELF.to_string()),
-                            gone.kind.folder_id().map(str::to_string),
-                        )
-                    })
-            });
+    // One read of the shelf list answers every fact about the shelf that is going: the level to step out to, which watched folder filed onto it, the rung it stood on, and the books that come up with it.
+    let (stepped_out, detached, rung, stood_on) = state.library.shelves.with_untracked(|shelves| {
+        shelf::find(shelves, shelf_id).map_or(
+            (ALL_SHELF.to_string(), None, None, Vec::new()),
+            |gone| {
+                (
+                    gone.parent
+                        .clone()
+                        .unwrap_or_else(|| ALL_SHELF.to_string()),
+                    gone.kind.folder_id().map(str::to_string),
+                    gone.is_folder().then(|| gone.kind.rung().to_string()),
+                    gone.books.clone(),
+                )
+            },
+        )
+    });
     state.library.shelves.update(|shelves| {
         shelf::lift_children(shelves, shelf_id);
         shelves.retain(|s| s.id != shelf_id);
+        // Then the folder's own rungs re-hang the way its next scan would hang them: a rung whose
+        // level is gone takes the nearest one still standing, so nothing is left pointing at a
+        // shelf that is not there.
+        if let Some(folder_id) = &detached {
+            for (id, want) in shelf::rehang_moves(shelves, folder_id) {
+                if let Some(moved) = shelf::find_mut(shelves, &id) {
+                    moved.parent = want;
+                }
+            }
+        }
     });
-    if let Some(folder_id) = detached {
+    if let Some(folder_id) = &detached {
         state.library.folders.update(|folders| {
-            if let Some(folder) = folder_ops::find_mut(folders, &folder_id) {
+            if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
                 folder.shelf_map.retain(|_, sid| sid != shelf_id);
+            }
+        });
+    }
+    // Read after the removal, so the rung that went cannot answer for itself.
+    let home = match (&detached, &rung) {
+        (Some(folder_id), Some(rung)) => state.library.shelves.with_untracked(|shelves| {
+            shelf::rung_above(shelves, folder_id, rung)
+        }),
+        _ => None,
+    };
+    if let Some(home) = home {
+        state.library.shelves.update(|shelves| {
+            for id in &stood_on {
+                if let Some(seat) = shelf::find_mut(shelves, &home) {
+                    shelf::shelf_add(seat, id);
+                }
             }
         });
     }

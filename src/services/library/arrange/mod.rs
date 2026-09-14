@@ -8,6 +8,7 @@ mod departure;
 mod moves;
 mod purge;
 mod relink;
+mod shelf_apart;
 mod shelf_departure;
 mod shelves;
 
@@ -17,6 +18,10 @@ mod tests;
 pub use moves::{also_show, file_many, move_many_to_shelf, move_row, unfile_books};
 pub use purge::{purge_books, ReadingData};
 pub use relink::{ask_relink, cancel_relink, relink_dialog, relink_search_folder};
+pub use shelf_apart::{
+    ask_shelf_apart, cancel_shelf_apart, take_shelf_apart, take_shelf_apart_as_copies,
+    ShelfApartAsk,
+};
 pub use shelf_departure::{
     answer_departure_return, cancel_departure, confirm_departure, ReturnPath, SeamSide,
     ShelfDepartureAsk,

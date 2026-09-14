@@ -33,7 +33,7 @@ use crate::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
 use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
-use crate::services::library::{delete_shelf, duplicate_shelf, rename_shelf};
+use crate::services::library::{ask_shelf_apart, duplicate_shelf, rename_shelf};
 use crate::state::AppState;
 
 use fold::choose_split;
@@ -402,7 +402,7 @@ fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl I
                                 on_click=move || {
                                     menu_open.set(false);
                                     if let Some(id) = current_shelf_id(state) {
-                                        delete_shelf(state, &id);
+                                        ask_shelf_apart(state, &id);
                                     }
                                 }
                             />
