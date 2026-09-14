@@ -63,7 +63,7 @@ pub struct ShelfConflictAsk {
 /// the two cannot drift about which buttons a given arrival gets — which is what
 /// they did when each spelled the condition out.
 pub fn offers(ask: &ShelfConflictAsk) -> &'static [Placement] {
-    if ask.opts.in_place {
+    if ask.opts.mode().reads_in_place() {
         Placement::SHELF_READ_IN_PLACE
     } else {
         Placement::SHELF_STORED
@@ -236,7 +236,7 @@ pub(super) fn replace_shelf(state: AppState, _ask: &PlacementAsk, shelf_id: &str
         && state.library.folders.with_untracked(|folders| {
             folders
                 .iter()
-                .any(|f| f.root == pending.root && f.opts.in_place)
+                .any(|f| f.root == pending.root && f.mode().reads_in_place())
         });
     if own_in_place {
         crate::services::library::import::replace_folder_with_copies(

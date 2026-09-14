@@ -131,7 +131,7 @@ pub fn import_folder(
     if let Some((tree_id, rung, on)) = &track {
         set_rung_tracking(state, tree_id, rung, *on);
     }
-    if opts.in_place {
+    if opts.mode().reads_in_place() {
         if let Some(covered) = covered_shelf(state, &root) {
             // Ground a family tree already holds — its own root re-picked, or
             // a rung of it — is one reconciliation on the covering tree: the
@@ -374,7 +374,7 @@ pub(super) fn displaced_member(
     let shelves = state.library.shelves.get_untracked();
     let mut best: Option<(usize, DisplacedMember)> = None;
     for other in folders.iter() {
-        if other.id == folder.id || !other.opts.in_place {
+        if other.id == folder.id || other.mode().copies_files() {
             continue;
         }
         let Some(rel) = rel_under(&other.root, &folder.root).filter(|rel| !rel.is_empty()) else {

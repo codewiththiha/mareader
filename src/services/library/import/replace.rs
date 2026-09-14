@@ -98,7 +98,7 @@ pub fn replace_rows_of_tree(state: AppState, root: &str) -> Vec<String> {
     let placed: HashSet<Fingerprint> = state.library.folders.with_untracked(|folders| {
         folders
             .iter()
-            .find(|f| f.root == root && f.opts.in_place)
+            .find(|f| f.root == root && f.mode().reads_in_place())
             .map(|f| f.placed.clone())
             .unwrap_or_default()
     });

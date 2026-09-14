@@ -121,7 +121,9 @@ impl ShelfAskInfo {
         // and the sheet WORDS it as one — but the answers are the arrival
         // mode's either way.
         let own = ask.own;
-        let in_place = ask.opts.in_place;
+        // The arrival's OWN mode: the two switches the sheet asked, read as
+        // the one answer they add up to.
+        let arrival_reads_in_place = ask.opts.mode().reads_in_place();
         // Whether the ground the arrival picks is one the library already
         // READS in place: the *as new* tree of copies beside the linked rows
         // the old tree keeps, and the *replace* that spends the tree's own
@@ -129,7 +131,7 @@ impl ShelfAskInfo {
         let reads_in_place = state.library.folders.with_untracked(|folders| {
             folders
                 .iter()
-                .any(|f| f.root == ask.root && f.opts.in_place)
+                .any(|f| f.root == ask.root && f.mode().reads_in_place())
         });
         // The name *as new* would mint, counted against the level's own
         // shelves — the row promises the counter rather than asking the
@@ -151,7 +153,7 @@ impl ShelfAskInfo {
         } else {
             format!("A shelf called “{}” is already here", ask.existing_name)
         };
-        let question = if in_place {
+        let question = if arrival_reads_in_place {
             // The subtitle already named the collision; the sentence is only
             // the rule and the two ways out of it.
             "A folder read in place cannot mint a second shelf of itself. Leave a \

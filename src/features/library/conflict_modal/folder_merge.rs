@@ -45,7 +45,7 @@ pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoVi
     // wearing the same name keeps all three, and a STORED folder keeps all
     // three too: its *as new* is a second copy in the store, a book of its
     // own bytes rather than a second door on one file.
-    let twin = ask.kind.in_place()
+    let twin = ask.kind.reads_in_place()
         && state.library.books.with_untracked(|rows| {
             ask.arrival.file.as_ref().is_some_and(|file| {
                 find_row(rows, &ask.existing_id)

@@ -244,7 +244,7 @@ pub(super) fn target_is_family(
     };
     folders.iter().any(|f| {
         f.id == folder_id
-            && f.opts.in_place
+            && f.mode().reads_in_place()
             && folder_ops::rel_under(ground, &f.root).is_some()
     })
 }
@@ -271,7 +271,7 @@ pub(super) fn return_path(
     };
     let folder = folders
         .iter()
-        .find(|f| &f.id == folder_id && f.opts.in_place)?;
+        .find(|f| &f.id == folder_id && f.mode().reads_in_place())?;
     let key = rel.clone().unwrap_or_default();
     if key.is_empty()
         && let Some((tree, tree_rel)) = shelf::family_for(folders, shelves, &folder.root)

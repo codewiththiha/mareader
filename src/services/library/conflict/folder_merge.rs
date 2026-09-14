@@ -120,11 +120,11 @@ fn withhold_keep_both_from_a_twin(
     if answer != Placement::KeepBoth {
         return answer;
     }
-    let in_place = matches!(&ask.kind, AskKind::FolderMerge { in_place: true, .. });
+    let reads_in_place = ask.kind.reads_in_place();
     let Some(file) = ask.arrival.file.as_ref() else {
         return answer;
     };
-    if in_place && is_the_same_file(state, &ask.existing_id, &file.path) {
+    if reads_in_place && is_the_same_file(state, &ask.existing_id, &file.path) {
         Placement::Merge
     } else {
         answer
@@ -158,12 +158,12 @@ fn land_answer_file(
     // The two facts only this ask's kind carries: whether the folder reads in
     // place, so the answer lands now, or copies, so it lands after a copy that
     // can fail — and which ledger records the placement.
-    let (in_place, folder_id) = match &ask.kind {
-        AskKind::FolderMerge { in_place, folder_id } => (*in_place, folder_id.as_deref()),
+    let (mode, folder_id) = match &ask.kind {
+        AskKind::FolderMerge { mode, folder_id } => (*mode, folder_id.as_deref()),
         _ => return,
     };
     let shelf_id = ask.arrival.shelf_id.clone();
-    if in_place {
+    if mode.reads_in_place() {
         crate::services::library::import::land_file(state, &file, name, &shelf_id, index);
         crate::services::library::import::settle_ledger(state, folder_id, file.fp);
         covers::backfill_missing(state);

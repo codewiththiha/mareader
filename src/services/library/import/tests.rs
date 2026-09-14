@@ -863,7 +863,7 @@ fn a_walk_mints_the_link_beside_the_copy_that_holds_its_fingerprint() {
         copy_paths: &empty_copy_paths,
         planned_name: &planned_name,
         root: "/books",
-        in_place: true,
+        mode: folder.mode(),
         merged: false,
         now: 1,
     };
@@ -922,7 +922,7 @@ fn a_copying_folder_never_mints_a_second_copy_of_its_own_file() {
         copy_paths: &empty_copies,
         planned_name: &planned_name,
         root: "/books",
-        in_place: false,
+        mode: folder.mode(),
         merged: false,
         now: 1,
     };

@@ -77,9 +77,9 @@ pub(crate) enum CopiesDest {
 /// very same ground. The one shape this module exists for — every other copies
 /// run keeps the ordinary bound walk.
 pub(crate) fn copies_over_standing_tree(state: AppState, root: &str, opts: &FolderOpts) -> bool {
-    !opts.in_place
+    opts.mode().copies_files()
         && state.library.folders.with_untracked(|folders| {
-            folders.iter().any(|f| f.root == root && f.opts.in_place)
+            folders.iter().any(|f| f.root == root && f.mode().reads_in_place())
         })
 }
 

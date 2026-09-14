@@ -155,7 +155,7 @@ pub(crate) fn converts_on_move_to(state: AppState, row_id: &str, to: &str) -> bo
     let rungs: Vec<Option<String>> = state.library.folders.with_untracked(|folders| {
         folders
             .iter()
-            .filter(|f| f.opts.in_place && f.placed.contains(&fp))
+            .filter(|f| f.mode().reads_in_place() && f.placed.contains(&fp))
             .map(|f| f.rungs_for(&path).0.map(str::to_string))
             .collect()
     });

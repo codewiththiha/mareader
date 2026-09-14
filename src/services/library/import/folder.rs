@@ -9,7 +9,7 @@ use leptos::prelude::*;
 
 use library_core::book::{add_book, book_rows, book_rows_mut, Book, Fingerprint, Origin, Row};
 use library_core::conflict::Arrival;
-use library_core::folder::{FolderOpts, WatchedFolder};
+use library_core::folder::{FolderMode, FolderOpts, WatchedFolder};
 use library_core::tracking::TrackingTree;
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
@@ -205,7 +205,7 @@ pub(super) fn resolve_folder(
     // the older surfaces read. A continuation re-mirrors the flag from the tree
     // it did not rewrite, so a folder's persisted flag cannot drift from its
     // tree whichever kind of run touched it last.
-    if folder.opts.in_place {
+    if folder.mode().reads_in_place() {
         if plan.continuation.is_none() {
             folder.set_tracking("", folder.opts.watch);
         } else {
@@ -342,7 +342,7 @@ fn planned_placements(
                     arrival,
                     existing_id,
                     existing_name,
-                    folder.opts.in_place,
+                    folder.mode(),
                     folder.id.clone(),
                 ));
                 continue;
@@ -395,7 +395,7 @@ fn screen_merge_adds(
                     arrival,
                     existing_id,
                     existing_name,
-                    folder.opts.in_place,
+                    folder.mode(),
                     folder.id.clone(),
                 ));
                 false
@@ -492,7 +492,7 @@ pub(super) struct Landing<'a> {
     pub(super) copy_paths: &'a HashSet<String>,
     pub(super) planned_name: &'a Option<String>,
     pub(super) root: &'a str,
-    pub(super) in_place: bool,
+    pub(super) mode: FolderMode,
     pub(super) merged: bool,
     pub(super) now: u64,
 }
@@ -550,7 +550,7 @@ pub(super) fn mint_walked_row(
         folder.mark_placed(file.fp);
         return Minted::Healed;
     }
-    let origin = if landing.in_place {
+    let origin = if landing.mode.reads_in_place() {
         Origin::Linked {
             src: file.path.clone(),
         }
@@ -598,7 +598,7 @@ pub(super) fn mint_walked_row(
     // second copy of a content the library holds as its OWN is the orphan in
     // the store the rule exists to prevent — the copies this run owes are of
     // files the library READS, and they come through the copy list above.
-    let beside_its_own_copy = landing.in_place
+    let beside_its_own_copy = landing.mode.reads_in_place()
         && book_rows(books).any(|b| {
             !b.independent && b.fp == file.fp && b.origin.is_store_copy_of(&file.path)
         });
@@ -687,7 +687,7 @@ fn plan_the_walk(
     // owes one: staying quiet about ground another folder placed is the
     // rescan's whole job, and the copies a previous import made are known by
     // their own bytes rather than by these addresses.
-    let copy_paths: HashSet<String> = if !folder.opts.in_place && !quiet {
+    let copy_paths: HashSet<String> = if folder.mode().copies_files() && !quiet {
         ledger::copy_over_paths(found, &registry, books)
     } else {
         HashSet::new()
@@ -798,7 +798,7 @@ fn plan_the_walk(
     // to be minted, so a file this run is making a row for is not also asked for
     // a membership of the row it is about to replace.
     if !quiet
-        && folder.opts.in_place
+        && folder.mode().reads_in_place()
         && replacements.is_empty()
         && plan.rename.is_none()
         && plan.into.is_none()
@@ -877,7 +877,7 @@ fn land_the_walk(
     let mut healed_here = 0usize;
     let mut new_shelves: Vec<Shelf> = Vec::new();
     let mut placements: Vec<(String, String)> = Vec::new();
-    let in_place = folder.opts.in_place;
+    let mode = folder.mode();
     // Taken BEFORE the landing borrows the walk's copy list: a mutable take
     // under an outstanding shared borrow is a borrow the compiler refuses,
     // and the relink list is the one field the landing consumes rather than
@@ -889,7 +889,7 @@ fn land_the_walk(
         copy_paths: &walk.copy_paths,
         planned_name,
         root,
-        in_place,
+        mode,
         merged,
         now,
     };
@@ -1074,7 +1074,7 @@ pub(super) async fn run_folder(
         update_task(state, &task, move |t| t.total = expected);
     }
 
-    let copies = if folder.opts.in_place || pending.is_empty() {
+    let copies = if folder.mode().reads_in_place() || pending.is_empty() {
         HashMap::new()
     } else {
         match copy_batch(state, &task, &pending).await {

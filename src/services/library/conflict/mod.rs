@@ -114,6 +114,7 @@ use leptos::prelude::*;
 
 use library_core::book::{find_row, Row};
 use library_core::conflict::{collide, next_name, Arrival, Placement, PlacementAsk, Scope};
+use library_core::folder::FolderMode;
 
 use crate::state::AppState;
 
@@ -140,10 +141,10 @@ pub enum AskKind {
     /// files with the same three doors each, and a switch that gives every
     /// waiting question the same answer in one click.
     FolderMerge {
-        /// Whether the merging folder reads in place or copies: a linked answer
-        /// lands now, a stored one lands after its copy — and a copy that fails
-        /// leaves the shelf untouched.
-        in_place: bool,
+        /// How the merging folder holds its books: a folder that reads in
+        /// place lands a linked answer now, a copying one lands it after its
+        /// copy — and a copy that fails leaves the shelf untouched.
+        mode: FolderMode,
         /// The watched folder whose ledger records the placement when the answer
         /// lands, so a later rescan stays quiet about the file and a removal that
         /// was holding it out is spent.
@@ -197,8 +198,8 @@ impl AskKind {
     /// collision's copy is the library's own whatever the level is, and a covered
     /// ask's *import here* is always a stored copy — the file's own tree already
     /// has the linked book, which is the whole reason the question was asked.
-    pub fn in_place(&self) -> bool {
-        matches!(self, AskKind::FolderMerge { in_place: true, .. })
+    pub fn reads_in_place(&self) -> bool {
+        matches!(self, AskKind::FolderMerge { mode, .. } if mode.reads_in_place())
     }
 
     /// Whether this ask wears the compact per-file sheet.
@@ -251,7 +252,7 @@ impl ConflictAsk {
         arrival: Arrival,
         existing_id: String,
         existing_name: String,
-        in_place: bool,
+        mode: FolderMode,
         folder_id: String,
     ) -> Self {
         Self {
@@ -259,7 +260,7 @@ impl ConflictAsk {
             existing_id,
             existing_name,
             kind: AskKind::FolderMerge {
-                in_place,
+                mode,
                 folder_id: Some(folder_id),
             },
         }

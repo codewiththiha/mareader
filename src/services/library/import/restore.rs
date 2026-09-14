@@ -106,7 +106,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
 
         let now = now_ms();
         let book_id = id::next_id(now);
-        let (origin, measured) = if opts.in_place {
+        let (origin, measured) = if opts.mode().reads_in_place() {
             (
                 Origin::Linked {
                     src: found.path.clone(),
@@ -147,7 +147,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
         // file's fingerprint stays free for the folder's ledger (which is
         // marked with it below). A copy that could not be weighed keeps the
         // pending flag the startup sweep finishes — not the source's stamp.
-        if !opts.in_place {
+        if opts.mode().copies_files() {
             book.adopt_measurement(measured);
         }
         let mut placed_id = String::new();
@@ -260,7 +260,7 @@ pub(super) fn covered_fate(state: AppState, file: &FoundFile) -> CoveredFate {
     let covering: Vec<String> = state.library.folders.with_untracked(|folders| {
         folders
             .iter()
-            .filter(|f| f.opts.in_place && rel_under(&file.path, &f.root).is_some())
+            .filter(|f| f.mode().reads_in_place() && rel_under(&file.path, &f.root).is_some())
             .map(|f| f.id.clone())
             .collect()
     });
