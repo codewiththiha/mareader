@@ -42,10 +42,10 @@ use library_core::book::Book;
 use library_core::shelf::{Shelf, children_of, find};
 use library_core::text::plural;
 
-use crate::features::library::context_menu::MenuTarget;
-use crate::features::library::gestures::ShelfItemPolicy;
+use crate::features::library::entry::{EntryDescriptor, EntryShell};
+use crate::features::library::gestures::folder_policy;
 use crate::features::library::selection::SelectionCheck;
-use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
+use crate::features::library::shelf_item::SeamVocab;
 use crate::state::AppState;
 
 /// How many cells a plate has, and the most it fills. Two by two: a folder is
@@ -101,45 +101,31 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     let dot_id = id.clone();
     let watched = Signal::derive(move || state.library.shelf_tracked(&dot_id));
 
-    // The membership the plate's check mark paints from — the same set the
-    // shell's own selected class reads, and the one `SelectionCheck` marks.
-    let is_selected = state.library.is_selected(&id);
+    // The id the plate's check mark reads through: the mark asks the library
+    // for the membership itself, the way the shell's own selected class does.
+    let check_id = id.clone();
 
     // The shelf's one press contract, the same wiring a book wears (see
     // `crate::features::library::gestures`) with the folder's own answers:
     // "open" drills the breadcrumb route, and the right-click asks about a
     // folder. A set being selected is not a reason to refuse a drag: lifting
     // one of three held folders is the whole of a multi-drag.
-    // The folder half of the reveal: a folder link's tap lights the folder
-    // itself, on the same signal and nonce a book's reveal rides.
-    let reveal_class = state.library.is_revealed(&id);
-
     let open_id = id.clone();
-    let target_id = id.clone();
-    let policy = ShelfItemPolicy {
+    let open = Callback::new(move |_| state.library.shelf.set(open_id.clone()));
+    // A folder's lift is a nesting, which writes a parent rather than a
+    // membership: there is no list to lift it off.
+    let entry = EntryDescriptor {
         id: id.clone(),
-        label: Signal::derive(move || format!("the {} shelf", name.get())),
-        draggable: Signal::derive(|| true),
-        open: Callback::new(move |_| state.library.shelf.set(open_id.clone())),
-        menu_target: Callback::new(move |_| MenuTarget::Folder {
-            id: target_id.clone(),
-        }),
-        // A folder's lift is a nesting, which writes a parent rather than a
-        // membership: there is no list to lift it off.
-        container: None,
+        vocab: SeamVocab::FolderCard,
+        base_class: "folder-card",
+        policy: folder_policy(&id, name, open, None),
     };
 
     view! {
-        <ShelfItemShell
-            state=state
-            vocab=SeamVocab::FolderCard
-            base_class="folder-card"
-            policy=policy
-            extra_classes=vec![("folder-reveal".to_string(), reveal_class)]
-        >
+        <EntryShell state=state entry=entry>
             <div class="folder-thumb-grid">
                 <Plate state=state shelf_id=id.clone() depth=0 />
-                <SelectionCheck state=state selected=is_selected />
+                <SelectionCheck state=state id=check_id />
             </div>
             <div class="folder-meta">
                 <span class="folder-name" title=move || { name.get() }>
@@ -156,7 +142,7 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
                     })
                 }}
             </div>
-        </ShelfItemShell>
+        </EntryShell>
     }
 }
 

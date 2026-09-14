@@ -18,6 +18,10 @@
 //!   * [`shelf_item`] — the element that contract paints on: one outer div
 //!     wearing the handlers, the registration and the state classes, so the
 //!     six surfaces differ only in vocabulary and content
+//!   * [`entry`] — the door every one of those surfaces goes through: a
+//!     descriptor of what the item IS, and the shell that paints the reveal,
+//!     the state classes and the registration from it, so the six call sites
+//!     stop spelling the same wiring out by hand
 //!   * [`add_menu`] / [`empty_state`] — the two ways in, on the one trigger
 //!     ([`add_menu::AddMenuButton`]) wearing three faces
 //!   * [`cover_thumb`] — the one painter of a cached cover, and a surface's
@@ -82,6 +86,7 @@ pub mod cover_thumb;
 pub mod departure_modal;
 pub mod dnd;
 pub mod empty_state;
+pub mod entry;
 pub mod facts;
 pub mod folder_card;
 pub mod gestures;

@@ -93,6 +93,25 @@ impl SeamVocab {
             SeamVocab::GridCard | SeamVocab::ListRow => "book",
         }
     }
+
+    /// The class the reveal's light wears on this surface, which is a fact about
+    /// the DENSITY rather than about the kind: a card's reveal rings the cover
+    /// frame it is drawn in, a row's is an inset ring on the row itself, and a
+    /// folder card rings the plate — the tree's shelf row is a row, so it wears
+    /// the row's name too.
+    ///
+    /// One table, read by [`crate::features::library::entry::EntryShell`], which
+    /// is the only place a reveal is painted. The stylesheet
+    /// (`styles/components/library/reveal.css`) is keyed on exactly these three
+    /// names, so a name changed here and nowhere else moves the paint and the
+    /// element together — the whole point of the shell owning both.
+    pub(crate) fn reveal(self) -> &'static str {
+        match self {
+            SeamVocab::FolderCard => "folder-reveal",
+            SeamVocab::GridCard => "book-reveal",
+            SeamVocab::ListRow | SeamVocab::FolderRow => "row-reveal",
+        }
+    }
 }
 
 /// The element id a reveal scrolls to and lights: the seam table's own prefix
@@ -230,12 +249,23 @@ pub(crate) fn ShelfItemShell(
     #[prop(into, optional)]
     style: Option<String>,
     /// A disclosure's own state, for the tree's shelf row.
-    #[prop(optional)]
+    ///
+    /// `Option` as the FIELD's type and `into` rather than `optional` on
+    /// purpose: this shell is reached through
+    /// [`crate::features::library::entry::EntryShell`] now, which holds the
+    /// disclosure's facts as an `Option` of its own and has to hand them on
+    /// unchanged. An `optional` prop's setter takes the value INSIDE the
+    /// option (that is what makes `<Shell aria_expanded=open />` read the way
+    /// it does), so a forwarded `Option` could not be passed through it — and
+    /// a shell that unpacked the option only to wrap it again would be a
+    /// shell deciding when an attribute is written, which is the mount's
+    /// business and not the element's.
+    #[prop(into)]
     aria_expanded: Option<Signal<bool>>,
     /// A key the surface owns BEFORE the shared keyboard halves — the tree
     /// row's Space, which is the disclosure's and not a scroll's. Answers
     /// `true` when it handled the event and the shared wiring stands down.
-    #[prop(optional)]
+    #[prop(into)]
     on_keydown_first: Option<Callback<leptos::ev::KeyboardEvent, bool>>,
     children: Children,
 ) -> impl IntoView {

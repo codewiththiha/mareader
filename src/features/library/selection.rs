@@ -64,11 +64,15 @@ use crate::state::AppState;
 /// drift from the set it marks, which is the one disagreement a reader would read
 /// as the app lying about what a click is about to act on.
 ///
-/// `selected` is the item's own, passed in rather than read here: the shelf item's
-/// wiring already derives it from the same set, and a mark that read the set a
-/// second way could only ever agree with the outline by luck.
+/// The item names ITSELF — the id of the book or shelf the mark is drawn on —
+/// and the membership is read here, from the one set the shelf item's own
+/// selected class reads. That is where the mark and the outline cannot disagree:
+/// the two facts are one question (`is_selected`), asked of the library in one
+/// place, and a mark that took a signal instead was three call sites each
+/// deriving the same signal by hand.
 #[component]
-pub(crate) fn SelectionCheck(state: AppState, selected: Signal<bool>) -> impl IntoView {
+pub(crate) fn SelectionCheck(state: AppState, id: String) -> impl IntoView {
+    let selected = state.library.is_selected(&id);
     view! {
         {move || {
             state.library.selecting.get().then(|| {

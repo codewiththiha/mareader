@@ -122,9 +122,9 @@ pub(crate) struct ShelfItem {
 /// label themselves from the same facts, open the same way, and right-click to
 /// the same question — they differ only in where the row is filed
 /// (`container`). One spelling, beside the contract they both hand to
-/// [`use_shelf_item`], so the link row's sibling ([`link_policy`] in
-/// `crate::features::library::link_card`) and this are the two shapes a
-/// shelf item's policy comes in, each written once.
+/// [`use_shelf_item`], so the three shapes a shelf item's policy comes in —
+/// this, [`folder_policy`] and [`link_policy`] — are written once each, in the
+/// file that owns the wiring they feed.
 pub(crate) fn book_policy(
     state: AppState,
     id: &str,
@@ -146,6 +146,64 @@ pub(crate) fn book_policy(
         menu_target: Callback::new(move |_| MenuTarget::Book {
             id: context_id.clone(),
             missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
+        }),
+        container,
+    }
+}
+
+/// The policy the two FOLDER surfaces share: the grid's card and the tree's
+/// shelf row both speak of themselves as "the Sci-fi shelf" in an aria answer
+/// and both right-click to the same question about a folder.
+///
+/// What is NOT shared is what a tap does, and that is why `open` is the
+/// caller's: a card in the grid drills the route (the reader asked for that
+/// shelf), while a row in the tree unfolds the branch it is standing on (the
+/// reader asked to see what is inside it). A container is the tree's fact too —
+/// a nested row knows the shelf whose member list drew it, a card does not —
+/// and a folder's lift is a nesting rather than a membership, so the grid's
+/// card passes `None` for the same reason the services refuse one.
+pub(crate) fn folder_policy(
+    id: &str,
+    name: Signal<String>,
+    open: Callback<()>,
+    container: Option<String>,
+) -> ShelfItemPolicy {
+    let menu_id = id.to_string();
+    ShelfItemPolicy {
+        id: id.to_string(),
+        label: Signal::derive(move || format!("the {} shelf", name.get())),
+        draggable: Signal::derive(|| true),
+        open,
+        menu_target: Callback::new(move |_| MenuTarget::Folder {
+            id: menu_id.clone(),
+        }),
+        container,
+    }
+}
+
+/// The policy both LINK surfaces share: the grid's card and the list's row say
+/// the same thing about themselves, open the same row, and right-click to the
+/// same question — a link is a row like any other to the menu, Open goes to the
+/// book, Select and Remove mean what they always mean, and "Find again" is not
+/// offered because a pointer has no address to die. One spelling rather than
+/// one per density.
+pub(crate) fn link_policy(
+    state: AppState,
+    id: &str,
+    name: &str,
+    container: Option<String>,
+) -> ShelfItemPolicy {
+    let open_id = id.to_string();
+    let menu_id = id.to_string();
+    let label = name.to_string();
+    ShelfItemPolicy {
+        id: id.to_string(),
+        label: Signal::stored(label),
+        draggable: Signal::derive(|| true),
+        open: Callback::new(move |_| document::open_row(state, open_id.clone())),
+        menu_target: Callback::new(move |_| MenuTarget::Book {
+            id: menu_id.clone(),
+            missing: false,
         }),
         container,
     }

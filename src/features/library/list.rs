@@ -72,15 +72,15 @@ use reader_core::format::Format;
 use crate::features::library::add_menu::{AddFace, AddMenuButton};
 use crate::features::library::cover_thumb::CoverThumb;
 use crate::features::library::content::{ShelfOrder, level_folders};
-use crate::features::library::context_menu::MenuTarget;
 use crate::features::library::dnd::controller::DragController;
+use crate::features::library::entry::{EntryDescriptor, EntryShell};
 use crate::features::library::folder_card::summary;
-use crate::features::library::gestures::{book_policy, ShelfItemPolicy};
+use crate::features::library::gestures::{book_policy, folder_policy};
 use crate::features::library::link_card::LinkRow;
 use crate::features::library::facts::book_facts;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::selection::SelectionCheck;
-use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
+use crate::features::library::shelf_item::SeamVocab;
 use crate::state::AppState;
 
 /// One level of the shelf tree, expanded in place.
@@ -268,22 +268,18 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     // the next re-hang passes it by. What the shell gets besides the policy is
     // the disclosure's two facts of its own: its expanded state for the aria,
     // and the Space key it owns before the shared keyboard halves.
-    // The folder half of the reveal, at this density: the row the folder
-    // wears in the tree lights the way the card does in the grid.
-    let reveal_class = state.library.is_revealed(&id);
-
-    let target_id = id.clone();
-    let policy = ShelfItemPolicy {
+    // The row's own fact, described rather than wired: a folder in the tree
+    // speaks the vocabulary the grid's folder card speaks (`SeamVocab::FolderRow`
+    // writes the row's class names and the `shelf-row-` element id) and takes the
+    // folder's policy with the DISCLOSURE for its open — a tap here unfolds the
+    // branch, where the card's tap drills into the shelf.
+    let entry = EntryDescriptor {
         id: id.clone(),
-        label: Signal::derive(move || format!("the {} shelf", name.get())),
-        draggable: Signal::derive(|| true),
-        open: toggle,
-        menu_target: Callback::new(move |_| MenuTarget::Folder {
-            id: target_id.clone(),
-        }),
+        vocab: SeamVocab::FolderRow,
+        base_class: "lib-row lib-row-shelf",
         // A folder's lift is a nesting, which writes a parent rather than a
         // membership: there is no list to lift it off.
-        container: None,
+        policy: folder_policy(&id, name, toggle, None),
     };
 
     let nav_id = id.clone();
@@ -298,13 +294,10 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
 
     view! {
         <>
-            <ShelfItemShell
+            <EntryShell
                 state=state
-                vocab=SeamVocab::FolderRow
-                base_class="lib-row lib-row-shelf"
-                policy=policy
+                entry=entry
                 style=indent
-                extra_classes=vec![("row-reveal".to_string(), reveal_class)]
                 aria_expanded=open
                 on_keydown_first=Callback::new(move |ev: leptos::ev::KeyboardEvent| {
                     // Space is the key a disclosure owns — prevented, so the
@@ -357,7 +350,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                 >
                     <Icon name=IconName::Open size=12 />
                 </button>
-            </ShelfItemShell>
+            </EntryShell>
             <Show when=move || open.get()>
                 <For each=move || kids.get() key=|s| s.id.clone() let:child>
                     // Erased through `AnyView`, the way the grid's recursive
@@ -457,9 +450,9 @@ fn ListRow(
     let chip = (book.format != Format::Pdf).then(|| book.format.label().to_string());
     let ext = book.format.label();
 
-    // The membership the cover's check mark paints from — the same set the
-    // shell's own selected class reads.
-    let is_selected = state.library.is_selected(&id);
+    // The id the cover's check mark reads through: the mark asks the library
+    // for the membership itself, the way the shell's own selected class does.
+    let check_id = id.clone();
 
     // The shelf's one press contract, the same one the grid's cards wear — a
     // row and a card answer to a hold, a tap and a movement alike at two
@@ -471,10 +464,15 @@ fn ListRow(
     // one file, and the address cannot say which of them the reader clicked.
     // The tree's own fact: a nested row answers to its branch, a flat row to
     // the level the page is on.
-    let policy = book_policy(state, &id, facts, parent.clone());
+    let entry = EntryDescriptor {
+        id: id.clone(),
+        vocab: SeamVocab::ListRow,
+        base_class: "lib-row",
+        policy: book_policy(state, &id, facts, parent.clone()),
+    };
 
-    // The row's two own classes: the reveal's light and the missing grey.
-    let reveal_class = state.library.is_revealed(&id);
+    // The row's one own class beyond the reveal's light, which the shell
+    // paints: the grey a book wears whose address stopped resolving.
     let missing_class = Signal::derive(move || {
         facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
     });
@@ -482,16 +480,11 @@ fn ListRow(
     let indent = row_indent(depth);
 
     view! {
-        <ShelfItemShell
+        <EntryShell
             state=state
-            vocab=SeamVocab::ListRow
-            base_class="lib-row"
-            policy=policy
+            entry=entry
             style=indent
-            extra_classes=vec![
-                ("row-reveal".to_string(), reveal_class),
-                ("row-missing".to_string(), missing_class),
-            ]
+            extra_classes=vec![("row-missing".to_string(), missing_class)]
         >
             {if dense {
                 // The dense variant's cover: the extension chip, in the art's own
@@ -505,7 +498,7 @@ fn ListRow(
                         class="lib-row-cover"
                         class=("book-cover-crop", move || crop.get())
                     >
-                        <SelectionCheck state=state selected=is_selected />
+                        <SelectionCheck state=state id=check_id />
                         <CoverThumb
                             state=state
                             path=Signal::derive(move || {
@@ -590,6 +583,6 @@ fn ListRow(
                     }
                 })
             }}
-        </ShelfItemShell>
+        </EntryShell>
     }
 }

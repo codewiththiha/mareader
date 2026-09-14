@@ -31,11 +31,12 @@ use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
 
 use crate::features::library::cover_thumb::CoverThumb;
+use crate::features::library::entry::{EntryDescriptor, EntryShell};
 use crate::features::library::gestures::book_policy;
 use crate::features::library::facts::book_facts;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::selection::SelectionCheck;
-use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
+use crate::features::library::shelf_item::SeamVocab;
 use crate::services::library::relink_dialog;
 use crate::state::AppState;
 use crate::state::reader::DEFAULT_PAGE_ASPECT;
@@ -80,15 +81,14 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         })
     };
 
-    // The card's two own classes: the reveal's light, and the grey a book
-    // wears whose address stopped resolving.
-    let reveal_class = state.library.is_revealed(&id);
+    // The card's one own class beyond the reveal's light, which the shell
+    // paints: the grey a book wears whose address stopped resolving.
     let missing_class = Signal::derive(move || {
         facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
     });
-    // The membership the cover's check mark paints from — the same set the
-    // shell's own selected class reads.
-    let is_selected = state.library.is_selected(&id);
+    // The id the cover's check mark reads through: the mark asks the library
+    // for the membership itself, the way the shell's selected class does.
+    let check_id = id.clone();
 
     // The press contract's three surface answers (see
     // `crate::features::library::gestures`). Opening names the ROW, not its
@@ -99,7 +99,12 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     // between the two.
     // No shelf of its own: a card is drawn by the open level, which is the
     // container the session resolves a nameless lift to.
-    let policy = book_policy(state, &id, facts, None);
+    let entry = EntryDescriptor {
+        id: id.clone(),
+        vocab: SeamVocab::GridCard,
+        base_class: "book-card",
+        policy: book_policy(state, &id, facts, None),
+    };
 
     // A removal asks first. The card does not know what a removal costs — the
     // resume point, the placements, the highlights, the app's own copy — and
@@ -112,15 +117,10 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     let relink_id = id;
 
     view! {
-        <ShelfItemShell
+        <EntryShell
             state=state
-            vocab=SeamVocab::GridCard
-            base_class="book-card"
-            policy=policy
-            extra_classes=vec![
-                ("book-reveal".to_string(), reveal_class),
-                ("book-missing".to_string(), missing_class),
-            ]
+            entry=entry
+            extra_classes=vec![("book-missing".to_string(), missing_class)]
         >
             <div class="book-cover-wrap">
                 <div
@@ -139,7 +139,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                     // The set membership, printed on the cover while the shelf is
                     // choosing: an outline alone asks the reader to remember which
                     // cards they have already tapped.
-                    <SelectionCheck state=state selected=is_selected />
+                    <SelectionCheck state=state id=check_id />
                     <CoverThumb
                         state=state
                         path=Signal::derive(move || {
@@ -256,6 +256,6 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             >
                 <Icon name=IconName::Close size=12 />
             </button>
-        </ShelfItemShell>
+        </EntryShell>
     }
 }

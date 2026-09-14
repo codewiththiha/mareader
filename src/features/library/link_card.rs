@@ -21,12 +21,11 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 
-use crate::features::library::context_menu::MenuTarget;
-use crate::features::library::gestures::ShelfItemPolicy;
+use crate::features::library::entry::{EntryDescriptor, EntryShell};
+use crate::features::library::gestures::link_policy;
 use crate::features::library::list::row_indent;
 use crate::features::library::remove_modal::RemoveSheet;
-use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
-use crate::services::document;
+use crate::features::library::shelf_item::SeamVocab;
 use crate::state::AppState;
 
 /// The line a link carries where a book carries its author or its page: what
@@ -49,49 +48,27 @@ fn link_title(to_shelf: bool) -> &'static str {
     }
 }
 
-/// The policy both link surfaces share: the same label, the same open, and the
-/// same menu answer — a link is a row like any other to the menu, Open goes to
-/// the book, Select and Remove mean what they always mean, and "Find again" is
-/// not offered because a pointer has no address to die. One spelling rather
-/// than one per density.
-fn link_policy(state: AppState, id: &str, name: &str, container: Option<String>) -> ShelfItemPolicy {
-    let open_id = id.to_string();
-    let menu_id = id.to_string();
-    let label = name.to_string();
-    ShelfItemPolicy {
-        id: id.to_string(),
-        label: Signal::stored(label),
-        draggable: Signal::derive(|| true),
-        open: Callback::new(move |_| document::open_row(state, open_id.clone())),
-        menu_target: Callback::new(move |_| MenuTarget::Book {
-            id: menu_id.clone(),
-            missing: false,
-        }),
-        container,
-    }
-}
-
 /// One link on the grid.
 #[component]
 pub(crate) fn LinkCard(state: AppState, id: String, name: String, to_shelf: bool) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
-    let reveal_class = state.library.is_revealed(&id);
     let remove_id = id.clone();
-    let policy = link_policy(state, &id, &name, None);
+    let entry = EntryDescriptor {
+        id: id.clone(),
+        vocab: SeamVocab::GridCard,
+        base_class: "book-card book-link",
+        // No shelf of its own: a link card is drawn by the open level, which
+        // is the container the session resolves a nameless lift to.
+        policy: link_policy(state, &id, &name, None),
+    };
     let remove = move |ev: leptos::ev::MouseEvent| {
         ev.stop_propagation();
         remove_sheet.ask(&remove_id);
     };
 
     view! {
-        <ShelfItemShell
-            state=state
-            vocab=SeamVocab::GridCard
-            base_class="book-card book-link"
-            policy=policy
-            extra_classes=vec![("book-reveal".to_string(), reveal_class)]
-        >
+        <EntryShell state=state entry=entry>
             <div class="book-cover-wrap">
                 <div class="book-cover" style:aspect-ratio="210 / 297">
                     <div class="book-cover-fallback">
@@ -117,7 +94,7 @@ pub(crate) fn LinkCard(state: AppState, id: String, name: String, to_shelf: bool
             >
                 <Icon name=IconName::Close size=12 />
             </button>
-        </ShelfItemShell>
+        </EntryShell>
     }
 }
 
@@ -143,21 +120,20 @@ pub(crate) fn LinkRow(
     // sheet has no ✕ to draw.
     let remove_sheet = use_context::<RemoveSheet>();
 
-    let reveal_class = state.library.is_revealed(&id);
     let remove_id = id.clone();
-    let policy = link_policy(state, &id, &name, parent);
+    let entry = EntryDescriptor {
+        id: id.clone(),
+        vocab: SeamVocab::ListRow,
+        base_class: "lib-row book-link",
+        // The shelf whose member list drew this row: the tree's own id inside
+        // an expanded branch, `None` in the flat section.
+        policy: link_policy(state, &id, &name, parent),
+    };
     let indent = row_indent(depth);
     let tooltip = name.clone();
 
     view! {
-        <ShelfItemShell
-            state=state
-            vocab=SeamVocab::ListRow
-            base_class="lib-row book-link"
-            policy=policy
-            style=indent
-            extra_classes=vec![("row-reveal".to_string(), reveal_class)]
-        >
+        <EntryShell state=state entry=entry style=indent>
             <span class="lib-row-ext" title=link_title(to_shelf)>
                 <Icon name=IconName::Link size=12 />
             </span>
@@ -186,6 +162,6 @@ pub(crate) fn LinkRow(
                     }
                 })
             }}
-        </ShelfItemShell>
+        </EntryShell>
     }
 }
