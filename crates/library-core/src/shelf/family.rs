@@ -21,9 +21,10 @@ pub fn family_for(
 /// shelf cut from a READ-AT-PLACE folder, leaving the seat the folder's own
 /// ledger names for its rung.
 ///
-/// Each negative is the book departure's rule read one level up: a VIRTUAL shelf
-/// is the reader's own, a shelf of a COPYING folder is the library's own once
-/// more, and a shelf with no folder above it has no ground to leave.
+/// Each negative is the book departure's rule read one level up: a shelf that is
+/// nobody's rung — one the reader made, and one a move already took off its tree —
+/// is the reader's own, a shelf of a COPYING folder is the library's own once more,
+/// and a shelf with no folder above it has no ground to leave.
 pub fn departs_on_move(
     shelves: &[Shelf],
     folders: &[crate::folder::WatchedFolder],

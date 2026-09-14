@@ -108,6 +108,14 @@ pub fn plain_shelf(id: &str, members: &[&str]) -> Shelf {
     shelf(id, id, members, None)
 }
 
+/// A shelf a move took off its tree: the reader's own now, holding the copies that move paid for.
+pub fn departed_shelf(id: &str, members: &[&str], parent: Option<&str>) -> Shelf {
+    Shelf {
+        kind: ShelfKind::Departed,
+        ..shelf(id, id, members, parent)
+    }
+}
+
 /// A folder shelf: one rung of a watched folder's tree, at `rel` (`None` is the root rung).
 pub fn folder_shelf(
     id: &str,

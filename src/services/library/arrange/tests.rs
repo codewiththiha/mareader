@@ -253,6 +253,17 @@ fn a_rung_the_reader_deleted_is_ground_the_book_has_left() {
 }
 
 #[test]
+fn a_rung_that_already_left_its_tree_owes_no_second_copy() {
+    let mut shelves = tree();
+    shelves.push(library_core::testkit::departed_shelf("moved", &[], Some("fic")));
+    let folders = vec![reading_folder()];
+    assert!(
+        !library_core::shelf::departs_on_move(&shelves, &folders, "moved", None),
+        "the move that took it off the tree already paid the copy"
+    );
+}
+
+#[test]
 fn a_folder_that_does_not_group_has_one_ground_for_every_file() {
     let owner = Owner::new();
     owner.set();

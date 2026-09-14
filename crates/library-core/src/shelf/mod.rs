@@ -1,4 +1,4 @@
-//! Shelves: an ordered list of book ids, and the two kinds that produce one.
+//! Shelves: an ordered list of book ids, and the kinds that produce one.
 //!
 //! A shelf holds membership and nothing else — no copies, no paths, no filesystem
 //! intent — which is what makes dragging a book between shelves safe by
@@ -35,12 +35,18 @@ pub enum ShelfKind {
         #[serde(default)]
         rel: Option<String>,
     },
+    /// A rung that LEFT its tree: the reader moved it off the seat the folder's own shelves name
+    /// for it and the move paid the copy, so the books the folder placed are the library's own and
+    /// no tree answers for this shelf any more.
+    Departed,
 }
 
 impl ShelfKind {
+    /// The folder a shelf is a rung of: a shelf the reader made and a shelf that left its tree
+    /// are nobody's rung.
     pub fn folder_id(&self) -> Option<&str> {
         match self {
-            ShelfKind::Virtual => None,
+            ShelfKind::Virtual | ShelfKind::Departed => None,
             ShelfKind::Folder { folder_id, .. } => Some(folder_id),
         }
     }
@@ -50,12 +56,12 @@ impl ShelfKind {
     }
 
     /// The rung this shelf stands on, as the folder's own map keys one: the empty
-    /// string for a watched root and for a shelf the reader made, which no directory
-    /// names. One spelling of "which rung of its tree is this", for the callers that
-    /// ask it of a standing shelf rather than of a ledger.
+    /// string for a watched root and for a shelf no directory names — one the reader
+    /// made, and one that left its tree. One spelling of "which rung of its tree is
+    /// this", for the callers that ask it of a standing shelf rather than of a ledger.
     pub fn rung(&self) -> &str {
         match self {
-            ShelfKind::Virtual => "",
+            ShelfKind::Virtual | ShelfKind::Departed => "",
             ShelfKind::Folder { rel, .. } => rel.as_deref().unwrap_or(""),
         }
     }

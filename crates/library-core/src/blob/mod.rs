@@ -74,11 +74,12 @@ pub fn sanitize(blob: &mut LibraryBlob) {
     }
 
     // A folder shelf whose folder was removed has no rescan to refill it and no
-    // watch dot to explain it, so it goes; a virtual shelf is the reader's own.
+    // watch dot to explain it, so it goes; a virtual shelf is the reader's own, and
+    // so is one that left its tree with its books copied.
     let folders: std::collections::HashSet<&str> =
         blob.folders.iter().map(|f| f.id.as_str()).collect();
     blob.shelves.retain(|s| match &s.kind {
-        ShelfKind::Virtual => true,
+        ShelfKind::Virtual | ShelfKind::Departed => true,
         ShelfKind::Folder { folder_id, .. } => folders.contains(folder_id.as_str()),
     });
 

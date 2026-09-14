@@ -428,10 +428,12 @@ The SHELF departs the same way, and asks first — the book's rule read one leve
 its directory stands on in the tree the folder's ledger names, so a hand taking the rung anywhere
 else — another rung of the very same tree included — is a departure; only a re-order among its own
 siblings, and a move back onto the seat, are not. The departure copies rather than converts one
-thing at a time: the shelf becomes the reader's own, every read-at-place book standing on the
-departing rungs goes through the very `convert_to_stored` a book's departure rides — bytes, logs,
-gloss keys and all — the copy takes the level's next free name so the folder's own name stays free,
-and the folder's `shelf_map` lets the departed zone go. What rides along unconverted is what was
+thing at a time: the rung becomes a shelf of the reader's own — `ShelfKind::Departed`, which no
+tree answers for any more, so it wears no watch dot, answers no seat and says on its card that the
+library keeps the copies — every read-at-place book standing on the departing rungs goes through the
+very `convert_to_stored` a book's departure rides — bytes, logs, gloss keys and all — the copy takes
+the level's next free name so the folder's own name stays free, and the folder's `shelf_map` lets
+the departed zone go. What rides along unconverted is what was
 never the folder's to convert: the reader's own shelves inside the subtree, a book also shown on a
 departing rung whose OWN rung still stands, and another folder's rung the subtree carries, which
 keeps its disk knowledge under the hand's mark. Because a departure copies a whole tree of bytes,

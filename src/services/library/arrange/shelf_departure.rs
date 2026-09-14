@@ -433,7 +433,7 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
         .filter(|dep| landed.iter().any(|id| id == &dep.id))
         .collect();
 
-    // The rungs become the reader's own shelves, the other folders' shelves that rode along take the hand's mark, and the folder lets the departed zone go.
+    // The rungs leave the tree with the copy they paid for, the other folders' shelves that rode along take the hand's mark, and the folder lets the departed zone go.
     let mut promised: std::collections::HashSet<String> =
         state.library.shelves.with_untracked(|shelves| {
             shelf::children_of(shelves, level.as_deref())
@@ -445,7 +445,7 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
         for dep in &going {
             for rung in &dep.rungs {
                 if let Some(one) = shelf::find_mut(shelves, rung) {
-                    one.kind = shelf::ShelfKind::Virtual;
+                    one.kind = shelf::ShelfKind::Departed;
                     one.manual_parent = false;
                 }
             }

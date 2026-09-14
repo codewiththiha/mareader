@@ -340,13 +340,11 @@ impl LibraryState {
         }) == Some(true)
     }
 
-    /// `Copy` for a shelf cut from a folder the library copies into its own store, a read-at-place mode for a shelf that is a door onto a directory on disk, and `None` for a shelf the reader made.
+    /// `Copy` for a shelf the library keeps copies of — cut from a folder imported that way, or taken off a read-at-place tree by a move that paid the copy — a read-at-place mode for a shelf that is a door onto a directory on disk, and `None` for a shelf no folder answers for.
     pub fn shelf_mode(&self, shelf_id: &str) -> Option<FolderMode> {
         self.folders.with(|folders| {
-            let seat = self
-                .shelves
-                .with(|shelves| Governance::new(folders, shelves).seat_of(shelf_id))?;
-            folder_ops::find(folders, &seat.folder_id).map(|f| f.mode())
+            self.shelves
+                .with(|shelves| Governance::new(folders, shelves).mode_of(shelf_id))
         })
     }
 
