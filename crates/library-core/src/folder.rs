@@ -501,13 +501,30 @@ impl WatchedFolder {
     }
 
     /// Whether this folder is watched ANYWHERE: its root, or any rung the
-    /// reader turned on under a root they turned off. The walk question —
-    /// which folders a focus rescan owes a pass — where [`WatchedFolder::tracked`]
-    /// is the root's own answer: a tree only a subfolder of is watched still
-    /// owes the walk, and the ledger's per-rung gate is what keeps the quiet
-    /// rungs quiet inside it.
+    /// reader turned on under a root they turned off. The tree's half of the
+    /// walk question — [`WatchedFolder::owes_walk`] is the question itself, and
+    /// this is what it asks of the tree — where [`WatchedFolder::tracked`] is
+    /// the root's own answer: a tree only a subfolder of is watched still owes
+    /// the walk, and the ledger's per-rung gate is what keeps the quiet rungs
+    /// quiet inside it.
     pub fn tracks_anything(&self) -> bool {
         self.tracking.tracked() || self.tracking.any_on()
+    }
+
+    /// Whether a walk is owed for this folder: whether there is a watch at all
+    /// — the MODE's question, because tracking is a promise about the folder the
+    /// books are READ from and a folder the library copies has none to keep —
+    /// and whether any rung of its tree is on.
+    ///
+    /// The two halves are one question with one answer, which is why the walk
+    /// asks for it here rather than spelling the pair out where it walks. The
+    /// tree alone would honour a `watch` flag a build that could write the pair
+    /// left on a copying folder, which [`FolderMode::from_opts`] folds into
+    /// `Copy` for exactly that reason; the mode alone would miss the tree a
+    /// reader turned off at the root while one subfolder stayed on, because the
+    /// flag mirrors the ROOT and that folder's flag therefore reads `false`.
+    pub fn owes_walk(&self) -> bool {
+        self.mode().reads_in_place() && self.tracks_anything()
     }
 
     /// Turn tracking on or off for one rung of this tree, and mirror the root's
@@ -1192,6 +1209,31 @@ mod tests {
         assert!(folder.opts.watch, "the root's answer is mirrored onto the flag");
         assert_eq!(folder.mode(), FolderMode::LinkInPlaceWatched);
         assert_eq!(folder.opts.mode(), folder.mode());
+    }
+
+    #[test]
+    fn a_folder_the_library_copies_is_owed_no_walk_whatever_its_tree_says() {
+        // The pair the sheet cannot offer — `in_place=false, watch=true` — folds
+        // into `Copy`, so a tree left standing on a copying folder by a build
+        // that COULD write the pair is chrome rather than a second opinion: the
+        // walk reads the mode beside the tree, and this is the folder where the
+        // two would otherwise disagree.
+        let copying = mode("f1", "/books", false, true);
+        assert_eq!(copying.mode(), FolderMode::Copy, "a watching copy is a copy");
+        assert!(copying.tracks_anything(), "and its tree is still standing");
+        assert!(!copying.owes_walk(), "so nothing walks it");
+
+        // The case the flag cannot speak for: a root turned off with one
+        // subfolder left on reads as an unwatched folder and is not one.
+        let mut partly = mode("f2", "/dvds", true, true);
+        partly.set_tracking("", false);
+        partly.set_tracking("Films", true);
+        assert!(!partly.opts.watch, "the root's own answer is off");
+        assert!(partly.owes_walk(), "and the subfolder still owes the walk");
+
+        // And a folder with no watch at all owes nothing, mode or no mode.
+        let quiet = mode("f3", "/comics", true, false);
+        assert!(!quiet.owes_walk());
     }
 
     /// A folder with the two mode switches set explicitly, where the default

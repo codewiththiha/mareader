@@ -331,8 +331,11 @@ pub(super) fn receipt(
                 // Watched anywhere in the tree, which is what the note
                 // promises: a folder that still walks — root or one rung the
                 // reader kept on — is a folder that can place this book again
-                // and offer it back.
-                f.tracks_anything()
+                // and offer it back. Asked exactly as the walk asks it
+                // (`library_core::folder::WatchedFolder::owes_walk`), because a
+                // note promising a scan the walk is not owed is a promise
+                // nothing keeps.
+                f.owes_walk()
                     && fingerprints
                         .iter()
                         .any(|fp| f.placed.contains(fp) || f.is_ignored(fp))

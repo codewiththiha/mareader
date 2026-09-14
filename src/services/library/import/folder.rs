@@ -194,9 +194,10 @@ pub(super) fn resolve_folder(
     // off, and forcing it back on was a switch that did not work.
     //
     // A run that COPIES writes no root decision either, because the watch is
-    // not offered beside a copy: a copying folder's tree is left for the shelf's
-    // menu to answer for. The mode is read off the folder rather than off the
-    // parameter, which was moved into it a line above.
+    // not offered beside a copy — and there is nothing in a copying folder's
+    // tree for a later scan to honour (see `WatchedFolder::owes_walk`). The
+    // mode is read off the folder rather than off the parameter, which was
+    // moved into it a line above.
     folder.opts = opts;
     // The sheet's switch is a question about the ROOT RUNG, and the tree is what
     // answers it from here on — so the sheet's answer is written into the tree

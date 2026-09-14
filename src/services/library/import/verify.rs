@@ -92,7 +92,12 @@ fn run_watched(state: AppState) {
         // at the root while one subfolder stayed on still owes the walk, and
         // the ledger's per-rung gate is what keeps the off rungs quiet inside
         // it. A folder nothing watches is the one that owes nothing.
-        .filter(|f| f.tracks_anything())
+        //
+        // Asked of the folder — `WatchedFolder::owes_walk` — rather than of its
+        // tree alone, which is the one reading this walk could not make for
+        // itself: whether there is a watch at all is the folder's MODE, and
+        // which rungs of it are on is the tree.
+        .filter(|f| f.owes_walk())
         .map(|f| (f.root.clone(), f.opts.clone()))
         .collect();
     for (root, opts) in watched {
