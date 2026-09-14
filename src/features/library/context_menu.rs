@@ -13,6 +13,15 @@
 //! owning a menu is four placements, four dismissals and four sets of rows to keep
 //! in step. So the surfaces ask and this answers, and the payload says which menu.
 //!
+//! Four menus, one renderer and one list of rows. A row is a `MenuItemSpec` —
+//! what it says, what it runs, whether it can run, and whether a rule stands
+//! above it — and the five rows a book, a link and a folder all answer with are
+//! built once, in the one order, by `base_entry_items`. What each menu is, then,
+//! is the rows it adds to those five: the row a dead address owns, the watch row
+//! a seat answers for, the set's counted rows, the level's conditional one. The
+//! two entry menus used to hold the same five rows twice, in two orders, with
+//! two disabled rules and two different removal rows for one gesture.
+//!
 //! The primitive underneath is `crate::components::primitives::floating::context_menu`,
 //! which owns the cursor placement, the viewport clamp and the dismissal; what is
 //! here is the library's half — what a right-click on each kind of thing means.
@@ -44,7 +53,6 @@ use crate::services::document;
 use crate::services::library::{
     create_shelf_and_enter, delete_shelf, duplicate_row, duplicate_rows, duplicate_shelf,
     path_of_row, path_of_shelf, relink_dialog, reveal_in_folder, set_shelf_watch, shelf_watch,
-    ShelfWatch,
 };
 use crate::state::AppState;
 
@@ -175,11 +183,311 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
     }
 }
 
-/// A book's menu.
+/// What one menu row is, as data.
+///
+/// The rows of the four menus here are the same rows in different orders —
+/// open, select, rename, duplicate, reveal, and then whatever the thing under
+/// the pointer owns — and a `<MenuItem>` written per menu meant the order, the
+/// disabled rule and the removal's own rule were each repeated wherever a row
+/// happened to be needed. As a list, a row can be built where the facts are,
+/// positioned, and left out; the renderer is then one component rather than
+/// four spellings of the same seven props.
+struct MenuItemSpec {
+    icon: IconName,
+    label: String,
+    run: Callback<()>,
+    sublabel: Option<String>,
+    title: Option<String>,
+    disabled: bool,
+    tone: MenuItemTone,
+    /// A rule above this row: the row that takes something away is a different
+    /// kind of thing from the rows that change the library, and the rule is
+    /// what says so — once, rather than per menu.
+    ruled: bool,
+}
+
+impl MenuItemSpec {
+    /// A row with the defaults a row usually has: no second line, no tooltip,
+    /// enabled, ordinary tone, no rule above it.
+    fn new(icon: IconName, label: impl Into<String>, run: Callback<()>) -> Self {
+        Self {
+            icon,
+            label: label.into(),
+            run,
+            sublabel: None,
+            title: None,
+            disabled: false,
+            tone: MenuItemTone::Default,
+            ruled: false,
+        }
+    }
+
+    /// The muted second line, for a row that has something to say about itself
+    /// beyond its name.
+    fn sublabel(mut self, text: String) -> Self {
+        self.sublabel = Some(text);
+        self
+    }
+
+    /// The tooltip, for a row whose label and second line still leave something
+    /// worth saying that fits on neither.
+    fn title(mut self, text: &'static str) -> Self {
+        self.title = Some(text.to_string());
+        self
+    }
+
+    /// Stand the row down when the thing it acts on cannot be acted on — a
+    /// book whose address died. The row STAYS: a menu whose rows disappeared
+    /// with the card's luck would be a menu whose shape says something the
+    /// reader has to work out, and a greyed "Open" says it where it was always
+    /// read.
+    fn off_when(self, off: bool) -> Self {
+        Self {
+            disabled: off,
+            ..self
+        }
+    }
+
+    /// The destructive tone, for the rows that take something away.
+    fn danger(mut self) -> Self {
+        self.tone = MenuItemTone::Danger;
+        self
+    }
+
+    /// A rule above this row.
+    fn ruled(mut self) -> Self {
+        self.ruled = true;
+        self
+    }
+}
+
+/// One menu's rows, drawn.
+///
+/// One renderer for all four menus — a book's, a folder's, the set's and the
+/// level's — because the rows were never what differed between them: what
+/// differs is which rows are in the list, and the list is built where the
+/// facts are. What is left here is the one thing a row of these menus has to
+/// know about its neighbours: the row above it asked for a rule.
+#[component]
+fn EntryMenu(
+    /// A heading above the rows, for a menu about a set rather than about the
+    /// one thing under the pointer.
+    #[prop(optional, into)]
+    heading: Option<String>,
+    items: Vec<MenuItemSpec>,
+) -> impl IntoView {
+    view! {
+        <>
+            {heading.map(|text| view! { <SectionLabel text=text /> })}
+            {items
+                .into_iter()
+                .map(|item| {
+                    let MenuItemSpec {
+                        icon,
+                        label,
+                        run,
+                        sublabel,
+                        title,
+                        disabled,
+                        tone,
+                        ruled,
+                    } = item;
+                    // A second line is a different ROW shape, not a longer one
+                    // (see `crate::components::primitives::menu::menu_item`),
+                    // and the row's own props take a `String` rather than an
+                    // `Option`: so the two cases build two rows, and a row with
+                    // no tooltip passes the empty one, which is no tooltip at
+                    // all and what it had before.
+                    let row = match sublabel {
+                        Some(note) => view! {
+                            <MenuItem
+                                icon=icon
+                                label=label
+                                sublabel=note
+                                title=title.unwrap_or_default()
+                                disabled=disabled
+                                tone=tone
+                                on_click=move || run.run(())
+                            />
+                        }
+                            .into_any(),
+                        None => view! {
+                            <MenuItem
+                                icon=icon
+                                label=label
+                                title=title.unwrap_or_default()
+                                disabled=disabled
+                                tone=tone
+                                on_click=move || run.run(())
+                            />
+                        }
+                            .into_any(),
+                    };
+                    view! {
+                        {ruled.then(|| view! { <Separator spacing="my-1" /> })}
+                        {row}
+                    }
+                })
+                .collect_view()}
+        </>
+    }
+}
+
+/// Which kind of entry a right-click landed on.
+///
+/// Three of the shared rows do something different for the two kinds, and the
+/// difference is a word or a service call rather than a shape — so it belongs
+/// here, where the rows are built, rather than in two menus that would each
+/// keep their own copy of the order.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EntryKind {
+    /// A row: a book in the grid or the list, or a pointer at one.
+    Row,
+    /// A shelf, drawn as a folder.
+    Shelf,
+}
+
+/// The rows every entry menu starts with, in the order every one of them shows
+/// them: what the entry is, what to do with it, and where it came from.
+///
+/// The five are the same five for a book, a link and a folder, which is why
+/// they are built here: two menus holding one list is how the two drifted into
+/// two orders, two disabled rules and two removal rows for one gesture.
+/// `dead` stands down the rows that cannot answer — a book whose address died
+/// can still be renamed, relinked and removed — and the kind decides which
+/// service answers `id`, never which rows the reader is offered.
+fn base_entry_items(
+    state: AppState,
+    id: &str,
+    kind: EntryKind,
+    dead: bool,
+    rename_sheet: RenameSheet,
+    close: Callback<()>,
+) -> Vec<MenuItemSpec> {
+    let mut items = Vec::with_capacity(6);
+
+    // Open. A folder opens as the page's shelf — the same write a tap makes —
+    // and a row opens through the document service, which is where "a book, or
+    // a pointer at one" is decided.
+    let open_id = id.to_string();
+    let open = match kind {
+        EntryKind::Row => MenuItemSpec::new(
+            IconName::Open,
+            "Open",
+            Callback::new(move |_| {
+                close.run(());
+                document::open_row(state, open_id.clone());
+            }),
+        )
+        .off_when(dead),
+        EntryKind::Shelf => MenuItemSpec::new(
+            IconName::Open,
+            "Open shelf",
+            Callback::new(move |_| {
+                close.run(());
+                state.library.shelf.set(open_id.clone());
+            }),
+        ),
+    };
+    items.push(open);
+
+    // Select. One gesture for both kinds: a right-click says "this one", and a
+    // set that grows from there is the same set the check marks draw.
+    let select_id = id.to_string();
+    items.push(MenuItemSpec::new(
+        IconName::Check,
+        "Select",
+        Callback::new(move |_| {
+            close.run(());
+            enter_selection(state, &select_id);
+        }),
+    ));
+
+    // Rename. The sheet renames what the shelf SHOWS — a book's title, a
+    // link's own name, a shelf's name — which is a fact every kind has,
+    // address or no address: a book whose file died is exactly the book a
+    // reader may want to rename before hunting the file down.
+    let rename_id = id.to_string();
+    let rename_title = match kind {
+        EntryKind::Row => "The name the library shows — the file on disk keeps its own",
+        EntryKind::Shelf => "The name the library shows — a folder on disk keeps its own",
+    };
+    items.push(
+        MenuItemSpec::new(
+            IconName::Pencil,
+            "Rename…",
+            Callback::new(move |_| {
+                close.run(());
+                match kind {
+                    EntryKind::Row => rename_sheet.ask_row(state, &rename_id),
+                    EntryKind::Shelf => rename_sheet.ask_shelf(state, &rename_id),
+                }
+            }),
+        )
+        .title(rename_title),
+    );
+
+    // Duplicate. A row duplicates as a row and a shelf as a shelf — a second
+    // card beside the original in both cases, and for a shelf it is the
+    // reader's own copy rather than a second door to one directory
+    // (`crate::services::library::duplicate`).
+    let dup_id = id.to_string();
+    let duplicate = match kind {
+        EntryKind::Row => MenuItemSpec::new(
+            IconName::Copy,
+            "Duplicate",
+            Callback::new(move |_| {
+                close.run(());
+                duplicate_row(state, &dup_id);
+            }),
+        )
+        .off_when(dead)
+        .title("A second copy of this book, filed beside it"),
+        EntryKind::Shelf => MenuItemSpec::new(
+            IconName::Copy,
+            "Duplicate",
+            Callback::new(move |_| {
+                close.run(());
+                duplicate_shelf(state, &dup_id);
+            }),
+        )
+        .title("A second shelf of your own, holding the same books"),
+    };
+    items.push(duplicate);
+
+    // Reveal. The file manager's own view of what is behind the entry: the
+    // store's copy for a book the library copied, the address itself for one
+    // read at its place, and the target for a link. An entry with nothing
+    // behind it gets no row at all rather than a disabled one — the menu is
+    // built per ask, so the answer cannot have gone stale, and a door the
+    // reader keeps trying is worse than a door that is not there.
+    let path = match kind {
+        EntryKind::Row => path_of_row(state, id),
+        EntryKind::Shelf => path_of_shelf(state, id),
+    };
+    if let Some(path) = path {
+        items.push(
+            MenuItemSpec::new(
+                IconName::Folder,
+                "Reveal in folder",
+                Callback::new(move |_| {
+                    close.run(());
+                    reveal_in_folder(state, path.clone());
+                }),
+            )
+            .off_when(dead),
+        );
+    }
+
+    items
+}
+
+/// A book's menu — a card or a row, a book or a link.
 ///
 /// No row carries a sublabel: a right-click is a reader who knows what the rows
 /// mean, and a menu that explains itself on every line is one that has to be
-/// read before it can be used.
+/// read before it can be used. What the kind adds to the shared five is the row
+/// a dead address owns and the removal.
 #[component]
 fn BookMenu(
     state: AppState,
@@ -189,109 +497,34 @@ fn BookMenu(
     close: Callback<()>,
 ) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
-    // Where the file manager would go, read at the build rather than at the
-    // click: the store's own copy for a book the library copied, the file
-    // where it stands for one read at its place, and the target's own answer
-    // for a link. A row with nothing behind it gets no row in the menu — the
-    // menu is built per ask, so the answer cannot go stale while it is up.
-    let reveal = path_of_row(state, &id);
-    // One owned id per row: each row's handler is a closure of its own and a
-    // `move` takes what it captures.
-    let open_id = id.clone();
-    let select_id = id.clone();
-    let rename_id = id.clone();
-    let dup_id = id.clone();
-    let relink_id = id.clone();
-    let remove_id = id;
-
-    view! {
-        <>
-            <MenuItem
-                icon=IconName::Open
-                label="Open"
-                // A book whose address died cannot be opened, and a row that
-                // answered with an error toast would be a row that knew better
-                // than to be offered.
-                disabled=missing
-                on_click=move || {
-                    close.run(());
-                    document::open_row(state, open_id.clone());
-                }
-            />
-            <MenuItem
-                icon=IconName::Check
-                label="Select"
-                on_click=move || {
-                    close.run(());
-                    enter_selection(state, &select_id);
-                }
-            />
-            <MenuItem
-                icon=IconName::Pencil
-                label="Rename…"
-                // The sheet renames what the shelf SHOWS — a book's title or a
-                // link's own name — which is a fact every row has, address or
-                // no address: a book whose file died is exactly the book a
-                // reader may want to rename before hunting the file down.
-                title="The name the library shows — the file on disk keeps its own".to_string()
-                on_click=move || {
-                    close.run(());
-                    rename_sheet.ask_row(state, &rename_id);
-                }
-            />
-            <MenuItem
-                icon=IconName::Copy
-                label="Duplicate"
-                title="A second copy of this book, filed beside it".to_string()
-                // A duplicate is a copy, and a book whose address died has
-                // nothing to copy — the Open row's own rule.
-                disabled=missing
-                on_click=move || {
-                    close.run(());
-                    duplicate_row(state, &dup_id);
-                }
-            />
-            {reveal.map(|path| {
-                view! {
-                    <MenuItem
-                        icon=IconName::Folder
-                        label="Reveal in folder"
-                        // A book whose address died has nothing to reveal: a
-                        // row that would answer with the shell's "not there
-                        // any more" is a row that knew better than to be
-                        // offered, the Open row's own rule.
-                        disabled=missing
-                        on_click=move || {
-                            close.run(());
-                            reveal_in_folder(state, path.clone());
-                        }
-                    />
-                }
-            })}
-            {missing.then(|| {
-                view! {
-                    <MenuItem
-                        icon=IconName::Search
-                        label="Find again…"
-                        on_click=move || {
-                            close.run(());
-                            relink_dialog(state, relink_id.clone());
-                        }
-                    />
-                }
-            })}
-            <Separator spacing="my-1" />
-            <MenuItem
-                icon=IconName::Close
-                label="Remove from library"
-                tone=MenuItemTone::Danger
-                on_click=move || {
-                    close.run(());
-                    remove_sheet.ask(&remove_id);
-                }
-            />
-        </>
+    let mut items = base_entry_items(state, &id, EntryKind::Row, missing, rename_sheet, close);
+    // The one row a dead address owns: the file the library recorded is not
+    // there any more, so the way back is to point at it again.
+    if missing {
+        let find_id = id.clone();
+        items.push(MenuItemSpec::new(
+            IconName::Search,
+            "Find again…",
+            Callback::new(move |_| {
+                close.run(());
+                relink_dialog(state, find_id.clone());
+            }),
+        ));
     }
+    items.push(
+        MenuItemSpec::new(
+            IconName::Close,
+            "Remove from library",
+            Callback::new(move |_| {
+                close.run(());
+                remove_sheet.ask(&id);
+            }),
+        )
+        .danger()
+        .ruled(),
+    );
+
+    view! { <EntryMenu items=items /> }
 }
 
 /// A shelf's menu, drawn as a folder.
@@ -302,21 +535,12 @@ fn BookMenu(
 /// filed inside the one that was asked, whichever level the page is on, because
 /// "new shelf" on a folder is an answer about that folder and not about the page.
 ///
-/// It carries the same Duplicate a book's menu does, and the two are one gesture
-/// with two answers rather than two gestures: a right-click that duplicated a card
-/// and quietly did nothing on a folder is a menu whose rows mean different things
-/// depending on what happened to be under the pointer. What differs is the copy —
-/// a shelf holds membership and never held a byte, so its duplicate is a second
-/// shelf of the reader's own holding the same books, and a folder shelf's copy is
-/// the reader's own too rather than a second door to one directory
-/// (`crate::services::library::duplicate`).
-///
 /// It is also the one place a folder's WATCH is turned by hand, and the row is
 /// the SEAT's rather than the tree's: tracking is a tree
 /// (`library_core::tracking`), so a right-click on a rung shelf turns that rung —
 /// an explicit decision at that rung, with the tree above keeping its own — and
 /// a right-click on the root shelf turns the whole tree, which is the root's
-/// seat. The import sheet's switch asks the same per-rung question of the
+/// seat. The import sheet's control asks the same per-rung question of the
 /// ground being imported; this row is the answer for a shelf that already
 /// stands (`crate::services::library::set_shelf_watch`).
 #[component]
@@ -326,142 +550,78 @@ fn FolderMenu(
     rename_sheet: RenameSheet,
     close: Callback<()>,
 ) -> impl IntoView {
-    // The directory this shelf represents, when it represents one: the ground
-    // its watched folder's tree cut it from. A shelf the reader owns has no
-    // ground and gets no row.
-    let reveal = path_of_shelf(state, &id);
+    let mut items = base_entry_items(state, &id, EntryKind::Shelf, false, rename_sheet, close);
     // The watch this shelf's seat answers for, when it answers for one: a
     // shelf of a folder the library reads in place, at its root or at any rung
     // of its tree, and a shelf a hand made inside one. The decision is the
     // SEAT's — the rung this shelf stands on — so the row toggles the ground
     // the reader is looking at, and the sublabel says which ground that is:
     // the whole folder at the root, only the subfolder at a rung.
-    let watch: Option<ShelfWatch> = shelf_watch(state, &id);
-    let open_id = id.clone();
-    let select_id = id.clone();
-    let rename_id = id.clone();
-    let dup_id = id.clone();
-    let inside_id = id.clone();
-    let watch_id = id.clone();
-    let remove_id = id;
-
-    view! {
-        <>
-            <MenuItem
-                icon=IconName::Open
-                label="Open shelf"
-                on_click=move || {
+    if let Some(watch) = shelf_watch(state, &id) {
+        let on = watch.on;
+        // The row toggles the SEAT this shelf stands on — the whole tree from
+        // the watched root, and only a subfolder and the ground inside it from
+        // a rung. The second line is what says which: from three shelves deep,
+        // "stop watching" without a named ground is a surprise rather than a
+        // toggle.
+        let deep = watch.rung_label.is_some();
+        let (icon, label) = match (on, deep) {
+            (true, true) => (IconName::EyeOff, "Stop watching this subfolder"),
+            (true, false) => (IconName::EyeOff, "Stop watching for new books"),
+            (false, true) => (IconName::Eye, "Watch this subfolder for new books"),
+            (false, false) => (IconName::Eye, "Watch for new books"),
+        };
+        let sublabel = match &watch.rung_label {
+            Some(rung) => format!("Only “{rung}” and the folders inside it"),
+            None => format!("The whole “{}” folder", watch.label),
+        };
+        let title = match (on, deep) {
+            (true, true) => {
+                "Stop checking this subfolder for new books; the books already here \
+                 stay, and the rest of the tree keeps watching its own"
+            }
+            (true, false) => "Stop checking this folder; the books already here stay",
+            (false, _) => {
+                "Check this folder for new books when the app opens or you come back to it"
+            }
+        };
+        let watch_id = id.clone();
+        items.push(
+            MenuItemSpec::new(
+                icon,
+                label,
+                Callback::new(move |_| {
                     close.run(());
-                    state.library.shelf.set(open_id.clone());
-                }
-            />
-            <MenuItem
-                icon=IconName::Check
-                label="Select"
-                on_click=move || {
-                    close.run(());
-                    enter_selection(state, &select_id);
-                }
-            />
-            <MenuItem
-                icon=IconName::Pencil
-                label="Rename…"
-                // The shelf's DISPLAY name: the crumb's inline field renames the
-                // same fact, and neither touches a directory on disk — a folder
-                // shelf keeps the name its ground has.
-                title="The name the library shows — a folder on disk keeps its own".to_string()
-                on_click=move || {
-                    close.run(());
-                    rename_sheet.ask_shelf(state, &rename_id);
-                }
-            />
-            <MenuItem
-                icon=IconName::Copy
-                label="Duplicate"
-                // A shelf holds membership and never held a byte, so its copy is
-                // a second shelf of the reader's own with the same books in it —
-                // including a folder shelf, which IS the OS directory and cannot
-                // be a second door to one directory (`duplicate_shelf_row`).
-                title="A second shelf of your own, holding the same books".to_string()
-                on_click=move || {
-                    close.run(());
-                    duplicate_shelf(state, &dup_id);
-                }
-            />
-            {reveal.map(|path| {
-                view! {
-                    <MenuItem
-                        icon=IconName::Folder
-                        label="Reveal in folder"
-                        on_click=move || {
-                            close.run(());
-                            reveal_in_folder(state, path.clone());
-                        }
-                    />
-                }
-            })}
-            {watch.map(|watch| {
-                let on = watch.on;
-                // The row toggles the SEAT this shelf stands on — the whole
-                // tree from the watched root, and only a subfolder and the
-                // ground inside it from a rung. The second line is what says
-                // which: from three shelves deep, "stop watching" without a
-                // named ground is a surprise rather than a toggle.
-                let deep = watch.rung_label.is_some();
-                let (icon, label) = match (on, deep) {
-                    (true, true) => (IconName::EyeOff, "Stop watching this subfolder"),
-                    (true, false) => (IconName::EyeOff, "Stop watching for new books"),
-                    (false, true) => (IconName::Eye, "Watch this subfolder for new books"),
-                    (false, false) => (IconName::Eye, "Watch for new books"),
-                };
-                let sublabel = match &watch.rung_label {
-                    Some(rung) => format!("Only “{rung}” and the folders inside it"),
-                    None => format!("The whole “{}” folder", watch.label),
-                };
-                let title = match (on, deep) {
-                    (true, true) => {
-                        "Stop checking this subfolder for new books; the books already here \
-                         stay, and the rest of the tree keeps watching its own"
-                    }
-                    (true, false) => "Stop checking this folder; the books already here stay",
-                    (false, _) => {
-                        "Check this folder for new books when the app opens or you come back to it"
-                    }
-                }
-                .to_string();
-                view! {
-                    <MenuItem
-                        icon=icon
-                        label=label
-                        sublabel=sublabel
-                        title=title
-                        on_click=move || {
-                            close.run(());
-                            set_shelf_watch(state, &watch_id, !on);
-                        }
-                    />
-                }
-            })}
-            <MenuItem
-                icon=IconName::Plus
-                label="New shelf"
-                on_click=move || {
-                    close.run(());
-                    create_shelf_and_enter(state, Some(&inside_id));
-                }
-            />
-            <Separator spacing="my-1" />
-            <MenuItem
-                icon=IconName::Close
-                label="Take shelf apart"
-                tone=MenuItemTone::Danger
-                on_click=move || {
-                    close.run(());
-                    delete_shelf(state, &remove_id);
-                }
-            />
-        </>
+                    set_shelf_watch(state, &watch_id, !on);
+                }),
+            )
+            .sublabel(sublabel)
+            .title(title),
+        );
     }
+    let inside_id = id.clone();
+    items.push(MenuItemSpec::new(
+        IconName::Plus,
+        "New shelf",
+        Callback::new(move |_| {
+            close.run(());
+            create_shelf_and_enter(state, Some(&inside_id));
+        }),
+    ));
+    items.push(
+        MenuItemSpec::new(
+            IconName::Close,
+            "Take shelf apart",
+            Callback::new(move |_| {
+                close.run(());
+                delete_shelf(state, &id);
+            }),
+        )
+        .danger()
+        .ruled(),
+    );
+
+    view! { <EntryMenu items=items /> }
 }
 
 /// The set's menu, from a right-click on any card already in it.
@@ -476,62 +636,63 @@ fn FolderMenu(
 fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>) -> impl IntoView {
     let count = state.library.selected.with_untracked(|set| set.len());
     let heading = format!("{count} selected");
-    let remove_label = format!("Remove ({count})");
-    let duplicate_label = format!("Duplicate ({count})");
+    let mut items = Vec::with_capacity(4);
+    items.push(MenuItemSpec::new(
+        IconName::Plus,
+        "New shelf from these",
+        Callback::new(move |_| {
+            close.run(());
+            file_selection_on_new_shelf(state);
+        }),
+    ));
+    // One act per selected thing, and each is the single duplicate's own — a
+    // copy beside the original, in the counter name the level gives it. The set
+    // holds both kinds of thing a right-click lands on, so a shelf in it
+    // duplicates as a shelf (its own copy, its own subtree) and a book as a
+    // book; things that cannot be copied (a book whose file died) are skipped
+    // by the service, which is where that fact lives.
+    items.push(MenuItemSpec::new(
+        IconName::Copy,
+        format!("Duplicate ({count})"),
+        Callback::new(move |_| {
+            close.run(());
+            let ids: Vec<String> = state
+                .library
+                .selected
+                .with_untracked(|set| set.iter().cloned().collect());
+            duplicate_rows(state, &ids);
+        }),
+    ));
+    items.push(
+        MenuItemSpec::new(
+            IconName::Close,
+            format!("Remove ({count})"),
+            Callback::new(move |_| {
+                close.run(());
+                ask_remove_selection(state, &remove_sheet);
+            }),
+        )
+        .danger()
+        .ruled(),
+    );
+    items.push(MenuItemSpec::new(
+        IconName::Undo,
+        "Clear selection",
+        Callback::new(move |_| {
+            close.run(());
+            exit_selection(state);
+        }),
+    ));
 
-    view! {
-        <>
-            <SectionLabel text=heading />
-            <MenuItem
-                icon=IconName::Plus
-                label="New shelf from these"
-                on_click=move || {
-                    close.run(());
-                    file_selection_on_new_shelf(state);
-                }
-            />
-            <MenuItem
-                icon=IconName::Copy
-                label=duplicate_label
-                // One act per selected thing, and each is the single duplicate's
-                // own — a copy beside the original, in the counter name the level
-                // gives it. The set holds both kinds of thing a right-click lands
-                // on, so a shelf in it duplicates as a shelf (its own copy, its
-                // own subtree) and a book as a book; things that cannot be copied
-                // (a book whose file died) are skipped by the service, which is
-                // where that fact lives.
-                on_click=move || {
-                    close.run(());
-                    let ids: Vec<String> = state
-                        .library
-                        .selected
-                        .with_untracked(|set| set.iter().cloned().collect());
-                    duplicate_rows(state, &ids);
-                }
-            />
-            <Separator spacing="my-1" />
-            <MenuItem
-                icon=IconName::Close
-                label=remove_label
-                tone=MenuItemTone::Danger
-                on_click=move || {
-                    close.run(());
-                    ask_remove_selection(state, &remove_sheet);
-                }
-            />
-            <MenuItem
-                icon=IconName::Undo
-                label="Clear selection"
-                on_click=move || {
-                    close.run(());
-                    exit_selection(state);
-                }
-            />
-        </>
-    }
+    view! { <EntryMenu heading=heading items=items /> }
 }
 
 /// The level's menu, from a right-click on empty shelf.
+///
+/// The two facts its second row is about — whether the level holds anything,
+/// and whether a selection is running — are read when the menu is built: a menu
+/// is asked for and drawn in the same breath, so nothing can change between the
+/// right-click and the row it lands on.
 #[component]
 fn LevelMenu(
     state: AppState,
@@ -539,52 +700,40 @@ fn LevelMenu(
     folders: FolderOrder,
     close: Callback<()>,
 ) -> impl IntoView {
+    let mut items = Vec::with_capacity(2);
+    items.push(MenuItemSpec::new(
+        IconName::Plus,
+        "New shelf",
+        Callback::new(move |_| {
+            close.run(());
+            create_shelf_and_enter(state, None);
+        }),
+    ));
     // A row that silently does nothing is worse than no row, so "Select all" is
     // only here while there is something on the level to select.
-    let anything = Signal::derive(move || {
-        !order.0.with(|books| books.is_empty()) || !folders.0.with(|each| each.is_empty())
-    });
-    let selecting = state.library.selecting;
-
-    view! {
-        <>
-            <MenuItem
-                icon=IconName::Plus
-                label="New shelf"
-                on_click=move || {
+    let anything = !order.0.with_untracked(|books| books.is_empty())
+        || !folders.0.with_untracked(|each| each.is_empty());
+    if anything {
+        if state.library.selecting.with_untracked(|on| *on) {
+            items.push(MenuItemSpec::new(
+                IconName::Undo,
+                "Clear selection",
+                Callback::new(move |_| {
                     close.run(());
-                    create_shelf_and_enter(state, None);
-                }
-            />
-            {move || {
-                if !anything.get() {
-                    return ().into_any();
-                }
-                if selecting.get() {
-                    return view! {
-                        <MenuItem
-                            icon=IconName::Undo
-                            label="Clear selection"
-                            on_click=move || {
-                                close.run(());
-                                exit_selection(state);
-                            }
-                        />
-                    }
-                        .into_any();
-                }
-                view! {
-                    <MenuItem
-                        icon=IconName::Check
-                        label="Select all"
-                        on_click=move || {
-                            close.run(());
-                            select_on_screen(state, order, folders);
-                        }
-                    />
-                }
-                    .into_any()
-            }}
-        </>
+                    exit_selection(state);
+                }),
+            ));
+        } else {
+            items.push(MenuItemSpec::new(
+                IconName::Check,
+                "Select all",
+                Callback::new(move |_| {
+                    close.run(());
+                    select_on_screen(state, order, folders);
+                }),
+            ));
+        }
     }
+
+    view! { <EntryMenu items=items /> }
 }

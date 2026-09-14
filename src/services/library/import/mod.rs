@@ -92,7 +92,7 @@ pub use replace::replace_rows_of_tree;
 pub use restore::restore_deleted_book;
 pub use tasks::dismiss_task;
 pub use verify::{
-    rescan_watched, set_shelf_watch, shelf_watch, verify_library, verify_one, ShelfWatch,
+    rescan_watched, set_shelf_watch, shelf_watch, verify_library, verify_one,
 };
 
 pub(crate) use copies::{copies_beside_tree, copies_over_standing_tree, CopiesDest};
