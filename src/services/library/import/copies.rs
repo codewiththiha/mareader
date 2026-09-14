@@ -1,33 +1,9 @@
-//! The copies run that touches no ledger: a copies import of ground a
-//! read-at-place tree still reads.
+//! The copies run that touches no ledger: a copies import of ground a read-at-place tree
+//! still reads.
 //!
-//! Every other folder run walks on a [`library_core::folder::WatchedFolder`] —
-//! the run resolves the folder's row, diffs against its ledger, mints its
-//! shelves through its map and writes the row back. That is the right shape
-//! for a tree the library READS, and the wrong one for a copies import of the
-//! very ground such a tree stands on: one directory is one ledger row, so a
-//! copies run over a standing tree's root would resolve to THAT row, flip its
-//! mode to copies, clear the map its seats hang on and write it back — the
-//! linked tree the reader asked to KEEP would stop being read, stop watching
-//! and lose every seat, as a side effect of an answer that promised a second
-//! shelf beside it.
-//!
-//! So this run is unbound. It walks the directory, asks the ledger's own pure
-//! table what an unbound copies run owes (`library_core::ledger::unbound_copies`
-//! — every file but the copy the library already made, one book per
-//! fingerprint), copies those files into the store, and files the copies onto
-//! shelves of the READER's own: `ShelfKind::Virtual`, minted fresh, bound to
-//! no folder row — the departure's copies' own rule, because a copy of a tree
-//! is bound to nothing: no rescan, no import and no watch ever answers through
-//! it. The standing tree's ledger, mode, map and watch are not read for a
-//! decision and not written at all.
-//!
-//! The two doors are the shelf sheet's stored answers over a standing tree:
-//! *as new*, which mints the counter-named shelf beside the tree, and
-//! *replace* of a shelf the tree does not own, whose copies file into the
-//! shelf the sweep just emptied. A copies import of ground NO tree reads keeps
-//! the ordinary bound run: there the fresh ledger row is the copies folder's
-//! own and nothing is hijacked.
+//! Every other folder run walks on a [`library_core::folder::WatchedFolder`] — it resolves
+//! the folder's row, diffs against its ledger and writes the row back. That is the right
+//! shape for a tree the library READS, and the wrong one for a copies import.
 
 use std::collections::BTreeMap;
 
@@ -54,28 +30,20 @@ use crate::state::library::ImportTask;
 use crate::state::AppState;
 use crate::time::now_ms;
 
-/// Where an unbound copies run files its books.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CopiesDest {
-    /// A fresh shelf of the reader's own at the root level, under the counter
-    /// name the sheet promised, spliced right behind the shelf whose name the
-    /// arrival collided with — the duplicate's own placement rule, because a
-    /// copy appended to the end of the level is a shelf the reader has to go
-    /// and find. Its subfolder shelves hang inside it.
+    /// Spliced right behind the shelf whose name the arrival collided with — the duplicate's
+    /// own placement rule, because a copy appended to the end of the level is a shelf the reader
+    /// has to go and find.
     NewShelf {
         name: String,
         after: Option<String>,
     },
-    /// A shelf that already stands — the *replace*'s target, whose books the
-    /// sweep has just taken out. The copies file into it, and its subfolder
-    /// shelves hang inside it.
+    /// The *replace*'s target, whose books the sweep has just taken out.
     Into { shelf_id: String },
 }
 
-/// Whether a copies run over `root` would resolve onto a standing read-at-place
-/// tree's ledger: the mode is copies and a folder the library READS owns the
-/// very same ground. The one shape this module exists for — every other copies
-/// run keeps the ordinary bound walk.
+/// The one shape this module exists for — every other copies run keeps the ordinary bound walk.
 pub(crate) fn copies_over_standing_tree(state: AppState, root: &str, opts: &FolderOpts) -> bool {
     opts.mode().copies_files()
         && state.library.folders.with_untracked(|folders| {
@@ -83,11 +51,7 @@ pub(crate) fn copies_over_standing_tree(state: AppState, root: &str, opts: &Fold
         })
 }
 
-/// Put the unbound run in motion — [`crate::services::library::import::proceed_folder`]'s
-/// own shape, minus the ledger: the card goes up on the click that asked, the
-/// walk starts now unless a rescan is walking this very root, in which case it
-/// starts on that rescan's release, and a second ask the reader made gets the
-/// one refusal sentence.
+/// [`crate::services::library::import::proceed_folder`]'s own shape, minus the ledger.
 pub(crate) fn copies_beside_tree(
     state: AppState,
     root: String,
@@ -106,10 +70,6 @@ pub(crate) fn copies_beside_tree(
     push_task(state, ImportTask::new(task, folder_label(&root)));
 }
 
-/// Claim the root and start the walk. The claim is the bound run's own: two
-/// walks of one directory — this one and a rescan of the tree that reads it —
-/// are two answers about the same files, and the copies run waiting its turn
-/// is the ask-outranks-a-rescan rule with the ledger half taken out.
 fn start_copies_run(
     state: AppState,
     root: String,
@@ -127,8 +87,6 @@ fn start_copies_run(
     });
 }
 
-/// The walk itself: scan, decide against the library rather than a ledger,
-/// copy, and file the copies onto the reader's own shelves.
 async fn run_copies(
     state: AppState,
     task: String,
@@ -142,24 +100,16 @@ async fn run_copies(
     };
     let mut books = state.library.books.get_untracked();
     let registry = ledger::registry_of(&books);
-    // What the run owes, off the ledger's own pure table: every file but the
-    // copy the library already made, one book per fingerprint. The copy list
-    // is asked again for the heal's skip set — a file the library reads in
-    // place is owed a COPY, so the row at its address is the one file the
-    // heal must not fold it into.
+    // Off the ledger's own pure table: every file but the copy the library already made, one
+    // book per fingerprint. The copy list is asked again for the heal's skip set, because a file
+    // the library reads in place is owed a COPY.
     let copy_paths = ledger::copy_over_paths(&found, &registry, &books);
     let mut adds = ledger::unbound_copies(&found, &registry, &books);
-    // A row migrated from the old schema carries a placeholder identity, so
-    // the table saw its file as unknown: the walk has just measured it, and a
-    // file at an address the library holds IS that book. The same heal the
-    // bound run runs, on the same rule.
     let healed = heal_by_address(&mut books, &mut adds, &copy_paths);
     if !healed.is_empty() {
         state.library.books.set(books);
     }
     if adds.is_empty() && healed.is_empty() {
-        // The card still owes its answer: an import that found every file
-        // already copied says so rather than leaving the dock guessing.
         return finish_task(state, &task, 0, 0);
     }
 
@@ -174,19 +124,12 @@ async fn run_copies(
         Ok(copies) => copies,
         Err(message) => return fail(state, &task, message, FailMode::Toast),
     };
-    // The copies' own measurements, in one pass, before a row is promised: a
-    // copy of a file a tree still reads must not wear the ORIGINAL's
-    // fingerprint — that identity stays the linked book's, and the copy is
-    // known by its own bytes.
     let stores: Vec<String> = pending
         .iter()
         .filter_map(|(book_id, _)| copies.get(book_id).cloned())
         .collect();
     let measured = measure_stores(stores).await;
 
-    // The destination shelf is minted on the first landing rather than at the
-    // start: a run whose every copy failed leaves no empty counter-named shelf
-    // behind to explain.
     let mut root_shelf: Option<String> = None;
     let mut rungs: BTreeMap<String, String> = BTreeMap::new();
     let mut landed = 0u32;
@@ -200,11 +143,7 @@ async fn run_copies(
         } else {
             on_shelf.clone()
         };
-        // The row is minted with no title of its own: the shelf shows the
-        // source's stem (`Book::title`'s fallback for a copy), which is the
-        // name the reader knows the file by. `mint_stored_row` marks it
-        // independent over the linked twin it copies, so its highlights and
-        // its place in the book are its own.
+        // The shelf shows the source's stem, which is the name the reader knows the file by.
         mint_stored_row(state, book_id.clone(), file, store.clone(), None, &shelf_id, None);
         adopt_copy_measurement(state, &book_id, measured.get(store).copied());
         landed += 1;
@@ -213,8 +152,6 @@ async fn run_copies(
     if landed > 0 {
         covers::backfill_missing(state);
     }
-    // A folder import lights the folder: the shelf the copies landed on, lit
-    // on the level that holds it, the bound run's own ending.
     match (&dest, &root_shelf) {
         (CopiesDest::Into { shelf_id }, _) => reveal::reveal_shelf(state, shelf_id),
         (_, Some(minted)) => reveal::reveal_shelf(state, minted),
@@ -223,9 +160,7 @@ async fn run_copies(
     finish_task(state, &task, landed + healed.len() as u32, 0);
 }
 
-/// The shelf the run files into: the *replace*'s standing target, or the
-/// counter-named shelf of the reader's own the *as new* promised — virtual,
-/// at the root level, right behind the shelf whose name the arrival wore.
+/// The *replace*'s standing target, or the counter-named shelf of the reader's own the *as new* promised.
 fn dest_shelf(state: AppState, dest: &CopiesDest, now: u64) -> String {
     match dest {
         CopiesDest::Into { shelf_id } => shelf_id.clone(),
@@ -256,11 +191,7 @@ fn dest_shelf(state: AppState, dest: &CopiesDest, now: u64) -> String {
     }
 }
 
-/// The shelf a found file's subfolder files onto, minting every rung between
-/// the destination and the file's own subfolder — the bound run's chain rule,
-/// on a local map instead of a ledger's: virtual shelves, hung parent to
-/// child, in the order the walk found them. A folder that does not group has
-/// no rungs and never asks.
+/// The bound run's chain rule, on a local map instead of a ledger's. A folder that does not group has no rungs.
 fn rung_shelf(
     state: AppState,
     root: &str,

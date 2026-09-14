@@ -1,25 +1,17 @@
-//! The two cheap measurements a [`Fingerprint`](crate::book::Fingerprint) is
-//! built from.
+//! The two cheap measurements a [`Fingerprint`](crate::book::Fingerprint) is built from.
 //!
-//! Both live here rather than in the shell crate that calls them so the
-//! library and the walk that feeds it cannot drift: a fingerprint computed one
-//! way on import and another on rescan is a library that duplicates every book
-//! it already has, and no test in the shell crate would have caught it.
+//! Here rather than in the shell crate that calls them so the library and the
+//! walk that feeds it cannot drift.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// How many leading bytes of a file the fingerprint reads. 8 KiB is past a
-/// PDF's header and into its first objects, past a reflowable document's front
-/// matter, and small enough that scanning a two-thousand-file folder costs one
-/// partial read per file rather than the folder's whole size.
+/// Past a PDF's header and into its first objects, and small enough that scanning a two-thousand-file folder costs one partial read per file.
 pub const HEAD_BYTES: usize = 8 * 1024;
 
-/// FNV-1a over the leading bytes, 32-bit. Not a cryptographic hash and not
-/// meant to be one: its job is to separate two files that happen to share a
-/// length and a modification stamp, and a 1-in-4-billion collision on a shelf
-/// of a few thousand books is a rounding error next to the mtime it rides
-/// with. Chosen over pulling in a hash crate because it is eleven lines,
-/// allocation-free and identical on every host.
+/// FNV-1a over the leading bytes, 32-bit. Not cryptographic: its job is to
+/// separate two files that happen to share a length and a modification stamp.
+/// Chosen over a hash crate because it is eleven lines, allocation-free and
+/// identical on every host.
 pub fn head_hash(head: &[u8]) -> u32 {
     let mut hash: u32 = 0x811c_9dc5;
     for byte in head.iter().take(HEAD_BYTES) {
@@ -31,10 +23,8 @@ pub fn head_hash(head: &[u8]) -> u32 {
 
 /// A file's modification time in milliseconds since the Unix epoch.
 ///
-/// A stamp the clock cannot express (a filesystem that stores pre-epoch times,
-/// or one that reports no mtime at all) lands on `0` rather than wrapping: two
-/// such files still differ by size and head hash, and a wrapped stamp would
-/// sort a 1904 file after a 2024 one in every comparison that reads it.
+/// A stamp the clock cannot express lands on `0` rather than wrapping, which
+/// would sort a 1904 file after a 2024 one.
 pub fn mtime_ms(modified: Option<SystemTime>) -> u64 {
     modified
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
@@ -48,7 +38,6 @@ mod tests {
 
     #[test]
     fn the_hash_is_the_reference_fnv1a_vector() {
-        // The published FNV-1a 32-bit test vectors: empty, then "a", "foobar".
         assert_eq!(head_hash(b""), 0x811c_9dc5);
         assert_eq!(head_hash(b"a"), 0xe40c_292c);
         assert_eq!(head_hash(b"foobar"), 0xbf9c_f968);
@@ -65,9 +54,6 @@ mod tests {
 
     #[test]
     fn only_the_head_is_read() {
-        // A file that differs past the window is the SAME file as far as the
-        // fingerprint is concerned — the point of the budget, and the reason a
-        // rescan never has to read a whole library.
         let mut long = vec![0u8; HEAD_BYTES + 64];
         let head_only = long[..HEAD_BYTES].to_vec();
         for slot in &mut long[HEAD_BYTES..] {

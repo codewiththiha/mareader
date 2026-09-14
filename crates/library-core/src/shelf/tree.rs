@@ -5,12 +5,9 @@
 
 use super::{find, Shelf, ShelfKind};
 
-/// The shelves filed directly inside `parent_id`, in the order the library
-/// stores them. `None` asks for the root level, which is what the page shows
-/// while it is drilled out of every shelf.
-///
-/// Direct children only: a level is a page, and a view that flattened the whole
-/// subtree would be showing the reader shelves they have not opened.
+/// The shelves filed directly inside `parent_id`; `None` asks for the root level.
+/// Direct children only: a level is a page, and flattening the subtree would show
+/// shelves the reader has not opened.
 pub fn children_of<'a>(shelves: &'a [Shelf], parent_id: Option<&str>) -> Vec<&'a Shelf> {
     shelves
         .iter()
@@ -18,13 +15,9 @@ pub fn children_of<'a>(shelves: &'a [Shelf], parent_id: Option<&str>) -> Vec<&'a
         .collect()
 }
 
-/// The chain above `id`, root first and excluding `id` itself — what a
-/// breadcrumb walks to draw the way back out.
-///
-/// The walk stops on a shelf it has already seen. [`sanitize`] makes a cycle
-/// unreachable in a loaded blob, but this answers a signal that can be read
-/// between two writes, and a breadcrumb that looped would hang the render
-/// rather than show one crumb too many.
+/// The chain above `id`, root first and excluding `id` — what a breadcrumb walks.
+/// The walk stops on a shelf it has already seen: a breadcrumb that looped would
+/// hang the render rather than show one crumb too many.
 pub fn ancestors<'a>(shelves: &'a [Shelf], id: &str) -> Vec<&'a Shelf> {
     let mut chain: Vec<&'a Shelf> = Vec::new();
     let mut next = find(shelves, id).and_then(|s| s.parent.as_deref());
@@ -42,20 +35,16 @@ pub fn ancestors<'a>(shelves: &'a [Shelf], id: &str) -> Vec<&'a Shelf> {
     chain
 }
 
-/// Whether `folder_id` may be filed inside `target_id`.
-///
-/// Two refusals, and both are about the same failure: a shelf inside itself is
-/// not a shelf the reader can reach. `folder_id == target_id` is the drop on
-/// itself; the walk up from the target is the drop into one of its own
-/// descendants, which is the same cycle one level down.
+/// Whether `folder_id` may be filed inside `target_id`. Both refusals are about
+/// the same failure, a shelf inside itself: the drop on itself, and the drop into
+/// one of its own descendants.
 pub fn can_nest(shelves: &[Shelf], folder_id: &str, target_id: &str) -> bool {
     if folder_id == target_id {
         return false;
     }
     let mut current = Some(target_id.to_string());
-    // Bounded by the list rather than by the walk finding its own tail: a blob
-    // that already carries a cycle would otherwise spin here forever, and the
-    // honest answer about a broken graph is "no".
+    // Bounded by the list rather than by the walk finding its own tail: a blob that
+    // already carries a cycle would otherwise spin here forever.
     for _ in 0..=shelves.len() {
         let Some(id) = current else {
             return true;
@@ -71,43 +60,24 @@ pub fn can_nest(shelves: &[Shelf], folder_id: &str, target_id: &str) -> bool {
     false
 }
 
-/// File `folder_id` inside `parent`, or at the root when `parent` is `None`.
-/// True when the shelf was found and the graph allows the move.
+/// File `folder_id` inside `parent`, or at the root when `parent` is `None`. True
+/// when the shelf was found and the graph allows the move; a refused drop leaves
+/// the list exactly as it was, so the caller can answer it by doing nothing.
 ///
-/// Refuses the move [`can_nest`] refuses, and leaves the list exactly as it
-/// was: a drop that would close a cycle is a drop that never happened, which
-/// is what lets the caller answer a refusal by doing nothing at all.
-///
-/// Every shelf may be moved, including one cut from a watched tree — and for
-/// a folder shelf the mark is an honest COMPARISON rather than a blanket:
-/// [`Shelf::manual_parent`] records that the shelf hangs off the seat its
-/// folder's own shelves name for it (`folder_seat`). A hand that takes a
-/// rung off its seat marks it, and the next re-hang passes it by; a hand that
-/// puts one BACK on its seat clears the mark, and the disk owns the place
-/// again; a re-order on the seat the shelf already hangs on writes the same
-/// answer it had. The mark is written HERE, in the one function every
-/// hand-move rides (a drag's nest, a bulk filing, a sibling reorder), rather
-/// than at call sites that would each have to remember it.
-///
-/// The read-at-place rung a hand drags off its seat does not arrive here at
-/// all: it departs as a copy first ([`departs_on_move`]), and what rides this
-/// function afterwards is the virtual shelf the copy became.
+/// A watched shelf keeps every fact it has except its place, and the mark written
+/// here is what stops the next re-hang from undoing a hand the disk disagrees
+/// with.
 pub fn reparent(shelves: &mut [Shelf], folder_id: &str, parent: Option<&str>) -> bool {
     if let Some(target) = parent
         && !can_nest(shelves, folder_id, target)
     {
         return false;
     }
-    // The seat is read before the write borrow: which place the disk names is
-    // a fact about the list as it stands, not about the shelf mid-move.
+    // The seat is read before the write borrow: which place the disk names is a fact about the list as it stands.
     let seat = folder_seat(shelves, folder_id);
     let Some(shelf) = shelves.iter_mut().find(|s| s.id == folder_id) else {
         return false;
     };
-    // A watched shelf keeps every fact it has except its place: the `rel`
-    // that routes its folder's new files into it travels with the move, and
-    // the mark below is what stops the next re-hang from undoing a hand the
-    // disk disagrees with — and nothing else.
     if let Some(seat) = seat {
         shelf.manual_parent = seat.as_deref() != parent;
     }
@@ -115,9 +85,9 @@ pub fn reparent(shelves: &mut [Shelf], folder_id: &str, parent: Option<&str>) ->
     true
 }
 
-/// The folder's rungs: every shelf of one folder, from the `rel` key to the
-/// shelf id wearing it. One map for the seat question and the re-hang,
-/// because both ask which shelf a rung key names and the two cannot drift.
+/// The folder's rungs: every shelf of one folder, from the `rel` key to the shelf
+/// id wearing it — one map for the seat question and the re-hang, so the two
+/// cannot drift.
 fn rungs_of<'a>(
     shelves: &'a [Shelf],
     folder_id: &str,
@@ -134,15 +104,9 @@ fn rungs_of<'a>(
         .collect()
 }
 
-/// The parent the folder's own SHELVES name for a folder shelf: the rung
-/// above its `rel`, or the library's root for a top-level rung. `None` for a
-/// shelf that is no folder's rung — a virtual shelf is the reader's wherever
-/// it hangs, and there is no disk answer to compare against.
-///
-/// The seat the re-hang wants and the mark [`reparent`] writes are one
-/// arithmetic: a rung whose parent rung is not standing — removed, or never
-/// minted yet — seats at the root, which is the honest answer for a broken
-/// tree and the same one [`rehang_moves`] gives.
+/// The parent the folder's own SHELVES name for a folder shelf: the rung above
+/// its `rel`, or the library's root for a top-level rung. `None` for a shelf that
+/// is no folder's rung, where there is no disk answer to compare against.
 fn folder_seat(shelves: &[Shelf], shelf_id: &str) -> Option<Option<String>> {
     let shelf = find(shelves, shelf_id)?;
     let ShelfKind::Folder { folder_id, rel } = &shelf.kind else {
@@ -159,16 +123,10 @@ fn folder_seat(shelves: &[Shelf], shelf_id: &str) -> Option<Option<String>> {
 
 
 /// Every shelf below any of `roots`, at any depth, in no particular order,
-/// without repeats and without the roots themselves.
-///
-/// Walked with an explicit stack and a seen-set rather than recursively, for
-/// two reasons. The forest is finite because [`sanitize`] cuts cycles out of a
-/// loaded blob — but this reads a list that can be caught between two writes,
-/// and a recursion over a graph with a loop in it is a stack that never
-/// unwinds. A shelf inside itself is also a shelf that would otherwise be
-/// counted twice, and two roots can share a descendant, which one question
-/// asks once — a removal's cascade and a departure's ride both count what
-/// actually goes.
+/// without repeats and without the roots themselves. Walked with an explicit stack
+/// and a seen-set rather than recursively: this reads a list that can be caught
+/// between two writes, and a recursion over a graph with a loop in it is a stack
+/// overflow.
 pub fn subtree_ids(shelves: &[Shelf], roots: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut stack: Vec<String> = roots.to_vec();
@@ -186,10 +144,8 @@ pub fn subtree_ids(shelves: &[Shelf], roots: &[String]) -> Vec<String> {
     out
 }
 
-/// Move a shelf's children up to the level it was on. What taking a shelf apart
-/// owes the shelves inside it: a child left pointing at a parent that is gone
-/// renders on no level at all, and the reader who removed one folder did not ask
-/// to lose the ones filed in it.
+/// Move a shelf's children up to the level it was on: a child left pointing at a
+/// parent that is gone renders on no level at all.
 pub fn lift_children(shelves: &mut [Shelf], folder_id: &str) {
     let inherited = shelves
         .iter()
@@ -203,29 +159,12 @@ pub fn lift_children(shelves: &mut [Shelf], folder_id: &str) {
 }
 
 /// The moves a watched folder's rescan owes its own shelves: every shelf the
-/// folder owns that is not hand-moved, when the rung its `rel` names resolves
-/// to a different parent than the one it hangs on.
-///
-/// The tree on disk is the tree on the shelf, for the shelves this folder
-/// owns: a folder card cut from a watched tree is a VIEW of that tree, so its
-/// rung is the one its `rel` names — including for shelves an older, flatter
-/// build minted as siblings, which this pass re-hangs under the rung they were
-/// always cut from. Virtual shelves are the reader's own arrangement and are
-/// never touched here, and neither is a shelf of another folder — nor a shelf
-/// the reader moved BY HAND, which [`reparent`] marked [`Shelf::manual_parent`]:
-/// the hand beats the disk, and this pass is the disk's. A moved shelf still
-/// serves as its subfolders' rung in the answer below, so the subtree the
-/// reader carried off re-hangs together, wherever it now hangs.
-///
-/// Answers the moves rather than writing them, so the caller holds one list of
-/// `(shelf id, wanted parent)` it can apply in one pass — and so the rule is a
-/// pure function a test can hold to account. A shelf is never its own parent,
-/// whatever a stale `shelf_map` claims: a self-edge the walk resolved through
-/// is filtered here rather than trusted to the sanitizer to catch later.
+/// folder owns that is not hand-moved, when the rung its `rel` names resolves to
+/// a different parent than the one it hangs on. A folder card cut from a watched
+/// tree is a VIEW of that tree, so the disk's shape wins for the shelves the
+/// folder owns.
 pub fn rehang_moves(shelves: &[Shelf], folder_id: &str) -> Vec<(String, Option<String>)> {
-    // The folder's rungs: its own `rel` to the shelf that carries it — the
-    // one map the seat question reads too, so the re-hang and the hand's
-    // mark cannot disagree about which shelf a rung names.
+    // The folder's rungs: the one map the seat question reads too, so the re-hang and the hand's mark cannot disagree.
     let rungs = rungs_of(shelves, folder_id);
     let mut moved = Vec::new();
     for shelf in shelves.iter() {
@@ -246,7 +185,6 @@ pub fn rehang_moves(shelves: &[Shelf], folder_id: &str) -> Vec<(String, Option<S
         let key = rel.clone().unwrap_or_default();
         let want = crate::folder::parent_key(&key)
             .and_then(|rung| rungs.get(rung).copied())
-            // A shelf is never its own parent, whatever a stale map claims.
             .filter(|w| *w != shelf.id.as_str())
             .map(str::to_string);
         if shelf.parent != want {

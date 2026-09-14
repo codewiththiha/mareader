@@ -1,56 +1,37 @@
 //! The wire contract between the shell's filesystem commands and the frontend
-//! that drives them.
-//!
-//! Both sides depend on this crate, so these types are declared ONCE. That is a
-//! deliberate improvement on the app's other wire (the AI chunk stream, whose
-//! envelope is written twice — `crates/ai-core/src/types.rs` and
-//! `src-tauri/src/ai/schema.rs` — and held together by a contract test): a
-//! shared crate does not need a test to prove the two halves agree, because
-//! there is only one half.
-//!
-//! Field names are the serde schema crossing `invoke` and `emit`, so they are
-//! the storage contract too — `rename_all = "camelCase"` on everything, which
-//! is what the JS side of Tauri's IPC speaks.
+//! that drives them. Both sides depend on this crate, so these types are
+//! declared ONCE rather than mirrored (the AI chunk stream's envelope is written
+//! twice and held together by a contract test).
 
 use serde::{Deserialize, Serialize};
 
-/// Which half of an import a progress beat belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ImportPhase {
-    /// Walking a folder. The total is not known yet, which is what the dock
-    /// reads as "indeterminate".
+    /// Walking a folder. The total is not known yet, which is what the dock reads as "indeterminate".
     Scan,
-    /// Copying admitted files into the app's store.
     Copy,
 }
 
-/// One progress beat, emitted on the shell's `library://progress` channel and
-/// re-broadcast as a window event by `src/services/library/mod.rs`.
+/// One progress beat, emitted on the shell's `library://progress` channel and re-broadcast as a window event by `src/services/library/mod.rs`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportProgress {
-    /// The import run this beat belongs to. Minted by the frontend, echoed
-    /// back, so two runs in flight never have their counts mixed.
+    /// The import run this beat belongs to, so two runs in flight never have their counts mixed.
     pub task: String,
     pub phase: ImportPhase,
     pub done: u32,
-    /// `0` during a scan (the count is not known until the walk ends), the
-    /// request count during a copy.
+    /// `0` during a scan (the count is not known until the walk ends), the request count during a copy.
     pub total: u32,
-    /// The file being worked on — the dock's second line.
     pub name: String,
 }
 
-/// What one address resolved to, from `verify_paths`. One row per path asked
-/// about, in the order asked, so the caller can zip the answer against its own
-/// list without matching on strings.
+/// One row per path asked about, in the order asked, so the caller can zip the answer against its own list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PathCheck {
     pub path: String,
-    /// False for a path that is gone, unreadable, a directory, or refused by
-    /// the shell's document gate. Everything below is zero when it is.
+    /// False for a path that is gone, unreadable, a directory, or refused by the shell's document gate.
     pub exists: bool,
     pub size: u64,
     pub mtime_ms: u64,
@@ -58,9 +39,8 @@ pub struct PathCheck {
 }
 
 impl PathCheck {
-    /// The measurement as a fingerprint, or `None` when the address did not
-    /// resolve — the caller marks that book `missing` rather than re-stamping
-    /// it with zeros, which would collide with every other missing book.
+    /// The measurement as a fingerprint, or `None` when the address did not resolve:
+    /// the caller marks that book `missing` rather than re-stamping it with zeros.
     pub fn fingerprint(&self) -> Option<crate::book::Fingerprint> {
         self.exists.then_some(crate::book::Fingerprint {
             size: self.size,
@@ -70,65 +50,48 @@ impl PathCheck {
     }
 }
 
-/// One file to copy into the app's store, for `store_books`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreRequest {
-    /// The source address. Must pass the shell's document gate.
     pub path: String,
-    /// The book's id, which becomes part of the stored name so two books with
-    /// the same title cannot collide in one directory.
+    /// The book's id, which becomes part of the stored name so two books with the same title cannot collide.
     pub id: String,
 }
 
-/// One stored copy to move into its own item folder, for `relocate_stored`.
-///
-/// The old flat store named a copy after the file it came from
-/// (`<root>/<format>/<stem>_<id>.<ext>`); the layout in [`crate::store`] names it
-/// after the book (`<root>/items/<id>/source.<ext>`). Copies made before that
-/// change keep the address recorded in their row and still open, but nothing
-/// writes that shape any more, so a one-time pass brings them across.
+/// One stored copy to move into its own item folder, for `relocate_stored`. The
+/// old flat store named a copy after the file it came from
+/// (`<root>/<format>/<stem>_<id>.<ext>`); [`crate::store`] names it after the
+/// book (`<root>/items/<id>/source.<ext>`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelocateRequest {
-    /// The address the row currently holds. Must be inside the app's store.
     pub from: String,
-    /// The book's id, which names the item folder the copy moves into.
     pub id: String,
 }
 
 /// What a relocation pass produced: one row per request, plus the store root the
-/// shell moved them inside.
-///
-/// The root rides along because the frontend cannot compute it — `<app_data_dir>`
-/// is the shell's answer — and it needs it to tell a copy that still sits in the
-/// old flat bucket from one already in its item folder. Asking for it is a
-/// second command and a second round trip; the pass that does the moving already
-/// has it in hand.
+/// shell moved them inside. The root rides along because the frontend cannot
+/// compute it — `<app_data_dir>` is the shell's answer — and it needs it to tell
+/// a copy still in the old bucket from one already in its item folder.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelocateResult {
-    /// The app's store root, `<app_data_dir>/Library`, or empty when the shell
-    /// has none — in which case no row moved and nothing is a candidate.
+    /// The app's store root, `<app_data_dir>/Library`, or empty when the shell has none.
     pub root: String,
-    /// One answer per request, in the order asked.
     pub results: Vec<StoreResult>,
 }
 
-/// What one copy produced. A failure is per-file rather than per-batch: a
-/// folder with one locked file in it should still import the other ninety-nine.
+/// A failure is per-file rather than per-batch: a folder with one locked file in it should still import the other ninety-nine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreResult {
     pub id: String,
     pub src: String,
-    /// The stored address, or empty when the copy failed.
     pub store: String,
     pub error: Option<String>,
 }
 
 impl StoreResult {
-    /// True when the copy landed.
     pub fn is_ok(&self) -> bool {
         self.error.is_none() && !self.store.is_empty()
     }
@@ -219,8 +182,6 @@ mod tests {
         assert_eq!(answer.root, "/app/Library");
         assert_eq!(answer.results.len(), 1);
         assert!(answer.results[0].is_ok());
-        // A shell with no app-data directory answers with an empty root and no
-        // row moved, which is what tells the pass to stop rather than retry.
         let none: RelocateResult =
             serde_json::from_str(r#"{"root":"","results":[]}"#).unwrap();
         assert!(none.root.is_empty() && none.results.is_empty());
@@ -241,7 +202,6 @@ mod tests {
             ..ok.clone()
         };
         assert!(!failed.is_ok());
-        // An empty address with no error is still not a copy that landed.
         let empty = StoreResult {
             id: "b1".into(),
             src: "/downloads/a.pdf".into(),

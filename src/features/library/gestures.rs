@@ -1,33 +1,9 @@
-//! The wiring every shelf item shares: one press decided once, and the four
-//! answers around it.
+//! The wiring every shelf item shares: one press decided once, and the four answers around it.
 //!
-//! A book card in the grid, a book row in the list and a folder card are three
-//! surfaces and ONE gesture contract — a tap opens (or toggles inside a
-//! selection), a hold starts that selection with this item in it, a movement
-//! hands the press to the drag session, Enter and Shift+Enter are the keyboard's
-//! halves of the same two, and a right-click asks the shelf's one menu host.
-//! Wired per surface, that contract was three copies of the same hundred lines,
-//! and a copy is where the surfaces drift: a row that forgot the hold's exhaust
-//! check would open a book the reader was selecting.
-//!
-//! So the contract lives here, and a surface hands it the three things that are
-//! actually the surface's: what the item is called (the aria words), whether a
-//! movement may lift it (a shelf the disk places says no), and what "open"
-//! means for it (a book reads, a shelf drills). Everything else — the wrapper
-//! from `crate::components::primitives::interactions::draggable_item`, the
-//! session's begin/release/cancel, the selection's enter/toggle, the menu's
-//! ask — is one definition.
-//!
-//! The hosts are asked for rather than expected: the library page provides both,
-//! and the tree the reader's sidebar will mount provides neither — a shelf with
-//! no session and no menu keeps its tap and stands everything else down:
-//! nothing to lift into, no menu to draw, no hold to start a selection no bar
-//! could act on.
-//!
-//! What is NOT here, deliberately: the drop-target registration and the classes
-//! a surface paints itself with. Those name DOM ids and CSS this module has no
-//! business knowing — a card is the thing on screen, and the session's registry
-//! is written by the card that owns the box.
+//! A book card in the grid, a book row in the list and a folder card are three surfaces and ONE
+//! gesture contract — a tap opens (or toggles inside a selection), a hold starts that selection
+//! with this item in it, a movement hands the press to the drag session, and Enter and
+//! Shift+Enter are the keyboard's two halves of the same.
 
 use std::rc::Rc;
 
@@ -44,59 +20,27 @@ use crate::features::library::selection::{enter_selection, payload_for, toggle_s
 use crate::services::document;
 use crate::state::AppState;
 
-/// The three answers only the surface knows.
 #[derive(Clone)]
 pub(crate) struct ShelfItemPolicy {
-    /// The id of the book or shelf this item draws: the selection member, the
-    /// drag payload and the menu's subject.
     pub id: String,
-    /// The words that name the item in an aria answer — "Dune" for a book,
-    /// "the Sci-fi shelf" for a folder — so the label reads "Open Dune" and
-    /// "Open the Sci-fi shelf" in the two voices the shelves already have.
+    /// So the label reads "Open Dune" and "Open the Sci-fi shelf" in the two voices the shelves already have.
     pub label: Signal<String>,
-    /// Whether a movement may lift this item. The shelf surfaces all say yes
-    /// today — what a movement then DOES is the services' answer, from a
-    /// membership edit to the departure's ask (see
-    /// `crate::services::library::arrange`) — and the knob stays the caller's,
-    /// because "may this be lifted" is a policy and the wiring is not the
-    /// place one is decided.
+    /// The knob stays the caller's, because "may this be lifted" is a policy and the wiring is not the place one is decided.
     pub draggable: Signal<bool>,
-    /// What "open" means for this item, answered when the press was NOT a hold
-    /// and the shelf is NOT selecting: a book reads, a folder drills.
     pub open: Callback<()>,
-    /// The menu a right-click asks for when the item is not inside a selection
-    /// (inside one, the set's menu is the answer, and that rule is the
-    /// helper's). Read at the ask rather than at the mount: a rescan can move
-    /// the facts a menu carries between the two.
+    /// Read at the ask rather than at the mount: a rescan can move the facts a menu carries between the two.
     pub menu_target: Callback<(), MenuTarget>,
-    /// The shelf whose member list renders this item, when the surface knows
-    /// it — the list's nested rows do, a grid card and a flat row do not. The
-    /// drag payload carries it so a move takes its books off the shelf they
-    /// were lifted from rather than off the level the page is on.
     pub container: Option<String>,
 }
 
-/// Everything a shelf item spreads onto its element and paints itself from.
-///
-/// The handlers are `Rc`s rather than one opaque bundle because `view!` wants
-/// each attribute to own what it calls, and a surface clones the ones it hangs
-/// and leaves the rest — the same spread the raw wrapper's handle offered.
 pub(crate) struct ShelfItem {
-    /// "The press is counting" — the tint on the frame the pointer arrives,
-    /// before anything has been decided.
     pub pressing: RwSignal<bool>,
-    /// Whether this item is in the page's selection.
     pub is_selected: Signal<bool>,
     pub on_pointerdown: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
     pub on_pointermove: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
     pub on_pointerup: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
     pub on_pointercancel: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
-    /// The click a completed hold generates: swallowed, because the hold has
-    /// already answered the press and the exhaust is not a second answer.
     pub on_click: Rc<dyn Fn(&leptos::ev::MouseEvent)>,
-    /// The right-click: the hold's synthetic exhaust is swallowed, a card
-    /// inside the selection asks about the SET, and anything else asks the
-    /// policy's target.
     pub on_contextmenu: Rc<dyn Fn(&leptos::ev::MouseEvent)>,
     /// Enter opens (or toggles, inside a selection); Shift+Enter is the
     /// keyboard's hold.

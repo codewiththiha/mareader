@@ -1,39 +1,6 @@
-//! A shelf on the page, drawn as a folder: a 2×2 plate of what is inside it —
-//! covers for its books and a plate of their own for its folders, recursively —
-//! then its name and what it holds.
-//!
-//! It replaces the shelf tile, which spanned the whole grid as a row of spines
-//! on a board. That shape could not nest — a row is a section, and a section
-//! cannot be inside another section — so a shelf inside a shelf had nowhere to
-//! be drawn. A folder is a cell like a book's, which is what makes every level
-//! of the library the same shape as the one above it.
-//!
-//! Called a folder because that is what it looks like; the domain word stays
-//! *shelf*, because *folder* already means a watched directory in
-//! `library_core`, and the two are different facts about the same row (see
-//! [`Shelf::parent`]'s note on `ShelfKind::Folder`).
-//!
-//! Three gestures share the card and the shelf's one wiring decides between
-//! them — `crate::features::library::gestures`, on the
-//! `crate::components::primitives::interactions::draggable_item` wrapper. A tap
-//! opens the shelf, a hold starts a multi-select with this shelf already in it,
-//! and a movement hands the press to `crate::features::library::dnd`, which is
-//! what files a book dropped on it or nests a shelf dropped on it.
-//!
-//! Every card drags, including one cut from a watched folder. What the drag
-//! MEANS is the services' answer rather than the card's: a shelf of a copying
-//! folder, and every shelf the reader owns, is filed where the hand takes it;
-//! a shelf a READ-AT-PLACE folder named is the OS directory itself, and a hand
-//! taking it off the seat its tree names is a departure — the sheet asks, and
-//! what lands where the hand pointed is the library's own copy of the shelf
-//! and of every read-at-place book standing on it
-//! (`crate::services::library::arrange`). The folder on disk is untouched, and
-//! the next import of it mints the original tree back and lights it up.
-//!
-//! A drop this folder refuses — a shelf that would end up inside itself — wears no
-//! ring at all, which is the honest half of the gesture: the decision table says
-//! no before the pointer gets there, so the reader is never offered a drop that
-//! the commit step would then quietly decline.
+//! A shelf on the page, drawn as a folder: a 2×2 plate of what is inside it — covers for its
+//! books and a plate of their own for its folders, recursively — then its name and what it
+//! holds.
 
 use leptos::prelude::*;
 
@@ -48,38 +15,20 @@ use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::SeamVocab;
 use crate::state::AppState;
 
-/// How many cells a plate has, and the most it fills. Two by two: a folder is
-/// recognised by what is inside it, and past four cells the plate is a mosaic
-/// nobody reads — the line under the name is the answer to "how much". Always
-/// four cells whatever the folder holds, so one book is one cover and three
-/// hatched quarters rather than one big rectangle that reads as a book card.
-///
-/// Shared with the fold preview a drag draws
-/// (`crate::features::library::dnd::layer`), because that preview is a promise
-/// about this plate and a promise drawn with a different number of cells is a
-/// promise about a folder the library does not have.
+/// Two by two: a folder is recognised by what is inside it, and past four cells the plate is a
+/// mosaic nobody reads. Always four cells whatever the folder holds, so one book is one cover and
+/// three hatched quarters rather than one big rectangle that reads as a book card.
 pub(crate) const THUMB_CAP: usize = 4;
 
-/// The deepest plate the preview recurses to: the folder's own plate, the plates
-/// of the folders inside it, and the plates of the folders inside those. Deeper
-/// than that a cell is a few pixels across, and draws a folder glyph instead.
 const PLATE_DEPTH: usize = 2;
 
 #[component]
 pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
-    // The prop is the shelf the `For` keyed this row on, and a keyed row is not
-    // re-created when the shelf's CONTENTS change — a book filed into it, a
-    // rename, a shelf nested inside. So everything that can move is read back
-    // out of the state by id, and the prop supplies only the identity plus the
-    // two facts a rescan owns and a reader cannot change from here. The press
-    // contract, the drop registration and the state classes are the shelf's
-    // one item shell (see `crate::features::library::shelf_item`); what is left
-    // here is the folder's own content.
+    // A keyed row is not re-created when the shelf's CONTENTS change, so everything that can move is read back out of the state by id, and the prop supplies only the identity.
     let id = shelf.id.clone();
 
     let name = state.library.shelf_name_signal(&id);
 
-    // Two counts, one line: what the folder holds, and what it holds it in.
     let count_id = id.clone();
     let counts = Signal::derive(move || {
         let books = state
@@ -93,36 +42,18 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         (books, inside)
     });
 
-    // Whether this shelf's rung is still tracked: the breathing dot that says
-    // "this shelf may fill itself". The question is the rung's and not the whole
-    // import's, so a subfolder turned off under a watched tree stops breathing
-    // while the tree above it keeps watching. Reactive, because the answer lives
-    // in two lists a hand can change while this card is on screen.
+    // The question is the rung's and not the whole import's, so a subfolder turned off under a watched tree stops breathing while the tree above it keeps watching.
     let dot_id = id.clone();
     let watched = Signal::derive(move || state.library.shelf_tracked(&dot_id));
 
-    // Where this shelf's books live, when a disk folder answers for it: the
-    // badge beside the dot. `None` for a shelf the reader made themselves and
-    // for the pseudo-shelf, because nothing outside the library answers for
-    // those — there is no second place their books could be, so there is
-    // nothing to say. Reactive for the same reason the dot is: a rescan can
-    // turn a folder around while this card is on screen.
     let mode_id = id.clone();
     let mode = Signal::derive(move || state.library.shelf_mode(&mode_id));
 
-    // The id the plate's check mark reads through: the mark asks the library
-    // for the membership itself, the way the shell's own selected class does.
     let check_id = id.clone();
 
-    // The shelf's one press contract, the same wiring a book wears (see
-    // `crate::features::library::gestures`) with the folder's own answers:
-    // "open" drills the breadcrumb route, and the right-click asks about a
-    // folder. A set being selected is not a reason to refuse a drag: lifting
-    // one of three held folders is the whole of a multi-drag.
+    // The folder's own answers: "open" drills the breadcrumb route, and the right-click asks about a folder. A set being selected is not a reason to refuse a drag.
     let open_id = id.clone();
     let open = Callback::new(move |_| state.library.shelf.set(open_id.clone()));
-    // A folder's lift is a nesting, which writes a parent rather than a
-    // membership: there is no list to lift it off.
     let entry = EntryDescriptor {
         id: id.clone(),
         vocab: SeamVocab::FolderCard,
@@ -145,10 +76,6 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
             <div class="folder-badges">
                 {move || {
                     mode.get().map(|mode| {
-                        // The badge is two words; the sentence it stands for
-                        // goes on the pointer's tooltip, because what a reader
-                        // actually wants to know is whether the folder on disk
-                        // can go.
                         let title = if mode.copies_files() {
                             "Every book here is a copy the library keeps — the folder on disk can go."
                         } else {
@@ -178,13 +105,7 @@ enum PlateItem {
     Book(Book),
 }
 
-/// The first four things inside a shelf, in the order the grid would show them —
-/// folders first, then books — because a plate that disagreed with the page about
-/// what is inside the folder would be a preview of something else.
-///
-/// Books and folders share the four cells rather than each having their own four:
-/// a folder holding two folders and a book is three cells full and one empty,
-/// exactly as the reader will find it.
+/// Folders first, then books — a plate that disagreed with the page about what is inside the folder would be a preview of something else. Books and folders share the four cells rather than each having their own four.
 fn plate_items(state: AppState, shelf_id: &str) -> Vec<PlateItem> {
     let (folders, members): (Vec<String>, Vec<String>) =
         state.library.shelves.with(|shelves| {
@@ -196,8 +117,6 @@ fn plate_items(state: AppState, shelf_id: &str) -> Vec<PlateItem> {
                 find(shelves, shelf_id).map(|s| s.books.clone()).unwrap_or_default(),
             )
         });
-    // The plate is covers, and a link has none: it is a pointer at a book
-    // whose own row is in this list already when the book is inside the folder.
     let books: Vec<Book> = state.library.books.with(|rows| {
         members
             .iter()
@@ -214,19 +133,7 @@ fn plate_items(state: AppState, shelf_id: &str) -> Vec<PlateItem> {
     out
 }
 
-/// One folder's plate: four cells, filled in order, the rest empty.
-///
-/// Recursive on purpose. A cell that holds a folder holds that folder's OWN plate
-/// — a folder of three books previews as three covers and an empty cell, inside
-/// the cell that previews it — because "what is inside this folder" is the same
-/// question at every depth, and a preview that flattened the subtree would show
-/// covers the reader will not find where the preview put them.
-///
-/// The recursion stops at [`PLATE_DEPTH`]: a cell four plates deep is a few pixels
-/// of something, and below that a folder is drawn as a folder rather than as a
-/// smear. The tree is finite — `library_core::shelf::sanitize` sees to that — but
-/// four cells per level is four to the power of the depth, and a preview is not
-/// worth an exponent.
+/// Recursive on purpose: a cell that holds a folder holds that folder's OWN plate, because "what is inside this folder" is the same question at every depth.
 #[component]
 fn Plate(state: AppState, shelf_id: String, depth: usize) -> impl IntoView {
     let items = Signal::derive(move || plate_items(state, &shelf_id));
@@ -238,9 +145,6 @@ fn Plate(state: AppState, shelf_id: String, depth: usize) -> impl IntoView {
                     Some(PlateItem::Folder(id)) => {
                         let id = id.clone();
                         if depth < PLATE_DEPTH {
-                            // The inner grid is the cell's own: a plate is four
-                            // cells and nothing else, so a plate inside a cell
-                            // needs the container that makes four cells a plate.
                             view! {
                                 <span class="folder-thumb-cell">
                                     <span class="folder-thumb-grid">
@@ -274,20 +178,12 @@ fn Plate(state: AppState, shelf_id: String, depth: usize) -> impl IntoView {
     }
 }
 
-/// One cell holding a book: the cached cover when there is one, and the empty
-/// cell's hatch when there is not yet — a cover is rendered away from the reader,
-/// so "nothing cached yet" is a state the plate has to look deliberate in.
 #[component]
 fn CoverCell(state: AppState, book: Book) -> impl IntoView {
     let path = book.path().to_string();
     let empty_path = path.clone();
     let alt = book.title();
-    // A book whose address died wears the card's own grey on the plate too:
-    // the plate is the folder's answer to "what is inside it", and a dead file
-    // inside is a fact the preview should not paint in full colour. Read at
-    // the build rather than tracked here — the plate's items signal re-fires
-    // on every change to the books list, a path check's among them, and the
-    // cell this rebuilds is the cell that knows.
+    // Read at the build rather than tracked here — the plate's items signal re-fires on every change to the books list, and the cell this rebuilds is the cell that knows.
     let missing = book.missing;
     view! {
         <span
@@ -308,9 +204,6 @@ fn CoverCell(state: AppState, book: Book) -> impl IntoView {
                 {
                     Some(cover) => {
                         view! {
-                            // Not natively draggable; see `book_card`. A plate is
-                            // four of these, and any one of them taking the pointer
-                            // would take it away from the folder's own gesture.
                             <img
                                 class="folder-thumb-img"
                                 src=cover.data_url.clone()
@@ -328,16 +221,7 @@ fn CoverCell(state: AppState, book: Book) -> impl IntoView {
     }
 }
 
-/// The line under the name: what the folder holds, and what it holds it in.
-///
-/// Both halves, because "3 books" on a folder with two shelves inside it is an
-/// answer to a question the reader did not ask — those shelves are the rest of
-/// the library down that path, and a count that leaves them out reads as a
-/// folder that is nearly empty.
-///
-/// Shared with the list's tree rows (`crate::features::library::list`), because
-/// a folder that counted itself differently at the two densities would be two
-/// answers to "what is in here".
+/// Both halves: "3 books" on a folder with two shelves inside it would leave out the rest of the library down that path. Shared with the list's tree rows.
 pub(crate) fn summary(counts: (usize, usize)) -> String {
     let (books, inside) = counts;
     let mut parts: Vec<String> = Vec::with_capacity(2);

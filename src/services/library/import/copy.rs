@@ -1,5 +1,4 @@
-//! The store batch: one `store_books` call for a run's whole copy list, the
-//! per-file failure sentence the batch's toast speaks, and the one
+//! The store batch: one `store_books` call for a run's whole copy list, and the one
 //! measurement pass over the copies that landed.
 
 use std::collections::HashMap;
@@ -12,17 +11,9 @@ use crate::services::library::{file_name, toast};
 use crate::services::library as wire;
 use crate::state::AppState;
 
-/// Split one batch of copy results into the addresses that landed, and say
-/// something about the ones that did not.
-///
-/// One spelling for both batches the library copies — a folder walk's and a
-/// loose file drop's — because a per-file failure is the same news either way
-/// and the reader should hear it in the same words. `noun` is the only thing
-/// that differs and it is what the sentence counts: the files on the way in.
-///
-/// A per-file failure is collected rather than fatal, which is the rule both
-/// callers were already keeping: a folder with one locked file in it should
-/// still import the other ninety-nine.
+/// One spelling for both batches the library copies — a folder walk's and a loose file
+/// drop's — because a per-file failure is the same news either way. `noun` is what the
+/// sentence counts.
 fn partition_store_results(
     state: AppState,
     results: Vec<StoreResult>,
@@ -47,7 +38,6 @@ fn partition_store_results(
     landed
 }
 
-/// Copy one batch into the store, answering with the stored address per book id.
 pub(super) async fn copy_batch(
     state: AppState,
     task: &str,
@@ -64,9 +54,7 @@ pub(super) async fn copy_batch(
     Ok(partition_store_results(state, results, "files"))
 }
 
-/// Measure a batch of store copies in one pass: stored address to its
-/// fingerprint. A copy that cannot be measured is simply absent, and the row
-/// it belongs to keeps a pending flag the startup sweep finishes.
+/// A copy that cannot be measured is absent, and its row keeps the pending flag the startup sweep finishes.
 pub(super) async fn measure_stores(stores: Vec<String>) -> HashMap<String, Fingerprint> {
     if stores.is_empty() {
         return HashMap::new();

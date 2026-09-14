@@ -1,12 +1,7 @@
-/* Library bookshelf. A book is a cover in a frame with a line of prose under
-   it, and a folder is a 2×2 plate of the covers inside it with the same line
-   under it — one shape for both, so a level of the library reads the same at
-   every depth. Colours come from the themed tokens so the shelf sits correctly
-   in every base mode and tint. */
-/* The column count is a custom property rather than a class per count: the view
-   menu writes one token (--lib-cols, from
-   `library_core::view::LibraryView::columns_token`) and the grid reads it, so
-   "how many across" is one value in one place and Auto is just its default. */
+/* Library bookshelf. A book is a cover in a frame with a line of prose under it, and a folder is a
+   2×2 plate of the covers inside it with the same line under it — one shape for both, at every
+   depth. Colours come from the themed tokens. */
+/* The column count is a custom property rather than a class per count: the view menu writes one token (--lib-cols, from `library_core::view::LibraryView::columns_token`) and the grid reads it. */
 .lib-grid {
   display: grid;
   grid-template-columns: repeat(var(--lib-cols, auto-fill), minmax(9.5rem, 1fr));
@@ -34,12 +29,9 @@
   box-shadow: 0 0 0 2px var(--color-accent);
 }
 
-/* The frame: one element owns the clip, the radius, the shadow and the lift, so
-   the cover inside it can be whatever ratio its document has and the progress
-   bar can sit flush with the bottom of the ART rather than under the title. The
-   lift is a straight translate on a cubic-bezier rather than the old lean and
-   rotate, because a card that no longer has a painted spine to lean away from
-   reads a rotation as a wobble. */
+/* The frame: one element owns the clip, the radius, the shadow and the lift, so the cover inside
+   can be whatever ratio its document has and the progress bar can sit flush with the bottom of the
+   ART. The lift is a straight translate, not the old lean and rotate. */
 .book-cover-wrap {
   position: relative;
   width: 100%;
@@ -160,12 +152,7 @@
   transition: width 0.3s ease;
 }
 
-/* The two round buttons floating over the cover's corner — the remove, and
-   the relink a missing book grows — wear one chrome: revealed on hover/focus,
-   inside the card rather than outside it now that the frame clips, because a
-   button hanging past the card's edge is one the grid's gap has to make room
-   for. The per-button rules are the position and the hover's ink, and nothing
-   else. */
+/* The remove button, and the relink a missing book grows, wear one chrome: revealed on hover/focus and kept inside the card, because the frame clips. The per-button rules are position and ink only. */
 .book-remove,
 .book-relink {
   position: absolute;
@@ -202,10 +189,7 @@
   color: var(--color-ink);
 }
 
-/* Drag-and-drop feedback overlay — full-screen while a file drag is over
-   the window. Themed entirely through the design tokens, so it follows the
-   active base mode and tint. pointer-events: none so the window-level drop
-   handlers keep receiving the drag. */
+/* Full-screen while a file drag is over the window. pointer-events: none so the window-level drop handlers keep receiving the drag. */
 .drag-overlay {
   position: fixed;
   inset: 0;
@@ -234,7 +218,6 @@
   text-align: center;
 }
 
-/* Soft accent glow behind the card. */
 .drag-dropzone::before {
   content: "";
   position: absolute;
@@ -275,16 +258,10 @@
   to   { opacity: 1; }
 }
 
-/* ---------------------------------------------------------------------------
-   Covers: the two treatments the view menu offers.
-
-   "Fit" is the shelf the app has always had — every cover at its document's own
-   aspect ratio, written inline per book and clamped in
-   `src/features/library/book_card.rs` so a pathological page cannot break the
-   grid. "Crop" is one ratio for all of them, so a shelf of mixed scans and
-   exports reads as a row of identical frames. Only the fill changes here; the
-   box's ratio is the card's inline style, because a class cannot beat one.
-   --------------------------------------------------------------------------- */
+/* Covers: the two treatments the view menu offers. "Fit" is the shelf the app has always had —
+   every cover at its document's own aspect ratio, clamped in `src/features/library/book_card.rs`;
+   "crop" is one ratio for all of them. Only the fill changes here, because the box's ratio is the
+   card's inline style. */
 .book-cover-crop .book-cover-img,
 .book-cover-crop .lib-row-img {
   object-fit: cover;
@@ -298,10 +275,7 @@
   white-space: nowrap;
 }
 
-/* The format chip lives on the row only: at list density a reader is scanning
-   names rather than looking at art, so the kind of thing a row is earns its
-   place there. On a cover it was a third statement of what the fallback art and
-   the file's own name already said, in the one corner the eye lands on. */
+/* The format chip lives on the row only: at list density a reader scans names rather than art, so the kind of thing a row is earns its place there. */
 .lib-row-format {
   flex: 0 0 auto;
   padding: 1px 5px;
@@ -314,10 +288,7 @@
   color: var(--color-muted);
 }
 
-/* ---------------------------------------------------------------------------
-   A book whose address died. The card stays: a missing book is not a removed
-   one, and the reader gets to decide between finding it again and letting it go.
-   --------------------------------------------------------------------------- */
+/* A book whose address died. The card stays: a missing book is not a removed one, and the reader decides between finding it again and letting it go. */
 .book-missing .book-cover-wrap,
 .row-missing .lib-row-cover {
   filter: grayscale(1) opacity(0.62);
@@ -339,9 +310,7 @@
   color: var(--color-muted);
 }
 
-/* Relink: the remove button's twin, one button to its left, wearing the shared
-   chrome above. Two affordances on a missing card and one on a healthy one,
-   which is the whole of the difference between the two states. */
+/* The remove button's twin, one button to its left. Two affordances on a missing card and one on a healthy one, which is the whole of the difference. */
 .book-relink {
   right: 32px;
 }
@@ -350,10 +319,7 @@
   color: var(--color-accent);
 }
 
-/* ---------------------------------------------------------------------------
-   The insertion line a drag draws. On the card rather than on the frame, so it
-   can stand in the gutter to the card's left instead of crossing the art.
-   --------------------------------------------------------------------------- */
+/* On the card rather than on the frame, so it can stand in the gutter to the card's left instead of crossing the art. */
 .book-drop-before {
   position: relative;
 }
@@ -370,19 +336,12 @@
 .row-drop-before {
   box-shadow: inset 0 2px 0 var(--color-accent);
 }
-/* The mirror seam: the bottom half of a list row is "after", and a drop shows
-   the exact edge it will land on — the top rule and this one are the two halves
-   of one row, never both lit, because the band that paints them is the band the
-   commit resolves its index from. */
+/* The mirror seam: the bottom half of a list row is "after". The top rule and this one are the two halves of one row, never both lit, because the band that paints them is the band the commit resolves its index from. */
 .row-drop-after {
   box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
-/* ---------------------------------------------------------------------------
-   The add card: a cover's shape with nothing on it. Same box as a book, dashed
-   instead of painted, and no shadow — an add affordance that casts a book's
-   shadow would read as an empty volume rather than as a door.
-   --------------------------------------------------------------------------- */
+/* The add card: a cover's shape with nothing on it. Same box as a book, dashed instead of painted, and no shadow — an add affordance casting a book's shadow would read as an empty volume. */
 .book-add {
   cursor: default;
 }

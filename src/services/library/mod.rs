@@ -1,43 +1,5 @@
-//! The frontend half of the library's filesystem wire.
-//!
-//! This file is the phone line and nothing else:
-//!
-//!   * [`install_import_bridge`] — ONE Tauri listener for the app's life, which
-//!     re-broadcasts the shell's progress beats as a window
-//!     [`IMPORT_PROGRESS_EVENT`]. Same shape as `services::ai`'s chunk bridge
-//!     and for the same reason: a per-mount listener would stack handlers whose
-//!     closures die with their owner, and the import dock mounts and unmounts
-//!     with the page.
-//!   * the `invoke` wrappers — one per shell command, each turning a typed
-//!     request into the wire types `library_core::wire` declares and parsing the
-//!     answer back. Nothing above this module ever sees a `JsValue`.
-//!   * the two native pickers, filtered to the format registry's own extension
-//!     list.
-//!
-//! ## The verb convention
-//!
-//! A function that splits a batch into the half that may land now and the
-//! half that owes a question is a `screen_*` — [`conflict::screen`], the
-//! shelf-move departure's screen, the import's merge screen. The answer is
-//! always a `(clean, asked)` pair, and the asked half always goes to a sheet
-//! rather than being dropped: a screen that silently discarded its second
-//! half is the vanishing placement the sheets exist to stop.
-//!
-//! The deciding is NOT here. Which files a scan adds, where they land and what
-//! a rescan skips is `library_core`'s ledger; [`import`] runs it against the
-//! shell's answers and writes the result to the library state, [`arrange`]
-//! holds the moves a reader makes by hand (a drag between shelves, a shelf filed
-//! inside another, a removal, a relink), [`duplicate`] is the second instance
-//! of one row a right-click asks for, and [`conflict`] is the one question
-//! both ask before a placement lands: does the level this is going to already
-//! hold a book of this name? The rule itself is `library_core::conflict`'s —
-//! pure, and host-tested — and [`conflict`] is the wiring between it and the
-//! three answers the sheet offers.
-//!
-//! [`import`]: crate::services::library::import
-//! [`arrange`]: crate::services::library::arrange
-//! [`duplicate`]: crate::services::library::duplicate
-//! [`conflict`]: crate::services::library::conflict
+//! The frontend half of the library's filesystem wire: one Tauri listener for the app's life
+//! ([`install_import_bridge`]) and the typed `invoke` wrappers over the shell's commands.
 
 pub mod arrange;
 pub mod conflict;
@@ -60,9 +22,6 @@ pub use import::{
     rescan_watched, restore_deleted_book, set_shelf_watch, shelf_watch, verify_library, verify_one,
 };
 
-/// The last segment of a path, on either separator, with no trailing separator.
-/// Empty only for a path that is nothing but separators — which is why the
-/// callers that turn it into a label have a fallback.
 pub(super) fn file_name(path: &str) -> String {
     path.trim_end_matches(['/', '\\'])
         .rsplit(['/', '\\'])
@@ -71,11 +30,7 @@ pub(super) fn file_name(path: &str) -> String {
         .to_string()
 }
 
-/// What a folder is called wherever the library names one — a dock card, a
-/// menu row's sublabel, the shelf at a watched root: the last segment of its
-/// path, which is the name the reader picked it by. One rule rather than one
-/// spelling per surface, and the fallback is the path itself, because a root
-/// ("/", "C:\\") has no last segment to show.
+/// The fallback is the path itself, because a root ("/", "C:\\") has no last segment to show.
 pub(crate) fn folder_label(root: &str) -> String {
     let name = file_name(root);
     if name.is_empty() {
@@ -118,23 +73,12 @@ use crate::time::now_ms;
 
 pub use crate::events::IMPORT_PROGRESS_EVENT;
 
-/// Put one sentence on the app's single toast slot.
-///
-/// The one spelling of that write for every library surface — the services,
-/// the sheets and the menus — so a failure is delivered the same way wherever
-/// it happened and no screen grows its own private route to the slot.
 pub(crate) fn toast(state: AppState, message: String) {
     state.ui.toast.set(Some(Toast::new(message)));
 }
 
-/// The Tauri channel the shell emits progress on. Mirrors
-/// `PROGRESS_EVENT` in `src-tauri/src/commands/library.rs`; the payload it
-/// carries is [`ImportProgress`], which both sides get from `library_core::wire`
-/// and so cannot drift.
 const PROGRESS_CHANNEL: &str = "library://progress";
 
-/// The shell command names. One table, so a rename on either side is a diff in
-/// one file rather than a string that stops matching.
 const CMD_SCAN: &str = "scan_folder";
 const CMD_VERIFY: &str = "verify_paths";
 const CMD_STORE: &str = "store_books";
@@ -142,19 +86,10 @@ const CMD_DELETE: &str = "delete_stored";
 const CMD_RELOCATE: &str = "relocate_stored";
 const CMD_REVEAL: &str = "reveal_in_folder";
 
-/// What every command here answers when there is no shell to answer: the same
-/// wording the open dialog uses, because from the reader's side it is the same
-/// situation.
 fn desktop_only() -> String {
     "Importing folders is only available in the desktop app.".to_string()
 }
 
-/// One `invoke`, typed at both ends.
-///
-/// `A` is serialized to the argument object the command expects and `T` parsed
-/// back out of its answer, so the wire shape lives in `library_core::wire` and
-/// the reflection lives here — the two things that used to be spread across
-/// every call site.
 async fn call<A: Serialize, T: DeserializeOwned>(cmd: &str, args: &A) -> Result<T, String> {
     if !tauri_bridge::has_tauri() {
         return Err(desktop_only());
@@ -196,8 +131,6 @@ struct PathArgs<'a> {
     path: &'a str,
 }
 
-/// Walk `root` and measure every file `opts` admits. `task` is the caller's id
-/// for the run; it comes back on every progress beat.
 pub async fn scan_folder(
     task: &str,
     root: &str,
@@ -206,13 +139,10 @@ pub async fn scan_folder(
     call(CMD_SCAN, &ScanArgs { task, root, opts }).await
 }
 
-/// Re-measure addresses the library already holds. One row per path, in order.
 pub async fn verify_paths(paths: Vec<String>) -> Result<Vec<PathCheck>, String> {
     call(CMD_VERIFY, &PathsArgs { paths }).await
 }
 
-/// Copy files into the app's store. One result per request, so a single locked
-/// file costs the reader that file and not the batch.
 pub async fn store_books(
     task: &str,
     requests: &[StoreRequest],
@@ -220,13 +150,7 @@ pub async fn store_books(
     call(CMD_STORE, &StoreArgs { task, requests }).await
 }
 
-/// Copy ONE file into the app's store, answering with the stored address.
-///
-/// The single-file form of [`store_books`], for the two places that copy
-/// outside a batch — a restore's re-measured file and a relink's new source —
-/// which used to each hand-roll the request, the result match and the same
-/// two error sentences. A failure is the shell's own per-file answer, already
-/// a sentence; the caller decides where it goes (a dock card, a toast).
+/// A failure is the shell's own per-file answer, already a sentence; the caller decides where it goes.
 pub(crate) async fn copy_one_to_store(task: &str, path: &str, id: &str) -> Result<String, String> {
     let requests = [StoreRequest {
         path: path.to_string(),
@@ -244,15 +168,7 @@ pub(crate) async fn copy_one_to_store(task: &str, path: &str, id: &str) -> Resul
     }
 }
 
-/// Copy ONE file into the store and take the copy's own measurement: the
-/// stored address, and its fingerprint — `None` when the copy could not be
-/// weighed, which leaves the row the pending mark the startup sweep finishes.
-///
-/// The composition a departure, a merge's copy answer and a single-file
-/// landing all ride, spelled once: copy FIRST, then measure the COPY rather
-/// than the source, because a stored row's identity is the copy's fingerprint
-/// and the source file's stays free for the folders that read it — the
-/// departure rule's arithmetic, in the one place it can be got right.
+/// `None` for the fingerprint leaves the row the pending mark the startup sweep finishes.
 pub(crate) async fn copy_and_measure(
     task: &str,
     path: &str,
@@ -267,25 +183,12 @@ pub(crate) async fn copy_and_measure(
     Ok((store, measured))
 }
 
-/// Move stored copies out of the old flat store into their own item folders.
-///
-/// One row per request, plus the store root the shell moved them inside — the
-/// frontend cannot compute that root itself, and it needs it to recognise a copy
-/// that has not been moved yet.
 pub async fn relocate_stored(
     requests: &[RelocateRequest],
 ) -> Result<RelocateResult, String> {
     call(CMD_RELOCATE, &RelocateArgs { requests }).await
 }
 
-/// Ask the OS file manager to reveal a path: the item selected inside its
-/// folder on the platforms that have the verb, the containing folder on the
-/// one that has not.
-///
-/// The ok side is the absence of news and is never parsed — a file manager
-/// that opened is its own report — and the error side arrives a sentence
-/// already, which the caller puts on a toast: a reveal is a courtesy, and
-/// its failure changes no state.
 pub(crate) async fn reveal_path(path: String) -> Result<(), String> {
     let args = serde_wasm_bindgen::to_value(&PathArgs { path: &path })
         .map_err(|e| format!("reveal: could not encode the request ({e})"))?;
@@ -298,9 +201,6 @@ pub(crate) async fn reveal_path(path: String) -> Result<(), String> {
         .map(|_| ())
 }
 
-/// Delete a copy the app made, when the book it belonged to is removed. Fire
-/// and forget: a store file that outlives its book wastes disk and nothing
-/// else, and there is no version of this where the reader should see an error.
 pub fn delete_stored(path: &str) {
     if !tauri_bridge::has_tauri() {
         return;
@@ -318,12 +218,6 @@ pub fn delete_stored(path: &str) {
     });
 }
 
-/// The native multi-file picker, filtered to the formats the library holds.
-///
-/// The filter is the format registry's own extension list — the same source the
-/// open dialog and the drag-drop admission read — so a fourth format appears in
-/// all three at once. A cancel answers with an empty list rather than an error:
-/// "the reader changed their mind" is not a failure and must not raise a toast.
 pub async fn pick_documents() -> Result<Vec<String>, String> {
     pick(Options {
         directory: false,
@@ -335,13 +229,6 @@ pub async fn pick_documents() -> Result<Vec<String>, String> {
     .map(|paths| paths.unwrap_or_default())
 }
 
-/// The native multi-file picker, rooted at a folder the library already knows.
-///
-/// "Open file picker here": the reader is looking at a watched folder's shelf and
-/// wants one file out of it, without the sheet and without its filters. An
-/// explicit pick is an explicit choice, so it bypasses the format set and the
-/// size threshold — the format gate stays, because a file the reader cannot open
-/// is not a book whatever they meant.
 pub async fn pick_documents_in(default_path: String) -> Result<Vec<String>, String> {
     pick(Options {
         directory: false,
@@ -353,7 +240,6 @@ pub async fn pick_documents_in(default_path: String) -> Result<Vec<String>, Stri
     .map(|paths| paths.unwrap_or_default())
 }
 
-/// The native directory picker, for an import's folder.
 pub async fn pick_folder() -> Result<Option<String>, String> {
     let paths = pick(Options {
         directory: true,
@@ -369,45 +255,23 @@ struct Options {
     directory: bool,
     multiple: bool,
     filter: bool,
-    /// Where the picker opens. The shell's own dialog option, and the difference
-    /// between "pick a file" and "pick a file from the folder you are looking at".
     default_path: Option<String>,
 }
 
-/// Whether one of the app's own native pickers is up, and the stamp of the last
-/// one that closed.
-///
-/// A picker is the one focus event the window gets that the app caused itself:
-/// a native dialog takes the window's place and hands it back, and the handback
-/// is a `tauri://focus` like any other. Which matters because the listener that
-/// event reaches answers with a walk of every watched folder — a walk of the
-/// very ground the dialog was opened to pick, started one tick before the import
-/// that was going to walk it properly.
+/// A picker is the one focus event the window gets that the app caused itself, and the listener that event reaches answers with a walk of every watched folder.
 static PICKER_OPEN: AtomicBool = AtomicBool::new(false);
 static PICKER_CLOSED: AtomicU64 = AtomicU64::new(0);
 
-/// How long after a picker closes its focus still counts as the picker's. The
-/// handback and the dialog's answer are two messages on their way to the same
-/// thread, and the grace is the room they need to arrive in either order.
 const PICKER_GRACE_MS: u64 = 1_000;
 
-/// Whether the window's current focus is the app's own picker handing it back.
-///
-/// The rescan's one guard against walking a folder the reader is about to
-/// import by name — see `import::verify::run_watched`. Only the WALK waits for a
-/// focus that means it; the measure pass, which is what marks a book `missing`
-/// when its file died while a dialog was up, runs on every focus whatever.
 pub(crate) fn picker_focus() -> bool {
     if PICKER_OPEN.load(Ordering::Relaxed) {
         return true;
     }
     let closed = PICKER_CLOSED.load(Ordering::Relaxed);
-    // No stamp, no answer: off wasm the clock is inert at zero, and reading a
-    // zero stamp as "closed this instant" would be a rescan that never runs.
     closed != 0 && now_ms().saturating_sub(closed) < PICKER_GRACE_MS
 }
 
-/// One `__TAURI__.dialog.open` call. Returns `None` on cancel.
 async fn pick(options: Options) -> Result<Option<Vec<String>>, String> {
     if !tauri_bridge::has_tauri() {
         return Err(desktop_only());
@@ -419,9 +283,6 @@ async fn pick(options: Options) -> Result<Option<Vec<String>>, String> {
         set(&opts, "defaultPath", &JsValue::from_str(default_path));
     }
     if options.filter {
-        // One filter row naming every extension the registry knows, rather than
-        // a row per format: the picker's job is "documents", not "which of the
-        // three did you mean".
         let filter = JsValue::from(js_sys::Object::new());
         set(&filter, "name", &JsValue::from_str("Documents"));
         let exts = js_sys::Array::new();
@@ -434,9 +295,6 @@ async fn pick(options: Options) -> Result<Option<Vec<String>>, String> {
         set(&opts, "filters", &filters);
     }
 
-    // Stamped around the await and not around the whole function: the dialog is
-    // the only part of this that takes the window's focus away, and a picker
-    // that failed to open never took it and so never owes one back.
     PICKER_OPEN.store(true, Ordering::Relaxed);
     let opened = tauri_bridge::open(opts).await;
     PICKER_OPEN.store(false, Ordering::Relaxed);
@@ -469,14 +327,7 @@ fn describe(error: JsValue) -> String {
         .unwrap_or_else(|| format!("{error:?}"))
 }
 
-/// Register the ONE Tauri progress listener for the app's life and re-broadcast
-/// every beat as a window [`IMPORT_PROGRESS_EVENT`].
-///
-/// Must be called inside the app reactive owner (the app root installs it next
-/// to the AI bridge): `tauri_listen` parks its closure in that owner, and a
-/// dropped closure would free the wasm function-table entry Tauri's JS still
-/// holds. Outside Tauri this is a no-op — there is no shell to import from, and
-/// the wasm-bindgen shim would throw on a missing global.
+/// Must be called inside the app reactive owner: `tauri_listen` parks its closure in that owner, and a dropped closure would free the wasm function-table entry Tauri's JS still holds.
 pub fn install_import_bridge() {
     if !tauri_bridge::has_tauri() {
         return;

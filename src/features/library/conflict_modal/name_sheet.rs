@@ -1,12 +1,6 @@
-//! The name question: an arrival whose name a row on this level already
-//! carries, and the three answers — the import's or the move's, decided by
-//! what is arriving.
-//!
-//! Described rather than drawn: this file works out what the question says and
-//! which answers it offers, and
-//! [`ConflictSheet`](crate::features::library::conflict_modal) draws it. The
-//! sentences are read once, off one snapshot of the library, so a row cannot
-//! promise one thing and the click do another.
+//! The name question: an arrival whose name a row on this level already carries, and the answers
+//! — the import's or the move's, decided by what is arriving. Described rather than drawn:
+//! [`ConflictSheet`](crate::features::library::conflict_modal) draws it.
 
 use leptos::prelude::*;
 
@@ -18,25 +12,13 @@ use crate::state::AppState;
 use super::info::{more_waiting, where_line};
 use super::sheet::{AnswerRoute, ChoiceSpec, SheetSpec};
 
-/// The level's own name question, described.
-///
-/// Every sentence here is built off one snapshot of the library — the name *as
-/// new* would mint, the highlights a replace takes with it, the shelf the
-/// collision is on — because a row that counted one way and answered another is
-/// a receipt for something else.
+/// Every sentence here is built off one snapshot of the library, because a row that counted one way and answered another is a receipt for something else.
 pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
     let where_line = where_line(state, &ask.arrival.shelf_id);
-    // Whether the arrival is a file with no row of its own yet. The sentence
-    // turns on it — an import has nothing of its own to keep, so its question is
-    // "what do I put here" rather than "which of the two do I keep".
     let import = ask.arrival.is_import();
-    // The answers this arrival gets, in the order the sheet shows them — the
-    // apply's own list rather than a condition the sheet re-derives, so a row
-    // the sheet renders is a row the answer will take.
+    // The apply's own list rather than a condition the sheet re-derives, so a row the sheet renders is a row the answer will take.
     let offers = conflict::offers_for(state, ask);
     let existing_name = ask.existing_name.clone();
-    // One read of both lists, so the promise on the row and the answer the
-    // click gives are counted against the same library.
     let (rows, shelves) = state.library.snapshot_rows();
     let new_name = next_name(
         &rows,
@@ -44,19 +26,13 @@ pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
         &ask.arrival.shelf_id,
         &ask.arrival.name,
     );
-    // The row's own id, which is the row's own list: a count taken from the
-    // address would promise a loss the merge cannot make, because a twin
-    // still reading that address keeps its own marks.
+    // A count taken from the address would promise a loss the merge cannot make, because a twin still reading that address keeps its own marks.
     let marks = crate::storage::load_gloss()
         .get(&ask.existing_id)
         .map(Vec::len)
         .unwrap_or(0);
 
     let question = if import {
-        // An import's *add as new* is a stored copy of the library's own — a
-        // book of its own bytes, whatever the level's twin reads — so no
-        // arrival ever has the row withheld: nothing a file's answers can do
-        // is a second door on one linked file.
         format!(
             "“{}” is already {where_line}. Add a second book of its own, put a link here \
              instead, or go to the one you have.",
@@ -76,9 +52,6 @@ pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
     let go_to_note = format!("Add nothing — go to “{existing_name}” where it already is");
     let new_note = format!("Keeps both, under the next free name — “{new_name}”");
     const LINK_NOTE: &str = "A pointer row, not a copy: tapping it goes to the book where it lives";
-    // The move's own three, and Replace is the one that says what it takes:
-    // the row it names leaves the library, and a highlight count the reader can
-    // see before the click is the difference between a receipt and a surprise.
     let merge_note = format!(
         "One book — “{existing_name}” stays, and takes this one's shelves, its highlights, \
          and the further place in it"
@@ -101,10 +74,6 @@ pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
          and nothing is destroyed"
     );
 
-    // One row per answer the ask offers, in its order. An import's *keep both*
-    // is a stored copy of the library's own and its *make link* is a pointer; a
-    // move's are the same two answers about a row the reader is holding — which
-    // is why the labels differ and the answers do not.
     let choices = offers
         .iter()
         .map(|choice| match choice {
@@ -123,10 +92,6 @@ pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
                 note: move_new_note.clone(),
                 placement: Placement::KeepBoth,
             },
-            // The pointer's own sentence is the move's when the shape keeps
-            // both sides, and the import's otherwise: one promises a dragged
-            // book becomes a pointer, the other promises a row that is not a
-            // copy.
             Placement::LinkOnly if import => ChoiceSpec {
                 label: "Make link",
                 note: LINK_NOTE.to_string(),
@@ -157,8 +122,6 @@ pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
         question,
         cancel_title: "Leave the shelf as it is",
         waiting,
-        // One arrival at a time: the next question behind this one is another
-        // book with another name, so there is nothing for one answer to apply to.
         apply_all: false,
         route: AnswerRoute::Placement,
         choices,

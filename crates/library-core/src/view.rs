@@ -1,49 +1,36 @@
 //! How the library is looking at the moment: the layout, the cover treatment,
 //! the column count and the sort.
 //!
-//! Deliberately NOT part of `reader_core::settings::Settings`. That blob is the
-//! appearance and reader-preference store, and every write to it re-runs the
-//! theme projection and re-serialises the whole settings JSON — which is why
-//! `src/state/library.rs` keeps the library out of it already. A column-count
-//! nudge is a library concern with the same write frequency as a page turn, so
-//! it persists with the library, in the library's own key.
+//! Deliberately NOT part of `reader_core::settings::Settings`: every write
+//! there re-runs the theme projection and re-serialises the whole settings
+//! JSON, which is why `src/state/library.rs` keeps the library out of it.
 
 use serde::{Deserialize, Serialize};
 
 use crate::sort::SortKey;
 
-/// The narrowest and widest fixed column counts the view menu offers. Between
-/// them the grid is legible on a 640 px window and on a maximised display;
-/// outside them a card is either a postage stamp or a poster.
+/// The narrowest and widest column counts the view menu offers.
 pub const COLUMNS_MIN: u8 = 2;
 pub const COLUMNS_MAX: u8 = 10;
 
-/// Grid of book covers, or a dense list of rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum LibraryLayout {
-    /// Covers on a shelf — the layout the library has always had.
     #[default]
     Grid,
-    /// One row per book: cover thumbnail, title, author, progress.
     List,
 }
 
-/// How a cover fills its box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CoverFit {
-    /// The whole cover, at the document's own aspect ratio (clamped, so a
-    /// pathological page cannot break the grid). The look the shelf has today.
     #[default]
     Fit,
-    /// Every cover cropped to A4 portrait, so a shelf of mixed scans and
-    /// exports reads as one row of identical spines.
+    /// Every cover cropped to A4 portrait.
     Crop,
 }
 
 impl CoverFit {
-    /// The label the view menu shows.
     pub fn label(self) -> &'static str {
         match self {
             CoverFit::Fit => "Fit",
@@ -52,24 +39,15 @@ impl CoverFit {
     }
 }
 
-/// The library's view, persisted with the library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryView {
     #[serde(default)]
     pub layout: LibraryLayout,
-    /// Fixed column count, or `None` for Auto (as many as fit). Ignored — and
-    /// shown disabled — in [`LibraryLayout::List`], where a row is a row; the
-    /// count survives the visit, so switching back to the grid returns the
-    /// columns the reader last picked.
+    /// `None` is Auto (as many as fit). Ignored in the list layout, where the count is kept for the next visit to the grid.
     #[serde(default)]
     pub columns: Option<u8>,
-    /// The count the auto flow currently produces. The shell writes it on every
-    /// resize while `columns` is `None`, so the menu can show Auto's live count
-    /// and the stepper's first `+` pins the count the reader is looking at
-    /// (5 → 6) rather than stepping from an idea nobody can see. Stale is
-    /// harmless: a resize — or a return to Auto — refreshes it before the next
-    /// click.
+    /// The count the auto flow currently produces, so the menu can show it live and the stepper's first press can pin it.
     #[serde(default = "default_auto_fit")]
     pub auto_fit: u8,
     #[serde(default)]
@@ -84,9 +62,7 @@ fn default_asc() -> bool {
     true
 }
 
-/// What `auto_fit` is in a blob written before the grid reported the flow's
-/// count: a mid-range guess, so a restored Auto steps inside the range rather
-/// than at its edge until the first measurement lands.
+/// A mid-range guess, for a blob written before the grid reported the flow's count.
 fn default_auto_fit() -> u8 {
     5
 }
@@ -105,11 +81,7 @@ impl Default for LibraryView {
 }
 
 impl LibraryView {
-    /// The value the grid's `--lib-cols` custom property takes: a count, or
-    /// `auto-fill` when the reader left it to the window width. One function
-    /// owns the spelling so the CSS and the control cannot drift. `auto_fit`
-    /// deliberately never reaches this token: a measurement that moved the
-    /// thing it measured would be a layout loop.
+    /// The value the grid's `--lib-cols` property takes, spelled once so the CSS and the control cannot drift.
     pub fn columns_token(&self) -> String {
         match self.columns {
             Some(n) => n.to_string(),
@@ -117,19 +89,13 @@ impl LibraryView {
         }
     }
 
-    /// Whether the +/− stepper may act. Auto is a real target: the first `+`
-    /// pins the count the auto flow is producing right now and steps from
-    /// there, so the stepper is live wherever a grid is showing columns and
-    /// only the list layout — which has none — kills it.
+    /// Auto is a real target: the first press pins the count the flow is showing, so only the list layout kills the stepper.
     pub fn columns_enabled(&self) -> bool {
         !self.is_list()
     }
 
-    /// Move the column count by one press, staying inside
-    /// [`COLUMNS_MIN`]..=[`COLUMNS_MAX`]. From Auto the first press pins what
-    /// the flow was showing (`auto_fit`) and steps from THAT; in the list it is
-    /// a no-op, so a control that renders disabled cannot be driven by a stray
-    /// key.
+    /// From Auto the first press pins what the flow was showing and steps from that.
+    /// A no-op in the list, so a control rendered disabled cannot be driven by a stray key.
     pub fn step_columns(&mut self, delta: i32) {
         if self.is_list() {
             return;
@@ -140,54 +106,31 @@ impl LibraryView {
         self.columns = Some(next as u8);
     }
 
-    /// The count a measurement of the flow becomes: inside the range the menu
-    /// offers. One spelling, read by [`report_auto_fit`](Self::report_auto_fit)
-    /// and by the grid that decides whether a report is worth a write — a clamp
-    /// only the writer knew about is a clamp the "did it change?" test beside it
-    /// does not, and the two disagreeing is a signal written on every resize.
+    /// One spelling, read by [`report_auto_fit`](Self::report_auto_fit) and by the grid that decides whether a report is worth a write.
     pub fn clamped_fit(fit: u8) -> u8 {
         fit.clamp(COLUMNS_MIN, COLUMNS_MAX)
     }
 
-    /// Record the column count the auto flow is producing right now, which is
-    /// what the grid measures on every resize. The report is the ONLY writer of
-    /// `auto_fit`, so the clamp lives beside the field rather than at each
-    /// measurement that feeds it.
-    ///
-    /// `columns` is deliberately untouched. It is the reader's pin, and a
-    /// measurement that moved it would be a window resize overriding a choice —
-    /// and, because the count the grid reports is derived from the layout
-    /// `columns_token` produces, a write there would be a measurement moving the
-    /// thing it measured. The stepper's first press is what turns Auto's live
-    /// count into a pin, and it reads `auto_fit` to do it
-    /// ([`step_columns`](Self::step_columns)).
+    /// The only writer of `auto_fit`; `columns` is the reader's pin and a measurement must not move it.
     pub fn report_auto_fit(&mut self, fit: u8) {
         self.auto_fit = Self::clamped_fit(fit);
     }
 
-    /// Back to Auto. The flow's count keeps being reported into `auto_fit`, so
-    /// the menu still shows a live number and the stepper's next press steps
-    /// from what the shelf is showing.
     pub fn auto_columns(&mut self) {
         self.columns = None;
     }
 
-    /// Whether a drag may re-order what the reader is looking at. A sorted
-    /// shelf re-sorts on the next render, so a drop would be undone before the
-    /// reader saw it land.
+    /// A sorted shelf re-sorts on the next render, so a drop would be undone before the reader saw it land.
     pub fn drag_reorders(&self) -> bool {
         self.sort.is_manual()
     }
 
-    /// True when the shelf renders as rows rather than as covers.
     pub fn is_list(&self) -> bool {
         self.layout == LibraryLayout::List
     }
 }
 
-/// Make a persisted view internally valid: the pinned count and the reported
-/// auto count both inside the range the menu offers. Idempotent. A list keeps
-/// the count it cannot show — it returns with the grid.
+/// Clamp a persisted view into the range the menu offers. Idempotent.
 pub fn sanitize(view: &mut LibraryView) {
     view.columns = view.columns.map(|n| n.clamp(COLUMNS_MIN, COLUMNS_MAX));
     view.auto_fit = view.auto_fit.clamp(COLUMNS_MIN, COLUMNS_MAX);
@@ -281,7 +224,6 @@ mod tests {
     #[test]
     fn stepping_from_auto_pins_what_auto_was_showing() {
         let mut v = LibraryView::default();
-        // The grid has been reporting the flow's count on every resize.
         v.auto_fit = 7;
         assert_eq!(v.columns, None, "Auto still owns the layout");
         v.step_columns(1);
@@ -323,8 +265,6 @@ mod tests {
         assert_eq!(v.auto_fit, COLUMNS_MIN);
         v.report_auto_fit(200);
         assert_eq!(v.auto_fit, COLUMNS_MAX);
-        // The clamp is one spelling, and the grid reads the same one to decide
-        // whether a report is worth a write.
         assert_eq!(LibraryView::clamped_fit(0), COLUMNS_MIN);
         assert_eq!(LibraryView::clamped_fit(200), COLUMNS_MAX);
         assert_eq!(LibraryView::clamped_fit(5), 5);

@@ -1,17 +1,6 @@
-//! The compact per-file question a folder merge asks: two names, three answers,
-//! and the switch that gives every waiting question the same answer in one
-//! click.
-//!
-//! Described rather than drawn: the sheet is
-//! [`ConflictSheet`](crate::features::library::conflict_modal)'s, and what is
-//! left here is the pair of names and the sentences.
-//!
-//! Its three are the move sheet's, re-spelled for an arrival with no row of its
-//! own: there is nothing to fold INTO the shelf's row yet, so *merge* is the
-//! file handing the row its measurement rather than two rows becoming one.
-//! Smaller than the import sheet on purpose — the shelf's question is already
-//! answered, and a sheet that re-explained the whole situation per file would be
-//! a sentence the reader has to re-read forty times.
+//! The compact per-file question a folder merge asks: two names, three answers, and the switch
+//! that gives every waiting question the same answer in one click. Described rather than drawn:
+//! the sheet is [`ConflictSheet`](crate::features::library::conflict_modal)'s.
 
 use leptos::prelude::*;
 
@@ -24,7 +13,6 @@ use crate::state::AppState;
 use super::info::more_waiting;
 use super::sheet::{AnswerRoute, ChoiceSpec, SheetSpec};
 
-/// A merged folder's per-file question, described.
 pub(super) fn describe_folder_merge(state: AppState, ask: &ConflictAsk) -> SheetSpec {
     let waiting = state
         .library
@@ -33,13 +21,7 @@ pub(super) fn describe_folder_merge(state: AppState, ask: &ConflictAsk) -> Sheet
     let incoming = ask.arrival.name.clone();
     let existing = ask.existing_name.clone();
     let subtitle = more_waiting(format!("Into “{existing}”"), waiting);
-    // The file arriving is the very file the row on the shelf reads — a
-    // re-import of a read-at-place folder's own book. *As new* of it would be
-    // a second row of one linked file, which the library does not make, so
-    // the sheet offers the two answers that add no copy. A different file
-    // wearing the same name keeps all three, and a STORED folder keeps all
-    // three too: its *as new* is a second copy in the store, a book of its
-    // own bytes rather than a second door on one file.
+    // *As new* of the very file the row reads would be a second row of one linked file, which the library does not make. A different file wearing the same name keeps all three, and so does a STORED folder.
     let twin = ask.kind.reads_in_place()
         && state.library.books.with_untracked(|rows| {
             ask.arrival.file.as_ref().is_some_and(|file| {

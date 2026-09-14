@@ -1,10 +1,8 @@
-//! The removal's receipt: what a removal takes, counted over the SET the
-//! confirm button will act on rather than over what was clicked.
+//! The removal's receipt: what a removal takes, counted over the SET the confirm button will
+//! act on rather than over what was clicked.
 //!
-//! The tree arithmetic a cascade depends on — which shelves are below the asked
-//! ones, and which of them has to go first — is pure over the shelf list and
-//! host-tested at the bottom of this file: "which shelves go" is exactly the
-//! question that should not need a browser to answer.
+//! The tree arithmetic a cascade depends on is pure over the shelf list and host-tested at the
+//! bottom of this file.
 
 use leptos::prelude::*;
 
@@ -15,64 +13,33 @@ use library_core::text::{human_size, plural};
 use crate::services::library::memberships;
 use crate::state::AppState;
 
-/// Everything the receipt lines are made of, read once per open.
 pub(super) struct Receipt {
     pub(super) books: Vec<Book>,
-    /// The names of the LINK rows the removal takes. A pointer costs nothing
-    /// but itself — no resume point, no highlights, no cover, no store copy —
-    /// and the book it points at stays in the library, which is a sentence the
-    /// sheet owes a reader who clicked a link's ✕ and got a receipt about
-    /// books.
+    /// A pointer costs nothing but itself — no resume point, no highlights, no cover, no store copy — and the book it points at stays in the library, which is a sentence the sheet owes a reader who clicked a link's ✕.
     pub(super) links: Vec<String>,
-    /// The ids the confirm button will purge: what was asked, plus everything
-    /// inside the asked shelves when the cascade is on. Separate from [`Self::books`]
-    /// only because the button needs ids and the rows need the rows' own facts.
+    /// Separate from [`Self::books`] only because the button needs ids and the rows need the rows' own facts.
     pub(super) book_ids: Vec<String>,
-    /// The ids the confirm button will delete: what was asked, plus every
-    /// descendant when the cascade is on.
     pub(super) shelf_ids: Vec<String>,
-    /// Whether this receipt was built with the cascade on, which is what the shelf
-    /// rows and the button's own wording have to agree with.
     pub(super) cascade: bool,
-    /// The name of the one shelf asked about, when exactly one was. A cascade pulls
-    /// books and further shelves into the receipt, and without this the heading
-    /// would answer "3 books" to a reader who clicked a shelf — a heading about
-    /// something they did not click, on the one sheet whose whole job is to say what
-    /// the click means.
+    /// A cascade pulls books and further shelves into the receipt, and without this the heading would answer "3 books" to a reader who clicked a shelf.
     pub(super) asked_name: Option<String>,
-    /// What sits inside the asked shelves whatever the switch says — the books
-    /// anywhere inside them, and the shelves nested inside them at any depth. The
-    /// switch's own visibility is decided by these, so it cannot depend on itself.
+    // The switch's own visibility is decided by these, so it cannot depend on itself.
     pub(super) inside_books: usize,
     pub(super) inside_shelves: usize,
-    /// Highlight marks stored against these addresses.
     pub(super) marks: usize,
     pub(super) covers: usize,
-    /// The names of the shelves any of these books is filed on, deduped: ten books
-    /// on one shelf is one placement to name, not ten.
     pub(super) placements: Vec<String>,
-    /// At least one of them came from a folder that is still being watched, so the
-    /// removal has a consequence worth one sentence: it will stay out.
     pub(super) watched: bool,
-    /// The app's own copies among them, and what they occupy.
     pub(super) stored_count: usize,
     pub(super) stored_bytes: u64,
-    /// The shelves being taken apart, and what survives each of them.
     pub(super) shelves: Vec<ShelfLine>,
 }
 
 
-/// One shelf the removal takes apart. A shelf is a list of ids and never held a
-/// byte, so its row is about what SURVIVES it rather than about what goes.
 pub(super) struct ShelfLine {
     pub(super) name: String,
     pub(super) books: usize,
-    /// Shelves filed inside it, which move up to the level it was on. Always zero
-    /// under a cascade, where nothing survives inside to be lifted.
     pub(super) lifted: usize,
-    /// Cut from a folder that is still watched, so the shelf returns if the
-    /// folder ever places a book in it again. Worth one sentence on the receipt
-    /// because it is the one consequence a reader cannot see coming.
     pub(super) watched: bool,
 }
 
@@ -82,7 +49,6 @@ impl Receipt {
         self.books.len() + self.links.len() + self.shelves.len() != 1
     }
 
-    /// The heading: one thing's own name, or a count.
     pub(super) fn heading(&self) -> String {
         if let Some(name) = &self.asked_name {
             return name.clone();
@@ -111,11 +77,7 @@ impl Receipt {
         }
     }
 
-    /// The line under the heading: the format, and a size the library has actually
-    /// measured. A book never measured has no honest size, and a placeholder's
-    /// "size" is the length of its path — a number on a receipt that would mean
-    /// nothing. A shelves-only receipt has no formats to name, so it says the one
-    /// thing a reader worries about: that nothing else goes with them.
+    /// A placeholder's "size" is the length of its path, a number on a receipt that would mean nothing. A shelves-only receipt says the one thing a reader worries about: that nothing else goes with them.
     pub(super) fn subtitle(&self) -> String {
         if self.books.is_empty() {
             if !self.links.is_empty() {
@@ -156,16 +118,7 @@ impl Receipt {
 }
 
 
-/// Every shelf below any of `roots`, at any depth, in no particular order and
-/// without repeats.
-///
-/// The walk itself is `library_core::shelf::subtree_ids` — the departure's ride
-/// asks it the same question, and a cascade and a copy that answered "which
-/// shelves go with this one" differently would be two rules wearing one name.
-/// Pure over the shelf list rather than over the state, so the arithmetic a
-/// cascade depends on is testable on the host: this is the function that decides
-/// which shelves a removal deletes, and "which shelves go" is exactly the
-/// question that should not need a browser to answer.
+/// The walk itself is `library_core::shelf::subtree_ids` — a cascade and a copy that answered "which shelves go with this one" differently would be two rules wearing one name.
 fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
     subtree_ids(shelves, roots)
         .into_iter()
@@ -174,17 +127,7 @@ fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
 }
 
 
-/// A cascade's delete order: deepest first.
-///
-/// `delete_shelf` lifts a shelf's children to the level it was on before removing
-/// it, which is the right thing for one removal and the wrong thing for a cascade:
-/// lifting a shelf that is next in line to be deleted moves it somewhere it is
-/// about to leave anyway, and moves it past the reader on the way. Deepest first
-/// means every lift finds nothing left to lift.
-///
-/// A stable sort on a reversed key, so two shelves at the same depth keep the
-/// order the library stores them in and the receipt's rows match the order they
-/// went in.
+/// `delete_shelf` lifts a shelf's children to the level it was on, which is the right thing for one removal and the wrong thing for a cascade: deepest first means every lift finds nothing left to lift.
 pub(super) fn deepest_first(shelves: &[Shelf], ids: &[String]) -> Vec<String> {
     let mut with_depth: Vec<(String, usize)> = ids
         .iter()
@@ -195,16 +138,7 @@ pub(super) fn deepest_first(shelves: &[Shelf], ids: &[String]) -> Vec<String> {
 }
 
 
-/// Build the receipt. `None` when none of the books or shelves are there any
-/// more, which is what makes a sheet left open across a removal harmless rather
-/// than a panic.
-///
-/// `cascade` decides which SET the receipt is of, and everything below — the books
-/// row, the highlight and cover counts, the store copies, the placements, the
-/// button's own wording — is measured over that set rather than over what was
-/// clicked. A receipt that itemised the selection and then removed the selection
-/// plus a shelf's contents would be a receipt for a different removal than the one
-/// it confirmed.
+/// `None` when none of the books or shelves are there any more, which makes a sheet left open across a removal harmless rather than a panic. Everything below is measured over the cascade's set rather than over what was clicked.
 pub(super) fn receipt(
     state: AppState,
     ids: &[String],
@@ -212,27 +146,18 @@ pub(super) fn receipt(
     cascade: bool,
 ) -> Option<Receipt> {
     let gloss = crate::storage::load_gloss();
-    // One untracked read of the shelf list, and the tree arithmetic below is pure
-    // over it: three nested reads of the same signal were three chances to see a
-    // different library than the one the receipt is describing.
     let all: Vec<Shelf> = state.library.shelves.get_untracked();
     let asked: Vec<Shelf> = all
         .iter()
         .filter(|s| shelf_ids.contains(&s.id))
         .cloned()
         .collect();
-    // Everything below the asked shelves, deduped against each other and against
-    // the asked ones: two selected shelves can share a descendant, and a shelf
-    // selected alongside its own parent is already in `asked`.
     let descendants = subtree(&all, shelf_ids);
     let delete_shelves: Vec<Shelf> = if cascade {
         asked.iter().chain(descendants.iter()).cloned().collect()
     } else {
         asked.clone()
     };
-    // What is inside, counted whether or not the cascade is on: these two numbers
-    // are what the switch's own visibility is decided by, and a switch that only
-    // appeared once it was already on could never be turned on.
     let inside_ids: Vec<String> = {
         let mut acc: Vec<String> = Vec::new();
         for shelf in all.iter().filter(|s| {
@@ -246,9 +171,6 @@ pub(super) fn receipt(
         }
         acc
     };
-    // The set the removal will actually take: what was asked, plus what is inside
-    // when the cascade is on. Deduped, because a book on the asked shelf and inside
-    // the asked folder is one book and one tombstone.
     let mut effective: Vec<String> = Vec::new();
     for id in ids {
         if !effective.contains(id) {
@@ -287,9 +209,6 @@ pub(super) fn receipt(
             } else {
                 children_of(&all, Some(s.id.as_str())).len()
             },
-            // The rung's own answer: the receipt says whether THIS shelf's
-            // ground will refill itself, and a subfolder turned off under a
-            // watched tree does not.
             watched: state.library.shelf_tracked_untracked(&s.id),
         })
         .collect();
@@ -300,9 +219,6 @@ pub(super) fn receipt(
     let mut placement_names: Vec<String> = Vec::new();
     for book in &books {
         let path = book.path();
-        // The row's own id, which is the row's own list: two rows of one file
-        // are two lists, so the count is what THIS removal takes and a twin on
-        // the shelf keeps its own.
         marks += gloss.get(&book.id).map(Vec::len).unwrap_or(0);
         if state
             .library
@@ -328,13 +244,7 @@ pub(super) fn receipt(
     let watched = measured
         && state.library.folders.with_untracked(|folders| {
             folders.iter().any(|f| {
-                // Watched anywhere in the tree, which is what the note
-                // promises: a folder that still walks — root or one rung the
-                // reader kept on — is a folder that can place this book again
-                // and offer it back. Asked exactly as the walk asks it
-                // (`library_core::folder::WatchedFolder::owes_walk`), because a
-                // note promising a scan the walk is not owed is a promise
-                // nothing keeps.
+                // Asked exactly as the walk asks it (`library_core::folder::WatchedFolder::owes_walk`), because a note promising a scan the walk is not owed is a promise nothing keeps.
                 f.owes_walk()
                     && fingerprints
                         .iter()
@@ -368,8 +278,6 @@ mod tests {
     use super::*;
     use library_core::shelf::ShelfKind;
 
-    /// A virtual shelf, which is the kind a reader makes and the only kind a
-    /// cascade can move.
     fn shelf(id: &str, parent: Option<&str>, books: &[&str]) -> Shelf {
         Shelf {
             id: id.to_string(),
@@ -385,7 +293,6 @@ mod tests {
         shelves.iter().map(|each| each.id.clone()).collect()
     }
 
-    /// `a` at the root, `b` inside it, `c` inside `b`, and an empty `d` beside `b`.
     fn tree() -> Vec<Shelf> {
         vec![
             shelf("a", None, &[]),

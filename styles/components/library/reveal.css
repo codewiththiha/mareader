@@ -1,12 +1,5 @@
-/* ---------------------------------------------------------------------------
-   The reveal: a card the reader was taken to.
-
-   The ring is a STATIC property of the class and the pulse is the animation, so
-   the two reduced-motion nets — which collapse every animation-duration in the
-   document — take the movement and leave the mark. A reveal that vanished under
-   prefers-reduced-motion would leave a reader who asked to be shown a book
-   looking at a shelf with nothing indicated on it.
-   --------------------------------------------------------------------------- */
+/* The reveal: a card the reader was taken to. The ring is a STATIC property of the class and the
+   pulse is the animation, so the reduced-motion nets take the movement and leave the mark. */
 .book-reveal .book-cover-wrap {
   box-shadow:
     0 0 0 2px var(--color-accent),
@@ -107,12 +100,7 @@
   color: var(--color-accent);
 }
 
-/* --- Multi-select (the hold). The gesture and its tuning are the ones the gloss
-   mark layer uses, so a shelf answers a hold the way a page does: an instant
-   change while the press counts, then the set. The change is a static paint or a
-   static transform, not a transition — the feedback has to arrive on the frame
-   the finger arrives, and a card that scales in over 150ms is a card that says
-   "I heard you" a sixth of a second late. --- */
+/* Multi-select (the hold): the gesture and its tuning are the ones the gloss mark layer uses. The change is a static paint, not a transition — the feedback has to arrive on the frame the finger does. */
 .book-pressing .book-cover-wrap {
   transform: scale(0.96);
 }
@@ -120,12 +108,9 @@
   opacity: 0.82;
 }
 
-/* What a drag is holding. Every card in the payload fades and not only the one
-   the press began on, because the set the reader picked up has to stay readable
-   as a set while the pointer carries it — a single faded card and a ghost of four
-   covers is a ghost the shelf disagrees with. The class comes off on the release,
-   on the cancellation and on Escape alike, since all three end the one session in
-   `src/features/library/dnd` rather than three flags on three cards. */
+/* What a drag is holding. Every card in the payload fades and not only the one the press began on,
+   because the set the reader picked up has to stay readable as a set. The class comes off on the
+   release, the cancellation and Escape alike, since all three end the one session. */
 .book-dragging,
 .lib-row-dragging,
 .folder-dragging {

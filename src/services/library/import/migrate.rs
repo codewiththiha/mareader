@@ -1,29 +1,9 @@
 //! The one-time move of every stored copy into the book's own item folder.
 //!
-//! The store used to be flat and name-derived — `<Library>/<format>/<stem>_<id>.<ext>`
-//! — and is now one folder per book (`<Library>/items/<id>/source.<ext>`,
-//! [`library_core::store`]). Copies made since that change are already there;
-//! copies made before it keep the address recorded in their row, so they still
-//! open, but they sit in a layout nothing writes any more and have no directory
-//! of their own for a cover or a set of marks to live in.
-//!
-//! This is the pass that brings them across, and it is self-limiting rather than
-//! run-once: the rows it moves are written back, so the next launch finds nothing
-//! in the old buckets and asks for nothing. A row the shell could not move keeps
-//! the address it has, which still opens, and is offered again next launch — a
-//! migration that gave up on a locked file permanently would strand a book in a
-//! bucket for one busy moment.
-//!
-//! Two ordering rules, both load-bearing:
-//!
-//!   * it runs BEFORE the startup measurement pass. A move changes the address a
-//!     row holds, and measuring the old one would mark the book `missing` for a
-//!     file this pass is about to put somewhere else;
-//!   * it leaves the copy's modification time alone. A stored row's identity is
-//!     the measurement of its OWN bytes, and every ledger entry, tombstone and
-//!     `placed` fingerprint names that measurement — re-stamping on a migration
-//!     would change a fingerprint the folder ledgers still hold, and turn every
-//!     stored book into a file its own folder has never seen.
+//! The store used to be flat and name-derived — `<Library>/<format>/<stem>_<id>.<ext>` — and
+//! is now one folder per book (`<Library>/items/<id>/source.<ext>`,
+//! [`library_core::store`]). Copies made before that change keep the address recorded in
+//! their row, so they still open, but they are the ones this pass moves.
 
 use std::collections::HashMap;
 
@@ -36,17 +16,11 @@ use library_core::wire::RelocateRequest;
 use crate::services::library as wire;
 use crate::state::AppState;
 
-/// Move every stored copy still sitting in the old flat buckets into its item
-/// folder, and write the rows that moved. Fire and forget: a book whose copy
-/// could not be moved still opens at the address it has, which is a worse shelf
-/// than the migration was for and not a reason to interrupt a launch.
+/// Fire and forget: a book whose copy could not be moved still opens at the address it has, which is not a reason to interrupt a launch.
 pub fn migrate_store_layout(state: AppState) {
     if !tauri_bridge::has_tauri() {
         return;
     }
-    // Every stored row, with the address its copy wore when this pass started —
-    // which is also the key its cover is cached under, and the half of the
-    // question the answer cannot supply.
     let candidates: Vec<(String, String)> = state.library.books.with_untracked(|rows| {
         book_rows(rows)
             .filter(|book| book.origin.is_stored())
@@ -61,15 +35,9 @@ pub fn migrate_store_layout(state: AppState) {
     });
 }
 
-/// One pass: ask the shell to move the copies, then rewrite the rows whose copy
-/// landed somewhere new.
-///
-/// The candidate list is built WITHOUT the store root, because the frontend
-/// cannot compute one — `<app_data_dir>` is the shell's answer — and the pass
-/// that does the moving hands it back. So the rows are filtered here, against the
-/// paths the shell actually answered for, rather than before the call: a row
-/// already in its item folder travels along and comes back wearing the address it
-/// had, which is one entry in a batch and not one decision got wrong.
+/// The candidate list is built WITHOUT the store root, because `<app_data_dir>` is the
+/// shell's answer and only the pass that does the moving can hand it back, so the rows are
+/// filtered against the paths the shell actually answered for.
 async fn run(state: AppState, candidates: Vec<(String, String)>) {
     let requests: Vec<RelocateRequest> = candidates
         .iter()
@@ -86,15 +54,11 @@ async fn run(state: AppState, candidates: Vec<(String, String)>) {
         }
     };
     if answer.root.is_empty() {
-        // No store directory on this host: nothing moved, and nothing will until
-        // there is one. Not worth a sentence — every row still opens.
         return;
     }
-    // id -> where its copy lived and where it lives now, for the rows whose
-    // address actually changed. The shell answers an already-migrated row with
-    // the address it wore, and rewriting that row would be a write, a persist
-    // and a cover re-key for nothing. Both halves are consumed once, in the
-    // order the shell answered in, which is what pairs a row with its result.
+    // id -> where its copy lived and where it lives now, for the rows whose address actually
+    // changed: the shell answers an already-migrated row with the address it wore, and rewriting
+    // that row would be a write, a persist and a cover re-key for nothing.
     let results = answer.results.into_iter();
     let moved: HashMap<String, (String, String)> = candidates
         .into_iter()
@@ -106,11 +70,9 @@ async fn run(state: AppState, candidates: Vec<(String, String)>) {
         return;
     }
 
-    // The address is the only thing that moves. The fingerprint, the provenance
-    // and the resume point all describe bytes that have not changed, and a row
-    // that arrived here with a pending measurement keeps it — the startup pass
-    // measures the copy at its new address and finishes the job, exactly as it
-    // would have at the old one.
+    // The address is the only thing that moves: the fingerprint, the provenance and the resume
+    // point all describe bytes that have not changed. A row that arrived with a pending
+    // measurement keeps it.
     let mut rewritten = 0usize;
     state.library.books.update(|rows| {
         for book in book_rows_mut(rows) {

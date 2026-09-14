@@ -1,18 +1,8 @@
 //! The ⋯ menu: how the shelf looks.
 //!
-//! Four decisions and nothing else — the layout, the column count, the cover
-//! treatment and the sort — because those are the four a reader actually changes
-//! while looking at a shelf. Every one of them is a `LibraryView` field, so the
-//! menu writes the view and the view writes the page: no row here reaches into
-//! the DOM to arrange anything itself.
-//!
-//! The Columns row is the one that can be impossible, and it says so by going
-//! quiet rather than by hiding: a list has no columns. Auto is not impossible —
-//! it is a count the grid reports on every resize (see
-//! `crate::features::library::grid`), so the row shows the live number and the
-//! stepper's first press pins it and steps from there. Every press leaves the
-//! stored value whole, so switching back to a grid returns the columns the
-//! reader last picked.
+//! Four decisions and nothing else — the layout, the column count, the cover treatment and the
+//! sort. Every one of them is a `LibraryView` field, so no row here reaches into the DOM to
+//! arrange anything itself.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -30,9 +20,6 @@ use crate::components::primitives::menu::separator::Separator;
 use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::state::AppState;
 
-/// The sort keys the menu offers, in the order it offers them. The labels come
-/// from the keys themselves, so a key added to `library_core::sort` is one row
-/// here and no copy to keep in step.
 const SORTS: [SortKey; 5] = [
     SortKey::Manual,
     SortKey::Title,
@@ -41,8 +28,6 @@ const SORTS: [SortKey; 5] = [
     SortKey::LastRead,
 ];
 
-/// Write one view change and persist it. Every control in this menu goes through
-/// here, so the "a knob that moves is a knob that is saved" rule is stated once.
 fn set_view(state: AppState, change: impl FnOnce(&mut LibraryView) + 'static) {
     state.library.view.update(change);
     crate::storage::persist_library(state.library);
@@ -54,17 +39,10 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
     let is_list = Signal::derive(move || state.library.view.with(|v| v.is_list()));
-    // The count the stepper shows and steps from: the pinned count when there is
-    // one, else the count Auto's flow is producing right now — which the grid
-    // reports on every resize (see `crate::features::library::grid`). An en-dash
-    // was what this row used to show under Auto; the live count is a better
-    // answer to "how many across am I looking at", and it is what the bounds
-    // below read, so Auto reports its own edges instead of having none.
+    // The pinned count when there is one, else the count Auto's flow is producing right now, which the grid reports on every resize (see `crate::features::library::grid`).
     let columns = Signal::derive(move || {
         state.library.view.with(|v| v.columns.or(Some(v.auto_fit)))
     });
-    // "Auto" is selected when no count is pinned — the raw field, not `columns`,
-    // which now answers for Auto too.
     let auto = Signal::derive(move || state.library.view.with(|v| v.columns.is_none()));
     let stepper_live = Signal::derive(move || state.library.view.with(|v| v.columns_enabled()));
     let at_min = Signal::derive(move || {
@@ -76,8 +54,6 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
     let fit = Signal::derive(move || state.library.view.with(|v| v.cover == CoverFit::Fit));
     let sort = Signal::derive(move || state.library.view.with(|v| v.sort));
     let ascending = Signal::derive(move || state.library.view.with(|v| v.sort_asc));
-    // Manual order has no direction: it IS the order. Offering one would be a
-    // control that appears to do something and rearranges nothing.
     let has_direction = Signal::derive(move || !sort.get().is_manual());
 
     view! {
@@ -99,8 +75,6 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                     icon=IconName::Plus
                     label="New shelf"
                     on_click=move || {
-                        // Drills straight in, so the reader is looking at the shelf
-                        // they just made and the breadcrumb is offering its name.
                         open.set(false);
                         create_shelf_and_enter(state, None);
                     }
@@ -135,11 +109,6 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                     >
                         <span>"Auto"</span>
                     </OptionButton>
-                    // A control that cannot act reads as quiet without help: the
-                    // disabled buttons already carry the app's disabled treatment,
-                    // and a dimmed wrapper on top of it was a second statement of
-                    // one fact — and the fact was wrong whenever it dimmed a
-                    // stepper that was live.
                     <div class="flex items-center gap-0.5">
                         <IconButton
                             icon=IconName::Minus

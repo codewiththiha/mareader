@@ -1,9 +1,6 @@
-//! How a shelf is ordered.
-//!
-//! One comparator over [`Row`], driven by a key and a direction — no
-//! secondary key, deliberately. "Then by…" is a second control that doubles
-//! the menu and answers a question readers do not ask: within a title, the
-//! address breaks the tie, which is stable, deterministic and free.
+//! How a shelf is ordered: one comparator over [`Row`], driven by a key and a
+//! direction. No secondary key, deliberately — within a title the address breaks
+//! the tie, which is stable, deterministic and free.
 
 use std::cmp::Ordering;
 
@@ -11,12 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::book::{Book, Row};
 
-/// What a shelf is sorted by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SortKey {
-    /// The order the reader arranged — the persisted book list as it stands.
-    /// The default, and the one a drag writes to.
+    /// The order the reader arranged. The default, and the one a drag writes to.
     #[default]
     Manual,
     Title,
@@ -26,7 +21,6 @@ pub enum SortKey {
 }
 
 impl SortKey {
-    /// The label the view menu shows.
     pub fn label(self) -> &'static str {
         match self {
             SortKey::Manual => "Manual",
@@ -38,8 +32,8 @@ impl SortKey {
     }
 
     /// True when the key re-orders the list rather than leaving the reader's
-    /// arrangement alone. What disables a drag: dropping a book at an index of
-    /// a list that is sorted by title would be undone by the next render.
+    /// arrangement alone. What disables a drag: a drop into a sorted list would be
+    /// undone by the next render.
     pub fn is_manual(self) -> bool {
         matches!(self, SortKey::Manual)
     }
@@ -48,20 +42,15 @@ impl SortKey {
 /// The comparison one key makes, ascending. Ties break on the address, so the
 /// order is total and stable whatever the list started as.
 ///
-/// A link is a row like any other here and has an answer for every key: its
-/// name sorts as a title, it has no author so it sorts after every author, it
-/// was added when it was made, it has never been read, and its tie-break is
-/// its own id because it has no address of its own. A shelf sorted by title
-/// with a pointer in it reads as one shelf rather than as a shelf with a row
-/// that jumped to an end.
+/// A link is a row like any other and has an answer for every key: its name
+/// sorts as a title, it has no author, it was added when it was made, and its
+/// tie-break is its own id because it has no address.
 fn ascending(a: &Row, b: &Row, key: SortKey) -> Ordering {
     let primary = match key {
-        // Manual never reaches here: the caller leaves the list alone.
         SortKey::Manual => Ordering::Equal,
         SortKey::Title => natural(&a.display_name(), &b.display_name()),
         SortKey::Author => match (author_of(a), author_of(b)) {
-            // No author sorts after every author, so a shelf of named books
-            // reads as a shelf rather than as a list with blanks in it.
+            // No author sorts after every author, so a shelf of named books has no blanks in it.
             (None, None) => Ordering::Equal,
             (None, Some(_)) => Ordering::Greater,
             (Some(_), None) => Ordering::Less,
@@ -73,19 +62,16 @@ fn ascending(a: &Row, b: &Row, key: SortKey) -> Ordering {
     primary.then_with(|| tiebreak(a).cmp(tiebreak(b)))
 }
 
-/// The author a row can name: a book's own, and nothing for a link.
 fn author_of(row: &Row) -> Option<String> {
     row.book().and_then(Book::author)
 }
 
-/// When a row was last read. A link has never been read, which sorts it with
-/// the books nobody has opened — the honest end of a "Last read" shelf.
+/// A link has never been read, which sorts it with the books nobody has opened.
 fn last_read_of(row: &Row) -> u64 {
     row.book().map_or(0, |b| b.last_read_ms)
 }
 
-/// The tie-break that makes the order total: a book's address, and a link's own
-/// id, which is the only thing about it that is stable and unique.
+/// The tie-break that makes the order total: a book's address, a link's own id.
 fn tiebreak(row: &Row) -> &str {
     match row {
         Row::Book(b) => b.path(),
@@ -93,14 +79,9 @@ fn tiebreak(row: &Row) -> &str {
     }
 }
 
-/// Case-insensitive compare that also puts "chapter 2" before "chapter 10".
-///
-/// Digit runs are compared by value rather than by first differing character,
-/// which is the only part of this that is not `eq_ignore_ascii_case`: a
-/// library is full of volume numbers, and "Volume 10" sorting between
-/// "Volume 1" and "Volume 2" is the kind of wrong a reader notices once and
-/// never forgives. Non-ASCII keeps its byte order — folding Unicode properly
-/// is a collation library, and a shelf of PDFs does not need one.
+/// Case-insensitive compare that also puts "chapter 2" before "chapter 10":
+/// digit runs are compared by value, which is the only part of this that is not
+/// `eq_ignore_ascii_case`. Non-ASCII keeps its byte order.
 fn natural(a: &str, b: &str) -> Ordering {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     let (mut i, mut j) = (0, 0);
@@ -115,8 +96,8 @@ fn natural(a: &str, b: &str) -> Ordering {
             while j < b.len() && b[j].is_ascii_digit() {
                 j += 1;
             }
-            // Leading zeros are not significant: "01" and "1" are the same
-            // number, and comparing the stripped runs keeps them adjacent.
+            // Leading zeros are not significant: "01" and "1" are the same number, and
+            // comparing the stripped runs keeps them adjacent.
             let na = strip_zeros(&a[si..i]);
             let nb = strip_zeros(&b[sj..j]);
             let ord = na.len().cmp(&nb.len()).then_with(|| na.cmp(nb));
@@ -132,7 +113,6 @@ fn natural(a: &str, b: &str) -> Ordering {
             j += 1;
         }
     }
-    // One name is a prefix of the other: the shorter one comes first.
     (a.len() - i).cmp(&(b.len() - j))
 }
 
@@ -142,11 +122,7 @@ fn strip_zeros(digits: &[u8]) -> &[u8] {
 }
 
 /// Sort a level's rows in place. [`SortKey::Manual`] leaves the reader's
-/// arrangement exactly as it is — which is the point of calling this with
-/// whatever the view says rather than branching at every call site.
-///
-/// `asc` inverts the key's order but never the tie-break, so a descending
-/// title sort is still deterministic.
+/// arrangement as it is. `asc` inverts the key's order but never the tie-break.
 pub fn sort_rows(rows: &mut [Row], key: SortKey, asc: bool) {
     if key.is_manual() {
         return;
@@ -162,14 +138,10 @@ pub fn sort_rows(rows: &mut [Row], key: SortKey, asc: bool) {
 }
 
 /// The order a shelf renders in: the member ids, resolved to rows, sorted.
-/// Members naming a row the library no longer has are dropped — a stale
-/// membership must not become a hole in the grid — and a member naming a LINK
-/// resolves to the link, which is a row the shelf renders like any other.
 ///
-/// The resolution is one pass over the list into a map and one lookup per
-/// member, rather than a walk of the library per member: a level renders on
-/// every change to the books, and a shelf of hundreds inside a library of
-/// thousands is exactly where a quadratic walk becomes a dropped frame.
+/// Members naming a row the library no longer has are dropped, and a member
+/// naming a link resolves to the link, which the shelf renders like any other
+/// row.
 pub fn ordered(rows: &[Row], members: &[String], key: SortKey, asc: bool) -> Vec<Row> {
     let index = crate::book::index_by_id(rows);
     let mut out: Vec<Row> = members
@@ -193,8 +165,6 @@ mod tests {
         }
     }
 
-    /// The rows a list of books makes: a shelf of books and no links, which is
-    /// what every ordering rule here is about.
     fn rows(books: impl IntoIterator<Item = Book>) -> Vec<Row> {
         books.into_iter().map(Row::Book).collect()
     }
@@ -303,9 +273,6 @@ mod tests {
 
     #[test]
     fn a_link_sorts_as_the_row_it_shows() {
-        // A pointer has a name, no author, a stamp of its own and no reading
-        // at all — which is an answer for every key rather than a row the sort
-        // has to skip.
         let mut list = rows([book("Dune", Some("Frank Herbert")), book("Apple", None)]);
         list.push(Row::link("l1".into(), "Child".into(), "b1".into(), 5));
         sort_rows(&mut list, SortKey::Title, true);
@@ -331,8 +298,6 @@ mod tests {
         ] {
             assert!(!key.label().is_empty());
         }
-        // The labels are storage-adjacent copy, so they survive a round trip
-        // of the value rather than of the string.
         let json = serde_json::to_string(&SortKey::LastRead).unwrap();
         assert_eq!(json, "\"lastRead\"");
         let back: SortKey = serde_json::from_str(&json).unwrap();

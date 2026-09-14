@@ -1,16 +1,9 @@
-//! “This book is not where the library left it.”
+//! "This book is not where the library left it."
 //!
-//! The question a click on a missing book asks instead of opening the reader
-//! onto an error: two doors that point the row at the file it is now — pick
-//! the file yourself, or name a folder and let the app walk it looking for a
-//! file of the book's own name — and a Cancel that changes nothing, because a
-//! missing book is a book the library is still holding a place for.
-//!
-//! Raised by the open's dead-address gate ([`crate::services::document::open`]
-//! hands a `missing` row to `crate::services::library::ask_relink` rather
-//! than to the engine) and answered by
-//! `crate::services::library::arrange::relink`, which re-measures whatever
-//! the reader names before it promises anything.
+//! The question a click on a missing book asks instead of opening the reader onto an error: two
+//! doors that point the row at the file it is now — pick the file yourself, or name a folder and
+//! let the app walk it looking for a file of the book's own name — plus a Cancel that changes
+//! nothing.
 
 use leptos::prelude::*;
 

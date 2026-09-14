@@ -1,16 +1,7 @@
-//! The two ways books arrive, and — inside a watched folder's shelf — the way
-//! one comes back.
+//! The two ways books arrive, and — inside a watched folder's shelf — the way one comes back.
 //!
-//! Both the shelf's `+` card and the empty state's button open this rather than
-//! doing anything themselves: an import has exactly two sources and the reader
-//! should see both from either, or the empty state becomes the only way to find
-//! one of them.
-//!
-//! The third section only exists when the page is drilled into a folder's shelf,
-//! and it is built without walking anything. A restore menu that had to rescan the
-//! tree to open would take as long as the import it is offering an alternative to,
-//! so it reads the folder's own ledger — its tombstones and what its last scan saw
-//! — and measures only the single file a row is about to bring back.
+//! The shelf's `+` card and the empty state's button open this rather than doing anything
+//! themselves: an import has two sources and the reader should see both from either.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -32,13 +23,10 @@ use crate::services::library::{
 };
 use crate::state::AppState;
 
-/// One row the folder section can offer back.
 #[derive(Debug, Clone, PartialEq)]
 struct RestoreRow {
     item: Recovered,
-    /// A removed book whose file is no longer where it was removed from. Still
-    /// listed, but disabled: a menu that quietly drops rows is a menu the reader
-    /// cannot tell from one that never had them.
+    /// Still listed, but disabled: a menu that quietly drops rows is a menu the reader cannot tell from one that never had them.
     gone: bool,
 }
 
@@ -59,8 +47,6 @@ impl RestoreRow {
         match &self.item {
             Recovered::Deleted(entry) => {
                 let age = human_age(entry.removed_ms, now_ms);
-                // A placeholder fingerprint's "size" is the length of its path,
-                // which is a number that would mean nothing on a menu row.
                 match entry.fp.mtime_ms {
                     0 => format!("removed {age}"),
                     _ => format!("removed {age} · {}", human_size(entry.fp.size)),
@@ -80,10 +66,7 @@ impl RestoreRow {
         }
     }
 
-    /// What a click on this row is for, in the words the tooltip uses. A restore
-    /// is an explicit act, so it is worth saying out loud that it ignores the
-    /// folder's filters — a reader who removed a 12 KB text file and asks for it
-    /// back is not asking to be told it is too small.
+    /// A restore is an explicit act, so it is worth saying out loud that it ignores the folder's filters.
     fn hint(&self) -> &'static str {
         match self.item {
             Recovered::Deleted(_) => {
@@ -94,18 +77,12 @@ impl RestoreRow {
     }
 }
 
-/// Build the rows from the folder's ledger. Synchronous and cheap: two lists the
-/// last scan already wrote.
 fn candidates(state: AppState, folder_id: &str) -> Vec<RestoreRow> {
     let Some(folder) = state.library.folder(folder_id) else {
         return Vec::new();
     };
     let rows = state.library.books.get_untracked();
     let shelves = state.library.shelves.get_untracked();
-    // A link has no fingerprint, so it is not in this index and a folder can
-    // never offer one back: it is a pointer at a book, not a copy of a file.
-    // Which shelves the folder owns and which a book is on are the ledger's
-    // own questions, asked of the shelf list inside `recoverables`.
     let index = index_by_fp(&rows);
     recoverables(&folder, &index, &shelves)
         .into_iter()
@@ -113,10 +90,6 @@ fn candidates(state: AppState, folder_id: &str) -> Vec<RestoreRow> {
         .collect()
 }
 
-/// Pick files and import them, read in place.
-///
-/// A cancel is not an error and raises nothing; anything else is worth a toast,
-/// because the reader asked for this and got no books.
 fn from_files(state: AppState, target: Option<String>) {
     spawn_local(async move {
         match pick_documents().await {
@@ -127,7 +100,6 @@ fn from_files(state: AppState, target: Option<String>) {
     });
 }
 
-/// The same, rooted at a folder the library already knows.
 fn from_files_in(state: AppState, root: String, target: Option<String>) {
     spawn_local(async move {
         match pick_documents_in(root).await {
@@ -138,10 +110,7 @@ fn from_files_in(state: AppState, root: String, target: Option<String>) {
     });
 }
 
-/// Pick a folder and open the import sheet onto it. The sheet is the point: a
-/// folder has options (which formats, how small is too small, whether to copy,
-/// whether to watch), and importing one on the strength of a picker alone would
-/// have to guess all of them.
+/// A folder has options (which formats, how small is too small, whether to copy, whether to watch), and importing one on the strength of a picker alone would have to guess all of them.
 fn from_directory(sheet: ImportSheet) {
     spawn_local(async move {
         match crate::services::library::pick_folder().await {
@@ -152,15 +121,7 @@ fn from_directory(sheet: ImportSheet) {
     });
 }
 
-/// The shelf a pick made from here lands on: the level the reader is looking at,
-/// and nothing at the root — "All" is the library's own order, not a shelf to
-/// file onto, so a pick from there leaves its books unfiled and that is the
-/// honest answer for a handful of loose files.
-///
-/// One spelling for the two ways in, because the grid's add card and the list's
-/// add row are one door in two shapes: a pick from one that filed somewhere the
-/// other would not is a door that behaves differently depending on which layout
-/// the reader happens to be looking at.
+/// Nothing at the root: "All" is the library's own order, not a shelf to file onto, so a pick from there leaves its books unfiled.
 pub(crate) fn add_target(state: AppState) -> Signal<Option<String>> {
     Signal::derive(move || {
         let id = state.library.shelf.get();
@@ -168,37 +129,18 @@ pub(crate) fn add_target(state: AppState) -> Signal<Option<String>> {
     })
 }
 
-/// Which face the add trigger wears. The three doors to one menu are three
-/// affordances in three layouts, and the wiring behind them — the open flag,
-/// the anchor, the target the picks file onto — is one.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AddFace {
-    /// The grid's last cell: a cover-shaped dashed button. It is a card and
-    /// not a toolbar button because the shelf is where the reader is looking
-    /// when they decide to add to it, and a grid with a hole at the end reads
-    /// as unfinished — the shape is the affordance: same box as a cover,
-    /// dashed instead of painted, plus instead of art. (It wears the book
-    /// card's classes for that shape and is not a book, so the selection
-    /// dimming in `styles/components/library/select.css` names it as an
-    /// exception.)
+    /// A card and not a toolbar button because the shelf is where the reader is looking when they decide to add to it, and a grid with a hole at the end reads as unfinished.
     Card,
-    /// The list's last row.
     Row,
-    /// The empty shelf's one call to action, with the drop hint under it.
-    /// Files onto NO level: the empty state is about the library, not about
-    /// wherever the reader happens to be standing.
     Empty,
 }
 
-/// The add trigger: the button, its anchor and the menu, wired once for the
-/// three faces.
 #[component]
 pub(crate) fn AddMenuButton(state: AppState, face: AddFace) -> impl IntoView {
     let open = RwSignal::new(false);
     let anchor: NodeRef<html::Div> = NodeRef::new();
-    // A pick made from inside a shelf files onto it; one made from the root
-    // has no shelf to file onto. The rule is `add_target`'s, and the empty
-    // state's door is the one that files onto nothing on purpose.
     let target = match face {
         AddFace::Empty => Signal::derive(|| None),
         AddFace::Card | AddFace::Row => add_target(state),
@@ -284,16 +226,10 @@ pub(crate) fn AddMenu(
     state: AppState,
     open: RwSignal<bool>,
     anchor: NodeRef<html::Div>,
-    /// The shelf a pick lands on. `None` files onto no shelf, which leaves the
-    /// books in "All" — the honest answer for a pick made from the root. Read at
-    /// click time rather than at mount: the trigger outlives a drill in or out.
     target: Signal<Option<String>>,
 ) -> impl IntoView {
     let sheet = use_context::<ImportSheet>().expect("the library page provides the import sheet");
 
-    // The folder this menu belongs to, if the page is drilled into one of its
-    // shelves. Derived rather than passed: the trigger is mounted once and the
-    // shelf underneath it changes.
     let folder_id = Signal::derive(move || {
         let id = state.library.shelf.get();
         if id == ALL_SHELF {
@@ -305,16 +241,9 @@ pub(crate) fn AddMenu(
     });
 
     let rows = RwSignal::new(Vec::<RestoreRow>::new());
-    // A moved-book row does not act immediately: "also show it here" and "go and
-    // look at where it went" are different answers, so the list swaps for a
-    // two-choice confirm inside the same popover. No modal lane is involved, which
-    // is the point — a confirm that evicted the menu it came from would close the
-    // thing the reader was reading.
+    // "Also show it here" and "go and look at where it went" are different answers, so the list swaps for a two-choice confirm inside the same popover — a confirm that evicted the menu it came from would close the thing the reader was reading.
     let confirm = RwSignal::new(None::<Recovered>);
 
-    // Build the rows when the menu opens, then measure the removed ones. A row
-    // whose file is gone stays listed and goes quiet, rather than disappearing
-    // between the click and the paint.
     Effect::new(move |_| {
         if !open.get() {
             return;
@@ -451,8 +380,6 @@ pub(crate) fn AddMenu(
     }
 }
 
-/// The address a removed-book row would restore from, for matching a path check
-/// back to the row it was about.
 fn deleted_path(row: &RestoreRow) -> Option<String> {
     match &row.item {
         Recovered::Deleted(entry) => Some(entry.last_path.clone()),
@@ -460,9 +387,7 @@ fn deleted_path(row: &RestoreRow) -> Option<String> {
     }
 }
 
-/// The folder the page is drilled into, if it is one of a watched folder's
-/// shelves. Read at click time: a restore has to name the folder it restores
-/// through, and the menu outlives the render that built it.
+/// Read at click time: a restore has to name the folder it restores through, and the menu outlives the render that built it.
 fn current_folder_id(state: AppState) -> Option<String> {
     let shelf_id = state.library.shelf.get_untracked();
     if shelf_id == ALL_SHELF {
@@ -471,9 +396,7 @@ fn current_folder_id(state: AppState) -> Option<String> {
     state.library.shelf_folder_id(&shelf_id)
 }
 
-/// One restore row. Its own component because a row is four strings and a branch,
-/// and building all of that inside an enumerated `map` would be a closure per
-/// signal handle for no reason.
+/// Its own component because a row is four strings and a branch, and building that inside an enumerated `map` would be a closure per signal handle.
 #[component]
 fn RestoreItem(
     state: AppState,
@@ -486,8 +409,6 @@ fn RestoreItem(
     let sublabel = row.sublabel(now);
     let hint = row.hint().to_string();
     let gone = row.gone;
-    // Everything the row needs, taken before `item` moves: the icon is a question
-    // about the row, and asking it afterwards would be asking a moved value.
     let icon = row.icon();
     let item = row.item;
 
@@ -505,10 +426,6 @@ fn RestoreItem(
                             return;
                         };
                         open.set(false);
-                        // The row comes off the list when the restore lands, not
-                        // before: a measurement that comes back empty keeps the
-                        // tombstone, and a menu that had already forgotten it would
-                        // have nowhere to put it back.
                         restore_deleted_book(state, folder_id, entry.fp);
                     }
                     Recovered::Moved { .. } => confirm.set(Some(item.clone())),
@@ -518,7 +435,6 @@ fn RestoreItem(
     }
 }
 
-/// The two-choice confirm a moved-book row swaps the list for.
 #[component]
 fn Confirm(
     state: AppState,
@@ -534,8 +450,6 @@ fn Confirm(
             home_shelf,
             ..
         } => (book_id.clone(), title.clone(), home_shelf.clone()),
-        // Only a moved row ever opens a confirm; anything else is a bug in the
-        // caller and an empty block is a quieter answer than a panic.
         Recovered::Deleted(_) => (String::new(), None, None),
     };
     let label = title.clone().unwrap_or_else(|| "This book".to_string());
@@ -572,10 +486,6 @@ fn Confirm(
                 label=go_label
                 sublabel="Closes this menu and takes you to it".to_string()
                 on_click=move || {
-                    // Closed BEFORE navigating: the menu is anchored to a trigger
-                    // inside the grid that is about to be replaced, and a popover
-                    // left measuring a node that no longer exists is a popover in
-                    // the wrong place.
                     open.set(false);
                     crate::services::library::reveal_book(state, &go_id);
                 }
@@ -584,8 +494,6 @@ fn Confirm(
     }
 }
 
-/// A book the menu would offer, for the one test this file can honestly hold: a
-/// row's words are a rule, not decoration.
 #[cfg(test)]
 mod tests {
     use super::RestoreRow;
@@ -638,8 +546,6 @@ mod tests {
 
     #[test]
     fn a_book_never_measured_shows_no_size_it_does_not_have() {
-        // A placeholder fingerprint's size is the length of its path. Printing it
-        // would put a number on a menu row that means nothing.
         let row = RestoreRow {
             item: Recovered::Deleted(Tombstone {
                 fp: Fingerprint {
@@ -682,8 +588,6 @@ mod tests {
         };
         assert_eq!(row.label(), "Dune");
         assert_eq!(row.sublabel(NOW), "now on “Fiction”");
-        // Built rather than updated: `Recovered` is an enum, and a struct-update
-        // on one is not a thing.
         let homeless = RestoreRow {
             item: Recovered::Moved {
                 book_id: "b1".into(),
@@ -698,8 +602,6 @@ mod tests {
 
     #[test]
     fn a_restore_says_that_it_ignores_the_folders_filters() {
-        // The one thing a reader could reasonably be surprised by, so it is on the
-        // row rather than in a document.
         let row = removed(Some("Dune"), "/books/dune.pdf", 1, 0);
         assert!(row.hint().contains("filters"));
     }

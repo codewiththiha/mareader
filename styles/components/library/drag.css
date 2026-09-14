@@ -1,13 +1,6 @@
-/* ---------------------------------------------------------------------------
-   The drag layer: what the pointer is carrying, drawn by the session rather than
-   composited by the engine.
-
-   A browser drag image is one bitmap of the element the press started on, made
-   before the drag begins and unreachable from a stylesheet afterwards. This is a
-   view like any other, which is the only way three things become possible: a ghost
-   of all four covers a reader is holding, a plate that fills in as a fold brews,
-   and a layer that the theme's own tokens paint.
-   --------------------------------------------------------------------------- */
+/* The drag layer: what the pointer is carrying, drawn by the session rather than composited by
+   the engine. A browser drag image is one bitmap of the element the press started on, made before
+   the drag begins and unreachable from a stylesheet afterwards. */
 .lib-drag-layer {
   position: fixed;
   z-index: var(--z-drag-overlay);
@@ -23,23 +16,10 @@
      behind the hand, which reads as rubber-banding. */
   transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* Sunk, which happens on one kind of target only: a title-bar crumb. The anchor
-   moves from "a little up and left of the pointer" to "centred on the crumb", and
-   the ghost shrinks with it, because a crumb is the one place on the page smaller
-   than the ghost hovering it — at full size the ghost covers the name of the very
-   level the reader is aiming at, and a third-size plate leaves that name sticking
-   out on both sides of it. All three halves are this one class — the anchor, the
-   transition that glides to it, and the ghost's own scale below — because they
-   are one fact and a second class would be a second writer of the same frame.
-
-   The `left`/`top` transition is scoped to the sunk state and NOT to the layer,
-   and there is no grace beat keeping it armed after the sink lifts. A transition
-   on `left`/`top` while the ghost follows the pointer is the ghost trailing the
-   hand by the length of the transition, and it costs a layout on every frame of
-   the follow — which is the one thing a drag must not spend. So the class comes
-   off on the same frame the sink lifts, the follow resumes 1:1 under the hand,
-   and the grow-back stays soft on transform and opacity alone, which the
-   compositor runs without touching layout. */
+/* Sunk, which happens on one kind of target only: a title-bar crumb. At full size the ghost
+   covers the name of the very level the reader is aiming at, so the anchor moves to the crumb's
+   centre, the ghost shrinks to a third and goes translucent. A shrink needs no lane, which is why
+   the crumb stays readable without any z-step. */
 .lib-drag-sunk {
   transform: translate(-50%, -50%);
   transition:

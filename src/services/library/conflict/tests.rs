@@ -10,8 +10,7 @@ fn fp(n: u32) -> Fingerprint {
     library_core::testkit::fp_n(n)
 }
 
-/// A Markdown row: the cover queue skips anything that is not a PDF, so a
-/// host test that lands a book never starts the wasm render chain.
+/// The cover queue skips anything that is not a PDF, so a host test that lands a book never starts the wasm render chain.
 fn row(id: &str, title: &str, path: &str, n: u32) -> Row {
     Row::Book(Book {
         title: Some(title.to_string()),
@@ -22,7 +21,6 @@ fn row(id: &str, title: &str, path: &str, n: u32) -> Row {
     })
 }
 
-/// A book row that has been read to `page`, so a fold has something to take.
 fn row_at(id: &str, title: &str, path: &str, n: u32, page: u32) -> Row {
     let mut row = row(id, title, path, n);
     row.as_book_mut().unwrap().page = page;
@@ -34,10 +32,6 @@ fn shelf(id: &str, members: &[&str]) -> Shelf {
     library_core::testkit::plain_shelf(id, members)
 }
 
-/// A stored row: the library's own copy of a file, with the provenance a
-/// conversion writes — `src` is the address the copy was made from, and it
-/// is what tells a merge or a link that the copy and a linked book are two
-/// halves of one content.
 fn stored_row(id: &str, title: &str, src_path: &str, store: &str, n: u32) -> Row {
     let mut book = Book::new(
         id.to_string(),
@@ -53,8 +47,6 @@ fn stored_row(id: &str, title: &str, src_path: &str, store: &str, n: u32) -> Row
     Row::Book(book)
 }
 
-/// An in-place folder that placed the given fingerprints — the ledger half
-/// of a read-at-place import.
 fn folder_in_place(
     id: &str,
     root: &str,
@@ -83,9 +75,7 @@ fn file(name: &str, n: u32) -> library_core::scan::FoundFile {
     }
 }
 
-/// The state a question is asked of, with the owner that keeps its signals
-/// alive — the pair a test has to hold, because a signal written under a
-/// dropped owner is a signal nobody can read.
+/// The pair a test has to hold, because a signal written under a dropped owner is a signal nobody can read.
 fn library(rows: Vec<Row>, shelves: Vec<Shelf>) -> (Owner, AppState) {
     let owner = Owner::new();
     owner.set();
@@ -95,7 +85,6 @@ fn library(rows: Vec<Row>, shelves: Vec<Shelf>) -> (Owner, AppState) {
     (owner, state)
 }
 
-/// The one question a single arrival raises, when it raises one.
 fn the_ask(state: AppState, arrival: Arrival) -> ConflictAsk {
     let (clean, asks) = screen(state, vec![arrival]);
     assert!(clean.is_empty(), "the level has no room for this name");
@@ -123,7 +112,6 @@ fn a_name_the_level_already_holds_asks_and_names_the_row() {
     let ask = the_ask(state, Arrival::import(file("dune", 2), "s", None));
     assert_eq!(ask.existing_id, "b1");
     assert_eq!(ask.existing_name, "Dune");
-    // The arrival survives on the ask, because an answer is what places it.
     assert_eq!(ask.arrival.name, "dune");
     assert!(ask.arrival.file.is_some());
 }
@@ -159,8 +147,6 @@ fn a_batch_lands_its_clean_half_and_queues_its_questions() {
         "and the rest wait rather than being dropped"
     );
 
-    // A second batch in flight joins the queue behind the one on screen
-    // rather than replacing it.
     let (_clean, more) = screen(
         state,
         vec![Arrival::import(file("dune", 6), "s", None)],
@@ -173,7 +159,6 @@ fn a_batch_lands_its_clean_half_and_queues_its_questions() {
     );
     assert_eq!(state.library.conflict_waiting.get_untracked().len(), 2);
 
-    // Cancel drops what is waiting, which is what Cancel has always meant.
     cancel(state);
     assert!(state.library.conflict.ask.get_untracked().is_none());
     assert!(state.library.conflict_waiting.get_untracked().is_empty());
@@ -201,9 +186,7 @@ fn already_imported_places_nothing_and_lights_the_row_it_names() {
     assert_eq!(first.id, "b1");
     assert!(!state.library.conflict.open.get_untracked());
 
-    // Asking again is asking again: the nonce is what makes a second
-    // reveal of the same row a second gesture rather than an equal value
-    // nobody is told about.
+    // The nonce is what makes a second reveal of the same row a second gesture rather than an equal value nobody is told about.
     let ask = the_ask(state, Arrival::import(file("dune", 2), "s", None));
     raise(state, vec![ask]);
     answer_placement(state, Placement::Open);
@@ -213,9 +196,6 @@ fn already_imported_places_nothing_and_lights_the_row_it_names() {
 
 #[test]
 fn make_link_puts_a_pointer_on_the_level_and_no_second_book() {
-    // The collision IS the row the link will point at, so a link always
-    // lands on a level that already holds a book of that name: the reader
-    // wants the book reachable from here and does not want a second one.
     let (_owner, state) = library(
         vec![row("b1", "Dune", "/one/dune.md", 1)],
         vec![shelf("s", &["b1"])],
@@ -250,13 +230,9 @@ fn a_link_never_blocks_the_next_arrival_and_never_gets_opened() {
         ],
         vec![shelf("s", &["l1"])],
     );
-    // The only row on the shelf is a pointer: the name is taken by nothing
-    // a reader would call a book, so the arrival lands.
     let (clean, asks) = screen(state, vec![Arrival::import(file("dune", 2), "s", None)]);
     assert_eq!(clean.len(), 1);
     assert!(asks.is_empty());
-    // And a pointer is not the library's row for a content: the book it
-    // points at is, whichever shelf that is filed on.
     assert_eq!(state.library.row("l1").map(|r| r.is_link()), Some(true));
     assert_eq!(state.library.row_name("l1"), "Dune");
     assert_eq!(state.library.row_name("gone"), "");
@@ -264,9 +240,7 @@ fn a_link_never_blocks_the_next_arrival_and_never_gets_opened() {
 
 #[test]
 fn merge_keeps_the_row_that_was_here_and_folds_the_other_into_it() {
-    // Two books of one name on one level, and the reader says they are one
-    // book: the row already here survives — its id is what every shelf and
-    // every storage key names — and takes the further place in it.
+    // The row already here survives — its id is what every shelf and every storage key names.
     let (_owner, state) = library(
         vec![
             row_at("b1", "Dune", "/one/dune.md", 1, 12),
@@ -306,11 +280,7 @@ fn merge_keeps_the_row_that_was_here_and_folds_the_other_into_it() {
 
 #[test]
 fn a_merge_after_a_move_leaves_the_level_the_book_departed() {
-    // The regression this guards: a drag from "t" onto "s" answered with
-    // merge used to file the survivor onto "t" — the very shelf the move
-    // departed — so the book looked like it had never moved, and a SECOND
-    // drag (which asks nothing, because the survivor is already on "s"
-    // and a row never collides with itself) was what finally took it off.
+    // The regression this guards: a drag from "t" onto "s" answered with merge used to file the survivor onto "t" — the very shelf the move departed.
     let (_owner, state) = library(
         vec![
             row_at("b1", "Dune", "/one/dune.md", 1, 12),
@@ -352,9 +322,6 @@ fn a_merge_after_a_move_leaves_the_level_the_book_departed() {
 
 #[test]
 fn the_covered_question_places_nothing_and_lights_the_folders_book() {
-    // A loose import of a file an in-place folder holds: the folder's
-    // book is the only book this file is, so the "show" answer writes no
-    // row and lights the one the folder has.
     let (_owner, state) = library(
         vec![row("b1", "Dune", "/books/dune.md", 1)],
         vec![shelf("fs", &["b1"]), shelf("s", &[])],
@@ -381,9 +348,6 @@ fn the_covered_question_places_nothing_and_lights_the_folders_book() {
 
 #[test]
 fn the_show_answer_imports_nothing_and_lights_the_shelf_that_is_here() {
-    // The stored arrival's first answer is a light and no import: nothing
-    // is written, no run starts, and the reveal lands on the shelf whose
-    // name the arrival carried, wherever it hangs.
     let (_owner, state) = library(Vec::new(), vec![shelf("s1", &[])]);
     state.library.shelf_conflict.ask.set(Some(ShelfConflictAsk {
         incoming_name: "Books".to_string(),
@@ -455,17 +419,12 @@ fn a_move_collision_is_the_other_question() {
         ],
         vec![shelf("s", &["b1"]), shelf("t", &["b2"])],
     );
-    // Two books of one name and the reader is holding one of them, so the
-    // sheet offers merge, replace and as new — and never a link, which is
-    // an answer for an arrival that has no row of its own to keep. The two
-    // answer sets are two types, so a sheet cannot offer one for the other.
+    // The sheet offers merge, replace and as new — and never a link, which is an answer for an arrival that has no row of its own to keep.
     let (clean, asks) = screen(state, vec![Arrival::moved("b2", "Dune", "s", None)]);
     assert!(clean.is_empty());
     assert_eq!(asks.len(), 1);
     assert!(!asks[0].arrival.is_import());
     assert_eq!(asks[0].existing_id, "b1");
-    // The same name arriving as a FILE on the same level is the other
-    // question, and says so on the arrival the sheet reads.
     let (clean, asks) = screen(state, vec![Arrival::import(file("dune", 3), "s", None)]);
     assert!(clean.is_empty());
     assert!(asks[0].arrival.is_import());
@@ -503,8 +462,6 @@ fn add_as_new_renames_a_moved_row_and_then_moves_it() {
         Some(Vec::new()),
         "having left the one it was lifted from"
     );
-    // The name it took is free on the level it left, and the level it
-    // joined now holds both names.
     assert_eq!(
         state.library.row_name("b1"),
         "Dune",
@@ -514,11 +471,7 @@ fn add_as_new_renames_a_moved_row_and_then_moves_it() {
 
 #[test]
 fn a_link_answer_dissolves_the_dragged_row_into_a_pointer_and_binds_the_log() {
-    // The pointer shape: a read-at-place book meets the library's own
-    // stored copy of its content. The copy stays, the file on disk stays,
-    // the level gains a row that reaches it — and the folder's moved-out
-    // log binds to the survivor, so a later import of the file highlights
-    // the copy instead of minting a neighbour.
+    // The pointer shape: a read-at-place book meets the library's own stored copy of its content. The folder's moved-out log binds to the survivor, so a later import of the file highlights the copy instead of minting a neighbour.
     let (_owner, state) = library(
         vec![
             row("b1", "Dune", "/books/dune.md", 1),
@@ -568,8 +521,6 @@ fn a_link_answer_dissolves_the_dragged_row_into_a_pointer_and_binds_the_log() {
 
 #[test]
 fn a_merge_into_the_stored_copy_binds_the_folder_log_to_the_survivor() {
-    // One book, the reader said — and the folder's file has no row of its
-    // own any more, so the log has to name the row that answers for it.
     let (_owner, state) = library(
         vec![
             row("b1", "Dune", "/books/dune.md", 1),
@@ -599,10 +550,7 @@ fn a_merge_into_the_stored_copy_binds_the_folder_log_to_the_survivor() {
 
 #[test]
 fn a_merge_of_two_different_books_writes_no_log() {
-    // The same NAME is not the same content: the folder's file still has a
-    // book the reader means by it — the one a re-import brings back — and
-    // a log binding the folder to an unrelated survivor would send that
-    // import to the wrong row.
+    // A log binding the folder to an unrelated survivor would send a re-import to the wrong row.
     let (_owner, state) = library(
         vec![
             row("b1", "Dune", "/books/dune.md", 1),

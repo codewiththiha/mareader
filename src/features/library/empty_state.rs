@@ -1,7 +1,6 @@
-//! The library with nothing in it: one import door, and the drop hint beside
-//! it. The door is the shared add trigger's empty face
-//! (`crate::features::library::add_menu::AddMenuButton`) — the same menu the
-//! grid's last cell and the list's last row open, wired once.
+//! The library with nothing in it: one import door, and the drop hint beside it. The door is the
+//! shared add trigger's empty face (`crate::features::library::add_menu::AddMenuButton`) — the same
+//! menu the grid's last cell and the list's last row open.
 
 use leptos::prelude::*;
 

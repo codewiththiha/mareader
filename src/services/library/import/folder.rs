@@ -1,7 +1,6 @@
-//! The folder run: scan one watched folder, run the ledger over what the
-//! walk found, copy whatever the options say to copy, and write the result in
-//! one go. The stages are the functions below; [`run_folder`] is the order
-//! they run in.
+//! The folder run: scan one watched folder, run the ledger over what the walk found,
+//! copy whatever the options say to copy, and write the result in one go. The stages
+//! are the functions below; [`run_folder`] is the order they run in.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -31,21 +30,9 @@ use crate::state::library::{ImportTask, NoteKind};
 use crate::state::AppState;
 use crate::time::now_ms;
 
-/// The shelf a found file belongs on: every rung between the folder's root shelf
-/// and the file's own subfolder, minted or reused, with each rung this call minted
-/// collected into `new_shelves` for the caller to put a shelf row under.
-///
-/// One spelling for the two loops a folder run mints through — the books it adds
-/// and the books the library already held, which a planned tree owes a membership
-/// of — because the two have to agree about what a rung is CALLED and about who
-/// OWNS it, and a second copy was a second answer to both. An *as new* run that
-/// named its root rung one way for new files and another for known ones would
-/// have minted two trees side by side instead of one.
-///
-/// The whole chain rather than the leaf, which is `shelf_chain_for`'s own rule:
-/// importing "1" whose inside is "2", "3" and four books has to produce "1" at the
-/// root with "2", "3" and the four books inside it — not three siblings at the
-/// root and the books twice.
+/// One spelling for the two loops a folder run mints through — the books it adds and the
+/// books the library already held, which a planned tree owes a membership of — so a rung
+/// cannot be minted twice under two spellings of its own name.
 fn chain_for(
     folder: &mut WatchedFolder,
     key: &str,
@@ -60,8 +47,7 @@ fn chain_for(
         key,
         |_| id::next_shelf_id(now),
         |rung| match (rung.is_empty(), planned_name) {
-            // The folder sheet's *as new* answer: the root rung wears the counter
-            // name it promised, and every rung below it keeps the disk's own.
+            // The folder sheet's *as new* answer: the root rung wears the counter name it promised.
             (true, Some(name)) => name.clone(),
             _ => shelf_name(rung, root),
         },
@@ -75,29 +61,16 @@ fn chain_for(
                 },
                 books: Vec::new(),
                 parent,
-                // Minted by the scan, so the scan owns its rung — until a hand
-                // moves it, which is `reparent`'s mark. A merged run marks every
-                // rung it mints: their tree hangs off a shelf the disk does not
-                // own, so there is no disk shape for a re-hang to put them back on.
+                // Minted by the scan, so the scan owns its rung — until a hand moves it, which is `reparent`'s mark.
                 manual_parent: merged,
             });
         },
     )
 }
 
-// ---------------------------------------------------------------------------
-// The dock's cards. Written from here rather than from the dock: the dock is a
-// view, and a view that owned the lifecycle of the thing it renders would have
-// to outlive the import it is reporting on.
-// ---------------------------------------------------------------------------
 
-/// Measure the rows the walk found at addresses the library already holds,
-/// taking those files out of the add list. The heal half of the migrated-row
-/// rule: a file at an address the library reads IS that book, whatever the two
-/// fingerprints say, and the walk has just made the measurement the startup
-/// pass could not. Answers the addresses it healed, which is the count the card
-/// reports and the set the merge stage passes by: a healed row's membership is
-/// the reader's business, exactly as the landing's own heal leaves it.
+/// The heal half of the migrated-row rule: a file at an address the library reads IS that
+/// book, whatever the two fingerprints say.
 pub(super) fn heal_by_address(
     books: &mut [Row],
     adds: &mut Vec<FoundFile>,
@@ -105,9 +78,6 @@ pub(super) fn heal_by_address(
 ) -> HashSet<String> {
     let mut healed = HashSet::new();
     adds.retain(|file| {
-        // A copies run's file is an add BECAUSE the library holds the
-        // address: healing it into the row that is there would answer the
-        // second instance the reader asked for with the first one.
         if skip.contains(&file.path) {
             return true;
         }
@@ -123,18 +93,9 @@ pub(super) fn heal_by_address(
     healed
 }
 
-/// The library as one folder run sees it: the snapshot the ledger diffs against,
-/// the walk's own answer, and the set of addresses the run owes a copy of its
-/// own.
-///
-/// A value so the stages below read one consistent picture rather than each
-/// taking its own borrow of four locals. Nothing in it is written back — what
-/// lands is applied to the LIVE signals at the end, so a book the reader opened
-/// while the walk was running is not overwritten by one.
-///
-/// `pub(super)` for the same reason [`Landing`] is: the stages are the run's
-/// units, and a stage a host test cannot build a picture for is a stage whose
-/// rule is only ever asserted by reading it.
+/// A value so the stages below read one consistent picture rather than each taking its own
+/// borrow of four locals. Nothing in it is written back: what lands is applied to the LIVE
+/// signals at the end.
 pub(super) struct Snapshot<'a> {
     pub(super) books: &'a [Row],
     pub(super) registry: &'a ledger::Registry,
@@ -142,20 +103,9 @@ pub(super) struct Snapshot<'a> {
     pub(super) copy_paths: &'a HashSet<String>,
 }
 
-/// The folder's ledger row for this run.
-///
-/// Importing a folder the library already watches continues that row's `placed`
-/// and `ignored` sets, which is the whole point of them: re-importing is how a
-/// reader would otherwise get back every book they deleted last week. A folder
-/// the library has never seen is minted here, and a minted row carries no
-/// history for any rule to misread.
-///
-/// The options are the sheet's. The watch is too, and where its answer LANDS
-/// is the run's: a fresh folder's root for an ordinary import, the picked rung
-/// for a continuation of a standing tree (written before the run, by
-/// `import_folder`), and nowhere at all for a copies run, which the sheet never
-/// asks. Turning a standing tree's watch by hand is the shelf's own menu
-/// (`crate::services::library::set_shelf_watch`).
+/// Importing a folder the library already watches continues that row's `placed` and `ignored`
+/// sets, which is the whole point of them: re-importing is how a reader would otherwise get
+/// back every book they deleted last week.
 pub(super) fn resolve_folder(
     folders: &[WatchedFolder],
     shelves: &[Shelf],
@@ -175,37 +125,14 @@ pub(super) fn resolve_folder(
         scanned_ms: 0,
         tracking: TrackingTree::default(),
     });
-    // The sheet's answers are this import's truth, and the next scan's — with
-    // one run that does not own the root's answer. A CONTINUATION of a standing
-    // tree is a re-pick of ground the tree already covers, and the sheet's
-    // switch on covered ground answered for the RUNG the pick names — an
-    // answer `import_folder` wrote on that rung (`set_rung_tracking`) before
-    // this run started. The tree's root is not this run's to rewrite: a rung
-    // re-picked with the switch on is a question about that subfolder, and
-    // writing the sheet's value over the root would turn the WHOLE tree on —
-    // or off — from a sheet that promised it answers for the subfolder alone.
-    //
-    // The root force this replaced — a seated ground forced watched whatever
-    // the sheet said — was the lock era's rule, from when the sheet's switch
-    // was DISABLED on covered ground and an arriving `false` was a stale
-    // default to defend against. The sheet now opens SEEDED with the tree's own
-    // answer for the ground, so what arrives is the reader's rather than a
-    // leftover: a re-import with the switch off is the reader turning the watch
-    // off, and forcing it back on was a switch that did not work.
-    //
-    // A run that COPIES writes no root decision either, because the watch is
-    // not offered beside a copy — and there is nothing in a copying folder's
-    // tree for a later scan to honour (see `WatchedFolder::owes_walk`). The
-    // mode is read off the folder rather than off the parameter, which was
-    // moved into it a line above.
+    // A CONTINUATION of a standing tree is a re-pick of ground the tree already covers, and the
+    // sheet's switch on covered ground answered for the RUNG the pick names — an answer
+    // `import_folder` wrote on that rung before this run started. The tree's root is not this
+    // run's to answer for.
     folder.opts = opts;
-    // The sheet's switch is a question about the ROOT RUNG, and the tree is what
-    // answers it from here on — so the sheet's answer is written into the tree
-    // rather than left on the flag alone. The two stay agreed because
-    // `set_tracking` mirrors the root's answer back onto the flag the sheet and
-    // the older surfaces read. A continuation re-mirrors the flag from the tree
-    // it did not rewrite, so a folder's persisted flag cannot drift from its
-    // tree whichever kind of run touched it last.
+    // The sheet's switch is a question about the ROOT RUNG, and the tree is what answers it from
+    // here on. The two stay agreed because `set_tracking` mirrors the root's answer back onto the
+    // flag the sheet and the older surfaces read.
     if folder.mode().reads_in_place() {
         if plan.continuation.is_none() {
             folder.set_tracking("", folder.opts.watch);
@@ -213,39 +140,22 @@ pub(super) fn resolve_folder(
             folder.opts.watch = folder.tracking.tracked();
         }
     }
-    // A pointer at a shelf that is gone is a rung the walk reuses instead of
-    // minting, and every placement that rides it lands on no shelf at all. Cut
-    // before the map is written to below, so a merge's root and an *as new*
-    // run's clearing are answers about the map that is left.
+    // Cut before the map is written to below, so a merge's root and an *as new* run's clearing are answers about the map that is left.
     folder.prune_shelf_map(shelves);
-    // A merge files into the shelf the level already held: the folder's root
-    // rung is that shelf, and the map is the one place the walk, the chain
-    // minting and every later rescan read the answer from — which is what makes
-    // the merge a promise the next scan keeps.
+    // A merge files into the shelf the level already held: the folder's root rung is that shelf, which is what makes the merge a promise the next scan keeps.
     if let Some(into) = &plan.into {
         folder.shelf_map.insert(String::new(), into.clone());
     }
-    // An *as new* answer owes a tree of its OWN: every rung is minted fresh
-    // under the counter-named root rather than reusing the rungs that hang off
-    // the shelf the folder used to file onto — and from this run on, the new
-    // tree is the folder's tree, which is what the map records.
+    // An *as new* answer owes a tree of its OWN: every rung is minted fresh under the counter-named root.
     if plan.rename.is_some() {
         folder.shelf_map.clear();
     }
     folder
 }
 
-/// Hang this folder's shelves back on the rungs their `rel` names.
-///
-/// The tree on disk is the tree on the shelf, for the shelves this folder owns —
-/// the rule and its edge cases (a hand-moved shelf keeps its place, a subtree
-/// re-hangs together, a virtual shelf is never touched) are
-/// `library_core::shelf::rehang_moves`', pure and host-tested; this is the one
-/// pass that asks it and applies the answer.
-///
-/// Before the diff and before the "nothing changed" return on purpose: a library
-/// arranged by an older build is repaired by the first rescan that looks at the
-/// folder, not only by an import that happens to add something.
+/// The rule and its edge cases are `library_core::shelf::rehang_moves`', pure and
+/// host-tested; this is the one pass that asks it and applies the answer. Runs before the
+/// walk, so the placements below land on the tree as it now stands.
 fn rehang(state: AppState, folder_id: &str) {
     let moves = state
         .library
@@ -264,24 +174,9 @@ fn rehang(state: AppState, folder_id: &str) {
     crate::storage::persist_library(state.library);
 }
 
-/// The placements a PLANNED tree owes the files the library already holds, and
-/// the per-file questions a standing rung's name asks on the way.
-///
-/// A planned tree — the folder sheet's *as new* or *merge* answer — owes a
-/// placement for EVERY file the walk found that the library already holds: a
-/// membership of the row it holds it in, never a second row, because one content
-/// is one identity and one identity is one row. Those files are exactly the ones
-/// the ledger's table answers with a Skip, so a tree promised as "its own shelf,
-/// its own tree" would otherwise hold only the new files — and a re-import of one
-/// folder, whose every file is known, would hold nothing at all.
-///
-/// A merge asks before it places: a file whose name a STANDING rung holds — the
-/// root shelf the answer named, or any subfolder shelf a previous run mapped — is
-/// the compact sheet's per-file question, even when the row wearing the name is
-/// the row the file resolves to, because a reader who re-imports a folder to
-/// reconcile it is owed the three answers per file wherever the names meet, not a
-/// card that says nothing was new. Files no standing name collides with join
-/// silently: new books in a merged folder are the default, not a case.
+/// A planned tree — the folder sheet's *as new* or *merge* answer — owes a placement for
+/// EVERY file the walk found that the library already holds: a membership of the row it
+/// holds it in, never a second row, because one content is one identity.
 fn planned_placements(
     state: AppState,
     snap: &Snapshot<'_>,
@@ -292,11 +187,6 @@ fn planned_placements(
     if plan.rename.is_none() && plan.into.is_none() {
         return (Vec::new(), Vec::new());
     }
-    // Known content never reaches a planned run's add list: its placement is the
-    // membership below, and an add would either resolve to the same row twice or
-    // — in a copying folder — make a store copy nothing reads. The copies run's
-    // own files are the exception the rule exists for: a second instance the
-    // reader just asked for, of a file a tree keeps reading in place.
     adds.retain(|f| {
         !snap.registry.contains_key(&f.fp) || snap.copy_paths.contains(&f.path)
     });
@@ -304,9 +194,7 @@ fn planned_placements(
     let mut replacements = Vec::new();
     let mut asks = Vec::new();
     for file in snap.found {
-        // The row the library holds this file in: by content identity first (the
-        // ledger's own answer), and by address second for the migrated row whose
-        // placeholder identity no measurement matched.
+        // By content identity first (the ledger's own answer), and by address second for the migrated row whose placeholder identity no measurement matched.
         let known = snap
             .registry
             .get(&file.fp)
@@ -319,8 +207,6 @@ fn planned_placements(
         let Some(row_id) = known else {
             continue;
         };
-        // A file the copies run owes lands as a book of its own below, not as
-        // a membership of the row it duplicates.
         if snap.copy_paths.contains(&file.path) {
             continue;
         }
@@ -354,18 +240,9 @@ fn planned_placements(
     (replacements, asks)
 }
 
-/// The compact sheet's questions over the walk's genuinely NEW files.
-///
-/// The same question [`planned_placements`] asks of the files the library already
-/// held, asked of the ones it did not: a merge's new arrivals land on a rung that
-/// may already hold their NAME, and a collision there is the compact sheet's too
-/// (one book / replace / as new, one at a time or one answer for all). Everything
-/// else goes in without being asked — new books are the default, not a case. A new
-/// file inside a SUBFOLDER a previous run mapped is asked against that subfolder's
-/// shelf; a file in a rung being minted fresh has nothing standing to collide with.
-///
-/// Only a merge asks. An *as new* tree mints every rung it files into, so there is
-/// nothing standing for a name to collide with.
+/// The same question [`planned_placements`] asks of the files the library already held,
+/// asked of the ones it did not: a merge's new arrivals land on a rung that may already hold
+/// their NAME, and a collision there is the compact sheet's too.
 fn screen_merge_adds(
     state: AppState,
     snap: &Snapshot<'_>,
@@ -407,33 +284,9 @@ fn screen_merge_adds(
     asks
 }
 
-/// The walked files this folder's tree owes a membership of and does not have
-/// one for: a file whose row the library still holds, but on no shelf this
-/// folder owns.
-///
-/// The merge half of a re-pick, and the half the ledger's table cannot answer.
-/// Two readers make this shape, and neither is a tombstone:
-///
-///   * a book the reader filed onto a shelf of their own. The row is where they
-///     put it and the file is still on this folder's ground, so both tables
-///     answer `Skip` — the content is known and its address has not moved — and
-///     the folder's shelf is left holding nothing for a book the folder holds;
-///   * a book whose shelf the reader took apart. A shelf is a list of ids and
-///     never held a byte, so the row survives it and is in the library on no
-///     shelf at all: a book the walk can see and the reader cannot.
-///
-/// A reader who picks this folder again is asking for its books, so both come
-/// back onto the rung their own directory names — and both come back as a
-/// MEMBERSHIP rather than a move, which is the folder's own "also show it here":
-/// the shelf the reader carried a book to keeps it, because a re-import is an ask
-/// about this folder and not an undo of the arrangement beside it. The files this
-/// run is minting a row for are not asked (their placement is the landing's own),
-/// and neither are the copies a copying run owes, which land as books of their
-/// own rather than as memberships of the row they duplicate.
-///
-/// Empty for a tree whose shelf already holds everything the walk found, which
-/// is what leaves the "nothing new" note the answer for a re-pick that really
-/// did reconcile a tree with nothing to give back.
+/// The merge half of a re-pick, and the half the ledger's table cannot answer. Two readers
+/// make this shape, and neither is a tombstone: a book the reader filed onto a shelf of their
+/// own, and a merge that took the rung a file used to sit on.
 pub(super) fn returned_memberships(
     state: AppState,
     snap: &Snapshot<'_>,
@@ -446,14 +299,9 @@ pub(super) fn returned_memberships(
         if adds.iter().any(|add| add.path == file.path) {
             continue;
         }
-        // A file the copies run owes lands as a book of its own, not as a
-        // membership of the row it duplicates.
         if snap.copy_paths.contains(&file.path) {
             continue;
         }
-        // The row the library holds this file in: by content identity first (the
-        // ledger's own answer), and by address second for the migrated row whose
-        // placeholder identity no measurement matched.
         let Some(row_id) = snap
             .registry
             .get(&file.fp)
@@ -466,9 +314,7 @@ pub(super) fn returned_memberships(
         else {
             continue;
         };
-        // Which shelves a book is on is the shelf module's question, and which of
-        // them this folder owns is the shelf KIND's — one spelling of each, the
-        // pair the folder's restore menu asks the same way.
+        // Which shelves a book is on is the shelf module's question, and which of them this folder owns is the shelf KIND's.
         let on_the_tree = shelves_ops::containing(&shelves_now, &row_id)
             .iter()
             .any(|shelf| shelf.kind.folder_id() == Some(folder_id));
@@ -479,14 +325,7 @@ pub(super) fn returned_memberships(
     out
 }
 
-/// What one walked file needs in order to become a row: the copies that landed,
-/// the measurements of the copies run's own, and the shape of the tree to mint
-/// into.
-///
-/// A value rather than eight arguments, because every one of them is a fact about
-/// the RUN and not about the file — the file supplies its own address, its
-/// measurement and the id minted for it, and everything else is the same for all
-/// four hundred of them.
+/// A value rather than eight arguments: every one of them is a fact about the RUN and not about the file.
 pub(super) struct Landing<'a> {
     pub(super) copies: &'a HashMap<String, String>,
     pub(super) copy_measured: &'a HashMap<String, Fingerprint>,
@@ -498,43 +337,15 @@ pub(super) struct Landing<'a> {
     pub(super) now: u64,
 }
 
-/// What minting one walked file produced.
 pub(super) enum Minted {
-    /// A row was placed: its id, and the shelf the chain minted for it.
     Placed { id: String, shelf: String },
-    /// The address the file was found at already belonged to a row, so the row
-    /// was measured rather than duplicated beside its own twin.
     Healed,
-    /// The copy the options owed did not land, so there are no bytes to read and
-    /// no row to promise.
     CopyFailed,
 }
 
-/// Mint one walked file's row on the LIVE list, or heal the row that appeared at
-/// its address while the walk was running.
-///
-/// The three outcomes are the three things that can be true of a file a walk
-/// found, and telling them apart is the run's whole job:
-///
-///   * a row already reads this address, so the file IS that book and the walk has
-///     just made the measurement the startup pass could not. This is the second
-///     half of the heal-by-address rule, for the book that appeared while the walk
-///     was running. Membership is left alone — the ledger records the placement,
-///     and where the reader filed it is the reader's business. The copies run's
-///     own files are exempt by name: their twin IS the point of them;
-///   * the copy the options owed failed, so there are no bytes to read and a book
-///     here would be a card that opens onto an error. The failure is already on
-///     the toast the batch raised;
-///   * otherwise the file is a new book, and it is minted from the walk's own
-///     measurement — a real fingerprint, not a placeholder, so nothing about it is
-///     pending.
-///
-/// A file this folder remembers REMOVING is coming back on an explicit ask, and
-/// the reader should not notice it was ever gone: the row returns wearing the name
-/// the shelf showed, and the ledger's log is spent by the landing. A copy that
-/// fails leaves the log standing, which is the one honest outcome for a file that
-/// could not be filed — so the spend happens here, with the landing, and not with
-/// the diff.
+/// The three outcomes are the three things that can be true of a file a walk found, and
+/// telling them apart is the run's whole job: a row already reads this address, the file is
+/// new, or the copy the options owed did not land.
 pub(super) fn mint_walked_row(
     books: &mut Vec<Row>,
     folder: &mut WatchedFolder,
@@ -579,26 +390,10 @@ pub(super) fn mint_walked_row(
     if let Some(title) = stone.as_ref().and_then(|s| s.title.clone()) {
         book.title = Some(title);
     }
-    // The copy list's file is a book of its own beside the linked book the
-    // tree keeps: independent, so its marks and its place in it are its own,
-    // and known by its copy's measurement — or by the pending flag the startup
-    // sweep finishes, when the copy could not be weighed. `add_book`'s
-    // one-row-per-fingerprint rule is the right rule for a walk and the wrong
-    // one for a second instance the reader just asked for by name, so the copy
-    // is pushed past it.
-    //
-    // A read-at-place book coming back beside the library's copy of ITS OWN
-    // file is pushed past the same rule, and for the same shape of reason: one
-    // content, two rows, each with one address. The copy wears the fingerprint
-    // on a host that stamps a copy like its source, so `add_book` would answer
-    // with the copy's id — and the walk would then file the COPY on this rung
-    // and report a book come home that never left the store. The link the
-    // folder reads and the copy the reader moved out are the shape a departure
-    // leaves behind on purpose, so the link is minted as its own row. A
-    // COPYING folder keeps the rule whole for the files it already copied: a
-    // second copy of a content the library holds as its OWN is the orphan in
-    // the store the rule exists to prevent — the copies this run owes are of
-    // files the library READS, and they come through the copy list above.
+    // The copy list's file is a book of its own beside the linked book the tree keeps:
+    // independent, so its marks and its place in it are its own. `add_book`'s one-row-per-
+    // fingerprint rule is the right rule for a walk and the wrong one for the second instance
+    // the reader just asked for.
     let beside_its_own_copy = landing.mode.reads_in_place()
         && book_rows(books).any(|b| {
             !b.independent && b.fp == file.fp && b.origin.is_store_copy_of(&file.path)
@@ -621,9 +416,7 @@ pub(super) fn mint_walked_row(
     } else {
         add_book(books, book)
     };
-    // The whole chain, not the leaf: importing "1" whose inside is "2", "3" and
-    // four books has to produce "1" at the root with "2", "3" and the four books
-    // inside it — not three siblings at the root and the books twice.
+    // The whole chain, not the leaf: importing "1" whose inside is "2" and four books has to produce "1" at the root with them inside it.
     let key = folder.shelf_key(file);
     let shelf_id = chain_for(
         folder,
@@ -635,7 +428,6 @@ pub(super) fn mint_walked_row(
         new_shelves,
     );
     folder.mark_placed(file.fp);
-    // The book landed, so a removal that was holding it out is spent.
     ledger::restore_deleted(folder, &file.fp);
     Minted::Placed {
         id: placed_id,
@@ -643,12 +435,7 @@ pub(super) fn mint_walked_row(
     }
 }
 
-/// What the walk owes, decided: the adds (already deduped, healed and
-/// screened), the relinks, the planned tree's memberships, the questions a
-/// merge asks, and the files a moved-out log represents. One value, so the
-/// stages after the diff read one answer rather than eight locals, and the
-/// "nothing to do" test is a question of this struct rather than of the
-/// run's guts.
+/// One value, so the stages after the diff read one answer rather than eight locals.
 struct WalkPlan {
     adds: Vec<FoundFile>,
     relinks: Vec<(String, String)>,
@@ -660,12 +447,8 @@ struct WalkPlan {
     represented: Vec<String>,
 }
 
-/// The diff stage: everything between the walk's raw findings and the copy
-/// batch — the registry the ledger reads, the ledger's own two tables, the
-/// heal of the rows the walk re-measured, the planned tree's memberships, the
-/// memberships a reconciliation owes the books its tree stopped holding, and
-/// the questions a merge asks. Decides against the SNAPSHOT; the only thing
-/// it writes is the folder's own ledger row, which the run holds.
+/// The diff stage: everything between the walk's raw findings and the copy batch. Decides
+/// against the SNAPSHOT; the only thing it writes is the folder's own ledger row.
 #[allow(clippy::too_many_arguments)]
 fn plan_the_walk(
     state: AppState,
@@ -678,32 +461,19 @@ fn plan_the_walk(
 ) -> WalkPlan {
     let registry = ledger::registry_of(books);
 
-    // The copy list, read off the same snapshot the diff reads and before the
-    // run writes anything: the addresses whose file the library already reads
-    // IN PLACE, and where this run lands a copy of its own beside the linked
-    // row. An explicit COPIES run owes every one of them a book — a copies
-    // import is the library's own second instance, unrelated to the tree that
-    // reads the ground, and a walk that answered Skip over all of them is the
-    // silent "Imported 0 books" this list exists to prevent. A RESCAN never
-    // owes one: staying quiet about ground another folder placed is the
-    // rescan's whole job, and the copies a previous import made are known by
-    // their own bytes rather than by these addresses.
+    // The addresses whose file the library already reads IN PLACE, and where this run lands a
+    // copy of its own beside the linked row: a copies import is the library's own second
+    // instance, unrelated to the tree that reads the ground.
     let copy_paths: HashSet<String> = if folder.mode().copies_files() && !quiet {
         ledger::copy_over_paths(found, &registry, books)
     } else {
         HashSet::new()
     };
 
-    // A fingerprint can rejoin the library by any route — a hand-open, a second
-    // folder's import, a restore — and a tombstone left behind for a book that
-    // exists is a restore row offering something the reader already has.
     ledger::prune_tombstones(folder, &registry);
-    // Written on every scan, including one that changes nothing: the restore
-    // menu's "did this book move out of my folder" answer is only as fresh as the
-    // last walk, and a walk that found nothing to do still saw every file.
+    // Written on every scan, including one that changes nothing: a walk that found nothing to do still saw every file.
     folder.record_seen(found);
 
-    // Explicit runs only — a rescan never reveals, so it never asks.
     let represented: Vec<String> = if quiet {
         Vec::new()
     } else {
@@ -712,8 +482,7 @@ fn plan_the_walk(
 
     let mut adds: Vec<FoundFile> = Vec::new();
     let mut relinks: Vec<(String, String)> = Vec::new();
-    // Two tables, one question each: what should come back on its own, and what
-    // the reader is asking for right now. See `ledger` for which rows differ.
+    // Two tables, one question each: what should come back on its own, and what the reader is asking for right now.
     let actions = match asked {
         Asked::OnFocus => ledger::diff_folder(folder, &registry, found),
         Asked::Explicitly => ledger::diff_import(folder, &registry, found),
@@ -725,15 +494,10 @@ fn plan_the_walk(
             ScanAction::Skip => {}
         }
     }
-    // A relink that would point a book at an address another row already reads
-    // is a relink of the WRONG row — the ledger owns that rule and its test.
     ledger::keep_healable_relinks(&mut relinks, books);
     let relinked = relinks.len();
 
-    // The ledger answered Skip for the copy run's own files — their content is
-    // known — but the run owes each of them a book of its own: back onto the
-    // add list they go, and the planned-tree pass below keeps them out of the
-    // memberships it owes the OTHER known files.
+    // The ledger answered Skip for the copy run's own files — their content is known — but the run owes each a book of its own.
     if !copy_paths.is_empty() {
         for file in found
             .iter()
@@ -745,9 +509,6 @@ fn plan_the_walk(
         }
     }
 
-    // The snapshot every stage below reads, so they all decide against one
-    // picture of the library rather than each taking its own borrow of four
-    // locals. Dropped by the heal underneath it, which writes to `books`.
     let (mut replacements, mut asks) = {
         let snap = Snapshot {
             books,
@@ -758,31 +519,20 @@ fn plan_the_walk(
         planned_placements(state, &snap, folder, plan, &mut adds)
     };
 
-    // A file at an address the library already holds IS that book, whatever the
-    // two fingerprints say. The case this catches is a row migrated from the
-    // previous schema: it carries a placeholder identity because nothing ever
-    // measured it, so the ledger above saw "unknown content" — and adding it
-    // would put a second copy of the same file on the shelf next to its own
-    // twin. Healing the row is the honest answer, and the walk has just made the
-    // measurement the startup pass could not.
+    // A file at an address the library already holds IS that book, whatever the two fingerprints
+    // say: the row this catches is one migrated from the previous schema, carrying a placeholder
+    // identity nothing ever measured.
     let healed_paths = heal_by_address(books, &mut adds, &copy_paths);
     let healed = healed_paths.len();
 
-    // One book per fingerprint INSIDE a single scan, always: a tree holding two
-    // byte-identical files is one book, and copying both would leave an orphan
-    // in the store that nothing can ever remove. Across scans it is the
-    // RESCAN's rule and not an explicit import's — a reader who asks for this
-    // folder is asking for the files in it, and a byte-identical copy of a book
-    // another folder placed is still a file this folder holds, so it is still a
-    // book on this folder's shelf.
+    // One book per fingerprint inside a single scan: a tree holding two byte-identical files is
+    // one book, and copying both would leave an orphan in the store that nothing can ever remove.
     let mut seen: HashSet<Fingerprint> = match asked {
         Asked::OnFocus => registry.keys().copied().collect(),
         Asked::Explicitly => HashSet::new(),
     };
     adds.retain(|f| seen.insert(f.fp));
 
-    // The same question for the files the ledger has NOT seen, which a merge
-    // asks and an *as new* tree has nothing standing to ask it against.
     {
         let snap = Snapshot {
             books,
@@ -793,11 +543,7 @@ fn plan_the_walk(
         asks.extend(screen_merge_adds(state, &snap, folder, plan, &mut adds));
     }
 
-    // The reconciliation's merge, which is the half of a re-pick that is not an
-    // add: the walked files this folder's tree owes a membership of and does not
-    // have one for. Asked last, once `adds` is the list that is actually going
-    // to be minted, so a file this run is making a row for is not also asked for
-    // a membership of the row it is about to replace.
+    // Asked last, once `adds` is the list that is actually going to be minted.
     if !quiet
         && folder.mode().reads_in_place()
         && replacements.is_empty()
@@ -814,14 +560,9 @@ fn plan_the_walk(
             };
             returned_memberships(state, &snap, &folder_id, &adds)
         };
-        // A row the walk just healed keeps the membership it had, which is the
-        // landing's own rule for a heal, and counting it here as well would be
-        // counting one file twice on the card that reports the run.
         returned.retain(|(_, file)| !healed_paths.contains(&file.path));
-        // The folder's shelf holds these files from this run on, which is what
-        // `placed` says: a book removed after it is a removal THIS folder takes
-        // a tombstone for, and a fingerprint the ledger skips with no book
-        // behind it is the one state a folder cannot recover from on its own.
+        // A book removed after this is a removal THIS folder takes a tombstone for, and a fingerprint
+        // the ledger skips with no book behind it is the one state a folder cannot recover from.
         for (_, file) in &returned {
             folder.mark_placed(file.fp);
         }
@@ -840,20 +581,15 @@ fn plan_the_walk(
     }
 }
 
-/// What the landing stage counted.
 struct LandTally {
     placed: u32,
     relinked: usize,
     healed: usize,
 }
 
-/// The landing stage: the diff's answer, written to the LIVE lists rather
-/// than to the snapshot — a walk of a big folder takes seconds, and a reader
-/// who opens a book during one must not have that read overwritten by the
-/// write at the end. `update` re-reads inside the write, so an import lands
-/// on top of whatever happened while it was walking. The folder's ledger row
-/// and the blob write stay with the caller: a stage that wrote half a library
-/// would be a stage the next one could not trust.
+/// The diff's answer, written to the LIVE lists rather than to the snapshot: a walk of a big
+/// folder takes seconds, and a reader who opens a book during one must not have that read
+/// overwritten by the write at the end.
 #[allow(clippy::too_many_arguments)]
 fn land_the_walk(
     state: AppState,
@@ -867,22 +603,12 @@ fn land_the_walk(
     merged: bool,
     now: u64,
 ) -> LandTally {
-    // Applied to the LIVE lists rather than to the copies taken before the scan.
-    // A walk of a big folder takes seconds, and a reader who opens a book during
-    // one would otherwise have that read overwritten by the write at the end — or,
-    // if the book was new to the library, dropped from it entirely. `update`
-    // re-reads inside the write, so an import lands on top of whatever happened
-    // while it was walking.
     let mut placed = 0u32;
     let mut relink_count = 0usize;
     let mut healed_here = 0usize;
     let mut new_shelves: Vec<Shelf> = Vec::new();
     let mut placements: Vec<(String, String)> = Vec::new();
     let mode = folder.mode();
-    // Taken BEFORE the landing borrows the walk's copy list: a mutable take
-    // under an outstanding shared borrow is a borrow the compiler refuses,
-    // and the relink list is the one field the landing consumes rather than
-    // reads.
     let relinks = std::mem::take(&mut walk.relinks);
     let landing = Landing {
         copies,
@@ -911,12 +637,8 @@ fn land_the_walk(
                 Minted::CopyFailed => {}
             }
         }
-        // The planned tree's other half: the folder's books the library
-        // already held, as memberships of the rows it holds them in. The
-        // chain mints whatever rungs are not in the map yet — the whole tree
-        // of an *as new* run, nothing at all of a merge into shelves that
-        // stand — and the member guard below keeps a book that is already
-        // where it is being put from moving to the end of it.
+        // The chain mints whatever rungs are not in the map yet, and the member guard below keeps a
+        // book that is already where it is being put from moving to the end of it.
         for (row_id, file) in &walk.replacements {
             let key = folder.shelf_key(file);
             let shelf_id = chain_for(
@@ -942,9 +664,6 @@ fn land_the_walk(
             let Some(shelf) = shelves_ops::find_mut(shelves, shelf_id) else {
                 continue;
             };
-            // Two byte-identical files in one tree are one book, so the second
-            // resolves to an id that is already a member: appending it again would
-            // reshuffle the shelf the reader can see.
             if !shelf.books.iter().any(|m| m == book_id) {
                 shelves_ops::place(&mut shelf.books, book_id, None);
             }
@@ -959,18 +678,8 @@ fn land_the_walk(
     }
 }
 
-/// Scan one folder, run the ledger over what the walk found, copy whatever the
-/// options say to copy, and write the result in one go.
-///
-/// The order the stages run in, rather than any of them: [`resolve_folder`]
-/// says which ledger row the walk continues, [`rehang`] puts the folder's
-/// shelves back on the rungs their directories name, [`plan_the_walk`]
-/// decides what the walk owes ([`ledger::diff_folder`] for a rescan and
-/// [`ledger::diff_import`] for a run the reader asked for, which differ about
-/// tombstones and nothing else), the copy batch makes whatever bytes the
-/// options say to make, [`land_the_walk`] lands all of it on the live signals
-/// at once, and the tail reports — the fold, the light, the questions and
-/// the card.
+/// The order the stages run in, rather than any of them: [`resolve_folder`], [`rehang`],
+/// [`plan_the_walk`], the copy batch, [`land`], then the questions a merge asks.
 pub(super) async fn run_folder(
     state: AppState,
     task: String,
@@ -979,9 +688,6 @@ pub(super) async fn run_folder(
     asked: Asked,
     plan: RootPlan,
 ) {
-    // A rescan is the quiet half of this function: it owes the reader no card
-    // and no write for a folder nothing changed in. An import owes an answer
-    // either way.
     let quiet = asked == Asked::OnFocus;
     let fail_mode = if quiet {
         FailMode::ConsoleOnly
@@ -993,10 +699,6 @@ pub(super) async fn run_folder(
         Err(message) => return fail(state, &task, message, fail_mode),
     };
 
-    // A snapshot, and only a snapshot: the ledger needs a consistent library to
-    // diff against, but nothing below writes these copies back. What lands is
-    // applied to the live signals at the end, so a book opened while the walk was
-    // running is not overwritten by one.
     let mut books = state.library.books.get_untracked();
     let folders = state.library.folders.get_untracked();
     let shelves_now = state.library.shelves.get_untracked();
@@ -1004,7 +706,6 @@ pub(super) async fn run_folder(
     let mut folder = resolve_folder(&folders, &shelves_now, &root, opts, &plan);
     rehang(state, &folder.id);
 
-    // The diff stage: what the walk owes, decided against the snapshot.
     let mut walk = plan_the_walk(state, &mut folder, &mut books, &mut found, asked, &plan, quiet);
 
     if walk.adds.is_empty()
@@ -1014,20 +715,9 @@ pub(super) async fn run_folder(
         && walk.replacements.is_empty()
         && walk.represented.is_empty()
     {
-        // Nothing to do. A quiet run leaves no trace beyond the folder's own
-        // "last scanned" stamp; an explicit import still owes the reader an
-        // answer, which is a card saying nothing was new — and a re-pick of
-        // ground the library already reads in place, the tree's root or any
-        // rung of it, owes the note as well: a sentence earned by a walk that
-        // found every book already standing.
-        //
-        // One shape of "nothing new" is not the note's, and it is an ANSWER
-        // rather than a question: a member of this tree is standing OUTSIDE
-        // it — its rung was removed and the subfolder imported on its own, or
-        // the pick itself is a folder a family could hold. An import is an
-        // ask, and a member outside its family is an ask answered: the fold
-        // puts it back on the rung its directory names, and the report names
-        // the shelf that went home.
+        // Nothing to do. A quiet run leaves no trace beyond the folder's own "last scanned" stamp;
+        // an explicit import still owes the reader an answer, which is a card saying nothing was new —
+        // and a re-pick of ground the library already reads in place owes the note as well.
         folder.scanned_ms = now_ms();
         let root_rung = folder.shelf_map.get("").cloned();
         let folder_id = folder.id.clone();
@@ -1053,11 +743,9 @@ pub(super) async fn run_folder(
     }
 
     let now = now_ms();
-    // Minted off the crate's own counter rather than the snapshot's length: two
-    // watched folders rescan concurrently, and two tasks that both counted the
-    // library as it was BEFORE their walks would mint the same id twice in the
-    // same millisecond — two books wearing one id, which the next load's
-    // sanitize resolves by dropping one of them.
+    // Minted off the crate's own counter rather than the snapshot's length: two watched folders
+    // rescan concurrently, and two tasks that both counted the library as it was BEFORE their walks
+    // would mint the same id twice.
     let adds = std::mem::take(&mut walk.adds);
     let pending: Vec<(String, &FoundFile)> = adds
         .iter()
@@ -1066,8 +754,6 @@ pub(super) async fn run_folder(
     let replaced = walk.replacements.len();
     let expected = (pending.len() + walk.relinked + walk.healed + replaced) as u32;
     if quiet {
-        // The first card appears only now, so a focus rescan that found nothing
-        // never raises one at all.
         let mut card = ImportTask::new(task.clone(), folder_label(&root));
         card.total = expected;
         push_task(state, card);
@@ -1083,11 +769,8 @@ pub(super) async fn run_folder(
             Err(message) => return fail(state, &task, message, fail_mode),
         }
     };
-    // The copy run's copies are measured in one pass before a row is promised:
-    // an independent copy of a file a tree still reads in place must not wear
-    // the ORIGINAL's fingerprint — that identity stays the linked book's, and
-    // the copy is known by its own bytes, the way every instance the library
-    // owns is.
+    // The copy run's copies are measured in one pass before a row is promised: an independent copy
+    // of a file a tree still reads in place must not wear the ORIGINAL's fingerprint.
     let copy_measured: HashMap<String, Fingerprint> = if !walk.copy_paths.is_empty() {
         let stores: Vec<String> = pending
             .iter()
@@ -1099,7 +782,6 @@ pub(super) async fn run_folder(
         HashMap::new()
     };
 
-    // The landing stage, on the live lists.
     let tally = land_the_walk(
         state,
         &mut folder,
@@ -1117,24 +799,13 @@ pub(super) async fn run_folder(
     let root_rung = folder.shelf_map.get("").cloned();
     let folder_id = folder.id.clone();
     write_folder(state, folder);
-    // The tree the walk just finished is hung on the seats the disk names, in
-    // the run that finished it rather than at the start of the next one. The
-    // re-hang at the top of this function read the map the walk was about to
-    // write, so a rung the map had lost — a root shelf taken apart, its rungs
-    // lifted to the level it was on — is a rung this run minted a fresh seat
-    // for and then left hanging where the removal put it. Same pass, same rule,
-    // and a no-op for a tree that was already on its seats.
+    // Hung in the run that finished the tree rather than at the start of the next one: the re-hang
+    // at the top of this function read the map the walk was about to write.
     rehang(state, &folder_id);
     crate::storage::persist_library(state.library);
-    // A folder import is the case this matters most: it is the one way a shelf
-    // arrives with dozens of books at once, and a plate of fallbacks is not a
-    // shelf the reader can scan.
     covers::backfill_missing(state);
 
-    // The fold an explicit run owes at its end — the plan's own, which puts
-    // the picked folder back into the family its ground names, or the outer
-    // tree's, which puts a member found standing outside back inside — runs
-    // before any light, so what is revealed is the shelf WHERE IT NOW IS.
+    // Runs before any light, so what is revealed is the shelf WHERE IT NOW IS.
     let folded = if quiet {
         None
     } else {
@@ -1144,17 +815,9 @@ pub(super) async fn run_folder(
             .and_then(|folder| run_fold(state, &plan, &folder, root_rung.as_deref(), &found))
     };
 
-    // What a FOLDER import reveals is the folder: the shelf the reader's pick
-    // named, lit on the level that holds it — the reader stays outside, where
-    // the folder is visible, because a folder import is about a folder. For a
-    // re-pick of ground the library already reads that is the continuation's
-    // shelf — the tree's root for its root, the RUNG for a rung, because the
-    // rung is the ground the reader asked about even though the walk that
-    // answered ran on the whole tree — and for a first import it is the run's
-    // own root shelf. Going inside and lighting a book is what a FILE import
-    // does (`run_files`), and a folder's books are not the folder. A fold gets
-    // the sentence instead of the bare light: the note says the shelf went
-    // home, and its highlight rides the note's close like every note's.
+    // What a FOLDER import reveals is the folder: the shelf the reader's pick named, lit on the
+    // level that holds it — the reader stays outside, where the folder is visible. For a re-pick
+    // that is the RUNG, because the rung is the ground the reader asked about.
     let represented_count = walk.represented.len() as u32;
     if !quiet {
         match folded {
@@ -1174,10 +837,6 @@ pub(super) async fn run_folder(
         }
     }
 
-    // The asks are raised after the clean half landed and the blob was
-    // written: the sheet counts against the level as the landing left it, and
-    // a card that finishes with questions outstanding says so rather than
-    // claiming an import nobody has answered yet.
     let waiting = walk.asks.len() as u32;
     if !walk.asks.is_empty() {
         let asks = std::mem::take(&mut walk.asks);

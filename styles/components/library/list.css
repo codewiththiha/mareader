@@ -1,7 +1,4 @@
-/* ---------------------------------------------------------------------------
-   The list layout: one row per book. The same books in the same order as the
-   grid, so nothing here carries a decision — only a shape.
-   --------------------------------------------------------------------------- */
+/* The list layout: one row per book. The same books in the same order as the grid, so nothing here carries a decision — only a shape. */
 .lib-list {
   overflow: hidden;
   background: color-mix(in srgb, var(--color-surface) 40%, transparent);
@@ -71,10 +68,7 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-/* The row's trailing 22px button, named for what it IS rather than for the one
-   action it first carried: a shelf row's is "open shelf", and only a book row's
-   and a link row's is the removal's ✕. A class called `remove` on a button that
-   navigates is a class the next reader has to disbelieve. */
+/* The row's trailing 22px button, named for what it IS and not for the one action it first carried: a shelf row's opens the shelf, and only a book row's is the removal's ✕. */
 .lib-row-action {
   display: flex;
   align-items: center;

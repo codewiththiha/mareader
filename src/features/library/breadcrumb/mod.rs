@@ -1,79 +1,21 @@
 //! The breadcrumb: the library page's only prose, and it is navigation.
 //!
-//! One crumb per level the page is drilled through, `Home` first and the shelf
-//! the page is on last. "Home" is always a button, because it is the way back, and so is
-//! every crumb above the last one: a folder three levels down is three clicks from
-//! the root only if the reader can see all three. Before shelves could nest there
-//! were two crumbs at most and the chain was a single optional value; it is a list
-//! now because that is what a forest's path is.
-//!
-//! A list has no end, and a title bar does. The oldest crumbs are elided behind an
-//! ellipsis, which is the same trade every bar that can go deep makes: the reader
-//! keeps the LAST few — the ones nearest where they are — and gets the rest one
-//! hover away. Whether the bar folds at all is a DEPTH question first: a chain
-//! shallower than the fold's own depth gate (`fold::FOLD_MIN_DEPTH`) never
-//! folds, however cramped — its crumbs truncate instead. Past the gate, how
-//! many fold is a WIDTH question before it is
-//! a count: every crumb is measured in a hidden probe against the cluster's own
-//! live box, and the fold deepens on the same frame the bar gets cramped — no
-//! window event anywhere. The count rule (`fold::CRUMB_KEEP`) is the fallback
-//! for the frames before the first measurement, and for numbers that cannot be
-//! trusted.
-//!
-//! The ellipsis is its own affordance and not an arrow on a crumb, and that is not
-//! cosmetics. An arrow on the third level whose panel lists the FIRST and the
-//! second reads as "deeper than three", because a disclosure hangs below the thing
-//! it discloses; the elided levels are shallower, so the affordance standing for
-//! them must not itself be a level. `…` claims to be nothing but a gap, which is
-//! what it is, and the chain inside it is drawn in the bar's own grammar —
-//! `2 > 3 > 4 >` wrapping to `5 > 6` — so a reader who has understood the bar has
-//! already understood the panel.
-//!
-//! The panel opens on hover rather than on click, and stays open while the pointer
-//! is on the ellipsis or on the panel: it is a way of SEEING the levels above, and
-//! a click is already taken by the crumb it lands on. Leaving both closes it one
-//! beat later, which is the beat the pointer needs to cross the gap between them.
-//!
+//! One crumb per level the page is drilled through, `Home` first and the shelf the page is on
+//! last. "Home" is always a button, because it is the way back, and so is every crumb above the
+//! last one: a folder three levels down is three clicks from the root only if the reader can see
+//! all three.
 
 //! ## Crumbs are drop targets
 //!
-//! Every crumb — elided ones included — is a target the drag can land on, so a book
-//! can be filed onto a level the reader is not standing on, including one the bar
-//! has elided, which is the only way to reach a deep level with a hand full of
-//! books without first putting them down. The ellipsis is a target as well and a
-//! drop on it is not: it stands for several levels and names none of them, so
-//! resting on it opens the panel and releasing on it does nothing.
-//!
-//! Which means the panel has to be openable DURING a drag, and a drag cannot raise
-//! a `mouseenter`: the card the press began on holds the pointer capture, and a
-//! captured pointer reports its boundary events to the capture target alone. So
-//! while a drag is live the ellipsis opens from the session's own hot target
-//! instead — the same geometry the drop is decided by, and the one thing under a
-//! capture that still tells the truth.
-//!
+//! Every crumb — elided ones included — is a target the drag can land on, so a book can be filed
+//! onto a level the reader is not standing on. The ellipsis is a target as well and a drop on it
+//! is not: it stands for several levels and the reader cannot see which one they would be
+//! choosing.
 
 //! ## The shelf's own menu
 //!
-//! The LAST crumb is a button for a second reason: it is where a shelf the
-//! reader made gets its name changed or gets taken apart. Renaming happens
-//! inline, in the crumb itself. A dialog that asks for a name before showing
-//! the shelf it belongs to is a dialog the reader has to answer to find out
-//! what they were asking for; here the thing being named is the thing being
-//! typed over. Enter commits and Escape cancels, which is the pair a reader
-//! already expects from a field that replaced a label.
-//!
-//! The crumb stays a drop target while it wears the menu — the registration
-//! is the one every other crumb rides — and while a rename field is up the
-//! box is simply not there to hit, which is the honest answer for a crumb
-//! that is being edited.
-//!
-//! ## Three files, one bar
-//!
-//! [`fold`] is the fold's arithmetic — how many crumbs the bar keeps, which of
-//! them the width hides, and how the panel packs what is hidden into rows —
-//! pure and host-tested. [`panel`] is the ellipsis's own surface: the hover
-//! intent, the ruler the panel measures itself with, and the chain it draws.
-//! This file is the bar and its crumbs.
+//! The LAST crumb is a button for a second reason: it is where a shelf the reader made gets its
+//! name changed or gets taken apart, with the rename happening inline in the crumb itself.
 
 
 mod fold;
@@ -97,51 +39,31 @@ use crate::state::AppState;
 use fold::choose_split;
 use panel::{EllipsisCrumb, HoverIntent};
 
-/// The element id of the root crumb, which stands for no shelf at all and so has
-/// no id of its own to be named after.
 const ALL_CRUMB_DOM_ID: &str = "crumb-all";
 
 
-/// One crumb: the level it stands for, what it is called right now, and whether
-/// the folder behind it is still watched.
-///
-/// `Clone` because the chain crosses a signal, and a `Signal` hands out copies
-/// rather than references — a derived value's contents are read inside a lock that
-/// a view cannot hold a borrow through.
+/// `Clone` because the chain crosses a signal, and a `Signal` hands out copies rather than references.
 #[derive(Clone)]
 struct Crumb {
     id: String,
     name: String,
-    /// Whether the shelf was cut from a folder that is still being watched. Every
-    /// shelf is removable now; this is the one fact about a removal worth a
-    /// sentence under the menu row, because it is the one consequence the reader
-    /// cannot see coming — the shelf comes back when the folder places again.
+    /// This is the one fact about a removal worth a sentence under the menu row, because it is the one consequence the reader cannot see coming — the shelf comes back when the folder places again.
     watched: bool,
 }
 
 
-/// The shelf the page is drilled into, or `None` at the root.
 fn current_shelf_id(state: AppState) -> Option<String> {
     let id = state.library.shelf.get_untracked();
     (id != ALL_SHELF).then_some(id)
 }
 
 
-/// The name a shelf has right now. Read when an action runs rather than when the
-/// crumb is built, so renaming the same shelf twice starts from what it is called
-/// now and not from what it was called at mount. The library's own accessor
-/// rather than a walk of the list here: a crumb, a folder card and a tree row all
-/// ask the same question, and one of them has to own the answer.
+/// Read when an action runs rather than when the crumb is built, so renaming the same shelf twice starts from what it is called now.
 fn shelf_name_now(state: AppState, shelf_id: &str) -> String {
     state.library.shelf_name(shelf_id)
 }
 
 
-/// The levels the page is drilled through, root first and ending with the one it is
-/// on. Empty at the root, where "Home" is the whole breadcrumb.
-///
-/// Tracked: the breadcrumb is a view, and a drill in or out is one of the two things
-/// that change it (a rename is the other).
 fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
     Signal::derive(move || {
         let id = state.library.shelf.get();
@@ -149,15 +71,10 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
             return Vec::new();
         }
         state.library.shelves.with(|shelves| {
-            // A shelf the list no longer holds answers as the root rather than as a
-            // crumb with no name in it.
             let Some(current) = library_core::shelf::find(shelves, &id) else {
                 return Vec::new();
             };
             let of = |shelf: &Shelf| {
-                // The rung's own answer rather than the whole import's, so a
-                // crumb for a subfolder turned off under a watched tree does not
-                // carry a dot the shelf below it has stopped earning.
                 let watched = state.library.shelf_tracked(&shelf.id);
                 Crumb {
                     id: shelf.id.clone(),
@@ -165,8 +82,6 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
                     watched,
                 }
             };
-            // `|s| of(s)` rather than `map(of)`: the adapter takes its closure by
-            // value, and the last crumb is built by the same one a line later.
             let mut chain: Vec<Crumb> = ancestors(shelves, &id).into_iter().map(|s| of(s)).collect();
             chain.push(of(current));
             chain
@@ -175,12 +90,8 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
 }
 
 
-// ---------------------------------------------------------------------------
-// Drop targets
-// ---------------------------------------------------------------------------
 
 
-/// The element id a crumb's box is read from.
 fn crumb_dom_id(shelf_id: &str) -> String {
     if shelf_id.is_empty() {
         ALL_CRUMB_DOM_ID.to_string()
@@ -189,15 +100,7 @@ fn crumb_dom_id(shelf_id: &str) -> String {
     }
 }
 
-/// Register a crumb as the target for `shelf_id` — empty for the root — and answer
-/// with the element id its box will be read from, for the view to put on it.
-///
-/// One call rather than a `NodeRef` and a rect reader, because a crumb's box is the
-/// one thing about it that cannot go stale unnoticed: the chain re-renders on a
-/// drill or a rename, and a target that outlived the crumb it belonged to would be
-/// a way to file books onto a level that is not on screen. A fold-menu row is the
-/// same target as a bar crumb and registers the same way, which is what makes a
-/// folded level reachable with a hand full of books.
+/// One call rather than a `NodeRef` and a rect reader, because a target that outlived the crumb it belonged to would be a way to file onto a level that is no longer shown.
 fn register_crumb(ctrl: &DragController, shelf_id: &str) -> String {
     let dom_id = crumb_dom_id(shelf_id);
     ctrl.registry.register(DropTargetEntry {
@@ -209,13 +112,7 @@ fn register_crumb(ctrl: &DragController, shelf_id: &str) -> String {
 }
 
 
-/// What a crumb wears. The crumb that is not where you are reads as a way back and
-/// the one that is reads as a heading; a crumb under a drag adds the accent rule
-/// that says the held items are about to go there.
-///
-/// A computed string rather than a conditional class because the hot state is the
-/// third of three things deciding the look, and three `class=` attributes on one
-/// element is three writers of one property.
+/// A computed string rather than a conditional class because the hot state is the third of three things deciding the look.
 fn crumb_class(current: bool, hot: bool) -> String {
     let base = "flex min-w-0 max-w-40 items-center gap-1 rounded-md px-1.5 py-0.5 \
                 transition-colors focus:outline-none focus-visible:ring-2 \
@@ -240,26 +137,17 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
     let intent = HoverIntent::new();
     let live = ctrl.live();
 
-    // A drill, a rename or a removal lists different levels, and a fold menu of
-    // the old ones is a menu of places the bar is no longer showing.
     Effect::new(move |_| {
         let _ = chain.get();
         intent.close();
     });
-    // So is a drag that has ended: the menu was opened by the drop target the
-    // pointer was on, and a reader who has let go is not holding anything over it.
     Effect::new(move |_| {
         if !live.get() {
             intent.close();
         }
     });
 
-    // The fold's two live numbers: what each crumb COSTS — the probe's boxes,
-    // re-read whenever the chain changes — and what the cluster can HOLD, which
-    // is its own client box, observed. Both move without a window resize: a
-    // crumb renamed, a level drilled into, the trailing cluster growing, the
-    // flex squeeze settling after the fold's own answer. The 0.5px guard on
-    // the write is what makes that last one a fixed point rather than a loop.
+    // Both move without a window resize: a crumb renamed, a level drilled into, the trailing cluster growing, the flex squeeze settling after the fold's own answer.
     let nav_ref: NodeRef<html::Nav> = NodeRef::new();
     let probe_ref: NodeRef<html::Span> = NodeRef::new();
     let widths: RwSignal<Vec<f64>> = RwSignal::new(Vec::new());
@@ -267,9 +155,6 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
 
     Effect::new(move |_| {
         let _ = chain.get();
-        // A frame later: the probe's own reactive children re-render on the
-        // chain change, and measuring the boxes before the patch would measure
-        // the chain that just left.
         request_animation_frame(move || {
             let Some(probe) = probe_ref.get() else {
                 return;
@@ -305,8 +190,6 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
         observe_elements(vec![observed], move |_| read());
     });
 
-    // The live split: by measured width, with the count rule as the fallback
-    // for the frames before the probe has answered.
     let split_sig = Signal::derive(move || {
         let len = chain.get().len();
         choose_split(&widths.get(), avail.get(), len)
@@ -318,12 +201,7 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
             class="flex min-w-0 items-center gap-0.5 text-sm"
             aria-label="Library location"
         >
-            // The width fold's ruler: one box per crumb plus one for the
-            // ellipsis itself, wearing the live crumbs' own metrics — padding,
-            // gap, the 10rem cap — invisible and out of flow. Plain spans with
-            // no ids and no registrations: a ruler is not a crumb, and a second
-            // element carrying a crumb's id would be a second answer for the
-            // drag's hit-test and the reveal's scroll.
+            // Plain spans with no ids and no registrations: a ruler is not a crumb, and a second element carrying a crumb's id would be a second answer for the drag's hit-test and the reveal's scroll.
             <span node_ref=probe_ref class="lib-crumb-probe" aria-hidden="true">
                 <span class="lib-crumb-probe-item">
                     <Icon name=IconName::More size=14 />
@@ -355,10 +233,7 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
                 let split = split_sig.get();
                 let (elided, shown) = levels.split_at(split);
                 let last = len.saturating_sub(1);
-                // The ellipsis first, because the levels behind it are the OLDEST:
-                // left to right has to stay root to leaf, in the bar and in the
-                // panel alike, or a chain the reader has just learned to read means
-                // something else in one place.
+                // Left to right has to stay root to leaf, in the bar and in the panel alike.
                 let gap = (!elided.is_empty()).then(|| {
                     view! {
                         <EllipsisCrumb
@@ -386,12 +261,7 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
 }
 
 
-/// The root crumb, shown as "Home": the library's front door, and the name a
-/// reader gives the level that holds everything. Always a button, because it is
-/// the way back, and a target with an empty id — the library's spelling of "no
-/// shelf", which is what makes a drop here take a book OFF the shelf it was
-/// dragged out of. The pseudo-shelf's own id stays `all`; only the word the bar
-/// shows is the friendly one.
+/// Always a button, because it is the way back, and a target with an empty id — the library's spelling of "no shelf", which is what makes a drop here take a book OFF the shelf it was dragged out of.
 #[component]
 fn AllCrumb(state: AppState, ctrl: DragController) -> impl IntoView {
     let dom_id = register_crumb(&ctrl, "");
@@ -424,12 +294,7 @@ fn AllCrumb(state: AppState, ctrl: DragController) -> impl IntoView {
 }
 
 
-/// A crumb that is not where you are: the chevron, the level's name, and the click
-/// that goes back to it.
-///
-/// Its own component so the last crumb's menu state stays out of it — a way back is
-/// a link, and a link with a rename field inside it is two controls fighting over
-/// one click.
+/// Its own component so the last crumb's menu state stays out of it — a way back is a link, and a link with a rename field inside it is two controls fighting over one click.
 #[component]
 fn LevelCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoView {
     let id = crumb.id.clone();
@@ -457,11 +322,7 @@ fn LevelCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoV
 }
 
 
-/// The shelf the page is on: its own popover — rename in place, a second shelf
-/// of the reader's own, or take the shelf apart — and still a drop target,
-/// because releasing a held book here files it onto the level the reader is
-/// already looking at, which is how a drag from inside a nested shelf lands back
-/// on the shelf that contains it.
+/// Still a drop target, because releasing a held book here files it onto the level the reader is already looking at.
 #[component]
 fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoView {
     let menu_open = RwSignal::new(false);
@@ -471,14 +332,9 @@ fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl I
     let name = crumb.name.clone();
     let tooltip = name.clone();
     let aria = format!("{name} shelf options");
-    // The crumb's drop registration is the one every crumb rides: the menu
-    // button wears the target's id, and while the rename field has replaced
-    // the button the box is simply not there to hit.
     let id = crumb.id.clone();
     let dom_id = register_crumb(&ctrl, &id);
     let hot_id = id;
-    // A Copy local rather than a field of the prop, so the popover's children stay
-    // an `Fn`: the note under the row is the only thing here that reads the crumb.
     let watched = crumb.watched;
 
     view! {
@@ -505,8 +361,6 @@ fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl I
                             class="flex min-w-0 max-w-40 items-center gap-1 rounded-md px-1.5 py-0.5 \
                                    font-medium text-ink transition-colors hover:bg-line \
                                    focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                            // The accent rule that says the held items are about to go
-                            // there — the same answer every other crumb paints.
                             class=("crumb-drop", move || ctrl.over_shelf(&class_id))
                         >
                             <span class="truncate">{shown}</span>
@@ -570,7 +424,6 @@ fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl I
 }
 
 
-/// The crumb while it is being renamed: the field that replaced the label.
 #[component]
 fn RenameField(
     state: AppState,

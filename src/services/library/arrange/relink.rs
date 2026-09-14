@@ -1,16 +1,7 @@
-//! A dead address, re-pointed: the reader picks a file — or a FOLDER, and the
-//! app walks it looking for the book's own name — and the book reads from
-//! there. A linked book takes the address, a stored book takes a fresh copy
-//! of it, made before anything is written so a failure leaves the row exactly
-//! as it was.
-//!
-//! The sheet is the door an open of a dead address walks through
-//! ([`ask_relink`]): a click on a book the library knows is gone asks the
-//! Find-again question instead of opening the reader onto an error, and the
-//! two answers are the two doors — pick the file yourself, or name a folder
-//! and let the walk find the name. The card's own button and the right-click's
-//! row still go straight to the file picker, which is the one door a reader
-//! who knows where the file moved to wants.
+//! A dead address, re-pointed: the reader picks a file — or a FOLDER, and the app walks it
+//! looking for the book's own name — and the book reads from there. A linked book takes the
+//! address, a stored book takes a fresh copy of it, made before anything is written so a
+//! failure leaves the row exactly as it was.
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -27,13 +18,9 @@ use crate::services::library as wire;
 use crate::state::library::RelinkAsk;
 use crate::state::AppState;
 
-/// Re-point a book whose address died at a file the reader picks.
-///
-/// A linked book takes the new address. A stored book does NOT become linked —
-/// that would quietly turn "the app keeps its own copy" back into "the app reads
-/// your folder again" — so the pick is copied into the store once more, from
-/// wherever the file lives now, and the copy is made BEFORE anything is written:
-/// a failure to copy leaves the row exactly as it was.
+/// A linked book takes the new address. A stored book does NOT become linked — that would
+/// quietly turn "the app keeps its own copy" back into "the app reads your folder again" —
+/// so the pick is copied into the store once more, from wherever the file lives now.
 fn relink_book(state: AppState, book_id: String, path: String) {
     if !tauri_bridge::has_tauri() {
         return;
@@ -82,42 +69,26 @@ fn relink_book(state: AppState, book_id: String, path: String) {
             }
             book.heal(fp);
         });
-        // The Find-again sheet, when this heal is its answer, closes on the
-        // heal: a book that reads again is a question answered.
         state.library.relink.dismiss();
-        // Covers are keyed by address, so the old entry now belongs to nobody;
-        // the prune drops it and the next open renders the new one.
         prune_now(state);
         crate::storage::persist_library(state.library);
         crate::storage::persist_covers(state.library);
-        // The old address's cover belongs to nobody now, and the new one has
-        // never been rendered: queue it rather than waiting for an open.
         covers::backfill_missing(state);
     });
 }
 
-/// Ask the reader for a file and relink to it.
-///
-/// The picker is the engine's own (`pdf_engine::api::pick_document`) rather than
-/// a second dialog implementation here: it is the same question — "which
-/// document?" — with the same filter, and a cancel is the same non-event.
+/// The engine's own picker rather than a second dialog implementation here: it is the same question — "which document?" — with the same filter.
 pub fn relink_dialog(state: AppState, book_id: String) {
     spawn_local(async move {
         match pdf_engine::api::pick_document().await {
             Ok(path) => relink_book(state, book_id, path),
-            // A cancel is the reader changing their mind, not a failure.
             Err(message) if message == "Open cancelled" => {}
             Err(message) => toast(state, message),
         }
     });
 }
 
-/// The door an open of a dead address walks through: the Find-again sheet,
-/// with the book's name on it and the two answers beside it.
-///
-/// A reader-page open — the sheet lives on the library page, and a dead row
-/// clicked from anywhere else still deserves a door — falls back to the file
-/// picker itself, which is the answer the sheet's first row would have run.
+/// A reader-page open — the sheet lives on the library page — falls back to the file picker itself, which is the answer the sheet's first row would have run.
 pub fn ask_relink(state: AppState, book_id: String) {
     if state.reader.document.status.get_untracked() == DocStatus::Ready {
         relink_dialog(state, book_id);
@@ -127,20 +98,12 @@ pub fn ask_relink(state: AppState, book_id: String) {
     state.library.relink.raise(RelinkAsk { book_id, name });
 }
 
-/// Walk away from the Find-again sheet: the book stays missing, its row and
-/// its shelf memberships stay exactly as they were, and the card keeps
-/// offering the question for as long as the address is dead.
+/// The book stays missing, its row and its shelf memberships stay exactly as they were.
 pub fn cancel_relink(state: AppState) {
     state.library.relink.dismiss();
 }
 
-/// The sheet's second door: pick a FOLDER and let the app find the book
-/// inside it. The walk is the shell's own (`scan_folder`, one measurement per
-/// file, every format, no size floor — a book the reader lost is not a file
-/// to filter), and the match is the name the reader knows the book by: the
-/// shelf's display name, the stem of the address the row still wears, or that
-/// address's own file name, extension and all. One match relinks; none says
-/// so in a sentence rather than silence.
+/// The walk is the shell's own (`scan_folder`, one measurement per file, every format, no size floor — a book the reader lost is not a file to filter).
 pub fn relink_search_folder(state: AppState, book_id: String) {
     spawn_local(async move {
         let known = state.library.books.with_untracked(|rows| {
@@ -180,12 +143,7 @@ pub fn relink_search_folder(state: AppState, book_id: String) {
     });
 }
 
-/// Whether a walked file is the book the reader lost, by name: the shelf's
-/// display name, the stem of the address the row still wears, or that
-/// address's file name with its extension — case aside, because a folder that
-/// answers in capitals is still the folder the book lives in. The content is
-/// nobody's question here: the relink that follows re-measures the file and
-/// the row takes the measurement it finds.
+/// Case aside, because a folder that answers in capitals is still the folder the book lives in. The content is nobody's question here: the relink that follows re-measures the file.
 fn is_the_book(found_path: &str, name: &str, old_path: &str) -> bool {
     let stem = stem_of(found_path);
     let file = file_name(found_path);
@@ -203,16 +161,11 @@ mod tests {
     #[test]
     fn the_name_the_shelf_shows_finds_the_book() {
         assert!(is_the_book("/found/Dune.pdf", "Dune", "/old/gone.pdf"));
-        // Case aside: a folder that shouts is still the book's folder. (A
-        // walk only ever admits the registry's own extensions, so the stem
-        // it answers with is a name a reader would recognise.)
         assert!(is_the_book("/found/DUNE.pdf", "Dune", "/old/gone.pdf"));
     }
 
     #[test]
     fn the_address_it_used_to_wear_finds_the_book() {
-        // The shelf name moved on (a title from the document), but the file
-        // the row still names is the file the walk found under a new roof.
         assert!(is_the_book(
             "/found/mathematical-proofs.pdf",
             "A Book",
@@ -223,8 +176,6 @@ mod tests {
     #[test]
     fn the_file_name_finds_the_book_extension_and_all() {
         assert!(is_the_book("/found/notes.md", "nothing alike", "/old/notes.md"));
-        // A re-export under the same name with a new suffix is still a hit on
-        // the stem of the old address.
         assert!(is_the_book("/found/report.pdf", "x", "/old/report.docx"));
     }
 

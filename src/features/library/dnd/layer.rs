@@ -1,25 +1,8 @@
-//! The drag overlay: one fixed layer, no pointer events of its own, drawn from
-//! the controller and nothing else.
+//! The drag overlay: one fixed layer, no pointer events of its own, drawn from the controller
+//! and nothing else.
 //!
-//! A browser drag image cannot be any of the four things this is. It is one
-//! bitmap of the element the press began on, so a set of four books drags as the
-//! one that was pressed; it is made before the drag starts, so it cannot become
-//! the shelf the drag is about to make; it is composited by the engine, so nothing
-//! in the stylesheet can reach it; and it only ever sits under the pointer, so it
-//! cannot sink into the thing it is about to land on. The layer is a view like any
-//! other, which is what lets all four be true at once.
-//!
-//! `pointer-events: none` is load-bearing rather than tidy: the drag hit-tests the
-//! registry against coordinates, so a layer that caught the pointer would only
-//! ever be a target for itself.
-//!
-//! Portalled to the document body. The layer's coordinates are viewport
-//! coordinates, and `position: fixed` only means the viewport while no ancestor is
-//! a containing block for it — which a `backdrop-filter`, a `transform` or a
-//! `contain` anywhere above would quietly stop being true. The floating surfaces
-//! in this app already pay for that once, by name:
-//! `crate::components::primitives::floating::popover`'s `coordinate_space`. A
-//! portal is the same fix with nothing left to remember.
+//! A browser drag image cannot be any of the four things this is: it is one bitmap of the
+//! element the press began on, made before the drag starts, and composited by the engine.
 
 use leptos::portal::Portal;
 use leptos::prelude::*;
@@ -29,14 +12,9 @@ use app_chrome::icon::{Icon, IconName};
 use crate::features::library::dnd::controller::{DragController, GhostTile};
 use crate::features::library::folder_card::THUMB_CAP;
 
-/// The most tiles the ghost fans out. Named after the folder's own plate cap
-/// rather than spelled a second time beside it: a drag of nine books is a promise
-/// about the shelf it is offering to make, and a promise drawn with a different
-/// number of cells than the card it becomes is a promise about a folder the
-/// library does not have. The count badge carries the rest.
+/// Named after the folder's own plate cap rather than spelled a second time beside it: a promise drawn with a different number of cells than the card it becomes is a promise about a folder the library does not have.
 const GHOST_TILES: usize = THUMB_CAP;
 
-/// The overlay a live drag draws under the pointer.
 #[component]
 pub(crate) fn DragLayer() -> impl IntoView {
     let ctrl = use_context::<DragController>().expect("the library page installs the drag session");
@@ -46,20 +24,10 @@ pub(crate) fn DragLayer() -> impl IntoView {
     let count = ctrl.count();
     let at = ctrl.pointer();
     let sunk = ctrl.sink();
-    // Hoisted out of the markup: `view!` reads a `>` in an attribute as the end of
-    // the tag, so a comparison has to be made somewhere else and arrive as a bool.
     let several = Signal::derive(move || count.get() > 1);
-    // One signal for the whole sunk state — the anchor, the scale AND the
-    // transition — because they are one fact. A separate "is animating" flag would
-    // be a second writer of the same frame, and the one frame the two could
-    // disagree about is exactly the frame that matters: the ghost coming off a
-    // target, where a transition armed a beat too long is a follow that starts out
-    // trailing the hand.
+    // One signal for the whole sunk state — the anchor, the scale AND the transition — because they are one fact: a separate "is animating" flag could disagree on exactly the frame that matters.
     let is_sunk = Signal::derive(move || sunk.get().is_some());
     let style = Signal::derive(move || {
-        // The sink spot rather than the pointer while sunk. The ghost has stopped
-        // being about where the hand is and started being about where the drop
-        // would land, and the two are the same point only by coincidence.
         match sunk.get() {
             Some(spot) => format!("left:{:.2}px;top:{:.2}px", spot.x, spot.y),
             None => {
@@ -80,10 +48,6 @@ pub(crate) fn DragLayer() -> impl IntoView {
                 >
                     <div class="lib-drag-ghost">
                         {move || {
-                            // A brewing fold replaces the ghost rather than sitting
-                            // beside it: the thing the reader is about to drop IS
-                            // the plate, and two answers to "what happens if I let
-                            // go" is one too many.
                             if let Some(preview) = fold.get() {
                                 return view! { <FoldPlate filled=preview.filled /> }.into_any();
                             }
@@ -109,8 +73,6 @@ pub(crate) fn DragLayer() -> impl IntoView {
     }
 }
 
-/// One fanned tile of the ghost: the cover when the library has art for it, a
-/// folder's glyph for a shelf, and the name's first letter when neither.
 #[component]
 fn GhostCard(fan: usize, tile: GhostTile) -> impl IntoView {
     let GhostTile { cover, label, folder } = tile;
@@ -131,13 +93,7 @@ fn GhostCard(fan: usize, tile: GhostTile) -> impl IntoView {
     }
 }
 
-/// The shelf the drop is about to make: a folder's own plate, with one cell lit
-/// per item it would hold and a `+` in the next one.
-///
-/// The folder card's classes rather than a look of its own, on purpose — the
-/// preview is a promise about what the card on this level will look like in a
-/// moment, and a promise drawn in a different style is a promise the reader has
-/// to translate.
+/// The folder card's classes rather than a look of its own: the preview is a promise about what the card on this level will look like in a moment.
 #[component]
 fn FoldPlate(filled: usize) -> impl IntoView {
     view! {
@@ -166,7 +122,6 @@ fn FoldPlate(filled: usize) -> impl IntoView {
     }
 }
 
-/// The first letter of a name, for a tile with no art to show.
 fn initial(label: &str) -> String {
     label
         .chars()

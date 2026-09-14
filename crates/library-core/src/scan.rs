@@ -14,48 +14,29 @@ use reader_core::format::{Format, SUPPORTED, format_from_ext};
 use crate::book::Fingerprint;
 use crate::folder::FolderOpts;
 
-/// One file a walk turned up, with the measurements its fingerprint needs.
-///
-/// Serialized because it crosses the IPC boundary: the shell's blocking walk
-/// produces these and the frontend's ledger consumes them, and a 2 000-file
-/// folder is a few hundred kilobytes of JSON either way.
+/// One file a walk turned up. Serialized: the shell's walk produces these and the frontend's ledger consumes them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FoundFile {
-    /// The absolute address. What a [`crate::book::Origin::Linked`] book holds.
     pub path: String,
-    /// The path relative to the watched root, with `/` separators on every
-    /// platform, and empty for a file at the root itself. The subfolder a
-    /// shelf is cut from.
+    /// Relative to the watched root, `/`-separated on every platform; empty for a file at the root itself.
     pub rel: String,
-    /// Lower-case extension without its dot, empty when the name has none.
     pub ext: String,
     pub size: u64,
     pub fp: Fingerprint,
 }
 
 impl FoundFile {
-    /// The pipeline this file would open through. `None` for a name the format
-    /// registry does not know, which is also what [`admits`] refuses.
     pub fn format(&self) -> Option<Format> {
         format_from_ext(&self.ext)
     }
 
-    /// The subfolder this file sits in, relative to the watched root — `""` at
-    /// the root. The key [`crate::folder::WatchedFolder::shelf_key`] hands to
-    /// the shelf chain a file is placed on.
     pub fn subfolder(&self) -> &str {
         subfolder_of(&self.rel)
     }
 }
 
-/// The subfolder a path relative to a watched root stands in: everything before
-/// its last `/`, and the empty string for a file at the root itself.
-///
-/// Free rather than a method on [`FoundFile`] because a book already in the
-/// library has an address and no finding, and the two have to agree about which
-/// rung an address belongs to — see
-/// [`crate::folder::WatchedFolder::rungs_for`].
+/// Free rather than a method on [`FoundFile`] because a book already in the library has an address and no finding, and the two have to agree about which rung an address belongs to — see [`crate::folder::WatchedFolder::rungs_for`].
 pub fn subfolder_of(rel: &str) -> &str {
     match rel.rsplit_once('/') {
         Some((dir, _)) => dir,
@@ -63,20 +44,9 @@ pub fn subfolder_of(rel: &str) -> &str {
     }
 }
 
-/// Whether a folder's options admit one found file.
-///
-/// Two knobs, and each has a direction that is easy to get the wrong way
-/// round:
-///
-/// * `include_selected` flips the format set from a whitelist into a
-///   blacklist, so "everything but PDF" is expressible without a second list;
-/// * `min_size` is a STRICT lower bound — "larger than 30 KB" rejects a file
-///   of exactly 30 KB, which is what the import sheet's wording promises.
-///
-/// A name the format registry does not know is refused outright rather than
-/// admitted as a PDF: [`format_from_ext`] is the registry's own answer, so a
-/// fourth kind added to `reader_core::format::SUPPORTED` is admitted by every
-/// folder that selects it, with no edit here.
+/// Whether a folder's options admit one found file. `min_size` is a STRICT
+/// lower bound: "larger than 30 KB" rejects a file of exactly 30 KB, which is
+/// what the import sheet's wording promises.
 pub fn admits(opts: &FolderOpts, ext: &str, size: u64) -> bool {
     let Some(fmt) = format_from_ext(ext) else {
         return false;
@@ -86,29 +56,13 @@ pub fn admits(opts: &FolderOpts, ext: &str, size: u64) -> bool {
     wanted && size > opts.min_size
 }
 
-/// The formats a folder may select, straight out of the registry and in its
-/// order. The import sheet's checkboxes are built from this, so they are the
-/// same rows the open dialog's filter and the drag-drop admission already
-/// read: a fourth format appears in all of them at once, with no list here to
-/// forget.
-///
-/// The registry's own column rather than a walk of its extensions deduped back
-/// into pipelines: one row is one format, and recovering that from an extension
-/// list is a second answer to a question the table already settled.
+/// The formats a folder may select, straight out of the registry and in its order.
 pub fn selectable_formats() -> Vec<Format> {
     SUPPORTED.iter().map(|kind| kind.format).collect()
 }
 
-/// The store sub-directory a format's copies go into: the pipeline's own name
-/// for its directory, so the directories read `pdf`, `text` and `markdown` and a
-/// fourth kind arrives with its own. `"other"` is only reachable for an
-/// extension the registry refuses — which [`admits`] has already turned away, so
-/// it is a belt-and-braces answer rather than a case the store can land in.
-///
-/// Here rather than in the shell because it is a question about the format
-/// registry, and the shell does not name `reader-core` directly: the registry is
-/// the frontend's, and `tools/check-formats.ts` keeps the shell's own copy of
-/// the extension list honest.
+/// The store sub-directory a format's copies go into: the pipeline's own
+/// name, so the directories read `pdf`, `text` and `markdown`.
 pub fn store_dir(ext: &str) -> &'static str {
     format_from_ext(ext)
         .map_or("other", |fmt| fmt.store_dir())
@@ -156,7 +110,6 @@ mod tests {
         assert!(!admits(&o, "pdf", 1));
         assert!(admits(&o, "md", 1));
         assert!(admits(&o, "txt", 1));
-        // The flip is about the registry, not about a fourth kind sneaking in.
         assert!(!admits(&o, "epub", 1));
     }
 
@@ -166,9 +119,7 @@ mod tests {
         assert!(!admits(&o, "pdf", 30 * 1024), "exactly 30 KB is not larger than 30 KB");
         assert!(admits(&o, "pdf", 30 * 1024 + 1));
         assert!(!admits(&o, "pdf", 1));
-        // Zero admits every byte the format set does — but "larger than zero"
-        // still refuses an empty file, because the comparison is strict at every
-        // threshold including this one.
+        // Zero is strict too: "larger than zero" refuses an empty file.
         assert!(admits(&opts(&[Format::Pdf], true, 0), "pdf", 1));
         assert!(!admits(&opts(&[Format::Pdf], true, 0), "pdf", 0));
     }
@@ -213,8 +164,7 @@ mod tests {
         assert_eq!(found("/r/a.pdf", "a.pdf", 1).subfolder(), "");
         assert_eq!(found("/r/x/a.pdf", "x/a.pdf", 1).subfolder(), "x");
         assert_eq!(found("/r/x/y/a.pdf", "x/y/a.pdf", 1).subfolder(), "x/y");
-        // A Windows walk normalises its separators to `/` before it gets
-        // here, so a `rel` that still carries one is a single segment.
+        // A Windows walk normalises its separators to `/` before this sees it.
         assert_eq!(found("C:\\r\\x\\a.pdf", "x\\a.pdf", 1).subfolder(), "");
     }
 

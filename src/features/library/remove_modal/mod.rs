@@ -1,41 +1,8 @@
 //! The remove sheet: what a removal costs, itemised.
 //!
-//! A removal here is not a dismissal. It takes the resume point, every shelf
-//! placement, the cached cover and the highlights with it, and for a book the app
-//! copied it can take the bytes too — so the sheet reads as a receipt of what is
-//! about to go rather than as a warning, and a row for something the books do not
-//! have is simply not there. A reader who removed a book they never opened sees one
-//! line, not four empty ones.
-//!
-//! One sheet for one book and for a selection, because the alternative is a bulk
-//! delete that skips the itemisation — the one place in the app where "remove"
-//! would not tell you what it takes. The rows aggregate; the questions do not
-//! change.
-//!
-//! Shelves come through the same sheet, because a selection holds both kinds and
-//! one removal gesture owes the reader one receipt. A shelf's row is shorter than
-//! a book's — it is a list of ids and never held a byte — but it is not empty of
-//! consequences: the books stay in the library, the shelves inside it move up a
-//! level, and a shelf cut from a watched folder says that the folder keeps
-//! watching and the shelf returns if the folder places a book in it again.
-//!
-//! A shelf can also take everything inside it with it, and that is a switch on the
-//! sheet rather than a second sheet, because it is a question about the SAME
-//! removal: what a shelf holds is part of what removing it costs. Off, the books
-//! inside stay in the library and the shelves inside move up a level — the shelf was
-//! a list of ids and never held a byte. On, the books inside are purged by the same
-//! receipt as a selected book (store copy, highlights, cover, tombstone) and the
-//! shelves inside are taken apart instead of lifted, deepest first so nothing is
-//! moved up a level on the way to being deleted. The switch is offered only when
-//! there is something inside to decide about, and the purge switch only when the
-//! books the removal will actually take include a copy the app made — a control
-//! that appears with nothing for it to decide is a control the reader has to read
-//! and then ignore.
-//!
-//! There is no undo toast, deliberately. The sheet IS the safety, and the real undo
-//! path is the folder's import menu, which keeps a tombstone per removal and can
-//! offer the book back; a toast would promise a second mechanism and then have to
-//! expire.
+//! A removal here is not a dismissal. It takes the resume point, every shelf placement, the
+//! cached cover and the highlights with it, and for a book the app copied it can take the
+//! bytes too — so the sheet reads as a receipt of what is about to go.
 
 
 mod receipt;
@@ -56,35 +23,19 @@ use crate::state::AppState;
 
 use receipt::{Receipt, deepest_first, receipt as build_receipt};
 
-/// The sheet's two handles, provided by the library page: whether it is open and
-/// which books it is asking about.
-///
-/// A context for the same reason the import sheet is one — a remove affordance
-/// lives on a grid card, on a list row and on the selection bar, and threading two
-/// signals from the page down through the grid to reach a card would put the
-/// sheet's plumbing in every component between.
+/// A context for the same reason the import sheet is one: a remove affordance lives on a grid card, on a list row and on the selection bar.
 #[derive(Clone, Copy)]
 pub(crate) struct RemoveSheet {
     pub open: RwSignal<bool>,
-    /// The books under question. One id for a card's ✕, several for a selection;
-    /// empty means the sheet has nothing to ask about and closes itself.
+    /// One id for a card's ✕, several for a selection; empty means the sheet has nothing to ask about and closes itself.
     pub books: RwSignal<Vec<String>>,
-    /// The shelves under question, from a selection. Separate from [`Self::books`]
-    /// because the two are different operations with one confirmation: a purge
-    /// itemises what a book takes with it, a shelf is taken apart and keeps every
-    /// book in the library.
+    /// Separate from [`Self::books`] because the two are different operations with one confirmation: a shelf is taken apart and keeps every book in the library.
     pub shelves: RwSignal<Vec<String>>,
-    /// Whether a shelf removal takes everything inside it with it.
-    ///
-    /// Reset by every ask rather than remembered, because a cascade is a decision
-    /// about ONE removal: a reader who took a deep shelf and all of its contents
-    /// apart did not thereby ask for the next removal to do the same, and a switch
-    /// that persisted would be a preference the sheet never offered as one.
+    /// Reset by every ask rather than remembered, because a cascade is a decision about ONE removal: a switch that persisted would be a preference the sheet never offered as one.
     pub cascade: RwSignal<bool>,
 }
 
 impl RemoveSheet {
-    /// Create and provide the handles. Called once, by the page.
     pub fn provide() -> Self {
         let sheet = Self {
             open: RwSignal::new(false),
@@ -96,8 +47,7 @@ impl RemoveSheet {
         sheet
     }
 
-    /// Ask about one book. A card's ✕ is never a question about a shelf, so the
-    /// shelf half is cleared rather than left over from the last selection.
+    /// A card's ✕ is never a question about a shelf, so the shelf half is cleared rather than left over from the last selection.
     pub fn ask(&self, book_id: &str) {
         self.books.set(vec![book_id.to_string()]);
         self.shelves.set(Vec::new());
@@ -105,8 +55,6 @@ impl RemoveSheet {
         self.open.set(true);
     }
 
-    /// Ask about a selection, which may hold both kinds. An empty selection is
-    /// not a question, and opening onto one would show a receipt for nothing.
     pub fn ask_many(&self, book_ids: Vec<String>, shelf_ids: Vec<String>) {
         if book_ids.is_empty() && shelf_ids.is_empty() {
             return;
@@ -121,24 +69,16 @@ impl RemoveSheet {
 
 #[component]
 pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoView {
-    // On by default: copies the app made for books that are leaving the library
-    // are files nothing will ever read again, and this switch is where a reader
-    // says otherwise. The lane arbitration and the Escape rule are the modal
-    // shell's (see `crate::components::primitives::overlay::modal_shell`).
+    // On by default: copies the app made for books that are leaving the library are files nothing will ever read again.
     let delete_copy = RwSignal::new(true);
 
-    // Books and shelves removed by any other route while the sheet is open close
-    // it, once neither half has anything left to talk about. Done in an effect
-    // rather than in the view, because a view that writes a signal is a view that
-    // can be asked to render and mutate in the same pass.
+    // Done in an effect rather than in the view, because a view that writes a signal is a view that can be asked to render and mutate in the same pass.
     Effect::new(move |_| {
         if !sheet.open.get() {
             return;
         }
         let ids = sheet.books.get();
         let shelf_ids = sheet.shelves.get();
-        // A link is a row the sheet can be about, so "still there" is a
-        // question about rows and not about books.
         let books_alive = !ids.is_empty()
             && state
                 .library
@@ -163,12 +103,7 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
                 {move || {
                     let ids = sheet.books.get();
                     let shelf_ids = sheet.shelves.get();
-                    // Read here rather than inside the sheet, so flipping the
-                    // switch rebuilds the receipt and the sheet together: every
-                    // row, the store-copy switch and the button's own wording are
-                    // all answers about ONE set of books, and a sheet that
-                    // recomputed some of them and not others would be a receipt
-                    // disagreeing with itself.
+                    // Read here rather than inside the sheet, so flipping the switch rebuilds the receipt and the sheet together: every row, the store-copy switch and the button's own wording are all answers about ONE set of books.
                     let cascade = sheet.cascade.get();
                     let info = build_receipt(state, &ids, &shelf_ids, cascade)?;
                     let cover_path = info
@@ -192,15 +127,7 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
     }
 }
 
-/// The sheet's body, split out so it can take the receipt by value: the outer view
-/// answers "is there still anything to talk about?" — and "what would this cost with
-/// the cascade on?" — on every run, and this one is built once per answer with an
-/// answer it can keep.
-///
-/// The sets the confirm button acts on come off the receipt and not off separate
-/// props, because the receipt is the thing the reader just read: a button handed the
-/// ids it was asked about while the rows described the ids plus a shelf's contents
-/// would confirm one removal and perform another.
+/// Split out so the body can take the receipt by value: the outer view answers "is there still anything to talk about?" on every run, and this one is built once per answer.
 #[component]
 fn ReceiptSheet(
     state: AppState,
@@ -216,10 +143,7 @@ fn ReceiptSheet(
     let inside_books = info.inside_books;
     let inside_shelves = info.inside_shelves;
     let offers_cascade = inside_books > 0 || inside_shelves > 0;
-    // Everything the view prints, worked out once. A `view!` body is a builder, not
-    // a place to compute: an attribute and a child that need the same string each
-    // need their own copy, and learning that from a compiler is a slow way to learn
-    // it.
+    // A `view!` body is a builder, not a place to compute: an attribute and a child that need the same string each need their own copy.
     let heading = info.heading();
     let tooltip = heading.clone();
     let subtitle = info.subtitle();
@@ -242,10 +166,7 @@ fn ReceiptSheet(
             .first()
             .is_some_and(|b| b.page > 1 || b.fraction.is_some());
     let marks_line = plural(marks, "mark", "marks");
-    // Hoisted out of the view: an `if` in attribute position is an expression the
-    // macro has to guess the end of, and a label is a string either way.
-    // "Cover art" rather than "cached cover(s)": the cache is the app's
-    // business, the picture is the reader's.
+    // Hoisted out of the view: an `if` in attribute position is an expression the macro has to guess the end of. "Cover art" rather than "cached cover(s)": the cache is the app's business, the picture is the reader's.
     let covers_label = "Cover art";
     let covers_line = plural(covers, "image", "images");
     let books_line = plural(info.books.len(), "book", "books");
@@ -263,13 +184,7 @@ fn ReceiptSheet(
             human_size(stored_bytes)
         ),
     };
-    // The button names both halves when the selection held both kinds, because
-    // a confirmation that only mentioned the books would be a confirmation the
-    // reader did not read before the shelves went.
-    // A cascade is already counted in both numbers — the books inside are in
-    // `books` and the shelves inside are in `shelves` — except in the one case
-    // where a shelf holds no books at all and only empty folders, and there the
-    // label has to say so or it promises less than the click does.
+    // A cascade is already counted in both numbers — the books inside are in `books` and the shelves inside are in `shelves` — except where a shelf holds no books at all and only empty folders.
     let remove_label = match (info.books.len(), info.shelves.len()) {
         (1, 0) => "Remove".to_string(),
         (0, 1) if cascade && inside_shelves > 0 => {
@@ -284,12 +199,7 @@ fn ReceiptSheet(
         (b, s) => format!("Remove {b} books and {s} shelves"),
     };
     let show_cover = !many && !info.books.is_empty();
-    // One row per shelf. Without the cascade the row says what SURVIVES it — a
-    // shelf is a list of ids, and the books stay while the shelves inside move up.
-    // With the cascade on it says what GOES, because that is now the honest answer
-    // and the same words would mean the opposite thing: `lifted` is zero there by
-    // construction, so nothing is described as moving up on its way to being
-    // deleted.
+    // Without the cascade the row says what SURVIVES it, and with the cascade on it says what GOES, because that is now the honest answer and the same words would mean the opposite thing.
     let shelf_rows: Vec<(String, String)> = info
         .shelves
         .iter()
@@ -310,10 +220,6 @@ fn ReceiptSheet(
         .collect();
     let has_shelves = !shelf_rows.is_empty();
     let shelf_watched = info.shelves.iter().any(|s| s.watched);
-    // What the switch is offering, in the numbers the receipt has just counted.
-    // Spelled out rather than left to the label, because "remove everything
-    // inside" is a sentence whose size the reader is about to find out the hard
-    // way, and this sheet exists so that they do not.
     let cascade_note = if cascade {
         match (inside_books, inside_shelves) {
             (0, shelves) => format!(
@@ -373,9 +279,6 @@ fn ReceiptSheet(
                 />
             </header>
 
-            // The heading is this sheet's own: it carries the cover of the book
-            // being removed, which the shared header has no slot for. The body and
-            // the button row are everybody's, and are the primitives'.
             <SheetBody>
                 <div class="divide-y divide-line rounded-xl border border-line">
                     {many.then(|| {
@@ -444,11 +347,6 @@ fn ReceiptSheet(
                     }
                 })}
 
-                // Offered only when there is something inside to decide about.
-                // An empty leaf shelf has no cascade and gets no switch; a shelf
-                // holding nothing but empty folders does, because there the switch
-                // is the whole difference between "these move up and clutter the
-                // level above" and "these go too".
                 {offers_cascade.then(|| {
                     view! {
                         <div class="mt-3 rounded-xl border border-line">
@@ -520,10 +418,6 @@ fn ReceiptSheet(
                 <Button
                     on_click=move |_| {
                         sheet.open.set(false);
-                        // The receipt's own sets, not the ones the click was
-                        // handed: under a cascade these are bigger, and this is the
-                        // one place where the difference is a book that survives or
-                        // does not.
                         if !purge_ids.is_empty() {
                             purge_books(
                                 state,
@@ -533,10 +427,7 @@ fn ReceiptSheet(
                                 },
                             );
                         }
-                        // Shelves after the books: a purge sweeps every shelf's
-                        // member list, and a shelf dissolved first would be swept
-                        // by nobody. Deepest first, so a cascade never lifts a
-                        // shelf to the level it was on moments before deleting it.
+                        // Shelves after the books, deepest first: a purge sweeps every shelf's member list, and a shelf dissolved first would be swept by nobody.
                         let shelves_now = state.library.shelves.get_untracked();
                         for shelf_id in deepest_first(&shelves_now, &delete_ids) {
                             delete_shelf(state, &shelf_id);
@@ -554,7 +445,6 @@ fn ReceiptSheet(
     }
 }
 
-/// One line of the receipt: an icon, what is going, and how much of it there is.
 #[component]
 fn ReceiptRow(icon: IconName, label: &'static str, value: String) -> impl IntoView {
     let tooltip = value.clone();

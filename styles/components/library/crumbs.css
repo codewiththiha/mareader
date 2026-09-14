@@ -1,23 +1,13 @@
-/* ---------------------------------------------------------------------------
-   The elided levels: the chain behind the breadcrumb's ellipsis.
-
-   A chain and not a list, in the bar's own grammar — name, chevron, name — so a
-   reader who has understood the breadcrumb has already understood the panel, and
-   so three levels cost one line of height instead of three. The chain is PACKED
-   rather than wrapped: the panel measures the ruler's crumb boxes and lays them
-   greedily against a budget of the whole window minus breathing room, so a chain
-   the screen can hold on one line is held on one line — and each packed row
-   paints its own surface, so a short second row is a short rectangle instead of
-   a wide empty one dragging along behind it.
-   --------------------------------------------------------------------------- */
+/* The elided levels: the chain behind the breadcrumb's ellipsis.
+   A chain and not a list, in the bar's own grammar — name, chevron, name — and PACKED rather than
+   wrapped: the panel measures the ruler's crumb boxes and lays them out against a budget of the
+   whole window. */
 .lib-elided-panel {
   /* A hard ceiling under the popover's measured width, so a measurement that
      overshoots — or a window that narrowed between the open and the place —
      still keeps the panel on the screen it opened on. */
   max-width: calc(100vw - 1.5rem);
-  /* The shell stops painting: the rows own the surface now, each at its own
-     width. Unlayered on purpose — these have to outrank the popover's own
-     bg/border/rounded/shadow utilities, which live in Tailwind's layer. */
+  /* The rows own the surface now, each at its own width. Unlayered on purpose: these have to outrank the popover's bg/border/rounded/shadow utilities, which live in Tailwind's layer. */
   padding: 0;
   background: transparent;
   border: 0;
@@ -63,11 +53,7 @@
 .lib-elided-crumb > button {
   min-width: 0;
 }
-/* The ruler: the same chain drawn invisible and unwrapped, so its natural width
-   can be measured before the panel commits to one. Absolute so it takes no room
-   in the panel, hidden so it never paints, pointer-events none so a hover can
-   never land on a measurement, and max-content so the box being measured is the
-   chain's own width and never the panel's. */
+/* The ruler: the same chain drawn invisible and unwrapped, so its natural width can be measured before the panel commits to one. Out of flow, never painted, pointer-events none, so a hover can never land on a measurement. */
 .lib-elided-probe {
   position: absolute;
   visibility: hidden;

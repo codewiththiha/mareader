@@ -1,29 +1,10 @@
-//! The library's app-lifetime wiring: the measurement pass at startup, the rescan
-//! of every watched folder when the window comes back, and the sink that folds
-//! the shell's progress beats into the dock's task list.
-//!
-//! All three are installed once at the app root and none of them belongs to a
-//! page. The rescans are deliberately narrow about when they run: a filesystem
-//! watcher would fire while the reader is copying files INTO the folder, which is
-//! the one moment a half-written PDF is most likely to be measured, whereas a
-//! rescan on focus answers the question that was actually asked — "next time the
-//! app opens or returns to the foreground" — with no watcher dependency and no
-//! race against an import in flight.
-//!
-//! The order between the two passes is not a coincidence and is not left to the
-//! caller: both moments run the SAME pair — measure every address the library
-//! holds, then walk the watched folders — because a walk only ever sees what
-//! is still on disk (a deleted or moved-out book is the measure's finding, not
-//! the walk's), and a diff against placeholder fingerprints would add a second
-//! copy of every book a watched folder already holds. One service owns the
-//! pair and its order ([`rescan_watched`]); [`verify_library`] is the
-//! startup's name for it.
+//! The library's app-lifetime wiring: the measurement pass at startup, the rescan of every
+//! watched folder when the window comes back, and the sink that folds the shell's progress
+//! beats into the dock's task list. All three are installed once at the app root.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-// The prelude is what puts `update` and `with_untracked` on a signal: they are
-// trait methods, and a file that only names `RwSignal` gets a struct with no
-// methods on it.
+// The prelude is what puts `update` and `with_untracked` on a signal: they are trait methods, and a file that only names `RwSignal` gets a struct with no methods on it.
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
@@ -36,31 +17,18 @@ use crate::services::library::{
 };
 use crate::state::AppState;
 
-/// The shortest gap between two rescans, in milliseconds. Focus events are not
-/// rare: alt-tabbing back and forth would otherwise walk every watched folder
-/// once per flick of the switcher, and a walk is a syscall per entry.
+/// Focus events are not rare: alt-tabbing back and forth would otherwise walk every watched folder once per flick of the switcher.
 const RESCAN_COOLDOWN_MS: u64 = 5_000;
 
-/// When the last rescan started. Relaxed ordering: the webview is
-/// single-threaded, so this only has to be a stamp, never a fence.
+/// Relaxed ordering: the webview is single-threaded, so this only has to be a stamp, never a fence.
 static LAST_RESCAN: AtomicU64 = AtomicU64::new(0);
 
-/// Install all three. Called once from the app root, after the theme and the AI
-/// bridge and before the OS file handoff — a double-clicked book must not land in
-/// the middle of the library's first measurement pass.
+/// Called once from the app root, after the theme and the AI bridge and before the OS file handoff — a double-clicked book must not land in the middle of the library's first measurement pass.
 pub(crate) fn library_effects(state: AppState) {
     install_progress_sink(state);
-    // A copy still sitting in the old flat store moves into its own item folder
-    // BEFORE the measurement pass, and the order is not negotiable: the move
-    // changes the address the row holds, so measuring first would mark the book
-    // `missing` for a file this pass is about to put somewhere else. On a library
-    // that has already moved it asks for nothing and costs one signal read.
+    // The move changes the address the row holds, so measuring first would mark the book `missing` for a file this pass is about to put somewhere else.
     migrate_store_layout(state);
     verify_library(state);
-    // A library restored from storage holds books whose covers were never
-    // rendered, or were rendered by a build that kept fewer of them: the shelf
-    // catches up in the background rather than staying a shelf of fallbacks
-    // until every book has been opened once.
     backfill_missing(state);
 
     if !tauri_bridge::has_tauri() {
@@ -69,21 +37,12 @@ pub(crate) fn library_effects(state: AppState) {
     crate::services::tauri_listen("tauri://focus", move |ev: web_sys::Event| {
         if focused(&ev) {
             rescan_once(state);
-            // Coming back to the window is also the moment a cover that failed
-            // while the reader was away deserves another attempt.
             backfill_missing(state);
         }
     });
 }
 
-/// Fold every progress beat into the dock's task list.
-///
-/// App-lifetime rather than page-lifetime, and that is the whole reason it is
-/// here: an import started on the library page is still running after the reader
-/// has opened a book, and a listener mounted on the page would stop counting the
-/// moment the route flipped. A beat for a task the list does not hold is dropped
-/// — which is how a quiet rescan stays quiet, since it raises no card until it
-/// has something to put on one.
+/// App-lifetime rather than page-lifetime: an import started on the library page is still running after the reader has opened a book. A beat for a task the list does not hold is dropped — which is how a quiet rescan stays quiet.
 fn install_progress_sink(state: AppState) {
     use_typed_event::<ImportProgress>(IMPORT_PROGRESS_EVENT, move |beat| {
         state.library.tasks.update(|tasks| {
@@ -94,8 +53,6 @@ fn install_progress_sink(state: AppState) {
     });
 }
 
-/// Rescan unless one just ran. The cooldown is the whole guard: a rescan that
-/// finds nothing writes nothing, so the only cost of a second one is the walk.
 fn rescan_once(state: AppState) {
     let now = crate::time::now_ms();
     let last = LAST_RESCAN.load(Ordering::Relaxed);
@@ -106,10 +63,6 @@ fn rescan_once(state: AppState) {
     rescan_watched(state);
 }
 
-/// Whether a focus event is a focus and not a blur. Tauri carries the answer in
-/// the payload; an event with no readable payload is treated as a focus, because
-/// the cost of one extra walk is a directory listing and the cost of ignoring a
-/// real one is a shelf that never updates.
 fn focused(ev: &web_sys::Event) -> bool {
     let value: &JsValue = ev.as_ref();
     js_sys::Reflect::get(value, &"payload".into())

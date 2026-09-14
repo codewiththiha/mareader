@@ -1,13 +1,6 @@
-/* ---------------------------------------------------------------------------
-   The bar's suggestions: the panel under the library's search pill.
-
-   The surface, the placement and the dismissal are the popover every bar menu
-   hangs from — fixed, so the centre slot's clipping cannot reach it. What is
-   here is only the rows: a thumb from the shelf's own cover cache, a name with
-   the characters the query actually hit lit in the accent, a second line that
-   exists only when it has something to say, and one quiet line at the foot
-   that teaches the keyboard once instead of on every row.
-   --------------------------------------------------------------------------- */
+/* The bar's suggestions: the panel under the library's search pill. The surface, the placement
+   and the dismissal are the popover every bar menu hangs from — fixed, so the centre slot's
+   clipping cannot reach it. What is here is only the rows. */
 .lib-suggest-list {
   display: flex;
   flex-direction: column;

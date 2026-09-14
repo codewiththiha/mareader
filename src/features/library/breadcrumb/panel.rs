@@ -1,11 +1,6 @@
-//! The ellipsis and its panel: the affordance that stands for the levels the
-//! bar has folded, the hover intent that opens it one beat behind the pointer,
-//! and the chain inside it, packed into rows the window's own width decides.
-//!
-//! The ellipsis is a target the drag can rest on but never drop on, and the
-//! panel has to be openable DURING a drag — both facts are the session's
-//! geometry answering for a captured pointer that raises no `mouseenter` (see
-//! `super`'s module docs for the whole argument).
+//! The ellipsis and its panel: the affordance that stands for the levels the bar has folded, the
+//! hover intent that opens it one beat behind the pointer, and the chain inside it, packed into
+//! rows the window's own width decides.
 
 use std::time::Duration;
 
@@ -23,20 +18,11 @@ use crate::state::AppState;
 use super::fold::{pack_rows, row_widths, split_by_counts};
 use super::{Crumb, register_crumb};
 
-/// The id of the ruler the folded panel measures itself with: the chain drawn
-/// once more, invisible and unwrapped, one measured box per crumb — the widths
-/// the row pack is laid against. Deliberately not in the drag's registry — it
-/// stands for no level, and a target that is a measurement would be a way to
-/// file books onto a ruler.
+/// Deliberately not in the drag's registry — it stands for no level, and a target that is a measurement would be a way to file books onto a ruler.
 const ELIDED_MAX_DOM_ID: &str = "crumb-elided-max";
 
 
-/// How wide the folded panel's rows may be: the whole window minus breathing
-/// room. A fraction of the window was the old budget, and it folded chains the
-/// screen had room to show on one line — the space was THERE and the panel
-/// declined to use it. The floor keeps a sliver of a window from producing a
-/// budget no crumb can be laid into; a crumb wider than even the full budget
-/// gets a row to itself rather than being dropped.
+/// The floor keeps a sliver of a window from producing a budget no crumb can be laid into; a crumb wider than even the full budget gets a row to itself.
 fn elided_budget_px() -> f64 {
     web_sys::window()
         .and_then(|w| w.inner_width().ok())
@@ -46,28 +32,15 @@ fn elided_budget_px() -> f64 {
 }
 
 
-/// The element id of the ellipsis. Deliberately not a `crumb-` id: it is a target
-/// the drag can rest on but it stands for no level, and sharing the crumbs' scheme
-/// would let a reader of the registry mistake it for one.
+/// Deliberately not a `crumb-` id: sharing the crumbs' scheme would let a reader of the registry mistake it for one.
 const ELLIPSIS_DOM_ID: &str = "crumb-elided";
 
 
-/// The beat between leaving the trigger and closing, so the pointer can cross the
-/// gap between the crumb and the panel.
 const MENU_CLOSE_GRACE_MS: u64 = 220;
 
 
-// ---------------------------------------------------------------------------
-// Hover intent
-// ---------------------------------------------------------------------------
 
-/// One hover-opened menu's two facts: whether it is open, and whether the pointer
-/// is on it.
-///
-/// The close is a beat behind the leave and owned by an effect on `over` rather
-/// than by a timer parked in a `StoredValue`, so there is exactly one timer and it
-/// is cancelled by the same thing that arms it. Coming back inside the beat re-runs
-/// the effect, whose cleanup is the cancellation.
+/// The close is a beat behind the leave and owned by an effect on `over` rather than by a timer parked in a `StoredValue`, so there is exactly one timer and it is cancelled by the same thing that arms it.
 #[derive(Clone, Copy)]
 pub(super) struct HoverIntent {
     open: RwSignal<bool>,
@@ -95,32 +68,24 @@ impl HoverIntent {
         this
     }
 
-    /// The pointer arrived on the trigger or the panel.
     pub(super) fn enter(&self) {
         self.over.set(true);
         self.open.set(true);
     }
 
-    /// The pointer left both. The close is the effect's, one beat later.
     pub(super) fn leave(&self) {
         self.over.set(false);
     }
 
-    /// Close now, and stop counting a hover that is not coming back.
     pub(super) fn close(&self) {
         self.over.set(false);
         self.open.set(false);
     }
 }
 
-// ---------------------------------------------------------------------------
 
 
-/// The ellipsis: the bar's one admission that it is not showing everything.
-///
-/// Not an arrow on a crumb, and the reason is the confusion an arrow makes — see
-/// the module docs. It is a button, so a keyboard reaches the panel the way a
-/// pointer does, and it is a target the drag can rest on but never drop on.
+/// Not an arrow on a crumb, and the reason is the confusion an arrow makes — see the module docs. It is a button, so a keyboard reaches the panel the way a pointer does.
 #[component]
 pub(super) fn EllipsisCrumb(
     state: AppState,
@@ -135,26 +100,13 @@ pub(super) fn EllipsisCrumb(
     });
     let anchor: NodeRef<html::Div> = NodeRef::new();
     let live = ctrl.live();
-    // `elide_at` never answers one, so this is always the plural.
     let tooltip = format!("Show the {} levels above", elided.len());
     let aria = tooltip.clone();
-    // Parked in a `StoredValue` rather than captured: a component's children are an
-    // `Fn`, and a children closure that owned the list would be an `FnOnce` the
-    // first time it built a crumb. A Copy handle to a plain scoped cell is the same
-    // fix `crate::components::primitives::floating::popover` uses for its panel
-    // class.
+    // A component's children are an `Fn`, and a children closure that owned the list would be an `FnOnce` the first time it built a crumb.
     let folded: StoredValue<Vec<Crumb>, LocalStorage> = StoredValue::new_local(elided);
-    // The folded chain cut into its packed rows. Reactive because the panel's
-    // children re-render when a measurement repacks them; it starts as the
-    // whole chain in one row, which is what the panel shows for the frame
-    // before the ruler has been read.
     let rows: RwSignal<Vec<Vec<Crumb>>> = RwSignal::new(vec![folded.get_value()]);
 
-    // The panel's width is measured rather than picked, and its chain is
-    // PACKED rather than wrapped: the ruler's crumb boxes are laid greedily
-    // against the window's budget, the panel becomes the widest packed row,
-    // and the rows render as surfaces of their own — so a short second row is
-    // a short rectangle instead of a wide empty one dragging along behind it.
+    // The panel's width is measured rather than picked, and its chain is PACKED rather than wrapped: the rows render as surfaces of their own, so a short second row is a short rectangle instead of a wide empty one dragging along behind it.
     let panel_width: RwSignal<f64> = RwSignal::new(0.0);
     let measure = move || {
         let Some(ruler) = by_id(ELIDED_MAX_DOM_ID) else {
@@ -181,9 +133,6 @@ pub(super) fn EllipsisCrumb(
         if (panel_width.get_untracked() - wide).abs() > 0.5 {
             panel_width.set(wide);
         }
-        // Only a REPACK re-renders the chain: a resize that packs to the same
-        // shape is the same rows, and rebuilding them would re-register every
-        // crumb's drop target for nothing.
         let repacked = rows.with_untracked(|current| {
             current.len() != counts.len()
                 || current
@@ -195,12 +144,7 @@ pub(super) fn EllipsisCrumb(
             rows.set(split_by_counts(folded.get_value(), &counts));
         }
     };
-    // Measured once the panel — and the ruler inside it — has mounted, and
-    // re-measured on every resize while the panel is open: the budget is the
-    // window's own, and the pack re-runs when it moves. The measurement is
-    // stable under a hover, which is what the old constant was actually
-    // protecting: the width only moves when the chain or the window does, and
-    // a chain that changed closed the panel a beat earlier.
+    // Measured once the panel — and the ruler inside it — has mounted, and re-measured on every resize while the panel is open: the width only moves when the chain or the window does.
     Effect::new(move |_| {
         if !intent.open.get() {
             return;
@@ -210,11 +154,7 @@ pub(super) fn EllipsisCrumb(
         on_cleanup(move || handle.remove());
     });
 
-    // A drag cannot raise a `mouseenter` — the card the press began on holds the
-    // pointer capture, and a captured pointer reports its boundary events to the
-    // capture target alone. So while a drag is live the panel opens from the
-    // session's hot target instead, which is the same geometry the drop itself is
-    // decided by and the one thing under a capture that still tells the truth.
+    // A drag cannot raise a `mouseenter` — the card the press began on holds the pointer capture — so while a drag is live the panel opens from the session's hot target instead.
     Effect::new(move |_| {
         if live.get() && ctrl.over_ellipsis() {
             intent.enter();
@@ -236,9 +176,6 @@ pub(super) fn EllipsisCrumb(
                 aria-label=aria
                 aria-expanded=move || intent.open.get().to_string()
                 on:keydown=move |ev: leptos::ev::KeyboardEvent| {
-                    // A keyboard cannot hover, and the levels behind this are on no
-                    // other surface — so the key that means "show me what is under
-                    // this" opens the panel.
                     if ev.key() == "ArrowDown" {
                         ev.prevent_default();
                         intent.enter();
@@ -250,11 +187,7 @@ pub(super) fn EllipsisCrumb(
             >
                 <Icon name=IconName::More size=14 />
             </button>
-            // The chain is built inside the popover's reactive child rather than
-            // before the markup, because each crumb in it registers a drop target
-            // that leaves the registry when the crumb unmounts: built here, that
-            // owner is the popover's, so closing the panel is what unregisters them,
-            // and a panel that has gone is not a set of targets the drag can hit.
+            // The chain is built inside the popover's reactive child rather than before the markup, because each crumb registers a drop target that leaves the registry when the crumb unmounts.
             <MenuPopover
                 open=intent.open
                 anchor=anchor
@@ -262,11 +195,7 @@ pub(super) fn EllipsisCrumb(
                 coordinate_space="toolbar-row"
                 class="lib-elided-panel max-h-80 overflow-y-auto".to_string()
             >
-                // The chain, drawn twice: once as the ruler — invisible,
-                // unwrapped, never hovered — and once as the rows the reader
-                // reads. The ruler wears the crumbs' own metrics (the
-                // `.lib-elided-crumb` item, and a label boxed like the live
-                // button); the pack reads its boxes, one width per crumb.
+                // The ruler wears the crumbs' own metrics; the pack reads its boxes, one width per crumb.
                 <div id=ELIDED_MAX_DOM_ID class="lib-elided-probe" aria-hidden="true">
                     {move || {
                         let levels = folded.get_value();
@@ -297,9 +226,6 @@ pub(super) fn EllipsisCrumb(
                     on:mouseleave=move |_| intent.leave()
                 >
                     {move || {
-                        // The last level of the chain trails nothing, wherever
-                        // the pack put it: the chevron is a separator between
-                        // levels, and the chain's own end is not one.
                         let last_id = folded
                             .get_value()
                             .last()
@@ -339,21 +265,9 @@ pub(super) fn EllipsisCrumb(
 
 
 
-/// One elided level, in the panel: a chip in a chain rather than a row in a list.
-///
-/// The chain is the point. Drawn the way the bar draws it — name, chevron, name — a
-/// reader who has understood the breadcrumb has already understood the panel, and
-/// the panel can be three levels wide where a list of rows would have been three
-/// levels tall. The chevron TRAILS its crumb and lives in the same flex item, so a
-/// wrapped line ends on `4 >` and the next begins on `5`, which is how a chain reads
-/// when it has to break; a leading chevron would put a stray `>` at the head of
-/// every line but the first.
-///
-/// A chip and not `crate::components::primitives::menu::menu_item`: the primitive
-/// computes its own class, has no element id to offer, and is a full-width row by
-/// construction. This needs an id for the drag to read its box from, the hot state
-/// a target under a drag wears, and a width that is its content's. It is a level to
-/// go to and a place to put things, not an action.
+/// Drawn the way the bar draws it — name, chevron, name — so a reader who has understood the
+/// breadcrumb has already understood the panel, and the panel can be three levels wide where a
+/// list of rows would have been three levels tall.
 #[component]
 fn ElidedCrumb(
     state: AppState,
@@ -363,9 +277,6 @@ fn ElidedCrumb(
     intent: HoverIntent,
 ) -> impl IntoView {
     let id = crumb.id.clone();
-    // Two names for one string: the markup's children are built before its
-    // attributes, so a `title` and a text node sharing a variable would be a borrow
-    // of a value the child had already moved.
     let label = crumb.name.clone();
     let tooltip = crumb.name;
     let dom_id = register_crumb(&ctrl, &id);
