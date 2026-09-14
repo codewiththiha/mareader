@@ -487,6 +487,7 @@ mod tests {
             scanned_ms: 0,
             // The ledger's tables answer for a folder the walk is ON — which since tracking became a tree means a tree that tracks from its root.
             tracking: TrackingTree::tracking_root(),
+            shapes: crate::shape::ShapeTree::default(),
         }
     }
 

@@ -13,7 +13,7 @@ mod tree;
 pub use family::{departing_moves, departs_on_move, family_for};
 pub use members::{containing, forget, forget_everywhere, members_of, place, shelf_add};
 pub use tree::{
-    ancestors, can_nest, children_of, lift_children, reparent, rehang_moves, subtree_ids,
+    ancestors, can_nest, children_of, lift_children, reparent, rehang_moves, rungs_of, subtree_ids,
 };
 
 /// The pseudo-shelf holding every book: the library's root, and the order the
@@ -664,6 +664,7 @@ mod tests {
             ]),
             scanned_ms: 0,
             tracking: TrackingTree::default(),
+            shapes: crate::shape::ShapeTree::default(),
         }];
         (shelves, folders)
     }
@@ -721,6 +722,7 @@ mod tests {
             shelf_map: BTreeMap::from([(String::new(), "stored".to_string())]),
             scanned_ms: 0,
             tracking: TrackingTree::default(),
+            shapes: crate::shape::ShapeTree::default(),
         });
         assert!(!departs_on_move(&shelves, &folders, "mine", Some("r")));
         // A copying folder's shelf is the library's own already: no ledger waits on its rung.

@@ -86,9 +86,9 @@ pub fn reparent(shelves: &mut [Shelf], folder_id: &str, parent: Option<&str>) ->
 }
 
 /// The folder's rungs: every shelf of one folder, from the `rel` key to the shelf
-/// id wearing it — one map for the seat question and the re-hang, so the two
-/// cannot drift.
-fn rungs_of<'a>(
+/// id wearing it — one map for the seat question, the re-hang and the shape a
+/// re-import moves a tree by, so the callers cannot drift.
+pub fn rungs_of<'a>(
     shelves: &'a [Shelf],
     folder_id: &str,
 ) -> std::collections::HashMap<String, &'a str> {

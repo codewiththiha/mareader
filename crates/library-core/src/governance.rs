@@ -211,6 +211,7 @@ mod tests {
                 .collect::<BTreeMap<_, _>>(),
             scanned_ms: 0,
             tracking: TrackingTree::default(),
+            shapes: crate::shape::ShapeTree::default(),
         }
     }
 

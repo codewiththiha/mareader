@@ -330,12 +330,11 @@ pub fn answer_departure_return(state: AppState) {
                 &ret.shelf_id,
                 None,
             ),
-            ReturnPath::Reseat { seat, .. } => {
-                nest_shelf(state, &ret.shelf_id, seat.as_deref())
-            }
+            ReturnPath::Reseat { seat, .. } => nest_shelf(state, &ret.shelf_id, seat.as_deref())
+                .then(|| ret.shelf_id.clone()),
         };
-        if moved && first.is_none() {
-            first = Some(ret.shelf_id.clone());
+        if let Some(seated) = moved {
+            first.get_or_insert(seated);
         }
     }
     if let Some(id) = first {

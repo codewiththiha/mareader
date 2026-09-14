@@ -12,7 +12,7 @@ use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 
 use super::claim::{already_importing, claim_root, root_is_claimed, when_root_is_free};
-use super::folder::run_folder;
+use super::folder::{flatten_rungs, page_shelves, run_folder};
 use super::tasks::{finish_task, push_task, task_id};
 use super::{rel_of, root_shelf_of, shelf_name, Asked};
 use crate::services::library::conflict;
@@ -31,6 +31,21 @@ pub(crate) struct RootPlan {
     pub into: Option<String>,
     pub continuation: Option<(String, String)>,
     pub fold: Option<(String, String)>,
+    /// The rung of the tree this run walks that the reader's pick answered for — the ground the
+    /// sheet's answers stand for. `""` when the pick IS that tree's own ground, and when a fold
+    /// gives the answers a rung to live on: the run reads the fold's rung then.
+    pub rung: String,
+}
+
+impl RootPlan {
+    /// The rung of the tree this run walks that the reader's pick answered for: the rung a fold
+    /// takes the pick in on, else the ground the gate read off the pick itself.
+    pub(super) fn answered_rung(&self) -> String {
+        match &self.fold {
+            Some((_, rel)) => rel.clone(),
+            None => self.rung.clone(),
+        }
+    }
 }
 
 /// The dock owns the feedback from here on. A folder whose NAME the root level already
@@ -64,6 +79,7 @@ pub fn import_folder(
                 opts,
                 RootPlan {
                     continuation: Some((covered.shelf_id, covered.shelf_name)),
+                    rung: covered.rel,
                     fold,
                     ..Default::default()
                 },
@@ -79,13 +95,13 @@ pub fn import_folder(
             let shelves = state.library.shelves.get_untracked();
             shelves_ops::family_for(&folders, &shelves, &root)
         };
-        if fold.is_some() {
+        if let Some(fold) = fold {
             proceed_folder(
                 state,
                 root,
                 opts,
                 RootPlan {
-                    fold,
+                    fold: Some(fold),
                     ..Default::default()
                 },
             );
@@ -133,13 +149,16 @@ pub(super) struct Covered {
     pub rel: String,
 }
 
-/// The sheet's tracking switch as the write it becomes: the tree covering the ground the reader
-/// picked, the rung that ground IS or stands on in it, and the answer itself.
+/// What a ground the library already reads answers the import sheet with: the tree covering the
+/// ground the reader picked, the rung that ground IS or stands on in it, that rung's tracking —
+/// and the options the row was imported with, the shelf shape among them, so the sheet opens on
+/// the state the folder is in rather than on whatever the last import was asked for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GroundWatch {
     pub tree_id: String,
     pub rung: String,
     pub on: bool,
+    pub opts: FolderOpts,
 }
 
 /// The rung a pick of `root` answers for, and the decision that rung carries now — the state the
@@ -156,8 +175,18 @@ pub fn ground_tracking(state: AppState, root: &str) -> Option<GroundWatch> {
         Some(covered) => (covered.tree_id, covered.rel),
         None => shelves_ops::family_for(&folders, &shelves, root)?,
     };
-    let on = folder_ops::find(&folders, &tree_id)?.tracks_rung(&rung);
-    Some(GroundWatch { tree_id, rung, on })
+    let row = folder_ops::find(&folders, &tree_id)?;
+    // The answers the sheet opens on are the row's, except the shelf shape: the structure question
+    // is answered for the GROUND the reader picked, and a rung a re-import moved answers with the
+    // shape it was moved into from then on.
+    let mut opts = row.opts.clone();
+    opts.groups = row.shape_at(&rung);
+    Some(GroundWatch {
+        on: row.tracks_rung(&rung),
+        opts,
+        tree_id,
+        rung,
+    })
 }
 
 /// The write the sheet owes when a tree covers the ground its switch answered about: the rung the
@@ -266,7 +295,6 @@ pub(super) fn displaced_member(
                     folder_id: other.id.clone(),
                     rel,
                     shelf_id,
-                    shelf_name: shelf.name.clone(),
                 },
             ));
         }
@@ -278,7 +306,6 @@ pub(super) struct DisplacedMember {
     pub(super) folder_id: String,
     pub(super) rel: String,
     pub(super) shelf_id: String,
-    pub(super) shelf_name: String,
 }
 
 /// Bounded by the list rather than by the walk finding its own tail, so a blob that already carries a cycle answers "no" rather than spinning.
@@ -324,10 +351,23 @@ fn member_rungs(shelves: &[Shelf], gone_id: &str, rel: &str) -> Vec<(String, Str
 /// run's own map before the walk: the walk then places the member's ground on the shelf that
 /// already stands for it instead of minting a rung beside each one. `run_fold` asks the same
 /// question of the same findings when the walk is done, and folds the member's row behind it.
+///
+/// Nothing is seeded for a row that keeps no tree — a copying row's shelves are the library's own —
+/// nor for one that keeps its whole ground on a single shelf: the rungs the member stands on are
+/// not rungs of that tree, so its books come onto the root rung with everything else, the
+/// flattening the fold runs for the member it takes in (`flatten_rungs`).
 pub(super) fn seed_member_rungs(state: AppState, folder: &mut WatchedFolder, found: &[FoundFile]) {
+    if !folder.mode().reads_in_place() {
+        return;
+    }
     let Some(member) = displaced_member(state, folder, found) else {
         return;
     };
+    // A member's ground answers with the shape AT it: where the tree keeps that ground on one
+    // shelf there is no rung for the member's own shelves to come back onto.
+    if !folder.cuts(&member.rel) {
+        return;
+    }
     let shelves = state.library.shelves.get_untracked();
     for (key, id) in member_rungs(&shelves, &member.folder_id, &member.rel) {
         folder.shelf_map.insert(key, id);
@@ -336,7 +376,9 @@ pub(super) fn seed_member_rungs(state: AppState, folder: &mut WatchedFolder, fou
 
 /// Put a displaced member back on the rung its directory names, and fold the folder that was
 /// reading it into the tree that contains it: one ground is read by one folder from here on.
-/// Three writes, in the order that keeps them honest.
+/// Three writes, in the order that keeps them honest, and the answer is the shelf the member sat
+/// on: the rung a tree that cuts one is put back on, the one shelf a tree that cuts none keeps it
+/// on.
 ///
 /// `run_root` is the root the calling run holds the claim for, when the call comes from one: a tree
 /// ANOTHER run is walking is the one fold to refuse, because that run's clone of the ledger lands
@@ -349,16 +391,14 @@ pub(crate) fn reclaim_rung(
     rel: &str,
     shelf_id: &str,
     run_root: Option<&str>,
-) -> bool {
+) -> Option<String> {
     let now = now_ms();
     let mut minted: Vec<Shelf> = Vec::new();
-    let Some((mut tree, gone)) = state.library.folders.with_untracked(|folders| {
+    let (mut tree, gone) = state.library.folders.with_untracked(|folders| {
         let tree = folder_ops::find(folders, tree_id)?.clone();
         let gone = folder_ops::find(folders, gone_id)?.clone();
         Some((tree, gone))
-    }) else {
-        return false;
-    };
+    })?;
     // Read before anything is written, because the answer is about the shelves that are standing and not about the ones this move is going to mint.
     let rungs = state
         .library
@@ -368,33 +408,105 @@ pub(crate) fn reclaim_rung(
     // different run is walking, whose clone of the ledger lands after this write.
     let foreign_walk = root_is_claimed(&tree.root) && run_root != Some(tree.root.as_str());
     if !rungs.iter().any(|(_, id)| id == shelf_id) || foreign_walk {
-        return false;
+        return None;
     }
     let root = tree.root.clone();
-    let parent = tree.shelf_chain_for(
-        library_core::folder::parent_key(rel).unwrap_or(""),
-        |_| id::next_shelf_id(now),
-        |rung| shelf_name(rung, &root),
-        |rung, id, name, parent| {
-            minted.push(Shelf {
-                id: id.to_string(),
-                name,
-                kind: ShelfKind::Folder {
+    // A ground the shape keeps on one shelf has no rung for the member's directory to become: the
+    // books come onto the rung that ground answers for and the shelves the member stood on go, so an
+    // adoption cannot cut a nested rung into an import that asked for none.
+    let seat = if tree.cuts(rel) {
+        let parent = tree.shelf_chain_for(
+            library_core::folder::parent_key(rel).unwrap_or(""),
+            |_| id::next_shelf_id(now),
+            |rung| shelf_name(rung, &root),
+            |rung, id, name, parent| {
+                minted.push(Shelf {
+                    id: id.to_string(),
+                    name,
+                    kind: ShelfKind::Folder {
+                        folder_id: tree_id.to_string(),
+                        rel: rel_of(rung),
+                    },
+                    books: Vec::new(),
+                    parent,
+                    manual_parent: false,
+                });
+            },
+        );
+        for (key, id) in &rungs {
+            tree.shelf_map.insert(key.clone(), id.clone());
+        }
+        state.library.shelves.update(|shelves| {
+            for shelf in minted {
+                if !shelves.iter().any(|s| s.id == shelf.id) {
+                    shelves.push(shelf);
+                }
+            }
+            let nestable = shelves_ops::can_nest(shelves, shelf_id, &parent);
+            for (key, id) in &rungs {
+                let Some(shelf) = shelves_ops::find_mut(shelves, id) else {
+                    continue;
+                };
+                shelf.kind = ShelfKind::Folder {
                     folder_id: tree_id.to_string(),
-                    rel: rel_of(rung),
-                },
-                books: Vec::new(),
-                parent,
-                manual_parent: false,
-            });
-        },
-    );
-    for (key, id) in &rungs {
-        tree.shelf_map.insert(key.clone(), id.clone());
-    }
+                    rel: rel_of(key),
+                };
+                if id != shelf_id {
+                    continue;
+                }
+                if nestable {
+                    shelf.parent = Some(parent.clone());
+                    shelf.manual_parent = false;
+                } else {
+                    shelf.manual_parent = true;
+                }
+            }
+        });
+        shelf_id.to_string()
+    } else {
+        // A pointer to a shelf that went is no seat, and this tree's map is not the one the run
+        // pruned: the mint is asked for the key the map has no standing rung under.
+        let standing = state.library.shelves.with_untracked(|shelves| {
+            tree.shelf_map
+                .get("")
+                .filter(|id| shelves_ops::find(shelves, id.as_str()).is_some())
+                .cloned()
+        });
+        let seat = match standing {
+            Some(seat) => seat,
+            None => {
+                tree.shelf_map.remove("");
+                tree.shelf_chain_for(
+                    "",
+                    |_| id::next_shelf_id(now),
+                    |rung| shelf_name(rung, &root),
+                    |rung, id, name, parent| {
+                        minted.push(Shelf {
+                            id: id.to_string(),
+                            name,
+                            kind: ShelfKind::Folder {
+                                folder_id: tree_id.to_string(),
+                                rel: rel_of(rung),
+                            },
+                            books: Vec::new(),
+                            parent,
+                            manual_parent: false,
+                        });
+                    },
+                )
+            }
+        };
+        page_shelves(state, minted);
+        flatten_rungs(state, gone_id, &seat);
+        seat
+    };
     // The answer the folded row carried for its own root becomes the rung it becomes: the row that
-    // answer was written on is the one this fold retires.
-    tree.set_tracking(rel, gone.opts.watch);
+    // answer was written on is the one this fold retires. A tree that cuts no rungs has one answer
+    // for the whole of its ground — the reader's own about its root — and the adoption does not
+    // second-guess it.
+    if tree.cuts(rel) {
+        tree.set_tracking(rel, gone.opts.watch);
+    }
     tree.placed.extend(gone.placed.iter().copied());
     for stone in gone.ignored.iter() {
         if !tree.is_ignored(&stone.fp) {
@@ -403,32 +515,6 @@ pub(crate) fn reclaim_rung(
     }
     tree.scanned_ms = tree.scanned_ms.max(gone.scanned_ms);
 
-    state.library.shelves.update(|shelves| {
-        for shelf in minted {
-            if !shelves.iter().any(|s| s.id == shelf.id) {
-                shelves.push(shelf);
-            }
-        }
-        let nestable = shelves_ops::can_nest(shelves, shelf_id, &parent);
-        for (key, id) in &rungs {
-            let Some(shelf) = shelves_ops::find_mut(shelves, id) else {
-                continue;
-            };
-            shelf.kind = ShelfKind::Folder {
-                folder_id: tree_id.to_string(),
-                rel: rel_of(key),
-            };
-            if id != shelf_id {
-                continue;
-            }
-            if nestable {
-                shelf.parent = Some(parent.clone());
-                shelf.manual_parent = false;
-            } else {
-                shelf.manual_parent = true;
-            }
-        }
-    });
     state.library.folders.update(|folders| {
         folders.retain(|f| f.id != gone_id);
         match folders.iter().position(|f| f.id == tree_id) {
@@ -437,7 +523,7 @@ pub(crate) fn reclaim_rung(
         }
     });
     crate::storage::persist_library(state.library);
-    true
+    Some(seat)
 }
 
 /// The half of [`import_folder`] that is the same whatever the folder sheet decided, and the half its answers call directly.
@@ -491,10 +577,9 @@ pub(super) fn run_fold(
     root_rung: Option<&str>,
     found: &[FoundFile],
 ) -> Option<(String, String)> {
-    if let Some((tree, rel)) = &plan.fold {
+    let seated = if let Some((tree, rel)) = &plan.fold {
         let rung = root_rung?;
-        reclaim_rung(state, tree, &folder.id, rel, rung, Some(&folder.root))
-            .then(|| (rung.to_string(), state.library.shelf_name(rung)))
+        reclaim_rung(state, tree, &folder.id, rel, rung, Some(&folder.root))?
     } else {
         let member = displaced_member(state, folder, found)?;
         reclaim_rung(
@@ -504,7 +589,8 @@ pub(super) fn run_fold(
             &member.rel,
             &member.shelf_id,
             Some(&folder.root),
-        )
-        .then(|| (member.shelf_id.clone(), member.shelf_name.clone()))
-    }
+        )?
+    };
+    let name = state.library.shelf_name(&seated);
+    Some((seated, name))
 }

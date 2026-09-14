@@ -185,6 +185,7 @@ fn nested(n: u32) -> WatchedFolder {
         ]),
         scanned_ms: 0,
         tracking: TrackingTree::default(),
+        shapes: library_core::shape::ShapeTree::default(),
     }
 }
 
@@ -332,6 +333,7 @@ fn folder_with_moved_log() -> WatchedFolder {
         ]),
         scanned_ms: 0,
         tracking: TrackingTree::default(),
+        shapes: library_core::shape::ShapeTree::default(),
     }
 }
 
@@ -382,6 +384,7 @@ fn reading_folder() -> WatchedFolder {
         ]),
         scanned_ms: 0,
         tracking: TrackingTree::default(),
+        shapes: library_core::shape::ShapeTree::default(),
     }
 }
 

@@ -758,16 +758,36 @@ its copies being the library's own second instance, unrelated to any tree:
   minting the root shelf back to host it.
 - The same fold runs at the end of any explicit walk whose tree has a MEMBER standing outside
   it (`import::gate::displaced_member`) — the rung removed and the subfolder imported on its own, or
-  left standing by an older build: the rungs the member already stands on are seeded into the run's
-  map before the walk (`import::gate::seed_member_rungs`), so the books come back onto the shelf
-  that already stands for the directory rather than onto a twin minted beside it, and the fold at
-  the end puts the member back, folds the folder that was reading it into the tree's ledger and
-  retires it — the watch that row answered for its own root becoming the watch of the rung it
-  becomes, since the row the answer was written on is the one the fold retires — and the note that
+  left standing by an older build. What "back" is, the tree's own SHAPE answers: a tree that cuts
+  a rung per folder seeds the rungs the member already stands on into the run's map before the walk
+  (`import::gate::seed_member_rungs`), so the books come back onto the shelf that already stands
+  for the directory rather than onto a twin minted beside it, and the fold hangs that shelf on
+  the rung the directory names; a tree that keeps the whole of its ground on ONE shelf seeds
+  nothing, and the fold brings the member's books onto that shelf and takes the member's own
+  shelves out (`import::folder::flatten_rungs`), because the shape the reader imported with cuts
+  no rungs. Either fold puts the member back, folds the folder that was reading it into the tree's
+  ledger and retires it — the watch that row answered for its own root becoming the watch of the
+  rung it becomes, since the row the answer was written on is the one the fold retires; for a
+  one-shelf tree the answer that stands is the reader's own about its root — and the note that
   rises is the report of the shelf that went home (`NoteKind::Returned`). An import is an ask, and
   a member outside its family is an ask answered rather than a second question. The fold is into
   the row the run is walking, which no clone of the ledger can undo; a tree ANOTHER run is walking
   is the one fold refused.
+- A folder's answers are the row's, and a re-import opens on them: `import::gate::ground_tracking`
+  carries the row's own options beside the rung's tracking, so the sheet shows the shape and the
+  filters the folder is in rather than the last import's, and the shelf-structure question is a
+  question the reader can answer the same way by not touching it. Answering it the other way
+  re-shapes the tree the row already reads (`import::folder::reshape_the_tree`): the one-shelf
+  answer brings the answered ground's books onto the rung that ground answers for and takes out the
+  rungs it has no place for, and the shelf-per-folder answer re-files each of them onto the rung its
+  own address names — both reusing the rungs that stand and minting none beside them, so the other
+  shape can never grow a second tree next to the first. The answer stands for the ground the pick
+  named, so the tree above it keeps the shape it stands on. A pick of a SUBFOLDER answers the
+  shape for the tree it is about to become a rung of, so the re-shape runs on the row the fold took
+  the pick into (`import::folder::reshape_row`), once the fold has the pick's ground inside it: the
+  books the one-shelf tree held spread come home to the rungs their own addresses name, and the run
+  that found nothing new lights the shelf its books went back to rather than reporting nothing new.
+  A rescan re-reads the row's answers, which is why only a re-import can move a tree this way.
 - A tree whose root rung a hand took OUT — the shelf's own departure — arrives with no shelf
   and no family slot to name, and simply walks: the copy wears the level's counter name, so the
   folder's own name is free, the walk re-mints the tree on the seats the disk names, and the

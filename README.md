@@ -310,9 +310,16 @@ touches a file you own.
 - **Import a folder.** The sheet asks five questions and nothing else: which formats (as an include
   or an exclude list), how large a file has to be to count as a book, whether to read in place or
   copy, whether to watch for new books, and whether subfolders become shelves. Every answer is
-  stored with the folder, so a later rescan honours the import it came from. The watch answer
-  belongs to the folder being imported: when it is part of a tree the library already reads, the
-  switch opens on the state that tree is in and answers for this subfolder alone — the tree above
+  stored with the folder, and the sheet opens on the answers the folder already has, so a re-import
+  asks only what you mean to change. Picking the other shelf structure is a re-shape rather than a
+  second import: one shelf for everything brings that ground's books back onto the rung it answers
+  for and takes out the rungs that answer has no place for, a shelf for each folder puts each of them
+  under the rung its own address names, and a shelf you made inside a rung that goes comes up with
+  it. The answer stands for the ground you picked, so re-importing one subfolder re-files that
+  subfolder's books — the folders a one-shelf import had spread end up under their own shelves
+  rather than beside them — while the rest of the tree keeps the shelves it stands on. The watch
+  answer belongs to the folder being imported: when it is part of a tree the library already
+  reads, the switch opens on the state that tree is in and answers for this subfolder alone — the tree above
   keeps watching its own — and what the switch shows is always the value that lands.
 - **Watched folders rescan when the app opens or returns to the foreground**, not through a
   filesystem watcher — a watcher fires while you are still copying files in, which is exactly when a
@@ -549,7 +556,9 @@ touches a file you own.
   tree out and its ground stops being anyone's family: importing one of its subfolders afterwards
   gives you that subfolder at the top of the library under its own name, with the root shelf you
   removed left where you put it — and importing the root again puts the subfolder back under it,
-  as its sub shelf.
+  as its sub shelf. A root that keeps the whole of its ground on one shelf has no rung to hang a
+  sub shelf on, so that re-import brings the subfolder's books onto the one shelf and takes the
+  sub shelf out: the shape you imported with is what the books come back to.
 - **A copies import is the library's own business, and asks only the level's name question.**
   Turning read-at-place off means *the library should own these books* — a second instance of
   its own, unrelated to any tree — so the import checks one thing: the name at the level it

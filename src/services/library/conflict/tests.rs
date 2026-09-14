@@ -62,6 +62,7 @@ fn folder_in_place(
         last_seen: Vec::new(),
         scanned_ms: 0,
         tracking: TrackingTree::default(),
+        shapes: library_core::shape::ShapeTree::default(),
     }
 }
 

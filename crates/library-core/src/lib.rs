@@ -27,6 +27,7 @@ pub mod id;
 pub mod ledger;
 pub mod query;
 pub mod scan;
+pub mod shape;
 pub mod shelf;
 pub mod sort;
 pub mod store;

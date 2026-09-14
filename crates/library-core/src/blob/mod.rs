@@ -226,6 +226,7 @@ mod tests {
                 last_seen: Vec::new(),
                 scanned_ms: 0,
                 tracking: TrackingTree::default(),
+                shapes: crate::shape::ShapeTree::default(),
             }],
             view: LibraryView::default(),
         };

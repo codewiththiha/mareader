@@ -13,6 +13,7 @@ use reader_core::format::Format;
 
 use crate::book::{Book, Fingerprint};
 use crate::scan::{FoundFile, admits, selectable_formats, subfolder_of};
+use crate::shape::ShapeTree;
 use crate::shelf::Shelf;
 use crate::tracking::{Track, TrackingTree};
 
@@ -206,6 +207,11 @@ pub struct WatchedFolder {
     /// the legacy [`FolderOpts::watch`] flag across into it.
     #[serde(default)]
     pub tracking: TrackingTree,
+    /// Which rungs answer for a shelf per folder, per rung rather than for the whole import.
+    /// [`ShapeTree`] owns the inheritance, and [`WatchedFolder::set_shape`] keeps the
+    /// root's answer the folder's own [`FolderOpts::groups`].
+    #[serde(default)]
+    pub shapes: ShapeTree,
 }
 
 /// The path of `path` relative to `root`, `/`-separated, with no leading or trailing
@@ -272,19 +278,56 @@ pub fn dir_of_rung(root: &str, rel: &str) -> String {
 }
 
 impl WatchedFolder {
-    /// The ledger key for a found file: its subfolder when the folder groups, the empty
-    /// string otherwise. One function owns the choice so the walk, the shelf creation
-    /// and the persisted map cannot disagree about it.
-    pub fn shelf_key(&self, found: &FoundFile) -> String {
-        if self.opts.groups {
-            found.subfolder().to_string()
+    /// The shelf shape the rungs at `key` answer with: the deepest rung that answered for
+    /// itself, else the answer the folder itself was imported with. The answer is a rung's
+    /// rather than the import's, so a re-import of one nested folder moves that folder's
+    /// books and leaves the rest of the tree where it stands.
+    pub fn shape_at(&self, key: &str) -> bool {
+        self.shapes.at(key).unwrap_or(self.opts.groups)
+    }
+
+    /// Record the shelf shape one ground answers with. The ROOT's answer IS
+    /// [`FolderOpts::groups`] — the one shape a folder remembers — and it stands for the whole
+    /// tree, which is why it takes every deeper answer with it. An answer for a rung below the
+    /// root stands for that rung and the rungs under it, and leaves the tree above alone.
+    pub fn set_shape(&mut self, rung: &str, grouped: bool) {
+        if rung.is_empty() {
+            self.opts.groups = grouped;
+            self.shapes.prune_zone("");
         } else {
-            String::new()
+            self.shapes.set(rung, grouped);
         }
     }
 
-    /// The two rungs this folder's tree names for an address: the shelf the address's own
-    /// subfolder maps to, and the shelf at the folder's root. Both are `None` when the
+    /// Whether the shape cuts a rung at this folder path: the root rung is always cut, and a
+    /// path under it is cut where the shape answers for a shelf per folder, inheriting the
+    /// nearest rung above that answered. One rule for the walk, the re-shape and the fold, so
+    /// the three cannot disagree about where a book belongs.
+    pub fn cuts(&self, key: &str) -> bool {
+        key.is_empty() || self.shape_at(key)
+    }
+
+    /// The rung an address's own FOLDER answers for under the shape: the deepest rung of the
+    /// folder's chain that the shape cuts. A folder no rung cuts below the root — one in a
+    /// subfolder of a one-shelf tree — answers for the root rung.
+    pub fn rung_for(&self, key: &str) -> String {
+        key_chain(key)
+            .into_iter()
+            .rev()
+            .find(|rung| self.cuts(rung))
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    /// The ledger key for a found file: the rung the shape cuts deepest for the file's own
+    /// subfolder. One function owns the choice so the walk, the shelf creation and the
+    /// persisted map cannot disagree about it.
+    pub fn shelf_key(&self, found: &FoundFile) -> String {
+        self.rung_for(found.subfolder())
+    }
+
+    /// The two rungs this folder's tree names for an address: the shelf the address answers
+    /// for under the shape, and the shelf at the folder's root. Both are `None` when the
     /// address is not under this folder at all.
     ///
     /// Two answers because the two questions asked of them differ: *where does this file
@@ -295,13 +338,9 @@ impl WatchedFolder {
         let Some(rel) = rel_under(path, &self.root) else {
             return (None, None);
         };
-        let key = if self.opts.groups {
-            subfolder_of(&rel)
-        } else {
-            ""
-        };
+        let key = self.rung_for(subfolder_of(&rel));
         (
-            self.shelf_map.get(key).map(String::as_str),
+            self.shelf_map.get(key.as_str()).map(String::as_str),
             self.shelf_map.get("").map(String::as_str),
         )
     }
@@ -586,6 +625,62 @@ mod tests {
     }
 
     #[test]
+    fn a_shape_answered_for_one_rung_cuts_the_rungs_under_it_alone() {
+        let mut f = WatchedFolder {
+            opts: FolderOpts {
+                groups: false,
+                ..FolderOpts::default()
+            },
+            shelf_map: BTreeMap::from([
+                (String::new(), "root".to_string()),
+                ("Fiction".to_string(), "fic".to_string()),
+            ]),
+            ..folder("/books")
+        };
+        assert_eq!(
+            f.rung_for("Fiction/SciFi"),
+            "",
+            "one shelf files every address on its root rung"
+        );
+        assert_eq!(f.rungs_for("/books/Reference/x.pdf").0, Some("root"));
+        // The nested folder a re-import answered for cuts its own rungs, and the tree above keeps
+        // the books that were never under it.
+        f.set_shape("Fiction", true);
+        assert_eq!(f.rung_for("Fiction"), "Fiction");
+        assert_eq!(f.rung_for("Fiction/SciFi"), "Fiction/SciFi");
+        assert_eq!(f.rung_for("Reference"), "", "the rest of the tree is where it was");
+        assert_eq!(
+            f.rungs_for("/books/Fiction/SciFi/dune.pdf").0,
+            None,
+            "no shelf stands for the rung the answer cut yet"
+        );
+        assert_eq!(f.rungs_for("/books/Fiction/other.pdf").0, Some("fic"));
+    }
+
+    #[test]
+    fn the_roots_answer_stands_for_the_whole_tree() {
+        let mut f = WatchedFolder {
+            opts: FolderOpts {
+                groups: false,
+                ..FolderOpts::default()
+            },
+            ..folder("/books")
+        };
+        f.set_shape("Fiction", true);
+        assert_eq!(f.rung_for("Fiction/SciFi"), "Fiction/SciFi");
+        f.set_shape("", true);
+        assert!(f.opts.groups, "the root's answer IS the folder's own shape");
+        assert!(f.shapes.is_empty(), "and it takes every deeper answer with it");
+        assert_eq!(f.rung_for("Fiction/SciFi"), "Fiction/SciFi");
+        f.set_shape("", false);
+        assert_eq!(
+            f.rung_for("Fiction/SciFi"),
+            "",
+            "one shelf puts every directory on the root rung"
+        );
+    }
+
+    #[test]
     fn a_folder_that_does_not_group_has_one_rung_for_every_file() {
         let f = WatchedFolder {
             opts: FolderOpts {
@@ -639,6 +734,7 @@ mod tests {
             last_seen: Vec::new(),
             scanned_ms: 0,
             tracking: TrackingTree::default(),
+            shapes: crate::shape::ShapeTree::default(),
         }
     }
 

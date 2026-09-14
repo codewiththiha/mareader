@@ -78,9 +78,11 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
             .flatten()
             .and_then(|root| ground_tracking(state, &root))
     });
-    // Ground an existing tree covers SEEDS the option rather than owning the display: an effect reads
-    // the tree's own answer for the rung into the options when the sheet opens onto that ground, so the
-    // control starts at the state the tree is in and a pick moves it.
+    // A ground the library already reads SEEDS the sheet rather than owning the display: an effect
+    // reads the row's own answers — the shelf shape among them — and the rung's tracking into the
+    // options when the sheet opens onto that ground, so the controls start at the state the folder
+    // is in and a pick moves it. Every other ground keeps the last import's answers, which is what
+    // a reader importing a second folder wants.
     Effect::new(move |_| {
         if !sheet.open.get() {
             return;
@@ -88,13 +90,25 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
         let Some(root) = sheet.root.get() else {
             return;
         };
-        // The lists under `ground_tracking` are read untracked, so the effect re-runs on an open and on a changed folder and nothing else: a seed that re-fired on every folder write would undo the toggle the reader just made.
+        // The lists under `ground_tracking` are read untracked, so the effect re-runs on an open
+        // and on a changed folder and nothing else: a seed that re-fired on every folder write
+        // would undo the answer the reader just gave.
         if let Some(watch) = ground_tracking(state, &root) {
-            opts.update(|o| o.watch = watch.on);
+            opts.set(FolderOpts {
+                watch: watch.on,
+                ..watch.opts
+            });
         }
     });
     let include = Signal::derive(move || opts.with(|o| o.include_selected));
     let grouped = Signal::derive(move || opts.with(|o| o.groups));
+    // The structure answer stands for the GROUND the reader picked: ground under a tree answers for
+    // that folder and the rungs below it, which is what the note under the buttons promises.
+    let in_tree = Signal::derive(move || {
+        ground
+            .get()
+            .is_some_and(|watch| !watch.rung.is_empty())
+    });
     let min_size = Signal::derive(move || opts.with(|o| o.min_size));
     let label = Signal::derive(move || opts.with(|o| o.min_size_label()));
     let at_floor = Signal::derive(move || min_size.get() == MIN_SIZE_FLOOR);
@@ -319,6 +333,19 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                         <span>"One shelf for everything"</span>
                                     </OptionButton>
                                 </div>
+                                <p class="mt-2 text-xs text-muted">
+                                    {move || {
+                                        if in_tree.get() {
+                                            "This answer stands for this folder and the ones under \
+                                             it — the rest of the tree keeps its own."
+                                                .to_string()
+                                        } else {
+                                            "A shelf for each folder gives every subfolder its own \
+                                             shelf; one shelf keeps the whole import together."
+                                                .to_string()
+                                        }
+                                    }}
+                                </p>
                             </div>
                         </div>
 
