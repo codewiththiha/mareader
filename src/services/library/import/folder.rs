@@ -18,6 +18,7 @@ use reader_core::format::Format;
 
 use super::copy::{copy_batch, measure_stores};
 use super::gate::{run_fold, RootPlan};
+use super::kept;
 use super::restore::take_represented;
 use super::tasks::{fail, finish_task, push_task, update_task, FailMode};
 use super::{rel_of, shelf_name, Asked};
@@ -630,6 +631,8 @@ fn land_the_walk(
         for (book_id, file) in pending {
             match mint_walked_row(books, folder, &landing, book_id, file, &mut new_shelves) {
                 Minted::Placed { id, shelf } => {
+                    // A file that came back is the file that left: what was kept lands with it.
+                    kept::reclaim(books, file, &id);
                     placements.push((id, shelf));
                     placed += 1;
                 }

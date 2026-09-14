@@ -124,7 +124,14 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
         }
         let mut placed_id = String::new();
         state.library.books.update(|books| {
+            let before = books.len();
             placed_id = add_book(books, book);
+            // The library may still hold this content through another row, and `add_book` answers
+            // with THAT row: its own marks and place stay its own, and what a removal kept for the
+            // file waits for a landing of its own.
+            if books.len() > before {
+                super::kept::reclaim(books, &found, &placed_id);
+            }
         });
 
         // One write: a fingerprint the ledger skips with no book behind it is the one state a folder cannot recover from on its own.

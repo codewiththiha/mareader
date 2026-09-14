@@ -9,7 +9,7 @@ pub mod import;
 pub mod reveal;
 
 pub use arrange::{
-    PurgeOpts, SeamSide, also_show, answer_departure_return, ask_relink, cancel_departure,
+    ReadingData, SeamSide, also_show, answer_departure_return, ask_relink, cancel_departure,
     cancel_relink, confirm_departure, create_shelf_and_enter, create_shelf_here, delete_shelf,
     file_many, memberships, move_many_to_shelf, nest_many, nest_shelf, purge_books, relink_dialog,
     relink_search_folder, rename_shelf, reorder_shelves_to_anchor, unfile_books,

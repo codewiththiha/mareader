@@ -1,8 +1,13 @@
 //! The remove sheet: what a removal costs, itemised.
 //!
-//! A removal here is not a dismissal. It takes the resume point, every shelf placement, the
-//! cached cover and the highlights with it, and for a book the app copied it can take the
-//! bytes too — so the sheet reads as a receipt of what is about to go.
+//! A removal here is not a dismissal. Every shelf placement goes, the app's own copy of the file
+//! goes — a book the library no longer holds is a file nothing will ever read again — and the
+//! cached cover goes, because the next import rebuilds it from the file.
+//!
+//! What the reader WROTE in the book is the one thing the sheet asks about: the highlights, the
+//! place they stopped at and any name they gave it are kept, and wait for the file to come back
+//! (`crate::storage::kept`). The switch drops them instead, which is the only part of a removal
+//! that is not a receipt.
 
 
 mod receipt;
@@ -18,7 +23,7 @@ use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
 use crate::components::primitives::form::row::Row;
-use crate::services::library::{PurgeOpts, delete_shelf, purge_books};
+use crate::services::library::{ReadingData, delete_shelf, purge_books};
 use crate::state::AppState;
 
 use receipt::{Receipt, deepest_first, receipt as build_receipt};
@@ -33,6 +38,10 @@ pub(crate) struct RemoveSheet {
     pub shelves: RwSignal<Vec<String>>,
     /// Reset by every ask rather than remembered, because a cascade is a decision about ONE removal: a switch that persisted would be a preference the sheet never offered as one.
     pub cascade: RwSignal<bool>,
+    /// Off by default, and reset by every ask for the cascade's reason — with more at stake: a removal
+    /// that quietly kept destroying the reader's marks because a switch was left on would be the
+    /// sheet answering a question nobody was asked this time.
+    pub delete_data: RwSignal<bool>,
 }
 
 impl RemoveSheet {
@@ -42,6 +51,7 @@ impl RemoveSheet {
             books: RwSignal::new(Vec::new()),
             shelves: RwSignal::new(Vec::new()),
             cascade: RwSignal::new(false),
+            delete_data: RwSignal::new(false),
         };
         provide_context(sheet);
         sheet
@@ -52,6 +62,7 @@ impl RemoveSheet {
         self.books.set(vec![book_id.to_string()]);
         self.shelves.set(Vec::new());
         self.cascade.set(false);
+        self.delete_data.set(false);
         self.open.set(true);
     }
 
@@ -62,6 +73,7 @@ impl RemoveSheet {
         self.books.set(book_ids);
         self.shelves.set(shelf_ids);
         self.cascade.set(false);
+        self.delete_data.set(false);
         self.open.set(true);
     }
 }
@@ -69,9 +81,6 @@ impl RemoveSheet {
 
 #[component]
 pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoView {
-    // On by default: copies the app made for books that are leaving the library are files nothing will ever read again.
-    let delete_copy = RwSignal::new(true);
-
     // Done in an effect rather than in the view, because a view that writes a signal is a view that can be asked to render and mutate in the same pass.
     Effect::new(move |_| {
         if !sheet.open.get() {
@@ -103,7 +112,7 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
                 {move || {
                     let ids = sheet.books.get();
                     let shelf_ids = sheet.shelves.get();
-                    // Read here rather than inside the sheet, so flipping the switch rebuilds the receipt and the sheet together: every row, the store-copy switch and the button's own wording are all answers about ONE set of books.
+                    // Read here rather than inside the sheet, so flipping the cascade switch rebuilds the receipt and the sheet together: every row, the data switch and the button's own wording are all answers about ONE set of books.
                     let cascade = sheet.cascade.get();
                     let info = build_receipt(state, &ids, &shelf_ids, cascade)?;
                     let cover_path = info
@@ -116,7 +125,6 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
                         <ReceiptSheet
                             state=state
                             sheet=sheet
-                            delete_copy=delete_copy
                             info=info
                             cover_path=cover_path
                             alt=alt
@@ -132,12 +140,12 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
 fn ReceiptSheet(
     state: AppState,
     sheet: RemoveSheet,
-    delete_copy: RwSignal<bool>,
     info: Receipt,
     cover_path: String,
     alt: String,
 ) -> impl IntoView {
     let cascade = info.cascade;
+    let delete_data = sheet.delete_data;
     let purge_ids = info.book_ids.clone();
     let delete_ids = info.shelf_ids.clone();
     let inside_books = info.inside_books;
@@ -166,24 +174,25 @@ fn ReceiptSheet(
             .first()
             .is_some_and(|b| b.page > 1 || b.fraction.is_some());
     let marks_line = plural(marks, "mark", "marks");
+    let copy_label = if stored_count == 1 {
+        "The app's own copy"
+    } else {
+        "The app's own copies"
+    };
+    let copy_line = human_size(stored_bytes);
+    let offers_data = info.offers_data();
+    let data_note = Signal::derive(move || {
+        if delete_data.get() {
+            "They go with the book: importing the file again lands it as a new book.".to_string()
+        } else {
+            "Kept: the marks, the place and any name you gave a book come back if the file is imported again."
+                .to_string()
+        }
+    });
     // Hoisted out of the view: an `if` in attribute position is an expression the macro has to guess the end of. "Cover art" rather than "cached cover(s)": the cache is the app's business, the picture is the reader's.
     let covers_label = "Cover art";
     let covers_line = plural(covers, "image", "images");
     let books_line = plural(info.books.len(), "book", "books");
-    let copy_label = match stored_count {
-        1 => format!("Delete the app's own copy ({})", human_size(stored_bytes)),
-        n => format!("Delete the app's {n} copies ({})", human_size(stored_bytes)),
-    };
-    let copy_note_on = match stored_count {
-        1 => format!(
-            "The copy the app made ({}) goes with the book. The file it was copied from is never touched.",
-            human_size(stored_bytes)
-        ),
-        n => format!(
-            "The {n} copies the app made ({}) go with the books. The files they were copied from are never touched.",
-            human_size(stored_bytes)
-        ),
-    };
     // A cascade is already counted in both numbers — the books inside are in `books` and the shelves inside are in `shelves` — except where a shelf holds no books at all and only empty folders.
     let remove_label = match (info.books.len(), info.shelves.len()) {
         (1, 0) => "Remove".to_string(),
@@ -317,6 +326,15 @@ fn ReceiptSheet(
                             />
                         }
                     })}
+                    {(stored_count > 0).then(|| {
+                        view! {
+                            <ReceiptRow
+                                icon=IconName::Copy
+                                label=copy_label
+                                value=copy_line.clone()
+                            />
+                        }
+                    })}
                     {has_placements.then(|| {
                         view! {
                             <ReceiptRow
@@ -327,6 +345,22 @@ fn ReceiptSheet(
                         }
                     })}
                 </div>
+
+                {offers_data.then(|| {
+                    view! {
+                        <div class="mt-3 rounded-xl border border-line">
+                            <Row label="Delete the highlights and reading position">
+                                <Switch
+                                    checked=Signal::derive(move || delete_data.get())
+                                    on_change=Callback::new(move |on| delete_data.set(on))
+                                    title="Take what the reader wrote in these books with them"
+                                        .to_string()
+                                />
+                            </Row>
+                            <p class="px-4 pb-3 text-xs text-muted">{data_note}</p>
+                        </div>
+                    }
+                })}
 
                 {has_shelves.then(|| {
                     view! {
@@ -373,30 +407,6 @@ fn ReceiptSheet(
                     }
                 })}
 
-                {(stored_count > 0).then(|| {
-                    view! {
-                        <div class="mt-3 rounded-xl border border-line">
-                            <Row label="Delete the copied files">
-                                <Switch
-                                    checked=Signal::derive(move || delete_copy.get())
-                                    on_change=Callback::new(move |on| delete_copy.set(on))
-                                    title=copy_label.clone()
-                                />
-                            </Row>
-                            <p class="px-4 pb-3 text-xs text-muted">
-                                {move || {
-                                    if delete_copy.get() {
-                                        copy_note_on.clone()
-                                    } else {
-                                        "The copies stay in the app's store, with nothing left to read them."
-                                            .to_string()
-                                    }
-                                }}
-                            </p>
-                        </div>
-                    }
-                })}
-
                 {watched.then(|| {
                     view! {
                         <p class="mt-3 text-xs text-muted">
@@ -419,13 +429,12 @@ fn ReceiptSheet(
                     on_click=move |_| {
                         sheet.open.set(false);
                         if !purge_ids.is_empty() {
-                            purge_books(
-                                state,
-                                &purge_ids,
-                                PurgeOpts {
-                                    delete_store_copy: delete_copy.get_untracked(),
-                                },
-                            );
+                            let data = if delete_data.get_untracked() {
+                                ReadingData::Delete
+                            } else {
+                                ReadingData::Keep
+                            };
+                            purge_books(state, &purge_ids, data);
                         }
                         // Shelves after the books, deepest first: a purge sweeps every shelf's member list, and a shelf dissolved first would be swept by nobody.
                         let shelves_now = state.library.shelves.get_untracked();
@@ -435,7 +444,7 @@ fn ReceiptSheet(
                     }
                     variant=ButtonVariant::Toolbar
                     tone=ButtonTone::Danger
-                    title="Remove these books and everything the library holds about them"
+                    title="Take these books and shelves out of the library"
                 >
                     <Icon name=IconName::Close size=16 />
                     <span>{remove_label}</span>

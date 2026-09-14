@@ -9,7 +9,7 @@ use library_core::conflict::Placement;
 use library_core::scan::FoundFile;
 
 use super::{answer_batch, member_slot, minted_name, AskKind, ConflictAsk};
-use crate::services::library::arrange::{purge_books, PurgeOpts};
+use crate::services::library::arrange::{ReadingData, purge_books};
 use crate::services::library::covers;
 use crate::state::AppState;
 
@@ -68,10 +68,10 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: Placement) {
     }
 }
 
-/// Through the removal's own sweep — receipt and all — so a replace here costs the reader exactly what a replace anywhere else does.
+/// Through the removal's own sweep — receipt and all — so a replace here costs the reader exactly what a replace anywhere else does, the reading data included.
 fn purge_existing(state: AppState, existing_id: &str) {
     let ids = [existing_id.to_string()];
-    purge_books(state, &ids, PurgeOpts::default());
+    purge_books(state, &ids, ReadingData::Delete);
 }
 
 /// The sheet already withholds it; this is the write side of the same rule, because apply-to-all can carry an answer across to a question whose sheet never offered it.

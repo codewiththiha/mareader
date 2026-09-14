@@ -27,6 +27,10 @@ pub(super) struct Receipt {
     pub(super) inside_books: usize,
     pub(super) inside_shelves: usize,
     pub(super) marks: usize,
+    /// How many of the books carry the reader's own work rather than the library's: a place they
+    /// stopped at, or a name they gave it. With the marks, this is what the sheet's one question is
+    /// about, and counting it here keeps that question's visibility off the question's own answer.
+    pub(super) wrote: usize,
     pub(super) covers: usize,
     pub(super) placements: Vec<String>,
     pub(super) watched: bool,
@@ -77,6 +81,13 @@ impl Receipt {
         }
     }
 
+    /// Whether there is anything of the reader's for the sheet's one question to decide. A control
+    /// that appears with nothing for it to decide is a control the reader has to read and then
+    /// ignore, and a removal of books nobody wrote in asks nothing.
+    pub(super) fn offers_data(&self) -> bool {
+        self.marks > 0 || self.wrote > 0
+    }
+
     /// A placeholder's "size" is the length of its path, a number on a receipt that would mean nothing. A shelves-only receipt says the one thing a reader worries about: that nothing else goes with them.
     pub(super) fn subtitle(&self) -> String {
         if self.books.is_empty() {
@@ -117,6 +128,16 @@ impl Receipt {
     }
 }
 
+
+/// How many of these books the reader left something in: a place they stopped at, or a name they
+/// gave one. The marks are counted apart from the rows, because they are the one thing this file
+/// reads out of the store rather than off the row.
+fn wrote_in(books: &[Book]) -> usize {
+    books
+        .iter()
+        .filter(|book| book.page > 1 || book.fraction.is_some() || book.title_locked)
+        .count()
+}
 
 /// The walk itself is `library_core::shelf::subtree_ids` — a cascade and a copy that answered "which shelves go with this one" differently would be two rules wearing one name.
 fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
@@ -239,6 +260,7 @@ pub(super) fn receipt(
             }
         }
     }
+    let wrote = wrote_in(&books);
     let fingerprints: Vec<_> = books.iter().map(|b| b.fp).collect();
     let measured = books.iter().all(|b| !b.fp_pending);
     let watched = measured
@@ -264,6 +286,7 @@ pub(super) fn receipt(
         inside_books: inside_ids.len(),
         inside_shelves: descendants.len(),
         marks,
+        wrote,
         covers,
         placements: placement_names,
         watched,
@@ -345,6 +368,28 @@ mod tests {
         let mut found = ids(&subtree(&looped, &["x".to_string()]));
         found.sort();
         assert_eq!(found, ["y"]);
+    }
+
+    #[test]
+    fn only_books_the_reader_wrote_in_ask_the_data_question() {
+        let untouched = library_core::testkit::book("b1");
+        let started = Book {
+            page: 3,
+            ..library_core::testkit::book("b2")
+        };
+        let streamed = Book {
+            fraction: Some(0.2),
+            ..library_core::testkit::book("b3")
+        };
+        let renamed = Book {
+            title_locked: true,
+            ..library_core::testkit::book("b4")
+        };
+        assert_eq!(
+            wrote_in(&[untouched, started, streamed, renamed]),
+            3,
+            "a book the reader never opened is a book with nothing of theirs to keep"
+        );
     }
 
     #[test]

@@ -1,4 +1,5 @@
-//! Persisted app state (settings, library, covers) over localStorage.
+//! Persisted app state (settings, library, covers) over localStorage, and the one store that is
+//! not app state at all: what a removal kept of the reader's own work ([`kept`]).
 //!
 //! Deliberately plain functions — a trait + `Box<dyn>` + `OnceLock` global for
 //! a single localStorage backend was more architecture than the app needs. If
@@ -6,6 +7,8 @@
 //!
 //! Failures are NOT silent: loads warn about what was dropped, saves return a
 //! [`StorageError`] the caller decides how to handle.
+
+pub mod kept;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -26,34 +29,23 @@ use library_core::blob::sanitize as sanitize_library;
 use reader_core::settings::{SETTINGS_KEY, Settings, sanitize};
 
 const COVERS_KEY: &str = "pdfreader.covers.v1";
-/// Gloss highlights, keyed by document path.
+/// Gloss highlights, keyed by the ROW ID the library holds for a book.
 ///
-/// Versioned like the rest: a PDF's mark is a page-space rect in CSS px —
-/// stable across zoom and sessions, but NOT across a change in how a page is
-/// laid out. If page rendering metrics ever change, bump this to `v2` rather
-/// than let old marks drift onto the wrong words.
-///
-/// A reflowable mark carries its identity in `context` instead — a tagged
-/// envelope holding a block index and a character range
-/// (`components::ai::reflow_anchor`) — because its pages are re-cut whenever
-/// the typography or column width moves. The envelope is versioned by its own
-/// tag, so a change there needs no new storage key.
-/// The marks are keyed by the ROW ID the library holds for a book, which is why
-/// this is `v2` rather than a schema edit under `v1`: a `v1` map is keyed by
-/// address, and the two shapes cannot be told apart by looking at one entry, so
-/// [`migrate_gloss_keys`] reads the old key and writes the new one rather than
-/// overwriting a map this build cannot parse.
-///
-/// Versioned like the rest for the second reason too: a PDF's mark is a
-/// page-space rect in CSS px — stable across zoom and sessions, but NOT across a
-/// change in how a page is laid out. If page rendering metrics ever change, bump
-/// this rather than let old marks drift onto the wrong words.
+/// Versioned like the rest: a PDF's mark is a page-space rect in CSS px — stable
+/// across zoom and sessions, but NOT across a change in how a page is laid out.
+/// If page rendering metrics ever change, bump this rather than let old marks
+/// drift onto the wrong words.
 ///
 /// A reflowable mark carries its identity in `context` instead — a tagged
 /// envelope holding a block index and a character range
 /// (`components::ai::reflow_anchor`) — because its pages are re-cut whenever
 /// the typography or column width moves. The envelope is versioned by its own
 /// tag, so a change there needs no new storage key.
+///
+/// The row id rather than the address is what makes this `v2`: a `v1` map is
+/// keyed by address, and the two shapes cannot be told apart by looking at one
+/// entry, so [`migrate_gloss_keys`] reads the old key and writes the new one
+/// rather than overwriting a map this build cannot parse.
 const GLOSS_KEY: &str = "pdfreader.gloss.v2";
 
 /// The address-keyed map this build migrated from. Read once, left alone: a
@@ -349,31 +341,40 @@ fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError>
     set(GLOSS_KEY, &json)
 }
 
-/// Drop one document's marks.
+/// Drop one row's marks: the reader's data goes with the book.
 ///
-/// A removal that leaves the highlights behind leaves the largest half of what a
-/// reader put into a book sitting in localStorage under a path nothing points at
-/// any more — and, worse, waiting to paint themselves over a DIFFERENT book if
-/// that path is ever reused. Read-modify-write like [`persist_gloss`], for the
-/// same reason: a second window's marks must not be clobbered by a removal in
-/// this one.
-pub fn remove_gloss(path: &str) {
+/// A removal that left them behind would leave the largest half of what a
+/// reader put into a book sitting in localStorage under a row nothing points at
+/// any more.
+pub fn remove_gloss(row_id: &str) {
+    take_gloss(row_id);
+}
+
+/// Take one row's marks out of the store. The row id is never reused, so the
+/// entry goes whatever the answer was — and a removal that KEEPS the reader's
+/// data carries the marks away with it (`crate::storage::kept::remember`)
+/// rather than dropping them.
+///
+/// Read-modify-write rather than keeping the map in memory: marks change only
+/// when the reader explains a word (human-paced), and re-reading keeps a second
+/// window's marks from being clobbered by a write in this one.
+pub fn take_gloss(row_id: &str) -> Vec<GlossMark> {
     let mut all = load_gloss();
-    if all.remove(path).is_none() {
-        return;
-    }
+    let Some(marks) = all.remove(row_id) else {
+        return Vec::new();
+    };
     if let Err(e) = save_gloss(&all) {
         e.report();
     }
+    marks
 }
 
-/// Replace one document's marks and write the whole map back.
-/// Read-modify-write rather than keeping the map in memory: marks change only
-/// when the reader explains a word (human-paced), and re-reading keeps a
-/// second window's marks from being clobbered.
-pub fn persist_gloss(path: &str, marks: &[GlossMark]) {
+/// Replace one row's marks and write the whole map back.
+/// Read-modify-write for [`take_gloss`]'s reason: a second window's marks must
+/// not be clobbered by a write in this one.
+pub fn persist_gloss(row_id: &str, marks: &[GlossMark]) {
     let mut all = load_gloss();
-    all.insert(path.to_string(), marks.to_vec());
+    all.insert(row_id.to_string(), marks.to_vec());
     if let Err(e) = save_gloss(&all) {
         e.report();
     }

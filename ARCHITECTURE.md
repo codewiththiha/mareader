@@ -478,9 +478,11 @@ The fingerprint is the identity, and one identity is normally one row — but no
 of one file are allowed, so the sanitizer dedupes by *id* rather than by fingerprint, and every
 path-keyed writer treats the twins as the twins they are: a read and a path check update *all* the
 rows at an address (the reading position is a fact about the file, not about the row), and a
-removal sweeps the address's gloss, cover and store copy only when no remaining row reads from it
-(`services::library::arrange`'s `sweep_path` — and the copy's deletion takes the book's own item
-folder with it, because the folder is the book's and not the store's). The ledger's registry is first-wins per fingerprint,
+removal sweeps the address's cover and store copy only when no remaining row reads from it
+(`services::library::arrange`'s `sweep_book` — and the copy's deletion takes the book's own item
+folder with it, because the folder is the book's and not the store's) — while the marks sit under
+the ROW, so they go with the row the removal took and a twin keeps its own. The ledger's registry
+is first-wins per fingerprint,
 which is a safe answer while every row of one fingerprint reads one address — and the reason a
 relink is dropped when the address it would write is one another row already reads, which is what
 keeps it safe now that two folders can each hold a copy.
@@ -985,15 +987,28 @@ Everything on that sheet is measured over the set the removal will actually take
 clicked: with the cascade on, the books row, the highlight and cover counts, the store copies and the
 button's own wording all describe the asked books plus everything inside the asked shelves. A receipt
 that itemised the selection and then removed the selection plus a folder's contents would be a receipt
-for a different removal than the one it confirmed. The switch is offered only when there is something
-inside to decide about — an empty leaf shelf gets no switch — and the store-copy switch only when the
-effective set contains a copy the app made, because a control that appears with nothing for it to
-decide is a control the reader has to read and then ignore. Two things follow from the cascade being a
+for a different removal than the one it confirmed. A switch is offered only where there is
+something for one to decide — an empty leaf shelf gets no cascade switch, and a removal of books
+nobody wrote in gets no data switch — because a control that appears with nothing to decide is a
+control the reader has to read and then ignore. Two things follow from the cascade being a
 change of SET rather than of wording: the shelf rows switch from saying what survives to saying what
 goes, since the same words would mean the opposite, and the deletes run deepest-first so
 `lift_children` never moves a shelf to the level it was on moments before deleting it. The tree
 arithmetic that decides which shelves those are (`subtree`, `deepest_first`) is pure over the shelf
 list and host-tested, including the cycle a blob caught between two writes can still carry.
+
+One row of that receipt is a question rather than a cost, and it is the only one. The app's own
+copy goes with the book: a file nothing will read again is not worth a switch, and removing a book
+has always meant the store losing it. What the READER wrote is theirs — the marks, the place they
+stopped at and any name they gave the book — so it is stowed instead, in `pdfreader.kept.v1`
+(`storage::kept`), keyed by the FILE rather than by the row that went. The switch drops it instead,
+and the sheet says what keeping it means: the next import to land that file as a row of its own
+puts it back (`import::kept`), matched by the file's name and by how much else agrees with the
+record — its address, its bytes. Only a landing that MINTS a row reclaims: a row the library still
+holds has reading data of its own, and an arrival that resolves to it is a second copy rather than
+a book coming back. A watched folder's tombstone is the other way a book comes home, and the two
+are independent on purpose — the log answers for a folder, and the kept store answers for a file
+the reader brought back themselves.
 
 Nesting is not `ShelfKind::Folder`'s `rel`. `rel` is a subfolder's address inside a watched
 directory's tree — a rescan key, written by the filesystem's shape. For a FOLDER shelf, `parent`

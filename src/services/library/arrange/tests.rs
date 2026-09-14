@@ -137,12 +137,6 @@ fn a_shift_larger_than_the_index_lands_at_the_front() {
     assert_eq!(list, vec!["a", "x", "y"]);
 }
 
-#[test]
-fn a_removal_deletes_the_app_s_own_copy_by_default() {
-    assert!(PurgeOpts::default().delete_store_copy);
-}
-
-
 fn fp(n: u32) -> Fingerprint {
     Fingerprint {
         size: u64::from(n),

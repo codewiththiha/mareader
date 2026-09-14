@@ -11,6 +11,7 @@ mod copy;
 mod files;
 mod folder;
 mod gate;
+mod kept;
 mod migrate;
 mod replace;
 mod restore;

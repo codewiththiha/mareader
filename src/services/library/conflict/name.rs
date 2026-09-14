@@ -10,8 +10,8 @@ use library_core::shelf;
 
 use super::{advance, apply_placement, member_slot, minted_name, ConflictAsk};
 use crate::services::library::arrange::{
-    converts_on_move_to, convert_to_stored, drop_row, memberships, move_row, purge_books,
-    unlist_row, write_moved_stones, Departed, PurgeOpts,
+    ReadingData, converts_on_move_to, convert_to_stored, drop_row, memberships, move_row,
+    purge_books, unlist_row, write_moved_stones, Departed,
 };
 use crate::services::library::covers;
 use crate::services::library::toast;
@@ -156,10 +156,11 @@ fn replace(state: AppState, ask: &ConflictAsk) {
         .into_iter()
         .map(|(id, _)| id)
         .collect();
+    // The sheet said what this answer costs — the row going, and its highlights with it.
     purge_books(
         state,
         std::slice::from_ref(&ask.existing_id),
-        PurgeOpts::default(),
+        ReadingData::Delete,
     );
     let shelf_id = ask.arrival.shelf_id.clone();
     let index = seat.or(ask.arrival.index);

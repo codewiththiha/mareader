@@ -421,16 +421,19 @@ touches a file you own.
   been released, and a session begun from one would have no release to end it.
 - **Removing a book shows you the receipt first.** The sheet itemises what goes with it — the resume
   point, the highlights, the cached cover, every shelf it was filed on — and leaves out the rows for
-  things the book does not have. For a book the app copied there is a switch for the copy, on by
-  default; the file it was copied from is never touched either way. There is no undo toast, because
-  the sheet is the safety and the folder's import menu is the undo.
+  things the book does not have. A copy the app made goes with the book: the store is never left
+  holding a file nothing can read, and the file it was copied from is never touched. What you wrote in
+  the book is the one thing the sheet asks about — leave the switch off and the marks, the place you
+  stopped at and any name you gave it wait for the file to come back, onto the book that importing it
+  again lands as. There is no undo toast, because the sheet is the safety and the folder's import menu
+  is the undo.
 - **Removing a shelf can take everything inside it with it.** Off — the default — the books inside stay
   in the library and the shelves inside move up a level. On, the books are purged by the same receipt a
   selected book gets and the shelves inside are taken apart too, deepest first. The switch is offered
-  only when there is something inside to decide about, and every row on the sheet, the store-copy
-  switch and the confirm button's own wording all describe the set the removal will actually take
-  rather than the one you clicked — so a cascade that reaches stored copies is a cascade that shows
-  you the copies first.
+  only when there is something inside to decide about, and every row on the sheet, the data switch and
+  the confirm button's own wording all describe the set the removal will actually take rather than the
+  one you clicked — so a cascade that reaches stored copies is a cascade that shows you the copies
+  first.
 - **Moving a read-at-place book out of its folder makes it the library's own.** The departure is
   the one move that writes a byte: the book becomes a stored copy — its name, its place in it and
   its highlights all travel with it — and the folder records a moved-out log, so no rescan files

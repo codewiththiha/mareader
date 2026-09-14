@@ -17,6 +17,7 @@ use library_core::wire::PathCheck;
 use reader_core::format::{Format, is_supported_path};
 
 use super::copy::{copy_batch, measure_stores};
+use super::kept;
 use super::restore::{covered_fate, lift_stone_for, restore_covered_file, take_represented, CoveredFate};
 use super::tasks::{fail, finish_task, push_task, task_id, FailMode};
 use super::verify::apply_checks;
@@ -357,7 +358,11 @@ fn mint_row(
     // Always a row of its own, and never a resolve to the row the library already holds: the
     // reader asked for THIS file on THIS level. Content identity is the ledger's business.
     let placed = book.id.clone();
-    state.library.books.update(|rows| rows.push(Row::Book(book)));
+    state.library.books.update(|rows| {
+        rows.push(Row::Book(book));
+        // A file that comes back is the file that left: whatever a removal kept for it lands here.
+        kept::reclaim(rows, file, &placed);
+    });
     // The root has no member list to place into, so the write is skipped rather than made and answered with nothing.
     if shelf_id != shelves_ops::ALL_SHELF {
         state.library.shelves.update(|shelves| {

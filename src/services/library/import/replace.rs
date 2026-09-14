@@ -12,7 +12,7 @@ use library_core::shelf::{self as shelves_ops};
 
 use super::claim::{already_importing, when_root_is_free};
 use super::gate::{proceed_folder, RootPlan};
-use crate::services::library::arrange::{self, PurgeOpts};
+use crate::services::library::arrange::{self, ReadingData};
 use crate::state::AppState;
 
 /// The books the level's shelf holds leave through the removal's own sweep — rows,
@@ -46,7 +46,9 @@ fn sweep_and_walk_into(
             .collect()
     };
     if !doomed.is_empty() {
-        arrange::purge_books(state, &doomed, PurgeOpts::default());
+        // The walk that follows lands these files again, as the library's own copies, so the
+        // reading data waits for that landing rather than going with these rows.
+        arrange::purge_books(state, &doomed, ReadingData::Keep);
     }
     if super::copies::copies_over_standing_tree(state, &root, &opts) {
         // The unbound walk files the copies into the shelf the sweep just emptied and leaves the tree's ledger alone: the bound run would convert the very tree the reader did NOT ask to convert.
@@ -93,7 +95,8 @@ pub fn replace_rows_of_tree(state: AppState, root: &str) -> Vec<String> {
 pub(crate) fn purge_folder_linked_books(state: AppState, root: &str) {
     let doomed = replace_rows_of_tree(state, root);
     if !doomed.is_empty() {
-        arrange::purge_books(state, &doomed, PurgeOpts::default());
+        // The copies that land in the next breath are these files: the data follows them.
+        arrange::purge_books(state, &doomed, ReadingData::Keep);
     }
 }
 
