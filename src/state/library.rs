@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use library_core::blob::LibraryBlob;
 use library_core::book::Row;
-use library_core::folder::{self as folder_ops, WatchedFolder};
+use library_core::folder::{self as folder_ops, FolderMode, WatchedFolder};
 use library_core::governance::Governance;
 use library_core::id;
 use library_core::shelf::{self, ALL_SHELF, Shelf};
@@ -532,6 +532,30 @@ impl LibraryState {
             self.shelves
                 .with(|shelves| Governance::new(folders, shelves).shelf_tracked(shelf_id))
         }) == Some(true)
+    }
+
+    /// The MODE of the folder whose tree this shelf stands in, when it stands
+    /// in one: `Copy` for a shelf cut from a folder the library copies into
+    /// its own store, a read-at-place mode for a shelf that is a door onto a
+    /// directory on disk, and `None` for a shelf the reader made themselves.
+    ///
+    /// The folder's seat is what answers (`Governance::seat_of`), so a shelf
+    /// nested inside a tree reports the tree's mode — the same seat
+    /// [`Self::shelf_tracked`] asks about — and the card that draws it can say
+    /// where its books are without walking the shelf's kind by hand. What it
+    /// is FOR is the one difference a reader has to know before removing a
+    /// shelf: the books of a copying shelf are the library's own, and the
+    /// books of a read-at-place shelf are not.
+    ///
+    /// Reactive, the way [`Self::shelf_tracked`] is: a rescan that turns a
+    /// folder around, or a hand that re-picks one, repaints the badge.
+    pub fn shelf_mode(&self, shelf_id: &str) -> Option<FolderMode> {
+        self.folders.with(|folders| {
+            let seat = self
+                .shelves
+                .with(|shelves| Governance::new(folders, shelves).seat_of(shelf_id))?;
+            folder_ops::find(folders, &seat.folder_id).map(|f| f.mode())
+        })
     }
 
     /// [`shelf_tracked`] without the subscription, for a caller that is building

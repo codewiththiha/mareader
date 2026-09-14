@@ -203,13 +203,27 @@ impl FolderMode {
         matches!(self, FolderMode::LinkInPlaceWatched)
     }
 
-    /// The import sheet's own words for this mode, so the control that sets it
-    /// and the sentence that describes it are one spelling.
+    /// The mode's own name, in the words the app asks the question in: the
+    /// import sheet's control, and any sentence that has to name a mode, read
+    /// it from here rather than spelling it again, because a mode described
+    /// two ways reads as two modes.
     pub fn label(self) -> &'static str {
         match self {
             FolderMode::Copy => "Copy into the library",
-            FolderMode::LinkInPlace => "Link in place",
-            FolderMode::LinkInPlaceWatched => "Link in place, watched",
+            FolderMode::LinkInPlace => "Read at place",
+            FolderMode::LinkInPlaceWatched => "Read at place, and watch for new books",
+        }
+    }
+
+    /// [`FolderMode::label`] cut down to two words, for the badge a folder card
+    /// wears in a corner rather than a choice a sheet lays out: what it says is
+    /// where the books are, and nothing else. A watched folder adds nothing
+    /// here — the dot beside the badge is the watched signal, and one fact
+    /// drawn twice in the same corner is noise.
+    pub fn badge(self) -> &'static str {
+        match self {
+            FolderMode::Copy => "Copied",
+            FolderMode::LinkInPlace | FolderMode::LinkInPlaceWatched => "On disk",
         }
     }
 }
@@ -468,16 +482,16 @@ impl WatchedFolder {
     /// folders to walk, ask this rather than the flag: one rule for "is this
     /// folder watched", and a rung-level answer available to the surfaces that
     /// want one ([`WatchedFolder::tracks_rung`]).
+    pub fn tracked(&self) -> bool {
+        self.tracking.tracked()
+    }
+
     /// The mode this folder was imported in: what a run on it does with the
     /// files it finds, and whether a later one walks the tree again. The two
     /// switches are [`FolderOpts`]'s; this is the one answer the services and
     /// the surfaces read instead of testing them apart.
     pub fn mode(&self) -> FolderMode {
         self.opts.mode()
-    }
-
-    pub fn tracked(&self) -> bool {
-        self.tracking.tracked()
     }
 
     /// Whether one rung of this tree is tracked: the rung's own decision, or the

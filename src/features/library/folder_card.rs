@@ -101,6 +101,15 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     let dot_id = id.clone();
     let watched = Signal::derive(move || state.library.shelf_tracked(&dot_id));
 
+    // Where this shelf's books live, when a disk folder answers for it: the
+    // badge beside the dot. `None` for a shelf the reader made themselves and
+    // for the pseudo-shelf, because nothing outside the library answers for
+    // those — there is no second place their books could be, so there is
+    // nothing to say. Reactive for the same reason the dot is: a rescan can
+    // turn a folder around while this card is on screen.
+    let mode_id = id.clone();
+    let mode = Signal::derive(move || state.library.shelf_mode(&mode_id));
+
     // The id the plate's check mark reads through: the mark asks the library
     // for the membership itself, the way the shell's own selected class does.
     let check_id = id.clone();
@@ -134,6 +143,21 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
                 <span class="folder-count">{move || summary(counts.get())}</span>
             </div>
             <div class="folder-badges">
+                {move || {
+                    mode.get().map(|mode| {
+                        // The badge is two words; the sentence it stands for
+                        // goes on the pointer's tooltip, because what a reader
+                        // actually wants to know is whether the folder on disk
+                        // can go.
+                        let title = if mode.copies_files() {
+                            "Every book here is a copy the library keeps — the folder on disk can go."
+                        } else {
+                            "These books stay in their folder on disk; the library only remembers \
+                             where they are."
+                        };
+                        view! { <span class="folder-mode" title=title>{mode.badge()}</span> }
+                    })
+                }}
                 {move || {
                     watched.get().then(|| {
                         view! {

@@ -121,6 +121,25 @@
   color: var(--color-ink);
 }
 
+/* Where a folder's books live, on the folder card that stands for one of its
+   shelves: "Copied" for books the library keeps in its own store, "On disk" for
+   books read where they sit. It sits on the same row as the watched dot, which
+   is the other half of the same question, and it is the quietest thing on the
+   plate on purpose — it is true of nearly every card, so it informs a reader
+   looking for it and stays out of the way of one who is not. The paper tint
+   rather than a solid fill keeps the cover under it legible. */
+.folder-mode {
+  padding: 1px 6px;
+  border: 1px solid var(--color-line);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-paper) 84%, transparent);
+  color: var(--color-muted);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 /* A watched folder's dot, on the folder card that stands for one of its shelves.
    It breathes rather than blinks: the badge is chrome the reader is not looking
    at directly, and a hard blink in the periphery is the one motion nobody asks
