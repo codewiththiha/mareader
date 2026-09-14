@@ -1,42 +1,37 @@
-//! The compact per-file sheet a folder merge asks: two names, three answers,
+//! The compact per-file question a folder merge asks: two names, three answers,
 //! and the switch that gives every waiting question the same answer in one
 //! click.
+//!
+//! Described rather than drawn: the sheet is
+//! [`ConflictSheet`](crate::features::library::conflict_modal)'s, and what is
+//! left here is the pair of names and the sentences.
+//!
+//! Its three are the move sheet's, re-spelled for an arrival with no row of its
+//! own: there is nothing to fold INTO the shelf's row yet, so *merge* is the
+//! file handing the row its measurement rather than two rows becoming one.
+//! Smaller than the import sheet on purpose — the shelf's question is already
+//! answered, and a sheet that re-explained the whole situation per file would be
+//! a sentence the reader has to re-read forty times.
 
 use leptos::prelude::*;
 
 use library_core::book::find_row;
-use library_core::conflict::{next_name, Placement};
+use library_core::conflict::{Placement, next_name};
 
-use crate::components::primitives::menu::choice_row::ChoiceRow;
-use crate::components::primitives::overlay::question_sheet::QuestionSheet;
-use crate::services::library::conflict::{self, ConflictAsk};
-
-use super::info::more_waiting;
+use crate::services::library::conflict::ConflictAsk;
 use crate::state::AppState;
 
+use super::info::more_waiting;
+use super::sheet::{AnswerRoute, ChoiceSpec, SheetSpec};
 
-/// The compact per-file sheet a folder merge asks: two names, three answers,
-/// and — behind the row of them — the switch that gives every waiting question
-/// the same answer in one click.
-///
-/// The move sheet's three, re-spelled for an arrival with no row of its own:
-/// there is nothing to fold INTO the shelf's row yet, so *merge* is the file
-/// handing the row its measurement rather than two rows becoming one. Smaller
-/// than the import sheet on purpose: the shelf's question is already answered,
-/// and a sheet that re-explained the whole situation per file would be a
-/// sentence the reader has to re-read forty times.
-#[component]
-pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
-    // The switch starts off on every question: "apply to all" is the reader's
-    // answer per sheet, not a preference the first click leaves behind.
-    let apply_all = RwSignal::new(false);
+/// A merged folder's per-file question, described.
+pub(super) fn describe_folder_merge(state: AppState, ask: &ConflictAsk) -> SheetSpec {
     let waiting = state
         .library
         .conflict_waiting
         .with_untracked(|w| w.iter().filter(|each| each.kind.is_folder_merge()).count());
     let incoming = ask.arrival.name.clone();
     let existing = ask.existing_name.clone();
-    let heading = incoming.clone();
     let subtitle = more_waiting(format!("Into “{existing}”"), waiting);
     // The file arriving is the very file the row on the shelf reads — a
     // re-import of a read-at-place folder's own book. *As new* of it would be
@@ -65,8 +60,7 @@ pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoVi
              under a name of its own."
         )
     };
-    let merge_note =
-        format!("One book — “{existing}” stays, and takes this file's measurement");
+    let merge_note = format!("One book — “{existing}” stays, and takes this file's measurement");
     const REPLACE_NOTE: &str =
         "The row on the shelf leaves the library; this file takes its slot";
     let new_name = {
@@ -75,51 +69,34 @@ pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoVi
     };
     let new_note = format!("Keep both — this file becomes “{new_name}”");
 
-    view! {
-        <QuestionSheet
-            heading=heading
-            subtitle=subtitle
-            question=question
-            on_close=Callback::new(move |_| conflict::cancel(state))
-            apply_all=(waiting, apply_all)
-        >
-                    <ChoiceRow
-                        label="Merge"
-                        note=merge_note
-                        on_click=Callback::new(move |_| {
-                            conflict::answer_folder_merge(
-                                state,
-                                Placement::Merge,
-                                apply_all.get_untracked(),
-                            )
-                        })
-                    />
-                    <ChoiceRow
-                        label="Replace"
-                        note=REPLACE_NOTE.to_string()
-                        on_click=Callback::new(move |_| {
-                            conflict::answer_folder_merge(
-                                state,
-                                Placement::Replace,
-                                apply_all.get_untracked(),
-                            )
-                        })
-                    />
-                    {(!twin).then(move || {
-                        view! {
-                            <ChoiceRow
-                                label="As new"
-                                note=new_note.clone()
-                                on_click=Callback::new(move |_| {
-                                    conflict::answer_folder_merge(
-                                        state,
-                                        Placement::KeepBoth,
-                                        apply_all.get_untracked(),
-                                    )
-                                })
-                            />
-                        }
-                    })}
-        </QuestionSheet>
+    let mut choices = vec![
+        ChoiceSpec {
+            label: "Merge",
+            note: merge_note,
+            placement: Placement::Merge,
+        },
+        ChoiceSpec {
+            label: "Replace",
+            note: REPLACE_NOTE.to_string(),
+            placement: Placement::Replace,
+        },
+    ];
+    if !twin {
+        choices.push(ChoiceSpec {
+            label: "As new",
+            note: new_note,
+            placement: Placement::KeepBoth,
+        });
+    }
+
+    SheetSpec {
+        heading: incoming,
+        subtitle,
+        question,
+        cancel_title: "Leave the shelf as it is",
+        waiting,
+        apply_all: true,
+        route: AnswerRoute::FolderMerge,
+        choices,
     }
 }

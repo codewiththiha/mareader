@@ -34,17 +34,13 @@
 //!   * [`rename_modal`] — the name the shelf shows, retyped: one field for a
 //!     book, a link or a shelf, and a display name is all it writes — the id,
 //!     the address and the file on disk keep what they have
-//!   * [`conflict_modal`] — the shelf already holds that book: the
-//!     duplicate/replace/merge question, and the second ask a replace owes;
-//!     a folder merge's per-file asks wear its compact sheet, and a loose
-//!     file of a read-at-place folder wears the covered sheet's two answers.
-//!     One file per question, with the strings all three print in [`info`]
-//!     beside them
-//!
-//! [`info`]: crate::features::library::conflict_modal
-//!   * [`shelf_conflict_modal`] — the level already holds that NAME: the
-//!     folder question an import asks before its walk, and the mode switch a
-//!     read-at-place folder asks when it is re-picked as copies
+//!   * [`conflict_modal`] — the level already holds that book, or that NAME:
+//!     the duplicate/replace/merge question and the second ask a replace owes;
+//!     a folder merge's per-file asks, a loose file of a read-at-place
+//!     folder's two, and the folder question an import asks before its walk
+//!     (a mode switch away from the same folder's own answers). One describer
+//!     per question, one renderer for all four, and the two strings more than
+//!     one question prints in `info` beside them
 //!   * [`departure_modal`] — a hand taking a read-at-place shelf off the seat
 //!     its folder's tree names: the move becomes the library's own copy, asked
 //!     before the copies are made
@@ -101,7 +97,6 @@ pub mod remove_modal;
 pub mod rename_modal;
 pub mod search_suggest;
 pub mod selection;
-pub mod shelf_conflict_modal;
 pub mod shelf_item;
 pub mod titlebar_search;
 pub mod view_menu;

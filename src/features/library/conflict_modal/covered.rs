@@ -1,30 +1,31 @@
-//! The two-answer sheet, and the two facts that raise it: a loose import of a
-//! file that sits inside a folder the library reads in place, where that folder's
-//! book for it is alive and standing; or a loose import of a file whose content
-//! the library already holds, wherever it is filed.
+//! The two-answer question, and the two facts that raise it: a loose import of a
+//! file that sits inside a folder the library reads in place, where that
+//! folder's book for it is alive and standing; or a loose import of a file whose
+//! content the library already holds, wherever it is filed.
 //!
 //! Two answers rather than three because the third a name collision offers — a
 //! pointer at a row on THIS level — has nothing to point at in either case: the
 //! row the library holds is not on this level, and a second linked row of one
 //! read-at-place file is the one thing that rule never makes. Which fact was
 //! noticed decides the sentence above the buttons and nothing else.
+//!
+//! Described rather than drawn: the sheet is
+//! [`ConflictSheet`](crate::features::library::conflict_modal)'s.
 
 use leptos::prelude::*;
 
-use crate::components::primitives::menu::choice_row::ChoiceRow;
-use crate::components::primitives::overlay::question_sheet::QuestionSheet;
 use library_core::conflict::Placement;
 
-use crate::services::library::conflict::{self, ConflictAsk};
+use crate::services::library::conflict::ConflictAsk;
 use crate::services::library::folder_label;
-
-use super::info::{more_waiting, where_line};
 use crate::state::AppState;
 
+use super::info::{more_waiting, where_line};
+use super::sheet::{AnswerRoute, ChoiceSpec, SheetSpec};
 
-/// The two-answer sheet: the library's own stored copy on this level — a book of
-/// its own bytes with its own highlights and its own place in it — or the book the
-/// library already holds, gone to and lit.
+/// The covered file's question, described: the library's own stored copy on this
+/// level — a book of its own bytes with its own highlights and its own place in
+/// it — or the book the library already holds, gone to and lit.
 ///
 /// What is left after the stronger question has been asked. A covered file's
 /// folder has already answered what a name collision would ask, and a file whose
@@ -33,15 +34,12 @@ use crate::state::AppState;
 /// one, and nothing else. The switch gives every other waiting question of this
 /// shape the same answer, because what one file of a forty-file drop says is
 /// usually what the other thirty-nine say.
-#[component]
-pub(super) fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
-    let apply_all = RwSignal::new(false);
+pub(super) fn describe_covered(state: AppState, ask: &ConflictAsk) -> SheetSpec {
     let waiting = state
         .library
         .conflict_waiting
         .with_untracked(|w| w.iter().filter(|each| each.kind.is_two_answer()).count());
     let incoming = ask.arrival.name.clone();
-    let heading = incoming.clone();
     // Which fact the library noticed decides the sentence, and the two are not
     // the same question: a covered file is ground a folder reads in place, where
     // one OS file is one linked book; a file the library simply already holds is
@@ -80,36 +78,25 @@ pub(super) fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
         None => format!("Add nothing — go to “{book_name}” and light it up"),
     };
 
-    view! {
-        <QuestionSheet
-            heading=heading
-            subtitle=subtitle
-            question=question
-            on_close=Callback::new(move |_| conflict::cancel(state))
-            apply_all=(waiting, apply_all)
-        >
-                    <ChoiceRow
-                        label="Import a copy here"
-                        note=import_note
-                        on_click=Callback::new(move |_| {
-                            conflict::answer_covered(
-                                state,
-                                Placement::KeepBoth,
-                                apply_all.get_untracked(),
-                            )
-                        })
-                    />
-                    <ChoiceRow
-                        label="Show the imported one"
-                        note=show_note
-                        on_click=Callback::new(move |_| {
-                            conflict::answer_covered(
-                                state,
-                                Placement::Open,
-                                apply_all.get_untracked(),
-                            )
-                        })
-                    />
-        </QuestionSheet>
+    SheetSpec {
+        heading: incoming,
+        subtitle,
+        question,
+        cancel_title: "Leave the shelf as it is",
+        waiting,
+        apply_all: true,
+        route: AnswerRoute::Covered,
+        choices: vec![
+            ChoiceSpec {
+                label: "Import a copy here",
+                note: import_note,
+                placement: Placement::KeepBoth,
+            },
+            ChoiceSpec {
+                label: "Show the imported one",
+                note: show_note,
+                placement: Placement::Open,
+            },
+        ],
     }
 }

@@ -29,34 +29,43 @@
 //! `crate::services::library::conflict` and the rule itself is
 //! `library_core::conflict`; this directory is the ask.
 //!
-//! ## Four files, one sheet
+//! ## Four questions, one sheet
 //!
-//! [`info`] is every string the sheet prints, read once per answer. [`name_sheet`]
-//! is the level's own name question, [`folder_merge`] the compact per-file sheet a
-//! merged folder asks, and [`covered`] the two answers a loose import of a file an
-//! in-place tree already holds gets. This file is the shell and the dispatch
-//! between the three — one signal, one modal, and the kind of the ask decides
-//! which body renders.
+//! Each question DESCRIBES itself and [`ConflictSheet`] draws it: [`info`] holds
+//! the two strings more than one question needs, [`name_sheet`] is the level's
+//! own name question, [`folder_merge`] the compact per-file sheet a merged
+//! folder asks, [`covered`] the two answers a loose import of a file an
+//! in-place tree already holds gets, and [`shelf`] the folder's own name
+//! collision, which lives on the shelf state and is mounted by
+//! [`ShelfConflictModal`] rather than by [`ConflictModal`].
+//!
+//! The four used to be four components that each drew their own list of
+//! `ChoiceRow`s and wired their own apply-to-all signal. What is left is one
+//! renderer, four describers, and one place that knows how an answer lands.
 //!
 //! Cancel — the button, the backdrop and the Escape key — drops the question on
 //! screen and every one waiting behind it, which is what a file manager's copy
 //! dialog has always meant by Cancel: the placements already answered keep
-//! their answers and the ones not asked simply do not land.
+//! their answers and the ones not asked simply do not land. The folder's own
+//! question is the exception: it has no queue, so cancelling drops the one.
 
 mod covered;
 mod folder_merge;
 mod info;
 mod name_sheet;
+mod sheet;
+mod shelf;
 
 use leptos::prelude::*;
 
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::state::AppState;
 
-use covered::CoveredSheet;
-use folder_merge::FolderMergeSheet;
-use info::NameSheetInfo;
-use name_sheet::NameSheet;
+use covered::describe_covered;
+use folder_merge::describe_folder_merge;
+use name_sheet::describe_name;
+use sheet::ConflictSheet;
+use shelf::describe_shelf;
 
 /// The sheet, mounted once by the library page.
 ///
@@ -90,23 +99,55 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
                 // A folder merge's file asks wear the compact sheet: the
                 // shelf's question is already answered, and what is left is a
                 // run of files with the same three doors each.
-                if ask.kind.is_folder_merge() {
-                    return Some(
-                        view! { <FolderMergeSheet state=state ask=ask /> }.into_any(),
-                    );
-                }
-                // A two-answer ask — a covered file's ground, or content the
-                // library already holds — is about the library rather than about
-                // the level's name, and its sheet is the pair the name question
-                // cannot offer: a copy of the library's own, or the book that is
-                // already there.
-                if ask.kind.is_two_answer() {
-                    return Some(
-                        view! { <CoveredSheet state=state ask=ask /> }.into_any(),
-                    );
-                }
-                let info = NameSheetInfo::of(state, &ask);
-                Some(view! { <NameSheet state=state info=info /> }.into_any())
+                let spec = if ask.kind.is_folder_merge() {
+                    describe_folder_merge(state, &ask)
+                } else if ask.kind.is_two_answer() {
+                    // A two-answer ask — a covered file's ground, or content
+                    // the library already holds — is about the library rather
+                    // than about the level's name, and its sheet is the pair
+                    // the name question cannot offer.
+                    describe_covered(state, &ask)
+                } else {
+                    describe_name(state, &ask)
+                };
+                Some(view! { <ConflictSheet state=state spec=spec /> }.into_any())
+            }}
+        </ModalShell>
+    }
+}
+
+/// The folder's question, mounted beside [`ConflictModal`] by the library page.
+///
+/// A second host rather than a second question on the first, because the two
+/// asks live on different states: a book collision is raised from inside a
+/// walk that is already running and can queue, and the folder's is asked
+/// before the walk starts and is the only thing standing in its way. The shell
+/// is the same shell and the body is the same [`ConflictSheet`] — what is
+/// separate is the signal, and the sentence the dialog calls itself to a
+/// screen reader.
+#[component]
+pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
+    let open = state.library.shelf_conflict.open;
+
+    // A close that came from the lane registry, the Escape key or the shell's
+    // backdrop wrote only the boolean; the question goes with it, so the sheet
+    // can never reopen onto a folder somebody already dismissed.
+    Effect::new(move |_| {
+        if !open.get() {
+            state.library.shelf_conflict.ask.set(None);
+        }
+    });
+
+    view! {
+        <ModalShell
+            open=open
+            aria_label="A shelf of that name is already here"
+            width="min(92vw, 420px)"
+        >
+            {move || {
+                let ask = state.library.shelf_conflict.ask.get()?;
+                let spec = describe_shelf(state, &ask);
+                Some(view! { <ConflictSheet state=state spec=spec /> }.into_any())
             }}
         </ModalShell>
     }

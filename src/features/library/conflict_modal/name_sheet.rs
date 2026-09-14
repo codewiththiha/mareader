@@ -1,190 +1,166 @@
 //! The name question: an arrival whose name a row on this level already
 //! carries, and the three answers — the import's or the move's, decided by
 //! what is arriving.
+//!
+//! Described rather than drawn: this file works out what the question says and
+//! which answers it offers, and
+//! [`ConflictSheet`](crate::features::library::conflict_modal) draws it. The
+//! sentences are read once, off one snapshot of the library, so a row cannot
+//! promise one thing and the click do another.
 
 use leptos::prelude::*;
 
-use library_core::conflict::Placement;
+use library_core::conflict::{Placement, next_name};
 
-use crate::components::primitives::menu::choice_row::ChoiceRow;
-use crate::components::primitives::overlay::question_sheet::QuestionSheet;
-use crate::services::library::conflict;
+use crate::services::library::conflict::{self, ConflictAsk};
 use crate::state::AppState;
 
-use super::info::{more_waiting, NameSheetInfo};
+use super::info::{more_waiting, where_line};
+use super::sheet::{AnswerRoute, ChoiceSpec, SheetSpec};
 
-/// The sheet's body, split out so it takes the facts by value: the outer view
-/// answers "is there still a question?" on every run, and this one is built
-/// once per answer with an answer it can keep.
-#[component]
-pub(super) fn NameSheet(state: AppState, info: NameSheetInfo) -> impl IntoView {
-    let subtitle = more_waiting(format!("Already {}", info.where_line), info.waiting);
-    let import = info.import;
-    // Which answers this arrival gets, in the order the sheet shows them — the
-    // apply's own list rather than a condition the sheet re-derives, so a button
-    // the sheet renders is a button the answer will take.
-    let offers = info.offers;
+/// The level's own name question, described.
+///
+/// Every sentence here is built off one snapshot of the library — the name *as
+/// new* would mint, the highlights a replace takes with it, the shelf the
+/// collision is on — because a row that counted one way and answered another is
+/// a receipt for something else.
+pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
+    let where_line = where_line(state, &ask.arrival.shelf_id);
+    // Whether the arrival is a file with no row of its own yet. The sentence
+    // turns on it — an import has nothing of its own to keep, so its question is
+    // "what do I put here" rather than "which of the two do I keep".
+    let import = ask.arrival.is_import();
+    // The answers this arrival gets, in the order the sheet shows them — the
+    // apply's own list rather than a condition the sheet re-derives, so a row
+    // the sheet renders is a row the answer will take.
+    let offers = conflict::offers_for(state, ask);
+    let existing_name = ask.existing_name.clone();
+    // One read of both lists, so the promise on the row and the answer the
+    // click gives are counted against the same library.
+    let (rows, shelves) = state.library.snapshot_rows();
+    let new_name = next_name(
+        &rows,
+        &shelves,
+        &ask.arrival.shelf_id,
+        &ask.arrival.name,
+    );
+    // The row's own id, which is the row's own list: a count taken from the
+    // address would promise a loss the merge cannot make, because a twin
+    // still reading that address keeps its own marks.
+    let marks = crate::storage::load_gloss()
+        .get(&ask.existing_id)
+        .map(Vec::len)
+        .unwrap_or(0);
+
     let question = if import {
         // An import's *add as new* is a stored copy of the library's own — a
         // book of its own bytes, whatever the level's twin reads — so no
         // arrival ever has the row withheld: nothing a file's answers can do
         // is a second door on one linked file.
         format!(
-            "“{}” is already {}. Add a second book of its own, put a link here \
+            "“{}” is already {where_line}. Add a second book of its own, put a link here \
              instead, or go to the one you have.",
-            info.incoming, info.where_line
+            ask.arrival.name
         )
     } else if offers.contains(&Placement::LinkOnly) {
         format!(
-            "A book called “{}” is already {}, and it is one of the library's own copies. \
+            "A book called “{existing_name}” is already {where_line}, and it is one of the library's own copies. \
              Keep one book, reach the copy from here, or keep both under a new name.",
-            info.existing_name, info.where_line
         )
     } else {
         format!(
-            "A book called “{}” is already {}. Keep one book, keep this one \
+            "A book called “{existing_name}” is already {where_line}. Keep one book, keep this one \
              instead, or keep both under a new name.",
-            info.existing_name, info.where_line
         )
     };
-    let heading = info.incoming.clone();
-    let go_to_note = format!(
-        "Add nothing — go to “{}” where it already is",
-        info.existing_name
-    );
-    let new_note = format!(
-        "Keeps both, under the next free name — “{}”",
-        info.new_name
-    );
+    let go_to_note = format!("Add nothing — go to “{existing_name}” where it already is");
+    let new_note = format!("Keeps both, under the next free name — “{new_name}”");
     const LINK_NOTE: &str = "A pointer row, not a copy: tapping it goes to the book where it lives";
     // The move's own three, and Replace is the one that says what it takes:
     // the row it names leaves the library, and a highlight count the reader can
     // see before the click is the difference between a receipt and a surprise.
     let merge_note = format!(
-        "One book — “{}” stays, and takes this one's shelves, its highlights, \
-         and the further place in it",
-        info.existing_name
+        "One book — “{existing_name}” stays, and takes this one's shelves, its highlights, \
+         and the further place in it"
     );
-    let replace_note = if info.marks > 0 {
+    let replace_note = if marks > 0 {
         format!(
-            "“{}” leaves the library, with its {} — this one takes its place \
+            "“{existing_name}” leaves the library, with its {} — this one takes its place \
              on every shelf it was on",
-            info.existing_name,
-            library_core::text::plural(info.marks, "highlight", "highlights")
+            library_core::text::plural(marks, "highlight", "highlights")
         )
     } else {
         format!(
-            "“{}” leaves the library — this one takes its place on every shelf \
-             it was on",
-            info.existing_name
+            "“{existing_name}” leaves the library — this one takes its place on every shelf \
+             it was on"
         )
     };
-    let move_new_note = format!("Keeps both — this one becomes “{}”", info.new_name);
+    let move_new_note = format!("Keeps both — this one becomes “{new_name}”");
     let link_note = format!(
-        "The book you dragged becomes a pointer here — “{}” stays, the file on disk stays, \
-         and nothing is destroyed",
-        info.existing_name
+        "The book you dragged becomes a pointer here — “{existing_name}” stays, the file on disk stays, \
+         and nothing is destroyed"
     );
 
-    view! {
-        <QuestionSheet
-            heading=heading
-            subtitle=subtitle
-            question=question
-            on_close=Callback::new(move |_| conflict::cancel(state))
-        >
-                    // One row per answer the ask offers, in its order. An
-                    // import's *keep both* is a stored copy of the library's own
-                    // and its *make link* is a pointer; a move's are the same two
-                    // answers about a row the reader is holding — which is why the
-                    // labels differ and the answers do not.
-                    //
-                    // A `match` that builds the row rather than a tuple of
-                    // strings: each row's `on_click` captures the note by move,
-                    // and a leptos view is not `Clone`, so the sentence has to be
-                    // built in the arm that uses it.
-                    {move || {
-                        offers
-                            .iter()
-                            .map(|choice| match choice {
-                                Placement::Open => view! {
-                                    <ChoiceRow
-                                        label="Already imported"
-                                        note=go_to_note.clone()
-                                        on_click=Callback::new(move |_| {
-                                            conflict::answer_placement(state, Placement::Open)
-                                        })
-                                    />
-                                }
-                                    .into_any(),
-                                Placement::KeepBoth if import => view! {
-                                    <ChoiceRow
-                                        label="Add as new"
-                                        note=new_note.clone()
-                                        on_click=Callback::new(move |_| {
-                                            conflict::answer_placement(state, Placement::KeepBoth)
-                                        })
-                                    />
-                                }
-                                    .into_any(),
-                                Placement::KeepBoth => view! {
-                                    <ChoiceRow
-                                        label="As new"
-                                        note=move_new_note.clone()
-                                        on_click=Callback::new(move |_| {
-                                            conflict::answer_placement(state, Placement::KeepBoth)
-                                        })
-                                    />
-                                }
-                                    .into_any(),
-                                // The pointer's own sentence is the move's when
-                                // the shape keeps both sides, and the import's
-                                // otherwise: one promises a dragged book becomes a
-                                // pointer, the other promises a row that is not a
-                                // copy.
-                                Placement::LinkOnly if import => view! {
-                                    <ChoiceRow
-                                        label="Make link"
-                                        note=LINK_NOTE.to_string()
-                                        on_click=Callback::new(move |_| {
-                                            conflict::answer_placement(state, Placement::LinkOnly)
-                                        })
-                                    />
-                                }
-                                    .into_any(),
-                                Placement::LinkOnly => view! {
-                                    <ChoiceRow
-                                        label="Make link"
-                                        note=link_note.clone()
-                                        on_click=Callback::new(move |_| {
-                                            conflict::answer_placement(state, Placement::LinkOnly)
-                                        })
-                                    />
-                                }
-                                    .into_any(),
-                                Placement::Merge => view! {
-                                    <ChoiceRow
-                                        label="Merge"
-                                        note=merge_note.clone()
-                                        on_click=Callback::new(move |_| {
-                                            conflict::answer_placement(state, Placement::Merge)
-                                        })
-                                    />
-                                }
-                                    .into_any(),
-                                Placement::Replace => view! {
-                                    <ChoiceRow
-                                        label="Replace"
-                                        note=replace_note.clone()
-                                        on_click=Callback::new(move |_| {
-                                            conflict::answer_placement(state, Placement::Replace)
-                                        })
-                                    />
-                                }
-                                    .into_any(),
-                            })
-                            .collect::<Vec<_>>()
-                    }}
-        </QuestionSheet>
+    // One row per answer the ask offers, in its order. An import's *keep both*
+    // is a stored copy of the library's own and its *make link* is a pointer; a
+    // move's are the same two answers about a row the reader is holding — which
+    // is why the labels differ and the answers do not.
+    let choices = offers
+        .iter()
+        .map(|choice| match choice {
+            Placement::Open => ChoiceSpec {
+                label: "Already imported",
+                note: go_to_note.clone(),
+                placement: Placement::Open,
+            },
+            Placement::KeepBoth if import => ChoiceSpec {
+                label: "Add as new",
+                note: new_note.clone(),
+                placement: Placement::KeepBoth,
+            },
+            Placement::KeepBoth => ChoiceSpec {
+                label: "As new",
+                note: move_new_note.clone(),
+                placement: Placement::KeepBoth,
+            },
+            // The pointer's own sentence is the move's when the shape keeps
+            // both sides, and the import's otherwise: one promises a dragged
+            // book becomes a pointer, the other promises a row that is not a
+            // copy.
+            Placement::LinkOnly if import => ChoiceSpec {
+                label: "Make link",
+                note: LINK_NOTE.to_string(),
+                placement: Placement::LinkOnly,
+            },
+            Placement::LinkOnly => ChoiceSpec {
+                label: "Make link",
+                note: link_note.clone(),
+                placement: Placement::LinkOnly,
+            },
+            Placement::Merge => ChoiceSpec {
+                label: "Merge",
+                note: merge_note.clone(),
+                placement: Placement::Merge,
+            },
+            Placement::Replace => ChoiceSpec {
+                label: "Replace",
+                note: replace_note.clone(),
+                placement: Placement::Replace,
+            },
+        })
+        .collect();
+
+    let waiting = state.library.conflict_waiting.with_untracked(|w| w.len());
+    SheetSpec {
+        heading: ask.arrival.name.clone(),
+        subtitle: more_waiting(format!("Already {where_line}"), waiting),
+        question,
+        cancel_title: "Leave the shelf as it is",
+        waiting,
+        // One arrival at a time: the next question behind this one is another
+        // book with another name, so there is nothing for one answer to apply to.
+        apply_all: false,
+        route: AnswerRoute::Placement,
+        choices,
     }
 }
