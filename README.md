@@ -435,15 +435,17 @@ touches a file you own.
   again lands as. There is no undo toast, because the sheet is the safety and the folder's import menu
   is the undo.
 - **Removing a shelf can take everything inside it with it.** Off — the default — the books inside stay
-  in the library and the shelves inside move up a level. On, the books are purged by the same receipt a
-  selected book gets and the shelves inside are taken apart too, deepest first. The switch is offered
-  only when there is something inside to decide about, and every row on the sheet, the data switch and
-  the confirm button's own wording all describe the set the removal will actually take rather than the
-  one you clicked — so a cascade that reaches stored copies is a cascade that shows you the copies
-  first.
-- **Moving a read-at-place book out of its folder makes it the library's own.** The departure is
-  the one move that writes a byte: the book becomes a stored copy — its name, its place in it and
-  its highlights all travel with it — and the folder records a moved-out log, so no rescan files
+  in the library and the shelves inside move up a level, and a shelf the folder reads in place asks the
+  one copy question first: **Copy and remove**, or **Let the folder make it again** for the answer that
+  stores nothing and leaves the level to the folder's next import. On, the books are purged by the same
+  receipt a selected book gets and the shelves inside are taken apart too, deepest first. The switch is
+  offered only when there is something inside to decide about, and every row on the sheet, the data
+  switch and the confirm button's own wording all describe the set the removal will actually take
+  rather than the one you clicked — so a cascade that reaches stored copies is a cascade that shows you
+  the copies first.
+- **Moving a read-at-place book out of its folder makes it the library's own.** Bytes go into the
+  store: the book becomes a stored copy — its name, its place in it and its highlights all travel
+  with it — and the folder records a moved-out log, so no rescan files
   the OS copy back and no menu offers it as a book that is gone. Importing that file again brings
   the linked book back beside the copy that left, and lights it up: two books of one content, each
   with one address. Dragging the stored copy back onto a shelf of the folder it left binds the log
@@ -452,18 +454,38 @@ touches a file you own.
   instead. What ties the book to its folder is the rung its own file stands on, not the folder's
   shelves, so a drag between two rungs of one watched folder departs as well; only a re-order on the
   rung the book is already on, and the move of any book the library already stores, copies nothing
-  and stays the membership edit a drag has always been.
-- **Moving a shelf a folder reads in place asks first: a copy, or its place back.** The shelf IS
-  the OS directory — the way a linked book is the OS file — so a hand taking it off the seat the
-  folder's tree names is a departure, and the one move that asks before it runs: the sheet says
-  which folder reads the shelf, how many books the copy costs and the name the copy will wear at
-  the level it lands on. Confirm and the shelf and every read-at-place book standing on it become
-  the library's own copies — bytes into the store, names, highlights and places in them
-  travelling along — and the copy takes the level's next free name, which keeps the folder's own
-  name free for the original. The copy is a book and a shelf of their own, bound to nothing: no
-  rescan, no import and no light ever answers through it, and importing the folder again brings
-  the original back on the seats the disk names, in the old names, lit inside its family. Cancel
-  leaves the shelf where the tree put it.
+  and stays the membership edit a drag has always been. The move that does copy asks first, in the
+  one sheet every copy asks in — the same sheet a shelf move, a level coming apart and a shelf
+  coming off the list ask in — and the books land where you dropped them.
+- **One sheet asks for every copy the library makes.** A read-at-place book leaving the ground that
+  made it — dragged out to the root, filed on a shelf the folder's tree does not name, moved off its
+  rung — a shelf moved off the seat its folder's tree names, a level of that tree taken apart, and a
+  shelf taken off the list are four gestures and one cost, so one sheet names the action you are in
+  the middle of, counts the books the copies are, promises where they land, and offers the copy —
+  or, for the two gestures that have a way home, the place back instead. Nothing is copied without
+  it: the folders on disk are untouched either way, and the copy is the library's own — bytes in the
+  store, its own highlights, its own place in it — while the files the folders read stay exactly
+  where they are.
+- **Taking a level of a read-at-place tree apart copies its books first.** The rung holds books the
+  folder placed there, and taking it apart takes them off the ground that made them: the sheet says
+  how many leave and which shelf above them they come up to, **Copy and take apart** makes them the
+  library's own before the level goes, and the level below a hole still hangs inside the tree. What
+  the folder's tree still answers for is never touched: a seat below the level keeps its own books,
+  and a book the library already stores is never copied a second time. The removal sheet asks the
+  same question about a shelf coming off the list, and there the answer the menus cannot offer is
+  still open — let the folder make the level again on its next import, and the books stay where they
+  are.
+- **Moving a shelf a folder reads in place is a departure, and the sheet says which copy it costs.**
+  The shelf IS the OS directory — the way a linked book is the OS file — so a hand taking it off the
+  seat the folder's tree names asks in the one sheet every copy asks in, which names the folder that
+  reads the shelf, counts the books the copy costs and promises the name the copy will wear at the
+  level it lands on. Confirm, and the shelf and every read-at-place book standing on it become the
+  library's own copies — bytes into the store, names, highlights and places in them travelling
+  along — and the copy takes the level's next free name, which keeps the folder's own name free for
+  the original. The copy is a book and a shelf of their own, bound to nothing: no rescan, no import
+  and no light ever answers through it, and importing the folder again brings the original back on
+  the seats the disk names, in the old names, lit inside its family. Cancel leaves the shelf where
+  the tree put it.
 - **A move inside the shelf's own family never has to cost a copy.** Dropping a read-at-place
   shelf on a rung of a tree its directory belongs to — the tree it was cut from, or the family
   that covers a folder you imported on its own — offers a third answer beside the copy and the

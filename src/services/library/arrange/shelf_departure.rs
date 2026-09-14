@@ -1,22 +1,23 @@
-//! The shelf's departure: a hand taking a read-at-place shelf off the seat its folder's tree
-//! names. The copies are a cost, and a cost is a question — the ask, the sheet's three
-//! answers, and the departure itself.
+//! The shelf's departure: a hand taking a read-at-place shelf off the seat its folder's tree names.
+//! Everything here answers that one gesture — which shelves owe it, what the copies cost, and the
+//! landing once the reader has bought them (`crate::services::library::arrange`).
 
 use leptos::prelude::*;
-use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{Origin, Row, book_rows, duplicate_title};
+use library_core::book::{Origin, Row, book_rows};
 use library_core::folder::{self as folder_ops, WatchedFolder};
 use library_core::shelf::{self as shelf, Shelf};
 
-use crate::services::library::{folder_label, toast};
+use crate::services::library::toast;
 use crate::state::AppState;
 
+use super::asking::free_name;
 use super::departure::depart;
 use super::shelves::{nest_shelf, reorder_shelves_to_anchor};
 use crate::services::library::reveal;
 
-/// A value rather than a boolean, because "the drop was after" and "insert after the anchor" are one fact said at three call sites.
+/// A value rather than a boolean, because "the drop was after" and "insert after the anchor" are
+/// one fact said at three call sites.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SeamSide {
     Before,
@@ -30,121 +31,25 @@ pub struct ShelfSeam {
     pub side: SeamSide,
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct DepartingShelf {
-    pub id: String,
-    pub name: String,
-    pub folder_name: String,
-    /// The books that become the library's own copies stand on the departing rungs.
-    pub books: usize,
-    /// The folder sheet's own convention: promised on the row before the click and counted again at it. The folder's own name stays free, because the next import of it re-mints the original tree wearing it.
-    pub copy_name: String,
-}
-
-/// Its own ask rather than a variant of the name sheet's because nothing collides: a nesting
-/// writes no membership, and the level the copies land on has nothing to say about them.
+/// Where the gesture's shelves were going: a shelf the reader named, or the root, which is the level
+/// that is not a shelf.
 #[derive(Clone, PartialEq)]
-pub struct ShelfDepartureAsk {
-    /// A departing shelf filed inside one of these rides with it and asks nothing of its own.
-    pub departing: Vec<DepartingShelf>,
-    pub target: Option<String>,
-    pub seam: Option<ShelfSeam>,
-    /// Empty unless the drop landed inside a family: a list with nothing in it is a sheet with two answers.
-    pub returns: Vec<ShelfReturn>,
-}
-
-#[derive(Clone, PartialEq)]
-pub struct ShelfReturn {
-    pub shelf_id: String,
-    pub name: String,
-    pub path: ReturnPath,
-}
-
-#[derive(Clone, PartialEq)]
-pub enum ReturnPath {
+pub(super) enum ReturnPath {
+    /// A displaced root shelf whose ground a family tree covers at a free rung goes home by the fold,
+    /// which hangs it on the rung its directory names and folds the folder that was reading it into
+    /// the tree's ledger.
     Reclaim {
         tree: String,
         gone: String,
         rel: String,
-        family_name: String,
     },
-    Reseat {
-        seat: Option<String>,
-        family_name: String,
-    },
+    /// Any other off-seat rung goes home by the reseat: back under the shelf its directory names.
+    Reseat { seat: Option<String> },
 }
 
-impl ShelfDepartureAsk {
-    /// A `view!` body is a builder and not a place to compute, and the counts here walk every book
-    /// the departing rungs hold. `None` when no departing shelf is there to ask about any more.
-    pub(super) fn of(
-        state: AppState,
-        departing: Vec<String>,
-        target: Option<String>,
-        seam: Option<ShelfSeam>,
-    ) -> Option<Self> {
-        let shelves = state.library.shelves.get_untracked();
-        let folders = state.library.folders.get_untracked();
-        let books = state.library.books.get_untracked();
-        let level = landing_level(&shelves, &target, seam.as_ref());
-        let mut promised: std::collections::HashSet<String> =
-            shelf::children_of(&shelves, level.as_deref())
-                .into_iter()
-                .map(|s| s.name.clone())
-                .collect();
-        let mut rows: Vec<DepartingShelf> = Vec::new();
-        let mut returns: Vec<ShelfReturn> = Vec::new();
-        for id in departing {
-            let Some(one) = shelf::find(&shelves, &id) else {
-                continue;
-            };
-            let shelf::ShelfKind::Folder { folder_id, rel } = &one.kind else {
-                continue;
-            };
-            let folder = folders.iter().find(|f| &f.id == folder_id);
-            let folder_name = folder
-                .map(|f| folder_label(&f.root))
-                .unwrap_or_else(|| one.name.clone());
-            let (subtree, rungs) = departing_sets(&shelves, folder_id, &id);
-            let count = folder.map_or(0, |f| {
-                departing_book_ids(&books, &shelves, f, &rungs, &subtree).len()
-            });
-            // Offered only for a drop inside the mover's FAMILY: anywhere else the copy is the only honest answer, because there is no tree to put the shelf back into.
-            let family_drop = folder.is_some_and(|f| {
-                let ground =
-                    folder_ops::dir_of_rung(&f.root, rel.as_deref().unwrap_or(""));
-                target_is_family(&shelves, &folders, level.as_deref(), &ground)
-            });
-            if family_drop
-                && let Some(path) = return_path(&shelves, &folders, &id)
-            {
-                returns.push(ShelfReturn {
-                    shelf_id: id.clone(),
-                    name: one.name.clone(),
-                    path,
-                });
-            }
-            let copy_name = duplicate_title(&one.name, &promised);
-            promised.insert(copy_name.clone());
-            rows.push(DepartingShelf {
-                id,
-                name: one.name.clone(),
-                folder_name,
-                books: count,
-                copy_name,
-            });
-        }
-        (!rows.is_empty()).then_some(Self {
-            departing: rows,
-            target,
-            seam,
-            returns,
-        })
-    }
-}
-
-/// The seam's anchor answers with the level that holds IT, a filing answers with its target, and the root is the level that is not a shelf.
-fn landing_level(
+/// The seam's anchor answers with the level that holds IT, a filing answers with its target, and
+/// the root is the level that is not a shelf.
+pub(super) fn landing_level(
     shelves: &[Shelf],
     target: &Option<String>,
     seam: Option<&ShelfSeam>,
@@ -201,25 +106,16 @@ pub(super) fn return_path(
     if key.is_empty()
         && let Some((tree, tree_rel)) = shelf::family_for(folders, shelves, &folder.root)
     {
-        let family_name = folders
-            .iter()
-            .find(|f| f.id == tree)
-            .map(|f| folder_label(&f.root))
-            .unwrap_or_default();
         return Some(ReturnPath::Reclaim {
             tree,
             gone: folder.id.clone(),
             rel: tree_rel,
-            family_name,
         });
     }
     let seat = folder_ops::parent_key(&key)
         .and_then(|rung| folder.shelf_map.get(rung))
         .cloned();
-    (one.parent != seat).then(|| ReturnPath::Reseat {
-        seat,
-        family_name: folder_label(&folder.root),
-    })
+    (one.parent != seat).then_some(ReturnPath::Reseat { seat })
 }
 
 /// The subtree is every shelf below the one the hand named — it rides with the copy the way a
@@ -283,55 +179,27 @@ pub(super) fn screen_shelf_moves(
         return (ids.to_vec(), Vec::new());
     }
     let shelves = state.library.shelves.get_untracked();
-    state.library.folders.with_untracked(|folders| {
-        shelf::departing_moves(&shelves, folders, ids, parent)
-    })
-}
-
-/// One question per gesture and no queue: a drag is one act, and a second act while the sheet is up replaces it.
-pub(super) fn raise_departure(
-    state: AppState,
-    departing: Vec<String>,
-    target: Option<String>,
-    seam: Option<ShelfSeam>,
-) {
-    let Some(ask) = ShelfDepartureAsk::of(state, departing, target, seam) else {
-        return;
-    };
-    state.library.shelf_departure.raise(ask);
-}
-
-/// Nothing moves and nothing copies, and the clean half of the gesture keeps its landing.
-pub fn cancel_departure(state: AppState) {
-    state.library.shelf_departure.dismiss();
+    state
+        .library
+        .folders
+        .with_untracked(|folders| shelf::departing_moves(&shelves, folders, ids, parent))
 }
 
 /// No copies: every mover that has a way home takes it, and a mover that has none stays where
 /// the tree put it. The fold is the import's own `reclaim_rung`, and the reseat rides the very
 /// `nest_shelf` the gesture did.
-pub fn answer_departure_return(state: AppState) {
-    let Some(ask) = state.library.shelf_departure.ask.get_untracked() else {
-        return;
-    };
-    cancel_departure(state);
+pub(super) fn take_them_home(state: AppState, returns: &[(String, ReturnPath)]) {
     let mut first: Option<String> = None;
-    for ret in &ask.returns {
-        let moved = match &ret.path {
-            ReturnPath::Reclaim {
-                tree,
-                gone,
-                rel,
-                ..
-            } => crate::services::library::import::reclaim_rung(
-                state,
-                tree,
-                gone,
-                rel,
-                &ret.shelf_id,
-                None,
-            ),
-            ReturnPath::Reseat { seat, .. } => nest_shelf(state, &ret.shelf_id, seat.as_deref())
-                .then(|| ret.shelf_id.clone()),
+    for (shelf_id, path) in returns {
+        let moved = match path {
+            ReturnPath::Reclaim { tree, gone, rel } => {
+                crate::services::library::import::reclaim_rung(
+                    state, tree, gone, rel, shelf_id, None,
+                )
+            }
+            ReturnPath::Reseat { seat } => {
+                nest_shelf(state, shelf_id, seat.as_deref()).then(|| shelf_id.clone())
+            }
         };
         if let Some(seated) = moved {
             first.get_or_insert(seated);
@@ -342,22 +210,15 @@ pub fn answer_departure_return(state: AppState) {
     }
 }
 
-/// The copies run in a spawned task — a shelf of fifty books is fifty files through the store — and the sheet is off the screen at once.
-pub fn confirm_departure(state: AppState) {
-    let Some(ask) = state.library.shelf_departure.ask.get_untracked() else {
-        return;
-    };
-    cancel_departure(state);
-    if ask.departing.is_empty() || !tauri_bridge::has_tauri() {
-        return;
-    }
-    spawn_local(async move {
-        depart_shelves(state, ask).await;
-    });
-}
-
-/// The book departure's order read one level up: the copies are made and the rungs are converted BEFORE any shelf write happens.
-async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
+/// The landing the reader bought: the copies are made and the departing rungs are converted BEFORE
+/// any shelf write happens, and the copies run in a spawned task — a shelf of fifty books is fifty
+/// files through the store.
+pub(super) async fn take_shelves_out(
+    state: AppState,
+    departing: Vec<String>,
+    target: Option<String>,
+    seam: Option<ShelfSeam>,
+) {
     struct Departure {
         id: String,
         name: String,
@@ -370,15 +231,15 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
 
     let level: Option<String> = {
         let shelves = state.library.shelves.get_untracked();
-        landing_level(&shelves, &ask.target, ask.seam.as_ref())
+        landing_level(&shelves, &target, seam.as_ref())
     };
     let mut departures: Vec<Departure> = Vec::new();
     {
         let shelves = state.library.shelves.get_untracked();
         let folders = state.library.folders.get_untracked();
         let books = state.library.books.get_untracked();
-        for row in &ask.departing {
-            let Some(one) = shelf::find(&shelves, &row.id) else {
+        for id in &departing {
+            let Some(one) = shelf::find(&shelves, id) else {
                 continue;
             };
             let shelf::ShelfKind::Folder { folder_id, rel } = &one.kind else {
@@ -387,19 +248,20 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
             let Some(folder) = folders.iter().find(|f| &f.id == folder_id) else {
                 continue;
             };
-            // The rule is asked again, because the sheet was up while the library went on living: a shelf that no longer owes a departure is skipped silently.
-            if !shelf::departs_on_move(&shelves, &folders, &row.id, level.as_deref()) {
+            // The rule is asked again, because the sheet was up while the library went on living:
+            // a shelf that no longer owes a departure is skipped silently.
+            if !shelf::departs_on_move(&shelves, &folders, id, level.as_deref()) {
                 continue;
             }
             if let Some(parent) = &level
-                && !shelf::can_nest(&shelves, &row.id, parent)
+                && !shelf::can_nest(&shelves, id, parent)
             {
                 continue;
             }
-            let (subtree, rungs) = departing_sets(&shelves, folder_id, &row.id);
+            let (subtree, rungs) = departing_sets(&shelves, folder_id, id);
             let book_ids = departing_book_ids(&books, &shelves, folder, &rungs, &subtree);
             departures.push(Departure {
-                id: row.id.clone(),
+                id: id.clone(),
                 name: one.name.clone(),
                 folder_id: folder_id.clone(),
                 rel: rel.clone().unwrap_or_default(),
@@ -439,7 +301,8 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
         .filter(|dep| landed.iter().any(|id| id == &dep.id))
         .collect();
 
-    // The rungs leave the tree with the copy they paid for, the other folders' shelves that rode along take the hand's mark, and the folder lets the departed zone go.
+    // The rungs leave the tree with the copy they paid for, the other folders' shelves that rode
+    // along take the hand's mark, and the folder lets the departed zone go.
     let mut promised: std::collections::HashSet<String> =
         state.library.shelves.with_untracked(|shelves| {
             shelf::children_of(shelves, level.as_deref())
@@ -466,9 +329,7 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
                 }
             }
             if let Some(one) = shelf::find_mut(shelves, &dep.id) {
-                let copy_name = duplicate_title(&dep.name, &promised);
-                promised.insert(copy_name.clone());
-                one.name = copy_name;
+                one.name = free_name(&dep.name, &mut promised);
             }
         }
     });
@@ -478,14 +339,13 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
                 continue;
             };
             folder.shelf_map.retain(|key, shelf_id| {
-                !folder_ops::key_in_zone(key, &dep.rel)
-                    && !dep.rungs.contains(shelf_id)
+                !folder_ops::key_in_zone(key, &dep.rel) && !dep.rungs.contains(shelf_id)
             });
         }
     });
     crate::storage::persist_library(state.library);
 
-    if let Some(seam) = &ask.seam {
+    if let Some(seam) = &seam {
         reorder_shelves_to_anchor(state, &landed, &seam.anchor_id, seam.side);
     } else {
         for id in &landed {

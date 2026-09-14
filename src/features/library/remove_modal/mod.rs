@@ -23,10 +23,10 @@ use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
 use crate::components::primitives::form::row::Row;
-use crate::services::library::{ReadingData, delete_shelf, purge_books};
+use crate::services::library::{ReadingData, remove_entries};
 use crate::state::AppState;
 
-use receipt::{Receipt, deepest_first, receipt as build_receipt};
+use receipt::{Receipt, receipt as build_receipt};
 
 /// A context for the same reason the import sheet is one: a remove affordance lives on a grid card, on a list row and on the selection bar.
 #[derive(Clone, Copy)]
@@ -400,9 +400,9 @@ fn ReceiptSheet(
                 {shelf_watched.then(|| {
                     view! {
                         <p class="mt-3 text-xs text-muted">
-                            "A shelf here came from a watched folder. Removing takes it off the
-                             list; the folder keeps watching, and the shelf returns when the
-                             folder gets new books."
+                            "A shelf here came from a watched folder. Removing it asks what the
+                             books it reads in place become: copies of your own, or books the
+                             folder makes again on its next import."
                         </p>
                     }
                 })}
@@ -428,19 +428,13 @@ fn ReceiptSheet(
                 <Button
                     on_click=move |_| {
                         sheet.open.set(false);
-                        if !purge_ids.is_empty() {
-                            let data = if delete_data.get_untracked() {
-                                ReadingData::Delete
-                            } else {
-                                ReadingData::Keep
-                            };
-                            purge_books(state, &purge_ids, data);
-                        }
-                        // Shelves after the books, deepest first: a purge sweeps every shelf's member list, and a shelf dissolved first would be swept by nobody.
-                        let shelves_now = state.library.shelves.get_untracked();
-                        for shelf_id in deepest_first(&shelves_now, &delete_ids) {
-                            delete_shelf(state, &shelf_id);
-                        }
+                        let data = if delete_data.get_untracked() {
+                            ReadingData::Delete
+                        } else {
+                            ReadingData::Keep
+                        };
+                        // The shelf half is the take-apart the menus offer as well, so a shelf reading books in place buys their copies through the same question.
+                        remove_entries(state, purge_ids.clone(), delete_ids.clone(), data);
                     }
                     variant=ButtonVariant::Toolbar
                     tone=ButtonTone::Danger

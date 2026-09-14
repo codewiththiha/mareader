@@ -11,7 +11,8 @@ use library_core::shelf::{self as shelf, Shelf, ALL_SHELF};
 use crate::state::AppState;
 use crate::time::now_ms;
 
-use super::shelf_departure::{raise_departure, screen_shelf_moves, SeamSide, ShelfSeam};
+use super::asking::ask_move_shelf;
+use super::shelf_departure::{screen_shelf_moves, SeamSide, ShelfSeam};
 
 /// `parent` is where the shelf hangs: `None` is the level the page is on, and `Some` is a
 /// shelf the reader named — a shelf made from inside a folder is that folder being subdivided,
@@ -58,7 +59,7 @@ pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> boo
     let one = [folder_id.to_string()];
     let (clean, departing) = screen_shelf_moves(state, &one, parent);
     if !departing.is_empty() {
-        raise_departure(state, departing, parent.map(str::to_string), None);
+        ask_move_shelf(state, departing, parent.map(str::to_string), None);
         return false;
     }
     if clean.is_empty() {
@@ -81,7 +82,7 @@ pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     }
     let (clean, departing) = screen_shelf_moves(state, folder_ids, Some(parent));
     if !departing.is_empty() {
-        raise_departure(state, departing, Some(parent.to_string()), None);
+        ask_move_shelf(state, departing, Some(parent.to_string()), None);
     }
     if clean.is_empty() {
         return;
@@ -109,7 +110,7 @@ pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, 
     });
     let (clean, departing) = screen_shelf_moves(state, ids, parent.as_deref());
     if !departing.is_empty() {
-        raise_departure(
+        ask_move_shelf(
             state,
             departing,
             parent,

@@ -1,6 +1,6 @@
 //! The moves a reader makes by hand: a drag between shelves, a lift out to the root, a second
-//! membership, and the gate every hand-move rides when the row it holds reads in place
-//! ([`super::departure`]).
+//! membership, and the gesture a copy question hands back to the sheet that asked it
+//! ([`super::asking`]).
 
 use leptos::prelude::*;
 
@@ -11,7 +11,8 @@ use library_core::shelf::{self as shelf, ALL_SHELF, shelf_add};
 use crate::services::library::conflict;
 use crate::state::AppState;
 
-use super::departure::{bind_returned, convert_departures};
+use super::asking::ask_move_copy;
+use super::departure::bind_returned;
 
 /// A whole drag in one call, whatever it held. The blob is written once for it — the rule
 /// [`purge_books`] gives for a bulk removal, for the same reason: a reader who closes the
@@ -41,13 +42,22 @@ fn seat_many(
     if book_ids.is_empty() {
         return;
     }
-    // A copy that fails costs that book its move and nothing else: it stays where it was. Every
-    // screen, sheet and shelf write downstream sees the books as what they are about to be.
-    if to != ALL_SHELF && from.as_deref().is_some_and(|f| f != to) {
-        let (lifted_from, landed_on) = (from.clone(), to.clone());
-        if convert_departures(state, book_ids, &to, move |rest, gone| {
-            seat_many(state, &rest, lifted_from, landed_on, index, &gone)
-        }) {
+    // A re-order leaves nothing behind — the rows are arriving where they already are — and every
+    // other hand-move is screened by the one departure rule, which reads the book's own rung and not
+    // the shelf it happens to stand on. A copy that fails costs that book its move and nothing else:
+    // it stays where it was, and every screen and shelf write downstream sees the books as what they
+    // are about to be.
+    let arriving_elsewhere = match from.as_deref() {
+        Some(from) => from != to,
+        None => to != ALL_SHELF,
+    };
+    if arriving_elsewhere {
+        let hand = RowMove::Seat {
+            from: from.clone(),
+            to: to.clone(),
+            index,
+        };
+        if ask_move_copy(state, book_ids, &to, hand) {
             return;
         }
     }
@@ -138,6 +148,56 @@ pub(crate) enum Departed {
     No,
 }
 
+/// The gesture a copy question interrupted, so the sheet's own answer can finish it: the same rows
+/// land, and the copies land marked — a departure is not a return, so a copied book binds no
+/// folder's moved-out log, and a book the move already took off its seat stays off it.
+#[derive(Clone, PartialEq)]
+pub(super) enum RowMove {
+    /// A drag or a bulk filing: the rows land on `to`, lifted off `from` where the two differ.
+    Seat {
+        from: Option<String>,
+        to: String,
+        index: Option<usize>,
+    },
+    /// One row's own move, the form the conflict sheet rides as well as a drag of a single book.
+    Row {
+        to: String,
+        index: Option<usize>,
+    },
+    /// Out of every shelf the row was on, to the library's own top level.
+    Unfile {
+        shelf: String,
+    },
+}
+
+impl RowMove {
+    /// Where the rows are going: the gate screens the gesture against it, and the answer screens
+    /// again, because the sheet was up while the library went on living.
+    pub(super) fn to(&self) -> &str {
+        match self {
+            RowMove::Seat { to, .. } | RowMove::Row { to, .. } => to,
+            RowMove::Unfile { .. } => ALL_SHELF,
+        }
+    }
+
+    pub(super) fn resume(self, state: AppState, ids: Vec<String>, copies: Vec<String>) {
+        match self {
+            RowMove::Seat { from, to, index } => seat_many(state, &ids, from, to, index, &copies),
+            RowMove::Row { to, index } => {
+                let departed = if copies.is_empty() {
+                    Departed::No
+                } else {
+                    Departed::ThisGesture
+                };
+                for id in &ids {
+                    move_row(state, id, &to, index, departed);
+                }
+            }
+            RowMove::Unfile { shelf } => unfile_books(state, &ids, &shelf),
+        }
+    }
+}
+
 /// Off every shelf it was on and onto the one named, at the slot the drop pointed at. The root has no member list, so a move there is a lift out of every shelf.
 pub fn move_row(
     state: AppState,
@@ -147,22 +207,12 @@ pub fn move_row(
     departed: Departed,
 ) {
     {
-        let (row, landed_on) = (row_id.to_string(), shelf_id.to_string());
-        if convert_departures(
-            state,
-            std::slice::from_ref(&row),
-            shelf_id,
-            move |rest, gone| {
-                if let Some(one) = rest.into_iter().next() {
-                    let departed = if gone.contains(&one) {
-                        Departed::ThisGesture
-                    } else {
-                        Departed::No
-                    };
-                    move_row(state, &one, &landed_on, index, departed);
-                }
-            },
-        ) {
+        let row = row_id.to_string();
+        let hand = RowMove::Row {
+            to: shelf_id.to_string(),
+            index,
+        };
+        if ask_move_copy(state, std::slice::from_ref(&row), shelf_id, hand) {
             return;
         }
     }
@@ -197,13 +247,11 @@ pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
     }
-    {
-        let lifted_from = shelf_id.to_string();
-        if convert_departures(state, book_ids, ALL_SHELF, move |rest, _| {
-            unfile_books(state, &rest, &lifted_from)
-        }) {
-            return;
-        }
+    let hand = RowMove::Unfile {
+        shelf: shelf_id.to_string(),
+    };
+    if ask_move_copy(state, book_ids, ALL_SHELF, hand) {
+        return;
     }
     let (clean, conflicts) = conflict::screen(
         state,

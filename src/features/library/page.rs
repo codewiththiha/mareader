@@ -12,18 +12,17 @@ use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::features::library::breadcrumb::Breadcrumb;
 use crate::features::library::conflict_modal::{ConflictModal, ShelfConflictModal};
+use crate::features::library::copy_modal::CopyModal;
 use crate::features::library::content::LibraryContent;
 use crate::features::library::context_menu::LibraryMenuHost;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::already_imported_modal::AlreadyImportedModal;
-use crate::features::library::departure_modal::ShelfDepartureModal;
 use crate::features::library::dnd::layer::DragLayer;
 use crate::features::library::import_modal::{ImportModal, ImportSheet, drain_sheet_toasts};
 use crate::features::library::progress_dock::ProgressDock;
 use crate::features::library::relink_modal::RelinkModal;
 use crate::features::library::remove_modal::{RemoveBookModal, RemoveSheet};
 use crate::features::library::rename_modal::{RenameModal, RenameSheet};
-use crate::features::library::shelf_apart_modal::ShelfApartModal;
 use crate::features::library::titlebar_search::TitlebarSearch;
 use crate::features::library::view_menu::ViewMenu;
 use crate::state::AppState;
@@ -84,8 +83,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             <RenameModal state=state sheet=rename_sheet />
             <ConflictModal state=state />
             <ShelfConflictModal state=state />
-            <ShelfDepartureModal state=state />
-            <ShelfApartModal state=state />
+            <CopyModal state=state />
             <AlreadyImportedModal state=state />
             <RelinkModal state=state />
             <ProgressDock state=state />

@@ -7,7 +7,7 @@
 use leptos::prelude::*;
 
 use library_core::book::{Book, Row};
-use library_core::shelf::{Shelf, ancestors, children_of, subtree_ids};
+use library_core::shelf::{Shelf, children_of, subtree_ids};
 use library_core::text::{human_size, plural};
 
 use crate::services::library::memberships;
@@ -147,16 +147,6 @@ fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
         .collect()
 }
 
-
-/// `delete_shelf` lifts a shelf's children to the level it was on, which is the right thing for one removal and the wrong thing for a cascade: deepest first means every lift finds nothing left to lift.
-pub(super) fn deepest_first(shelves: &[Shelf], ids: &[String]) -> Vec<String> {
-    let mut with_depth: Vec<(String, usize)> = ids
-        .iter()
-        .map(|id| (id.clone(), ancestors(shelves, id).len()))
-        .collect();
-    with_depth.sort_by_key(|one| std::cmp::Reverse(one.1));
-    with_depth.into_iter().map(|(id, _)| id).collect()
-}
 
 
 /// `None` when none of the books or shelves are there any more, which makes a sheet left open across a removal harmless rather than a panic. Everything below is measured over the cascade's set rather than over what was clicked.
@@ -392,28 +382,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_cascade_deletes_deepest_first() {
-        let tree = tree();
-        let order = deepest_first(&tree, &["a".to_string(), "b".to_string(), "c".to_string()]);
-        assert_eq!(
-            order.first().map(String::as_str),
-            Some("c"),
-            "the deepest goes first, so no lift moves a shelf that is next in line"
-        );
-        assert_eq!(
-            order.last().map(String::as_str),
-            Some("a"),
-            "and the shelf the reader asked about goes last"
-        );
-    }
-
-    #[test]
-    fn shelves_at_one_depth_keep_the_libraries_own_order() {
-        // A stable sort: the receipt's rows and the order the shelves went in are
-        // the same order, so a reader can follow what happened.
-        let tree = tree();
-        let order = deepest_first(&tree, &["d".to_string(), "b".to_string()]);
-        assert_eq!(order, ["d", "b"]);
-    }
 }

@@ -436,17 +436,26 @@ the level's next free name so the folder's own name stays free, and the folder's
 the departed zone go. What rides along unconverted is what was
 never the folder's to convert: the reader's own shelves inside the subtree, a book also shown on a
 departing rung whose OWN rung still stands, and another folder's rung the subtree carries, which
-keeps its disk knowledge under the hand's mark. Because a departure copies a whole tree of bytes,
-it is the one move that goes to a sheet BEFORE it happens (`arrange::ShelfDepartureAsk`): the row
-promises the copies and the counter name, Confirm pays, and Cancel leaves the shelf where the tree
-put it while the clean half of the gesture — the books and the virtual shelves a mixed drag also
-carried — keeps the landing it already had.
+keeps its disk knowledge under the hand's mark. It is a COST, so it is a question: the
+shelf's own departure is one of the four gestures that go to a sheet BEFORE they happen
+(`arrange::CopyAsk`), and the row promises the copies and the counter name before the button does.
+Cancel leaves the shelf where the tree put it while the clean half of the gesture — the books and
+the virtual shelves a mixed drag also carried — keeps the landing it already had.
+
+One answer is the same for every copy the library makes, and that is the whole of
+`arrange::asking`: a read-at-place book moving off its rung, a rung moving off its seat, a level
+coming apart under the reader's hand, and a shelf coming off the list through the removal sheet are
+four gestures with one cost, so one sheet names the action the reader is in the middle of and offers
+the copy. It is the reader's answer that decides, not the path: `Copy` runs the copies and then
+resumes the very gesture it interrupted (`arrange::moves::RowMove::resume`), and `WithoutCopies`
+finishes the gesture the way it ran before the question existed — a return for a shelf with a way
+home, and the removal sheet's own removal, which leaves the folder's ground to the next import.
 
 The sheet has a third answer when the drop landed inside the mover's FAMILY — a rung of an
 in-place tree whose root covers the ground the mover stands on (`arrange::shelf_departure::target_is_family`) —
 because a read-at-place shelf lives on the seat its directory stands on, so a move inside the
 tree it belongs to never has to cost a copy. *Put it back in its place* returns every mover that
-has a way home (`arrange::ReturnPath`): a displaced folder — one removed and imported on its own,
+has a way home (`arrange::shelf_departure::ReturnPath`): a displaced folder — one removed and imported on its own,
 or born under an older build — folds into the family tree through the import's own
 `reclaim_rung`, on the rung its directory names, and an off-seat rung reseats on the seat its
 ledger names, which takes the hand's mark off on the way and gives the disk its place back. A
@@ -1002,7 +1011,12 @@ parent that no longer exists.
 
 Removing a shelf lifts the shelves inside it to the level it was on (`shelf::lift_children`), for the
 same reason its books stay in the library: a reader who took one folder apart did not ask to lose the
-folders filed in it.
+folders filed in it — and the level comes up to the nearest rung the folder's tree still stands on
+rather than to the library's top level, because a rung below a hole is a level the folder's next scan
+cannot see. What a level DOES take with it is the books it holds read in place: they leave the ground
+that made them, so the removal sheet asks the same copy question a menu's *Take shelf apart* asks
+(`arrange::asking`), and the reader who wants the folder to mint the level back instead picks the
+answer that copies nothing.
 
 That is the default and not the only answer, because "take this shelf apart" and "get rid of this
 shelf and everything in it" are both things a reader means, and only the first of them was reachable.

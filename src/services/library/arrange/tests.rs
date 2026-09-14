@@ -1,5 +1,9 @@
+use super::asking::{CopyAnswer, CopyAsk, books_the_rung_takes};
 use super::moves::{insert_many, place_many, reorder_root};
-use super::shelf_departure::{departing_book_ids, departing_sets, return_path, target_is_family};
+use super::shelves::delete_shelf;
+use super::shelf_departure::{
+    ReturnPath, departing_book_ids, departing_sets, return_path, target_is_family,
+};
 use super::*;
 use std::collections::{BTreeMap, HashSet};
 
@@ -496,22 +500,27 @@ fn the_ask_names_the_copies_the_level_s_next_free_names() {
     state.library.shelves.set(shelves);
     state.library.books.set(rows());
 
-    let ask = ShelfDepartureAsk::of(
+    let ask = CopyAsk::of_shelf(
         state,
         vec!["fic".to_string(), "fic2".to_string()],
         Some("to".to_string()),
         None,
     )
     .expect("two departing shelves are a question");
-    assert_eq!(ask.departing.len(), 2);
-    assert_eq!(ask.departing[0].copy_name, "Fiction_1");
-    assert_eq!(ask.departing[1].copy_name, "Fiction_2");
-    assert_eq!(ask.departing[0].folder_name, "books");
-    assert_eq!(ask.departing[1].folder_name, "more");
-    assert_eq!(ask.departing[0].books, 2);
-    assert_eq!(ask.departing[1].books, 0);
+    assert_eq!(ask.action, "Move shelves");
+    assert_eq!(ask.subject, "2 shelves — 2 books read in place");
     assert!(
-        ask.returns.is_empty(),
+        ask.lines[0].contains("their 2 books"),
+        "the two levels' books are counted together in the one row: {}",
+        ask.lines[0]
+    );
+    assert!(
+        ask.lines[0].contains("“Fiction_1”") && ask.lines[0].contains("“Fiction_2”"),
+        "and the row promises the names the copies will wear: {}",
+        ask.lines[0]
+    );
+    assert!(
+        ask.options.iter().all(|one| one.answer != CopyAnswer::WithoutCopies),
         "a reader's own shelf is nobody's family, so the drop owes no way home"
     );
 }
@@ -537,7 +546,7 @@ fn family_state() -> (Vec<Shelf>, Vec<WatchedFolder>) {
 fn a_displaced_folder_s_root_shelf_goes_home_by_the_fold() {
     let (shelves, folders) = family_state();
     match return_path(&shelves, &folders, "s3") {
-        Some(ReturnPath::Reclaim { tree, gone, rel, .. }) => {
+        Some(ReturnPath::Reclaim { tree, gone, rel }) => {
             assert_eq!(tree, "f1", "the family the ground belongs to");
             assert_eq!(gone, "f3", "the folder that was reading it on its own");
             assert_eq!(rel, "Fiction/SciFi", "the rung its directory names");
@@ -561,7 +570,7 @@ fn an_off_seat_rung_goes_home_by_the_reseat_and_a_seated_one_is_home() {
         .unwrap()
         .parent = Some("mine".to_string());
     match return_path(&off, &folders, "fic") {
-        Some(ReturnPath::Reseat { seat, .. }) => assert_eq!(seat.as_deref(), Some("r")),
+        Some(ReturnPath::Reseat { seat }) => assert_eq!(seat.as_deref(), Some("r")),
         _ => panic!("the reseat is an off-seat rung's way home"),
     }
     let mut lifted = shelves.clone();
@@ -571,7 +580,7 @@ fn an_off_seat_rung_goes_home_by_the_reseat_and_a_seated_one_is_home() {
         .unwrap()
         .parent = Some("mine".to_string());
     match return_path(&lifted, &folders, "r") {
-        Some(ReturnPath::Reseat { seat, .. }) => assert_eq!(seat, None),
+        Some(ReturnPath::Reseat { seat }) => assert_eq!(seat, None),
         _ => panic!("the root's seat is the library's own level"),
     }
 }
@@ -661,20 +670,87 @@ fn a_level_holding_books_read_in_place_asks_before_it_comes_apart() {
 
     ask_shelf_apart(state, "two");
 
-    let ask = state.library.shelf_apart.ask.get_untracked().expect("the question");
-    assert_eq!(ask.books, 2);
-    assert_eq!(ask.home.as_deref(), Some("one"), "named for where the books come up to");
+    let ask = state.library.copy_ask.ask.get_untracked().expect("the question is up");
+    assert_eq!(ask.action, "Take shelf apart");
+    assert!(
+        ask.lines[0].contains("The 2 books read in place here"),
+        "the sheet counts the books the copies cost: {}",
+        ask.lines[0]
+    );
+    assert!(
+        ask.subject.starts_with("“two”"),
+        "and it names the level the reader picked"
+    );
+    assert!(
+        ask.options.iter().any(|one| one.answer == CopyAnswer::Copy && one.primary),
+        "a level read in place comes apart as copies, and the copies are what the button offers"
+    );
     assert!(
         state.library.shelves.get_untracked().iter().any(|s| s.id == "two"),
         "nothing is gone before the reader answers"
     );
 
-    take_shelf_apart(state);
+    answer_copy(state, CopyAnswer::Cancel);
 
-    assert!(state.library.shelf_apart.ask.get_untracked().is_none(), "the sheet closes");
-    let shelves = state.library.shelves.get_untracked();
-    assert!(shelves.iter().all(|s| s.id != "two"));
-    assert!(shelves.iter().any(|s| s.id == "one" && s.books.contains(&"b1".to_string())));
+    assert!(
+        state.library.copy_ask.ask.get_untracked().is_none(),
+        "the sheet closes with the answer"
+    );
+    assert!(
+        state.library.shelves.get_untracked().iter().any(|s| s.id == "two"),
+        "and a question the reader backed out of leaves the tree alone"
+    );
+}
+
+#[test]
+fn taking_a_level_apart_leaves_the_levels_below_it_alone() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    state.library.shelves.set(tree());
+    state.library.books.set(rows());
+    state.library.folders.set(vec![reading_folder()]);
+
+    // `Fiction` holds one book read in place, and the rung below it holds another on a ground of
+    // its own: the level coming apart pays for its own book, and the tree keeps answering for the
+    // rest — a copy of a book whose rung stays is a copy the reader never asked for.
+    let ask = CopyAsk::of_apart(state, "fic").expect("the level read in place is a question");
+    assert!(
+        ask.lines[0].contains("The book read in place here becomes a copy"),
+        "one book, and no other: {}",
+        ask.lines[0]
+    );
+    assert_eq!(
+        books_the_rung_takes(state, "fic"),
+        vec!["mid".to_string()],
+        "asked and answered through one walk, so the sheet and the copies cannot drift"
+    );
+}
+
+#[test]
+fn a_level_the_library_already_stores_comes_apart_without_a_question() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    let mut shelves = tree();
+    shelves
+        .iter_mut()
+        .find(|s| s.id == "sf")
+        .expect("the lowest rung")
+        .books = vec!["loose".to_string(), "kept".to_string()];
+    state.library.shelves.set(shelves);
+    state.library.books.set(rows());
+    state.library.folders.set(vec![reading_folder()]);
+
+    // `kept` is the library's own copy already and `loose` is a file no folder placed here: neither
+    // is a book to make a copy of, so nothing is stored twice and nothing is asked.
+    ask_shelf_apart(state, "sf");
+
+    assert!(
+        state.library.copy_ask.ask.get_untracked().is_none(),
+        "nothing to copy, nothing to ask"
+    );
+    assert!(state.library.shelves.get_untracked().iter().all(|s| s.id != "sf"));
 }
 
 #[test]
@@ -687,12 +763,18 @@ fn a_level_with_nothing_read_in_place_asks_nothing() {
     // `1st` holds nothing, and the reader's own shelf is nobody's ground: neither leaves a book
     // answering to a folder.
     ask_shelf_apart(state, "one");
-    assert!(state.library.shelf_apart.ask.get_untracked().is_none());
-    assert!(state.library.shelves.get_untracked().iter().all(|s| s.id != "one"));
+    assert!(state.library.copy_ask.ask.get_untracked().is_none());
+    let shelves = state.library.shelves.get_untracked();
+    assert!(shelves.iter().all(|s| s.id != "one"), "the empty level comes apart at once");
+    assert_eq!(
+        shelves.iter().find(|s| s.id == "two").expect("the rung below").parent.as_deref(),
+        Some("root"),
+        "and it brings the level below it up inside the tree"
+    );
 
     state.library.shelves.set(tree());
     ask_shelf_apart(state, "mine");
-    assert!(state.library.shelf_apart.ask.get_untracked().is_none());
+    assert!(state.library.copy_ask.ask.get_untracked().is_none());
     assert!(state.library.shelves.get_untracked().iter().all(|s| s.id != "mine"));
 }
 

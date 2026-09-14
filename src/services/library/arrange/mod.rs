@@ -4,6 +4,7 @@
 //! reader owns.** A shelf holds book ids, so a drag edits a list of ids, and the OS file a
 //! read-in-place book points at is never renamed, moved or deleted from here.
 
+mod asking;
 mod departure;
 mod moves;
 mod purge;
@@ -18,17 +19,12 @@ mod tests;
 pub use moves::{also_show, file_many, move_many_to_shelf, move_row, unfile_books};
 pub use purge::{purge_books, ReadingData};
 pub use relink::{ask_relink, cancel_relink, relink_dialog, relink_search_folder};
-pub use shelf_apart::{
-    ask_shelf_apart, cancel_shelf_apart, take_shelf_apart, take_shelf_apart_as_copies,
-    ShelfApartAsk,
-};
-pub use shelf_departure::{
-    answer_departure_return, cancel_departure, confirm_departure, ReturnPath, SeamSide,
-    ShelfDepartureAsk,
-};
+pub use asking::{CopyAnswer, CopyAsk, answer_copy, cancel_copy, remove_entries};
+pub use shelf_apart::ask_shelf_apart;
+pub use shelf_departure::SeamSide;
 pub use shelves::{
-    create_shelf_and_enter, create_shelf_here, delete_shelf, memberships, nest_many, nest_shelf,
-    rename_shelf, reorder_shelves_to_anchor,
+    create_shelf_and_enter, create_shelf_here, memberships, nest_many, nest_shelf, rename_shelf,
+    reorder_shelves_to_anchor,
 };
 
 pub(crate) use departure::{convert_to_stored, converts_on_move_to, write_moved_stones};

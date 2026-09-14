@@ -3,11 +3,10 @@
 //! folder's log to keep, and its highlights following the address.
 
 use leptos::prelude::*;
-use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{Book, Origin, find_book_mut, find_row};
+use library_core::book::{Book, Origin, Row, find_book_mut, find_row};
 use library_core::conflict::same_name;
-use library_core::folder::{self as folder_ops, Tombstone};
+use library_core::folder::{self as folder_ops, Tombstone, WatchedFolder};
 use library_core::ledger::tombstone;
 use library_core::shelf::ALL_SHELF;
 
@@ -19,44 +18,49 @@ use crate::time::now_ms;
 
 use super::folder_shelf_of;
 
-/// Answers whether a conversion started, which is the caller's whole question: it did, so
-/// the move has not happened yet. One spelling for the three moves that owe a departure — a
-/// drag between shelves, a lift out to the root, and the one-row form the conflict sheet
-/// rides.
-pub(super) fn convert_departures(
-    state: AppState,
-    ids: &[String],
-    to: &str,
-    retry: impl FnOnce(Vec<String>, Vec<String>) + 'static,
-) -> bool {
-    if !tauri_bridge::has_tauri() {
-        return false;
-    }
-    let converting: Vec<String> = ids
-        .iter()
-        .filter(|id| converts_on_move_to(state, id, to))
+/// The rows a move to `to` takes into the store, in the order the gesture held them.
+pub(super) fn converting_rows(state: AppState, ids: &[String], to: &str) -> Vec<String> {
+    let books = state.library.books.get_untracked();
+    let folders = state.library.folders.get_untracked();
+    ids.iter()
+        .filter(|id| converts_on_move(&books, &folders, id, to))
         .cloned()
-        .collect();
-    if converting.is_empty() {
-        return false;
-    }
-    let all: Vec<String> = ids.to_vec();
-    spawn_local(async move {
-        let departed = depart(state, &converting).await;
-        let failed: Vec<String> = converting
-            .into_iter()
-            .filter(|id| !departed.contains(id))
-            .collect();
-        let rest: Vec<String> = all.into_iter().filter(|id| !failed.contains(id)).collect();
-        if !rest.is_empty() {
-            retry(rest, departed);
-        }
-    });
-    true
+        .collect()
 }
 
-/// This is the ONE "a read-at-place book is leaving the ground that made it" primitive, and
-/// both machines that need it call it rather than each writing their own.
+/// The same question about one row, for the callers that hold a single id rather than a gesture.
+pub(crate) fn converts_on_move_to(state: AppState, row_id: &str, to: &str) -> bool {
+    let books = state.library.books.get_untracked();
+    let folders = state.library.folders.get_untracked();
+    converts_on_move(&books, &folders, row_id, to)
+}
+
+/// The three negatives are as load-bearing as the positive: a STORED book is already the
+/// library's own and simply moves, and a book no in-place folder placed is nobody's
+/// departure.
+fn converts_on_move(books: &[Row], folders: &[WatchedFolder], row_id: &str, to: &str) -> bool {
+    let Some((fp, path)) = find_row(books, row_id)
+        .and_then(|row| row.book())
+        .filter(|book| matches!(book.origin, Origin::Linked { .. }))
+        .map(|book| (book.fp, book.path().to_string()))
+    else {
+        return false;
+    };
+    // An EMPTY list is the only thing the length says: no ledger is waiting, so no departure is owed.
+    let rungs: Vec<Option<String>> = folders
+        .iter()
+        .filter(|f| f.mode().reads_in_place() && f.placed.contains(&fp))
+        .map(|f| f.rungs_for(&path).0.map(str::to_string))
+        .collect();
+    if rungs.is_empty() {
+        return false;
+    }
+    to == ALL_SHELF || !rungs.iter().any(|rung| rung.as_deref() == Some(to))
+}
+
+/// The ONE "a book is leaving the ground that made it" primitive, so the copy a move buys, the copy
+/// a level coming apart buys and the copy a removal buys are one write. A book the store refused is
+/// left out of the answer, which is how the caller knows to leave that book where it was.
 pub(super) async fn depart(state: AppState, rows: &[String]) -> Vec<String> {
     let mut departed: Vec<String> = Vec::with_capacity(rows.len());
     for id in rows {
@@ -67,32 +71,6 @@ pub(super) async fn depart(state: AppState, rows: &[String]) -> Vec<String> {
     }
     covers::backfill_missing(state);
     departed
-}
-
-/// The three negatives are as load-bearing as the positive: a STORED book is already the
-/// library's own and simply moves, and a book no in-place folder placed is nobody's
-/// departure.
-pub(crate) fn converts_on_move_to(state: AppState, row_id: &str, to: &str) -> bool {
-    let Some((fp, path)) = state.library.books.with_untracked(|rows| {
-        find_row(rows, row_id)
-            .and_then(|row| row.book())
-            .filter(|book| matches!(book.origin, Origin::Linked { .. }))
-            .map(|book| (book.fp, book.path().to_string()))
-    }) else {
-        return false;
-    };
-    // An EMPTY list is the only thing the length says: no ledger is waiting, so no departure is owed.
-    let rungs: Vec<Option<String>> = state.library.folders.with_untracked(|folders| {
-        folders
-            .iter()
-            .filter(|f| f.mode().reads_in_place() && f.placed.contains(&fp))
-            .map(|f| f.rungs_for(&path).0.map(str::to_string))
-            .collect()
-    });
-    if rungs.is_empty() {
-        return false;
-    }
-    to == ALL_SHELF || !rungs.iter().any(|rung| rung.as_deref() == Some(to))
 }
 
 /// Make a read-at-place book the library's own stored copy: the departure half of a move, and
