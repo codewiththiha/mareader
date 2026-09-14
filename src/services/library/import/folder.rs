@@ -17,7 +17,7 @@ use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 use reader_core::format::Format;
 
 use super::copy::{copy_batch, measure_stores};
-use super::gate::{run_fold, RootPlan};
+use super::gate::{run_fold, seed_member_rungs, RootPlan};
 use super::kept;
 use super::restore::take_represented;
 use super::tasks::{fail, finish_task, push_task, update_task, FailMode};
@@ -708,6 +708,12 @@ pub(super) async fn run_folder(
 
     let mut folder = resolve_folder(&folders, &shelves_now, &root, opts, &plan);
     rehang(state, &folder.id);
+    // With no fold planned, a member standing outside the tree is the ground this walk is about to
+    // land on: its rungs go into the run's map first (`seed_member_rungs`), and the fold behind the
+    // walk is the same question asked of the same findings.
+    if !quiet && plan.fold.is_none() {
+        seed_member_rungs(state, &mut folder, &found);
+    }
 
     let mut walk = plan_the_walk(state, &mut folder, &mut books, &mut found, asked, &plan, quiet);
 

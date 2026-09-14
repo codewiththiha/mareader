@@ -322,7 +322,14 @@ pub fn answer_departure_return(state: AppState) {
                 gone,
                 rel,
                 ..
-            } => crate::services::library::import::reclaim_rung(state, tree, gone, rel, &ret.shelf_id),
+            } => crate::services::library::import::reclaim_rung(
+                state,
+                tree,
+                gone,
+                rel,
+                &ret.shelf_id,
+                None,
+            ),
             ReturnPath::Reseat { seat, .. } => {
                 nest_shelf(state, &ret.shelf_id, seat.as_deref())
             }

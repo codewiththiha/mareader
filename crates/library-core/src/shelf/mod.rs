@@ -784,13 +784,32 @@ mod tests {
         deeper.id = "f2".into();
         deeper.root = "/books/Fiction".into();
         deeper.shelf_map.clear();
+        deeper
+            .shelf_map
+            .insert(String::new(), "deeper_root".to_string());
+        let mut both_shelves = shelves.clone();
+        both_shelves.push(cut("deeper_root", "f2", None, None));
         let mut outer = folders[0].clone();
         outer.shelf_map.remove("Fiction/SciFi");
         let both = vec![outer, deeper];
         assert_eq!(
-            family_for(&both, &shelves, "/books/Fiction/SciFi"),
+            family_for(&both, &both_shelves, "/books/Fiction/SciFi"),
             Some(("f1".to_string(), "Fiction/SciFi".to_string()))
         );
+    }
+
+    #[test]
+    fn a_taken_out_root_leaves_no_family_behind_it() {
+        let (shelves, folders) = in_place_tree();
+        // A rung a removal emptied is a home to come back to while the tree's own root stands.
+        assert_eq!(
+            family_for(&folders, &shelves, "/books/Fiction/Deleted"),
+            Some(("f1".to_string(), "Fiction/Deleted".to_string()))
+        );
+        // With the root shelf gone the tree is out of the library, and the ground under it is a
+        // start of its own: folding into it would mint the root shelf back to host the pick.
+        let taken_out: Vec<Shelf> = shelves.iter().filter(|s| s.id != "r").cloned().collect();
+        assert_eq!(family_for(&folders, &taken_out, "/books/Fiction/Deleted"), None);
     }
 
     #[test]

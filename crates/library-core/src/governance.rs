@@ -41,6 +41,15 @@ impl<'a> Governance<'a> {
         Self { folders, shelves }
     }
 
+    /// The shelf a folder's ledger names for one of its rungs, when that shelf is still
+    /// standing: the one read behind both [`Self::covering`] and [`Self::family`].
+    fn standing_rung<'f>(&self, folder: &'f WatchedFolder, rung: &str) -> Option<&'f String> {
+        folder
+            .shelf_map
+            .get(rung)
+            .filter(|id| self.shelves.iter().any(|s| s.id == **id))
+    }
+
     /// The standing shelf an in-place tree already holds for `ground`: `ground` IS a
     /// folder the library reads in place, or a subfolder inside one, and the rung its
     /// directory names in that tree has a shelf still standing.
@@ -54,12 +63,9 @@ impl<'a> Governance<'a> {
             let Some(rel) = rel_under(ground, &folder.root) else {
                 continue;
             };
-            let Some(shelf_id) = folder.shelf_map.get(&rel) else {
+            let Some(shelf_id) = self.standing_rung(folder, &rel) else {
                 continue;
             };
-            if find_shelf(self.shelves, shelf_id).is_none() {
-                continue;
-            }
             let coverage = Coverage {
                 folder_id: folder.id.clone(),
                 rel: rel.clone(),
@@ -76,14 +82,19 @@ impl<'a> Governance<'a> {
     }
 
     /// The family a ground belongs to but is NOT standing in: the deepest in-place
-    /// folder whose root covers `ground` at a rung of its own, when the rung that
-    /// folder's ledger names for it is vacant — a slot a removal emptied, or a
-    /// departure. `None` when the covering tree's rung is alive: that is
-    /// [`covering`]'s answer rather than a family to fold back into.
+    /// folder whose root covers `ground` at a rung of its own, when that folder's
+    /// ledger names no standing shelf for the rung — a slot a removal emptied, or a
+    /// departure — while the shelf its own root is kept on still stands. `None` when
+    /// the covering tree's rung is alive: that is [`covering`]'s answer rather than a
+    /// family to fold back into.
+    ///
+    /// A tree whose root shelf the reader has taken out is no family: ground under it
+    /// is a start of its own, not a rung of a tree nothing stands on.
     pub fn family(&self, ground: &str) -> Option<(String, String)> {
         self.folders
             .iter()
             .filter(|f| f.mode().reads_in_place())
+            .filter(|f| self.standing_rung(f, "").is_some())
             .filter_map(|f| {
                 rel_under(ground, &f.root)
                     .filter(|rel| !rel.is_empty())
@@ -91,11 +102,9 @@ impl<'a> Governance<'a> {
             })
             .max_by_key(|(len, _, _)| *len)
             .and_then(|(_, folder, rel)| {
-                let vacant = match folder.shelf_map.get(&rel) {
-                    Some(id) => !self.shelves.iter().any(|s| s.id == *id),
-                    None => true,
-                };
-                vacant.then(|| (folder.id.clone(), rel))
+                self.standing_rung(folder, &rel)
+                    .is_none()
+                    .then(|| (folder.id.clone(), rel))
             })
     }
 
@@ -286,9 +295,12 @@ mod tests {
     fn of_two_nested_trees_the_longest_relative_rung_answers() {
         // The tie-break is the longest `rel`, which is the tree whose root sits
         // HIGHEST. The nested-tree case is also asserted in shelf/mod.rs's family test.
-        let outer = folder("f1", "/books", true, &[("Fiction", "fic")]);
-        let inner = folder("f2", "/books/Fiction", true, &[]);
-        let shelves = vec![crate::testkit::plain_shelf("mine", &[])];
+        let outer = folder("f1", "/books", true, &[("", "or"), ("Fiction", "fic")]);
+        let inner = folder("f2", "/books/Fiction", true, &[("", "ir")]);
+        let shelves = vec![
+            folder_shelf("or", "Books", "f1", None, &[], None),
+            folder_shelf("ir", "Fiction", "f2", None, &[], None),
+        ];
         let both = vec![outer, inner];
         let g = Governance::new(&both, &shelves);
         assert_eq!(

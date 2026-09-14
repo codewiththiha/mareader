@@ -752,15 +752,22 @@ its copies being the library's own second instance, unrelated to any tree:
   departed books' logs are, to be spent — and the run's last act folds the shelf it minted onto
   the rung its directory names (`RootPlan::fold`, `import::reclaim_rung`), the light landing on
   the shelf where it stands again. An import of a folder is the reader wanting it back, and back
-  is inside the tree its ground belongs to, not a second shelf at the top of the library.
+  is inside the tree its ground belongs to, not a second shelf at the top of the library. A family
+  answers only while the shelf the tree's own ROOT is kept on still stands: a reader who took the
+  tree out emptied its ground, and a pick of a folder under it starts a tree of its own rather than
+  minting the root shelf back to host it.
 - The same fold runs at the end of any explicit walk whose tree has a MEMBER standing outside
   it (`import::gate::displaced_member`) — the rung removed and the subfolder imported on its own, or
-  left standing by an older build: the fold puts it back, folds the folder that was reading it
-  into the tree's ledger and retires it — the watch that row answered for its own root becoming
-  the watch of the rung it becomes, since the row the answer was written on is the one the
-  fold retires — and the note that rises is the report of the shelf that went home
-  (`NoteKind::Returned`). An import is an ask, and a member outside its family is an ask answered
-  rather than a second question.
+  left standing by an older build: the rungs the member already stands on are seeded into the run's
+  map before the walk (`import::gate::seed_member_rungs`), so the books come back onto the shelf
+  that already stands for the directory rather than onto a twin minted beside it, and the fold at
+  the end puts the member back, folds the folder that was reading it into the tree's ledger and
+  retires it — the watch that row answered for its own root becoming the watch of the rung it
+  becomes, since the row the answer was written on is the one the fold retires — and the note that
+  rises is the report of the shelf that went home (`NoteKind::Returned`). An import is an ask, and
+  a member outside its family is an ask answered rather than a second question. The fold is into
+  the row the run is walking, which no clone of the ledger can undo; a tree ANOTHER run is walking
+  is the one fold refused.
 - A tree whose root rung a hand took OUT — the shelf's own departure — arrives with no shelf
   and no family slot to name, and simply walks: the copy wears the level's counter name, so the
   folder's own name is free, the walk re-mints the tree on the seats the disk names, and the

@@ -72,7 +72,8 @@ pub fn import_folder(
         }
         // Not covered, but the ground may still be a family's: the rung the pick names was deleted,
         // or departed as a copy. An import of a folder is the reader wanting it BACK, and back is the
-        // rung its directory names in the tree that covers it.
+        // rung its directory names in the tree that covers it — while that tree's own root shelf
+        // stands, because a pick under a tree the reader has taken out is a tree of its own.
         let fold = {
             let folders = state.library.folders.get_untracked();
             let shelves = state.library.shelves.get_untracked();
@@ -213,9 +214,11 @@ pub(super) fn covered_of(
     })
 }
 
-/// The shape this answers, and it is one the reader makes rather than a bug: a rung of a
-/// watched tree is removed, which cuts the folder's pointer to it and leaves the folder
-/// watching; that same subfolder is then imported on its own.
+/// The member standing outside the tree: a folder inside `folder`'s ground that reads itself in
+/// place, which the reader made by importing that subfolder on its own — a rung removed first, or
+/// the subfolder picked before the folder above it. The pick of that folder is the ask that takes
+/// it back in, and only while the shelf the member's row is kept on still stands: a shelf that went
+/// is an answer with nothing to move.
 pub(super) fn displaced_member(
     state: AppState,
     folder: &WatchedFolder,
@@ -296,15 +299,56 @@ fn hangs_inside(shelves: &[Shelf], shelf_id: &str, folder_id: &str) -> bool {
     false
 }
 
+/// The rungs a folded member brings: every shelf the folded folder owns, keyed the way the tree
+/// that receives it keys its own — the rung the member's directory names, and the ones below it.
+fn member_rungs(shelves: &[Shelf], gone_id: &str, rel: &str) -> Vec<(String, String)> {
+    shelves
+        .iter()
+        .filter(|s| s.kind.folder_id() == Some(gone_id))
+        .filter_map(|s| {
+            let ShelfKind::Folder { rel: own, .. } = &s.kind else {
+                return None;
+            };
+            let own = own.as_deref().unwrap_or("");
+            let key = if own.is_empty() {
+                rel.to_string()
+            } else {
+                format!("{rel}/{own}")
+            };
+            Some((key, s.id.clone()))
+        })
+        .collect()
+}
+
+/// The rungs a run lands on when a member stands outside the tree it belongs to, seeded into the
+/// run's own map before the walk: the walk then places the member's ground on the shelf that
+/// already stands for it instead of minting a rung beside each one. `run_fold` asks the same
+/// question of the same findings when the walk is done, and folds the member's row behind it.
+pub(super) fn seed_member_rungs(state: AppState, folder: &mut WatchedFolder, found: &[FoundFile]) {
+    let Some(member) = displaced_member(state, folder, found) else {
+        return;
+    };
+    let shelves = state.library.shelves.get_untracked();
+    for (key, id) in member_rungs(&shelves, &member.folder_id, &member.rel) {
+        folder.shelf_map.insert(key, id);
+    }
+}
+
 /// Put a displaced member back on the rung its directory names, and fold the folder that was
 /// reading it into the tree that contains it: one ground is read by one folder from here on.
 /// Three writes, in the order that keeps them honest.
+///
+/// `run_root` is the root the calling run holds the claim for, when the call comes from one: a tree
+/// ANOTHER run is walking is the one fold to refuse, because that run's clone of the ledger lands
+/// after this write and drops it — while the calling run's own tree is the row it is already
+/// writing, and the fold is the last thing that writes it.
 pub(crate) fn reclaim_rung(
     state: AppState,
     tree_id: &str,
     gone_id: &str,
     rel: &str,
     shelf_id: &str,
+    run_root: Option<&str>,
 ) -> bool {
     let now = now_ms();
     let mut minted: Vec<Shelf> = Vec::new();
@@ -316,28 +360,14 @@ pub(crate) fn reclaim_rung(
         return false;
     };
     // Read before anything is written, because the answer is about the shelves that are standing and not about the ones this move is going to mint.
-    let rungs: Vec<(String, String)> = state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .filter(|s| s.kind.folder_id() == Some(gone_id))
-            .filter_map(|s| {
-                let ShelfKind::Folder { rel: own, .. } = &s.kind else {
-                    return None;
-                };
-                let own = own.clone().unwrap_or_default();
-                Some((
-                    s.id.clone(),
-                    if own.is_empty() {
-                        rel.to_string()
-                    } else {
-                        format!("{rel}/{own}")
-                    },
-                ))
-            })
-            .collect()
-    });
-    // A shelf that went while the note was up is an answer with nothing to move; so is a tree being walked right now, whose run writes its clone of the ledger back whole.
-    if !rungs.iter().any(|(id, _)| id == shelf_id) || root_is_claimed(&tree.root) {
+    let rungs = state
+        .library
+        .shelves
+        .with_untracked(|shelves| member_rungs(shelves, gone_id, rel));
+    // A shelf that went while the note was up is an answer with nothing to move; so is a tree a
+    // different run is walking, whose clone of the ledger lands after this write.
+    let foreign_walk = root_is_claimed(&tree.root) && run_root != Some(tree.root.as_str());
+    if !rungs.iter().any(|(_, id)| id == shelf_id) || foreign_walk {
         return false;
     }
     let root = tree.root.clone();
@@ -359,7 +389,7 @@ pub(crate) fn reclaim_rung(
             });
         },
     );
-    for (id, key) in &rungs {
+    for (key, id) in &rungs {
         tree.shelf_map.insert(key.clone(), id.clone());
     }
     // The answer the folded row carried for its own root becomes the rung it becomes: the row that
@@ -380,7 +410,7 @@ pub(crate) fn reclaim_rung(
             }
         }
         let nestable = shelves_ops::can_nest(shelves, shelf_id, &parent);
-        for (id, key) in &rungs {
+        for (key, id) in &rungs {
             let Some(shelf) = shelves_ops::find_mut(shelves, id) else {
                 continue;
             };
@@ -452,7 +482,8 @@ fn start_folder_run(
 
 /// The plan's own fold first: the run walked the picked folder's ledger, and its root shelf
 /// is the member going home. With no fold planned, the run asks whether a member is standing
-/// outside the tree it belongs to.
+/// outside the tree it belongs to. Either fold is told the root this run holds: a tree ANOTHER
+/// run is walking is the one fold to refuse.
 pub(super) fn run_fold(
     state: AppState,
     plan: &RootPlan,
@@ -462,7 +493,7 @@ pub(super) fn run_fold(
 ) -> Option<(String, String)> {
     if let Some((tree, rel)) = &plan.fold {
         let rung = root_rung?;
-        reclaim_rung(state, tree, &folder.id, rel, rung)
+        reclaim_rung(state, tree, &folder.id, rel, rung, Some(&folder.root))
             .then(|| (rung.to_string(), state.library.shelf_name(rung)))
     } else {
         let member = displaced_member(state, folder, found)?;
@@ -472,6 +503,7 @@ pub(super) fn run_fold(
             &member.folder_id,
             &member.rel,
             &member.shelf_id,
+            Some(&folder.root),
         )
         .then(|| (member.shelf_id.clone(), member.shelf_name.clone()))
     }

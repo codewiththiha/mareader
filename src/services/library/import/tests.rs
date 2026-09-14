@@ -6,9 +6,10 @@ use super::claim::{claim_root, root_is_claimed, when_root_is_free};
 use super::files::{land_file, screen_content};
 use super::folder::{
     mint_walked_row, resolve_folder, returned_memberships, Landing, Minted, Snapshot,
-};use super::gate::{
-    covered_shelf, displaced_member, ground_tracking, reclaim_rung, run_fold, write_rung_tracking,
-    GroundWatch, RootPlan,
+};
+use super::gate::{
+    covered_shelf, displaced_member, ground_tracking, reclaim_rung, run_fold, seed_member_rungs,
+    write_rung_tracking, GroundWatch, RootPlan,
 };
 use super::replace::{purge_folder_linked_books, replace_rows_of_tree};
 use super::restore::{covered_fate, restore_covered_file, CoveredFate};
@@ -961,7 +962,7 @@ fn putting_a_member_back_gives_the_tree_its_rung_and_retires_the_folder() {
         }
     });
 
-    reclaim_rung(state, "f1", "f2", "mid/deep", "s3");
+    reclaim_rung(state, "f1", "f2", "mid/deep", "s3", None);
 
     let shelves = state.library.shelves.get_untracked();
     let back = shelves.iter().find(|s| s.id == "s3").expect("the returning shelf");
@@ -1017,7 +1018,7 @@ fn putting_a_member_back_mints_the_rungs_the_tree_lost() {
         }
     });
 
-    reclaim_rung(state, "f1", "f2", "mid/deep", "s3");
+    reclaim_rung(state, "f1", "f2", "mid/deep", "s3", None);
 
     let shelves = state.library.shelves.get_untracked();
     let folders = state.library.folders.get_untracked();
@@ -1035,7 +1036,7 @@ fn an_answer_about_a_shelf_that_went_does_nothing_at_all() {
     let (state, _owner) = displaced_state();
     state.library.shelves.update(|shelves| shelves.retain(|s| s.id != "s3"));
 
-    reclaim_rung(state, "f1", "f2", "mid/deep", "s3");
+    reclaim_rung(state, "f1", "f2", "mid/deep", "s3", None);
 
     let folders = state.library.folders.get_untracked();
     assert_eq!(folders.len(), 2, "the nested folder is still the nested folder");
@@ -1080,6 +1081,78 @@ fn the_fold_puts_the_member_back_and_names_the_shelf_it_seated() {
 
     let again = run_fold(state, &plan, &outer, None, &walk);
     assert!(again.is_none(), "the member is inside the tree now");
+}
+
+#[test]
+fn the_run_that_walks_the_tree_lands_on_the_member_s_shelf_and_takes_it_back_in() {
+    let (state, _owner) = displaced_state();
+    let mut outer = state.library.folder("f1").expect("the tree");
+    let walk = vec![found_under("/root", "/root/mid/deep/dune.md", 7)];
+    let _walking_it = claim_root("/root", Asked::Explicitly).expect("the run's own claim");
+
+    seed_member_rungs(state, &mut outer, &walk);
+    assert_eq!(
+        outer.shelf_map.get("mid/deep").map(String::as_str),
+        Some("s3"),
+        "the walk lands on the shelf the member already stands on"
+    );
+    assert_eq!(
+        outer.shelf_map.get("mid").map(String::as_str),
+        Some("s2"),
+        "and the rungs the tree already holds are left where they are"
+    );
+
+    let folded = run_fold(state, &RootPlan::default(), &outer, None, &walk)
+        .expect("the run that walks the tree may take its member back in");
+    assert_eq!(folded, ("s3".to_string(), "deep".to_string()));
+    let shelves = state.library.shelves.get_untracked();
+    assert_eq!(
+        shelves
+            .iter()
+            .find(|s| s.id == "s3")
+            .and_then(|s| s.parent.clone()),
+        Some("s2".to_string()),
+        "and the member is back on the rung its directory names"
+    );
+    assert_eq!(
+        state.library.folders.get_untracked().len(),
+        1,
+        "one ground, one folder"
+    );
+}
+
+#[test]
+fn a_tree_another_run_is_walking_is_not_folded_into() {
+    let (state, _owner) = displaced_state();
+    let inner = state.library.folder("f2").expect("the picked folder");
+    let plan = RootPlan {
+        fold: Some(("f1".to_string(), "mid/deep".to_string())),
+        ..Default::default()
+    };
+    let _theirs = claim_root("/root", Asked::OnFocus).expect("the tree's own run");
+    let _mine = claim_root("/root/mid/deep", Asked::Explicitly).expect("the pick's run");
+
+    assert!(
+        run_fold(state, &plan, &inner, Some("s3"), &[]).is_none(),
+        "the tree's own run writes its clone of the ledger back"
+    );
+    assert_eq!(state.library.folders.get_untracked().len(), 2);
+}
+
+#[test]
+fn a_tree_the_reader_took_out_answers_nothing_for_the_ground_under_it() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    let mut tree = folder_in_mode("f1", "/books", true, true);
+    tree.shelf_map.insert("scifi".to_string(), "sub".to_string());
+    state.library.folders.set(vec![tree]);
+    state.library.shelves.set(Vec::new());
+
+    assert!(
+        ground_tracking(state, "/books/scifi").is_none(),
+        "the pick is a tree of its own rather than a rung of a tree nothing stands on"
+    );
 }
 
 #[test]
@@ -1282,7 +1355,7 @@ fn a_folded_row_s_watch_becomes_the_rung_it_becomes() {
         .set(vec![standing("fs", "f1"), standing("sub", "f2")]);
 
     assert!(
-        reclaim_rung(state, "f1", "f2", "scifi", "sub"),
+        reclaim_rung(state, "f1", "f2", "scifi", "sub", None),
         "the member goes home"
     );
     let folders = state.library.folders.get_untracked();

@@ -544,7 +544,12 @@ touches a file you own.
   on the rung its directory names, inside the nesting, lit where it stands. The same happens at
   the end of any import of the outer tree that finds one of its folders standing outside it: an
   import is you asking for the folder, and a member outside its family is an ask answered — the
-  note that rises is the report of the shelf that went home, not a question about it.
+  note that rises is the report of the shelf that went home, not a question about it — and the
+  books land on the shelves that folder already stands on rather than beside them. Take the whole
+  tree out and its ground stops being anyone's family: importing one of its subfolders afterwards
+  gives you that subfolder at the top of the library under its own name, with the root shelf you
+  removed left where you put it — and importing the root again puts the subfolder back under it,
+  as its sub shelf.
 - **A copies import is the library's own business, and asks only the level's name question.**
   Turning read-at-place off means *the library should own these books* — a second instance of
   its own, unrelated to any tree — so the import checks one thing: the name at the level it

@@ -4,11 +4,13 @@
 
 use super::{ancestors, find, Shelf, ShelfKind};
 
-/// The family a ground directory belongs to but is not standing in: the DEEPEST
-/// in-place folder whose root covers `ground` at a rung of its own, when the
-/// rung that folder's ledger names for it is not standing — a slot a removal
-/// emptied, or a departure. `None` when no in-place tree covers the ground, or
-/// the covering tree's rung is alive.
+/// The family a ground directory belongs to but is not standing in: the deepest
+/// in-place folder whose root covers `ground` at a rung of its own, when the rung
+/// that folder's ledger names for it is not standing — a slot a removal emptied,
+/// or a departure — while the shelf its own root is kept on still stands. `None`
+/// when no in-place tree covers the ground, when the covering tree's rung is
+/// alive, and when the reader has taken the tree itself out: ground under a tree
+/// nothing stands on is a start of its own rather than a rung of that tree.
 pub fn family_for(
     folders: &[crate::folder::WatchedFolder],
     shelves: &[Shelf],
