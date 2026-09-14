@@ -1,26 +1,32 @@
 //! The import sheet: what a folder import is allowed to be.
 //!
-//! Five answers, and each one is a `library_core::folder::FolderOpts` field — the
-//! sheet writes the options and the shell's walk reads them, so there is no
-//! second copy of "what does larger than 30 KB mean" anywhere in the app.
+//! Every answer here is a `library_core::folder::FolderOpts` field — the sheet
+//! writes the options and the shell's walk reads them, so there is no second
+//! copy of "what does larger than 30 KB mean" anywhere in the app.
 //!
-//! The two switches are nested on purpose. "Watch for new books" only means
-//! something for a folder the library reads in place: a store copy is the app's
-//! own file from the moment it lands, and rescanning the source afterwards would
-//! be a second opinion about a book that already exists. The row hides rather
-//! than disables, because a switch that cannot be turned on is noise.
+//! The Books section is ONE control with three answers rather than two
+//! switches, because there are three modes and not four: copy the books into the
+//! app's own store, read them where they are, or read them where they are and
+//! rescan the folder for new ones. The pair of booleans underneath has a fourth
+//! combination — watching a folder whose books are being copied — and nesting two
+//! switches over one choice is what made it reachable: the watch row hid behind
+//! the mode row, so a click had to reach into the hidden answer and put it back.
+//! `library_core::folder::FolderMode` names the three, picking one writes BOTH
+//! switches from it, and the row that used to be hidden is a mode now. The stored
+//! shape does not move: `FolderOpts` keeps its `in_place` and `watch`, and the
+//! mode is the reading of the two.
 //!
-//! The watch switch is the reader's on every ground, and what changes is which
-//! rung their answer lands on. Tracking is a tree rather than one flag for the
-//! whole import (`library_core::tracking`), so ground an existing read-at-place
-//! tree already covers is a rung of THAT tree: the sheet opens with the tree's
-//! own answer for the rung already on the switch, and the click writes back to
-//! that rung, which is what lets a subfolder be tracked differently from the
-//! import it stands inside. Ground nothing covers is a fresh folder's root, and
-//! the switch writes the options the sheet already holds. Either way the switch
-//! is the sheet's own signal — what it shows is what lands, and a covered
-//! ground seeds the signal rather than owning the display, because a switch
-//! that reads one place and writes another is a switch that cannot be clicked.
+//! Watching is the reader's on every ground, and what changes is which rung their
+//! answer lands on. Tracking is a tree rather than one flag for the whole import
+//! (`library_core::tracking`), so ground an existing read-at-place tree already
+//! covers is a rung of THAT tree: the sheet opens with the tree's own answer for
+//! the rung already on the control, a pick writes back to that rung, and that is
+//! what lets a subfolder be tracked differently from the import it stands inside.
+//! Ground nothing covers is a fresh folder's root, and the pick is the options
+//! the sheet already holds. Either way the control is the sheet's own signal —
+//! what it shows is what lands, and a covered ground seeds the signal rather than
+//! owning the display, because a control that reads one place and writes another
+//! cannot be clicked.
 //!
 //! This used to be a lock. Ground a watched tree was seated on got a disabled
 //! switch and a sentence telling the reader to go and right-click the shelf
@@ -29,16 +35,15 @@
 //! could not say anything about that subfolder, and a sheet whose defaults were
 //! `false` would have quietly un-tracked the tree it was importing. The lock was
 //! the only honest answer a single flag could give. With a rung to write, the
-//! import is the reader's ask again: turning the switch off on covered ground is
-//! an explicit `Off` at that rung, and the tree above keeps watching its own.
+//! import is the reader's ask again: reading a covered subfolder at place but
+//! leaving it out of the scan is an explicit `Off` at that rung, and the tree
+//! above keeps watching its own.
 //!
-//! The sheet still hides the row entirely for a folder imported as copies,
-//! because a store copy is the app's own file from the moment it lands and
-//! rescanning the source afterwards would be a second opinion about a book that
-//! already exists. Hiding is the honest answer there — the mode has no tracking
-//! question — where disabling never was. A copies run therefore lands no
-//! tracking answer at all: an `Off` written to a standing tree's rung by a mode
-//! that never showed the switch would be a decision the reader was never asked.
+//! A copies run lands no tracking answer at all, which is what the mode says
+//! rather than what a hidden switch decided: the control never offered the
+//! answer, so the run cannot write one, and an `Off` written to a standing
+//! tree's rung by a mode that has no tracking question would be a decision the
+//! reader was never asked.
 //!
 //! Turning tracking off by hand from the shelf's own right-click is
 //! `crate::services::library::set_shelf_watch`, and it answers for the SEAT the
@@ -50,17 +55,15 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
-use library_core::folder::{FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR};
+use library_core::folder::{FolderMode, FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR};
 use library_core::scan::selectable_formats;
 use reader_core::format::Format;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::controls::option_button::OptionButton;
-use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
-use crate::components::primitives::form::row::Row;
 use crate::services::library::{ground_tracking, import_folder, pick_folder};
 use crate::state::AppState;
 
@@ -122,8 +125,15 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
     // `crate::components::primitives::overlay::modal_shell`).
     let opts = RwSignal::new(FolderOpts::default());
 
-    let in_place = Signal::derive(move || opts.with(|o| o.in_place));
-    let watching = Signal::derive(move || opts.with(|o| o.watch));
+    // The pair the options carry, read as the one mode the control offers.
+    // The control below is a three-way choice — copy, read at place, read at
+    // place and watch — and the fourth pair (a watching copy) is not a choice
+    // it can show, so nothing here has to guard against it: every click writes
+    // BOTH switches from the mode it picked.
+    let mode = Signal::derive(move || opts.with(|o| o.mode()));
+    let copies = Signal::derive(move || mode.get().copies_files());
+    let reads_in_place = Signal::derive(move || mode.get().reads_in_place());
+    let watched = Signal::derive(move || mode.get().tracks_new_files());
     // The tree and rung a watch answer belongs to, when an existing read-at-place
     // tree already covers this ground. Read reactively, so a folder whose tracking
     // the reader turned off from its own menu in between — or whose shelf another
@@ -137,14 +147,14 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
             .flatten()
             .and_then(|root| ground_tracking(state, &root))
     });
-    // The switch is the sheet's own on EVERY ground, and what it shows —
+    // The control is the sheet's own on EVERY ground, and what it shows —
     // `opts.watch` — is the value that lands. Ground an existing tree covers
     // SEEDS the option rather than owning the display: an effect reads the
     // tree's own answer for the rung into the options when the sheet opens
-    // onto that ground, so the switch starts at the state the tree is in and a
-    // click moves it. The display used to read the tree and the click to write
-    // the options, which is a switch that shows one value and stores another:
-    // on covered ground it could be clicked all day without the knob moving.
+    // onto that ground, so the control starts at the state the tree is in and
+    // a pick moves it. The display used to read the tree and the click to write
+    // the options, which is a control that shows one value and stores another:
+    // on covered ground it could be turned all day without the mark moving.
     Effect::new(move |_| {
         if !sheet.open.get() {
             return;
@@ -311,89 +321,79 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                         </div>
 
                         // --- how the books are held -------------------------
+                        // One control, three modes, because there ARE three:
+                        // two switches over one choice let the sheet sit in a
+                        // state its own options say cannot exist (a watching
+                        // copy), and the guard that stopped it was a rule the
+                        // reader could not see. Picking a mode here writes both
+                        // switches at once.
                         <SectionLabel text="Books" />
                         <div class="divide-y divide-line rounded-xl border border-line">
-                            <Row label="Read at place">
-                                <Switch
-                                    checked=in_place
-                                    on_change=Callback::new(move |on| {
-                                        // The ground's own answer, read before the write: a
-                                        // mode turned back on restores the state the tree is
-                                        // in rather than the `false` the mode-off took with it.
-                                        let ground_on =
-                                            ground.get_untracked().map(|(_, _, gon)| gon);
-                                        opts.update(|o| {
-                                            o.in_place = on;
-                                            // Watching a copy is a question the
-                                            // sheet does not ask, so turning the
-                                            // mode off takes the answer with it —
-                                            // the row hides, and a hidden switch
-                                            // that remembered an answer would
-                                            // land one nobody can see.
-                                            if !on {
-                                                o.watch = false;
-                                            } else if let Some(gon) = ground_on {
-                                                o.watch = gon;
-                                            }
-                                        });
-                                    })
-                                    title="Read the books from their own folders, without copying".to_string()
-                                />
-                            </Row>
-                            <Show when=move || in_place.get() fallback=|| ()>
-                                <div class="px-4 py-3.5 pl-8">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <div class="min-w-0">
-                                            <span class="block text-sm text-ink">
-                                                "Watch for new books"
-                                            </span>
-                                            <span class="mt-0.5 block text-xs text-muted">
-                                                {move || {
-                                                    // A subfolder of a tree the
-                                                    // library already reads says
-                                                    // which rung the answer is
-                                                    // about, because the switch is
-                                                    // the reader's here rather
-                                                    // than a lock: turning it off
-                                                    // is a decision at that rung
-                                                    // and the tree above keeps
-                                                    // watching its own.
-                                                    if ground.get().is_some() {
-                                                        "This folder is part of a tree the library \
-                                                         already reads. The switch answers for this \
-                                                         subfolder alone."
-                                                            .to_string()
-                                                    } else {
-                                                        "Checks for new books when the app opens or \
-                                                         you come back to it."
-                                                            .to_string()
-                                                    }
-                                                }}
-                                            </span>
-                                        </div>
-                                        // Rebuilt rather than reactive inside:
-                                        // the row's title is a `String` prop, and
-                                        // a ground that changed is a switch with a
-                                        // different sentence on it.
-                                        {move || {
-                                            let title = if ground.get().is_some() {
-                                                "Watch this subfolder for new books"
-                                            } else {
-                                                "Watch for new books"
-                                            };
-                                            view! {
-                                                <Switch
-                                                    checked=watching
-                                                    on_change=Callback::new(move |on| {
-                                                        opts.update(|o| o.watch = on);
-                                                    })
-                                                    title=title.to_string()
-                                                />
-                                            }
-                                        }}
-                                    </div>
+                            <div class="px-4 py-3.5">
+                                <span class="mb-2 block text-sm text-ink">
+                                    "How the books are held"
+                                </span>
+                                <div class="flex flex-col gap-1.5">
+                                    <OptionButton
+                                        selected=copies
+                                        on_click=move || set_mode(opts, FolderMode::Copy)
+                                        variant_class="flex items-center gap-2 px-2.5 py-1.5 text-xs"
+                                    >
+                                        <Dot on=copies />
+                                        <span>{FolderMode::Copy.label()}</span>
+                                    </OptionButton>
+                                    <OptionButton
+                                        selected=reads_in_place
+                                        on_click=move || set_mode(opts, FolderMode::LinkInPlace)
+                                        variant_class="flex items-center gap-2 px-2.5 py-1.5 text-xs"
+                                    >
+                                        <Dot on=reads_in_place />
+                                        <span>{FolderMode::LinkInPlace.label()}</span>
+                                    </OptionButton>
+                                    <OptionButton
+                                        selected=watched
+                                        on_click=move || {
+                                            set_mode(opts, FolderMode::LinkInPlaceWatched)
+                                        }
+                                        variant_class="flex items-center gap-2 px-2.5 py-1.5 text-xs"
+                                    >
+                                        <Dot on=watched />
+                                        <span>{FolderMode::LinkInPlaceWatched.label()}</span>
+                                    </OptionButton>
                                 </div>
-                            </Show>
+                                <p class="mt-2 text-xs text-muted">
+                                    {move || match mode.get() {
+                                        FolderMode::Copy => {
+                                            "Books are copied into the app's own files, so they \
+                                             keep working even if the folder moves or is deleted."
+                                                .to_string()
+                                        }
+                                        FolderMode::LinkInPlace => {
+                                            "Books stay where they are — the library just remembers \
+                                             where they live. Books added to the folder later are \
+                                             not picked up."
+                                                .to_string()
+                                        }
+                                        // A subfolder of a tree the library already reads
+                                        // answers for itself: the switch is the reader's
+                                        // here rather than a lock, and the tree above keeps
+                                        // its own answer.
+                                        FolderMode::LinkInPlaceWatched => {
+                                            if ground.get().is_some() {
+                                                "Books stay where they are, and this subfolder is \
+                                                 checked for new ones. The rest of the tree keeps \
+                                                 its own answer."
+                                                    .to_string()
+                                            } else {
+                                                "Books stay where they are, and the folder is \
+                                                 checked for new ones when the app opens or you \
+                                                 come back to it."
+                                                    .to_string()
+                                            }
+                                        }
+                                    }}
+                                </p>
+                            </div>
                             <div class="px-4 py-3.5">
                                 <span class="mb-2 block text-sm text-ink">"Folder structure"</span>
                                 <div class="flex flex-col gap-1.5">
@@ -417,19 +417,6 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                             </div>
                         </div>
 
-                        <p class="mt-3 text-xs text-muted">
-                            {move || {
-                                if in_place.get() {
-                                    "Books stay where they are — the library just remembers \
-                                     where they live."
-                                        .to_string()
-                                } else {
-                                    "Books are copied into the app's own files, so they keep \
-                                     working even if the folder moves or is deleted."
-                                        .to_string()
-                                }
-                            }}
-                        </p>
                     </SheetBody>
 
                     <SheetFooter>
@@ -448,18 +435,22 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                 ) else {
                                     return;
                                 };
-                                // The value that lands is the value the switch
-                                // showed, and the switch is the options signal on
+                                // The value that lands is the value the control
+                                // showed, and the control is the options signal on
                                 // every ground — so one read carries both halves of
                                 // the answer. Ground an existing tree covers sends
                                 // the decision to that tree at the rung the pick
                                 // names; ground nothing covers sends it to a fresh
                                 // folder's root through `options.watch` itself.
-                                let track = options.in_place.then(|| {
-                                    ground.get_untracked().map(|(tree, rung, _)| {
-                                        (tree, rung, options.watch)
+                                let track = options
+                                    .mode()
+                                    .reads_in_place()
+                                    .then(|| {
+                                        ground.get_untracked().map(|(tree, rung, _)| {
+                                            (tree, rung, options.watch)
+                                        })
                                     })
-                                }).flatten();
+                                    .flatten();
                                 sheet.open.set(false);
                                 import_folder(state, root, options, track);
                             }
@@ -523,4 +514,17 @@ fn Dot(on: Signal<bool>) -> impl IntoView {
             }}
         </span>
     }
+}
+
+/// Write one of the three modes onto the options: both switches, one write.
+///
+/// The control decides a MODE and the pair is what lands, so the two are set
+/// together rather than each by its own click — which is the whole of what the
+/// old guard (`if !on { o.watch = false }`) was protecting against, expressed
+/// as the shape of the write instead of as a rule on one of the two switches.
+fn set_mode(opts: RwSignal<FolderOpts>, mode: FolderMode) {
+    opts.update(|o| {
+        o.in_place = mode.reads_in_place();
+        o.watch = mode.tracks_new_files();
+    });
 }
