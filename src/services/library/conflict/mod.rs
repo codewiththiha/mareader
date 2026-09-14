@@ -148,7 +148,7 @@ pub enum AskKind {
         /// The watched folder whose ledger records the placement when the answer
         /// lands, so a later rescan stays quiet about the file and a removal that
         /// was holding it out is spent.
-        folder_id: Option<String>,
+        folder_id: String,
     },
     /// A loose import of a file that sits inside a folder the library READS IN
     /// PLACE, where the book that folder holds for it is alive and standing. Two
@@ -186,7 +186,7 @@ impl AskKind {
     pub fn folder_id(&self) -> Option<&str> {
         match self {
             AskKind::NameCollision | AskKind::AlreadyHave => None,
-            AskKind::FolderMerge { folder_id, .. } => folder_id.as_deref(),
+            AskKind::FolderMerge { folder_id, .. } => Some(folder_id.as_str()),
             AskKind::Covered { folder_id } => Some(folder_id),
         }
     }
@@ -259,10 +259,7 @@ impl ConflictAsk {
             arrival,
             existing_id,
             existing_name,
-            kind: AskKind::FolderMerge {
-                mode,
-                folder_id: Some(folder_id),
-            },
+            kind: AskKind::FolderMerge { mode, folder_id },
         }
     }
 

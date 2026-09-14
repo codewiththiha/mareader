@@ -159,7 +159,7 @@ fn land_answer_file(
     // place, so the answer lands now, or copies, so it lands after a copy that
     // can fail — and which ledger records the placement.
     let (mode, folder_id) = match &ask.kind {
-        AskKind::FolderMerge { mode, folder_id } => (*mode, folder_id.as_deref()),
+        AskKind::FolderMerge { mode, folder_id } => (*mode, Some(folder_id.as_str())),
         _ => return,
     };
     let shelf_id = ask.arrival.shelf_id.clone();
@@ -186,7 +186,3 @@ fn land_answer_file(
         folder_id.map(|id| (id.to_string(), fp)),
     );
 }
-
-// ---------------------------------------------------------------------------
-// The covered file's answers: a loose import from a read-at-place folder.
-// ---------------------------------------------------------------------------

@@ -646,9 +646,9 @@ fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>
         }),
     ));
     // One act per selected thing, and each is the single duplicate's own — a
-    // copy beside the original, in the counter name the level gives it. The set
-    // holds both kinds of thing a right-click lands on, so a shelf in it
-    // duplicates as a shelf (its own copy, its own subtree) and a book as a
+    // second card beside the original, in the counter name the level gives it.
+    // The set holds both kinds of thing a right-click lands on, so a shelf in
+    // it duplicates as a shelf (its own copy, its own subtree) and a book as a
     // book; things that cannot be copied (a book whose file died) are skipped
     // by the service, which is where that fact lives.
     items.push(MenuItemSpec::new(

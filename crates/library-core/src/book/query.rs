@@ -36,14 +36,6 @@ pub fn find_book_mut<'a>(rows: &'a mut [Row], id: &str) -> Option<&'a mut Book> 
     book_rows_mut(rows).find(|b| b.id == id)
 }
 
-/// The key the highlights of the book being opened are stored under.
-///
-/// `book_id` is the row the reader named, when they named one; `path` is the
-/// address being opened, which is all a drop or an "open with" has. The row
-/// wins when it is the row of that address — a private book reads its own mark
-/// list, and every other book at the address reads the address's — and the
-/// address is the answer otherwise, which is the shared rule and the honest
-/// fallback when the row went.
 /// Id → row, in one pass: the index a level's members resolve against rather
 /// than a walk of the library per member. Two modules each hand-rolled this
 /// map — the sort that renders a shelf and the collision that screens an

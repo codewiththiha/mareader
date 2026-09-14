@@ -43,7 +43,3 @@ pub fn raise_note(state: AppState, shelf_id: String, name: String, kind: NoteKin
 pub fn close_already_imported(state: AppState) {
     state.library.already_imported.open.set(false);
 }
-
-// ---------------------------------------------------------------------------
-// The compact sheet's answers: one file of a merging folder, at a time.
-// ---------------------------------------------------------------------------

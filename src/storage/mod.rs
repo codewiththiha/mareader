@@ -101,16 +101,6 @@ fn warn(op: &'static str, detail: &str) {
     let _ = (op, detail);
 }
 
-/// One console line about a load, guarded for the reason
-/// [`StorageError::report`] is: a migration is worth saying out loud once, and
-/// a host test that ran one must not abort on the saying.
-fn log_info(message: &str) {
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::info_1(&JsValue::from_str(message));
-    #[cfg(not(target_arch = "wasm32"))]
-    let _ = message;
-}
-
 /// The browser's own key-value store, and `None` wherever there is not one —
 /// which is every host test this crate runs, and the reason a save off wasm is
 /// a reported no-op rather than a panic.
@@ -192,10 +182,8 @@ pub fn load_library() -> LibraryBlob {
     }
     if let Some(raw) = get(V2_KEY) {
         let legacy: BlobV2 = parse("library v2", &raw);
-        let count = legacy.books.len();
         let mut blob = migrate_v2(legacy);
         sanitize_library(&mut blob);
-        log_info(&format!("[storage] migrated {count} books from {V2_KEY}"));
         return blob;
     }
     let legacy: Vec<RecentBook> = get(LEGACY_KEY)
@@ -204,10 +192,8 @@ pub fn load_library() -> LibraryBlob {
     if legacy.is_empty() {
         return LibraryBlob::default();
     }
-    let count = legacy.len();
     let mut blob = migrate_v1(legacy, crate::time::now_ms());
     sanitize_library(&mut blob);
-    log_info(&format!("[storage] migrated {count} books from {LEGACY_KEY}"));
     blob
 }
 
@@ -298,8 +284,8 @@ pub fn persist_covers(library: LibraryState) {
 /// again picks them up, and a removal that never comes costs one localStorage
 /// entry rather than a reader's highlights.
 ///
-/// Log-and-skip throughout: a highlight that could not be carried is a sentence
-/// on the console, not a library that refuses to load.
+/// Skip throughout: a highlight list no row answers for costs that list, not a
+/// library that refuses to load.
 pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
     let Some(raw) = get(GLOSS_V1_KEY) else {
         return;
@@ -345,9 +331,7 @@ pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
     }
     if let Err(e) = save_gloss(&carried) {
         e.report();
-        return;
     }
-    log_info(&format!("[storage] carried {moved} highlight lists onto their books"));
 }
 
 /// Load every book's gloss highlights, keyed by row id.

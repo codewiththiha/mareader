@@ -85,7 +85,3 @@ pub(super) fn fail(state: AppState, task: &str, message: String, mode: FailMode)
     update_task(state, task, move |t| t.fail(message));
     toast(state, sentence);
 }
-
-// ---------------------------------------------------------------------------
-// The three ways in.
-// ---------------------------------------------------------------------------

@@ -39,11 +39,6 @@ use crate::services::library::arrange::ShelfDepartureAsk;
 use crate::services::library::conflict::{ConflictAsk, ShelfConflictAsk};
 use crate::time::now_ms;
 
-/// How many covers the cache holds. A cover is a base64 JPEG of a few tens of
-/// kilobytes, so this — not [`BOOKS_CAP`](library_core::book::BOOKS_CAP)
-/// — is the library's real memory and quota budget. Past it the least recently
-/// read covers go; they are derived, and reopening a book renders its page 1
-/// again.
 /// Persisted cover art for one book: the first page rendered to a small JPEG.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,14 +184,6 @@ impl ImportTask {
     }
 }
 
-/// The library domain's signals.
-///
-/// Four of these persist together as one [`LibraryBlob`] and are separate
-/// signals anyway: the shelf re-renders when a book's resume point moves, and
-/// nothing else should. The rest are the page's own and a restart forgets them — a
-/// search that survived would be one the reader did not type, a dock card that
-/// survived would report an import that finished last week, and a selection that
-/// survived would be a set of books the reader cannot see selected.
 /// One "light this up" gesture: the row or shelf to scroll to, and the nonce
 /// that makes a second reveal of the SAME thing a second reveal.
 ///
@@ -321,6 +308,14 @@ pub struct RelinkAsk {
     pub name: String,
 }
 
+/// The library domain's signals.
+///
+/// Four of these persist together as one [`LibraryBlob`] and are separate
+/// signals anyway: the shelf re-renders when a book's resume point moves, and
+/// nothing else should. The rest are the page's own and a restart forgets them — a
+/// search that survived would be one the reader did not type, a dock card that
+/// survived would report an import that finished last week, and a selection that
+/// survived would be a set of books the reader cannot see selected.
 #[derive(Clone, Copy)]
 pub struct LibraryState {
     /// Every ROW, in the order the "All" shelf shows them: the books, and the

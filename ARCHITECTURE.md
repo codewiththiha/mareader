@@ -885,8 +885,7 @@ The split is IO on one side and decisions on the other, and the wire between the
   screenshots never crosses the wire, refuses symlinks and hidden directories, caps the depth and
   the result count, and gates every path through the crate's existing document gate. Its delete
   command only removes a path that canonicalises inside the app's own store directory, and its
-  beside-copy — the duplicate's (`copy_beside`) — only creates a document inside the original's
-  own directory, under a name that does not exist yet.
+  relocation only moves between two such paths.
 - `library_core::wire` holds the four types that cross (`ImportProgress`, `PathCheck`,
   `StoreRequest`, `StoreResult`). Both sides depend on `library-core`, so there is one declaration
   and no contract test needed to prove the halves agree — which is an improvement on the AI chunk
@@ -1256,15 +1255,14 @@ an ARRIVAL, and a rename is not an arrival; two rows of one name on one level ar
 reader named that way.
 
 One right-click makes a second instance of what was pointed at, whichever kind of thing it was:
-*Duplicate* (`services::library::duplicate`). A book read AT ITS PLACE gets a second file beside the first —
-the shell's `commands::library::copy_beside` creates it inside the original's own directory under
-a name the frontend probed free, refuses a name already taken rather than overwriting it, and
-stamps it with its own modification time, so the copy measures as a second book and not as the
-first one twice; the folders whose ground the copy stands on take the placement into their
-ledgers, which is what makes removing the duplicate later a removal the next rescan honours
-instead of a book that walks back in. A book the library COPIED gets a second store copy through
-the store's own batch, named after the new row's id and known by the copy's own measurement, and
-a link duplicates as a link — a pointer costs a row, not bytes. Either way the duplicate is a row
+*Duplicate* (`services::library::duplicate`). A book — whatever its origin — gets a second copy in
+the library's own store through the store's own batch, named after the new row's id and stamped
+with its own modification time, so the copy measures as a second book and not as the first one
+twice and is known by the copy's own measurement; the source the original recorded stays the
+provenance both wear. Nothing is written into the folder the original reads and the duplicate is
+never linked, so the departure rule never sees it and there is no sibling on the reader's disk for
+the library to orphan. A link duplicates as a link — a pointer costs a row, not bytes. Either way
+the duplicate is a row
 of its own: the counter name the level showing the original gives it
 (`library_core::conflict::next_name` — the collision sheet's convention), filed right behind the
 row the reader pointed at on every shelf the original is filed on, with a fresh resume point and

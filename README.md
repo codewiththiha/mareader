@@ -405,10 +405,10 @@ touches a file you own.
   A name you type is yours and survives as-is: a title that looks like a filename is dropped when
   it came from a document's own metadata, which is where such titles are download debris, but not
   when a reader typed it at this sheet.
-  **Duplicate** makes a second instance of the thing under the pointer: a book read at its place
-  gets a second FILE beside the first, in the file manager's counter name (`dune_1.pdf`, and a
-  duplicate of a duplicate steps rather than stacks); a book the library copied gets a second copy
-  in the store; a link duplicates as a link. Either way the duplicate is its own row — its own
+  **Duplicate** makes a second instance of the thing under the pointer: a book, whatever its
+  origin, gets a second copy in the library's own store — nothing is written beside your files —
+  and the row wears the level's counter name (a duplicate of a duplicate steps rather than
+  stacks); a link duplicates as a link. Either way the duplicate is its own row — its own
   name on the level's counter, its own resume point and highlights — filed right behind the row
   you pointed at, on every shelf the original is on. A SHELF duplicates as a shelf: a second one
   of your own holding the same books, with the whole tree inside it copied along, in the level's

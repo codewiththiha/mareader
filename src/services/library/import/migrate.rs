@@ -128,12 +128,6 @@ async fn run(state: AppState, candidates: Vec<(String, String)>) {
     }
     rekey_covers(state, &moved);
     crate::storage::persist_library(state.library);
-    // One line rather than a toast: the reader did not ask for this and nothing
-    // on the shelf changed, but a move of somebody's library is worth saying out
-    // loud once, where a reader who goes looking can find it.
-    web_sys::console::info_1(
-        &format!("[library] moved {rewritten} stored copies into their own folders").into(),
-    );
 }
 
 /// Carry each moved book's cover across to its new address.
