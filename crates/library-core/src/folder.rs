@@ -125,6 +125,93 @@ impl FolderOpts {
     pub fn admits_file(&self, ext: &str, size: u64) -> bool {
         admits(self, ext, size)
     }
+
+    /// The mode these two switches add up to. See [`FolderMode`]: the switches
+    /// are the WIRE, this is the answer every caller actually asks for.
+    pub fn mode(&self) -> FolderMode {
+        FolderMode::from_opts(self)
+    }
+}
+
+/// The three ways a folder import can hold its books, read off the two switches
+/// [`FolderOpts`] carries.
+///
+/// The pair is what a stored blob has and what a reader's older session keeps,
+/// and it stays that way — this is a computed view over it, not a fourth field
+/// to migrate. What it is NOT is an answer: "does this folder copy its books",
+/// "does it read them where they stand", "will a later scan look again" are the
+/// questions every caller actually asks, and each caller answering them from
+/// the raw pair is how ~20 sites end up disagreeing. Asked as a `match` on this
+/// enum instead, a fourth mode is a compile error at every site that has to
+/// handle it, which is the whole of what "remember to update three places"
+/// cannot give.
+///
+/// It also makes the impossible combination unrepresentable in the places that
+/// read it: `in_place = false, watch = true` is a copy that watches, and a copy
+/// does not care what the source folder does next, so that pair folds into
+/// [`FolderMode::Copy`] here rather than behaving one way in an import gate and
+/// another way in a verify pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderMode {
+    /// Copy every admitted file into the library's own store. The shelf stands
+    /// on its own afterwards: the source folder can be moved, emptied or
+    /// deleted without the library noticing.
+    Copy,
+    /// Read each book at the address it was found at, and never look again.
+    LinkInPlace,
+    /// Read each book at the address it was found at, and walk the tree again
+    /// when the app opens or regains focus.
+    LinkInPlaceWatched,
+}
+
+impl FolderMode {
+    /// The mode a pair of switches means.
+    ///
+    /// Written as a `match` over the pair rather than two nested `if`s so the
+    /// folding of the unofferable combination is visible in one place: a
+    /// watching copy is a copy, because tracking is a promise about the tree
+    /// the books are READ from.
+    pub fn from_opts(opts: &FolderOpts) -> Self {
+        match (opts.in_place, opts.watch) {
+            (false, _) => FolderMode::Copy,
+            (true, false) => FolderMode::LinkInPlace,
+            (true, true) => FolderMode::LinkInPlaceWatched,
+        }
+    }
+
+    /// Whether a run in this mode writes copies the library owns.
+    pub fn copies_files(self) -> bool {
+        matches!(self, FolderMode::Copy)
+    }
+
+    /// Whether the books a run places are read at the address they were found
+    /// at. The complement of [`FolderMode::copies_files`], spelled out because
+    /// it is the question the import, the departure and the conflict sheets
+    /// actually read.
+    pub fn reads_in_place(self) -> bool {
+        !self.copies_files()
+    }
+
+    /// Whether a later scan walks this folder's tree again.
+    ///
+    /// The ROOT's answer: it is read off [`FolderOpts::watch`], which the
+    /// tracking tree mirrors at its root rung. Which rungs are actually
+    /// tracked is the tree's own question — [`WatchedFolder::tracked`] and
+    /// [`WatchedFolder::tracks_rung`] — and a subfolder turned off under a
+    /// watched root keeps this mode while it answers `false` there.
+    pub fn tracks_new_files(self) -> bool {
+        matches!(self, FolderMode::LinkInPlaceWatched)
+    }
+
+    /// The import sheet's own words for this mode, so the control that sets it
+    /// and the sentence that describes it are one spelling.
+    pub fn label(self) -> &'static str {
+        match self {
+            FolderMode::Copy => "Copy into the library",
+            FolderMode::LinkInPlace => "Link in place",
+            FolderMode::LinkInPlaceWatched => "Link in place, watched",
+        }
+    }
 }
 
 /// One folder the library watches.
@@ -381,6 +468,14 @@ impl WatchedFolder {
     /// folders to walk, ask this rather than the flag: one rule for "is this
     /// folder watched", and a rung-level answer available to the surfaces that
     /// want one ([`WatchedFolder::tracks_rung`]).
+    /// The mode this folder was imported in: what a run on it does with the
+    /// files it finds, and whether a later one walks the tree again. The two
+    /// switches are [`FolderOpts`]'s; this is the one answer the services and
+    /// the surfaces read instead of testing them apart.
+    pub fn mode(&self) -> FolderMode {
+        self.opts.mode()
+    }
+
     pub fn tracked(&self) -> bool {
         self.tracking.tracked()
     }
@@ -1047,6 +1142,42 @@ mod tests {
         // would pass while proving nothing about the folder every surface reads.
         find_mut(&mut folders, "f2").unwrap().set_tracking("", true);
         assert!(find(&folders, "f2").is_some_and(|f| f.tracked() && f.opts.watch));
+    }
+
+    #[test]
+    fn the_two_switches_add_up_to_one_mode_and_its_questions() {
+        // The sheet offers three combinations and one of them is not
+        // offerable; the pair is still what a blob carries, so the folding has
+        // to happen where the mode is computed rather than at every reader.
+        let opts = |in_place: bool, watch: bool| FolderOpts {
+            in_place,
+            watch,
+            ..FolderOpts::default()
+        };
+        assert_eq!(opts(true, false).mode(), FolderMode::LinkInPlace);
+        assert_eq!(opts(true, true).mode(), FolderMode::LinkInPlaceWatched);
+        assert_eq!(opts(false, false).mode(), FolderMode::Copy);
+        assert_eq!(
+            opts(false, true).mode(),
+            FolderMode::Copy,
+            "a copy does not care what the source folder does next"
+        );
+        // The three questions the call sites were each answering for
+        // themselves, asked once here instead.
+        assert!(opts(false, true).mode().copies_files());
+        assert!(!opts(false, true).mode().reads_in_place());
+        assert!(opts(true, true).mode().reads_in_place());
+        assert!(!opts(true, true).mode().copies_files());
+        assert!(opts(true, true).mode().tracks_new_files());
+        assert!(!opts(true, false).mode().tracks_new_files());
+        // A folder answers with its options' mode, and the ROOT switch the
+        // flag mirrors is the one that answers for tracking.
+        let mut folder = folder("/books");
+        folder.opts.in_place = true;
+        folder.set_tracking("", true);
+        assert!(folder.opts.watch, "the root's answer is mirrored onto the flag");
+        assert_eq!(folder.mode(), FolderMode::LinkInPlaceWatched);
+        assert_eq!(folder.opts.mode(), folder.mode());
     }
 
     /// A folder with the two mode switches set explicitly, where the default

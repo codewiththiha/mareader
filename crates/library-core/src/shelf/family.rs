@@ -63,7 +63,7 @@ pub fn departs_on_move(
     };
     let Some(folder) = folders
         .iter()
-        .find(|f| &f.id == folder_id && f.opts.in_place)
+        .find(|f| &f.id == folder_id && f.mode().reads_in_place())
     else {
         return false;
     };

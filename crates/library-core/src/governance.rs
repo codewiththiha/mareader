@@ -94,7 +94,7 @@ impl<'a> Governance<'a> {
     /// into a reconciliation rather than a second tree.
     pub fn covering(&self, ground: &str) -> Option<Coverage> {
         let mut rung: Option<Coverage> = None;
-        for folder in self.folders.iter().filter(|f| f.opts.in_place) {
+        for folder in self.folders.iter().filter(|f| f.mode().reads_in_place()) {
             let Some(rel) = rel_under(ground, &folder.root) else {
                 continue;
             };
@@ -134,7 +134,7 @@ impl<'a> Governance<'a> {
     pub fn family(&self, ground: &str) -> Option<(String, String)> {
         self.folders
             .iter()
-            .filter(|f| f.opts.in_place)
+            .filter(|f| f.mode().reads_in_place())
             .filter_map(|f| {
                 rel_under(ground, &f.root)
                     .filter(|rel| !rel.is_empty())
@@ -194,7 +194,7 @@ impl<'a> Governance<'a> {
                 })?,
         };
         let folder = crate::folder::find(self.folders, folder_id)?;
-        folder.opts.in_place.then(|| Seat {
+        folder.mode().reads_in_place().then(|| Seat {
             folder_id: folder_id.to_string(),
             rung: rung.to_string(),
         })
@@ -222,7 +222,7 @@ impl<'a> Governance<'a> {
     pub fn placing_rungs(&self, fp: &Fingerprint, path: &str) -> Vec<Option<String>> {
         self.folders
             .iter()
-            .filter(|f| f.opts.in_place && f.placed.contains(fp))
+            .filter(|f| f.mode().reads_in_place() && f.placed.contains(fp))
             .map(|f| f.rungs_for(path).0.map(str::to_string))
             .collect()
     }
