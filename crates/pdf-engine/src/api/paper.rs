@@ -36,7 +36,6 @@ pub async fn sample_paper_page(page: u32) -> Result<Option<PaperFrame>, EngineEr
     resolve_frame(value, &format!("samplePaperPage({page})"))
 }
 
-/// Publish (or, with `None`, clear) `--pdf-paper`.
 pub fn set_paper(hex: Option<&str>) {
     if !guard_pdf_reader() {
         return;

@@ -28,8 +28,6 @@ pub struct GlossBox {
     pub y: f64,
     pub w: f64,
     pub h: f64,
-    /// Corner radius — animated alongside the box so the chip's pill radius
-    /// morphs into the card radius.
     pub r: f64,
 }
 

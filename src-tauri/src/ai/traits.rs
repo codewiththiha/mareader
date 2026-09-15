@@ -64,9 +64,7 @@ pub struct AiError {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type", content = "data")]
 pub enum AiChunk {
-    /// A partial or final snapshot of the WordInfo
     Snapshot(WordInfo),
-    /// The stream is complete
     Done,
     /// The run failed; carries a typed, retryable-aware error.
     Error(AiError),

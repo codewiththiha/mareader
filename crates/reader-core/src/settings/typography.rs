@@ -61,25 +61,21 @@ pub fn builtin_fonts() -> &'static [BuiltInFont] {
 /// plus the four generic stacks. The id is what settings persist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemFont {
-    // Generic stacks — "whatever the platform says", always available.
     UiSerif,
     UiSans,
     UiMono,
-    // Serif faces.
     Georgia,
     TimesNewRoman,
     Palatino,
     Garamond,
     Baskerville,
     Charter,
-    // Sans faces.
     Arial,
     Helvetica,
     Verdana,
     TrebuchetMs,
     Tahoma,
     GillSans,
-    // Monospace faces.
     CourierNew,
     Menlo,
     Consolas,
@@ -142,7 +138,6 @@ impl SystemFont {
         Self::all().iter().copied().find(|f| f.id() == id)
     }
 
-    /// What the pickers show.
     pub fn label(self) -> &'static str {
         match self {
             Self::UiSerif => "System Serif",

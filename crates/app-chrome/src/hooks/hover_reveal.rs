@@ -34,7 +34,6 @@ pub const DEFAULT_HOVER_DELAY: Duration = Duration::from_millis(400);
 /// it. `..Default::default()` covers the two optional halves.
 #[derive(Clone, Copy)]
 pub struct HoverConfig {
-    /// Pointer must be off the surface this long before it hides.
     pub delay: Duration,
     /// While true the surface never hides (an open popover, a drag).
     pub hold: Option<Signal<bool>>,

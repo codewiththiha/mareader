@@ -49,11 +49,9 @@ pub struct ZoomTransition {
     /// Visual scale the tween started from, so a retarget continues from
     /// wherever the eye currently is instead of teleporting.
     pub from: f64,
-    /// Resolved target scale.
     pub to: f64,
     /// `Date::now()` at (re)targeting; a retarget restarts the clock.
     pub start_ms: f64,
-    /// Whether the visual scale should tween; `false` lands on the first frame.
     pub animate: bool,
     /// True while this is a container [`ZoomCommand::Follow`] transaction. The
     /// distinction is load-bearing twice over: a follow's commit is HELD (the

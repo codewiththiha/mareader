@@ -29,14 +29,10 @@ pub enum Axis {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
-    /// One page at a time. Paginated.
     Single,
-    /// Two pages side by side, no gap (a "spread"). Paginated.
     Spread,
     #[default]
-    /// All pages in one vertical strip; wheel/keys scroll vertically.
     ScrollVertical,
-    /// All pages in one horizontal strip; wheel/keys scroll horizontally.
     ScrollHorizontal,
 }
 

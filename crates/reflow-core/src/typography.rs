@@ -23,14 +23,11 @@ pub use reader_core::settings::typography::{
 /// the classic book-reading faces, in availability order.
 const SERIF_STACK: &str =
     "Charter, \"Bitstream Charter\", \"Iowan Old Style\", Georgia, \"Times New Roman\", serif";
-/// The sans family's natural stack.
 const SANS_STACK: &str =
     "ui-sans, -apple-system, \"Segoe UI\", Helvetica, Arial, sans-serif";
-/// The monospace family's natural stack.
 const MONO_STACK: &str =
     "ui-mono, Menlo, Consolas, \"Liberation Mono\", \"Courier New\", monospace";
 
-/// The natural stack of a family — what a `Default` family slot resolves to.
 fn family_default_stack(family: TextFamily) -> &'static str {
     match family {
         TextFamily::Serif => SERIF_STACK,

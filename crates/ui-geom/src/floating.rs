@@ -11,7 +11,6 @@
 //! [`crate::spring`] — one shared physics keeps the gloss card and the
 //! anchored surfaces feeling identical.
 
-/// A plain 2-D size in CSS px.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Size {
     pub w: f64,
@@ -24,7 +23,6 @@ impl Size {
     }
 }
 
-/// A point in the viewport (CSS px).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Point {
     pub x: f64,
@@ -37,7 +35,6 @@ impl Point {
     }
 }
 
-/// A positioned rect.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect {
     pub x: f64,
@@ -145,11 +142,8 @@ pub enum PlacementSide {
 #[derive(Debug, Clone, Copy)]
 pub struct PlacementOptions {
     pub side: PlacementSide,
-    /// Gap between the anchor and the panel's near edge.
     pub gap: f64,
-    /// Min distance from the viewport edges.
     pub margin: f64,
-    /// The viewport the panel must stay inside.
     pub viewport: Size,
 }
 

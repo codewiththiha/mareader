@@ -35,7 +35,6 @@ impl BaseTokens {
     }
 }
 
-/// The raw palette for a base mode.
 pub fn base_tokens(mode: BaseMode) -> BaseTokens {
     match mode {
         BaseMode::Light => BaseTokens {
