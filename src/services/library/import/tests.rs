@@ -253,7 +253,7 @@ fn a_continuation_run_keeps_the_tree_s_own_root_decision() {
         "/books",
         FolderOpts::default(),
         &RootPlan {
-            continuation: Some(Continuation { shelf_id: "s1".into(), name: "Books".into() })),
+            continuation: Some(Continuation { shelf_id: "s1".into(), name: "Books".into() }),
             ..RootPlan::default()
         },
     );
@@ -273,7 +273,7 @@ fn a_continuation_run_keeps_the_tree_s_own_root_decision() {
             ..FolderOpts::default()
         },
         &RootPlan {
-            continuation: Some(Continuation { shelf_id: "s2".into(), name: "Music".into() })),
+            continuation: Some(Continuation { shelf_id: "s2".into(), name: "Music".into() }),
             ..RootPlan::default()
         },
     );
@@ -1135,7 +1135,7 @@ fn a_tree_another_run_is_walking_is_not_folded_into() {
     let (state, _owner) = displaced_state();
     let inner = state.library.folder("f2").expect("the picked folder");
     let plan = RootPlan {
-        fold: Some(Fold { tree_id: "f1".to_string(), rel: "mid/deep".to_string() })),
+        fold: Some(Fold { tree_id: "f1".to_string(), rel: "mid/deep".to_string() }),
         ..Default::default()
     };
     let _theirs = claim_root("/root", Asked::OnFocus).expect("the tree's own run");
@@ -1185,13 +1185,13 @@ fn the_sheet_opens_on_the_answers_the_folder_already_has() {
 #[test]
 fn the_shape_answer_stands_for_the_rung_the_pick_named() {
     let folded = RootPlan {
-        fold: Some(Fold { tree_id: "f1".to_string(), rel: "Fiction".to_string() })),
+        fold: Some(Fold { tree_id: "f1".to_string(), rel: "Fiction".to_string() }),
         rung: String::new(),
         ..Default::default()
     };
     assert_eq!(folded.answered_rung(), "Fiction", "a fold gives the answer its rung");
     let covered = RootPlan {
-        continuation: Some(Continuation { shelf_id: "s1".to_string(), name: "Books".to_string() })),
+        continuation: Some(Continuation { shelf_id: "s1".to_string(), name: "Books".to_string() }),
         rung: "Fiction".to_string(),
         ..Default::default()
     };
@@ -1488,7 +1488,7 @@ fn the_books_a_fold_into_a_nested_ground_come_home_to_its_rungs() {
     ]);
     let walk = vec![found_under("/root", "/root/main/dune.md", 7)];
     let plan = RootPlan {
-        fold: Some(Fold { tree_id: "f1".to_string(), rel: "main".to_string() })),
+        fold: Some(Fold { tree_id: "f1".to_string(), rel: "main".to_string() }),
         ..Default::default()
     };
     let pick = state.library.folder("f2").expect("the picked folder");
@@ -1617,7 +1617,7 @@ fn the_planned_fold_seats_the_run_s_own_shelf() {
     let (state, _owner) = displaced_state();
     let inner = state.library.folder("f2").expect("the picked folder");
     let plan = RootPlan {
-        fold: Some(Fold { tree_id: "f1".to_string(), rel: "mid/deep".to_string() })),
+        fold: Some(Fold { tree_id: "f1".to_string(), rel: "mid/deep".to_string() }),
         ..Default::default()
     };
     let folded = run_fold(state, &plan, &inner, Some("s3"), &[])

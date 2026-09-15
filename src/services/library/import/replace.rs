@@ -24,8 +24,9 @@ pub(crate) fn replace_shelf_with_folder(
     opts: FolderOpts,
     existing_id: String,
 ) {
+    let walk_root = root.clone();
     gate_root(state, &root, move || {
-        sweep_and_walk_into(state, root, opts, existing_id)
+        sweep_and_walk_into(state, walk_root, opts, existing_id)
     });
 }
 

@@ -855,7 +855,7 @@ fn land_the_walk(
             }
         }
         for (book_id, file) in pending {
-            match mint_walked_row(books, folder, &landing, book_id, file, &mut new_shelves) {
+            match mint_walked_row(books, folder, landing, book_id, file, &mut new_shelves) {
                 Minted::Placed { id, shelf } => {
                     // A file that came back is the file that left: what was kept lands with it.
                     kept::reclaim(books, file, &id);

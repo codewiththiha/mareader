@@ -176,8 +176,14 @@ fn DockCard(state: AppState, id: String) -> impl IntoView {
                     type="button"
                     title="Dismiss"
                     aria-label="Dismiss this import"
-                    on:click=move |_| {
-                        dismiss_task(state, &close_id);
+                    on:click={
+                        // The children closure this button lives in re-runs, so the
+                        // handler takes a copy it can own rather than the card's own
+                        // id — the swatch grid hands its clicks the same way.
+                        let id = close_id.clone();
+                        move |_| {
+                            dismiss_task(state, &id);
+                        }
                     }
                 >
                     <Icon name=IconName::Close size=11 />

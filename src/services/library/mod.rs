@@ -11,7 +11,7 @@ pub mod import;
 pub mod reveal;
 
 pub use arrange::{
-    CopyAnswer, CopyAsk, ReadingData, SeamSide, add_link, also_show, answer_copy, ask_relink,
+    CopyAnswer, CopyAsk, ReadingData, SeamSide, also_show, answer_copy, ask_relink,
     ask_shelf_apart, cancel_copy, cancel_relink, create_shelf_and_enter, create_shelf_here,
     file_many, memberships, move_many_to_shelf, nest_many, nest_shelf, relink_dialog,
     relink_search_folder, remove_entries, rename_row, rename_shelf, reorder_shelves_to_anchor,

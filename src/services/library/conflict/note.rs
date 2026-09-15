@@ -1,8 +1,6 @@
 //! Not a question — an answer: a folder the library already reads in place is named,
 //! and closing the note lights its shelf up.
 
-use leptos::prelude::*;
-
 use crate::state::library::{AlreadyNote, NoteKind};
 use crate::state::AppState;
 

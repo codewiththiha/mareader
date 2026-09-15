@@ -74,7 +74,7 @@ impl DropTargetRegistry {
     /// card is a DOM descendant of the level, so the pointer's deepest element reaches it
     /// first — and among targets sharing one node the reverse order still decides.
     pub fn hit_test(&self, x: f64, y: f64) -> Option<DropTargetId> {
-        let hit = web_sys::window()?.document()?.element_from_point(x, y)?;
+        let hit = web_sys::window()?.document()?.element_from_point(x as f32, y as f32)?;
         self.entries.with_untracked(|list| {
             let mut node: Option<web_sys::Element> = Some(hit);
             while let Some(el) = node {

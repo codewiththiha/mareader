@@ -17,9 +17,10 @@ use crate::state::AppState;
 /// Focus events are not rare: alt-tabbing back and forth would otherwise walk every watched folder once per flick of the switcher.
 const RESCAN_COOLDOWN_MS: u64 = 5_000;
 
-/// The cooldown is a thread-local `Cooldown` rather than a raw stamp: the rule ("five
-/// minutes of focused attention between two walks") is `library_core::id`'s to hold and
-/// test, and this file only says where the answer lives.
+// The cooldown is a thread-local `Cooldown` rather than a raw stamp: the rule ("five
+// minutes of focused attention between two walks") is `library_core::id`'s to hold and
+// test, and this file only says where the answer lives. A plain comment, not a doc
+// one: there is no item here for `///` to attach to — `thread_local!` is a macro.
 thread_local! {
     static RESCAN: RefCell<Cooldown> = RefCell::new(Cooldown::new(RESCAN_COOLDOWN_MS));
 }

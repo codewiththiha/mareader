@@ -369,7 +369,10 @@ fn a_departure_s_landing_does_not_bind_the_log_it_just_wrote() {
     assert!(filed, "and the move itself still happened");
 
     move_row(state, "b1", "shelf2", None, Departed::No);
-    assert!(bound(state), "a later gesture binds the log to the row by name");
+    assert!(
+        bound(state),
+        "a later gesture binds the log to the row by the address they share"
+    );
 }
 
 

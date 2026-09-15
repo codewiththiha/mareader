@@ -8,13 +8,18 @@
 //! spelling is shared rather than mirrored.
 
 /// The last segment of a path, either separator, no trailing empties: what a shelf shows a
-/// file by. Empty for a path that is all separator.
+/// file by. Empty for a path that is all separator, and for a bare drive root (`C:\`) —
+/// a root is all root, with no last segment to show.
 pub fn file_name(path: &str) -> String {
-    path.trim_end_matches(['/', '\\'])
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(path)
-        .to_string()
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    // A drive root only looks like a segment once the separator behind it is trimmed
+    // away: "C:" is a letter wearing its colon, not a name. The letter is checked
+    // because a colon is a legal character in a Unix name, and "ab:" is one.
+    let bytes = trimmed.as_bytes();
+    if bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        return String::new();
+    }
+    trimmed.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
 }
 
 /// The name without its extension: the title a document wears when it supplies none.

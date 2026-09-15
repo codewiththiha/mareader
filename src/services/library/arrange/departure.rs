@@ -149,19 +149,27 @@ pub(crate) fn write_moved_stones(state: AppState, book: &Book, returned_row: Opt
         .update(|folders| tombstone(folders, &entry));
 }
 
-/// The bind is by FINGERPRINT for a row that was measured, and by name only for one still
-/// wearing its pending placeholder: two books called "Dune" in one folder are two logs, and
-/// the name alone cannot say whose copy came home — the log's own fp can, and does.
+/// The bind is by ADDRESS, and the address is the one thing a copy cannot change: the log's
+/// fp is the file's and the row's is its own copy's stamp, so the fingerprints can never
+/// meet again — but the log remembers where the file stood (`last_path`) and the row
+/// remembers where its bytes came from (`origin.source()`), and two books called "Dune"
+/// in one folder left two logs from two addresses. A row with no address to name — a
+/// legacy copy — falls back to the name, and only while it is still wearing its pending
+/// placeholder.
 pub(super) fn bind_returned(state: AppState, row_id: &str, shelf_id: &str) {
     if shelf_id == ALL_SHELF {
         return;
     }
-    let Some((name, fp, measured)) = state.library.books.with_untracked(|rows| {
+    let Some((name, src, measured)) = state.library.books.with_untracked(|rows| {
         find_row(rows, row_id)
             .filter(|row| row.book().is_some_and(|b| b.origin.is_stored()))
             .map(|row| {
                 let book = row.book().expect("the filter above held");
-                (row.display_name(), book.fp, !book.fp_pending)
+                (
+                    row.display_name(),
+                    book.origin.source().map(str::to_string),
+                    !book.fp_pending,
+                )
             })
     }) else {
         return;
@@ -178,10 +186,9 @@ pub(super) fn bind_returned(state: AppState, row_id: &str, shelf_id: &str) {
             if !entry.moved {
                 return false;
             }
-            if measured {
-                entry.fp == fp
-            } else {
-                same_name(&entry.label(), &name)
+            match src.as_deref() {
+                Some(src) => src == entry.last_path,
+                None => !measured && same_name(&entry.label(), &name),
             }
         };
         if let Some(entry) = folder.ignored.iter_mut().find(|entry| is_the_one(entry)) {

@@ -26,6 +26,17 @@ use super::shelf_departure::{
 };
 use super::shelves::delete_shelf;
 
+/// The action's own wording: the count belongs to the subject, and "1 Take shelf apart" is not a
+/// sentence. `text::plural` counts because a count is what a subject is for; this one refuses
+/// the count for the same reason, and the two are not one helper.
+fn doing(count: usize, one: &str, many: &str) -> String {
+    if count == 1 {
+        one.to_string()
+    } else {
+        many.to_string()
+    }
+}
+
 /// What the reader is in the middle of, and everything the answer needs to finish it. One enum
 /// rather than a flag per door: the sheet names the action, and the answer resumes THAT gesture
 /// rather than a second one built from the same facts.
@@ -208,7 +219,7 @@ impl CopyAsk {
             });
         }
         Some(Self {
-            action: plural(names.len(), "Move shelf", "Move shelves"),
+            action: doing(names.len(), "Move shelf", "Move shelves"),
             subject,
             lines,
             options,
@@ -308,7 +319,7 @@ impl CopyAsk {
         };
         let lines = vec![kept, again];
         Some(Self {
-            action: plural(names.len(), "Remove shelf", "Remove shelves"),
+            action: doing(names.len(), "Remove shelf", "Remove shelves"),
             subject: plural(names.len(), "shelf", "shelves"),
             lines,
             options: vec![

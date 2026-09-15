@@ -51,10 +51,12 @@ impl PathCheck {
 }
 
 /// One file the library is about to act on, from the webview's side of the wire: the
-/// book's id (which becomes part of the stored name so two books with the same title
-/// cannot collide) and the address the bytes come from. One shape for both commands that
-/// take it — a copy's source and a relocation's current address are the same question,
-/// "where do the bytes stand now" — so the two sides' fail constructors are one too.
+/// address the bytes come from and the book's id (which becomes part of the stored
+/// name so two books with the same title cannot collide). One shape for both commands
+/// that take it — a copy's source and a relocation's current address are the same
+/// question, "where do the bytes stand now" — so the two sides' fail constructors are
+/// one too. The address leads and the id follows, the order both shapes it replaces
+/// already spelled, so the wire bytes of a relocation are unchanged by the unification.
 ///
 /// For a relocation, `from` is the copy's current address in the old flat store
 /// (`<root>/<format>/<stem>_<id>.<ext>`) that [`crate::store`]'s item layout
@@ -62,8 +64,8 @@ impl PathCheck {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookFileRequest {
-    pub id: String,
     pub from: String,
+    pub id: String,
 }
 
 /// What a relocation pass produced: one row per request, plus the store root the

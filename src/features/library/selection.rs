@@ -145,7 +145,13 @@ fn in_page_order(state: AppState, ids: Vec<String>) -> Vec<String> {
         .filter(|id| wanted.contains(id))
         .collect();
     let placed: HashSet<&str> = ordered.iter().map(String::as_str).collect();
-    ordered.extend(ids.into_iter().filter(|id| !placed.contains(id.as_str())));
+    // Collected before the extend on purpose: `placed` borrows `ordered`, and the
+    // borrow ends with the filter, not with the statement the filter used to share.
+    let arrivals: Vec<String> = ids
+        .into_iter()
+        .filter(|id| !placed.contains(id.as_str()))
+        .collect();
+    ordered.extend(arrivals);
     ordered
 }
 

@@ -931,7 +931,7 @@ The split is IO on one side and decisions on the other, and the wire between the
   command only removes a path that canonicalises inside the app's own store directory, and its
   relocation only moves between two such paths.
 - `library_core::wire` holds the four types that cross (`ImportProgress`, `PathCheck`,
-  `StoreRequest`, `StoreResult`). Both sides depend on `library-core`, so there is one declaration
+  `BookFileRequest`, `StoreResult`). Both sides depend on `library-core`, so there is one declaration
   and no contract test needed to prove the halves agree — which is an improvement on the AI chunk
   envelope, written twice and held together by a test.
 - `services::library::import` runs the ledger and writes the answer. One walk per root, claimed
