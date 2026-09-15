@@ -11,7 +11,7 @@ mod family;
 mod members;
 mod tree;
 
-pub use content::{content_kind, content_kind_recursive, ContentKind};
+pub use content::{badge_kind, ContentKind};
 pub use family::{departing_moves, departs_on_move, family_for};
 pub use members::{containing, forget, forget_everywhere, members_of, place, shelf_add};
 pub use tree::{

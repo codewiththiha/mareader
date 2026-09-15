@@ -13,7 +13,7 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::{Book, Row};
 use library_core::query;
-use library_core::shelf::{children_of, find, ContentKind, Shelf};
+use library_core::shelf::{children_of, find, Shelf};
 use library_core::sort;
 use library_core::view::CoverFit;
 use reader_core::format::Format;
@@ -23,6 +23,7 @@ use crate::features::library::cover_thumb::CoverThumb;
 use crate::features::library::content::{ShelfOrder, level_folders};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::entry::{EntryDescriptor, EntryShell};
+use crate::features::library::folder_badge::FolderBadge;
 use crate::features::library::folder_card::summary;
 use crate::features::library::gestures::{book_policy, folder_policy};
 use crate::features::library::link_card::LinkRow;
@@ -120,23 +121,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     });
     let name = state.library.shelf_name_signal(&id);
 
-    let content_id = id.clone();
-    let content = Signal::derive(move || {
-        state.library.shelves.with(|shelves| {
-            state.library.books.with(|rows| {
-                let direct = find(shelves, &content_id)
-                    .map(|shelf| library_core::shelf::content_kind(rows, shelf))
-                    .unwrap_or(ContentKind::Empty);
-                if direct != ContentKind::Empty {
-                    direct
-                } else {
-                    library_core::shelf::content_kind_recursive(rows, shelves, &content_id)
-                }
-            })
-        })
-    });
-    let mode_id = id.clone();
-    let mode = Signal::derive(move || state.library.shelf_mode(&mode_id));
+    let badge_id = id.clone();
     let open_id = id.clone();
     let open = Signal::derive(move || ctx.expanded.with(|set| set.contains(&open_id)));
 
@@ -236,35 +221,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                 >
                     {move || name.get()}
                 </span>
-                {move || {
-                    let kind = content.get();
-                    if kind != ContentKind::Empty {
-                        let badge = kind.badge().unwrap_or_default();
-                        let title = kind.tooltip().unwrap_or_default();
-                        let mixed = kind.is_mixed();
-                        view! {
-                            <span
-                                class="folder-mode ml-2"
-                                class=("folder-mode-mixed", mixed)
-                                title=title
-                            >
-                                {badge}
-                            </span>
-                        }
-                            .into_any()
-                    } else {
-                        mode.get()
-                            .map(|mode| {
-                                let title = if mode.copies_files() {
-                                    "Every book here is a copy the library keeps — the folder on disk can go."
-                                } else {
-                                    "These books stay in their folder on disk; the library only remembers where they are."
-                                };
-                                view! { <span class="folder-mode ml-2" title=title>{mode.badge()}</span> }
-                            })
-                            .into_any()
-                    }
-                }}
+                <FolderBadge state=state shelf_id=badge_id class="folder-mode ml-2" />
                 <Show when=move || !ctx.dense>
                     <span class="shrink-0 text-xs text-muted">
                         {move || summary((members.with(|m| m.len()), kids.get().len()))}

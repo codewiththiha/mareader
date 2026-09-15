@@ -18,6 +18,7 @@ pub mod dnd;
 pub mod empty_state;
 pub mod entry;
 pub mod facts;
+pub mod folder_badge;
 pub mod folder_card;
 pub mod gestures;
 pub mod grid;
