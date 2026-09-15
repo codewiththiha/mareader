@@ -371,7 +371,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                         </Button>
                         <Button
                             on_click=move |_| {
-                                let (Some(root), mut options) = (
+                                let (Some(root), options) = (
                                     sheet.root.get_untracked(),
                                     opts.get_untracked(),
                                 ) else {

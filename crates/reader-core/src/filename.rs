@@ -139,14 +139,14 @@ const OFFICE_AND_PRINT: [&str; 7] = ["doc", "docx", "ps", "dvi", "tex", "ppt", "
 /// to BE a known extension, and "75" is not one. A leading dot is the whole
 /// of a hidden file's name (".markdown"), not an extension on an empty stem.
 fn strip_doc_extension(s: &str) -> &str {
-    let lower = s.to_lowercase();
-    let Some(dot) = lower.rfind('.') else {
+    let Some(dot) = s.rfind('.') else {
         return s;
     };
     if dot == 0 {
         return s;
     }
-    let ext = &lower[dot + 1..];
+    let lower = s[dot + 1..].to_lowercase();
+    let ext = lower.as_str();
     let known = crate::format::extensions().any(|kind| kind == ext)
         || OFFICE_AND_PRINT.contains(&ext);
     if known {
@@ -256,6 +256,9 @@ mod tests {
             ("/books/Rust 1.75", Some("Rust 1.75")),
             ("/books/.markdown", Some(".markdown")),
             ("/books/archive.epub", Some("archive.epub")),
+            // Lowercasing can expand Unicode. The dot offset must still be
+            // measured in the original name that is sliced.
+            ("/books/İ.PDF", Some("İ")),
             ("/", None),
         ] {
             assert_eq!(file_stem_from_path(path).as_deref(), want, "path {path:?}");

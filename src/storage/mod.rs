@@ -49,6 +49,10 @@ const GLOSS_KEY: &str = "pdfreader.gloss.v2";
 /// downgraded to wrote.
 const GLOSS_V1_KEY: &str = "pdfreader.gloss.v1";
 
+/// One-shot gate for the address-to-row migration. The v1 data itself stays
+/// in place so an older build can still read it after a downgrade.
+const GLOSS_V2_MIGRATED_KEY: &str = "pdfreader.gloss.v2.migrated";
+
 /// A persistence failure (quota exceeded, storage blocked, serialization
 /// error). The UI must never crash on these — but they must not vanish.
 ///
@@ -255,6 +259,9 @@ pub fn persist_covers(library: LibraryState) {
 /// later load that finds the row again picks it up, and a removal that never
 /// comes costs one localStorage entry rather than a reader's highlights.
 pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
+    if get(GLOSS_V2_MIGRATED_KEY).is_some() {
+        return;
+    }
     let Some(raw) = get(GLOSS_V1_KEY) else {
         return;
     };
@@ -263,7 +270,6 @@ pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
         return;
     }
     let mut carried = load_gloss();
-    let mut moved = 0usize;
     for (key, marks) in old {
         if marks.is_empty() {
             continue;
@@ -292,12 +298,12 @@ pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
                 existing.push(mark);
             }
         }
-        moved += 1;
-    }
-    if moved == 0 {
-        return;
     }
     if let Err(e) = save_gloss(&carried) {
+        e.report();
+        return;
+    }
+    if let Err(e) = set(GLOSS_V2_MIGRATED_KEY, "1") {
         e.report();
     }
 }

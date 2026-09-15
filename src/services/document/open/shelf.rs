@@ -48,6 +48,9 @@ pub(crate) fn record(state: AppState, path: &str, title: Option<String>, point: 
     crate::storage::persist_library(state.library);
 
     if let Some(book) = created {
+        // An address-only open now has a row of its own. Publish that identity
+        // before the open tail derives the gloss key and loads highlights.
+        state.reader.document.book_id.set(Some(book.id.clone()));
         // The open proved this file is readable and measured nothing about it,
         // so the row it just created carries a placeholder identity. One
         // metadata read fixes that — without it a watched folder would refuse
@@ -59,5 +62,23 @@ pub(crate) fn record(state: AppState, path: &str, title: Option<String>, point: 
         // open is about to render (see `super::cover`) lands after the prune.
         prune_now(state);
         crate::storage::persist_covers(state.library);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_first_open_publishes_the_created_row_as_the_session_identity() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+
+        record(state, "/books/dune.md", Some("Dune".to_string()), ReadPoint::fresh());
+
+        let id = state.library.books.with_untracked(|rows| rows[0].id().to_string());
+        assert_eq!(state.reader.document.book_id.get_untracked().as_deref(), Some(id.as_str()));
+        assert_eq!(crate::services::document::gloss_key(state), id);
     }
 }

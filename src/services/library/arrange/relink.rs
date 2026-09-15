@@ -75,17 +75,22 @@ fn relink_book_on(state: AppState, book_id: String, path: String, on_task: Optio
             let Some(book) = find_book_mut(rows, &book_id) else {
                 return;
             };
+            book.heal(fp);
             match &mut book.origin {
                 Origin::Linked { src } => *src = path.clone(),
                 Origin::Stored { src, store: at } => {
                     *src = Some(path.clone());
                     if let Some((store, measured)) = stored.as_ref() {
                         *at = store.clone();
-                        book.adopt_measurement(*measured);
+                        // A copied file's own measurement supersedes the
+                        // picked source's fingerprint. With no measurement,
+                        // healing keeps the same fallback as before.
+                        if measured.is_some() {
+                            book.adopt_measurement(*measured);
+                        }
                     }
                 }
             }
-            book.heal(fp);
         });
         state.library.relink.dismiss();
         prune_now(state);

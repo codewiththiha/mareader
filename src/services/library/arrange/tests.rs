@@ -92,6 +92,35 @@ fn an_empty_set_leaves_the_list_alone() {
 }
 
 #[test]
+fn a_bulk_move_to_the_root_removes_each_clean_row_from_every_shelf() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    state.library.books.set(list());
+    state.library.shelves.set(vec![
+        own("from", "From", None, &["a", "b"]),
+        own("also", "Also", None, &["a", "c"]),
+    ]);
+
+    move_many_to_shelf(
+        state,
+        &owned(&["a", "b"]),
+        Some("from".to_string()),
+        ALL_SHELF.to_string(),
+        Some(4),
+    );
+
+    let shelves = state.library.shelves.get_untracked();
+    assert!(
+        shelves
+            .iter()
+            .all(|shelf| !shelf.books.iter().any(|id| id == "a" || id == "b")),
+        "a move to All uses the same everywhere-removal as a single-row move"
+    );
+    assert_eq!(ids(&state.library.books.get_untracked()), vec!["c", "d", "a", "b"]);
+}
+
+#[test]
 fn a_book_already_on_the_shelf_is_moved_not_duplicated() {
     let mut members = owned(&["a", "b", "c"]);
     place_many(&mut members, &owned(&["a"]), Some(2));

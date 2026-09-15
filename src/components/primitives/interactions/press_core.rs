@@ -53,6 +53,9 @@ pub fn arm_timer(
     after_ms: i32,
     on_fire: impl FnMut() + 'static,
 ) {
+    // A second pointerdown replaces the first hold. Clear its JS handle
+    // before dropping the closure that handle could otherwise still call.
+    clear_timer(timer);
     let Some(win) = web_sys::window() else {
         return;
     };

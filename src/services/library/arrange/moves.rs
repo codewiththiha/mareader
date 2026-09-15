@@ -68,6 +68,13 @@ fn seat_many(
         );
         let clean_ids = clean_move_ids(clean);
         if !clean_ids.is_empty() {
+            if from.is_some() {
+                state.library.shelves.update(|shelves| {
+                    for book_id in &clean_ids {
+                        shelf::forget_everywhere(shelves, book_id);
+                    }
+                });
+            }
             state
                 .library
                 .books
