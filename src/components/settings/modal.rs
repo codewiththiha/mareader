@@ -1,15 +1,20 @@
-//! Centered reader settings modal shell: the tab strip, the Escape handler and
-//! the body that hosts one tab at a time. The tabs live in `layout`, `theme`,
-//! `animations` and `fonts`, and the SET of them is not fixed — see `shown`.
+//! Centered reader settings modal: the tab strip and the body that hosts one tab
+//! at a time. The tabs live in `layout`, `theme`, `animations` and `fonts`, and
+//! the SET of them is not fixed — see `shown`.
 //!
-//! The `open` signal belongs to the page (two things open this modal: the gear
-//! button and the reader menu's item), so the page's signal is registered as
-//! [`OverlayPolicy::MODAL`] here. That is what makes opening a menu close the
-//! modal and vice versa, without either component knowing about the other —
-//! see [`lanes`](crate::components::primitives::overlay::lanes).
+//! The backdrop, the panel, the overlay lane and the Escape rule are
+//! [`ModalShell`]'s, which is what every other sheet in the app rides: one
+//! contract for how a modal opens and closes rather than one per surface, and
+//! the `role="dialog"` and `aria-label` that go with it. What is left here is
+//! this modal's own face — a strip of tabs where a sheet has a heading.
+//!
+//! The `open` signal belongs to the page (two things open this modal: the
+//! gear button and the reader menu's item), and the shell registers it, so
+//! opening a menu closes the modal and vice versa without either component
+//! knowing about the other — see
+//! [`lanes`](crate::components::primitives::overlay::lanes).
 
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
 
 use crate::components::settings::animations::AnimationsTab;
 use crate::components::settings::common::{Tab, TabButton};
@@ -18,7 +23,7 @@ use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::state::AppState;
 
 #[component]
@@ -28,8 +33,6 @@ pub fn SettingsModal(
     #[prop(default = "min(92vw, 620px)")] width: &'static str,
     #[prop(default = "min(76vh, 640px)")] height: &'static str,
 ) -> impl IntoView {
-    // Mutual exclusion with the anchored menus, on the page's signal.
-    use_overlay_lane(open, OverlayPolicy::MODAL);
     let tab = RwSignal::new(Tab::Layout);
     // The Animations tab is offered only while the master switch in the Layout
     // tab is on — an animations panel that cannot animate anything is worse
@@ -48,91 +51,66 @@ pub fn SettingsModal(
         Tab::Fonts if !fonts_on.get() => Tab::Layout,
         other => other,
     });
-    Effect::new(move |_| {
-        if !open.get() {
-            return;
-        }
-        let h = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
-            if let Ok(kev) = ev.dyn_into::<web_sys::KeyboardEvent>()
-                && kev.key() == "Escape"
-            {
-                // A dropdown (or any dismissable surface) opened inside
-                // the modal owns this press: its own handler peels it,
-                // and closing the modal underneath it in the same
-                // keydown would take both layers down at once.
-                if app_chrome::floating::dismiss::has_open_dismissable() {
-                    return;
-                }
-                open.set(false);
-            }
-        });
-        on_cleanup(move || h.remove());
-    });
     view! {
-        <Show when=move || open.get()>
-            <div
-                class="fixed inset-0 z-[var(--z-popover)] flex items-center justify-center bg-black/45 p-4"
-                on:click=move |_| open.set(false)
-            >
-                <div
-                    class="flex flex-col rounded-2xl border border-line bg-surface shadow-2xl"
-                    style=format!("width:{width};height:{height}")
-                    on:click=move |ev| ev.stop_propagation()
-                >
-                    <div class="flex shrink-0 items-center gap-1 px-4 pb-2 pt-4">
-                        <TabButton
-                            tab=tab
-                            active=shown
-                            t=Tab::Layout
-                            icon=IconName::Layout
-                            label="Layout"
-                        />
-                        <TabButton
-                            tab=tab
-                            active=shown
-                            t=Tab::Theme
-                            icon=IconName::Palette
-                            label="Theme"
-                        />
-                        <Show when=move || animations_on.get()>
+        <ModalShell open=open aria_label="Reader settings" width=width height=height>
+            {move || {
+                view! {
+                    <>
+                        <div class="flex shrink-0 items-center gap-1 px-4 pb-2 pt-4">
                             <TabButton
                                 tab=tab
                                 active=shown
-                                t=Tab::Animations
-                                icon=IconName::Motion
-                                label="Animations"
+                                t=Tab::Layout
+                                icon=IconName::Layout
+                                label="Layout"
                             />
-                        </Show>
-                        <Show when=move || fonts_on.get()>
                             <TabButton
                                 tab=tab
                                 active=shown
-                                t=Tab::Fonts
-                                icon=IconName::Type
-                                label="Fonts"
+                                t=Tab::Theme
+                                icon=IconName::Palette
+                                label="Theme"
                             />
-                        </Show>
-                        <div class="ml-auto">
-                            <IconButton
-                                icon=IconName::Close
-                                title="Close"
-                                class="rounded-full bg-line/60 hover:bg-line".to_string()
-                                on_click=move || open.set(false)
-                            />
+                            <Show when=move || animations_on.get()>
+                                <TabButton
+                                    tab=tab
+                                    active=shown
+                                    t=Tab::Animations
+                                    icon=IconName::Motion
+                                    label="Animations"
+                                />
+                            </Show>
+                            <Show when=move || fonts_on.get()>
+                                <TabButton
+                                    tab=tab
+                                    active=shown
+                                    t=Tab::Fonts
+                                    icon=IconName::Type
+                                    label="Fonts"
+                                />
+                            </Show>
+                            <div class="ml-auto">
+                                <IconButton
+                                    icon=IconName::Close
+                                    title="Close"
+                                    class="rounded-full bg-line/60 hover:bg-line".to_string()
+                                    on_click=move || open.set(false)
+                                />
+                            </div>
                         </div>
-                    </div>
-                    <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5">
-                        {move || match shown.get() {
-                            Tab::Layout => view! { <LayoutTab state=state /> }.into_any(),
-                            Tab::Theme => view! { <ThemeTab state=state /> }.into_any(),
-                            Tab::Animations => {
-                                view! { <AnimationsTab state=state /> }.into_any()
-                            }
-                            Tab::Fonts => view! { <FontsTab state=state /> }.into_any(),
-                        }}
-                    </div>
-                </div>
-            </div>
-        </Show>
+                        <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5">
+                            {move || match shown.get() {
+                                Tab::Layout => view! { <LayoutTab state=state /> }.into_any(),
+                                Tab::Theme => view! { <ThemeTab state=state /> }.into_any(),
+                                Tab::Animations => {
+                                    view! { <AnimationsTab state=state /> }.into_any()
+                                }
+                                Tab::Fonts => view! { <FontsTab state=state /> }.into_any(),
+                            }}
+                        </div>
+                    </>
+                }
+            }}
+        </ModalShell>
     }
 }

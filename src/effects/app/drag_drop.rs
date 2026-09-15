@@ -4,10 +4,12 @@
 //! carrying a document the reader can open. Two things used to fool it and
 //! are ruled out here —
 //!
-//!   * A drag that STARTED inside the window (a text selection, a page image,
-//!     a book card): both the DOM and Tauri report it as entering, and the
-//!     window's `dragstart`/`dragend` pair is what tells the two apart —
-//!     while it is open every enter is ignored.
+//!   * A drag that STARTED inside the window (a text selection, a page image):
+//!     both the DOM and Tauri report it as entering, and the window's
+//!     `dragstart`/`dragend` pair is what tells the two apart — while it is open
+//!     every enter is ignored. The library's own moves never reach it: a book
+//!     being filed rides pointer events end to end (`crate::features::library::dnd`),
+//!     so it raises no DOM `dragstart` and cannot be mistaken for a document arriving.
 //!   * A drag of something else (a PNG, a folder, a URL): the DOM drag names
 //!     its items' kinds and MIME types up front, Tauri names the paths, and
 //!     each is checked against `reader_core::format` — the one registry of
@@ -25,6 +27,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use leptos::prelude::*;
+use pdf_engine::types::DocStatus;
 use reader_core::format;
 use web_sys::Event;
 
@@ -111,10 +114,39 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
             return;
         }
         let paths = drop_paths(&ev);
+        let documents: Vec<String> = paths
+            .iter()
+            .filter(|path| format::is_supported_path(path))
+            .cloned()
+            .collect();
+        if documents.is_empty() {
+            return;
+        }
+        // On the library page a drop files the books; anywhere else it opens
+        // one. The difference is the page's, not the drag's: dropping three
+        // PDFs on a shelf means "these are mine now", and opening the first of
+        // them and losing the other two is not what anybody meant.
+        if on_library_page(state) {
+            let target = state.library.shelf.get_untracked();
+            let shelf = (target != library_core::shelf::ALL_SHELF).then_some(target);
+            crate::services::library::import_files(state, documents, shelf);
+            return;
+        }
         if let Some(path) = format::first_supported(paths.iter().map(String::as_str)) {
             crate::services::document::open_path(state, path.to_string());
         }
     });
+}
+
+/// Whether the app is looking at the library rather than at a document.
+///
+/// Read from the document status and not from the location, because the status IS
+/// the route: the app navigates to `/reader` when a document is ready and back
+/// to `/` when it is not, so anything short of ready is the library page. Asking
+/// the router instead would mean a hook with no reactive owner to belong to, from
+/// inside a Tauri listener whose closure outlives every owner the app has.
+fn on_library_page(state: AppState) -> bool {
+    state.reader.document.status.get_untracked() != DocStatus::Ready
 }
 
 /// Whether a DOM drag carries at least one FILE whose advertised type may be

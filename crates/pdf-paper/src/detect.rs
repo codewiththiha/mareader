@@ -79,7 +79,6 @@ impl PaperDetector {
         }
     }
 
-    /// Count every pixel of the buffer.
     fn feed_rgba(&mut self, rgba: &[u8]) -> usize {
         for px in rgba.as_chunks::<4>().0 {
             self.count(px[0], px[1], px[2]);

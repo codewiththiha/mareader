@@ -114,9 +114,7 @@ pub(crate) struct FitDims {
     /// Usable container height (`>= 1`); the full window height in every
     /// mode, the title bar being a hover-revealed overlay rather than a band.
     pub ch_eff: f64,
-    /// Effective page width (doubled in spread mode).
     pub pw_eff: f64,
-    /// Effective page height.
     pub ph_eff: f64,
     /// Whether the strip runs horizontally. In that mode Fit Page uses the
     /// viewport height, while Fit Width still means the width of one page.

@@ -8,7 +8,6 @@ use leptos::prelude::*;
 /// A floating selection action bar.
 #[component]
 pub fn ActionBar(
-    /// Whether the bar is visible.
     visible: Signal<bool>,
     children: ChildrenFn,
     /// Extra classes on the pill (positioning, surface name…).

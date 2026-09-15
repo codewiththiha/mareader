@@ -1,10 +1,12 @@
 //! Persist the reader's position in the current book.
 //!
 //! Watches `viewer.page` (kept in sync with scrolling in both view modes) and,
-//! while a document is open, keeps the current path's `RecentBook.page` in the
-//! library up to date, so the next open resumes where the reader left off.
-//! Persistence is debounced: a fast scroll through continuous mode is one
-//! localStorage write, not one per row.
+//! while a document is open, keeps the open book's resume point in the library
+//! up to date, so the next open resumes where the reader left off. The write is
+//! `library_core::book::record_read`'s — every row that shares the address moves,
+//! and a row that is a book of its own moves alone — through the same seam an
+//! open records through. Persistence is debounced: a fast scroll through
+//! continuous mode is one localStorage write, not one per row.
 //!
 //! Stands down for the whole of a zoom transaction: the page counter is not
 //! trustworthy while one is open — the dominant arm is standing down and a
@@ -50,12 +52,9 @@ pub fn reading_progress(state: AppState) {
             0.0
         };
         let fraction = if streaming { state.reader.stream_fraction() } else { None };
-        // A zoom transaction owns the geometry and the page counter is not
-        // trustworthy while it does: the dominant arm stands down and a held
-        // navigation has not replayed, so the page on show may be the
-        // pre-jump one. The read is TRACKED, so the effect re-runs — with the
-        // settled page — on the frame the transaction closes; nothing is lost
-        // by waiting.
+        // Stand down for the whole of a zoom transaction (see the module doc):
+        // the read is TRACKED, so the effect re-runs — with the settled page —
+        // on the frame the transaction closes, and nothing is lost by waiting.
         if zooming.get() {
             return;
         }
@@ -73,14 +72,27 @@ pub fn reading_progress(state: AppState) {
             return;
         }
 
-        // No-op write guard: only touch the library when the position
-        // actually moved, so position-tracking syncs (which can re-write an
-        // equal page) never dirty the list or trigger a save. A fraction
-        // counts as moved past half a percent — finer steps are scroll noise
-        // the debounce would coalesce anyway.
+        // No-op write guard: only touch the library when the position actually
+        // moved, so position-tracking syncs (which can re-write an equal page)
+        // never dirty the list or trigger a save. A fraction counts as moved
+        // past half a percent — finer steps are scroll noise the debounce
+        // would coalesce anyway.
+        //
+        // Which rows move is `library_core::book::rows_for_read`'s answer and
+        // not the address's: the book the reader opened by name keeps its own
+        // position when it is a book of its own, and every shared row at the
+        // address moves otherwise. Read untracked on purpose — the id is
+        // written before the path in an open, so the tracked `path` above is
+        // already the subscription that re-runs this on a new document.
+        let book_id = state.reader.document.book_id.get_untracked();
         let mut changed = false;
         state.library.books.update(|books| {
-            if let Some(b) = books.iter_mut().find(|b| b.path == path) {
+            let at = library_core::book::rows_for_read(books, book_id.as_deref(), &path);
+            for i in at {
+                let Some(b) = books.get_mut(i).and_then(library_core::book::Row::as_book_mut)
+                else {
+                    continue;
+                };
                 let page_moved = b.page != page;
                 let fraction_moved = match (b.fraction, fraction) {
                     (Some(old), Some(new)) => (new - old).abs() > 0.005,
@@ -109,7 +121,7 @@ pub fn reading_progress(state: AppState) {
         if let Some(h) = timer.get_value() {
             h.clear();
         }
-        let snapshot = state.library.books.with_untracked(|books| books.clone());
+        let snapshot = state.library.snapshot();
         let handle = set_timeout_with_handle(
             move || {
                 if let Err(e) = save_library(&snapshot) {

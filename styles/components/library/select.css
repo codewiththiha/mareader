@@ -1,0 +1,105 @@
+/* The multi-select a hold starts: what stepping back looks like, the ring that says a card is in
+   the set, and the mark that says which ones you tapped. The gesture and its tuning are the press
+   primitive's (`src/components/primitives/interactions/draggable_item.rs`); this is what the
+   gesture looks like once it has decided. */
+/* While choosing, the cards not in the set step back, and come forward again
+   under the pointer: the reader is about to tap one of them. */
+/* `.book-add` wears the book card's classes for its shape and is not a book:
+   dimming it would advertise a choice it does not offer. The tree's shelf rows
+   used to be out for the mirror-image reason — no hold added one to a set —
+   and a hold does now, so a row steps back with the rest of the level. */
+.lib-grid-selecting .book-card:not(.book-selected):not(.book-add),
+.lib-grid-selecting .folder-card:not(.folder-selected),
+.lib-list-selecting .lib-row:not(.lib-row-selected) {
+  opacity: 0.62;
+}
+.lib-grid-selecting .book-card:not(.book-selected):not(.book-add):hover,
+.lib-grid-selecting .folder-card:not(.folder-selected):hover,
+.lib-list-selecting .lib-row:not(.lib-row-selected):hover {
+  opacity: 0.95;
+}
+
+/* Membership. A ring on the art for a card, the accent inset on the folder's
+   whole cell, a tint plus a rule for a row — the row has no art to ring that
+   would not also ring its thumbnail twice. */
+.book-selected .book-cover-wrap {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 6px 16px -6px rgb(0 0 0 / 0.30);
+}
+.lib-row-selected {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+/* The mark that says which ones you have already tapped. Empty it is a ring on
+   the art; filled it is the accent with a check, so the set is legible without
+   reading the bar's count. */
+.lib-check {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid rgb(255 255 255 / 0.78);
+  border-radius: 9999px;
+  background: rgb(0 0 0 / 0.34);
+  color: transparent;
+  pointer-events: none;
+}
+/* Bottom-left rather than top-left: the top-left corner is the missing-file
+   badge's, and a book can be both missing and selected. A folder's plate has no
+   badge in either corner, but the mark goes in the same one anyway — one place
+   to look is the whole of what makes it legible. */
+.book-cover > .lib-check,
+.folder-thumb-grid > .lib-check {
+  bottom: 6px;
+  left: 6px;
+}
+.book-selected .book-cover > .lib-check,
+.folder-selected .folder-thumb-grid > .lib-check {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-paper);
+}
+/* A row's thumbnail is 2.6rem across, so the mark covers it rather than sitting
+   in a corner of it. */
+.lib-row-cover > .lib-check {
+  inset: 0;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+}
+.lib-row-selected .lib-row-cover > .lib-check {
+  color: var(--color-paper);
+}
+
+/* The bar arrives the way the gloss bar does: lifted into place, once. */
+@keyframes library-bar-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.lib-select-bar {
+  animation: library-bar-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* The shelf's right-click arrives the way the gloss's does — a short rise from the
+   cursor, once. Both nets in animations.css collapse it for a reader who asked for
+   no motion, and the keyframe ends at the resting state, so a collapsed animation
+   is a menu that is simply already there. */
+.lib-context-menu {
+  animation: library-menu-in 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes library-menu-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Off rather than shortened: the global net in animations.css would leave the
+     bar parked at its starting offset for the length of a 0.01ms animation, and
+     a bar that arrives is a bar the reader can find. */
+  .lib-select-bar {
+    animation: none;
+  }
+}

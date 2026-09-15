@@ -12,21 +12,14 @@
 //! in. Both rules live here so no component has to know the pair of paddings
 //! a spine implies.
 
-/// Page width in CSS px at scale 1: A4 at 96dpi.
 pub const PAGE_WIDTH: f64 = 794.0;
-/// Page height in CSS px at scale 1: A4 at 96dpi.
 pub const PAGE_HEIGHT: f64 = 1123.0;
 
-/// Symmetric margin around the text area, in CSS px at scale 1.
 const PAD: f64 = 72.0;
-/// Book layout: the spine-side margin.
 const GUTTER: f64 = 92.0;
-/// Book layout: the outer margin.
 const EDGE: f64 = 56.0;
 
-/// The column-width dial's floor, in percent of the natural column.
 const MIN_COLUMN_PCT: f64 = 60.0;
-/// The column-width dial's ceiling, in percent of the natural column.
 const MAX_COLUMN_PCT: f64 = 140.0;
 /// The narrowest text column any dial combination may leave: a page that
 /// cannot hold a line of body type is a page that cannot be read.
@@ -55,20 +48,15 @@ pub enum SpineSide {
 pub struct PageGeometry {
     pub width: f64,
     pub height: f64,
-    /// Block (top/bottom) padding.
     pub pad_block: f64,
-    /// Inline padding of a LEFT page (or a symmetric page): the near side.
     pub pad_inline_left: f64,
-    /// Inline padding of a LEFT page (or a symmetric page): the far side.
     pub pad_inline_right: f64,
     /// Reader margin spent INSIDE the card, on both inline sides, on top of
     /// the pads above. The shells already spend the same dial as air around
     /// the page; this is the half that widens the text block's own margins,
     /// so a reflowable page answers the dial in every mode, paginated or not.
     pub extra_inline: f64,
-    /// Width the text actually flows in.
     pub content_width: f64,
-    /// Height the paginator packs blocks into.
     pub content_height: f64,
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "pdf-reader"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -58,6 +58,11 @@ web-sys = { version = "0.3", features = [
   "DataTransferItemList",
   "ScrollToOptions",
   "ScrollBehavior",
+  # The library's reveal: taking the reader to a book means centering its card in
+  # the scroller, and `scroll_into_view` with no options cannot say "centered" or
+  # "smoothly".
+  "ScrollIntoViewOptions",
+  "ScrollLogicalPosition",
   "Storage",
   "MediaQueryList",
   "CustomEvent",
@@ -91,6 +96,17 @@ pdf-core = { path = "crates/pdf-core" }
 reflow-core = { path = "crates/reflow-core" }
 txt-core = { path = "crates/txt-core" }
 md-core = { path = "crates/md-core" }
+# The library's domain: the book and its fingerprint, shelves and watched
+# folders, the scan predicate, the rescan ledger, the sort and the persisted
+# blob. Shared with the Tauri shell, which does the IO and measures with the
+# same fingerprint this crate defines.
+library-core = { path = "crates/library-core" }
+
+[dev-dependencies]
+# The app's host tests build their books, rows and shelves with the domain
+# crate's own fixtures rather than a tenth private copy of a fifteen-field
+# literal; the feature is a dev-only gate and never reaches a release build.
+library-core = { path = "crates/library-core", features = ["test-util"] }
 
 [workspace]
 members = [
@@ -108,6 +124,7 @@ members = [
   "crates/reflow-core",
   "crates/txt-core",
   "crates/md-core",
+  "crates/library-core",
 ]
 
 [profile.release]
@@ -152,4 +169,8 @@ strip = "none"
 # Keep the app memory-safe by construction; the workspace has no unsafe
 # outside the tauri shell crate.
 [lints.rust]
+# Warnings are denied, not printed: a gate that only shows up in the log is a
+# gate that gets read past. The priority applies the group first, so the
+# individual levels below it remain deliberate overrides.
+warnings = { level = "deny", priority = -1 }
 unsafe_code = "deny"

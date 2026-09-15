@@ -5,25 +5,20 @@
 //! The struct is three groups, named for what they hold rather than for the
 //! format they came from:
 //!
-//! * the identity — path, title, author, the format, the load status;
+//! * the identity — path, the library row it is, title, author, the format,
+//!   the load status;
 //! * the outline — the chapter tree, whatever produced it;
 //! * the content — [`page_metrics::PageMetrics`] (the page sizes BOTH pipelines
 //!   publish) and [`reflow::ReflowContent`] (the blocks, heights and page cut
 //!   that only a reflowable document has).
 //!
-//! The content used to be split asymmetrically: the PDF's geometry was inlined
-//! into this struct (`page1_size`, `metrics`) while a text document lived in a
-//! parallel `ReflowContent` on `ReaderState`, so every consumer that cared about
-//! a page had to know which of the two it was reading. Grouping them as
-//! siblings fixed that — and the sibling that holds page sizes is named for
-//! what it measures rather than for the format that used to own it, because a
-//! reflowable document publishes A4 into exactly the same fields, through
-//! [`DocumentState::publish_cut`]. Each leaf stayed its own signal on
-//! purpose, rather than folding into one payload enum inside one signal, because
-//! every geometry write would then notify every reader of the document,
-//! including the ones that only wanted its title. The format is already the tag
-//! that says which half is live; a second one in the state would only be able to
-//! disagree with it.
+//! The page sizes are named for what they measure rather than for the format
+//! that used to own them, because a reflowable document publishes A4 into
+//! exactly the same fields, through [`DocumentState::publish_cut`]. Each leaf
+//! stayed its own signal on purpose: one payload enum inside one signal would
+//! notify every reader of the document on every geometry write, including the
+//! ones that only wanted its title. The format is already the tag that says
+//! which half is live; a second one in the state could only disagree with it.
 //!
 //! A field added here is reset by [`DocumentState::reset`] and by nothing else,
 //! which is the invariant that keeps a close from leaking the last book.
@@ -45,7 +40,6 @@ pub use reflow::ReflowContent;
 
 #[derive(Clone, Copy)]
 pub struct DocumentState {
-    // --- identity ------------------------------------------------------------
     pub status: RwSignal<DocStatus>,
     /// Which pipeline the open document renders through. PDF while nothing
     /// is open (the historical default), so chrome that branches on it has
@@ -53,36 +47,38 @@ pub struct DocumentState {
     pub format: RwSignal<Format>,
     pub error: RwSignal<Option<String>>,
     pub path: RwSignal<Option<String>>,
+    /// The library row the reader opened, when the open named one — a card, a
+    /// list row, the context menu's Open all carry an id, while a drop, an
+    /// "open with" and a dialog carry nothing but an address.
+    ///
+    /// The address cannot tell two rows of one file apart, and the library
+    /// can hold two. Every reader of a resume point and every writer of a
+    /// highlight asks which row this is rather than guessing from the path —
+    /// see `crate::services::document::gloss_key` and
+    /// [`library_core::book::rows_for_read`].
+    pub book_id: RwSignal<Option<String>>,
     pub title: RwSignal<Option<String>>,
     pub author: RwSignal<Option<String>>,
     /// How many pages the reader is currently navigating. Both pipelines
-    /// publish it — the PDF from the engine's answer, a reflowable document
-    /// from its page cut — because every surface that shows or clamps a page
-    /// reads this and none of them may care who counted.
+    /// publish it, because every surface that shows or clamps a page reads
+    /// this and none of them may care who counted.
     pub num_pages: RwSignal<u32>,
     /// The document's flattened chapter tree, behind a shared handle. `Arc`
     /// rather than a plain `Vec` because Leptos hands every reader its own
-    /// clone of a signal's value: a textbook outline is several hundred
-    /// `OutlineNode`s with owned `String` titles, and the panel reads the list
-    /// on every page turn (active-entry memo, reveal effect, row list) as well
-    /// as the floating label. Cloning the handle is a refcount bump; cloning
-    /// the list was several hundred allocations per notify.
+    /// clone of a signal's value, and the panel reads the list on every page
+    /// turn: cloning the handle is a refcount bump, cloning the list was
+    /// several hundred allocations per notify.
     pub outline: RwSignal<Arc<Vec<OutlineNode>>>,
     /// True while the (lazy) outline resolution is in flight — the panel
     /// shows "resolving" instead of a definitive "No outline" for a book
     /// whose chapters are merely not back yet.
     pub outline_pending: RwSignal<bool>,
-    // --- content -------------------------------------------------------------
     /// The pages, per format. Exactly one half belongs to the open document.
     pub content: DocumentContent,
 }
 
-/// The pages of the open document. Two grouped signals, not one enum: nothing
-/// needs a tag telling it which half is live (the format is already that tag,
-/// and `Format` carries the one question anyone asks — `is_reflowable`), while
-/// a payload enum inside a single signal would make every geometry write
-/// notify every reader of the document, including the ones that only wanted
-/// its title.
+/// The pages of the open document: two grouped signals, not one enum (see
+/// the module docs for why the halves stay separate signals).
 #[derive(Clone, Copy, Default)]
 pub struct DocumentContent {
     /// Page sizes at scale 1 and as laid out. Shared: a PDF fills these from
@@ -105,11 +101,11 @@ impl DocumentContent {
 /// What a reflowable re-cut tells the document: how many pages it now has,
 /// how big each one is, and which page the reader lands on.
 ///
-/// Every page of a reflowable document is the same size — A4 is the cut's one
-/// fixed point — so this carries ONE size and ONE height rather than two
-/// vectors of a repeated value, and [`DocumentState::publish_cut`] expands
-/// them. The page count is the cut's, not the reader's: a cut that changes the
-/// count must say so before anything clamps a page against it.
+/// Every page is the same size — A4 is the cut's one fixed point — so this
+/// carries ONE size and ONE height rather than two vectors of a repeated
+/// value, and [`DocumentState::publish_cut`] expands them. The page count is
+/// the cut's, not the reader's: a cut that changes the count must say so
+/// before anything clamps a page against it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReflowCut {
     /// Pages the cut produced.
@@ -130,6 +126,7 @@ impl Default for DocumentState {
             format: RwSignal::new(Format::default()),
             error: RwSignal::new(None),
             path: RwSignal::new(None),
+            book_id: RwSignal::new(None),
             title: RwSignal::new(None),
             author: RwSignal::new(None),
             num_pages: RwSignal::new(0),
@@ -149,6 +146,7 @@ impl DocumentState {
         self.format.set(Format::default());
         self.error.set(None);
         self.path.set(None);
+        self.book_id.set(None);
         self.num_pages.set(0);
         self.title.set(None);
         self.author.set(None);
@@ -157,11 +155,9 @@ impl DocumentState {
         self.content.reset();
     }
 
-    /// Height-over-width aspect of page 1 (tracked read: subscribes the
-    /// caller to `page1_size`). Every fixed-geometry surface that sizes itself
-    /// against the first sheet — the thumbnail grid's row height, the
-    /// auto-center target — goes through here, so the fallback policy lives in
-    /// exactly one place.
+    /// Height-over-width aspect of page 1 (tracked read). Every
+    /// fixed-geometry surface that sizes itself against the first sheet goes
+    /// through here, so the fallback policy lives in exactly one place.
     pub fn page1_aspect(&self) -> f64 {
         page_aspect(self.content.metrics.page1_size.get())
     }
@@ -172,21 +168,20 @@ impl DocumentState {
         page_aspect(self.content.metrics.page1_size.get_untracked())
     }
 
-    /// The document's human-facing name (tracked read: subscribes to title
-    /// and path): its usable title, else the file stem, else "No document".
-    /// The three surfaces that show the name — toolbar title, sidebar document
-    /// card, floating label — used to hand-roll this with three different
-    /// fallbacks; the policy lives here.
+    /// The document's human-facing name (tracked read): its usable title,
+    /// else the file stem, else "No document". The three surfaces that show
+    /// the name used to hand-roll this with three different fallbacks; the
+    /// policy lives here.
     pub fn display_name(&self) -> String {
         reader_core::filename::display_name(self.title.get().as_deref(), self.path.get().as_deref())
             .unwrap_or_else(|| NO_DOCUMENT.to_string())
     }
 
     /// File the engine's flattened outline entries into the reader's outline.
-    /// The conversion is the PDF pipeline's last format-specific act: from
-    /// here the panel cannot tell these chapters from the ones `md_core`
-    /// derives, and the `page_count` clamp stops an outline authored against a
-    /// re-saved file from jumping past the last sheet.
+    /// The PDF pipeline's last format-specific act: from here the panel
+    /// cannot tell these chapters from the ones `md_core` derives, and the
+    /// `page_count` clamp stops an outline authored against a re-saved file
+    /// from jumping past the last sheet.
     pub fn set_pdf_outline(&self, entries: Vec<OutlineEntry>, page_count: u32) {
         self.outline.set(Arc::new(pdf_core::outline::to_nodes(entries, page_count)));
     }
@@ -195,12 +190,10 @@ impl DocumentState {
     /// and per-page sizes, fed exactly as a PDF feeds them.
     ///
     /// The one place the two pipelines meet, and what lets the paged modes,
-    /// the zoom ladder and the progress chrome never ask which format is open.
-    /// The reflow half decides the numbers
+    /// the zoom ladder and the progress chrome never ask which format is
+    /// open. The reflow half decides the numbers
     /// ([`reflow::ReflowContent::recut`]) and the document writes them,
-    /// because they are the document's fields: a format's content describing
-    /// its own pages is a re-cut; a format's content setting the reader's page
-    /// count is one module reaching into another's state.
+    /// because they are the document's fields.
     pub fn publish_cut(&self, cut: &ReflowCut) {
         self.num_pages.set(cut.num_pages);
         self.content
@@ -219,8 +212,8 @@ pub const NO_DOCUMENT: &str = "No document";
 
 /// Height-over-width aspect of a page size, falling back to
 /// [`DEFAULT_PAGE_ASPECT`] when the size is missing or its width is not
-/// positive (a zero-width sheet has no meaningful aspect, and dividing by it
-/// would poison every height derived from it).
+/// positive — dividing by a zero-width sheet would poison every height
+/// derived from it.
 pub(crate) fn page_aspect(size: Option<PageSize>) -> f64 {
     match size {
         Some(s) if s.width > 0.0 => s.height / s.width,
@@ -252,10 +245,10 @@ mod tests {
 
     #[test]
     fn a_reset_releases_both_halves() {
-        // The invariant the module note promises: one reset, both pipelines, so
-        // a close cannot leave the previous book's page sizes behind while the
-        // next document's pages are already being measured.
+        // One reset, both pipelines: a close cannot leave the previous
+        // book's page sizes behind while the next document is measured.
         let state = DocumentState::default();
+        state.book_id.set(Some("b1".to_string()));
         state.content.metrics.css_heights.set(vec![792.0]);
         state.content.reflow.heights.set(Arc::new(vec![40.0]));
         state.num_pages.set(3);
@@ -263,6 +256,11 @@ mod tests {
         assert!(state.content.metrics.css_heights.get_untracked().is_empty());
         assert!(state.content.reflow.heights.get_untracked().is_empty());
         assert_eq!(state.num_pages.get_untracked(), 0);
+        assert_eq!(
+            state.book_id.get_untracked(),
+            None,
+            "a close cannot leave the last book's row named"
+        );
         assert!(state.content.metrics.page1_size.get_untracked().is_none());
     }
 }

@@ -3,6 +3,7 @@
 
 pub mod ai;
 pub mod document;
+pub mod library;
 pub mod tauri_listen;
 pub mod window;
 

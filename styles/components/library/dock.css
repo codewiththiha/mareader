@@ -1,0 +1,163 @@
+/* The import dock. Bottom-left, clear of the shelf's centre and of the app's one toast slot
+   (`.toast-anchor`, in styles/components/shell.css): an import is not a message, but a thing the
+   reader started and may want to glance at while doing something else. */
+.import-dock {
+  position: fixed;
+  bottom: 1rem;
+  left: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.import-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 20rem;
+  padding: 0.55rem 0.7rem;
+  box-shadow: var(--shadow-float);
+  animation: import-card-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes import-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.import-ring-wrap {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+}
+.import-ring {
+  display: block;
+  /* Start the arc at twelve o'clock; the dash offset below counts from there. */
+  transform: rotate(-90deg);
+}
+.import-ring-track,
+.import-ring-fill {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.import-ring-track {
+  stroke: var(--color-line);
+}
+.import-ring-fill {
+  stroke: var(--color-accent);
+  /* 2 * pi * r(15). The Rust side writes --ring-offset from the same number
+     (`CIRCUMFERENCE` in src/features/library/progress_dock.rs); the two have to
+     agree or the ring stops short of full at 100%. */
+  stroke-dasharray: 94.248;
+  stroke-dashoffset: var(--ring-offset, 94.248);
+  transition: stroke-dashoffset 120ms linear;
+}
+/* A scan has no total, so there is no fraction to draw: the ring shows a fixed
+   quarter turn and spins. Both reduced-motion nets kill the animation globally
+   (styles/components/animations.css), and a frozen quarter arc still reads as
+   "working" because the label beside it says so in words. */
+.import-ring-spin {
+  animation: import-ring-spin 1s linear infinite;
+}
+.import-ring-spin .import-ring-fill {
+  stroke-dashoffset: 70.7;
+  transition: none;
+}
+@keyframes import-ring-spin {
+  from {
+    transform: rotate(-90deg);
+  }
+  to {
+    transform: rotate(270deg);
+  }
+}
+.import-ring-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent);
+}
+.import-ring-percent {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+/* The card's dismiss, on the shared ghost (shared.css): a size and a hover is all its own. */
+.import-card-close {
+  width: 20px;
+  height: 20px;
+}
+.import-card:hover .import-card-close,
+.import-card-close:focus-visible {
+  opacity: 1;
+}
+.import-card-close:hover {
+  border-color: var(--color-line);
+  background: var(--color-line);
+  color: var(--color-ink);
+}
+
+/* Where a folder's books live: "Copied" for books in the library's own store, "On disk" for
+   books read where they sit, and "Mixed" when both live on the same shelf. It shares a row with
+   the watched dot, and it is the quietest thing on the plate on purpose — it is true of nearly
+   every card. */
+.folder-mode {
+  padding: 1px 6px;
+  border: 1px solid var(--color-line);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-paper) 84%, transparent);
+  color: var(--color-muted);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Mixed content: on-disk and stored books on the same shelf. Slightly louder than the
+   single-kind badges so the reader notices the shelf holds two kinds. */
+.folder-mode-mixed {
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-line));
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-paper) 88%);
+  color: color-mix(in srgb, var(--color-ink) 80%, var(--color-muted));
+}
+
+/* A watched folder's dot. It breathes rather than blinks: the badge is chrome the reader is not
+   looking at directly, and a hard blink in the periphery is the one motion nobody asks for. */
+.folder-watched {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--color-line);
+  border-radius: 9999px;
+  background: var(--color-accent);
+  animation: folder-watch-breathe 2.4s ease-in-out infinite;
+}
+@keyframes folder-watch-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A run that could not finish wears the app's failure colour on its ring, so the card reads as an
+   answer rather than as a progress bar that stopped early. Tailwind's red-400 token, the same one
+   `ToastTone::Error` wears, so a failure is one colour everywhere. */
+.import-card-failed .import-ring-fill {
+  stroke: var(--color-red-400);
+}
+.import-card-failed .import-ring-value {
+  color: var(--color-red-400);
+}

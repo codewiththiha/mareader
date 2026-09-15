@@ -10,11 +10,8 @@
 /// One chapter of the open document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutlineNode {
-    /// The chapter's own title, as the document spells it.
     pub title: String,
-    /// The 1-based page the chapter starts on.
     pub page: u32,
-    /// Nesting level, 0 for a top-level chapter.
     pub depth: u32,
 }
 

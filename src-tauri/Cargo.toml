@@ -1,6 +1,6 @@
 [package]
 name = "pdf"
-version = "0.7.0"
+version = "0.8.0"
 description = "A desktop PDF reader built for long-form reading."
 authors = ["codewiththiha"]
 edition = "2024"
@@ -23,6 +23,12 @@ tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The library's domain: the fingerprint a folder walk produces, the size
+# threshold and format set a scan filters by, and the FNV-1a head hash both
+# sides of the wire have to agree on. The shell does the IO and the frontend
+# does the deciding, but the MEASUREMENTS have to be one definition or a book
+# imported on Monday is a different book to the rescan on Tuesday.
+library-core = { path = "../crates/library-core" }
 dotenvy = "0.15"      # Loads the .env file (FM_BRIDGE_BIN) before Tauri boots
 futures = "0.3"       # Handles fm-bridge's async streams
 async-stream = "0.3"  # Wraps the AI output chunks into a stream
@@ -66,3 +72,9 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 # Activates the Apple Intelligence provider on Apple Silicon Macs.
 ai = ["dep:fm-bridge"]
+
+[lints.rust]
+# Warnings are denied, not printed: a gate that only shows up in the log is a
+# gate that gets read past. The priority applies the group first, so the
+# individual levels below it remain deliberate overrides.
+warnings = { level = "deny", priority = -1 }

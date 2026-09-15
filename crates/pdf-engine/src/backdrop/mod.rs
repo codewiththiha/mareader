@@ -117,10 +117,6 @@ pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: imp
     }
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
 /// The reader's paper settings changed (or are being restated on mount).
 ///
 /// `blend_on` gates the engine-side frame stash: while it is off, live
@@ -227,10 +223,6 @@ pub fn position(pos: f64) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Feeding & publishing
-// ---------------------------------------------------------------------------
-
 /// Feed one raw frame (live stash or offscreen sample) into the session.
 fn feed_frame(frame: &api::PaperFrame) {
     let changed = with(|s| feed_state(s, frame));
@@ -315,12 +307,9 @@ pub(super) fn publish() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests: the state machine runs on the host (bridge calls are guarded, so
-// only the in-Rust transitions are exercised — the colour math itself is
-// the pdf-paper crate's own test surface).
-// ---------------------------------------------------------------------------
-
+// The state machine runs on the host: bridge calls are guarded, so only the
+// in-Rust transitions are exercised — the colour math itself is the
+// pdf-paper crate's own test surface.
 #[cfg(test)]
 mod tests {
     use super::*;

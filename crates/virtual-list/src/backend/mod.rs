@@ -11,10 +11,10 @@ use crate::window::{Budget, Window};
 
 /// The primitive column geometry every backend provides, in sub-pixels.
 pub trait StripBackend {
-    /// Number of items.
+    /// How many items the backend holds.
     fn len(&self) -> usize;
 
-    /// Whether there are no items.
+    /// Whether the backend holds none; the default is `len() == 0`.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }

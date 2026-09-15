@@ -32,9 +32,8 @@ pub(super) fn panel_is_shown(panel: SidebarMode, mode: SidebarMode, collapsing: 
     mode == panel || (mode == SidebarMode::None && collapsing && last == panel)
 }
 
-/// Final mount gate for thumbnail cells. Even if the panel state would
-/// normally preserve cells through an outro, there is nothing to preserve
-/// when a close arrives before the opening delay created any cells.
+/// Final mount gate for thumbnail cells: an outro state alone never creates
+/// cells — only the open transition mounts them.
 pub(super) fn thumbnail_cells_are_live(
     cells_mounted: bool,
     mode: SidebarMode,
@@ -115,8 +114,8 @@ mod tests {
 
     #[test]
     fn thumbnail_cells_require_a_real_mount() {
-        // The helper remains defensive: an outro state alone never creates
-        // cells; the open transition is what mounts them.
+        // An outro state alone never creates cells; the open transition is
+        // what mounts them.
         assert!(!thumbnail_cells_are_live(
             false,
             SidebarMode::None,

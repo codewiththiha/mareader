@@ -207,7 +207,6 @@ pub fn PdfPageCanvas(
     // render target; `zoom_animating` suspends renders mid-gesture. All three
     // are explicit props so the component has no hidden ambient dependency.
 
-    // --- Stretch effect ------------------------------------------------------
     // Follows `display_scale`. Pure CSS: resize the host so the EXISTING bitmap
     // scales with the layout, and mask the moment a render is going to wipe it.
     // Never renders — that is the whole point of the split.
@@ -227,7 +226,6 @@ pub fn PdfPageCanvas(
         stretch_host(&hid_stretch, &cid_stretch, lw, lh, ls, s, false);
     });
 
-    // --- Render effect -------------------------------------------------------
     Effect::new(move || {
         // Read every dependency unconditionally: a Leptos effect only
         // subscribes to what it READS during a run, so a conditional read would

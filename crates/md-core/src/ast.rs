@@ -24,7 +24,6 @@ enum MarkdownConstruct {
     List,
     /// A GFM pipe table.
     Table,
-    /// A block quote.
     Quote,
     /// A thematic break (`---`, `***`, `___`).
     Rule,

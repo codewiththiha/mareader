@@ -11,7 +11,6 @@
 //! [`crate::spring`] — one shared physics keeps the gloss card and the
 //! anchored surfaces feeling identical.
 
-/// A plain 2-D size in CSS px.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Size {
     pub w: f64,
@@ -24,7 +23,6 @@ impl Size {
     }
 }
 
-/// A point in the viewport (CSS px).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Point {
     pub x: f64,
@@ -37,7 +35,6 @@ impl Point {
     }
 }
 
-/// A positioned rect.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect {
     pub x: f64,
@@ -62,7 +59,6 @@ impl Rect {
     pub fn left(self) -> f64 {
         self.x
     }
-    /// Vertical center of the rect.
     fn center_y(self) -> f64 {
         self.y + self.h * 0.5
     }
@@ -88,13 +84,9 @@ pub struct FloatBox {
 }
 
 impl FloatBox {
-    /// One explicit-Euler spring step over all five fields. Returns
-    /// `(next_box, next_velocity)`. dt is clamped by the caller so long
-    /// frames never blow the integrator past its stability bound.
-    ///
-    /// The step itself is `crate::spring::spring_axis` — the same
-    /// integrator the gloss card steps — so the floating panels and the word
-    /// card cannot drift out of tune.
+    /// One explicit-Euler spring step over all five fields, via
+    /// [`crate::spring::spring_axis`]; returns `(next_box, next_velocity)`.
+    /// The caller clamps `dt` to [`crate::spring::MAX_FRAME_S`].
     pub fn step(&self, vel: &FloatBox, target: &FloatBox, dt: f64) -> (FloatBox, FloatBox) {
         let (x, vx) = crate::spring::spring_axis(self.x, vel.x, target.x, dt);
         let (y, vy) = crate::spring::spring_axis(self.y, vel.y, target.y, dt);
@@ -150,11 +142,8 @@ pub enum PlacementSide {
 #[derive(Debug, Clone, Copy)]
 pub struct PlacementOptions {
     pub side: PlacementSide,
-    /// Gap between the anchor and the panel's near edge.
     pub gap: f64,
-    /// Min distance from the viewport edges.
     pub margin: f64,
-    /// The viewport the panel must stay inside.
     pub viewport: Size,
 }
 
@@ -175,7 +164,6 @@ fn clamp_axis(pos: f64, extent: f64, size: f64, margin: f64) -> f64 {
     pos.clamp(margin, (extent - size - margin).max(margin))
 }
 
-/// Clamp `p` so a box of `size` stays inside `viewport` with `margin`.
 pub fn clamp_point_to_viewport(p: Point, size: Size, viewport: Size, margin: f64) -> Point {
     Point {
         x: clamp_axis(p.x, viewport.w, size.w, margin),

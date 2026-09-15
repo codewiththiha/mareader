@@ -24,7 +24,6 @@ use serde::{Deserialize, Serialize};
 pub struct OutlineEntry {
     pub title: String,
     pub page: u32,
-    /// Nesting depth in the source tree, 0 for a top-level chapter.
     #[serde(default)]
     pub depth: u32,
 }

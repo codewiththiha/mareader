@@ -21,12 +21,10 @@ pub struct SelectionRect {
 /// PDF's event — which carries neither — deserializes unchanged.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SelectionDetail {
-    /// The exact text the user highlighted.
     pub text: String,
     /// Surrounding sentence (~120 chars from the same layer of the document) so
     /// the model can disambiguate the word.
     pub context: String,
-    /// Tight bounding box around the selection (the "warp window").
     pub rect: SelectionRect,
     /// Which format family painted the host the selection is in
     /// (`"pdf"` / `"reflow"`), or `None` when it is in neither.

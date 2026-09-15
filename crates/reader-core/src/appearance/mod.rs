@@ -15,7 +15,7 @@
 //! other, and nothing outside this tree knows which of them a page went
 //! through.
 
-pub mod base;
+pub(crate) mod base;
 mod model;
 pub mod presets;
 pub(crate) mod preview;

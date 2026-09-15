@@ -53,7 +53,7 @@ pub struct GridSpec {
 }
 
 impl GridSpec {
-    /// Fixed column count.
+    /// A spec of exactly `columns` columns.
     pub const fn fixed(columns: usize, gap_cross: f64) -> Self {
         Self {
             columns: GridColumns::Fixed(columns),
@@ -61,7 +61,8 @@ impl GridSpec {
         }
     }
 
-    /// Responsive column count from a minimum column width.
+    /// A spec that fits as many columns of at least `min_width` as the
+    /// cross extent allows.
     pub const fn responsive(min_width: f64, gap_cross: f64) -> Self {
         Self {
             columns: GridColumns::Responsive { min_width },

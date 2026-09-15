@@ -13,7 +13,7 @@ use crate::engine::{CoreConfig, VirtualizerCore, build_layout};
 use crate::options::VirtualizerOptions;
 use crate::virtualizer::{Virtualizer, VirtualizerInner};
 
-/// Create a virtualizer. Must be called inside a reactive owner.
+/// Must be called inside a reactive owner.
 pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     let count0 = options.count.get_untracked();
     let config = CoreConfig {

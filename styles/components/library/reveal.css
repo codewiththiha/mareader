@@ -1,0 +1,118 @@
+/* The reveal: a card the reader was taken to. The ring is a STATIC property of the class and the
+   pulse is the animation, so the reduced-motion nets take the movement and leave the mark. */
+.book-reveal .book-cover-wrap {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent),
+    0 8px 18px -8px rgb(0 0 0 / 0.45);
+  animation: book-reveal-pulse 1.6s ease-out both;
+}
+@keyframes book-reveal-pulse {
+  from {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 16px color-mix(in srgb, var(--color-accent) 40%, transparent),
+      0 8px 18px -8px rgb(0 0 0 / 0.45);
+  }
+  to {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent),
+      0 8px 18px -8px rgb(0 0 0 / 0.45);
+  }
+}
+.row-reveal {
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+/* The folder half of the reveal: a folder link lights the folder itself —
+   the same accent ring and the same one-shot pulse a book's cover wears, on
+   the whole card, because a folder has no cover frame of its own. The list
+   density needs no rule of its own: its folder row wears `row-reveal`. */
+.folder-reveal {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  animation: folder-reveal-pulse 1.6s ease-out both;
+}
+@keyframes folder-reveal-pulse {
+  from {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 16px color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  to {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+}
+
+/* The sheets' cover thumbnail — the remove receipt and the conflict sheet both
+   wear it: the book being talked about, at a size that fits a receipt line
+   rather than a shelf. */
+.remove-cover {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: 40px;
+  aspect-ratio: 210 / 297;
+  overflow: hidden;
+  border-radius: 2px 5px 5px 2px;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--color-accent) 22%, var(--color-paper)),
+    var(--color-paper) 74%
+  );
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.22);
+}
+.remove-cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The list's add row: the grid's add card in the shape of a row. Same dashed
+   intent and the same accent on hover, so the two layouts read as one library at
+   two densities rather than as two features. */
+.lib-add-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px dashed transparent;
+  background: transparent;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.lib-add-row:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  color: var(--color-accent);
+}
+.lib-add-row:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* Multi-select (the hold): the gesture and its tuning are the ones the gloss mark layer uses. The change is a static paint, not a transition — the feedback has to arrive on the frame the finger does. */
+.book-pressing .book-cover-wrap {
+  transform: scale(0.96);
+}
+.lib-row-pressing {
+  opacity: 0.82;
+}
+
+/* What a drag is holding. Every card in the payload fades and not only the one the press began on,
+   because the set the reader picked up has to stay readable as a set. The class comes off on the
+   release, the cancellation and Escape alike, since all three end the one session. */
+.book-dragging,
+.lib-row-dragging,
+.folder-dragging {
+  opacity: 0.45;
+}

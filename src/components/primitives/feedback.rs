@@ -41,11 +41,6 @@ pub fn CenteredLoader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoVie
     }
 }
 
-// ---------------------------------------------------------------------------
-// Shimmer
-// ---------------------------------------------------------------------------
-
-
 
 /// Placeholder shimmer lines shown while content is loading.
 #[component]

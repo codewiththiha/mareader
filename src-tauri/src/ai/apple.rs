@@ -81,15 +81,15 @@ fn map_err(e: BridgeError) -> AiError {
 /// content, so a chunk that echoes an empty array never wipes the synonyms
 /// that arrived earlier.
 fn merge_partial(acc: &mut WordInfo, val: &serde_json::Value) {
-    if let Some(s) = val.get("pos").and_then(|v| v.as_str()) {
-        if !s.trim().is_empty() {
-            acc.pos = s.to_string();
-        }
+    if let Some(s) = val.get("pos").and_then(|v| v.as_str())
+        && !s.trim().is_empty()
+    {
+        acc.pos = s.to_string();
     }
-    if let Some(s) = val.get("meaning").and_then(|v| v.as_str()) {
-        if !s.trim().is_empty() {
-            acc.meaning = s.to_string();
-        }
+    if let Some(s) = val.get("meaning").and_then(|v| v.as_str())
+        && !s.trim().is_empty()
+    {
+        acc.meaning = s.to_string();
     }
     if let Some(a) = val.get("synonyms").and_then(|v| v.as_array()) {
         let items: Vec<String> = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();
@@ -133,7 +133,7 @@ impl AiProvider for AppleAiProvider {
             .system(WORD_INFO_SYSTEM_PROMPT)
             .user(&prompt)
             .schema(schema)
-            .stream_structured(true); // Enable streaming of JSON snapshots
+            .stream_structured(true);
 
         Box::pin(stream! {
             let mut stream = Box::pin(bridge.stream(request));
@@ -176,7 +176,7 @@ impl AiProvider for AppleAiProvider {
                         yield AiChunk::Error(map_err(e));
                         break;
                     }
-                    _ => {} // Ignore other events
+                    _ => {}
                 }
             }
         })

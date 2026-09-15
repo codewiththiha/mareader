@@ -47,8 +47,6 @@ pub(crate) enum Gate {
     StandDown,
 }
 
-/// The gate for a transaction that may be open.
-///
 /// Keying this off "is a zoom in flight" alone would be just as wrong as ignoring
 /// it: the first frame of a slide opens the transaction, so every later frame
 /// would bail out and the smooth slide would become a jump at the end.

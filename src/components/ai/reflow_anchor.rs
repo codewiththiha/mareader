@@ -201,21 +201,21 @@ fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sy
     // somewhere unexpected (a page mid-remount) from answering for a block the
     // reader is not looking at.
     let hostless = mode == ViewMode::ScrollVertical && state.reflowable_untracked();
-    if !hostless {
-        if let Some(page) = page_of_block(state.document.content.reflow, block) {
-            // One lookup, not two: ask the row whether the host it is mounted
-            // under is the one this mode puts its page in. A row that is mounted
-            // somewhere else — a page mid-remount, a stale twin — answers `None`
-            // and the mark hides, which is what a scoped `querySelector` on the
-            // host used to say, without first fetching the host to search it.
-            let scoped = format!("#{}", host_id_for_mode(mode, page));
-            if let Some(row) = app_chrome::hooks::dom::by_id(&id) {
-                if row.closest(&scoped).ok().flatten().is_some() {
-                    return Some(row);
-                }
-            }
-            return None;
+    if !hostless
+        && let Some(page) = page_of_block(state.document.content.reflow, block)
+    {
+        // One lookup, not two: ask the row whether the host it is mounted
+        // under is the one this mode puts its page in. A row that is mounted
+        // somewhere else — a page mid-remount, a stale twin — answers `None`
+        // and the mark hides, which is what a scoped `querySelector` on the
+        // host used to say, without first fetching the host to search it.
+        let scoped = format!("#{}", host_id_for_mode(mode, page));
+        if let Some(row) = app_chrome::hooks::dom::by_id(&id)
+            && row.closest(&scoped).ok().flatten().is_some()
+        {
+            return Some(row);
         }
+        return None;
     }
     app_chrome::hooks::dom::by_id(&id)
 }
@@ -288,17 +288,17 @@ pub fn spot_screen_box_in(
     // page host, a row's own box does not bound its text, and only a handful
     // of hosts are mounted at a time — nothing to win and a wrong `None` to
     // lose.
-    if mode == ViewMode::ScrollVertical {
-        if let Some(document) = web_sys::window().and_then(|w| w.document()) {
-            let viewport = document
-                .document_element()
-                .map_or(0.0, |root| root.client_height() as f64);
-            if viewport > 0.0 {
-                let slack = viewport * OFFSCREEN_SLACK;
-                let rect = el.get_bounding_client_rect();
-                if rect.height() == 0.0 || rect.bottom() < -slack || rect.top() > viewport + slack {
-                    return None;
-                }
+    if mode == ViewMode::ScrollVertical
+        && let Some(document) = web_sys::window().and_then(|w| w.document())
+    {
+        let viewport = document
+            .document_element()
+            .map_or(0.0, |root| root.client_height() as f64);
+        if viewport > 0.0 {
+            let slack = viewport * OFFSCREEN_SLACK;
+            let rect = el.get_bounding_client_rect();
+            if rect.height() == 0.0 || rect.bottom() < -slack || rect.top() > viewport + slack {
+                return None;
             }
         }
     }

@@ -5,7 +5,6 @@
 // `closest` that returns null — a selection stops producing an "Explain"
 // pill, or a canvas stops finding its host — and the only symptom is a
 // reader that quietly does nothing.
-//
 // The app's half is `src/dom_contract.rs`. Two attribute NAMES
 // (`data-host-page`, `data-ai-popover`) cannot live there — a Leptos view
 // takes an attribute's name from the markup, only its value from an
@@ -13,8 +12,6 @@
 // out of the Rust source, as it reads the id shapes out of the builders'
 // format! strings. `tools/check-dom-contract.ts` fails CI when the halves
 // disagree. Nothing outside this file should spell any of these names.
-
-// --- attributes every reader host carries ---------------------------------
 
 /** Names the format family that painted a host: `pdf` or `reflow`. */
 export const HOST_ATTR = "data-reader-host";
@@ -28,8 +25,6 @@ export const BLOCK_INDEX_ATTR = "data-block-index";
 /** On the AI pill's root: a press here is not a click that clears a selection. */
 export const AI_POPOVER_ATTR = "data-ai-popover";
 
-// --- values `HOST_ATTR` carries -------------------------------------------
-
 /**
  * The engine only ever branches on `reflow`: a PDF host is the path it has
  * always taken, and the app decides what to do with a `host` value it does
@@ -39,15 +34,12 @@ export const AI_POPOVER_ATTR = "data-ai-popover";
  */
 export const HOST_REFLOW = "reflow";
 
-// --- class names both sides look up ---------------------------------------
-
 /** The text layer inside a PDF host: the app builds it, the engine fills it. */
 export const TEXT_LAYER_CLASS = "textLayer";
 
 /** The still-bitmap overlay a zoom stretches while a re-render is on its way. */
 export const PAGE_SNAPSHOT_CLASS = "page-snapshot";
 
-// --- element id shapes ----------------------------------------------------
 // `components/viewer/page_host.rs` builds these. Three of the four prefixes
 // number their pages from 1; the continuous strip indexes its window from 0,
 // and so do its ids — the one asymmetry a caller has to know.
@@ -64,8 +56,6 @@ export const CANVAS_ID_SUFFIX = "-cv";
 /** Suffix of the wrapper row around one page of a vertical strip. */
 export const STREAM_WRAP_SUFFIX = "-wrap";
 
-// --- derived selectors ----------------------------------------------------
-
 export const HOST_SELECTOR = `[${HOST_ATTR}]`;
 export const BLOCK_ROW_SELECTOR = `[${BLOCK_INDEX_ATTR}]`;
 export const AI_POPOVER_SELECTOR = `[${AI_POPOVER_ATTR}]`;
@@ -74,8 +64,6 @@ export const PAGE_SNAPSHOT_SELECTOR = `.${PAGE_SNAPSHOT_CLASS}`;
 /** A selection in the gap between two pages of the strip lands on a wrapper. */
 export const STREAM_WRAP_SELECTOR = `[id^='${ID_PREFIX_STREAM}-'][id$='${STREAM_WRAP_SUFFIX}']`;
 
-// --- id parsing -----------------------------------------------------------
-//
 // Compiled once, not per call: `pageFromCanvasId` runs on the fallback path of
 // every unmounted-id resolution, which on a fast scroll is per row.
 

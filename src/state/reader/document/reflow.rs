@@ -273,10 +273,12 @@ mod tests {
 
     #[test]
     fn the_estimate_metrics_carry_the_settings_through() {
-        let mut s = TextSettings::default();
-        s.font_size = 20.0;
-        s.line_height = 1.5;
-        s.paragraph_margin = 0.5;
+        let s = TextSettings {
+            font_size: 20.0,
+            line_height: 1.5,
+            paragraph_margin: 0.5,
+            ..Default::default()
+        };
         let geo = reflow_core::geometry(false);
         let m = estimate_metrics(&s, &geo);
         assert_eq!(m.font_size, 20.0);

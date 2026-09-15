@@ -53,11 +53,8 @@ use crate::state::ReaderState;
 /// ask for a page in a mode it is not in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageSlot {
-    /// The single-page view's one page.
     Single,
-    /// The spread's left-hand page.
     SpreadLeft,
-    /// The spread's right-hand page.
     SpreadRight,
 }
 
@@ -128,7 +125,6 @@ pub(crate) fn host_id_for_axis(axis: Axis, page: u32) -> String {
     )
 }
 
-/// The canvas id of a strip page, by axis.
 pub(crate) fn canvas_id_for_axis(axis: Axis, page: u32) -> String {
     canvas_id_for_mode(
         match axis {

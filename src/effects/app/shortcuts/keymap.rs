@@ -81,7 +81,6 @@ impl NavOutcome {
     }
 }
 
-/// The keymap.
 pub(super) fn resolve(k: NavKey<'_>) -> NavOutcome {
     match k.key {
         // Left/right: a page turn everywhere except the horizontal strip,

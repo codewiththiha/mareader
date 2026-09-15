@@ -6,8 +6,7 @@
 //! * Escape / outside-press dismissal comes from [`dismiss`](app_chrome::floating::dismiss);
 //! * the open/close transition is reported through `on_open_change` rather
 //!   than the popover reaching into app chrome itself (the app-shell
-//!   `MenuPopover` in `crate::components::shell::titlebar::toolbar_popover` owns
-//!   the titlebar-hold behaviour).
+//!   `MenuPopover` owns the titlebar-hold behaviour).
 //!
 //! Width is a prop so each menu can size itself. `position: fixed` escapes
 //! the sidebar's `overflow-hidden`; the optional `coordinate_space` id
@@ -18,9 +17,11 @@ use leptos::children::ChildrenFn;
 use leptos::html;
 use leptos::prelude::*;
 
+use wasm_bindgen::JsCast;
+
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
-use app_chrome::floating::position::{place_at_anchor, placement_options};
-use app_chrome::floating::types::{PlacementSide, Size, node_within_any};
+use app_chrome::floating::position::{panel_size, place_at_anchor, viewport};
+use app_chrome::floating::types::{PlacementOptions, PlacementSide, node_within_any};
 use app_chrome::hooks::use_window_event::use_window_event;
 
 #[component]
@@ -28,9 +29,12 @@ pub fn Popover(
     open: RwSignal<bool>,
     /// NodeRef of the trigger wrapper the panel anchors to.
     anchor: NodeRef<html::Div>,
-    /// Desired panel width in CSS px (custom per menu).
-    #[prop(default = 256)]
-    width: u32,
+    /// Desired panel width in CSS px (custom per menu). Reactive because one
+    /// panel measures itself: the breadcrumb's folded chain takes its width
+    /// from an invisible ruler inside the panel, and the measurement lands a
+    /// frame after the open — the panel re-places itself when it does.
+    #[prop(into, default = Signal::stored(256u32))]
+    width: Signal<u32>,
     /// Min distance from viewport edges.
     #[prop(default = 8)]
     margin: u32,
@@ -57,42 +61,33 @@ pub fn Popover(
     let panel_ref: NodeRef<html::Div> = NodeRef::new();
     let style_sig = RwSignal::new(String::new());
 
-    // Window-aware placement: right-aligned to the trigger, clamped into the
-    // viewport, flipped ABOVE the trigger when there is no room below.
+    // Right-aligned to the trigger; clamping and the upward flip are the
+    // shared math's (`place_at_anchor`).
     let place = move || {
         // The trigger wrapper is the only anchor: a popover whose trigger is
         // not mounted has nothing to be placed against.
         let Some(a) = anchor.get() else { return };
-        let Some(win) = web_sys::window() else {
-            return;
+        let panel = panel_size(
+            panel_ref.get().map(|p| p.unchecked_into::<web_sys::Element>()),
+            (width.get() as f64, 200.0),
+        );
+        let opts = PlacementOptions {
+            side: placement,
+            gap: 4.0,
+            margin: margin as f64,
+            viewport: viewport(),
         };
-        let win_w = win
-            .inner_width()
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(1280.0);
-        let win_h = win
-            .inner_height()
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(800.0);
-        let panel = panel_ref
-            .get()
-            .map(|p| {
-                let r = p.get_bounding_client_rect();
-                Size::new(r.width().max(1.0), r.height().max(1.0))
-            })
-            .unwrap_or(Size::new(width as f64, 200.0));
-        let opts = placement_options(placement, 4.0, margin as f64, Size::new(win_w, win_h));
         let placed = place_at_anchor(&a, panel.w, panel.h, &opts, coordinate_space);
         let rect = placed.rect;
         style_sig.set(format!(
             "left:{:.1}px;top:{:.1}px;width:{:.0}px;transform-origin:{}",
-            rect.x, rect.y, width, placed.transform_origin
+            rect.x,
+            rect.y,
+            width.get(),
+            placed.transform_origin
         ));
     };
 
-    // Place once the panel mounts; re-clamp on window resize while open.
     Effect::new(move |_| {
         if !open.get() {
             return;

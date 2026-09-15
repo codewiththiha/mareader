@@ -14,23 +14,24 @@ use reader_core::settings::PaperArea;
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
-use crate::components::settings::common::{Row, StyleSelect};
+use crate::components::primitives::form::row::Row;
+use crate::components::settings::common::StyleSelect;
 use crate::state::AppState;
 
 /// The raster-only half of the Theme tab: the paper blend and its detection.
 #[component]
 pub(crate) fn PaperSection(state: AppState) -> impl IntoView {
-    // Raster concerns, both of them: blend sampling and edge detection act on
-    // the PDF's always-light bitmaps. A reflowable document paints its paper
-    // and ink straight from the theme tokens, so the section is not merely
-    // inert while one is open — it describes machinery that does not run.
+    // Blend sampling and edge detection act on the PDF's always-light bitmaps;
+    // a reflowable document paints its paper and ink straight from the theme
+    // tokens, so the section is not merely inert while one is open — it
+    // describes machinery that does not run.
     let reflowable = Signal::derive(move || state.reader.reflowable());
     let s = state.settings;
     let blend_off = Signal::derive(move || !s.with(|st| st.layout.blend_mode));
 
     view! {
         <Show when=move || !reflowable.get()>
-        <div class="mt-5"><Separator vertical=false /></div>
+        <Separator vertical=false spacing="mt-5" />
         <SectionLabel text="Paper" />
         <div class="divide-y divide-line rounded-xl border border-line">
             <Row label="Blend Mode">

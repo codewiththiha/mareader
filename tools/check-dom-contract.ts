@@ -1,6 +1,5 @@
 // DOM-contract sync check — the same cheap insurance as `check-events.ts`,
 // for the other half of the boundary between the app and the engine.
-//
 // The app builds the page hosts; the engine under `public/engine/` paints
 // into them. They never call each other, so everything they share is a name
 // in the DOM: attributes, attribute values, class names and the shape of the
@@ -14,7 +13,6 @@
 // read out of the builders in src/components/viewer/page_host.rs (the
 // format! templates and the suffix swap) rather than compared against a
 // copy — a prefix on one side only is a rename half done.
-//
 // TypeScript source; Trunk's pre-build hook compiles it to
 // `scripts/check-dom-contract.js`.
 
@@ -33,10 +31,6 @@ const RUST_SOURCES = ALL_FILES.filter(
 );
 
 const ENGINE_SOURCES = ALL_FILES.filter((file) => file.endsWith(".ts") && file.startsWith("public/"));
-
-// ---------------------------------------------------------------------------
-// The two tables.
-// ---------------------------------------------------------------------------
 
 type Table = Map<string, string>;
 
@@ -77,11 +71,9 @@ const problems: string[] = [];
 const RUST_TEXT = new Map<string, string>();
 for (const file of RUST_SOURCES) RUST_TEXT.set(file, read(file));
 
-// ---------------------------------------------------------------------------
 // 1. Every name the engine declares must be the app's, spelled the same way.
 // The engine is the side that queries, so it must not invent; a name the app
 // declares but the engine never reads is fine — the app owns the vocabulary.
-// ---------------------------------------------------------------------------
 
 for (const [name, value] of engine) {
   // An id fragment is not spelled anywhere in Rust either: it is assembled by a
@@ -120,9 +112,7 @@ for (const name of app.keys()) {
   }
 }
 
-// ---------------------------------------------------------------------------
 // 2. The element-id shapes, read out of the builders.
-// ---------------------------------------------------------------------------
 
 function fnBody(file: string, fnName: string): string {
   const text = read(file);
@@ -220,10 +210,8 @@ if (wrapTemplates.length === 0) {
   );
 }
 
-// ---------------------------------------------------------------------------
 // 3. Nothing outside the tables may spell a contract name: a literal works
 // the day it is written and stops matching the day the table moves.
-// ---------------------------------------------------------------------------
 
 /** Strip line and block comments, respecting string literals. */
 function stripComments(text: string): string {
@@ -305,9 +293,7 @@ for (const file of ENGINE_SOURCES) {
   }
 }
 
-// ---------------------------------------------------------------------------
 // 4. Every name the engine declares must be one it uses.
-// ---------------------------------------------------------------------------
 
 const ENGINE_TEXT = new Map<string, string>();
 for (const file of ENGINE_SOURCES) ENGINE_TEXT.set(file, stripComments(read(file)));

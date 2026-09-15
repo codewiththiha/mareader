@@ -17,7 +17,6 @@ use crate::block::TextBlock;
 /// One occurrence of the query.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextHit {
-    /// The block containing the match.
     pub block: usize,
     /// Which occurrence of the query this is inside its own block, counting
     /// from zero.

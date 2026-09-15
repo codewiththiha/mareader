@@ -15,7 +15,8 @@ use leptos::prelude::*;
 
 use reflow_core::typography::{FontChoice, SystemFont, TextColumnAlign, TextSettings};
 
-use crate::components::settings::common::{Row, StyleSelect};
+use crate::components::primitives::form::row::Row;
+use crate::components::settings::common::StyleSelect;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use crate::components::primitives::menu::section_label::SectionLabel;

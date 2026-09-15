@@ -45,7 +45,6 @@ pub struct OpenResult {
     pub page_widths: Vec<f64>,
 }
 
-/// `{ok:true, width, height, scale}` — engine.renderPage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderResult {
@@ -54,7 +53,6 @@ pub struct RenderResult {
     pub scale: f64,
 }
 
-/// `{ok:true, width, height, scale}` — engine.renderThumb.
 ///
 /// The old `cached` flag (the engine blitted an already-rendered bitmap
 /// synchronously) arrived with the promise — too late for the cell's first

@@ -1,0 +1,20 @@
+/* The one ghost of an icon button the library surfaces share: a quiet round ✕-shaped thing
+   that is not there until its surface is hovered or focused, and then is. The per-surface
+   rules (grid.css, list.css, dock.css) add size, position and ink — the four spellings this
+   replaced had drifted into three sizes and two transitions while each claimed to be the
+   same button. */
+
+.icon-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-muted);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.14s ease, color 0.14s ease, background 0.14s ease,
+    border-color 0.14s ease;
+}

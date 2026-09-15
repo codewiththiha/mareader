@@ -8,9 +8,8 @@
 //! sit on: the title bar's 88px gutter when the rail is down, the rail's
 //! own header gutter when it is up — docked or floating, the header
 //! reserves the same 88px either way. The app computes those two hosting
-//! facts (its shell controller owns the rail's open/close machine) and
-//! passes them down as `rail_hosted` / `bar_hosted`: this component stays
-//! chrome, not app — it does not know what a sidebar is.
+//! facts and passes them down as `rail_hosted` / `bar_hosted`: this
+//! component stays chrome, not app — it does not know what a sidebar is.
 //!
 //! The grace at the hide is the BAR's, so it only applies where the bar can
 //! take the lights back (`bar_hosted`): in an overlay layout there is no
@@ -20,8 +19,8 @@
 //!
 //! THE HIDE ALWAYS LANDS. The lights follow the bar's hover-reveal through
 //! [`TitleBarCtx::visible`], and the bar's hide is re-checked at both ends
-//! of its hold (see `app_chrome::titlebar::root`) — so the decision here is
-//! sound, but the command is async IPC while the decision is synchronous: a
+//! of its hold — so the decision here is sound, but the command is async IPC
+//! while the decision is synchronous: a
 //! decision that changes mid-flight could otherwise let a stale command land
 //! last, leaving the native lights up with nothing left to re-run the
 //! effect. Every send therefore re-checks the live truth once its promise
@@ -36,13 +35,12 @@
 //! `ResizeObserver`; every `visible=true` invoke carries it as
 //! `headerHeight`, and the Rust command owns
 //! `y = ((h - btn_h)/2 + natural_origin_y).max(0)` with a cached
-//! `natural_origin_y` (~5pt Sonoma, ~7pt Tahoe) so no per-OS branch.
+//! `natural_origin_y` (~5pt Sonoma, ~7pt Tahoe), so no per-OS branch.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::hooks::dom::{TOOLBAR_ROW_ID, by_id};
 use crate::hooks::verified_switch::use_verified_switch;
 use crate::hooks::use_resize_observer::observe_elements;
 use crate::titlebar::root::TitleBarCtx;
@@ -64,19 +62,26 @@ pub fn TrafficLights(
     let ctx = use_context::<TitleBarCtx>();
     let hide_grace = StoredValue::new_local(None::<TimeoutHandle>);
     // Live header height for Tahoe-proof centering. Observed on
-    // `#toolbar-row`; `on_cleanup` in `observe_content_size` disconnects it.
+    // `#toolbar-row`; `on_cleanup` in `observe_elements` disconnects it.
     let header_height: RwSignal<f64> = RwSignal::new(TITLE_BAR_H);
 
-    // Keep `header_height` in sync with the real bar height. This is what
-    // replaces the static `tauri.conf.json {y:25}` with a live value. The
-    // observer fires once on `observe()` with the current size, so the
-    // first `visible=true` invoke already carries the centered `y`.
+    // Keep `header_height` in sync with the real bar height, replacing the
+    // static `tauri.conf.json {y:25}` with a live value. The observer fires
+    // once on `observe()` with the current size, so the first `visible=true`
+    // invoke already carries the centered `y`.
+    //
+    // The row arrives through the shell's ref rather than its id: a route
+    // swap runs this body a whole tick before the router exchanges the DOM,
+    // and in that window the id still names the outgoing page's row, which
+    // one install would then latch onto for good. The ref is set when the
+    // shell's own row builds, and that wakes this effect for the real
+    // install (the same window `use_center_slot` waits out).
     Effect::new(move |_| {
-        let Some(el) = by_id(TOOLBAR_ROW_ID) else {
+        let Some(row) = ctx.and_then(|c| c.row_ref.get()) else {
             return;
         };
         let hh = header_height;
-        observe_elements(vec![el], move |entries| {
+        observe_elements(vec![row.into()], move |entries| {
             if let Some(entry) = entries.first() {
                 let h = entry.content_rect().height();
                 if h > 0.0 {

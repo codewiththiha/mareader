@@ -4,19 +4,8 @@
 //! `backdrop-filter` containing blocks force on us.
 
 use super::types::{
-    place_panel_from_anchor, rect_from_element, PlacementOptions, PlacementSide, PlacedPanel, Rect,
-    Size,
+    place_panel_from_anchor, rect_from_element, PlacementOptions, PlacedPanel, Rect, Size,
 };
-
-/// Placement options with sensible floating-UI defaults.
-pub fn placement_options(side: PlacementSide, gap: f64, margin: f64, viewport: Size) -> PlacementOptions {
-    PlacementOptions {
-        side,
-        gap,
-        margin,
-        viewport,
-    }
-}
 
 /// Place a panel of `panel_w` x `panel_h` at the given anchor element within
 /// the viewport, optionally compensating a transformed/backdrop container.
@@ -62,7 +51,7 @@ pub fn place_at_anchor(
     }
 }
 
-/// Viewport-read helper for the panel height at placement time.
+/// The measured size of `node`, or `fallback` before it has mounted.
 pub fn panel_size(node: Option<web_sys::Element>, fallback: (f64, f64)) -> Size {
     match node {
         Some(el) => {
@@ -73,7 +62,6 @@ pub fn panel_size(node: Option<web_sys::Element>, fallback: (f64, f64)) -> Size 
     }
 }
 
-/// The viewport as a [`Size`], via the shared reactive helper.
 pub fn viewport() -> Size {
     let (w, h) = crate::hooks::use_viewport::viewport_size();
     Size::new(w, h)

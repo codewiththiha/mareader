@@ -29,7 +29,8 @@ pub struct DomSurface {
 }
 
 impl DomSurface {
-    /// A surface with no element attached yet.
+    /// A surface bound to no element yet: writes are no-ops until
+    /// [`Self::attach`].
     pub fn new(axis: Axis, padding_start: f64) -> Self {
         Self {
             slot: Rc::new(RefCell::new(None)),
@@ -38,17 +39,17 @@ impl DomSurface {
         }
     }
 
-    /// Attach (or replace) the scroll container.
+    /// Attach (or replace) the scroll container writes go to.
     pub fn attach(&self, el: web_sys::Element) {
         *self.slot.borrow_mut() = Some(el);
     }
 
-    /// Clear the currently attached element.
+    /// Detach the element; later writes are no-ops.
     pub fn detach(&self) {
         *self.slot.borrow_mut() = None;
     }
 
-    /// The currently attached element, if any.
+    /// The attached element, if any.
     pub fn element(&self) -> Option<web_sys::Element> {
         self.slot.borrow().clone()
     }
@@ -95,7 +96,6 @@ impl ScrollSurface for TestSurface {
 
 #[cfg(test)]
 impl TestSurface {
-    /// All writes so far.
     pub(crate) fn writes(&self) -> Vec<(f64, bool)> {
         self.writes.borrow().clone()
     }

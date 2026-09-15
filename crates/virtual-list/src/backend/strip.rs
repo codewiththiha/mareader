@@ -694,8 +694,6 @@ mod tests {
         assert_eq!(to_sub(-1.0), 0);
     }
 
-    // ---- new tests for the upgrades --------------------------------------
-
     #[test]
     fn hinted_index_matches_unhinted_for_all_positions() {
         let s = Strip::uniform(50, 100.0, 24.0);

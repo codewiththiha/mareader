@@ -2,87 +2,207 @@ name: CI
 
 on:
   push:
+    # Every branch, because that is where the work happens: this repo's history
+    # is a thousand runs on long-lived feature branches and almost none on main,
+    # so `branches: [main, master]` here would silence CI on exactly the commits
+    # that need it. `"**"` is spelled out rather than left implicit so that the
+    # tag filter below cannot be read as narrowing the branch one.
+    branches: ["**"]
+    # Tags are the release workflow's business — it builds all four platforms
+    # off `v*` — so they are kept out of this one instead of being built twice.
+    tags-ignore: ["v*"]
   pull_request:
+  workflow_dispatch:
 
+# Nothing here publishes anything; the release workflow holds the only token
+# that writes.
+permissions:
+  contents: read
+
+# Every name in this block starts with CARGO or RUST, and rust-cache folds both
+# prefixes into its cache key. That is the point of the first two — they have to
+# be identical on every run or nothing is ever a hit — and it is also the trap:
+# editing a value here, or adding a variable, silently throws away every warm
+# cache in the repo on the next run. Step-scoped env (the RUSTDOCFLAGS below)
+# is safe, because the cache action has already computed its key by then.
 env:
   CARGO_TERM_COLOR: always
 
+  # rust-cache sets this itself; saying it here means the build behaves the same
+  # whether or not that action is in the job. Incremental artifacts are written
+  # into target/incremental, are useless across runners, and checkout refreshes
+  # every mtime on the way in — so all they would do is inflate the cache and
+  # invalidate themselves.
+  CARGO_INCREMENTAL: "0"
+
+  # Debug info stays out of the build. Cargo.toml already asks for this
+  # (`debug = false` and `strip = "debuginfo"` on [profile.dev], and the same on
+  # [profile.dev.package."*"]), which is why the cache is ~360MB rather than
+  # multiple GB; this pins it from the CI side too, so a profile edit in the
+  # manifest cannot quietly start shipping symbols through the cache.
+  CARGO_PROFILE_DEV_DEBUG: "0"
+
+  # A crates.io hiccup should cost a retry, not a red run.
+  CARGO_NET_RETRY: "10"
+  RUSTUP_DOWNLOAD_TIMEOUT: "600"
+
 # Same-branch pushes cancel the previous run; release tags keep their runs.
+#
+# The group spells a pull request out by number rather than leaning on
+# github.ref alone: on a pull_request event that ref is refs/pull/N/merge, which
+# is unique per PR but reads as an opaque path in the UI and collides with
+# nothing, while on a push it is the branch. Naming the PR explicitly keeps the
+# two event kinds in groups that are obviously distinct, so a force-push cannot
+# be seen as contending with an open PR off the same branch.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Four lanes that used to be one serial job. The split is worth more than the
+# tidiness: the app crate's test harness is a ~90s compile that clippy, the wasm
+# check and the TypeScript build never had to wait behind, and a clippy failure
+# stopped the run before anyone learned whether the tests passed. One push now
+# reports every lane, and the wall clock is the slowest of them rather than the
+# lot of them added up.
+#
+# Each cargo lane owns its cache key. Two lanes sharing one key is two lanes
+# racing to write it: GitHub refuses the second save outright, so whichever job
+# finishes first decides what the other one restores next time, and neither
+# carries the artifacts the other actually built. Separate keys cost one cold
+# build each and then stay put.
+#
+# The timeouts are sized against the cold numbers those first builds actually
+# came in at — lint 3m15s, test 5m29s, macOS 6m47s, web 50s — with room for a
+# stable-Rust bump to throw every cache key away at once, which is the only
+# routine event that makes a lane rebuild from nothing.
 jobs:
-  check:
-    name: Check (fmt, clippy, test, versions)
+  lint:
+    name: Lint (clippy, wasm)
     runs-on: ubuntu-22.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
-      # No system packages are installed here on purpose: nothing in this job
-      # compiles the `pdf` Tauri shell (clippy and tests exclude it, the wasm
-      # check targets the pure-Rust frontend), so webkit2gtk & co. would be
-      # dead weight. The shell is compiled natively by the macOS job below and
-      # fully built by the release pipeline.
+      # No system packages are installed here on purpose: nothing in this lane
+      # compiles the `pdf` Tauri shell (clippy and rustdoc exclude it, the wasm
+      # check targets the pure-Rust frontend), so webkit2gtk & co. would be dead
+      # weight. The shell is linted natively by the macOS lane below and fully
+      # built by the release pipeline.
+      #
+      # rustfmt is deliberately not installed: see the note on the clippy step.
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
+          components: clippy
           targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
-
-      # node is only needed to run the version-sync check (pure stdlib, no
-      # node_modules), so a frozen install is not required here.
-      - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          shared-key: lint-cache
 
-      # Install the TypeScript dev dependencies (typescript + @types/node)
-      # so the pre-build tsc step can compile the .ts sources the engine and
-      # scripts are now written in.
-      - name: Install Node dependencies
-        run: npm ci
-
-      # Type-check the TypeScript sources (public/pdfEngine.ts and
-      # tools/*.ts). The actual .js emission happens in the Trunk pre-build
-      # hook and the `build:ts` npm script; this gate catches type errors
-      # that the smoke test would otherwise only fail on at runtime.
-      - name: Type-check TypeScript
-        run: npm run check:ts
-
-      # Emit the .js files the engine-smoke and version-sync steps below
-      # expect (public/pdfEngine.js and scripts/*.js).
-      - name: Build TypeScript
-        run: npm run build:ts
-
-      # NOTE: no `cargo fmt --check` here. The codebase is hand-formatted in a
-      # style that rustfmt >=1.9x would rewrite across ~40 files; running it
-      # would fail on pre-existing code. A one-time formatting pass can be a
-      # dedicated commit if desired.
-      #
-      # Clippy is gated with `-D warnings`. The allow-list below is the complete
-      # set of lints this workspace trips today — re-derived by running the step
-      # with every `-A` removed, on the host and on the wasm frontend — and it
-      # carries ESTABLISHED style rather than new sloppiness (e.g.
-      # `clone_on_copy` for the idiomatic Leptos `state.clone()` on a `Copy`
-      # AppState). It is deliberately short: a lint that stops firing should be
-      # dropped from here, not left as a permanent exemption.
-      # New code is still held to `-D warnings`.
-
-      # `--workspace`, like the test step below: a bare `cargo clippy` selects
-      # only the root package, which would silently leave pdf-core (the zoom
-      # ladder and fit maths), pdf-engine, pdf-paper, and both virtual-list
-      # crates out of the lint. `pdf` is excluded here and linted natively on
-      # the macOS job, which is also where its tests run.
-      - name: Clippy (deny warnings)
+      # `--locked` fails with "cannot update the lock file" and nothing else,
+      # which is a poor thing to be handed at two in the morning — and this repo
+      # has now tripped it twice for two different reasons: a member whose
+      # version in the lock had not followed its manifest, and three crates left
+      # sitting in the lock after the dependencies that pulled them in went away
+      # (cargo prunes unreachable entries, and pruning is an update). Resolve
+      # once without the flag, print what cargo actually wanted to change, then
+      # put the committed file back so every gate below still sees the lock
+      # exactly as it is in git.
+      - name: Show what --locked would reject
         run: |
-          cargo clippy --workspace --all-targets --exclude pdf -- -D warnings \
-            -A clippy::clone_on_copy \
-            -A clippy::field_reassign_with_default \
-            -A clippy::collapsible_if \
-            -A clippy::redundant_closure \
-            -A clippy::type_complexity \
-            -A clippy::assertions_on_constants
+          cp Cargo.lock /tmp/Cargo.lock.committed
+          cargo metadata --format-version 1 > /dev/null || true
+          if ! git diff --quiet -- Cargo.lock; then
+            echo "::error::Cargo.lock does not match the manifests; cargo wants:"
+            git --no-pager diff -- Cargo.lock
+          fi
+          cp /tmp/Cargo.lock.committed Cargo.lock
+
+      # Clippy is gated with `-D warnings` and NO allow-list: the six lints that
+      # used to be exempted here were fixed at their sites instead, so a warning
+      # anywhere in the workspace is a red run. A lint that is genuinely wrong
+      # for one site gets a reasoned `#[allow]` there — where a reader meets the
+      # code and the reason — rather than a blanket exemption that silences the
+      # whole workspace forever.
+      #
+      # There is no `cargo fmt --check` anywhere in this workflow, and that is a
+      # decision rather than an oversight: the codebase is hand-formatted in a
+      # style rustfmt >=1.9x would rewrite across ~40 files, so the gate would
+      # fail on pre-existing code. A one-time formatting pass belongs in a
+      # dedicated commit, not in a check that is red from the day it lands.
+      #
+      # `--workspace`, like the test lane: a bare `cargo clippy` selects only the
+      # root package, which would silently leave pdf-core (the zoom ladder and
+      # fit maths), pdf-engine, pdf-paper, and both virtual-list crates out of
+      # the lint. `pdf` is excluded here and linted natively on the macOS lane,
+      # which is also where its tests run.
+      #
+      # `--locked` is what caught Cargo.lock still calling the shell crate 0.7.0
+      # a whole release after it became 0.8.0: cargo re-resolved on every run and
+      # threw the answer away, so the drift was invisible until something refused
+      # to resolve quietly. check-versions now reads the lock as well and names
+      # the file, which is a better error than this one.
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets --exclude pdf --locked -- -D warnings
+
+      # The frontend is Rust compiled to wasm; verify it compiles for the wasm
+      # target without a full `trunk build` (that lives in the release pipeline).
+      #
+      # Warnings are fatal here too — this is the only lane that compiles the
+      # `cfg(target_arch = "wasm32")` sites the host lanes never see. The deny
+      # rides in every crate's own `[lints.rust] warnings = "deny"` rather than
+      # in RUSTFLAGS: the table applies to this workspace's crates and nothing
+      # else, so dependency artifacts keep the warm cache keys a RUSTFLAGS edit
+      # would throw away.
+      - name: Check wasm frontend
+        run: cargo check --target wasm32-unknown-unknown --locked
+
+      # Feature unification hides under-declared dependencies: inside the
+      # workspace another crate turns on the web-sys features this one uses,
+      # so a missing feature only surfaces for whoever reuses the crate on
+      # its own. app-chrome is the crate meant to be reused (it is the
+      # format-agnostic chrome), so check it alone.
+      - name: Check app-chrome standalone
+        run: cargo check -p app-chrome --target wasm32-unknown-unknown --locked
+
+      # NOT RUN, and the reason is worth writing down because the gate was
+      # built and tried:
+      #
+      #   RUSTDOCFLAGS='-D rustdoc::broken_intra_doc_links' \
+      #     cargo doc --no-deps --document-private-items --workspace --exclude pdf
+      #
+      # It works, and it is not a small find: 33 unresolved intra-doc links
+      # across the three crates rustdoc reached before cargo stopped the build
+      # (app-chrome, pdf-engine and the app itself), the other eleven never
+      # getting far enough to be counted. They are the same failure
+      # check-doc-paths exists for, in the one form it cannot read: a `//!`
+      # that names a sibling module without `super::`, a `[`search`]` that is
+      # both a function and a module, a `[`ScrollShell`]` left behind when its
+      # shell moved module.
+      #
+      # It is not turned on because not all of them can be fixed with a path.
+      # `[`GlossMark::context`]` points at a struct FIELD, and rustdoc has no
+      # link form for one at any prefix, so those are prose rewrites — and the
+      # eleven undocumented crates cannot be enumerated short of running
+      # rustdoc until they can. Repairing the lot is a dedicated commit,
+      # the same call the missing `cargo fmt --check` above makes: a gate that
+      # is red on the day it lands teaches people to read past red.
+
+  test:
+    name: Test (workspace)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # No clippy, no rustfmt and no wasm target here: this lane only builds and
+      # runs the host test harnesses, and every component it does not install is
+      # a second off the setup and a few MB out of the cache.
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-cache
 
       # --workspace, not a bare `cargo test`: the manifest root is also the
       # `pdf-reader` package, so a bare run tests only the app and silently
@@ -93,29 +213,47 @@ jobs:
       # `pdf` (the Tauri shell) is excluded: `tauri::generate_context!`
       # resolves `frontendDist` at compile time and panics when `../dist`
       # does not exist, and the frontend is only built by the release
-      # pipeline. It has no unit tests of its own.
+      # pipeline. Its tests run on the macOS lane, which compiles it natively.
       - name: Tests
-        run: cargo test --workspace --exclude pdf
+        run: cargo test --workspace --exclude pdf --locked
 
-      # The frontend is Rust compiled to wasm; verify it compiles for the wasm
-      # target without a full `trunk build` (that lives in the release pipeline).
-      - name: Check wasm frontend
-        run: cargo check --target wasm32-unknown-unknown
+  web:
+    name: Web (TypeScript, CSS, engine, contracts)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
 
-      # Feature unification hides under-declared dependencies: inside the
-      # workspace another crate turns on the web-sys features this one uses,
-      # so a missing feature only surfaces for whoever reuses the crate on
-      # its own. app-chrome is the crate meant to be reused (it is the
-      # format-agnostic chrome), so check it alone.
-      - name: Check app-chrome standalone
-        run: cargo check -p app-chrome --target wasm32-unknown-unknown
+      # No Rust in this lane at all: everything here reads the tree or runs the
+      # emitted JavaScript, which is why it can start the moment the checkout
+      # lands rather than behind a toolchain install — and why it is the lane
+      # that reports a version or a contract drift first.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-      # The imperative engine (public/pdfEngine.ts) is browser code; run its
-      # stub-based smoke test (compiled to scripts/test-engine-smoke.js by
-      # the TypeScript build step above) to catch regressions in open /
-      # render / theme-bake / scrub / destroy.
-      - name: Engine smoke test
-        run: node scripts/test-engine-smoke.js
+      - name: Install Node dependencies
+        run: npm ci
+
+      # Type-checks tsconfig.json with --noEmit and then emits the tools, so the
+      # separate `check:ts` pass this lane used to run first put the same
+      # compiler over the same files twice for the same answer. What the steps
+      # below consume is the emission: scripts/*.js and the three engine bundles.
+      - name: Build TypeScript
+        run: npm run build:ts
+
+      # The stylesheet is compiled by a Trunk pre_build hook, which meant nothing
+      # but a release build ever ran it: a broken @apply or a token that stopped
+      # existing arrived as a bad bundle on a tag rather than as a red check on
+      # the commit that caused it.
+      - name: Build CSS
+        run: npm run build:css
+
+      # The consistency checks run before the engine smoke on purpose. They read
+      # the tree and finish in under a second between them, so a drift is
+      # reported in the first moments of the lane instead of after the smoke
+      # test has spent its half a minute.
 
       - name: Verify versions are in sync
         run: node scripts/check-versions.js
@@ -134,6 +272,17 @@ jobs:
       - name: Verify comment paths resolve
         run: node scripts/check-doc-paths.js
 
+      # Dead code is deleted, not annotated. An `allow(dead_code)` or
+      # `allow(unused…)` outlives the code it excuses, and no compile lane can
+      # see a suppression sitting on wasm-only or platform-gated code — so this
+      # one reads the tree instead, and holds on every target at once.
+      - name: Verify no dead-code suppressions
+        run: |
+          if grep -rn --include='*.rs' -E '#!?\[(allow|expect)\((dead_code|unused)' src crates src-tauri tests; then
+            echo "::error::dead-code suppressions are not allowed — delete the code or use it"
+            exit 1
+          fi
+
       # The engine and the app agree on three window-event names, declared once
       # in Rust and once in TypeScript. A disagreement is silent at build time.
       - name: Verify the window-event tables agree
@@ -145,14 +294,28 @@ jobs:
       - name: Verify the DOM contract agrees
         run: node scripts/check-dom-contract.js
 
-  # The Linux job above cannot see `set_traffic_lights`: it is
+      # The imperative engine (public/pdfEngine.ts) is browser code; run its
+      # stub-based smoke test (compiled to scripts/test-engine-smoke.js by the
+      # TypeScript build step above) to catch regressions in open /
+      # render / theme-bake / scrub / destroy.
+      - name: Engine smoke test
+        run: node scripts/test-engine-smoke.js
+
+  # The Linux lanes cannot see `set_traffic_lights`: it is
   # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
   # feature set that feeds it) would otherwise first surface when a release
   # tag builds the macOS legs. Check the shell crate natively on an Apple
   # runner to keep that gap closed.
+  #
+  # Apple runners are the scarcest of the four labels and the slowest to be
+  # handed one, so this lane carries the widest timeout of the four: it builds
+  # tauri and the objc2 bindings, and a job that hangs on a runner should cost
+  # twenty-five minutes and a red square rather than sit there for the
+  # six-hour default.
   macos-check:
     name: Check (macOS-only shell code)
     runs-on: macos-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -160,8 +323,12 @@ jobs:
         with:
           components: clippy
 
-      # Keys on the workspace root, same as the Linux job.
+      # Its own key, like the Linux lanes: this is the only job that builds the
+      # shell crate, so there is nothing for it to share with and a key borrowed
+      # from a Linux lane would only ever miss.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-cache
 
       # `tauri::generate_context!` resolves `frontendDist` (../dist) at compile
       # time and panics when it is missing; the frontend itself is built by the
@@ -172,16 +339,9 @@ jobs:
           printf '<!doctype html><title>PDF Reader</title>' > dist/index.html
 
       - name: Clippy (deny warnings)
-        run: |
-          cargo clippy -p pdf --all-targets -- -D warnings \
-            -A clippy::clone_on_copy \
-            -A clippy::field_reassign_with_default \
-            -A clippy::collapsible_if \
-            -A clippy::redundant_closure \
-            -A clippy::type_complexity \
-            -A clippy::assertions_on_constants
+        run: cargo clippy -p pdf --all-targets --locked -- -D warnings
 
       # The AiChunk wire-contract tests live in this crate; without this step
       # they compile nowhere and run nowhere.
       - name: Tests (shell crate)
-        run: cargo test -p pdf
+        run: cargo test -p pdf --locked

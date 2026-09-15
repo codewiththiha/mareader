@@ -15,7 +15,6 @@ pub enum MenuItemTone {
     Danger,
 }
 
-/// A menu row.
 #[component]
 pub fn MenuItem(
     /// Leading icon, if any. `None` still renders the aligned w-4 slot so
@@ -32,6 +31,25 @@ pub fn MenuItem(
     /// Selected/pressed state (checked rows, active options).
     #[prop(optional)]
     selected: Option<Signal<bool>>,
+    /// Draw the trailing check from `selected` instead of passing one in as a
+    /// child.
+    ///
+    /// Every checked row in the app wants the same accent mark in the same
+    /// trailing slot, and a row that took `selected` AND a child check derived
+    /// one predicate twice to say one thing — six times over in the shelf's view
+    /// menu alone, and once more as inline markup in the settings dropdown. The
+    /// row already holds the signal; this lets it answer for the mark too.
+    #[prop(default = false)]
+    check: bool,
+    /// A muted second line under the label, for a row that has something to say
+    /// about itself beyond its name. Opt-in and additive: a row without one
+    /// renders exactly the single span it always did, so no existing menu moves.
+    #[prop(optional, into)]
+    sublabel: Option<String>,
+    /// A tooltip, for the rows where the label and its second line still leave
+    /// something worth saying that does not fit on either.
+    #[prop(optional, into)]
+    title: Option<String>,
     /// Row geometry override (denser/larger rows). Defaults to the shared
     /// menu-row look (`rounded-md px-2 py-1.5`).
     #[prop(optional)]
@@ -43,11 +61,11 @@ pub fn MenuItem(
     let danger = tone == MenuItemTone::Danger;
     let row_class = row_class.unwrap_or("rounded-md px-2 py-1.5");
 
-    // Computed class string (the repo rule only restricts single-token
-    // conditional tuples; a computed string is allowed and avoids two
-    // text-colour utilities fighting each other). Selected uses the same
-    // accent-soft treatment as OptionButton, so every
-    // selected/pressed row in the app speaks one visual language.
+    // A computed class string: the repo rule only restricts single-token
+    // conditional tuples, and a computed string avoids two text-colour
+    // utilities fighting each other. Selected uses the same accent-soft
+    // treatment as OptionButton, so every selected/pressed row in the app
+    // speaks one visual language.
     let class = move || {
         let hover = if disabled { "" } else { "hover:bg-line" };
         let base = format!(
@@ -67,6 +85,7 @@ pub fn MenuItem(
         <button
             type="button"
             role="menuitem"
+            title=title
             disabled=disabled
             aria-disabled=disabled.to_string()
             on:click=move |_| on_click()
@@ -81,8 +100,32 @@ pub fn MenuItem(
                     }
                 })}
             </span>
-            <span>{label}</span>
+            {match sublabel {
+                Some(sub) => {
+                    view! {
+                        <span class="min-w-0 flex-1 text-left">
+                            <span class="block truncate">{label}</span>
+                            <span class="block truncate text-[11px] font-normal text-muted">
+                                {sub}
+                            </span>
+                        </span>
+                    }
+                        .into_any()
+                }
+                None => view! { <span>{label}</span> }.into_any(),
+            }}
             {children.map(|c| c())}
+            {check.then(|| {
+                view! {
+                    <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
+                        {move || {
+                            selected_sig
+                                .get()
+                                .then(|| view! { <Icon name=IconName::Check size=14 /> })
+                        }}
+                    </span>
+                }
+            })}
         </button>
     }
 }

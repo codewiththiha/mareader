@@ -23,9 +23,9 @@
 //! over `SIDEBAR_SLIDE_MS` (the shell controller's machine timing), and
 //! `.sidebar-aside { contain: layout style }` keeps the reflow from
 //! escaping the aside. The page follows the rail on every frame of that
-//! slide — that is `follow_watcher`'s container follow, not a refit, and
-//! the burst costs one raster pass because a follow holds its commit until
-//! the container goes quiet.
+//! slide — `follow_watcher`'s container follow, not a refit — and the burst
+//! costs one raster pass because a follow holds its commit until the
+//! container goes quiet.
 //!
 //! Tab switches (Thumbs ↔ Outline) still use `invisible` on the inactive
 //! panel so the virtualization window stays engine-bound and a switch back
@@ -41,12 +41,6 @@ use leptos::children::ViewFn;
 use leptos::prelude::*;
 
 use crate::state::SidebarMode;
-
-/// Selector for the sliding aside itself. The toolbar's title measurement
-/// observes this element (its width changes every frame of the slide, unlike
-/// the row, which only changes inset at the end of the close hold) — the
-/// selector lives next to the class it targets so they cannot drift apart.
-pub(crate) const SIDEBAR_ASIDE_SELECTOR: &str = "aside.sidebar-aside";
 
 /// Ask the visible panel to scroll to wherever the reader currently is.
 ///

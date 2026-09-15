@@ -55,9 +55,7 @@ pub enum SidebarMode {
 /// frameless captions read.
 #[derive(Clone, Copy)]
 pub struct UiState {
-    /// Which sidebar panel (if any) is open.
     pub sidebar: RwSignal<SidebarMode>,
-    /// Current toast (if any), rendered by the app-root `ToastHost`.
     pub toast: RwSignal<Option<Toast>>,
     /// Whether the window is maximized — the frameless caption cluster's
     /// maximize/restore glyph. Written by the app-lifetime window-state bridge

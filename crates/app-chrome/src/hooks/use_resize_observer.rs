@@ -31,7 +31,8 @@ pub fn observe_elements(
     let callback_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
 
     Effect::new(move || {
-        // Guard: only set up once (StoredValue access is non-reactive).
+        // StoredValue access is non-reactive, so the effect must guard its
+        // own once-only setup.
         if callback_handle.with_value(|c| c.is_some()) {
             return;
         }
@@ -94,7 +95,6 @@ pub fn use_resize_observer(target: NodeRef<html::Div>, on_resize: impl Fn(Resize
         // interface.
         let el: web_sys::Element = el.unchecked_into::<web_sys::Element>();
         if callback_handle.with_value(|c| c.is_some()) {
-            // Same node still mounted: nothing to do.
             if observed.with_value(|o| o.as_ref().is_some_and(|o| o == &el)) {
                 return;
             }

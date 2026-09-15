@@ -136,11 +136,8 @@ impl PageAnchor {
 /// persisted schema stays the one [`PageAnchor`] shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ReflowSpot {
-    /// Index of the block the spot lives in, in document order.
     pub block: usize,
-    /// First character of the spot inside that block's rendered text.
     pub start: usize,
-    /// One past the last character of the spot.
     pub end: usize,
 }
 
@@ -151,7 +148,6 @@ impl ReflowSpot {
         Self { block, start, end: end.max(start) }
     }
 
-    /// The spot's length in characters.
     pub fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }

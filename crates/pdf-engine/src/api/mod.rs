@@ -95,7 +95,6 @@ js_keys! {
     // Native dialog options (built once per dialog open — still hoisted so
     // the pattern is uniform and the picker never allocates a key twice).
     KEY_MULTIPLE => "multiple",
-    KEY_DIRECTORY => "directory",
     KEY_FILTERS => "filters",
     KEY_EXTENSIONS => "extensions",
     KEY_DOCUMENTS => "Documents",
@@ -108,8 +107,6 @@ pub(crate) fn reflect_get(obj: &JsValue, key: &'static LocalKey<JsValue>) -> Res
 
 /// `obj[key] = value` using one of the hoisted keys.
 pub(crate) fn reflect_set(obj: &JsValue, key: &'static LocalKey<JsValue>, value: &JsValue) -> bool {
-    // `LocalKey::with` wants `&'static self`; the hoisted keys are `const`
-    // items, so `&KEY_X` at the call site is a promoted `'static` reference.
     key.with(|k| js_sys::Reflect::set(obj, k, value)).unwrap_or(false)
 }
 

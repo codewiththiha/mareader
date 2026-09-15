@@ -31,6 +31,9 @@ const GRACE_MS: f64 = 1500.0;
 use crate::state::ReaderState;
 use crate::state::app::SidebarMode;
 
+/// The armed glide step, parked where a re-arm can replace it mid-flight.
+type GlideStep = Rc<dyn Fn()>;
+
 /// Panel-lifetime state shared between the thumbnail panel's effects and the
 /// auto-center machinery.
 pub struct AutoCenter {
@@ -41,19 +44,17 @@ pub struct AutoCenter {
     /// Handle for the debounced auto-center glide.
     pub glide_timer: StoredValue<Option<TimeoutHandle>, LocalStorage>,
     /// The current self-re-arming glide step.
-    pub glide_step: StoredValue<Option<Rc<dyn Fn()>>, LocalStorage>,
-    /// The panel's virtualizer.
+    pub glide_step: StoredValue<Option<GlideStep>, LocalStorage>,
     pub virtualizer: Virtualizer,
 }
 
 impl AutoCenter {
-    /// Create the bundle around the panel's virtualizer.
     pub fn new(virtualizer: Virtualizer) -> Self {
         Self {
             last_user_drive: Rc::new(Cell::new(f64::NEG_INFINITY)),
             centered: StoredValue::new_local((false, 0u32)),
             glide_timer: StoredValue::new_local(None::<TimeoutHandle>),
-            glide_step: StoredValue::new_local(None::<Rc<dyn Fn()>>),
+            glide_step: StoredValue::new_local(None::<GlideStep>),
             virtualizer,
         }
     }
@@ -65,11 +66,6 @@ impl AutoCenter {
         install_lifetime_cleanup(&self);
     }
 }
-
-// ---------------------------------------------------------------------------
-// Pure timing rules
-// ---------------------------------------------------------------------------
-
 
 /// Content-coordinate offset that vertically centers a row of height
 /// `cell_h` whose top sits at `row_top`, in a viewport `vh` tall.
@@ -135,11 +131,6 @@ fn glide_verdict(
 
 
 
-// ---------------------------------------------------------------------------
-// Wiring
-// ---------------------------------------------------------------------------
-
-
 /// Warm the thumbnail cache around the page the glide just centered on: the
 /// two before and eight after cover the next flick of scrolling.
 fn prefetch_neighborhood(page: u32) {
@@ -177,7 +168,7 @@ struct Glide {
     virtualizer: Virtualizer,
     last_user_drive: Rc<Cell<f64>>,
     timer: StoredValue<Option<TimeoutHandle>, LocalStorage>,
-    step_slot: StoredValue<Option<Rc<dyn Fn()>>, LocalStorage>,
+    step_slot: StoredValue<Option<GlideStep>, LocalStorage>,
     page: u32,
     /// Aspect frozen at arming time (the tracked read happened in the
     /// effect run that armed this glide; the step must not re-subscribe).
@@ -392,10 +383,6 @@ fn install_lifetime_cleanup(auto: &AutoCenter) {
         step_slot.set_value(None);
     });
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

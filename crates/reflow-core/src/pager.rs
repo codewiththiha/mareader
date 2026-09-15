@@ -15,11 +15,8 @@ use crate::block::{BlockKind, TextBlock};
 /// The inputs of the height ESTIMATE, all at scale 1.
 #[derive(Debug, Clone, Copy)]
 pub struct BlockMetrics {
-    /// The width the text flows in (the page's content width).
     pub content_width: f64,
-    /// Body font size in px.
     pub font_size: f64,
-    /// Line height, as a unitless multiple of the font size.
     pub line_height: f64,
     /// Space under a paragraph, in ems of the font size.
     pub paragraph_margin_em: f64,
@@ -29,12 +26,10 @@ pub struct BlockMetrics {
 }
 
 impl BlockMetrics {
-    /// Height of one line, in px.
     fn line_height_px(&self) -> f64 {
         self.font_size * self.line_height
     }
 
-    /// How many glyphs fit on a line, at least one.
     fn chars_per_line(&self) -> f64 {
         (self.content_width / (self.font_size * self.char_width).max(0.001)).max(1.0)
     }
@@ -84,7 +79,6 @@ pub struct PageCut {
 }
 
 impl PageCut {
-    /// One-past-the-last block of the page.
     pub fn end(&self) -> usize {
         self.start + self.count
     }

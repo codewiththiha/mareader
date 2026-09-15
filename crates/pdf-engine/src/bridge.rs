@@ -15,7 +15,6 @@ use wasm_bindgen::JsCast;
 
 #[wasm_bindgen]
 extern "C" {
-    // --- PDF engine: window.PDFReader ---
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub fn version() -> String;
 
@@ -104,7 +103,6 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "takePendingFile")]
     pub async fn take_pending_file() -> JsValue;
 
-    // --- Engine: theme re-bake + scrub mode ---
     // The engine bakes the theme (filter + paper blend) into every page and
     // thumbnail raster so canvases are plain opaque textures; on an appearance
     // change it must re-bake the rasters it holds, and the theme applier calls
@@ -118,10 +116,9 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
 
-    // --- Engine: paper pipeline (the `pdf-paper` crate's eyes) ---
-    // The engine owns the CANVASES; the crate (via this crate's `paper`
-    // session) owns every colour decision. Four calls carry the whole
-    // contract, all in the Rust->engine direction:
+    // The paper pipeline's eyes: the engine owns the CANVASES; the
+    // `pdf-paper` crate (via this crate's `paper` session) owns every colour
+    // decision. Four calls carry the whole contract:
     //
     // * `setPaper` publishes (or, with "", clears) `--pdf-paper`.
     // * `setPaperActive` gates the per-render frame stash on the blend switch.
@@ -172,5 +169,3 @@ pub fn has_pdf_reader() -> bool {
         })
         .unwrap_or(false)
 }
-
-

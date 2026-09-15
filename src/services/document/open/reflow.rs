@@ -4,26 +4,22 @@
 //! The shape mirrors the PDF open (claim the session, read, seed, flip the
 //! status), but the content never touches the pdf.js engine: the file is read
 //! through the shell's `read_file_text` command and handed to its format's
-//! parser, which returns the blocks the shared machinery lays out. From here
-//! a text document and a PDF are the same object — pages of the same A4
-//! sheet, the same scale pipeline, strip and virtualizer — and the one
-//! difference is what paints inside a page (`components::formats::reflow`).
+//! parser. From here a text document and a PDF are the same object — pages of
+//! the same A4 sheet through the same scale pipeline — and the one difference
+//! is what paints inside a page (`components::formats::reflow`).
 //!
 //! Two things make this the whole format-specific surface of the open flow:
 //!
 //! * the PARSER is a match on the format, not a second pipeline: a third
-//!   reflowable format adds one arm here (and a block view and renderer), not
-//!   a copy of this file;
+//!   reflowable format adds one arm here, not a copy of this file;
 //! * pagination starts from the pure estimate — character counts against the
 //!   column width — so the reader is up the instant the file is read; the
-//!   measurement pipeline then refines it block by block as the reader's rows
-//!   report heights (`crate::effects::reader::reflow_measure`).
+//!   measurement pipeline then refines it block by block
+//!   (`crate::effects::reader::reflow_measure`).
 //!
 //! Markdown also gets an outline, and it is seeded rather than resolved: the
-//! headings are already in the text, so this file hands over the block indices
-//! and `effects::reader::reflow_outline` turns them into pages against the
-//! live cut. There is no resolver tail to race, which is why `outline_pending`
-//! goes false here.
+//! headings are already in the text, so there is no resolver tail to race,
+//! which is why `outline_pending` goes false here.
 
 use std::sync::Arc;
 
@@ -33,7 +29,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use md_core::MarkdownHeading;
 use pdf_engine::types::PageSize;
-use reader_core::filename::display_name;
+use reader_core::filename::document_title;
 use reader_core::format::Format;
 use reader_core::view::ViewMode;
 use reflow_core::block::TextBlock;
@@ -58,7 +54,7 @@ struct Parsed {
 /// The document's bytes as text, through the shell's gated read command.
 /// Outside the desktop shell there is no filesystem to read from — the
 /// plain-browser build answers with the same "desktop only" error the open
-/// dialog gives, rather than a platform failure.
+/// dialog gives.
 async fn read_file_text(path: &str) -> Result<String, String> {
     if !tauri_bridge::has_tauri() {
         return Err(
@@ -99,7 +95,7 @@ pub(super) fn open_reflowable(
             }
         };
         // The read finished — but a second open (or a close) may have taken
-        // the document state over while it was working.
+        // the document state over while it worked.
         if !session::owns(stamp) {
             return;
         }
@@ -118,12 +114,11 @@ pub(super) fn open_reflowable(
 /// oversized blocks so a page can be packed tightly.
 ///
 /// The subdivision runs BEFORE anything downstream sees the blocks, so block
-/// identities are stable for the whole session and every consumer (pages,
-/// stream, search, outline) works in the same atoms. Plain text cuts at 40
-/// lines — its hard breaks are natural boundaries and a fixed-line paragraph
-/// (ASCII tables, poetry) must not be chopped; Markdown cuts prose only, at
-/// [`reflow_core::block::SPLIT_MAX_LINES`], because a split inside a list,
-/// fence, table or quote re-opens that construct mid-page.
+/// identities are stable for the whole session and every consumer works in
+/// the same atoms. Plain text cuts at 40 lines — its hard breaks are natural
+/// boundaries and a fixed-line paragraph must not be chopped; Markdown cuts
+/// prose only, at [`reflow_core::block::SPLIT_MAX_LINES`], because a split
+/// inside a list, fence, table or quote re-opens that construct mid-page.
 fn parse(format: Format, raw: &str) -> Parsed {
     match format {
         Format::Markdown => {
@@ -153,11 +148,10 @@ fn parse(format: Format, raw: &str) -> Parsed {
 /// The document read and parsed: seed the state, flip the route, and let the
 /// measurement pipeline refine the cut.
 ///
-/// The steps shared with the PDF tail — identity, gloss marks, the resume
-/// clamp, the startup scale, the route flip, the shelf record — are
-/// [`super::enter`]'s, so the two cannot drift on what "open" means. What is
-/// left here is the reflowable half of the seeding: release the engine, parse
-/// into blocks, estimate the cut, publish it.
+/// The steps shared with the PDF tail are [`super::enter`]'s, so the two
+/// cannot drift on what "open" means. What is left here is the reflowable
+/// half of the seeding: release the engine, publish the blocks, estimate the
+/// cut.
 fn ready(
     state: AppState,
     path: String,
@@ -168,23 +162,19 @@ fn ready(
 ) {
     let settings = state.settings.get_untracked();
     // The geometry the first cut is estimated against — resolved through the
-    // same two dials the measurement pipeline resolves (the reader's margin
-    // and column-width runtime signals, already seeded from the persisted
-    // settings by the layout prefs), so the seed and the refine agree and the
-    // dialled document never opens against numbers it immediately re-cuts away
-    // from.
+    // same two dials the measurement pipeline resolves, so the seed and the
+    // refine agree and the dialled document never opens against numbers it
+    // immediately re-cuts away from.
     let geo = geometry(settings.text.book_layout)
         .with_extra_inline(state.reader.viewer.page_margin.get_untracked())
         .with_column_pct(state.reader.viewer.column_width_pct.get_untracked());
-    let name = display_name(parsed.title.as_deref(), Some(&path));
+    let name = document_title(parsed.title.as_deref());
     let Parsed { blocks, title, author, headings } = parsed;
 
     // Document identity, through the shared handshake. A text page is the
-    // sheet `reflow_core::geometry` cuts into — as wide as the column and its
-    // pads say, which the dials above already answered — and the outline
-    // starts SEEDED rather than pending: the headings are already in the
-    // blocks, so `effects::reader::reflow_outline` re-projects them against
-    // the live cut and there is no resolver tail to race.
+    // sheet `reflow_core::geometry` cuts into, and the outline starts SEEDED
+    // rather than pending: the headings are already in the blocks, so there
+    // is no resolver tail to race.
     super::enter::identity(
         state,
         super::enter::DocumentIdentity {
@@ -197,8 +187,8 @@ fn ready(
         },
     );
 
-    // A text document opening over a PDF: release the engine's book and the
-    // paper session that tracked it — neither has any part in what follows.
+    // A text document opening over a PDF: release the engine's book and its
+    // paper session — neither has any part in what follows.
     spawn_local(async move {
         _ = pdf_engine::api::destroy().await;
     });
@@ -206,26 +196,22 @@ fn ready(
 
     // The other pipeline's model is released at the same moment, and this
     // document's gloss highlights are loaded before anything mounts — exactly
-    // where the PDF open loads them, so the first page (or stream window)
-    // already paints them. A reflowable mark is a block and a character range,
-    // so it is `set_initial_heights` below — which publishes the block→page
-    // map — that makes it projectable; loading first and paginating second
-    // puts a mark on the right page at first paint instead of a frame
-    // later.
+    // where the PDF open loads them, so the first paint already carries them.
+    // A reflowable mark is a block and a character range, so it is
+    // `set_initial_heights` below that makes it projectable; loading first
+    // and paginating second puts a mark on the right page at first paint
+    // instead of a frame later.
     state.reader.document.content.reflow.reset();
-    super::enter::load_marks(state, &path);
+    super::enter::load_marks(state);
 
-    // The reflowable content: blocks in, estimate cut out.
-    // `set_initial_heights` carries the page count and the per-page sizes
-    // across to the machinery the PDF shares; every later correction arrives
-    // through the measurement pipeline's `recut`.
+    // The reflowable content: blocks in, estimate cut out. Every later
+    // correction arrives through the measurement pipeline's `recut`.
     let metrics = estimate_metrics(&settings.text, &geo);
     let heights = estimate_heights(&blocks, &metrics);
     state.reader.document.content.reflow.blocks.set(Arc::new(blocks));
     state.reader.document.content.reflow.headings.set(Arc::new(headings));
 
-    // The seed scale, from the same shared step the PDF seed uses — including
-    // the stream exception, where there is no page to fit.
+    // The seed scale, from the same shared step the PDF seed uses.
     let (startup_fit, scale) = super::enter::startup_scale(state, (geo.width, PAGE_HEIGHT));
 
     // Reading position + zoom, seeded in the same order the PDF seed uses:
@@ -234,11 +220,8 @@ fn ready(
     // rides along only when the document opens INTO the stream — a fraction
     // saved by an earlier streamed session means nothing to a paged read, and
     // letting it linger would hijack the anchor when the reader later flips
-    // the mode.
-    // Read the mode, not the fit it produced: `FitMode::None` would also be
-    // the answer for a persisted default that resolved to no fit, and the
-    // fraction below must ride along only for a document that opened INTO the
-    // stream.
+    // the mode. Read the mode, not the fit it produced: `FitMode::None` would
+    // also be the answer for a persisted default that resolved to no fit.
     let streaming = state.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
     state.reader.document.content.reflow.resume_fraction.set(if streaming { saved_fraction } else { None });
     state.reader.viewer.awaiting_anchor.set(true);
@@ -247,9 +230,7 @@ fn ready(
     state.reader.viewer.scroll_top.set(0.0);
 
     // The estimate's cut, published before the resume page is chosen: the
-    // clamp inside `resume_page` is against the page count this cut produced,
-    // so reading the count back out of the signal would only be a slower way of
-    // asking the cut.
+    // clamp inside `resume_page` is against the page count this cut produced.
     let cut = state.reader.document.content.reflow.set_initial_heights(state, heights, geo);
     state.reader.document.publish_cut(&cut);
     let resume = super::enter::resume_page(saved_page, cut.num_pages);
@@ -258,9 +239,20 @@ fn ready(
     super::enter::enter_ready(state);
 
     // The shelf record is the last step, exactly as it is for a PDF. No cover
-    // and no thumbnail warmup follow it, and that is the format's answer
-    // rather than an omission: both are page-1 rasters out of the pdf.js
-    // engine (`super::cover`, `super::warmup`), and a reflowable document has
-    // no raster to hand them — its shelf card keeps the stylised fallback.
-    super::shelf::record(state, &path, name, resume, cut.num_pages);
+    // and no thumbnail warmup follow it: both are page-1 rasters out of the
+    // pdf.js engine, and a reflowable document has no raster to hand them —
+    // its shelf card keeps the stylised fallback.
+    super::shelf::record(
+        state,
+        &path,
+        name,
+        // The saved fraction is carried across the open rather than dropped:
+        // this session's first scroll overwrites it, but a document closed
+        // before that first scroll must not lose the last read's position.
+        library_core::book::ReadPoint {
+            page: resume,
+            num_pages: cut.num_pages,
+            fraction: saved_fraction,
+        },
+    );
 }
