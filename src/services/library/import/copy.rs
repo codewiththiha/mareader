@@ -20,7 +20,7 @@ pub(super) type Landed = (String, Option<Fingerprint>);
 /// One spelling for both batches the library copies — a folder walk's and a loose file
 /// drop's — because a per-file failure is the same news either way. `noun` is what the
 /// sentence counts.
-fn partition_store_results(
+pub(crate) fn partition_store_results(
     state: AppState,
     results: Vec<StoreResult>,
     noun: &str,

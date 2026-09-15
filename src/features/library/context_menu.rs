@@ -325,7 +325,7 @@ fn base_entry_items(
             }),
         )
         .off_when(dead)
-        .title("A second copy of this book, filed beside it"),
+        .title("A second copy of this book, the library's own — highlights and all — filed beside it"),
         EntryKind::Shelf => MenuItemSpec::new(
             IconName::Copy,
             "Duplicate",
@@ -334,7 +334,7 @@ fn base_entry_items(
                 duplicate_shelf(state, &dup_id);
             }),
         )
-        .title("A second shelf of your own, holding the same books"),
+        .title("A second shelf of your own, holding fresh copies of its books"),
     };
     items.push(duplicate);
 

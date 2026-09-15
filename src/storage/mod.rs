@@ -379,3 +379,92 @@ pub fn persist_gloss(row_id: &str, marks: &[GlossMark]) {
         e.report();
     }
 }
+
+/// One row's marks, copied onto another row: the duplicate's highlights are its
+/// own list under its own id, each mark wearing a freshly minted id, so nothing
+/// about the two lists is shared — a stroke explained in one book never toggles,
+/// evicts or overwrites the other's.
+///
+/// The source list stays where it is, because the original keeps its highlights;
+/// a source with no list, or an empty one, costs nothing and writes nothing.
+/// Read-modify-write for [`persist_gloss`]'s reason: a second window's marks
+/// must not be clobbered by a write in this one.
+pub fn copy_gloss(from_id: &str, to_id: &str) {
+    let mut all = load_gloss();
+    let Some(marks) = all.get(from_id) else {
+        return;
+    };
+    if marks.is_empty() {
+        return;
+    }
+    all.insert(to_id.to_string(), re_ided(marks, crate::time::now_ms()));
+    if let Err(e) = save_gloss(&all) {
+        e.report();
+    }
+}
+
+/// The marks a duplicate wears: the same words at the same spots, under ids
+/// minted for the copy rather than carried from the original. An id only keys a
+/// list's own toggles and answer cache, so carrying the old ones would work
+/// today — and one future rule away from two books sharing a stroke, which is
+/// the sharing this copy exists to end.
+///
+/// The stamp is the caller's (`copy_gloss` reads the clock once): every mark in
+/// one list mints at the same millisecond, so the index is folded in to keep two
+/// marks on one page of one list from colliding.
+fn re_ided(marks: &[GlossMark], now_ms: u64) -> Vec<GlossMark> {
+    marks
+        .iter()
+        .enumerate()
+        .map(|(at, mark)| GlossMark {
+            id: ai_core::gloss::mark_id(mark.anchor.page, now_ms + at as u64),
+            ..mark.clone()
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ai_core::gloss::{GlossBox, PageAnchor};
+
+    fn mark(id: &str, word: &str, page: u32) -> GlossMark {
+        GlossMark {
+            id: id.to_string(),
+            word: word.to_string(),
+            context: "the sentence it stood in".to_string(),
+            anchor: PageAnchor {
+                page,
+                rect: GlossBox { x: 10.0, y: 20.0, w: 30.0, h: 8.0, r: 0.0 },
+            },
+        }
+    }
+
+    #[test]
+    fn a_copied_list_keeps_its_spots_and_mints_its_own_ids() {
+        let marks = vec![mark("g3-1", "palimpsest", 3), mark("g3-2", "sietch", 3)];
+        let fresh = re_ided(&marks, 1_700);
+        assert_eq!(fresh.len(), 2);
+        for (old, new) in marks.iter().zip(&fresh) {
+            assert_eq!(new.word, old.word, "the explained word travels");
+            assert_eq!(new.context, old.context, "the context travels");
+            assert_eq!(new.anchor, old.anchor, "the spot travels");
+            assert_ne!(new.id, old.id, "the id does not");
+        }
+        assert_ne!(fresh[0].id, fresh[1].id, "two marks on one page differ");
+        assert_eq!(
+            fresh[0].id, "g3-1700",
+            "the scheme the capture sites mint is the scheme the copy mints"
+        );
+        assert_eq!(fresh[1].id, "g3-1701", "the index keeps the stamps apart");
+    }
+
+    #[test]
+    fn an_empty_list_never_reaches_storage() {
+        // The guard the caller rides: copy_gloss with nothing to copy writes
+        // nothing, which on wasm is the difference between a duplicate that
+        // leaves the store alone and one that serializes the whole map for
+        // nothing.
+        assert!(re_ided(&[], 5).is_empty());
+    }
+}

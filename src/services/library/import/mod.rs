@@ -34,6 +34,11 @@ pub use verify::{rescan_watched, set_shelf_watch, shelf_watch, verify_one};
 /// need a card to land on, and the runs that minted phantom ids were emissions nobody saw.
 pub(crate) use tasks::{begin_task, fail_task, finish_task};
 
+/// The per-file half of a store batch's answer, for the copy runs that live outside this
+/// module (a duplicate of a shelf): which copies came home with their measurements, and a
+/// toast for the ones the store refused.
+pub(crate) use copy::partition_store_results;
+
 pub(crate) use copies::{copies_beside_tree, copies_over_standing_tree, CopiesDest};
 pub(crate) use files::{land_stored_copy, land_stored_copy_settling, settle_ledger};
 pub(crate) use gate::{proceed_folder, reclaim_rung, RootPlan};

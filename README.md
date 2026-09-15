@@ -412,16 +412,21 @@ touches a file you own.
   A name you type is yours and survives as-is: a title that looks like a filename is dropped when
   it came from a document's own metadata, which is where such titles are download debris, but not
   when a reader typed it at this sheet.
-  **Duplicate** makes a second instance of the thing under the pointer: a book, whatever its
-  origin, gets a second copy in the library's own store — nothing is written beside your files —
-  and the row wears the level's counter name (a duplicate of a duplicate steps rather than
-  stacks); a link duplicates as a link. Either way the duplicate is its own row — its own
-  name on the level's counter, its own resume point and highlights — filed right behind the row
-  you pointed at, on every shelf the original is on. A SHELF duplicates as a shelf: a second one
-  of your own holding the same books, with the whole tree inside it copied along, in the level's
-  counter name and right behind the shelf it came from. It costs no disk, because a shelf holds
-  membership and never held a byte — and a folder's shelf copies as one of yours rather than as a
-  second shelf of the folder, because one directory is one linked shelf. No row carries a second line explaining itself:
+  **Duplicate** makes a second instance of the thing under the pointer, and nothing about it is
+  shared with what it came from: a book, whatever its origin — read at its place or already the
+  library's own copy — gets a second copy in the library's own store, nothing is written beside
+  your files, the row wears the level's counter name (a duplicate of a duplicate steps rather
+  than stacks), and the highlights ride along as the copy's own list, so a stroke explained in
+  one book never reaches the other. A link at a book duplicates the same way — the copy is of
+  what it opens, filed beside the link itself — while a link at a shelf stays a link, because a
+  level holds no bytes to store. Either way the duplicate is its own row — its own
+  name on the level's counter, its own resume point and its own highlights — filed right behind the row
+  you pointed at, on every shelf that row is on. A SHELF duplicates as a second tree of your own
+  holding fresh copies of the books inside it — one store batch and one card for the whole run,
+  and a member the store refused is dropped rather than shared — in the level's
+  counter name and right behind the shelf it came from. A folder's shelf copies as one of yours
+  rather than as a second shelf of the folder, because one directory is one linked shelf, and the
+  fresh copies measure as their own books, so no rescan ever re-hangs them. No row carries a second line explaining itself:
   a right-click is a reader who knows what the rows mean. One host answers all four, so the menu
   is the same menu wherever it was asked
   from, and a right-click never starts a drag: a menu row is clicked by a pointer that has already

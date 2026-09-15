@@ -1323,20 +1323,26 @@ with its own modification time, so the copy measures as a second book and not as
 twice and is known by the copy's own measurement; the source the original recorded stays the
 provenance both wear. Nothing is written into the folder the original reads and the duplicate is
 never linked, so the departure rule never sees it and there is no sibling on the reader's disk for
-the library to orphan. A link duplicates as a link — a pointer costs a row, not bytes. Either way
+the library to orphan. The highlights ride along (`storage::copy_gloss`): the copy lands wearing
+its own list under its own row id, every mark re-minted, so the two books' strokes never toggle,
+evict or overwrite each other. A link at a book duplicates the same way — the copy is of what it
+opens, named after the link and filed beside the link — while a link at a shelf stays a link,
+because a level holds no bytes to store. Either way
 the duplicate is a row
 of its own: the counter name the level showing the original gives it
 (`library_core::conflict::next_name` — the collision sheet's convention), filed right behind the
-row the reader pointed at on every shelf the original is filed on, with a fresh resume point and
-fresh highlights. A book whose address died has nothing to copy and gets the disabled row, the
-Open row's own rule; the selection's menu duplicates the set, one task and one report, because
+row the reader pointed at on every shelf that row is filed on, with a fresh resume point. A book
+whose address died has nothing to copy and gets the disabled row, the Open row's own rule, and a
+link whose target died answers a toast instead, because the menu cannot know a pointer's target
+went; the selection's menu duplicates the set, one task and one report, because
 two duplicates of one book asked in the same tick would race for one counter name.
 
-A SHELF is the third answer and not a batch of the first two: it holds membership and never held a
-byte, so its duplicate is a second shelf of the reader's own holding the same books, with the whole
-subtree copied along — every shelf a fresh id, the sibling order the level reads kept, the copy's
-root hung where the original hangs and spliced in right behind it, because the shelf list IS the
-render order. The root wears the level's counter (`library_core::conflict::next_shelf_name`, the
+A SHELF is the same answer at the tree's own scale: its duplicate is a second tree of the reader's
+own holding fresh copies of the books inside it, with the whole subtree copied along — every
+member through the one store batch, so one card carries the whole run and a member the store
+refused is dropped, not shared; every shelf a fresh id, the sibling order the level reads kept,
+the copy's root hung where the original hangs and spliced in right behind it, because the shelf
+list IS the render order. The root wears the level's counter (`library_core::conflict::next_shelf_name`, the
 shelf half of the same convention) and everything inside it keeps its own name, since the copy's
 levels are fresh and hold nothing to collide with. Every copied shelf is `ShelfKind::Virtual`
 whatever the original was, and that is a rule rather than a simplification: one directory is one
