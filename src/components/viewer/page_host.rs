@@ -53,11 +53,8 @@ use crate::state::ReaderState;
 /// ask for a page in a mode it is not in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageSlot {
-    /// The single-page view's one page.
     Single,
-    /// The spread's left-hand page.
     SpreadLeft,
-    /// The spread's right-hand page.
     SpreadRight,
 }
 

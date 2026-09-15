@@ -42,12 +42,10 @@ pub struct AutoCenter {
     pub glide_timer: StoredValue<Option<TimeoutHandle>, LocalStorage>,
     /// The current self-re-arming glide step.
     pub glide_step: StoredValue<Option<Rc<dyn Fn()>>, LocalStorage>,
-    /// The panel's virtualizer.
     pub virtualizer: Virtualizer,
 }
 
 impl AutoCenter {
-    /// Create the bundle around the panel's virtualizer.
     pub fn new(virtualizer: Virtualizer) -> Self {
         Self {
             last_user_drive: Rc::new(Cell::new(f64::NEG_INFINITY)),

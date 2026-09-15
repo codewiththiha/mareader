@@ -67,7 +67,6 @@ mod tests {
         assert!(close(frame_delta(f64::NAN, 1_000.0, MAX_SCROLL_FRAME_S), 0.0));
     }
 
-    /// An ordinary 60fps frame reports its own gap, in seconds.
     #[test]
     fn an_ordinary_frame_is_its_own_gap() {
         assert!(close(frame_delta(1_000.0, 1_016.0, MAX_SCROLL_FRAME_S), 0.016));

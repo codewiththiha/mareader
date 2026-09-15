@@ -35,7 +35,6 @@ use serde::{Deserialize, Serialize};
 /// `page` + `index`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct BlockHit {
-    /// Index of the block the hit sits in, in document order.
     pub block: u32,
     /// Which occurrence of the query inside that block, counting from zero.
     pub occurrence: u32,

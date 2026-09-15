@@ -345,13 +345,11 @@ pub struct Virtualizer {
 }
 
 impl Virtualizer {
-    /// Wrap freshly created inner state (the hook's constructor).
     pub(crate) fn from_inner(inner: Rc<VirtualizerInner>) -> Self {
         Self { inner }
     }
 }
 
-/// Write a signal only when the value actually changed.
 fn write_if_changed<T>(signal: RwSignal<T>, value: T)
 where
     T: PartialEq + Copy + Send + Sync + 'static,

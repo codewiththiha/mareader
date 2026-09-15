@@ -757,7 +757,6 @@ impl VirtualizerCore {
     }
 }
 
-/// Build the right layout kind from the shape.
 pub(crate) fn build_layout(
     shape: &LayoutShape,
     count: usize,

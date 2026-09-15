@@ -164,7 +164,6 @@ fn clamp_axis(pos: f64, extent: f64, size: f64, margin: f64) -> f64 {
     pos.clamp(margin, (extent - size - margin).max(margin))
 }
 
-/// Clamp `p` so a box of `size` stays inside `viewport` with `margin`.
 pub fn clamp_point_to_viewport(p: Point, size: Size, viewport: Size, margin: f64) -> Point {
     Point {
         x: clamp_axis(p.x, viewport.w, size.w, margin),
