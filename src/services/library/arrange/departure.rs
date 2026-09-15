@@ -47,16 +47,16 @@ fn converts_on_move(books: &[Row], folders: &[WatchedFolder], row_id: &str, to: 
     else {
         return false;
     };
-    // An EMPTY list is the only thing the length says: no ledger is waiting, so no departure is owed.
-    let rungs: Vec<Option<String>> = folders
+    // Only a folder that placed this content owes a departure; a deleted
+    // rung answers `None` and so never matches the destination.
+    let placing: Vec<&WatchedFolder> = folders
         .iter()
         .filter(|f| f.mode().reads_in_place() && f.placed.contains(&fp))
-        .map(|f| f.rungs_for(&path).0.map(str::to_string))
         .collect();
-    if rungs.is_empty() {
+    if placing.is_empty() {
         return false;
     }
-    to == ALL_SHELF || !rungs.iter().any(|rung| rung.as_deref() == Some(to))
+    to == ALL_SHELF || !placing.iter().any(|f| f.rungs_for(&path).0 == Some(to))
 }
 
 /// The ONE "a book is leaving the ground that made it" primitive, so the copy a move buys, the copy

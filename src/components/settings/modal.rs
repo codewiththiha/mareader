@@ -8,7 +8,7 @@
 //! the `role="dialog"` and `aria-label` that go with it. What is left here is
 //! this modal's own face — a strip of tabs where a sheet has a heading.
 //!
-//! The `open` signal still belongs to the page (two things open this modal: the
+//! The `open` signal belongs to the page (two things open this modal: the
 //! gear button and the reader menu's item), and the shell registers it, so
 //! opening a menu closes the modal and vice versa without either component
 //! knowing about the other — see

@@ -4,18 +4,13 @@
 //! on the engine, the other on a file read and a parser — but they end in the
 //! same place: the same identity fields written, the same gloss marks loaded,
 //! the same resume clamp, startup scale, route flip and shelf record. Those
-//! steps live here once.
-//!
-//! A contract, not a convenience: the tails used to spell the handshake out
-//! separately and drifted — loading gloss marks at open (so the first painted
-//! page carries them) was added to the PDF seed and had to be added to the
-//! reflow tail by hand. A step added here reaches every format at once.
+//! steps live here once, so a step added here reaches every format at once.
 //!
 //! Deliberately NOT here: the order in which a tail seeds its own content.
 //! Both tails depend on an order only they can see — heights published at the
 //! seed scale, the anchor guard up before the page is written, the route
-//! flipping last — and a shared function would hide the sequence that makes it
-//! correct.
+//! flipping last — and a shared function would hide the sequence that makes
+//! it correct.
 
 use std::sync::Arc;
 
@@ -32,10 +27,9 @@ use crate::state::AppState;
 use crate::zoom::target::FitDims;
 
 /// Which document is open, in the fields both formats have. `outline` is
-/// `None` for a format whose chapter tree resolves after the open (a PDF's
-/// comes from the engine, asynchronously); a format that already has its
-/// headings passes the empty tree and says so, which clears `outline_pending`
-/// without a second race to lose.
+/// `None` for a format whose chapter tree resolves after the open; a format
+/// that already has its headings passes the empty tree and says so, which
+/// clears `outline_pending` without a second race to lose.
 pub(super) struct DocumentIdentity {
     pub format: Format,
     pub path: String,
@@ -51,12 +45,12 @@ pub(super) struct DocumentIdentity {
 /// Write the document's identity.
 ///
 /// The format flips here rather than in the tails: a PDF opening over a text
-/// document has to shed the reflowable gates (blend, thumbnails, the Fonts
-/// tab) in the same breath a text open claims them, and one write is the only
-/// way the two cannot disagree about when that happens.
+/// document has to shed the reflowable gates in the same breath a text open
+/// claims them, and one write is the only way the two cannot disagree about
+/// when that happens.
 ///
-/// The previous book's chapters are cleared with the identity — a mid-read open
-/// never passes through `close_document`'s reset, so the old tree would
+/// The previous book's chapters are cleared with the identity — a mid-read
+/// open never passes through `close_document`'s reset, so the old tree would
 /// otherwise show while the new one resolves.
 pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
     let document = &state.reader.document;
@@ -67,9 +61,8 @@ pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
     // this open belongs to, when it belongs to one — and that name is never
     // the address's stem for a stored book, because the address a copy opens
     // at is the store's own `source.pdf`, a layout artifact rather than a
-    // name (`library_core::book::Book::title` falls back to the source the
-    // bytes came from). A title bar reading "source" for every book the
-    // library copied is the sentence this write exists to prevent.
+    // name. A title bar reading "source" for every copied book is the
+    // sentence this write exists to prevent.
     let title = match doc.title.as_deref().map(str::trim) {
         Some(own) if reader_core::filename::is_usable_title(own) => doc.title.clone(),
         _ => state
@@ -90,22 +83,18 @@ pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
 
 /// This document's gloss highlights, into a freshly reset gloss state. Loaded
 /// during the open rather than lazily by the mark layer so the very first page
-/// mount already paints them — page-space rects for a PDF, a block and
-/// character range for a reflowable document, which the page cut makes
-/// projectable. `reset` runs first so a field added to the gloss state cannot
-/// be missed here.
+/// mount already paints them. `reset` runs first so a field added to the gloss
+/// state cannot be missed here.
 ///
 /// Which list "this document's" is, is [`crate::services::document::gloss_key`]'s
-/// answer: the id of the row the library holds for it. Two rows of one file are
-/// two lists, and a book of its own reads the marks its own reader made — which
-/// falls out of the key being an id rather than out of a rule about privacy.
+/// answer: the id of the row the library holds for it. Two rows of one file
+/// are two lists, and a book of its own reads the marks its own reader made.
 ///
-/// There is deliberately no fallback to the address. Marks are keyed by row id
-/// and the storage migrates an address-keyed list onto the row that was reading
-/// it (`crate::storage::migrate_gloss_keys`), so an address read here would only
-/// ever find a list the migration had already claimed — and finding it would put
-/// one file's marks on a different book at the same address. An open with no row
-/// to name has no marks to load, which is the honest answer rather than a guess.
+/// There is deliberately no fallback to the address. Marks are keyed by row
+/// id and the storage migrates an address-keyed list onto the row that was
+/// reading it (`crate::storage::migrate_gloss_keys`), so an address read here
+/// would only ever find a list the migration had already claimed — and put
+/// one file's marks on a different book at the same address.
 pub(super) fn load_marks(state: AppState) {
     state.reader.gloss.reset();
     let key = crate::services::document::gloss_key(state);
@@ -130,9 +119,8 @@ pub(super) fn resume_page(saved_page: u32, num_pages: u32) -> u32 {
 ///
 /// Resolved through the same geometry the first live refit will use, so the
 /// first frame already sits where the fit is going to land instead of jumping
-/// to it a moment later. `page_size` is the sheet being fitted: page 1's for a
-/// PDF, the dialled card (A4 unless the column-width dial grew it) for a
-/// reflowable document.
+/// to it a moment later. `page_size` is the sheet being fitted: page 1's for
+/// a PDF, the dialled card for a reflowable document.
 ///
 /// A document opening straight into the continuous stream is the exception —
 /// and the reason this returns the fit mode, not only the scale: there is no
@@ -140,9 +128,9 @@ pub(super) fn resume_page(saved_page: u32, num_pages: u32) -> u32 {
 /// settings, and the zoom starts at 1 with no fit to remember.
 pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode, f64) {
     let streaming = state.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
-    // The startup fit mode is a user setting (Fit Page / Fit Width), not a
-    // hard-coded fit-width, and `sanitize` has already replaced a persisted
-    // `None` with the default — so this is always a real fit mode here.
+    // The startup fit mode is a user setting, not a hard-coded fit-width,
+    // and `sanitize` has already replaced a persisted `None` with the
+    // default — so this is always a real fit mode here.
     let startup_fit = if streaming {
         FitMode::None
     } else {
@@ -154,19 +142,15 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
         // The container CANNOT be asked at seed time: `container_size` is
         // what the mounted scroller reports and nothing is mounted yet —
         // seeding from it fits the first page against the previous document's
-        // box, and the post-mount refit then commits a zoom over the first
-        // renders. The window is alive already, so measure IT: the title bar
-        // overlays the content, so only a DOCKED rail gives width up (`w-72`,
-        // border-box), and the fit maths gets the same container the mounted
-        // viewer will report a moment later — which turns the post-mount refit
-        // into a no-op.
+        // box. The window is alive already, so measure IT: the title bar
+        // overlays the content, so only a DOCKED rail gives width up, and the
+        // fit maths gets the same container the mounted viewer will report a
+        // moment later — which turns the post-mount refit into a no-op.
         //
-        // The column-width dial is a reflowable-only setting and stays out
-        // of this budget: a reflowable page box already carries it through
-        // the geometry it was cut with, and a PDF page IS the column — the
-        // same contract the live fit maths holds (`crate::zoom::target`).
-        // The format is settled by the identity step that runs before this
-        // one.
+        // The column-width dial stays out of this budget: a reflowable page
+        // box already carries it through the geometry it was cut with, and a
+        // PDF page IS the column — the same contract the live fit maths holds
+        // (`crate::zoom::target`).
         const DOCKED_RAIL_W: f64 = 288.0;
         let (vw, vh) = app_chrome::hooks::use_viewport::viewport_size();
         let docked = !state.settings.with_untracked(|s| s.layout.sidebar_overlay)
@@ -187,8 +171,7 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
 /// fresh mount reads is in its new-document state — `status = Ready` is what
 /// mounts the reader, so anything written after this is written under a live
 /// view. A successful open also dismisses a stale error toast and drops the
-/// previous document's search: the floating overlay and its highlights belong
-/// to the book that was open and must not linger into this one.
+/// previous document's search, which must not linger into this one.
 pub(super) fn enter_ready(state: AppState) {
     state.reader.document.error.set(None);
     state.reader.document.status.set(DocStatus::Ready);

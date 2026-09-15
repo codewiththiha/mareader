@@ -36,7 +36,6 @@ pub enum ReadingData {
     Delete,
 }
 
-
 /// One book is a batch of one: the sheet is the only caller and it always holds a list. Seven
 /// things have to happen together per book, and doing any of them alone leaves something behind
 /// that nothing will ever collect.
@@ -59,7 +58,8 @@ pub fn purge_books(state: AppState, row_ids: &[String], data: ReadingData) {
     crate::storage::persist_covers(state.library);
 }
 
-/// Reads the world before writing any of it, because the tombstone needs the folder that placed this book and the shelf it was filed on.
+/// Reads the world before writing any of it: the tombstone needs the folder
+/// that placed this book and the shelf it was filed on.
 fn purge_one(state: AppState, row: &Row, data: ReadingData) {
     let row_id = row.id();
     let Some(book) = row.book() else {

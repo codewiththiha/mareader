@@ -1,21 +1,14 @@
 //! The question sheet: the one face every "the library has a question" sheet
-//! wears — a heading with the queue's count on it, the question in one
-//! sentence, the answers as a divided list of [`ChoiceRow`]s, the
-//! apply-to-all switch when questions queue, and a Cancel that means the same
-//! thing everywhere.
+//! wears — a heading with the queue's count, the question in one sentence,
+//! the answers as [`ChoiceRow`]s, the apply-to-all switch when questions
+//! queue, and a Cancel that means the same thing everywhere.
 //!
-//! Four sheets were drawing this from scratch — the name collision's, the
-//! folder merge's, the covered file's and the folder's own — and the copies
-//! had already drifted once (two of them grew the apply-to-all row, two never
-//! needed it). The question's WORDS and its answers stay the sheet's: this
-//! component is the skeleton they hang on, composed of the same
-//! [`SheetHeader`], [`SheetBody`] and [`SheetFooter`] a custom-shaped sheet
-//! (the import's, the removal receipt's) still composes itself.
-//!
-//! It renders the sheet's INSIDE, not its [`ModalShell`]: one host shell
-//! (the conflict modal's) dispatches between three of these by the question's
-//! kind, and a shell per question would be three lane registrations where
-//! one was asked for.
+//! The question's words and answers stay the sheet's; this is the skeleton
+//! they hang on, composed of the same [`SheetHeader`], [`SheetBody`] and
+//! [`SheetFooter`] a custom-shaped sheet composes itself. It renders the
+//! sheet's inside, not its [`ModalShell`]: the conflict modal's one host
+//! shell dispatches between three of these by kind, and a shell per question
+//! would be three lane registrations where one was asked for.
 
 use leptos::prelude::*;
 
@@ -26,8 +19,8 @@ use super::sheet::{SheetBody, SheetFooter, SheetHeader};
 
 /// The "apply to all" row: one switch that gives every waiting question of
 /// the same kind the answer being clicked. Rendered only when questions are
-/// actually waiting behind this one — a switch offering to answer nothing is
-/// a control that lies about its reach.
+/// actually waiting — a switch offering to answer nothing is a control that
+/// lies about its reach.
 #[component]
 pub fn ApplyToAll(
     /// How many MORE questions wait behind the one on screen.

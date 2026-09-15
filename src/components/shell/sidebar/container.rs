@@ -23,9 +23,9 @@
 //! over `SIDEBAR_SLIDE_MS` (the shell controller's machine timing), and
 //! `.sidebar-aside { contain: layout style }` keeps the reflow from
 //! escaping the aside. The page follows the rail on every frame of that
-//! slide — that is `follow_watcher`'s container follow, not a refit, and
-//! the burst costs one raster pass because a follow holds its commit until
-//! the container goes quiet.
+//! slide — `follow_watcher`'s container follow, not a refit — and the burst
+//! costs one raster pass because a follow holds its commit until the
+//! container goes quiet.
 //!
 //! Tab switches (Thumbs ↔ Outline) still use `invisible` on the inactive
 //! panel so the virtualization window stays engine-bound and a switch back

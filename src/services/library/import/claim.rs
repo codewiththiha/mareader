@@ -13,7 +13,8 @@ use super::Asked;
 thread_local! {
     /// One run per root, claimed synchronously and released when the run's future drops — see [`claim_root`].
     static RUNNING: RefCell<HashMap<String, Asked>> = RefCell::new(HashMap::new());
-    /// One start per root, run by the rescan's own release rather than polled for, so an ask is never refused by a walk the app started for itself.
+    /// One start per root, run by the rescan's own release rather than polled
+    /// for, so an ask is never refused by a walk the app started for itself.
     static WAITING: RefCell<HashMap<String, Box<dyn FnOnce()>>> = RefCell::new(HashMap::new());
 }
 
@@ -22,7 +23,8 @@ pub(super) struct RootClaim(String);
 impl Drop for RootClaim {
     fn drop(&mut self) {
         RUNNING.with(|running| running.borrow_mut().remove(&self.0));
-        // Taken out and called with no borrow outstanding on either map: the start it hands over claims this very root.
+        // Taken out and called with no borrow outstanding: the start it
+        // hands over claims this very root.
         let start = WAITING.with(|waiting| waiting.borrow_mut().remove(&self.0));
         if let Some(start) = start {
             start();
@@ -30,8 +32,8 @@ impl Drop for RootClaim {
     }
 }
 
-/// The sentence a second ask for a folder that is already being walked gets. One spelling,
-/// because the two doors that can refuse a run refuse it for the same reason.
+/// The sentence a second ask for a walking folder gets. One spelling: the
+/// two doors that can refuse a run refuse it for the same reason.
 pub(super) fn already_importing(state: AppState, root: &str) {
     toast(
         state,
@@ -48,9 +50,9 @@ pub(super) fn root_is_claimed(root: &str) -> bool {
         || WAITING.with(|waiting| waiting.borrow().contains_key(root))
 }
 
-/// Two concurrent walks of one folder are two snapshots of the same ledger row and two
-/// writes back to it, and the second write drops whatever the first run placed. The
-/// check-and-claim is one write for that reason.
+/// Two concurrent walks of one folder are two snapshots of the same ledger
+/// row and two writes back; the second write drops whatever the first placed.
+/// Hence the check-and-claim is one write.
 pub(super) fn claim_root(root: &str, asked: Asked) -> Option<RootClaim> {
     let free = RUNNING.with(|running| {
         running.borrow_mut().insert(root.to_string(), asked).is_none()
@@ -58,9 +60,9 @@ pub(super) fn claim_root(root: &str, asked: Asked) -> Option<RootClaim> {
     free.then(|| RootClaim(root.to_string()))
 }
 
-/// Answers `false` when the root belongs to an ask the READER made — a second import, or
-/// a replace — which is the refusal the caller owes a sentence for. The rule: **an ask
-/// outranks a rescan.**
+/// Runs `start` when the root is free, queues it behind a focus rescan, and
+/// answers `false` when the root belongs to an ask the reader made — the
+/// refusal the caller owes a sentence for. An ask outranks a rescan.
 pub(super) fn when_root_is_free<F>(root: &str, start: F) -> bool
 where
     F: FnOnce() + 'static,
@@ -83,14 +85,14 @@ where
     }
 }
 
-/// One spelling for the guarded start the run doors share — a folder import, a copies run:
-/// the claim, the card and the double-import sentence in one place, so the ordering (the
-/// run starts inside the claim's ask, and the card goes up only when there is a run) stops
-/// being copy-paste folklore at each door.
+/// The guarded start the run doors share — a folder import, a copies run:
+/// the claim, the card and the double-import sentence in one place, so the
+/// ordering (run starts inside the claim, card goes up only when there is a
+/// run) is not copy-paste folklore at each door.
 ///
-/// `launch` receives the task id its progress beats will echo and the root it walks; a root
-/// held by a rescan queues the launch for the walk's own release, which is `when_root_is_free`'s
-/// rule rather than this one's.
+/// `launch` receives the task id its beats echo and the root it walks; a root
+/// held by a rescan queues the launch for the walk's release
+/// ([`when_root_is_free`]'s rule).
 pub(super) fn start_guarded(
     state: AppState,
     root: &str,
@@ -106,8 +108,8 @@ pub(super) fn start_guarded(
     super::tasks::push_task(state, crate::state::library::ImportTask::new(card, folder_label(root)));
 }
 
-/// The claim gate without a card of its own, for the doors whose run and card come from
-/// somewhere deeper in (a replace that hands its root to `proceed_folder`): the same
+/// The claim gate without a card, for doors whose run and card come from
+/// deeper in (a replace handing its root to `proceed_folder`): the same
 /// refusal sentence, no second card for one run.
 pub(super) fn gate_root(state: AppState, root: &str, launch: impl FnOnce() + 'static) {
     if !when_root_is_free(root, launch) {

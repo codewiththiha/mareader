@@ -1,18 +1,15 @@
 //! The shelf's "Duplicate": a second instance of one thing, asked for by name.
 //!
-//! A duplicate is the app's own object from the moment it exists, and that is
-//! the whole of the rule: nothing about it is shared with what it came from.
-//! Not the bytes — a book read at its place, a copy the library already made
-//! and a link at a book all duplicate into the library's own store, each copy
-//! in its own item folder — and not the reader's work either: the highlights
-//! land on the copy as its own list under its own id, so a stroke explained in
-//! one book never reaches the other. A shelf duplicates the same way: the copy
-//! is a second tree of the reader's own holding fresh copies of the books
-//! inside it, not a second door onto the same rows.
+//! A duplicate is the app's own object from the moment it exists: nothing
+//! about it is shared with what it came from. Not the bytes — a read-at-place
+//! book, a stored copy and a link at a book all duplicate into the library's
+//! own store, each in its own item folder — and not the reader's work: the
+//! highlights land on the copy as its own list under its own id. A shelf
+//! duplicates the same way: a second tree holding fresh copies of the books,
+//! not a second door onto the same rows.
 //!
-//! The one thing that stays a pointer is a link at a SHELF, because a level
-//! holds membership and never held a byte — there is nothing to store and
-//! nothing a second pointer could share that the first one does.
+//! The one thing that stays a pointer is a link at a shelf: a level holds
+//! membership and never held a byte, so there is nothing to store.
 
 use std::collections::{HashMap, HashSet};
 
@@ -40,9 +37,8 @@ pub fn duplicate_shelf(state: AppState, shelf_id: &str) {
     duplicate_entries(state, std::slice::from_ref(&shelf_id.to_string()));
 }
 
-/// The name says ENTRIES because a shelf's rows and the shelves themselves are both in the
-/// list — `duplicate_rows` said only half of what it did, and the half it said was the half
-/// the caller could already see.
+/// ENTRIES because a shelf's rows and the shelves themselves are both in
+/// the list.
 pub fn duplicate_entries(state: AppState, ids: &[String]) {
     if ids.is_empty() {
         return;
@@ -83,9 +79,10 @@ fn report(landed: &[Duplicated]) -> String {
     format!("Duplicated {} {noun}.", landed.len())
 }
 
-/// Every refusal but the missing book has already said so on the toast (the missing book's
-/// menu row is disabled before the click can land). The two id kinds are disjoint by prefix,
-/// so the row list answering "not mine" is the shelf list's turn.
+/// Every refusal but the missing book has already said so on the toast (the
+/// missing book's menu row is disabled before the click can land). The two id
+/// kinds are disjoint by prefix, so the row list answering "not mine" is the
+/// shelf list's turn.
 async fn duplicate_one(state: AppState, id: &str) -> Option<Duplicated> {
     let Some(row) = state.library.row(id) else {
         return duplicate_shelf_row(state, id)
@@ -128,10 +125,10 @@ async fn duplicate_one(state: AppState, id: &str) -> Option<Duplicated> {
     }
 }
 
-/// What a link points at, for the duplicate it is about to become: the book whose
-/// bytes the copy will wear, or the shelf a second pointer stays at. A link whose
-/// target is gone, dead or not a book answers [`LinkAt::Dead`], which is the
-/// refusal every caller of this shares.
+/// What a link points at, for the duplicate it is about to become: the book
+/// whose bytes the copy will wear, or the shelf a second pointer stays at. A
+/// link whose target is gone, dead or not a book answers [`LinkAt::Dead`],
+/// which is the refusal every caller of this shares.
 enum LinkAt {
     Book(Book),
     Shelf,
@@ -148,9 +145,10 @@ fn link_at(rows: &[Row], target: &str) -> LinkAt {
     }
 }
 
-/// A shelf link's duplicate: a second link at the same shelf, filed beside the
-/// first. The counter name and the filing are the row rules every duplicate
-/// follows; only the "stays a pointer" half is this function's own.
+/// A shelf link's duplicate: a second link at the same shelf, filed beside
+/// the first. The counter name and the filing are the row rules every
+/// duplicate follows; only the "stays a pointer" half is this function's
+/// own.
 fn duplicate_shelf_link(state: AppState, row_id: &str, name: &str, target: &str) -> String {
     let now = now_ms();
     let title = name_for(state, name);
@@ -162,11 +160,11 @@ fn duplicate_shelf_link(state: AppState, row_id: &str, name: &str, target: &str)
 }
 
 /// A book's duplicate: a second copy in the library's own store, wearing the
-/// name the reader pointed at — the book's own display name, or the link's name
-/// when a link was what was duplicated. Whatever origin the original had, the
-/// copy is `Stored`; the highlights come along as the copy's own list; and the
-/// row lands beside the row the reader pointed at, not beside the original the
-/// link happened to read.
+/// name the reader pointed at — the book's own display name, or the link's
+/// name when a link was what was duplicated. Whatever origin the original
+/// had, the copy is `Stored`; the highlights come along as the copy's own
+/// list; and the row lands beside the row the reader pointed at, not beside
+/// the original the link happened to read.
 ///
 /// `shown` is the name to counter-step on the level, minted by the caller
 /// because the two callers read it off two different rows.
@@ -177,8 +175,9 @@ async fn duplicate_book(
     shown: String,
 ) -> Option<String> {
     let book_id = id::next_id(now_ms());
-    // A card for the copy: the shell's beats for it need somewhere to land, and the duplicate
-    // of a big document is a copy the reader is waiting on like any other.
+    // A card for the copy: the shell's beats for it need somewhere to land,
+    // and the duplicate of a big document is a copy the reader is waiting on
+    // like any other.
     let task = import::begin_task(state, shown.clone());
     let from = book.path().to_string();
     let (new_store, measured) = match ipc::copy_one(&task, &from, &book_id).await {
@@ -201,14 +200,17 @@ async fn duplicate_book(
         now_ms(),
     );
     dup.title = Some(title.clone());
-    // A base the file itself carried underscores in ("harry_potter_1") reads as snake-case debris to the title rule, and a name the reader just asked for is not debris.
+    // A base the file itself carried underscores in ("harry_potter_1") reads
+    // as snake-case debris to the title rule, and a name the reader just
+    // asked for is not debris.
     dup.title_locked = true;
     dup.adopt_measurement(measured);
     let dup_id = dup.id.clone();
     state.library.books.update(|rows| rows.push(Row::Book(dup)));
-    // The highlights are half of what the reader put into the book: the copy lands wearing
-    // its own list of them — same words at the same spots, ids of their own — so the two
-    // books' marks are separate from the first moment.
+    // The highlights are half of what the reader put into the book: the copy
+    // lands wearing its own list of them — same words at the same spots, ids
+    // of their own — so the two books' marks are separate from the first
+    // moment.
     crate::storage::copy_gloss(&marks_of, &dup_id);
     file_beside(state, beside, &dup_id);
     import::finish_task(state, &task, 1, 0);
@@ -259,10 +261,11 @@ enum Member {
     Skip,
 }
 
-/// A shelf's duplicate: the plan, the one store batch for every copy it owes,
-/// and the landing. The batch is one call so one card carries the whole run,
-/// and a per-file failure is one toast naming the file — the other members
-/// still land, which is the folder run's own answer to a locked file.
+/// A shelf's duplicate: the plan, the one store batch for every copy it
+/// owes, and the landing. The batch is one call so one card carries the whole
+/// run, and a per-file failure is one toast naming the file — the other
+/// members still land, which is the folder run's own answer to a locked
+/// file.
 async fn duplicate_shelf_row(state: AppState, shelf_id: &str) -> Option<String> {
     let plan = plan_the_tree(state, shelf_id)?;
     let requests: Vec<BookFileRequest> = plan
@@ -335,7 +338,9 @@ fn plan_the_tree(state: AppState, shelf_id: &str) -> Option<TreePlan> {
             },
             kind: ShelfKind::Virtual,
             books: shelf.books.clone(),
-            // The subtree keeps its shape and closes no loop; a parent the walk could not reach is no parent at all rather than an edge at the ORIGINAL.
+            // The subtree keeps its shape and closes no loop; a parent the
+            // walk could not reach is no parent at all rather than an edge at
+            // the ORIGINAL.
             parent: if at == 0 {
                 original.parent.clone()
             } else {
@@ -455,7 +460,9 @@ fn land_the_tree(
                 .filter_map(|old| mapped.get(&old).cloned())
                 .collect();
         }
-        // Right behind the original's own row: the shelf list IS the render order, so a copy appended to the end would be a shelf the reader has to go and find.
+        // Right behind the original's own row: the shelf list IS the render
+        // order, so a copy appended to the end would be a shelf the reader
+        // has to go and find.
         let at = live
             .iter()
             .position(|s| s.id == original_id)
@@ -465,7 +472,8 @@ fn land_the_tree(
     name
 }
 
-// The file manager's counter, counted against the level the reader clicked from, because the collision that matters is the one they can see.
+// The file manager's counter, counted against the level the reader clicked
+// from: the collision that matters is the one they can see.
 fn name_for(state: AppState, display: &str) -> String {
     let (rows, shelves) = (
         state.library.books.get_untracked(),
@@ -475,7 +483,8 @@ fn name_for(state: AppState, display: &str) -> String {
     next_name(&rows, &shelves, &level, display)
 }
 
-/// `place` is the drag's spelling — remove, insert at the index — which is what "beside the row you pointed at" means on a list the reader can see.
+/// `place` is the drag's spelling — remove, insert at the index — which is
+/// what "beside the row you pointed at" means on a list the reader can see.
 fn file_beside(state: AppState, original_id: &str, dup_id: &str) {
     let seats: Vec<(String, usize)> = state.library.shelves.with_untracked(|shelves| {
         shelves_ops::containing(shelves, original_id)
@@ -782,12 +791,11 @@ mod tests {
 
     #[test]
     fn a_folder_shelf_duplicates_as_a_shelf_of_the_readers_own() {
-        // One directory is one linked shelf: a folder's map names one shelf per
-        // rung, so a second folder shelf of one rung would be two doors to one
-        // directory with only one of them on the ledger — and a rescan would
-        // re-hang a shelf the reader made. The copy is the reader's own second
-        // tree over fresh copies of the books, which no walk, fold or departure
-        // answers for.
+        // One directory is one linked shelf: a second folder shelf of one rung
+        // would be two doors to one directory with only one of them on the
+        // ledger — and a rescan would re-hang a shelf the reader made. The
+        // copy is the reader's own second tree over fresh copies of the
+        // books.
         let (state, _owner) = nested_state();
         state.library.shelves.update(|shelves| {
             shelves[0] = library_core::testkit::folder_shelf(

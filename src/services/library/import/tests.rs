@@ -24,7 +24,8 @@ use library_core::scan::FoundFile;
 use library_core::shelf::Shelf;
 use reader_core::format::Format;
 
-/// The cover queue skips anything that is not a PDF, so a host test that lands one never starts the wasm render chain.
+/// The cover queue skips anything that is not a PDF, so a host test that
+/// lands one never starts the wasm render chain.
 #[test]
 fn a_loose_file_whose_content_the_library_holds_asks_instead_of_landing() {
     let owner = Owner::new();
@@ -104,7 +105,8 @@ fn found(path: &str, n: u32) -> FoundFile {
     library_core::testkit::found_md(path, n)
 }
 
-/// A test whose file sits in a subfolder needs the real thing, because a `rel` of only the file's own name puts every book on the folder's root shelf.
+/// A test whose file sits in a subfolder needs the real `rel`: a bare file
+/// name would put every book on the folder's root shelf.
 fn found_under(root: &str, path: &str, n: u32) -> FoundFile {
     let rel = library_core::folder::rel_under(path, root)
         .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path).to_string());
@@ -218,7 +220,8 @@ fn a_run_the_reader_started_is_the_one_an_ask_is_refused_by() {
     );
 }
 
-/// The watch arrives as the tree's root decision and not as the flag alone, because the flag is now that decision's mirror.
+/// The watch arrives as the tree's root decision, not the flag alone: the
+/// flag is now that decision's mirror.
 fn folder_in_mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedFolder {
     let mut folder = WatchedFolder {
         opts: FolderOpts {
@@ -470,7 +473,6 @@ fn only_the_root_shelf_has_no_subfolder() {
     assert_eq!(rel_of("scifi/deep").as_deref(), Some("scifi/deep"));
 }
 
-
 fn fp(n: u32) -> Fingerprint {
     Fingerprint {
         size: u64::from(n),
@@ -651,7 +653,9 @@ fn a_file_no_in_place_tree_answers_for_is_an_ordinary_import() {
     );
 }
 
-/// A host that stamps a copy like its source left the library holding the SOURCE's fingerprint on the copy's row, so the next walk's prune read the moved-out log as a book come back and dropped it.
+/// A host that stamps a copy like its source left the library holding the
+/// source's fingerprint on the copy's row, so the next walk's prune read the
+/// moved-out log as a book come back and dropped it.
 #[test]
 fn a_departure_whose_log_is_gone_still_brings_the_linked_book_back() {
     let owner = Owner::new();
@@ -830,7 +834,6 @@ fn a_copying_folder_never_mints_a_second_copy_of_its_own_file() {
     assert_eq!(books.len(), 1, "and no second copy of one file is made");
 }
 
-
 fn rung(
     id: &str,
     name: &str,
@@ -851,7 +854,9 @@ fn rung(
     }
 }
 
-/// The reported shape: `Root/ > Mid/ > Deep/` imported as one tree, the `Deep` rung removed, `Deep/` then imported on its own so it stands at the top level.
+/// The reported shape: `Root/ > Mid/ > Deep/` imported as one tree, the
+/// `Deep` rung removed, `Deep/` then imported on its own so it stands at the
+/// top level.
 fn displaced_state() -> (AppState, Owner) {
     let owner = Owner::new();
     owner.set();
@@ -1058,7 +1063,9 @@ fn an_answer_about_a_shelf_that_went_does_nothing_at_all() {
     );
 }
 
-/// The member standing outside the tree goes back on the rung its directory names, and the light the note's close rides lands on the shelf in its new place rather than on the rung the tree lost.
+/// The member standing outside the tree goes back on the rung its directory
+/// names, and the light the note's close rides lands on the shelf in its new
+/// place rather than on the rung the tree lost.
 #[test]
 fn the_fold_puts_the_member_back_and_names_the_shelf_it_seated() {
     let (state, _owner) = displaced_state();
@@ -1629,7 +1636,6 @@ fn the_planned_fold_seats_the_run_s_own_shelf() {
     assert_eq!(state.library.folders.get_untracked().len(), 1);
 }
 
-
 fn linked(id: &str, path: &str, n: u32) -> Row {
     Row::Book(Book::new(
         id.to_string(),
@@ -1897,7 +1903,6 @@ fn a_replace_takes_the_linked_books_and_leaves_the_copies() {
         "the placements stay: they are what keeps a rescan quiet until the copies land"
     );
 }
-
 
 fn reconciled_state() -> (AppState, Owner) {
     let owner = Owner::new();

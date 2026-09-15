@@ -1,22 +1,23 @@
-//! The reading data a removal kept, put back on the book a later import lands.
+//! The reading data a removal kept, put back on the book a later import
+//! lands.
 //!
-//! A removal the reader did not ask to be destructive stows what the library held about the book —
-//! the marks, the place they stopped at, the name they gave it — under the file it came from
-//! (`crate::storage::kept`). This is the other half of that promise: an import that mints a book of
-//! its OWN is that file coming back, and what waits for it lands on the new row.
+//! A non-destructive removal stows the marks, resume point and name under the
+//! file they came from (`crate::storage::kept`); this is the other half of
+//! that promise — an import that mints a book of its own is that file coming
+//! back, and what waits lands on the new row.
 //!
-//! A row an import merges into is not one of those: a book the library still holds has its own
-//! marks and its own place, and an arrival that resolves to it is a second copy rather than a book
-//! returning. Every minting path therefore hands this the row it just made.
+//! A merged-into row is not one of those: a book the library still holds has
+//! its own marks and place, and an arrival resolving to it is a second copy,
+//! not a book returning. Every minting path hands this the row it just made.
 
 use library_core::book::{Row, book_rows_mut};
 use library_core::scan::FoundFile;
 
 use crate::storage::kept::{self as kept_store, KeptBook};
 
-/// The best answer this file gives a waiting record, written onto the row an import has just made
-/// and spent by it: a second import of the same file is a second book rather than a second helping
-/// of the same reading data.
+/// Write a waiting record onto the row an import just made, and spend it: a
+/// second import of the same file is a second book, not a second helping of
+/// the same reading data.
 pub(super) fn reclaim(rows: &mut [Row], file: &FoundFile, row_id: &str) {
     if let Some(kept) = kept_store::claim(file) {
         apply(rows, row_id, kept);
@@ -33,8 +34,8 @@ fn apply(rows: &mut [Row], row_id: &str, kept: KeptBook) {
     book.fraction = kept.fraction;
     book.last_read_ms = kept.last_read_ms;
     if let Some(title) = &kept.title {
-        // The reader typed this one, so it is locked again: the name the shelf shows must not be
-        // overwritten by whatever the document calls itself on the next open.
+        // The reader typed this name, so it is locked again: the shelf must
+        // not show whatever the document calls itself on the next open.
         book.title = Some(title.clone());
         book.title_locked = true;
     }

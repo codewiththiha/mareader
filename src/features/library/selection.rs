@@ -1,9 +1,9 @@
-//! Multi-select on the shelf: the gesture that starts it, the set it fills, and the bar that
-//! acts on it.
+//! Multi-select on the shelf: the gesture that starts it, the set it fills,
+//! and the bar that acts on it.
 //!
 //! The gesture is the app's one card wrapper at the app's one hold tuning
-//! (`crate::components::primitives::interactions::draggable_item`), so holding a book feels
-//! exactly like holding a highlight.
+//! (`crate::components::primitives::interactions::draggable_item`), so holding
+//! a book feels exactly like holding a highlight.
 
 use std::collections::HashSet;
 
@@ -27,9 +27,9 @@ use crate::features::library::remove_modal::RemoveSheet;
 use crate::services::library::{create_shelf_here, file_many, nest_many};
 use crate::state::AppState;
 
-/// The mark is the visible half of a selection — an outline alone asks the reader to remember
-/// which cards they have already tapped — and three copies of it were three places the check could
-/// drift from the set it marks.
+/// The visible half of a selection: an outline alone asks the reader to
+/// remember which cards they tapped, and three copies of the check were three
+/// places it could drift from the set it marks.
 #[component]
 pub(crate) fn SelectionCheck(state: AppState, id: String) -> impl IntoView {
     let selected = state.library.is_selected(&id);
@@ -58,13 +58,15 @@ pub(crate) fn enter_selection(state: AppState, item_id: &str) {
     });
 }
 
-/// Every exit goes through here — Done, Escape, a click on empty shelf, an action that consumed the selection, leaving the page — so there is one place that decides what "not selecting" means.
+/// Every exit goes through here — Done, Escape, a click on empty shelf, an
+/// action that consumed the selection, leaving the page — so one place decides
+/// what "not selecting" means.
 pub(crate) fn exit_selection(state: AppState) {
     state.library.selecting.set(false);
     state.library.selected.set(HashSet::new());
 }
 
-// "Is this one in it" is asked by every card on every repaint, and a list would answer it by walking.
+// Asked by every card on every repaint; a list would answer it by walking.
 pub(crate) fn toggle_selected(state: AppState, item_id: &str) {
     state.library.selected.update(|selected| {
         if !selected.remove(item_id) {
@@ -80,7 +82,8 @@ pub(crate) fn selected_ids(state: AppState) -> Vec<String> {
         .with_untracked(|selected| selected.iter().cloned().collect())
 }
 
-/// It itemises what a removal costs, and a link costs nothing but itself, which is a line the receipt says rather than a reason to leave the row out of the set.
+/// Itemises what a removal costs. A link costs nothing but itself — a line
+/// the receipt says, not a reason to leave the row out of the set.
 fn selected_books(state: AppState) -> Vec<String> {
     let folders = selected_folders(state);
     selected_ids(state)
@@ -98,7 +101,8 @@ fn selected_folders(state: AppState) -> Vec<String> {
     })
 }
 
-/// Holding three books and lifting one of them lifts all three, while lifting a book nobody selected lifts that book and leaves the set the reader built alone.
+/// Lifting a held book lifts the whole set; lifting an unselected book lifts
+/// that book and leaves the set alone.
 pub(crate) fn payload_for(
     state: AppState,
     item_id: &str,
@@ -134,10 +138,12 @@ pub(crate) fn payload_for(
     }
 }
 
-/// The set has no order, but a drop does: three books put down before a card land in whatever order the payload names them, and an order a hash iteration chose is one the reader cannot predict.
+/// The set has no order, but a drop does: three books put down before a card
+/// land in payload order, and an order a hash iteration chose is one the
+/// reader cannot predict.
 fn in_page_order(state: AppState, ids: Vec<String>) -> Vec<String> {
-    // Two set lookups rather than two list scans: the page's order is asked per gesture,
-    // over a selection that can be every card on the level.
+    // Two set lookups rather than list scans: asked per gesture over a
+    // selection that can be every card on the level.
     let wanted: HashSet<String> = ids.iter().cloned().collect();
     let mut ordered: Vec<String> = level_rows(state)
         .into_iter()
@@ -145,8 +151,8 @@ fn in_page_order(state: AppState, ids: Vec<String>) -> Vec<String> {
         .filter(|id| wanted.contains(id))
         .collect();
     let placed: HashSet<&str> = ordered.iter().map(String::as_str).collect();
-    // Collected before the extend on purpose: `placed` borrows `ordered`, and the
-    // borrow ends with the filter, not with the statement the filter used to share.
+    // Collected before the extend: `placed` borrows `ordered`, and the
+    // borrow must end with the filter.
     let arrivals: Vec<String> = ids
         .into_iter()
         .filter(|id| !placed.contains(id.as_str()))
@@ -155,7 +161,9 @@ fn in_page_order(state: AppState, ids: Vec<String>) -> Vec<String> {
     ordered
 }
 
-/// One action from the reader's side, two operations on the same list, and a folder that cannot be nested there (because it would end up inside itself) is left where it is rather than failing the batch.
+/// One reader action, two operations on one list. A folder that cannot be
+/// nested there (it would end up inside itself) is left where it is rather
+/// than failing the batch.
 fn file_selection(state: AppState, shelf_id: &str) {
     let books = selected_books(state);
     file_many(state, &books, shelf_id);
@@ -163,14 +171,16 @@ fn file_selection(state: AppState, shelf_id: &str) {
     nest_many(state, &folders, shelf_id);
 }
 
-/// Created without drilling into it: the reader picked cards on one shelf and asked for them to be on another, and navigating away is an answer to a question they did not ask.
+/// Created without drilling into it: the reader asked for the cards to be on
+/// another shelf, not to navigate there.
 pub(crate) fn file_selection_on_new_shelf(state: AppState) {
     let shelf_id = create_shelf_here(state);
     file_selection(state, &shelf_id);
     exit_selection(state);
 }
 
-// Both halves go to the sheet, because the sheet receipts both: an ask that handed over the books alone would take the shelves apart with no receipt at all.
+// Both halves go to the sheet because the sheet receipts both: handing over
+// the books alone would take shelves apart with no receipt.
 pub(crate) fn ask_remove_selection(state: AppState, sheet: &RemoveSheet) {
     let books = selected_books(state);
     let folders = selected_folders(state);
@@ -218,7 +228,9 @@ pub(crate) fn use_select_mode(state: AppState) {
     on_cleanup(move || exit_selection(state));
 }
 
-/// "All books" is not one of them: filing onto it would be a way of filing nowhere at all. A selection holding a folder cannot be filed inside that folder or inside anything under it.
+/// "All books" is not one of them: filing onto it would be filing nowhere. A
+/// selection holding a folder cannot be filed inside that folder or anything
+/// under it.
 fn shelf_choices(state: AppState) -> Signal<Vec<Shelf>> {
     Signal::derive(move || {
         let selected = state.library.selected.get();

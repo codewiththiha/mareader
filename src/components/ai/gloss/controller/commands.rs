@@ -14,8 +14,6 @@ use super::geometry::GlossGeometry;
 use super::open::GlossOpen;
 use super::MARK_CAP;
 
-/// The shared behaviours: every path funnels through these instead of
-/// re-implementing a close or a persistence dance.
 #[derive(Clone, Copy)]
 pub struct GlossCommands {
     /// Full dismiss back to Idle (keeps the mark — the highlight reopens it).
@@ -40,10 +38,9 @@ pub struct GlossCommands {
 ///
 /// A PDF's spot IS its page-space rect, so the anchor's own tolerance is the
 /// whole answer. A reflowable mark's rect is only the box it happened to be
-/// captured in — viewport pixels, which move when the reader scrolls — so
-/// comparing rects there would stack a second stroke on the same word the
-/// moment the page moved. Two reflowable marks are the same spot when their
-/// envelopes are: same block, same characters.
+/// captured in — viewport pixels, which move when the reader scrolls — so two
+/// reflowable marks are the same spot when their envelopes are: same block,
+/// same characters.
 fn same_glossed_spot(a: &GlossMark, b: &GlossMark) -> bool {
     if a.word != b.word {
         return false;
@@ -61,9 +58,8 @@ fn same_glossed_spot(a: &GlossMark, b: &GlossMark) -> bool {
 }
 
 /// Build the commands over a controller's slices. Split from the slices
-/// themselves because these are behaviour, not state: they are the only place
-/// that writes to more than one slice at a time, and to the document's
-/// persisted marks.
+/// themselves because these are behaviour, not state: the only place that
+/// writes to more than one slice at a time, and to the persisted marks.
 pub(super) fn build_commands(
     state: AppState,
     content: GlossContent,
@@ -77,13 +73,11 @@ pub(super) fn build_commands(
     let marks = state.reader.gloss.marks;
 
     // The marks' one write to storage. There is no per-mark write: the stored
-    // shape is a document's list, so every mutation of it persists the whole
-    // list, and a document that is not open has nowhere to put it. The KEY is
-    // `crate::services::document::gloss_key`'s rather than the document's
-    // path, so a book of its own writes the list its own reader reads — the
-    // load at open asks the same question and the two cannot drift.
-    // Captures the state and one signal, so it is `Copy` and each command
-    // below takes its own copy.
+    // shape is a document's list, so every mutation persists the whole list,
+    // and a document that is not open has nowhere to put it. The KEY is
+    // `crate::services::document::gloss_key`'s rather than the path, so a book
+    // of its own writes the list its own reader reads — the load at open asks
+    // the same question and the two cannot drift.
     let persist = move || {
         let key = crate::services::document::gloss_key(state);
         if !key.is_empty() {
@@ -91,8 +85,8 @@ pub(super) fn build_commands(
         }
     };
 
-    // Full dismiss back to Idle. NOTE: the mark itself is intentionally kept
-    // — the highlight is the point, and it is what reopens this card later.
+    // Full dismiss back to Idle. The mark itself is intentionally kept — the
+    // highlight is what reopens this card later.
     let reset = Callback::new(move |_| {
         popover_open.set(false);
         content.clear();
@@ -105,9 +99,8 @@ pub(super) fn build_commands(
         open.end_run();
     });
 
-    // The outro: fold the expanded card back down onto the word. Every close
-    // path funnels through here, and the popover's settle watcher unmounts
-    // the surface once the spring has actually landed on the stroke.
+    // Every close path funnels through here; the popover's settle watcher
+    // unmounts the surface once the spring has landed on the stroke.
     let collapse_to_mark = Callback::new(move |_| {
         if geometry.gphase.get_untracked() != GlossPhase::Expanded || drag.active.get_untracked() {
             return;
@@ -116,8 +109,7 @@ pub(super) fn build_commands(
         geometry.gphase.set(GlossPhase::Compact);
     });
 
-    // Record + persist a freshly captured mark, and hand back the CANONICAL
-    // one. Returning it matters — the id is what keys the processing glow
+    // Hand back the CANONICAL mark: the id is what keys the processing glow
     // and the answer cache, so the caller must not go on holding the
     // discarded duplicate.
     let add_mark = Callback::new(move |m: GlossMark| -> GlossMark {
@@ -135,8 +127,7 @@ pub(super) fn build_commands(
             }
         });
         // The cap drops the oldest mark; its answer must go with it, or the
-        // session cache outlives every stroke it belongs to and grows without
-        // the bound MARK_CAP exists to impose.
+        // session cache grows without the bound MARK_CAP exists to impose.
         if let Some(old) = evicted {
             cache.remove(&old.id);
         }
@@ -144,9 +135,9 @@ pub(super) fn build_commands(
         m
     });
 
-    // The single removal path: context menu, selection bar, anything later.
-    // Persist first, evict the session cache, then close the card if it
-    // belonged to one of the removed marks. Hands the batch back for undo.
+    // The single removal path. Persist first, evict the session cache, then
+    // close the card if it belonged to one of the removed marks. Hands the
+    // batch back for undo.
     let remove_marks = Callback::new(move |ids: Vec<String>| -> Vec<GlossMark> {
         if ids.is_empty() {
             return Vec::new();
@@ -196,9 +187,9 @@ pub(super) fn build_commands(
         persist();
     });
 
-    // Retry the current mark after a retryable failure: the same opening
-    // ritual minus persistence (the mark is already canonical), so the stroke
-    // thinks again and the surface is reborn on the first fresh chunk.
+    // The same opening ritual minus persistence (the mark is already
+    // canonical), so the stroke thinks again and the surface is reborn on
+    // the first fresh chunk.
     let retry = Callback::new(move |_| {
         let Some(mark) = open.mark.get_untracked() else {
             return;
@@ -206,15 +197,14 @@ pub(super) fn build_commands(
         if !tauri_bridge::has_tauri() {
             // The environment cannot change mid-session, and the desktop-only
             // verdict `begin_fetch` would reach is not retryable — so the
-            // button that got us here cannot be showing. Leave the card alone.
+            // button that got us here cannot be showing.
             return;
         }
-        // A retry is a NEW run of the same opening ritual: `begin_fetch` starts
-        // the run (the failed one's late chunks are no longer this card's
-        // business), clears the last answer, and puts the stroke back into
-        // thinking. Persistence is deliberately not repeated — the mark is
-        // already canonical, which is why this goes through the transition and
-        // not through the open path.
+        // A retry is a NEW run of the same opening ritual: `begin_fetch`
+        // starts the run (the failed one's late chunks are no longer this
+        // card's business), clears the last answer, and puts the stroke back
+        // into thinking. Persistence is not repeated — the mark is already
+        // canonical.
         super::wiring::begin_fetch(content, geometry, open, processing_id, mark);
     });
 

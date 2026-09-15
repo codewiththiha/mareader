@@ -1,6 +1,6 @@
-//! The compact sheet's question: one file of a folder import merging into a shelf the level already
-//! held. Three answers — one book, replace, or two books — and the switch that gives every waiting
-//! file of the merge the same answer.
+//! The compact sheet's question: one file of a folder import merging into a
+//! shelf the level already held. Three answers — one book, replace, or two
+//! books — and the switch that gives every waiting file the same answer.
 
 use leptos::prelude::*;
 
@@ -68,13 +68,16 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: Placement) {
     }
 }
 
-/// Through the removal's own sweep — receipt and all — so a replace here costs the reader exactly what a replace anywhere else does, the reading data included.
+/// Through the removal's own sweep, receipt and all: a replace here costs
+/// the reader exactly what a replace anywhere else does.
 fn purge_existing(state: AppState, existing_id: &str) {
     let ids = [existing_id.to_string()];
     purge_books(state, &ids, ReadingData::Delete);
 }
 
-/// The sheet already withholds it; this is the write side of the same rule, because apply-to-all can carry an answer across to a question whose sheet never offered it.
+/// The sheet already withholds it; this is the write side of the same rule,
+/// because apply-to-all can carry an answer to a question whose sheet never
+/// offered it.
 fn withhold_keep_both_from_a_twin(
     state: AppState,
     ask: &ConflictAsk,

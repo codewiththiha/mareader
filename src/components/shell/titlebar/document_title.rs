@@ -1,10 +1,7 @@
 //! The reader's toolbar document-name label.
 //!
-//! The library page used to carry a second label of its own in the leading
-//! cluster, measuring its max-width against the trailing one. It went when the
-//! library's bar became navigation — a breadcrumb says where you are, which is a
-//! different job from naming a document, and on a page with no document open the
-//! two were competing for the same slot.
+//! The library page has no label of its own: its bar is navigation, and a
+//! breadcrumb saying where you are is a different job from naming a document.
 
 use leptos::prelude::*;
 

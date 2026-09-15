@@ -1,20 +1,19 @@
-//! Path-part spelling: the one place a file name, a stem, an extension or a folder label is
-//! taken apart.
+//! Path-part spelling: the one place a file name, a stem, an extension or a
+//! folder label is taken apart.
 //!
-//! Six functions in three idioms used to do these four jobs — `rsplit('/')` in the services,
-//! `Path::extension` in the shell, `rsplit_once('.')` in the import — and a Windows path
-//! answered differently depending on which door it came in. Everything here is pure and
-//! host-tested, and both the frontend and the shell depend on this crate already, so the
-//! spelling is shared rather than mirrored.
+//! These four jobs used to be done by six functions in three idioms across
+//! the services, the shell and the import, and a Windows path answered
+//! differently depending on which door it came in. Everything here is pure,
+//! host-tested, and shared by the frontend and the shell.
 
-/// The last segment of a path, either separator, no trailing empties: what a shelf shows a
-/// file by. Empty for a path that is all separator, and for a bare drive root (`C:\`) —
-/// a root is all root, with no last segment to show.
+/// The last segment of a path, either separator, no trailing empties: what a
+/// shelf shows a file by. Empty for an all-separator path and for a bare drive
+/// root (`C:\`) — a root has no last segment to show.
 pub fn file_name(path: &str) -> String {
     let trimmed = path.trim_end_matches(['/', '\\']);
-    // A drive root only looks like a segment once the separator behind it is trimmed
-    // away: "C:" is a letter wearing its colon, not a name. The letter is checked
-    // because a colon is a legal character in a Unix name, and "ab:" is one.
+    // A drive root only looks like a segment once its trailing separator is
+    // trimmed: "C:" is a letter wearing its colon, not a name. The letter is
+    // checked because a colon is legal in a Unix name — "ab:" is one.
     let bytes = trimmed.as_bytes();
     if bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
         return String::new();
@@ -22,8 +21,8 @@ pub fn file_name(path: &str) -> String {
     trimmed.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
 }
 
-/// The name without its extension: the title a document wears when it supplies none.
-/// A dotfile (`.gitignore`) is all stem — the format registry refuses it either way.
+/// The name without its extension: the title a document wears when it
+/// supplies none. A dotfile (`.gitignore`) is all stem.
 pub fn file_stem(path: &str) -> String {
     let name = file_name(path);
     match name.rsplit_once('.') {
@@ -32,8 +31,8 @@ pub fn file_stem(path: &str) -> String {
     }
 }
 
-/// Lower case, no dot: the key the format registry answers by. Empty for a name Rust reads
-/// as having no extension (`Makefile`, `.gitignore`).
+/// Lower case, no dot: the key the format registry answers by. Empty for a
+/// name with no extension (`Makefile`, `.gitignore`).
 pub fn extension(path: &str) -> String {
     let name = file_name(path);
     match name.rsplit_once('.') {
@@ -42,8 +41,8 @@ pub fn extension(path: &str) -> String {
     }
 }
 
-/// The last segment a folder goes by, falling back to the whole path for a root ("/",
-/// "C:\\") that has no last segment to show.
+/// The last segment a folder goes by, falling back to the whole path for a
+/// root ("/", "C:\\") that has no segment to show.
 pub fn dir_label(path: &str) -> String {
     let name = file_name(path);
     if name.is_empty() {

@@ -1,21 +1,19 @@
 //! The library's domain: what a book is, how the app holds one, and the rules
 //! that decide what a folder scan does next.
 //!
-//! Everything here is pure — no filesystem, no wasm, no DOM, no leptos — so a
-//! host test can hold the decisions to account (`cargo test -p library-core`).
-//! Walking a folder, measuring a file and copying one into the store is the
-//! Tauri shell's business (its `commands` module); rendering the shelf and the
-//! import sheets is `src/features/library`.
+//! Pure domain logic — no filesystem, no wasm, no DOM, no leptos — so every
+//! decision here is testable on the host. Folder walking and file IO live in
+//! the Tauri shell's `commands` module; rendering lives in
+//! `src/features/library`.
 //!
-//! A book is an ADDRESS, not a copy: a [`book::Origin::Linked`] book is the
-//! path it was opened from, and nothing in this crate ever moves a file the
-//! user owns. [`book::Origin::Stored`] is the opt-in other way round.
+//! A book is an address, not a copy: [`book::Origin::Linked`] points at the
+//! path the user opened and this crate never moves a file the user owns;
+//! [`book::Origin::Stored`] is the opt-in copy-into-store mode.
 //!
-//! A shelf holds [`book::Row`]s. Questions about a row's CONTENT — a
-//! fingerprint, an address, a resume point — are asked of the book rows
-//! ([`book::book_rows`]), because a [`book::Row::Link`] has none of the three;
-//! questions about a row's PLACE — membership, a drag, a removal — are asked of
-//! the row, whichever kind it is.
+//! A shelf holds [`book::Row`]s. Content questions (fingerprint, address,
+//! resume point) go through [`book::book_rows`] because a [`book::Row::Link`]
+//! carries none of them; place questions (membership, drag, removal) go
+//! through the row itself, whichever kind it is.
 
 pub mod blob;
 pub mod book;
@@ -37,8 +35,6 @@ pub mod tracking;
 pub mod view;
 pub mod wire;
 
-/// Test fixtures for the crate's own tests and for a dependent crate's
-/// `test-util` dev-dependency.
+/// Test fixtures, shared with dependent crates through the `test-util` feature.
 #[cfg(any(test, feature = "test-util"))]
 pub mod testkit;
-

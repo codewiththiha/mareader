@@ -1,5 +1,5 @@
-//! The loose-file run — a picker's or a drop's handful of documents — and the single-file
-//! landings every answered sheet rides.
+//! The loose-file run — a picker's or a drop's handful of documents — and
+//! the single-file landings every answered sheet rides.
 
 use std::collections::HashMap;
 
@@ -31,10 +31,11 @@ use crate::state::library::ImportTask;
 use crate::state::AppState;
 use crate::time::now_ms;
 
-/// The library's own copies: a loose file has no folder to rescan it and no structure to
-/// preserve, and a linked row no ledger answers for is a row no rule can keep honest. The
-/// source address stays provenance, and a file an in-place folder's tree already holds goes
-/// to that folder's own answer first ([`screen_files`]).
+/// Loose files land as the library's own copies: no folder rescans them and
+/// no structure is preserved, and a linked row no ledger answers for is a row
+/// no rule can keep honest. The source address stays provenance; a file an
+/// in-place tree already holds goes to that folder's answer first
+/// ([`screen_files`]).
 pub fn import_files(state: AppState, paths: Vec<String>, target: Option<String>) {
     if paths.is_empty() {
         return;
@@ -50,9 +51,9 @@ pub fn import_files(state: AppState, paths: Vec<String>, target: Option<String>)
     });
 }
 
-/// A file an in-place tree holds is a file the library already has a book for, and what the
-/// drop means is the folder's to say. Answers with the books that came back and the asks the
-/// standing ones raise.
+/// A file an in-place tree holds is a file the library already has a book
+/// for, and what the drop means is the folder's to say. Answers with the
+/// books that came back and the asks the standing ones raise.
 fn screen_files(
     state: AppState,
     found: &mut Vec<FoundFile>,
@@ -81,9 +82,9 @@ fn screen_files(
     (restored, covered_asks)
 }
 
-/// A file whose CONTENT the library already holds is a file the reader already has, wherever
-/// it is filed and whatever it is called. A folder walk has always asked this, through the
-/// ledger's registry; a loose file did not.
+/// A file whose content the library already holds is a file the reader
+/// already has, wherever it is filed. A folder walk has always asked this
+/// through the ledger's registry; a loose file did not.
 pub(super) fn screen_content(
     state: AppState,
     found: &mut Vec<FoundFile>,
@@ -95,9 +96,9 @@ pub(super) fn screen_content(
         let Some(held) = ledger::existing_for(&rows, file.fp) else {
             return true;
         };
-        // A row whose address died is not an answer to the question — the reader cannot be
-        // taken to it — so the file stays in the walk and lands as the library's own copy
-        // beside the row that went missing.
+        // A row whose address died is no answer — the reader cannot be taken
+        // to it — so the file stays in the walk and lands as the library's own
+        // copy beside the missing row.
         if held.missing {
             return true;
         }
@@ -112,10 +113,10 @@ pub(super) fn screen_content(
     asks
 }
 
-/// One copy a run is about to land, with everything the landing needs: the measurement the
-/// shell sent home with the copy, the name a spent log owed the row, and the index the
-/// gesture held. A value rather than the four-tuple it replaced, because positional
-/// `Option`s answer no questions about what they are.
+/// One copy a run is about to land, with everything the landing needs: the
+/// measurement the shell sent home, the name a spent log owed the row, and
+/// the index the gesture held. A named value rather than a four-tuple of
+/// positional `Option`s.
 pub(super) struct PendingCopy {
     pub(super) book_id: String,
     pub(super) file: FoundFile,
@@ -125,9 +126,9 @@ pub(super) struct PendingCopy {
     pub(super) measured: Option<Fingerprint>,
 }
 
-/// Answer each file by the ground it stands on — a file of a read-at-place folder is that
-/// folder's business first, and the rest land as the library's own stored copies, except the
-/// ones whose NAME the target level already holds, which ask (see
+/// Answer each file by the ground it stands on: a file of a read-at-place
+/// folder is that folder's business first; the rest land as stored copies,
+/// except the ones whose name the target level already holds, which ask (see
 /// [`crate::services::library::conflict`]).
 async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Option<String>) {
     let checks = match ipc::verify_paths(paths).await {
@@ -157,7 +158,8 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
 
     let held_asks = screen_content(state, &mut found, &shelf_id);
 
-    // Every file whose NAME the target level already holds is a question rather than a placement, so a file whose twin sits on another shelf is not one.
+    // Every file whose name the target level holds is a question rather than
+    // a placement; a twin on another shelf is not one.
     let arrivals: Vec<Arrival> = found
         .iter()
         .map(|file| Arrival::import(file.clone(), shelf_id.clone(), None))
@@ -171,7 +173,9 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         let Some(file) = arrival.file.clone() else {
             continue;
         };
-        // The removal is spent by the explicit ask, and only a COPYING folder's log reaches here: an in-place tree's log is the folder's answer above.
+        // The removal is spent by the explicit ask, and only a copying
+        // folder's log reaches here: an in-place tree's log is the folder's
+        // answer above.
         let stone = lift_stone_for(state, &file);
         let title = stone.as_ref().and_then(|s| s.title.clone());
         let book_id = id::next_id(now);
@@ -199,9 +203,9 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         }
     };
 
-    // The batched landing: one write per collection for the whole drop — the pattern the
-    // folder run proved — so a five-hundred-file drop is two reactive pulses rather than
-    // three per file, each re-running every sort and filter the page subscribes to.
+    // The batched landing: one write per collection for the whole drop, so a
+    // five-hundred-file drop is two reactive pulses rather than three per
+    // file, each re-running every sort and filter the page subscribes to.
     let landed_batch: Vec<PendingCopy> = pending
         .into_iter()
         .filter_map(|(book_id, file, title, index)| {
@@ -231,7 +235,8 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     if placed > 0 {
         covers::backfill_missing(state);
     }
-    // One light for the books that CAME BACK: the folder's restorations first, then the landings a log was spent by, then the rows the logs named as represented.
+    // One light for the books that came back: the folder's restorations
+    // first, then the landings a log was spent by, then the represented rows.
     let came_back = restored
         .into_iter()
         .chain(stone_landings)
@@ -248,10 +253,9 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     finish_task(state, &task, placed, waiting);
 }
 
-/// The landing of a file a FOLDER answers for: an in-place merge seating a file its own rung
-/// holds, and a restoration putting a logged book back in its folder's place. A loose import
-/// does not come through here — a file no folder answers for is the library's own stored
-/// copy.
+/// The landing of a file a folder answers for: an in-place merge seating a
+/// file its own rung holds, and a restoration putting a logged book back in
+/// its folder's place. A loose import does not come through here.
 pub fn land_file(
     state: AppState,
     file: &FoundFile,
@@ -295,22 +299,22 @@ pub(crate) fn mint_stored_row(
     )
 }
 
-/// The batch of stored copies a run just made, landed in one write per collection: the
-/// books with their measurements already adopted (the shell sent them home with the copies),
-/// then the placements. `seat_of` answers the shelf the copy at each index lands on — the
-/// one level a drop names, or the rung each file's subfolder cut.
+/// Land a batch of stored copies in one write per collection: books with
+/// their measurements adopted (the shell sent them home with the copies),
+/// then the placements. `seat_of` answers the shelf each copy lands on — the
+/// level a drop names, or the rung its subfolder cut.
 ///
-/// Answers how many landed; a copy the store refused never reaches here, because the caller
-/// filtered the batch against the results first.
+/// Answers how many landed; a refused copy never reaches here because the
+/// caller filtered the batch against the results first.
 pub(super) fn land_stored_batch(
     state: AppState,
     batch: Vec<PendingCopy>,
     seat_of: impl Fn(usize) -> String,
 ) -> u32 {
     let now = now_ms();
-    // The independence check reads the list as it stands before the batch lands, exactly as
-    // the single-row mint did — one read for the whole batch rather than one per file, and
-    // taken BEFORE the write rather than inside it.
+    // The independence check reads the list before the batch lands, as the
+    // single-row mint did: one read for the whole batch, taken before the
+    // write rather than inside it.
     let independents: Vec<bool> = state.library.books.with_untracked(|rows| {
         batch
             .iter()
@@ -333,20 +337,22 @@ pub(super) fn land_stored_batch(
                     now,
                 )
             };
-            // The copy's own measurement becomes the row's identity and the source file's
-            // fingerprint stays free, so an OS file that keeps its own can still be placed
-            // by any folder that reads it, as its own linked book.
+            // The copy's measurement becomes the row's identity and the
+            // source's fingerprint stays free, so any folder that reads the
+            // OS file can still place it as its own linked book.
             book.adopt_measurement(each.measured);
             let placed_id = book.id.clone();
             rows.push(Row::Book(book));
-            // A file that comes back is the file that left: whatever a removal kept for it lands here.
+            // A file that comes back is the file that left: whatever a
+            // removal kept for it lands here.
             kept::reclaim(rows, &each.file, &placed_id);
         }
     });
     state.library.shelves.update(|shelves| {
         for (at, each) in batch.iter().enumerate() {
             let shelf_id = seat_of(at);
-            // The root has no member list to place into, so the write is skipped rather than made and answered with nothing.
+            // The root has no member list, so the placement write is
+            // skipped.
             if shelf_id != shelves_ops::ALL_SHELF
                 && let Some(shelf) = shelves_ops::find_mut(shelves, &shelf_id)
             {
@@ -357,9 +363,9 @@ pub(super) fn land_stored_batch(
     batch.len() as u32
 }
 
-/// The single-file form of the batch [`run_files`] lands, for the two answers that place a
-/// file after a question. The copy is made BEFORE the row is promised: a failure to copy is
-/// a toast and a level left untouched.
+/// The single-file form of the batch [`run_files`] lands, for the two answers
+/// that place a file after a question. The copy is made before the row is
+/// promised: a failure to copy is a toast and a level left untouched.
 pub(crate) fn land_stored_copy(
     state: AppState,
     file: FoundFile,
@@ -380,7 +386,7 @@ pub(crate) fn land_stored_copy_settling(
     settle: Option<(String, Fingerprint)>,
 ) {
     let book_id = id::next_id(now_ms());
-    // A card the beats can find: the shell throttles its emissions per task id, and an id
+    // A card the beats can find: the shell throttles per task id, and an id
     // the dock does not hold is a ring nobody sees.
     let task = begin_task(state, file_name(&file.path));
     spawn_local(async move {
@@ -401,9 +407,9 @@ pub(crate) fn land_stored_copy_settling(
     });
 }
 
-/// The copy's own measurement becomes the row's identity and the source file's fingerprint
-/// stays free, so an OS file that keeps its own can still be placed by any folder that reads
-/// it, as its own linked book.
+/// The copy's measurement becomes the row's identity and the source's
+/// fingerprint stays free, so any folder that reads the OS file can still
+/// place it as its own linked book.
 pub(super) fn adopt_copy_measurement(state: AppState, row_id: &str, measured: Option<Fingerprint>) {
     state.library.books.update(|rows| {
         if let Some(book) = find_book_mut(rows, row_id) {
@@ -437,15 +443,17 @@ fn mint_row(
             now,
         )
     };
-    // Always a row of its own, and never a resolve to the row the library already holds: the
-    // reader asked for THIS file on THIS level. Content identity is the ledger's business.
+    // Always a row of its own, never a resolve to the row the library holds:
+    // the reader asked for this file on this level. Content identity is the
+    // ledger's business.
     let placed = book.id.clone();
     state.library.books.update(|rows| {
         rows.push(Row::Book(book));
-        // A file that comes back is the file that left: whatever a removal kept for it lands here.
+        // A file that comes back is the file that left: what a removal kept
+        // for it lands here.
         kept::reclaim(rows, file, &placed);
     });
-    // The root has no member list to place into, so the write is skipped rather than made and answered with nothing.
+    // The root has no member list, so the placement write is skipped.
     if shelf_id != shelves_ops::ALL_SHELF {
         state.library.shelves.update(|shelves| {
             if let Some(shelf) = shelves_ops::find_mut(shelves, shelf_id) {
@@ -471,9 +479,9 @@ pub(super) fn found_from_check(check: &PathCheck) -> Option<FoundFile> {
     })
 }
 
-/// Record the placement and spend a removal that was holding the file out — the two writes
-/// `run_folder` makes when a file lands, made here because this file landed after an ANSWER
-/// rather than after a walk.
+/// Record the placement and spend a removal that was holding the file out —
+/// the two writes `run_folder` makes when a file lands, made here because
+/// this file landed after an answer rather than after a walk.
 pub(crate) fn settle_ledger(state: AppState, folder_id: Option<&str>, fp: Fingerprint) {
     let Some(folder_id) = folder_id else {
         return;

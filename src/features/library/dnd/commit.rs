@@ -1,8 +1,8 @@
 //! The only place a drop touches library state.
 //!
-//! Every move here rides a service the shelf's menus already ride — `crate::services::library`
-//! for the moves and the shelf a fold makes — so a dragged book persists, keeps its cover and is
-//! revealed exactly as a filed one is.
+//! Every move rides a service the shelf's menus already ride
+//! (`crate::services::library`), so a dragged book persists, keeps its cover
+//! and is revealed exactly as a filed one is.
 
 use leptos::prelude::*;
 
@@ -20,7 +20,9 @@ pub fn apply(state: AppState, effect: DropEffect, payload: DragPayload) {
     if payload.is_empty() {
         return;
     }
-    // A drag inside an expanded branch is THAT branch's: reading the page's level here instead would unfile a book that sits on both from the open shelf for a reorder that never left the branch.
+    // A drag inside an expanded branch is that branch's: reading the page's
+    // level instead would unfile a book that sits on both, for a reorder that
+    // never left the branch.
     let from = match payload.source.clone() {
         Some(named) => (named != ALL_SHELF).then_some(named),
         None => {
@@ -36,7 +38,9 @@ pub fn apply(state: AppState, effect: DropEffect, payload: DragPayload) {
             shelf,
             after,
         } => {
-            // HERE is two facts the effect carries rather than this step re-deriving: the container that renders the row, and which side of the anchor the seam was. The held folders get no position: a level renders its folders before its books.
+            // The effect carries the landing facts (container and seam side)
+            // rather than this step re-deriving them. Held folders get no
+            // position: a level renders its folders before its books.
             let (to, index) = insert_anchor(state, &book_id, shelf.as_deref(), after);
             move_many_to_shelf(state, &payload.books, from, to.clone(), index);
             land_folders(state, &payload.folders, &to);
@@ -88,7 +92,9 @@ fn land_folders(state: AppState, folders: &[String], to: &str) {
     }
 }
 
-/// The index is the anchor's position in its CONTAINER rather than a count of what is on screen, which is the fix for a drop between nested rows — an expanded tree renders rows the level's own order does not hold.
+/// The index is the anchor's position in its container, not a count of what
+/// is on screen: an expanded tree renders rows the level's own order does not
+/// hold.
 fn insert_anchor(
     state: AppState,
     book_id: &str,

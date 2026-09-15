@@ -1,8 +1,9 @@
-//! The one door every shelf item goes through: a descriptor of what an item IS, and a shell that
-//! paints the shared contract from it.
+//! The one door every shelf item goes through: a descriptor of what an item
+//! is, and a shell that paints the shared contract from it.
 //!
-//! Six surfaces draw a shelf item, and every one of them used to say the same two things about
-//! itself by hand: the reveal's class and the policy its press contract takes.
+//! Six surfaces draw a shelf item; each used to say the same two things about
+//! itself by hand — the reveal's class and the policy its press contract
+//! takes.
 
 use leptos::prelude::*;
 
@@ -10,7 +11,8 @@ use crate::features::library::gestures::ShelfItemPolicy;
 use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
 use crate::state::AppState;
 
-/// The four fields are the four facts a surface genuinely owns: the id (which is also the element id, the drag registration and the reveal's target), the class vocabulary its CSS speaks, its own base classes, and the policy its press contract takes.
+/// The facts a surface genuinely owns. The id doubles as the element id, the
+/// drag registration and the reveal's target.
 pub(crate) struct EntryDescriptor {
     pub(crate) id: String,
     pub(crate) vocab: SeamVocab,
@@ -39,7 +41,8 @@ pub(crate) fn EntryShell(
         policy,
     } = entry;
 
-    // The reveal is the shell's question, asked once, in the class the surface's own vocabulary wears for it. The list's surfaces layer their own facts on top (a book whose address died is grey).
+    // The reveal class is asked once here, in the surface's own vocabulary;
+    // list surfaces layer their own facts on top (a dead address is grey).
     let mut classes = vec![(vocab.reveal().to_string(), state.library.is_revealed(&id))];
     classes.extend(extra_classes);
     let style = style.unwrap_or_default();

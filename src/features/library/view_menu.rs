@@ -1,8 +1,8 @@
 //! The ⋯ menu: how the shelf looks.
 //!
-//! Four decisions and nothing else — the layout, the column count, the cover treatment and the
-//! sort. Every one of them is a `LibraryView` field, so no row here reaches into the DOM to
-//! arrange anything itself.
+//! Four decisions — layout, column count, cover treatment and sort — every
+//! one a `LibraryView` field, so no row here reaches into the DOM to arrange
+//! anything itself.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -39,7 +39,9 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
     let is_list = Signal::derive(move || state.library.view.with(|v| v.is_list()));
-    // The pinned count when there is one, else the count Auto's flow is producing right now, which the grid reports on every resize (see `crate::features::library::grid`).
+    // The pinned count when there is one, else the count Auto's flow is
+    // producing, which the grid reports on every resize (see
+    // `crate::features::library::grid`).
     let columns = Signal::derive(move || {
         state.library.view.with(|v| v.columns.or(Some(v.auto_fit)))
     });

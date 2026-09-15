@@ -1,8 +1,8 @@
 //! The one element every shelf item is.
 //!
-//! Six surfaces answer to the shelf's press contract — the grid's book card and its link, the
-//! list's book row and its link, the grid's folder card and the tree's shelf row — and before
-//! this file each of them wore the same sixty lines to do it.
+//! Six surfaces answer to the shelf's press contract — the grid's book card
+//! and its link, the list's book row and its link, the grid's folder card and
+//! the tree's shelf row — each of which used to wear the same sixty lines.
 
 use std::rc::Rc;
 
@@ -14,8 +14,8 @@ use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropT
 use crate::features::library::gestures::{ShelfItemPolicy, use_shelf_item};
 use crate::state::AppState;
 
-/// The whole of the per-surface difference: which class names it writes, which session
-/// questions it asks, and which element id it registers under.
+/// The whole per-surface difference: which class names it writes, which
+/// session questions it asks, and which element id it registers under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SeamVocab {
     GridCard,
@@ -57,7 +57,8 @@ impl SeamVocab {
         }
     }
 
-    /// A fact about the DENSITY rather than about the kind: a card's reveal rings the cover frame, a row's is an inset ring, and a folder card rings the plate.
+    /// A fact about the density, not the kind: a card's reveal rings the
+    /// cover frame, a row's is an inset ring, a folder card rings the plate.
     pub(crate) fn reveal(self) -> &'static str {
         match self {
             SeamVocab::FolderCard => "folder-reveal",
@@ -67,7 +68,9 @@ impl SeamVocab {
     }
 }
 
-/// One table decides every element id an item mounts under ([`ShelfItemShell`]), so the reveal — the one reader of those ids outside the mount — asks the table too, and a prefix renamed here moves both.
+/// One table decides every element id an item mounts under
+/// ([`ShelfItemShell`]), so the reveal — the only reader of those ids outside
+/// the mount — asks the table too, and a renamed prefix moves both.
 pub(crate) fn reveal_dom_id(target_is_shelf: bool, list_layout: bool, id: &str) -> String {
     let vocab = match (target_is_shelf, list_layout) {
         (true, true) => SeamVocab::FolderRow,
@@ -87,7 +90,8 @@ impl SeamVocab {
         }
     }
 
-    /// One string rather than one binding per class, because the whole list is one fact and the shell is the only writer of it.
+    /// One string rather than one binding per class: the list is one fact and
+    /// the shell is its only writer.
     fn classes(
         self,
         base: &'static str,
@@ -140,10 +144,11 @@ impl SeamVocab {
                     if drag.nests_into(id) {
                         out.push_str(" row-nest-here");
                     }
-                    match drag.sibling_at(id) {
-                        Some(false) => out.push_str(" row-drop-before"),
-                        Some(true) => out.push_str(" row-drop-after"),
-                        None => {}
+                    if drag.sibling_before(id) {
+                        out.push_str(" row-drop-before");
+                    }
+                    if drag.sibling_after(id) {
+                        out.push_str(" row-drop-after");
                     }
                 }
             }
@@ -168,7 +173,10 @@ pub(crate) fn ShelfItemShell(
     extra_classes: Vec<(String, Signal<bool>)>,
     #[prop(into, optional)]
     style: Option<String>,
-    /// `Option` as the FIELD's type and `into` rather than `optional` on purpose: this shell is reached through [`crate::features::library::entry::EntryShell`], which holds the disclosure's facts as an `Option` of its own, and an `optional` prop's setter takes the value INSIDE the option.
+    /// `Option` in the field type and `into` rather than `optional` on
+    /// purpose: [`crate::features::library::entry::EntryShell`] already holds
+    /// the disclosure's facts as an `Option`, and an `optional` prop's setter
+    /// takes the value inside the option.
     #[prop(into)]
     aria_expanded: Option<Signal<bool>>,
     #[prop(into)]

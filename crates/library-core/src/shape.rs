@@ -1,9 +1,9 @@
 //! The shelf shape as a tree, not a bool.
 //!
-//! A read-at-place tree used to carry one root-level shape for the whole ground it
-//! imported, so no smaller unit could answer the question. The tree keeps what the flag
-//! could not: a shelf per folder cut from one subfolder down while the rest of the tree
-//! stays on its root rung, which is what a re-import of one nested folder asks for.
+//! A single root-level flag could not answer for a subtree: re-importing one
+//! nested folder asks for a shelf per folder from that folder down while the
+//! rest of the tree stays on its root rung. The tree stores a per-rung answer
+//! and lets every other rung inherit the nearest one above it.
 
 use std::collections::BTreeMap;
 
@@ -11,15 +11,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::folder::key_chain;
 
-/// Per-rung shelf-shape answers for one watched folder's tree, keyed by rung path exactly
-/// like [`crate::folder::WatchedFolder::shelf_map`]. Only explicit answers are stored — an
-/// absent rung inherits the nearest ancestor that answered, and
+/// Per-rung shelf-shape answers for one watched folder's tree, keyed by rung
+/// path like [`crate::folder::WatchedFolder::shelf_map`]. Only explicit answers
+/// are stored; an absent rung inherits the nearest ancestor that answered, and
 /// [`crate::folder::FolderOpts::groups`] when none did.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShapeTree {
-    /// Rung path to the answer that rung gives for itself and its subtree. Nothing is stored
-    /// for a rung that inherits, and a blob from before the shape was a tree has no key at all.
+    /// Rung path to the answer for that rung and its subtree. Inheriting rungs
+    /// store nothing, and blobs from before the shape was a tree have no key.
     #[serde(default)]
     overrides: BTreeMap<String, bool>,
 }
@@ -29,10 +29,10 @@ impl ShapeTree {
         Self::default()
     }
 
-    /// The deepest answer on `key`'s chain: `Some(true)` cuts a shelf per folder from this
-    /// rung down, `Some(false)` keeps it and everything under it on one shelf, `None` when
-    /// the rung and every rung above it inherit. The deepest answer wins — a subfolder put
-    /// back on rungs under a one-shelf root is one again.
+    /// The deepest answer on `key`'s chain: `Some(true)` cuts a shelf per
+    /// folder from this rung down, `Some(false)` keeps the subtree on one
+    /// shelf, `None` when the whole chain inherits. A subfolder answered
+    /// against a one-shelf root wins for its own subtree.
     pub fn at(&self, key: &str) -> Option<bool> {
         key_chain(key)
             .into_iter()
@@ -40,22 +40,22 @@ impl ShapeTree {
             .find_map(|rung| self.overrides.get(rung).copied())
     }
 
-    /// Record the answer one rung gives for itself. It stands for the whole subtree below it
-    /// until a rung under it answers for itself.
+    /// Record the answer one rung gives for itself and its subtree, until a
+    /// deeper rung answers for itself.
     pub fn set(&mut self, key: &str, grouped: bool) {
         self.overrides.insert(key.to_string(), grouped);
     }
 
-    /// Drop every answer in `zone`: the zone's own rung and the whole subtree below it, the
-    /// zone arithmetic [`crate::folder::key_in_zone`] gives a shelf map. Answers above the
-    /// zone stand, so the ground falls back to inheriting them again.
+    /// Drop every answer inside `zone` (same zone arithmetic as
+    /// [`crate::folder::key_in_zone`]). Answers above the zone stand, so the
+    /// subtree falls back to inheriting them.
     pub fn prune_zone(&mut self, zone: &str) {
         self.overrides
             .retain(|key, _| !crate::folder::key_in_zone(key, zone));
     }
 
-    /// Whether the tree answers nothing of its own, so every rung takes the answer its
-    /// folder was imported with.
+    /// Whether the tree stores no answer of its own, so every rung takes the
+    /// answer its folder was imported with.
     pub fn is_empty(&self) -> bool {
         self.overrides.is_empty()
     }

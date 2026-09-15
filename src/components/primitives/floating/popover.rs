@@ -6,8 +6,7 @@
 //! * Escape / outside-press dismissal comes from [`dismiss`](app_chrome::floating::dismiss);
 //! * the open/close transition is reported through `on_open_change` rather
 //!   than the popover reaching into app chrome itself (the app-shell
-//!   `MenuPopover` in `crate::components::primitives::floating::menu_popover` owns
-//!   the titlebar-hold behaviour).
+//!   `MenuPopover` owns the titlebar-hold behaviour).
 //!
 //! Width is a prop so each menu can size itself. `position: fixed` escapes
 //! the sidebar's `overflow-hidden`; the optional `coordinate_space` id
@@ -60,8 +59,8 @@ pub fn Popover(
     let panel_ref: NodeRef<html::Div> = NodeRef::new();
     let style_sig = RwSignal::new(String::new());
 
-    // Window-aware placement: right-aligned to the trigger, clamped into the
-    // viewport, flipped ABOVE the trigger when there is no room below.
+    // Right-aligned to the trigger; clamping and the upward flip are the
+    // shared math's (`place_at_anchor`).
     let place = move || {
         // The trigger wrapper is the only anchor: a popover whose trigger is
         // not mounted has nothing to be placed against.
@@ -98,7 +97,6 @@ pub fn Popover(
         ));
     };
 
-    // Place once the panel mounts; re-clamp on window resize while open.
     Effect::new(move |_| {
         if !open.get() {
             return;

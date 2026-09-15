@@ -1,8 +1,9 @@
 //! What a drop can land on, and how the pointer finds it.
 //!
-//! Targets register themselves instead of being discovered from the event that happens to bubble
-//! past: a `dragover`/`dragleave` pair counts child boundaries rather than targets, which is how
-//! the shelf's old marker flickered between a card and the grid it sits in.
+//! Targets register themselves instead of being discovered from events that
+//! bubble past: a `dragover`/`dragleave` pair counts child boundaries rather
+//! than targets, which made the shelf's old marker flicker between a card and
+//! the grid it sits in.
 
 use leptos::prelude::*;
 
@@ -12,23 +13,29 @@ use app_chrome::hooks::dom::by_id;
 pub enum DropTargetKind {
     Book,
     Folder,
-    /// The way back to a level is therefore also a way to file whatever is held onto that level from anywhere in the library.
+    /// The way back to a level is also a way to file what is held onto that
+    /// level from anywhere in the library.
     Shelf,
-    /// A target and not a drop: resting on it during a drag opens the panel, because a captured pointer raises no `mouseenter` for the bar to hear.
+    /// A hover target, not a drop: resting on it during a drag opens the
+    /// panel, because a captured pointer raises no `mouseenter`.
     Ellipsis,
     Level,
 }
 
-/// Never a path, for the reason `crate::services::library::arrange` gives: an in-app move edits a list of ids and never touches the filesystem.
+/// Never a path: an in-app move edits a list of ids and never touches the
+/// filesystem (see `crate::services::library::arrange`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropTargetId(pub DropTargetKind, pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropTargetEntry {
     pub id: DropTargetId,
-    /// Named rather than held: a card that unmounted mid-drag leaves an id that finds nothing, which is a target that cannot be hit.
+    /// Named rather than held: a card that unmounted mid-drag leaves an id
+    /// that finds nothing, which is a target that cannot be hit.
     pub dom_id: String,
-    /// `Some(ALL_SHELF)` spells the library's own order; `None` is "unspecified", and the session resolves it to the open level — the answer a grid card implies, because a card is only ever drawn by the shelf the page is on.
+    /// `Some(ALL_SHELF)` spells the library's own order; `None` means
+    /// unspecified and the session resolves it to the open level — the answer
+    /// a grid card implies, since a card is drawn by the shelf the page is on.
     pub shelf: Option<String>,
 }
 
@@ -38,7 +45,8 @@ struct Registered {
     entry: DropTargetEntry,
 }
 
-/// One per page and shared by every card: exactly one target is hot at a time, and no card has to know about any other for that to hold.
+/// One per page, shared by every card: exactly one target is hot at a time,
+/// and no card has to know about any other for that to hold.
 #[derive(Clone, Copy)]
 pub struct DropTargetRegistry {
     entries: RwSignal<Vec<Registered>>,
@@ -53,7 +61,9 @@ impl DropTargetRegistry {
         }
     }
 
-    /// The cleanup is the reason this is a method and not a write to a signal: a card that unmounted without leaving the registry would keep a dead id in it forever. It removes THIS registration by token, so a re-created card does not evict the newer one.
+    /// Registers `entry` and removes it again on cleanup, by token: a card
+    /// that unmounted would otherwise keep a dead id in the registry forever,
+    /// and a token keeps a re-created card from evicting the newer one.
     pub fn register(&self, entry: DropTargetEntry) {
         let id = entry.id.clone();
         self.tokens.update(|at| *at += 1);
@@ -66,13 +76,12 @@ impl DropTargetRegistry {
         on_cleanup(move || entries.update(|list| list.retain(|each| each.token != token)));
     }
 
-    /// One `elementFromPoint` and a walk up from what it found, rather than a rect read for
-    /// every registered target on every pointermove: a two-hundred-card grid was two hundred
-    /// forced layout reads per mouse event, each one a chance to invalidate the layout the
-    /// next one read. The walk up finds the nearest registered ancestor, which is the same
-    /// "card before the level it sits in" the reverse-registration order used to give — the
-    /// card is a DOM descendant of the level, so the pointer's deepest element reaches it
-    /// first — and among targets sharing one node the reverse order still decides.
+    /// One `elementFromPoint` and a walk up from the hit, rather than a rect
+    /// read per registered target per pointermove: a two-hundred-card grid was
+    /// two hundred forced layout reads per mouse event. The walk finds the
+    /// nearest registered ancestor — "card before the level it sits in", since
+    /// the card is a DOM descendant of the level — and among targets sharing
+    /// one node the reverse registration order decides.
     pub fn hit_test(&self, x: f64, y: f64) -> Option<DropTargetId> {
         let hit = web_sys::window()?.document()?.element_from_point(x as f32, y as f32)?;
         self.entries.with_untracked(|list| {
@@ -88,7 +97,9 @@ impl DropTargetRegistry {
         })
     }
 
-    /// A sunk ghost sits at the CENTRE of the thing it is landing on, and the centre has to be read rather than remembered, because the shelf can scroll and a level can re-lay itself out between the moment a drag starts and the moment it rests somewhere.
+    /// The centre is read rather than remembered: the shelf can scroll and a
+    /// level can re-lay itself out between the drag starting and the ghost
+    /// sinking.
     pub fn rect_of(&self, id: &DropTargetId) -> Option<web_sys::DomRect> {
         self.entries.with_untracked(|list| {
             list.iter()
@@ -98,7 +109,8 @@ impl DropTargetRegistry {
         })
     }
 
-    /// What the session asks for a row's own container: the hit-test answers WHICH target the pointer is on, and the entry carries the shelf whose member list renders it.
+    /// The entry behind a hit: the hit-test answers which target the pointer
+    /// is on, and the entry carries the shelf whose member list renders it.
     pub fn entry_of(&self, id: &DropTargetId) -> Option<DropTargetEntry> {
         self.entries.with_untracked(|list| {
             list.iter()

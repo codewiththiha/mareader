@@ -1,10 +1,9 @@
-//! The library feature: the `/` route page, the shelf it shows, and the surfaces that fill
-//! it.
+//! The library feature: the `/` route page, the shelf it shows, and the
+//! surfaces that fill it.
 //!
-//! Grouped by what a reader does rather than by file count: [`page`] is the route and its
-//! modal hosts, [`content`] the state the page is in and the one order every view renders,
-//! [`grid`] and [`list`] the two densities, and the rest the cards, menus and sheets a reader
-//! opens.
+//! Grouped by what a reader does: [`page`] is the route and its modal hosts,
+//! [`content`] the page state and the one order every view renders, [`grid`]
+//! and [`list`] the two densities, and the rest the cards, menus and sheets.
 
 pub mod add_menu;
 pub mod already_imported_modal;

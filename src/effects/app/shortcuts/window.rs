@@ -15,12 +15,10 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
     ev: &leptos::ev::KeyboardEvent,
 ) {
     match ev.key().to_lowercase().as_str() {
-        // Cmd/Ctrl+O -> open dialog
         "o" => {
             ev.prevent_default();
             on_open();
         }
-        // Cmd/Ctrl+0 -> fit width
         "0" => {
             ev.prevent_default();
             state.viewer.fit.set(FitMode::Width);
@@ -38,7 +36,6 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
                 crate::events::dispatch_event(crate::events::FOCUS_LIBRARY_SEARCH_EVENT);
             }
         }
-        // Cmd/Ctrl+1 / 2 -> view mode
         "1" => {
             ev.prevent_default();
             state.viewer.mode.set(ViewMode::Single);

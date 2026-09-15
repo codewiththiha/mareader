@@ -1,20 +1,17 @@
-//! The machinery a press gesture is made of, shared by the two gestures that
-//! need it: [`long_press`](super::long_press), where a hold IS the gesture, and
-//! [`draggable_item`](super::draggable_item), where a hold races a movement and a
-//! release for the right to answer the press.
+//! The machinery a press gesture is made of, shared by
+//! [`long_press`](super::long_press) (where a hold is the gesture) and
+//! [`draggable_item`](super::draggable_item) (where a hold races a movement
+//! and a release for the right to answer the press).
 //!
-//! Both were carrying their own copy of the same four things — the pending-timer
-//! type that parks a wasm shim beside the JS handle that can still call it, the
-//! clear that drops both, the squared-distance test that decides whether a pointer
-//! has left its origin, and the arm-a-timeout dance. Two copies of a
-//! lifetime-sensitive dance is two places to get the `Closure` drop order wrong,
-//! and getting it wrong is a timeout that fires into freed memory: not a wrong
-//! answer a test would catch, but a crash on a timer.
+//! Both used to carry their own copy of the pending-timer type, the clear
+//! that drops the shim beside its JS handle, the squared-distance test and
+//! the arm-a-timeout dance. Two copies of a lifetime-sensitive dance is two
+//! places to get the `Closure` drop order wrong — and that mistake is a
+//! timeout firing into freed memory, a crash no test would catch.
 //!
-//! What is NOT here is either gesture's own policy. Which of the three a press
-//! turned into, what a completed hold suppresses, and whether a finger may drag
-//! at all are the callers' — this module only holds the parts that are the same
-//! because the platform is the same.
+//! Neither gesture's policy lives here: which answer a press turned into,
+//! what a completed hold suppresses and whether a finger may drag are the
+//! callers'.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -23,18 +20,17 @@ use wasm_bindgen::closure::Closure;
 /// A pending hold timer: the JS timeout handle plus the wasm-shim closure it
 /// keeps alive.
 ///
-/// Parked in a `StoredValue` rather than a captured local so a re-run or a
-/// cleanup cannot free the closure while the timeout is still queued — the shim
-/// is a raw function pointer into wasm memory, and a `setTimeout` that outlives
-/// its `Closure` calls into freed memory rather than failing loudly.
+/// Parked in a `StoredValue` rather than a captured local so a re-run or
+/// cleanup cannot free the closure while the timeout is queued: the shim is
+/// a raw function pointer into wasm memory, and a `setTimeout` outliving its
+/// `Closure` calls into freed memory rather than failing loudly.
 pub type PendingTimer = Option<(i32, Closure<dyn FnMut()>)>;
 
 /// Clear a pending timer and drop the shim parked beside it.
 ///
-/// Harmless when the timer has already fired — the handle is stale and
-/// `clear_timeout` on a stale handle does nothing — which is what lets every
-/// cancellation path call it unconditionally instead of asking first whether
-/// there is still something to cancel.
+/// Harmless when the timer has already fired, so every cancellation path
+/// calls it unconditionally instead of asking whether there is still
+/// something to cancel.
 pub fn clear_timer(timer: StoredValue<PendingTimer, LocalStorage>) {
     timer.with_value(|t| {
         if let Some((handle, _)) = t
@@ -49,9 +45,9 @@ pub fn clear_timer(timer: StoredValue<PendingTimer, LocalStorage>) {
 /// Queue `on_fire` for `after_ms` from now, parking the shim where
 /// [`clear_timer`] can find it.
 ///
-/// No window — a host test, or a platform with no DOM — arms nothing and answers
-/// silently, which is what makes a gesture primitive callable from a test that
-/// has no browser to time out in.
+/// With no window (a host test, a platform with no DOM) it arms nothing and
+/// answers silently, which makes the gesture primitives callable from tests
+/// that have no browser to time out in.
 pub fn arm_timer(
     timer: StoredValue<PendingTimer, LocalStorage>,
     after_ms: i32,

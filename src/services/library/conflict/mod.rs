@@ -243,16 +243,17 @@ pub fn offers_for(state: AppState, ask: &ConflictAsk) -> &'static [Placement] {
     }
 }
 
-/// One spelling because four call sites ask it and the sheet prints the answer in three
-/// places: a heading and two buttons that each derived their own would eventually disagree
-/// about which book the question is about.
+/// One spelling, because the sheet prints this name in its heading and in every button's
+/// sentence: a site that derived its own would eventually disagree with the others about
+/// which book the question is about.
 pub(crate) fn existing_name_of(rows: &[Row], existing_id: &str, arrival: &Arrival) -> String {
     find_row(rows, existing_id)
         .map(|row| row.display_name())
         .unwrap_or_else(|| arrival.name.clone())
 }
 
-/// Every placing surface hands its placements through here BEFORE writing anything, and applies the clean half at once.
+/// Every placing surface hands its placements through here before writing
+/// anything, and applies the clean half at once.
 pub fn screen(state: AppState, arrivals: Vec<Arrival>) -> (Vec<Arrival>, Vec<ConflictAsk>) {
     let (rows, shelves) = state.library.snapshot_rows();
     let mut clean = Vec::with_capacity(arrivals.len());
@@ -273,7 +274,8 @@ pub fn screen(state: AppState, arrivals: Vec<Arrival>) -> (Vec<Arrival>, Vec<Con
     (clean, asks)
 }
 
-/// A sheet already up takes them onto its queue rather than being replaced: two drops in flight owe two answers.
+/// A sheet already up takes new asks onto its queue rather than being
+/// replaced: two drops in flight owe two answers.
 pub fn raise(state: AppState, asks: Vec<ConflictAsk>) {
     if asks.is_empty() {
         return;
@@ -309,15 +311,15 @@ pub(super) fn advance(state: AppState) {
     }
 }
 
-/// The question on screen and every one behind it are skipped: the placements already answered keep their answers.
+/// Skips the question on screen and every one behind it; placements already
+/// answered keep their answers.
 pub fn cancel(state: AppState) {
     state.library.conflict.dismiss();
     state.library.conflict_waiting.set(Vec::new());
 }
 
-
-/// Read at the click rather than at the raise, and in one place: the two answers that mint
-/// one have to mint the same name for the same arrival.
+/// Read at the click rather than at the raise, in one place: the two answers
+/// that mint a name must mint the same one for the same arrival.
 pub(super) fn minted_name(state: AppState, ask: &ConflictAsk) -> String {
     let (rows, shelves) = state.library.snapshot_rows();
     next_name(&rows, &shelves, &ask.arrival.shelf_id, &ask.arrival.name)

@@ -1,8 +1,8 @@
-//! The removal's receipt: what a removal takes, counted over the SET the confirm button will
-//! act on rather than over what was clicked.
+//! The removal's receipt: what a removal takes, counted over the set the
+//! confirm button will act on rather than over what was clicked.
 //!
-//! The tree arithmetic a cascade depends on is pure over the shelf list and host-tested at the
-//! bottom of this file.
+//! The tree arithmetic a cascade depends on is pure over the shelf list and
+//! host-tested at the bottom of this file.
 
 use leptos::prelude::*;
 
@@ -15,21 +15,27 @@ use crate::state::AppState;
 
 pub(super) struct Receipt {
     pub(super) books: Vec<Book>,
-    /// A pointer costs nothing but itself — no resume point, no highlights, no cover, no store copy — and the book it points at stays in the library, which is a sentence the sheet owes a reader who clicked a link's ✕.
+    /// A pointer costs nothing but itself — no resume point, highlights,
+    /// cover or store copy — and its book stays in the library: a sentence the
+    /// sheet owes a reader who clicked a link's ✕.
     pub(super) links: Vec<String>,
-    /// Separate from [`Self::books`] only because the button needs ids and the rows need the rows' own facts.
+    /// Separate from [`Self::books`]: the button needs ids, the rows need the
+    /// rows' own facts.
     pub(super) book_ids: Vec<String>,
     pub(super) shelf_ids: Vec<String>,
     pub(super) cascade: bool,
-    /// A cascade pulls books and further shelves into the receipt, and without this the heading would answer "3 books" to a reader who clicked a shelf.
+    /// A cascade pulls books and further shelves into the receipt; without
+    /// this the heading would answer "3 books" to a reader who clicked a
+    /// shelf.
     pub(super) asked_name: Option<String>,
-    // The switch's own visibility is decided by these, so it cannot depend on itself.
+    // The switch's visibility is decided by these, so it cannot depend on
+    // itself.
     pub(super) inside_books: usize,
     pub(super) inside_shelves: usize,
     pub(super) marks: usize,
-    /// How many of the books carry the reader's own work rather than the library's: a place they
-    /// stopped at, or a name they gave it. With the marks, this is what the sheet's one question is
-    /// about, and counting it here keeps that question's visibility off the question's own answer.
+    /// How many books carry the reader's own work — a resume point or a name
+    /// they gave it. With the marks, this is the sheet's one question;
+    /// counting it here keeps the question's visibility off its own answer.
     pub(super) wrote: usize,
     pub(super) covers: usize,
     pub(super) placements: Vec<String>,
@@ -39,14 +45,12 @@ pub(super) struct Receipt {
     pub(super) shelves: Vec<ShelfLine>,
 }
 
-
 pub(super) struct ShelfLine {
     pub(super) name: String,
     pub(super) books: usize,
     pub(super) lifted: usize,
     pub(super) watched: bool,
 }
-
 
 impl Receipt {
     pub(super) fn many(&self) -> bool {
@@ -81,14 +85,16 @@ impl Receipt {
         }
     }
 
-    /// Whether there is anything of the reader's for the sheet's one question to decide. A control
-    /// that appears with nothing for it to decide is a control the reader has to read and then
-    /// ignore, and a removal of books nobody wrote in asks nothing.
+    /// Whether there is anything of the reader's for the sheet's question to
+    /// decide: a control with nothing to decide is one the reader reads and
+    /// then ignores.
     pub(super) fn offers_data(&self) -> bool {
         self.marks > 0 || self.wrote > 0
     }
 
-    /// A placeholder's "size" is the length of its path, a number on a receipt that would mean nothing. A shelves-only receipt says the one thing a reader worries about: that nothing else goes with them.
+    /// A placeholder's "size" is the length of its path — a receipt number
+    /// that would mean nothing. A shelves-only receipt says the one thing a
+    /// reader worries about: nothing else goes with them.
     pub(super) fn subtitle(&self) -> String {
         if self.books.is_empty() {
             if !self.links.is_empty() {
@@ -128,10 +134,9 @@ impl Receipt {
     }
 }
 
-
-/// How many of these books the reader left something in: a place they stopped at, or a name they
-/// gave one. The marks are counted apart from the rows, because they are the one thing this file
-/// reads out of the store rather than off the row.
+/// How many of these books the reader left something in: a resume point or a
+/// name. Marks are counted apart from the rows because they are the one thing
+/// this file reads out of the store rather than off the row.
 fn wrote_in(books: &[Book]) -> usize {
     books
         .iter()
@@ -139,7 +144,9 @@ fn wrote_in(books: &[Book]) -> usize {
         .count()
 }
 
-/// The walk itself is `library_core::shelf::subtree_ids` — a cascade and a copy that answered "which shelves go with this one" differently would be two rules wearing one name.
+/// The walk itself is `library_core::shelf::subtree_ids`: a cascade and a
+/// copy answering "which shelves go with this one" differently would be two
+/// rules wearing one name.
 fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
     subtree_ids(shelves, roots)
         .into_iter()
@@ -147,9 +154,10 @@ fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
         .collect()
 }
 
-
-
-/// `None` when none of the books or shelves are there any more, which makes a sheet left open across a removal harmless rather than a panic. Everything below is measured over the cascade's set rather than over what was clicked.
+/// `None` when none of the books or shelves are there any more, which makes
+/// a sheet left open across a removal harmless rather than a panic.
+/// Everything below is measured over the cascade's set, not over what was
+/// clicked.
 pub(super) fn receipt(
     state: AppState,
     ids: &[String],

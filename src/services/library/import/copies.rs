@@ -1,9 +1,10 @@
-//! The copies run that touches no ledger: a copies import of ground a read-at-place tree
-//! still reads.
+//! The copies run that touches no ledger: a copies import of ground a
+//! read-at-place tree still reads.
 //!
-//! Every other folder run walks on a [`library_core::folder::WatchedFolder`] — it resolves
-//! the folder's row, diffs against its ledger and writes the row back. That is the right
-//! shape for a tree the library READS, and the wrong one for a copies import.
+//! Every other folder run walks on a [`library_core::folder::WatchedFolder`]
+//! — resolve the row, diff against its ledger, write it back. That is the
+//! right shape for a tree the library reads and the wrong one for a copies
+//! import.
 
 use std::collections::BTreeMap;
 
@@ -30,9 +31,9 @@ use crate::time::now_ms;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CopiesDest {
-    /// Spliced right behind the shelf whose name the arrival collided with — the duplicate's
-    /// own placement rule, because a copy appended to the end of the level is a shelf the reader
-    /// has to go and find.
+    /// Spliced right behind the shelf whose name the arrival collided with:
+    /// a copy appended to the end of the level is a shelf the reader has to go
+    /// and find.
     NewShelf {
         name: String,
         after: Option<String>,
@@ -41,7 +42,8 @@ pub(crate) enum CopiesDest {
     Into { shelf_id: String },
 }
 
-/// The one shape this module exists for — every other copies run keeps the ordinary bound walk.
+/// The one shape this module exists for; every other copies run keeps the
+/// ordinary bound walk.
 pub(crate) fn copies_over_standing_tree(state: AppState, root: &str, opts: &FolderOpts) -> bool {
     opts.mode().copies_files()
         && state.library.folders.with_untracked(|folders| {
@@ -91,9 +93,10 @@ async fn run_copies(
     };
     let mut books = state.library.books.get_untracked();
     let registry = ledger::registry_of(&books);
-    // Off the ledger's own pure table: every file but the copy the library already made, one
-    // book per fingerprint. The copy list is asked again for the heal's skip set, because a file
-    // the library reads in place is owed a COPY.
+    // Off the ledger's own pure table: every file but the copy the library
+    // already made, one book per fingerprint. The copy list is asked again
+    // for the heal's skip set: a file the library reads in place is owed a
+    // copy.
     let copy_paths = ledger::copy_over_paths(&found, &registry, &books);
     let mut adds = ledger::unbound_copies(&found, &registry, &books);
     let healed = heal_by_address(&mut books, &mut adds, &copy_paths);
@@ -133,9 +136,9 @@ async fn run_copies(
         })
         .collect();
 
-    // The seat each copy lands on, resolved in the batch's own order BEFORE the landing
-    // writes: the root shelf is minted once, and a grouped run cuts each file's rung under
-    // it — rungs the placement then files onto.
+    // The seat each copy lands on, resolved in batch order before the
+    // landing writes: the root shelf is minted once and a grouped run cuts
+    // each file's rung under it.
     let mut root_shelf: Option<String> = None;
     let mut rungs: BTreeMap<String, String> = BTreeMap::new();
     let seats: Vec<String> = batch
@@ -165,7 +168,8 @@ async fn run_copies(
     finish_task(state, &task, run_total(landed, healed.len(), 0), 0);
 }
 
-/// The *replace*'s standing target, or the counter-named shelf of the reader's own the *as new* promised.
+/// The *replace*'s standing target, or the counter-named shelf the *as new*
+/// answer promised.
 fn dest_shelf(state: AppState, dest: &CopiesDest, now: u64) -> String {
     match dest {
         CopiesDest::Into { shelf_id } => shelf_id.clone(),
@@ -186,7 +190,8 @@ fn dest_shelf(state: AppState, dest: &CopiesDest, now: u64) -> String {
     }
 }
 
-/// The bound run's chain rule, on a local map instead of a ledger's. A folder that does not group has no rungs.
+/// The bound run's chain rule, on a local map instead of a ledger's. A
+/// folder that does not group has no rungs.
 fn rung_shelf(
     state: AppState,
     root: &str,

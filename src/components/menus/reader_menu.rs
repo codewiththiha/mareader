@@ -65,7 +65,6 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                 coordinate_space="toolbar-row"
                 class="p-2".to_string()
             >
-                // ── Zoom row: readout centered, steppers around it ──
                 <div class="flex items-center justify-between px-2 py-1">
                     <IconButton
                         icon=IconName::ZoomOut
@@ -79,7 +78,6 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                         on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(1), true)
                     />
                 </div>
-                // ── 4 view modes | separator | fit width / fit page ──
                 <div class="flex items-center justify-center gap-1 px-2 py-1">
                     <ModeButton state=state m=ViewMode::Single icon=IconName::SinglePage title="Single page" />
                     <ModeButton state=state m=ViewMode::Spread icon=IconName::DualPage title="Two pages" />

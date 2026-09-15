@@ -1,8 +1,8 @@
 //! The library's content area: what the page shows under its title bar.
 //!
-//! Three states the reader can be in and one they cannot avoid — a document opening, a
-//! document that failed to open, and the shelf itself — here rather than on the reader's page
-//! because this route is where the app lands on launch, after a close, and after a failed
+//! Three states — a document opening, a document that failed to open, and the
+//! shelf itself — live here rather than on the reader's page because this
+//! route is where the app lands on launch, after a close, and after a failed
 //! open.
 
 use std::collections::HashSet;
@@ -32,23 +32,31 @@ use crate::state::AppState;
 
 const LEVEL_DOM_ID: &str = "library-level";
 
-/// Provided here and read by the views, the selection bar and `crate::features::library::dnd::commit`: a card cannot work the index out from its own DOM without counting siblings, which is a second definition of the order.
+/// Provided here, read by the views, the selection bar and
+/// `crate::features::library::dnd::commit`: a card cannot work its index out
+/// of the DOM without counting siblings, which would be a second definition
+/// of the order.
 #[derive(Clone, Copy)]
 pub struct ShelfOrder(pub Signal<Vec<Row>>);
 
-/// Provided beside [`ShelfOrder`] and for the same reason: the grid renders the folders before the books, and a card that derived the level itself would be a second answer to "what is here".
+/// Provided beside [`ShelfOrder`] for the same reason: the grid renders
+/// folders before books, and a card that derived the level itself would be a
+/// second answer to "what is here".
 #[derive(Clone, Copy)]
 pub struct FolderOrder(pub Signal<Vec<Shelf>>);
 
 const REVEAL_MS: u64 = 1600;
 
-/// Two animation frames before the lookup, not one: the reveal usually arrives with a shelf switch, and the grid it scrolls is the one the switch mounts, which does not exist yet in the frame the signal was written.
+/// Two animation frames before the lookup, not one: the reveal usually
+/// arrives with a shelf switch, and the grid it scrolls is the one the switch
+/// mounts — not yet in the DOM in the frame the signal was written.
 fn install_reveal(state: AppState) {
     Effect::new(move |_| {
         let Some(Reveal { id: book_id, nonce }) = state.library.reveal.get() else {
             return;
         };
-        // The seam table owns the id scheme (it is what an item's mount writes its id from), so the reveal reads it rather than re-spelling the prefixes.
+        // The seam table owns the id scheme, so the reveal reads it rather
+        // than re-spelling the prefixes.
         let dom_id = crate::features::library::shelf_item::reveal_dom_id(
             library_core::id::is_shelf(&book_id),
             state.library.view.with_untracked(|v| v.is_list()),
@@ -70,7 +78,8 @@ fn install_reveal(state: AppState) {
                 node.scroll_into_view_with_scroll_into_view_options(&options);
             });
         });
-        // The nonce guard is what lets a second reveal of the SAME book re-light it: without it the clear from the first would put out the second.
+        // The nonce guard lets a second reveal of the same book re-light it:
+        // without it the first reveal's clear would put out the second.
         let handle = set_timeout_with_handle(
             move || {
                 state.library.reveal.update(|at| {
@@ -90,12 +99,15 @@ fn install_reveal(state: AppState) {
     });
 }
 
-/// The reader's own master switch and the platform's answer are two different questions with the same answer shape, and either one saying no is enough.
+/// The reader's master switch and the platform's answer are two questions
+/// with one shape: either saying no is enough.
 fn scroll_may_animate(state: AppState) -> bool {
     state.settings.with_untracked(|s| s.animations.enabled) && !prefers_reduced_motion()
 }
 
-/// This is the order a drop counts, as well as the one both layouts render: a card lands "here" at an index in what the reader is looking at. Four steps, and the sequence is the point.
+/// The order both layouts render and a drop counts against: a card lands
+/// "here" at an index in what the reader is looking at. Four steps, and the
+/// sequence is the point.
 pub(crate) fn level_rows(state: AppState) -> Vec<Row> {
     let view = state.library.view.get();
     let shelf_id = state.library.shelf.get();
@@ -126,7 +138,8 @@ pub(crate) fn level_rows(state: AppState) -> Vec<Row> {
     query::filter(&list, &state.library.query.get())
 }
 
-/// One answer for both densities: a search that hid the matching folders in the grid and kept every one of them in the list would be two searches wearing one text box.
+/// One answer for both densities: a search that hid matching folders in the
+/// grid but kept them in the list would be two searches wearing one text box.
 pub(crate) fn level_folders(state: AppState, root: Option<String>) -> Vec<Shelf> {
     let at = state.library.shelf.get();
     let terms = state.library.query.get();
@@ -146,12 +159,15 @@ pub(crate) fn level_folders(state: AppState, root: Option<String>) -> Vec<Shelf>
 
 #[component]
 pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
-    // One derived signal, so the grid, the list and the "nothing here" line all agree about what is on screen.
+    // One derived signal, so the grid, the list and the empty-state line
+    // agree about what is on screen.
     let order = Signal::derive(move || level_rows(state));
     provide_context(ShelfOrder(order));
     let folders = Signal::derive(move || level_folders(state, None));
     provide_context(FolderOrder(folders));
-    // The registry hit-tests in reverse, so the cards a shelf mounts after this are found ahead of the space they stand on. One registration for both layouts, because there is one scroll container.
+    // The registry hit-tests in reverse, so cards mounted after this are
+    // found ahead of the space they stand on. One registration for both
+    // layouts: there is one scroll container.
     let drag = use_context::<DragController>().expect("the library page installs the drag session");
     let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
     drag.registry.register(DropTargetEntry {
@@ -159,12 +175,14 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
         dom_id: LEVEL_DOM_ID.to_string(),
         shelf: None,
     });
-    // The queue already skips what it has, so this reads as a question rather than a command. No tracked reads inside, so it asks once per mount.
+    // The queue skips what it has, so this is a question rather than a
+    // command. No tracked reads inside: it asks once per mount.
     Effect::new(move |_| {
         backfill_missing(state);
     });
     install_reveal(state);
-    // Installed here rather than per card: those are facts about the shelf, and one listener per card would be N listeners racing to leave the same mode.
+    // Installed here rather than per card: one listener per card would be N
+    // listeners racing to leave the same mode.
     use_select_mode(state);
 
     let status = state.reader.document.status;
@@ -186,14 +204,20 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
 
     view! {
         <div class="flex h-full w-full flex-col">
-            // An open cannot be aborted from here, and does not need to be: picking another file claims a new session stamp, which makes the in-flight attempt drop its own tail (see `crate::services::document::session`).
+            // An open cannot be aborted from here and does not need to be:
+            // picking another file claims a new session stamp, and the
+            // in-flight attempt drops its own tail (see
+            // `crate::services::document::session`).
             <Show when=move || status.get() == DocStatus::Opening fallback=|| ()>
                 <CenteredLoader />
             </Show>
             <Show when=move || status.get() == DocStatus::Error fallback=|| ()>
                 <div class="flex h-full w-full items-center justify-center pt-12 text-center text-muted">
                     <p class="text-lg">
-                        // The path is read UNTRACKED on purpose — the sentence is a snapshot of the attempt that failed, and a tracked read inside `unwrap_or_else` would only be subscribed on the runs where it happens to execute.
+                        // Read untracked on purpose: the sentence is a
+                        // snapshot of the failed attempt, and a tracked read
+                        // inside `unwrap_or_else` would only subscribe on the
+                        // runs where it executes.
                         {move || {
                             error.get().unwrap_or_else(|| {
                                 let kind = state
@@ -218,7 +242,9 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
                     <div
                         id=LEVEL_DOM_ID
                         class="min-h-0 flex-1 overflow-y-auto pt-12"
-                        // It is where "new shelf" and "select all" belong, and a card's own right-click stops propagating so this only ever hears the space between them.
+                        // "New shelf" and "select all" belong to the level;
+                        // a card's own right-click stops propagating, so this
+                        // only hears the space between cards.
                         on:contextmenu=move |ev: leptos::ev::MouseEvent| {
                             ev.prevent_default();
                             menu.ask(
@@ -282,7 +308,6 @@ mod tests {
     fn ids(rows: &[Row]) -> Vec<&str> {
         rows.iter().map(|r| r.id()).collect()
     }
-
 
     #[test]
     fn the_root_shows_the_rows_no_shelf_holds() {
@@ -371,7 +396,6 @@ mod tests {
         state.library.shelf.set("gone".to_string());
         assert!(level_rows(state).is_empty());
     }
-
 
     #[test]
     fn the_doors_on_a_level_are_the_shelves_filed_directly_inside_it() {

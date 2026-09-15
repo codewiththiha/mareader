@@ -1,8 +1,7 @@
 //! One question, described — and the one renderer that draws all four.
 //!
-//! Four questions wear this chrome: the level's own NAME, a merged folder's per-FILE ask, a
-//! covered file's GROUND, and a folder's own name collision. Each was a component that worked
-//! out its sentences and then rendered its own list of rows.
+//! Four questions wear this chrome: the level's own name, a merged folder's
+//! per-file ask, a covered file's ground, and a folder's name collision.
 
 use leptos::prelude::*;
 
@@ -13,7 +12,9 @@ use crate::components::primitives::overlay::question_sheet::QuestionSheet;
 use crate::services::library::conflict;
 use crate::state::AppState;
 
-/// The four asks are raised on two states and dropped by two functions; naming the ROUTE rather than carrying a closure per row is what makes "which ask is this" and "which call answers it" one fact.
+/// The four asks are raised on two states and dropped by two functions;
+/// naming the route rather than carrying a closure per row makes "which ask
+/// is this" and "which call answers it" one fact.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum AnswerRoute {
     Placement,
@@ -28,7 +29,8 @@ pub(super) struct ChoiceSpec {
     pub(super) placement: Placement,
 }
 
-/// A value rather than a component because the four questions differ in their words and their rows and in nothing else.
+/// A value rather than a component: the four questions differ in their words
+/// and rows and in nothing else.
 pub(super) struct SheetSpec {
     pub(super) heading: String,
     pub(super) subtitle: String,
@@ -40,7 +42,8 @@ pub(super) struct SheetSpec {
     pub(super) choices: Vec<ChoiceSpec>,
 }
 
-/// The ✕, the backdrop, the Escape key and Cancel all end in [`close`], which is the one place the answer to "what does dropping this question mean" lives.
+/// The ✕, the backdrop, the Escape key and Cancel all end in [`close`]: the
+/// one place that answers "what does dropping this question mean".
 #[component]
 pub(super) fn ConflictSheet(state: AppState, spec: SheetSpec) -> impl IntoView {
     let SheetSpec {

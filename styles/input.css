@@ -28,23 +28,17 @@
 @import "./components/ai.css";         /* AI blur-fade, shimmer, the Explain pill's entrance */
 @import "./components/gloss.css";      /* word-card morph surface + highlighter stroke */
 @import "./components/appearance.css"; /* hue strip, preset thumbnails, link layer */
-/* The library, one file per surface. Split along the section banners the
-   stylesheet already had, and in the order it already had them: the cascade is
-   order-sensitive, so a split that also rearranged would be a split that changed
-   the look — and nothing in CI compiles CSS, so the only check is that the nine
-   files concatenate back to the one they came from.
+/* The library, one file per surface, in the order the cascade needs: a
+   rearranged split would be a split that changed the look. The CI web lane
+   compiles this through `npm run build:css`, so a missing file or a dead
+   @apply fails there.
 
    One prefix for the feature: lib-, and the component prefixes under it
-   (book-, folder-, import-, row-, drag-). It used to carry two spellings of its
-   own name — the short one on the small pieces and the full word on the
-   structural ones — and nothing in either told a reader which to reach for, so
-   each new surface picked at random and the two vocabularies grew to 43 rules
-   and 41. (Neither spelling is written with its leading dot here on purpose: a
-   dead selector in a comment is a class name nothing can grep for.)
-   The element ids keep their own scheme (crumb-…, library-level) and are not
-   classes; the Rust side spells both, and SeamVocab in
-   `src/features/library/shelf_item.rs` is the one table that decides which state
-   class a surface wears. */
+   (book-, folder-, import-, row-, drag-). Neither spelling is written with
+   its leading dot here on purpose: a dead selector in a comment is a class
+   name nothing can grep for. The element ids keep their own scheme (crumb-…,
+   library-level); SeamVocab in `src/features/library/shelf_item.rs` is the
+   one table that decides which state class a surface wears. */
 @import "./components/library/shared.css"; /* the ghost icon button every library surface reveals on hover */
 @import "./components/library/grid.css";     /* the shelf grid, the book card, its covers, a dead address, the add card */
 @import "./components/library/folder.css";   /* a shelf drawn as a folder: the 2x2 plate and its three states */

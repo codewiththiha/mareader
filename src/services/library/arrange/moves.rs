@@ -136,12 +136,16 @@ fn moved_arrivals(
     })
 }
 
-/// The import half of a screen is [`crate::services::library::import::land_stored_copy`]'s business instead; nothing in this module raises one.
+/// The import half of a screen is
+/// [`crate::services::library::import::land_stored_copy`]'s business;
+/// nothing in this module raises one.
 fn clean_move_ids(clean: Vec<Arrival>) -> Vec<String> {
     clean.into_iter().filter_map(|a| a.moving).collect()
 }
 
-/// A value rather than a boolean at the call site: a departure writes a moved-out log and the copy then lands, often on another shelf of the very folder it left.
+/// A value rather than a boolean at the call site: a departure writes a
+/// moved-out log and the copy then lands, often on another shelf of the very
+/// folder it left.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Departed {
     ThisGesture,
@@ -198,7 +202,9 @@ impl RowMove {
     }
 }
 
-/// Off every shelf it was on and onto the one named, at the slot the drop pointed at. The root has no member list, so a move there is a lift out of every shelf.
+/// Off every shelf it was on and onto the one named, at the slot the drop
+/// pointed at. The root has no member list, so a move there is a lift out of
+/// every shelf.
 pub fn move_row(
     state: AppState,
     row_id: &str,
@@ -242,7 +248,8 @@ pub fn move_row(
     }
 }
 
-/// The books stay in the library — a shelf holds ids and never held a byte — and the folder ledger is untouched.
+/// The books stay in the library — a shelf holds ids and never held a byte —
+/// and the folder ledger is untouched.
 pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
@@ -273,7 +280,9 @@ pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
     conflict::raise(state, conflicts);
 }
 
-/// Membership only, so the same rule covers a bulk filing as covers a drag: a shelf holds ids, nothing here touches a filesystem, and a book already on the shelf is not moved to the end of it for being named twice.
+/// Membership only, so the same rule covers a bulk filing and a drag:
+/// nothing here touches a filesystem, and a book already on the shelf is not
+/// moved to the end for being named twice.
 pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
@@ -300,12 +309,16 @@ pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
     conflict::raise(state, conflicts);
 }
 
-/// One book, two memberships, and nothing copied anywhere. The folder's ledger is untouched: the book stays placed where it was placed, which is what keeps the next rescan quiet about it.
+/// One book, two memberships, nothing copied. The folder's ledger is
+/// untouched: the book stays placed where it was placed, which keeps the next
+/// rescan quiet about it.
 pub fn also_show(state: AppState, book_id: &str, shelf_id: &str) {
     file_many(state, &[book_id.to_string()], shelf_id);
 }
 
-/// Lifted out and put back in together rather than one at a time: each book's removal shifts the tail left, so moving four in sequence would have the second one's index mean something the first one's already changed.
+/// Lifted out and put back together rather than one at a time: each removal
+/// shifts the tail left, so moving four in sequence would have the second
+/// one's index mean something the first already changed.
 pub(super) fn reorder_root(rows: &mut Vec<Row>, row_ids: &[String], index: Option<usize>) {
     let mut lifted: Vec<(usize, Row)> = row_ids
         .iter()
@@ -334,7 +347,9 @@ pub(super) fn reorder_root(rows: &mut Vec<Row>, row_ids: &[String], index: Optio
     insert_many(rows, lifted.into_iter().map(|(_, row)| row), index, shift);
 }
 
-/// [`shelf::place`] for one book and this for a drag: `place` retains and inserts, which is the same two steps, and doing them per book would leave each one's index counting a list the last one had already changed.
+/// [`shelf::place`] for one book, this for a drag: the same two steps, but
+/// per-book placement would leave each index counting a list the last one
+/// already changed.
 pub(super) fn place_many(members: &mut Vec<String>, book_ids: &[String], index: Option<usize>) {
     let shift = index.map_or(0, |at| {
         book_ids

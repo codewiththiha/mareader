@@ -1,8 +1,8 @@
 //! The library's search bar, in the title bar's centre slot.
 //!
-//! The reader's floating search is an overlay over a document; this is a filter over a shelf, so
-//! it borrows the LOOK and nothing else: an always-present pill that narrows the grid on the
-//! spot.
+//! The reader's floating search is an overlay over a document; this is a
+//! filter over a shelf, so it borrows the look only: an always-present pill
+//! that narrows the grid on the spot.
 
 use std::time::Duration;
 
@@ -20,9 +20,9 @@ use crate::features::library::search_suggest::SearchSuggestions;
 use crate::services::library::reveal_book;
 use crate::state::AppState;
 
-/// The quiet gap between a keystroke and the suggestion scan over every row in the library:
-/// long enough to let a fast typist's letters land, short enough that the panel still feels
-/// like it answers the typing.
+/// The quiet gap between a keystroke and the suggestion scan: long enough
+/// for a fast typist's letters to land, short enough that the panel still
+/// feels like it answers the typing.
 const SUGGEST_DEBOUNCE_MS: u64 = 90;
 
 fn placeholder(state: AppState) -> Signal<String> {
@@ -45,7 +45,8 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
     let input_ref: NodeRef<html::Input> = NodeRef::new();
     let anchor: NodeRef<html::Div> = NodeRef::new();
 
-    // `open` is the popover's own signal — its dismissal writes it too — so a closed panel renders and computes nothing.
+    // `open` is the popover's own signal (its dismissal writes it too), so a
+    // closed panel renders and computes nothing.
     let open = RwSignal::new(false);
     let active = RwSignal::new(0usize);
     let suggestions: RwSignal<Vec<Suggestion>> = RwSignal::new(Vec::new());
@@ -75,10 +76,9 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
         open.set(!suggestions.with_untracked(|s| s.is_empty()));
     };
 
-    // The suggest pass is debounced, the query write is not: the shelf filters on every
-    // keystroke because that is what typing into it means, while the suggestion panel is a
-    // scan over every row in the library and a fast typist would run it once per letter.
-    // One pending timer, replaced by each keystroke, so only the last one lands.
+    // The suggest pass is debounced, the query write is not: the shelf
+    // filters per keystroke, while suggestions scan every row in the library.
+    // One pending timer, replaced by each keystroke, so only the last lands.
     let pending_show: RwSignal<Option<TimeoutHandle>> = RwSignal::new(None);
     let queue_show = move || {
         if let Some(handle) = pending_show.get_untracked() {
@@ -99,7 +99,8 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
         open.set(false);
     };
 
-    // The shortcut layer dispatches and forgets: it has no business knowing that the library's bar owns an input node.
+    // The shortcut layer dispatches and forgets: it has no business knowing
+    // the library's bar owns an input node.
     let focus_handle =
         window_event_listener(
             leptos::ev::Custom::new(FOCUS_LIBRARY_SEARCH_EVENT),

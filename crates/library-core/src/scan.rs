@@ -1,11 +1,9 @@
 //! What a folder scan found, and whether the folder's own options admit it.
 //!
-//! The split is deliberate: the shell walks the filesystem and produces
-//! [`FoundFile`] rows (it is the only layer that can), and this module decides
-//! which of them the folder the user configured actually wants. The decision
-//! is pure, so the two things that make it awkward — the include/exclude flip
-//! and the size threshold's strictness — are host-testable rather than
-//! something you discover by pointing the app at a real folder.
+//! The shell walks the filesystem and produces [`FoundFile`] rows; this module
+//! decides which of them the configured folder wants. The decision is pure, so
+//! its awkward corners — the include/exclude flip and the size threshold's
+//! strictness — are host-testable.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +12,8 @@ use reader_core::format::{Format, SUPPORTED, format_from_ext};
 use crate::book::Fingerprint;
 use crate::folder::FolderOpts;
 
-/// One file a walk turned up. Serialized: the shell's walk produces these and the frontend's ledger consumes them.
+/// One file a walk turned up. Serialized: the shell produces these and the
+/// frontend's ledger consumes them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FoundFile {
@@ -31,11 +30,10 @@ impl FoundFile {
         format_from_ext(&self.ext)
     }
 
-    /// The format the file was admitted by, for the mints that follow a walk: a file the
-    /// registry refused never reaches one, so `None` here means a `FoundFile` built by
-    /// hand rather than by a scan — and the fallback is named rather than scattered
-    /// `unwrap_or(Format::Pdf)` shields at every mint, each implying an impossible state
-    /// the next reader would have to re-derive.
+    /// The format the file was admitted by. A file the registry refused never
+    /// reaches a mint, so a `None` here means a hand-built [`FoundFile`]; the
+    /// fallback is named once rather than scattered `unwrap_or` shields at
+    /// every mint.
     pub fn admitted_format(&self) -> Format {
         self.format().unwrap_or(Format::Pdf)
     }
@@ -45,7 +43,10 @@ impl FoundFile {
     }
 }
 
-/// Free rather than a method on [`FoundFile`] because a book already in the library has an address and no finding, and the two have to agree about which rung an address belongs to — see [`crate::folder::WatchedFolder::rungs_for`].
+/// Free function rather than a [`FoundFile`] method: a book already in the
+/// library has an address and no finding, and the two must agree about which
+/// rung an address belongs to — see
+/// [`crate::folder::WatchedFolder::rungs_for`].
 pub fn subfolder_of(rel: &str) -> &str {
     match rel.rsplit_once('/') {
         Some((dir, _)) => dir,
@@ -53,9 +54,9 @@ pub fn subfolder_of(rel: &str) -> &str {
     }
 }
 
-/// Whether a folder's options admit one found file. `min_size` is a STRICT
-/// lower bound: "larger than 30 KB" rejects a file of exactly 30 KB, which is
-/// what the import sheet's wording promises.
+/// Whether a folder's options admit one found file. `min_size` is a strict
+/// lower bound: "larger than 30 KB" rejects exactly 30 KB, which is what the
+/// import sheet's wording promises.
 pub fn admits(opts: &FolderOpts, ext: &str, size: u64) -> bool {
     let Some(fmt) = format_from_ext(ext) else {
         return false;

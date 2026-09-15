@@ -1,25 +1,17 @@
-//! The sheet's chrome below the panel: a heading, a scrollable body and a row
-//! of buttons.
+//! The sheet's chrome below the panel: a heading, a scrollable body and a
+//! row of buttons.
 //!
-//! [`ModalShell`](super::modal_shell::ModalShell) owns the backdrop, the panel,
-//! the overlay lane and the Escape rule — the four things a sheet can quietly
-//! differ about and never look wrong doing it. This owns the three things a
-//! reader actually sees, which every sheet was drawing again from scratch: seven
-//! copies of one `<header>` with one truncated title, one muted line and one ✕,
-//! seven of one `<footer>` with one right-aligned button row, and seven of the
-//! scrollable middle between them.
+//! [`ModalShell`](super::modal_shell::ModalShell) owns the backdrop, panel,
+//! overlay lane and Escape rule; this owns the three parts a reader sees,
+//! which every sheet used to draw from scratch.
 //!
 //! Split from the shell rather than folded into it because two sheets have a
-//! header of their own shape — the import sheet's is a sentence, and the removal
-//! receipt's carries the cover of the book being removed — and a shell that
-//! could only draw one header would be a shell those two had to work around.
-//! These three are ordinary components a sheet composes, so the one that does
-//! not fit uses the two that do and draws the third itself.
-//!
-//! The heading carries its own truncation tooltip. That is the small thing worth
-//! centralising: a shelf name or a folder path too long for a 420px panel has to
-//! be readable somewhere, and a header each sheet drew itself is a header each
-//! sheet had to remember that for.
+//! header of their own shape (the import sheet's is a sentence, the removal
+//! receipt's carries a cover): these are ordinary components a sheet
+//! composes, so one that does not fit uses the two that do and draws the
+//! third itself. The heading carries its own truncation tooltip — a shelf
+//! name or folder path too long for a 420px panel has to be readable
+//! somewhere.
 
 use leptos::prelude::*;
 
@@ -30,12 +22,13 @@ use app_chrome::icon_button::IconButton;
 /// it.
 #[component]
 pub fn SheetHeader(
-    /// The title. Truncates to one line and is its own tooltip, because the
-    /// thing a sheet is about is usually a shelf name or a file path and neither
-    /// fits a 420px panel.
+    /// The title. Truncates to one line and is its own tooltip: a sheet is
+    /// usually about a shelf name or a file path, and neither fits a 420px
+    /// panel.
     #[prop(into)]
     heading: String,
-    /// The muted line under the title: what the sheet is about in one clause.
+    /// The muted line under the title: what the sheet is about in one
+    /// clause.
     #[prop(optional, into)]
     subtitle: Option<String>,
     /// What the ✕ does. A sheet whose closing means more than "not open" — the

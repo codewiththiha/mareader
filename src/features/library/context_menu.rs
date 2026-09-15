@@ -1,7 +1,4 @@
 //! The shelf's right-click: one menu per kind of thing under the pointer.
-//!
-//! A card used to answer a right-click with the removal receipt and nothing else, which is one
-//! row of a menu wearing the whole gesture.
 
 use leptos::prelude::*;
 
@@ -25,10 +22,13 @@ use crate::services::library::{
 };
 use crate::state::AppState;
 
-/// Carrying the facts rather than an id: a menu row that asked the library what it was pointing at would be reading a list a rescan can change between the click and the row.
+/// Carries the facts rather than an id: a row that asked the library what it
+/// pointed at would read a list a rescan can change between click and row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuTarget {
-    /// The id is all an open needs — it is what says WHICH row the reader meant when the library holds two of one name — so carrying the address beside it would be a second answer.
+    /// The id is all an open needs — it says which row the reader meant when
+    /// the library holds two of one name — so the address beside it would be a
+    /// second answer.
     Book { id: String, missing: bool },
     Folder { id: String },
     Selection,
@@ -44,7 +44,8 @@ pub struct MenuRequest {
 
 #[derive(Clone, Copy)]
 pub struct LibraryMenuHost {
-    /// One signal for the whole page, so exactly one menu is up at a time and asking for a second closes the first by replacing it.
+    /// One signal for the whole page: exactly one menu is up at a time, and
+    /// asking for a second replaces the first.
     pub request: RwSignal<Option<MenuRequest>>,
 }
 
@@ -70,7 +71,9 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
     let folders = use_context::<FolderOrder>().expect("the library content provides the folders");
     let request = menu.request;
-    // Handed to whichever row was chosen rather than left to each menu to remember: a row that acted without closing would leave a menu floating over the shelf it had just changed.
+    // Handed to every row rather than left to each menu to remember: a row
+    // that acted without closing would leave a menu floating over the shelf
+    // it had just changed.
     let close = Callback::new(move |_| request.set(None));
 
     view! {
@@ -125,10 +128,9 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
     }
 }
 
-/// The rows of the four menus here are the same rows in different orders — open, select, rename,
-/// duplicate, reveal, and then whatever the thing under the pointer owns — and a `<MenuItem>`
-/// written per menu meant the order, the disabled rule and the removal's own rule were each
-/// repeated.
+/// The four menus here are the same rows in different orders — open, select,
+/// rename, duplicate, reveal, then whatever the target owns. One row builder,
+/// so the order, the disabled rule and the removal rule are written once.
 struct MenuItemSpec {
     icon: IconName,
     label: String,
@@ -137,7 +139,8 @@ struct MenuItemSpec {
     title: Option<String>,
     disabled: bool,
     tone: MenuItemTone,
-    /// The row that takes something away is a different kind of thing from the rows that change the library, and the rule is what says so.
+    /// Marks the row that takes something away, as distinct from the rows
+    /// that change the library.
     ruled: bool,
 }
 
@@ -165,7 +168,8 @@ impl MenuItemSpec {
         self
     }
 
-    /// The row STAYS: a menu whose rows disappeared with the card's luck would be a menu whose shape says something the reader has to work out.
+    /// The row stays regardless: a menu whose shape changed with the card's
+    /// state would say something the reader has to work out.
     fn off_when(self, off: bool) -> Self {
         Self {
             disabled: off,
@@ -184,7 +188,9 @@ impl MenuItemSpec {
     }
 }
 
-/// A book's, a folder's, the set's and the level's — what differs is which rows are in the list, and the list is built where the facts are. What is left here is the rule above a row.
+/// A book's, a folder's, the set's and the level's: what differs is which
+/// rows the list holds, and the list is built where the facts are. What is
+/// left here is the rule above a row.
 #[component]
 fn EntryMenu(
     #[prop(optional, into)]
@@ -207,7 +213,10 @@ fn EntryMenu(
                         tone,
                         ruled,
                     } = item;
-                    // A second line is a different ROW shape, not a longer one (see `crate::components::primitives::menu::menu_item`), so the two cases build two rows and a row with no tooltip passes the empty one, which is no tooltip at all.
+                    // A second line is a different row shape, not a longer
+                    // one (see `crate::components::primitives::menu::menu_item`):
+                    // the two cases build two rows, and no tooltip passes the
+                    // empty one.
                     let row = match sublabel {
                         Some(note) => view! {
                             <MenuItem
@@ -243,14 +252,18 @@ fn EntryMenu(
     }
 }
 
-/// The difference is a word or a service call rather than a shape, so it belongs here rather than in two menus that would each keep their own copy of the order.
+/// The difference between the two menus is a word or a service call, not a
+/// shape — so it lives here rather than in two menus each keeping their own
+/// copy of the order.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EntryKind {
     Row,
     Shelf,
 }
 
-/// The five are the same five for a book, a link and a folder: two menus holding one list is how the two drifted into two orders, two disabled rules and two removal rows for one gesture.
+/// The same five rows for a book, a link and a folder: two menus holding one
+/// list is how they drifted into two orders, two disabled rules and two
+/// removal rows for one gesture.
 fn base_entry_items(
     state: AppState,
     id: &str,
@@ -293,7 +306,9 @@ fn base_entry_items(
         }),
     ));
 
-    // The sheet renames what the shelf SHOWS, which every kind has, address or no address: a book whose file died is exactly the book a reader may want to rename before hunting the file down.
+    // The sheet renames what the shelf shows, which every kind has: a book
+    // whose file died is exactly the one a reader may want to rename before
+    // hunting the file down.
     let rename_id = id.to_string();
     let rename_title = match kind {
         EntryKind::Row => "The name the library shows — the file on disk keeps its own",
@@ -338,7 +353,8 @@ fn base_entry_items(
     };
     items.push(duplicate);
 
-    // An entry with nothing behind it gets no row at all rather than a disabled one — the menu is built per ask, so the answer cannot have gone stale.
+    // An entry with nothing behind it gets no row rather than a disabled
+    // one: the menu is built per ask, so the answer cannot be stale.
     let path = match kind {
         EntryKind::Row => path_of_row(state, id),
         EntryKind::Shelf => path_of_shelf(state, id),
@@ -377,9 +393,9 @@ fn BookMenu(
             "Find again…",
             Callback::new(move |_| {
                 close.run(());
-                // Through the guarded door rather than the picker's: one function decides
-                // whether a reader-page open goes straight to the dialog or the sheet comes
-                // up, and a second caller of the raw picker was a second answer to drift.
+                // Through the guarded door: one function decides between the
+                // dialog and the sheet, and a second caller of the raw picker
+                // was a second answer to drift.
                 ask_relink(state, find_id.clone());
             }),
         ));
@@ -400,7 +416,9 @@ fn BookMenu(
     view! { <EntryMenu items=items /> }
 }
 
-/// The one place a shelf can be taken apart from without selecting it first, and the one place a shelf is subdivided from where it stands: "new shelf" on a folder is an answer about that folder.
+/// The one place a shelf can be taken apart without selecting it first, and
+/// the one place a shelf is subdivided from where it stands: "new shelf" on a
+/// folder is an answer about that folder.
 #[component]
 fn FolderMenu(
     state: AppState,
@@ -409,7 +427,8 @@ fn FolderMenu(
     close: Callback<()>,
 ) -> impl IntoView {
     let mut items = base_entry_items(state, &id, EntryKind::Shelf, false, rename_sheet, close);
-    // The decision is the SEAT's — the rung this shelf stands on — so the row toggles the ground the reader is looking at.
+    // The decision is the seat's — the rung this shelf stands on — so the
+    // row toggles the ground the reader is looking at.
     if let Some(watch) = shelf_watch(state, &id) {
         let on = watch.on;
         let deep = watch.rung_label.is_some();
@@ -472,7 +491,10 @@ fn FolderMenu(
     view! { <EntryMenu items=items /> }
 }
 
-/// The count is read when the menu is built rather than carried in the request, so the heading and the removal row cannot disagree. It is a number and not a signal because a menu row's label is a `String` and the set cannot change while a menu is up.
+/// The count is read when the menu is built rather than carried in the
+/// request, so the heading and the removal row cannot disagree. A number, not
+/// a signal: a row label is a `String` and the set cannot change while a menu
+/// is up.
 #[component]
 fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>) -> impl IntoView {
     let count = state.library.selected.with_untracked(|set| set.len());
@@ -522,7 +544,8 @@ fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>
     view! { <EntryMenu heading=heading items=items /> }
 }
 
-/// The two facts its second row is about are read when the menu is built: a menu is asked for and drawn in the same breath, so nothing can change between the right-click and the row.
+/// Its second row's facts are read when the menu is built: a menu is asked
+/// for and drawn in the same breath, so nothing changes in between.
 #[component]
 fn LevelMenu(
     state: AppState,

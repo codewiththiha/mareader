@@ -1,15 +1,14 @@
-//! Where a book's bytes live on disk: one folder per book, keyed by an id that
-//! never changes.
+//! Where a book's bytes live on disk: one folder per book, keyed by an id
+//! that never changes.
 //!
-//! Every file a book owns — its source, its cover, its highlights — sits in the
-//! one folder its id names, so a merge or a delete is one directory. Names are
-//! not title-derived: a book can be renamed without anything on disk moving.
+//! Every file a book owns — source, cover, highlights — sits in the folder its
+//! id names, so a merge or a delete is one directory. Names are not
+//! title-derived: renaming a book moves nothing on disk.
 
 pub const ITEMS_DIR: &str = "items";
 
-/// The file name a stored book's bytes wear inside its item folder: a PDF is
-/// `source.pdf`, a markdown file `source.md`. One predictable stem, the format
-/// carried by the suffix.
+/// The stem a stored book's bytes wear inside its item folder (`source.pdf`,
+/// `source.md`): one predictable name, the format carried by the suffix.
 const SOURCE_STEM: &str = "source";
 
 pub const COVER_FILE: &str = "cover.webp";
@@ -18,26 +17,26 @@ pub const MARKS_FILE: &str = "marks.json";
 
 pub const META_FILE: &str = "meta.json";
 
-/// The item-folder root under a store root: `<store_root>/items`. Everything
-/// below lives here, which is what keeps a book's bytes, cover and marks inside
-/// the store the delete command's containment check already guards.
+/// The item-folder root under a store root: `<store_root>/items`. Keeping
+/// everything below one root is what the delete command's containment check
+/// guards.
 pub fn items_root(store_root: &str) -> String {
     join(trim_sep(store_root), ITEMS_DIR)
 }
 
-/// The folder one book owns end to end: `<items_root>/<id>`. The id is
-/// sanitised into a single component rather than trusted: a hand-edited blob
-/// must not be able to turn a folder name into a traversal.
+/// The folder one book owns: `<items_root>/<id>`. The id is sanitised into a
+/// single component rather than trusted: a hand-edited blob must not turn a
+/// folder name into a traversal.
 pub fn item_dir(items_root: &str, book_id: &str) -> String {
     join(trim_sep(items_root), &component(book_id))
 }
 
-/// Where a stored book's bytes live: `<items_root>/<id>/source.<ext>`. An empty
-/// extension yields a bare `source` with no suffix, which no admitted format
-/// asks for — the registry refuses an extension-less name.
+/// Where a stored book's bytes live: `<items_root>/<id>/source.<ext>`. An
+/// empty extension yields a bare `source`; no admitted format asks for one —
+/// the registry refuses an extension-less name.
 pub fn source_path(items_root: &str, book_id: &str, ext: &str) -> String {
-    // The emptiness check is on the RAW extension: `component` maps an empty
-    // string to its `item` fallback, which is right for a folder name and wrong for
+    // The emptiness check is on the raw extension: `component` maps an empty
+    // string to its fallback, which is right for a folder name and wrong for
     // "this source has no suffix".
     let file = if ext.trim().is_empty() {
         SOURCE_STEM.to_string()
@@ -59,10 +58,10 @@ pub fn meta_path(items_root: &str, book_id: &str) -> String {
     join(&item_dir(items_root, book_id), META_FILE)
 }
 
-/// The stem a migrated source keeps in its new name, which is every supported
-/// extension lower-cased. `None` for an extension the registry does not know,
-/// which keeps its old name rather than being renamed into something no reader
-/// can open.
+/// The extension a migrated source keeps in its new name: every supported
+/// extension lower-cased. `None` for one the registry does not know, which
+/// keeps its old name rather than being renamed into something no reader can
+/// open.
 pub fn migrated_ext(ext: &str) -> Option<&'static str> {
     match crate::scan::store_dir(ext) {
         "other" => None,
@@ -70,9 +69,9 @@ pub fn migrated_ext(ext: &str) -> Option<&'static str> {
     }
 }
 
-/// The id a copy in the OLD flat store was named with: the token after its last
-/// underscore. The old name was `<stem>_<id>.<ext>`, and an id never carries an
-/// underscore. `None` for a name with no seam, which is a file this app did not
+/// The id a copy in the old flat store was named with: the token after its
+/// last underscore (the old name was `<stem>_<id>.<ext>`, and an id never
+/// carries one). `None` for a name with no seam — a file this app did not
 /// write.
 pub fn flat_store_id(file_name: &str) -> Option<String> {
     let stem = file_name.rsplit_once('.').map_or(file_name, |(stem, _)| stem);
@@ -81,13 +80,12 @@ pub fn flat_store_id(file_name: &str) -> Option<String> {
         .filter(|id| !id.is_empty())
 }
 
-/// Whether a recorded store address still sits in the OLD flat bucket, and so
-/// is a candidate for the one-time migration: directly inside one of the three
+/// Whether a recorded store address still sits in the old flat bucket and is
+/// a candidate for the one-time migration: directly inside one of the three
 /// format directories under the store root, as `<root>/pdf/dune_ab12.pdf`.
 pub fn is_flat_store_path(store_root: &str, path: &str) -> bool {
-    // A directory edge rather than a string prefix, so `/Library-old/x` is not
-    // under `/Library` — the rule `crate::folder::rel_under` gives a watched
-    // folder, applied to the one directory the app owns.
+    // A directory edge rather than a string prefix, so `/Library-old/x` is
+    // not under `/Library`.
     let Some(rest) = crate::folder::rel_under(path, store_root) else {
         return false;
     };
@@ -98,8 +96,8 @@ pub fn is_flat_store_path(store_root: &str, path: &str) -> bool {
     matches!(dir, "pdf" | "text" | "markdown")
 }
 
-/// Drop a trailing separator so a join never produces `root//child`. Both
-/// separators are trimmed: a store root arrives from the host's own path API.
+/// Drop trailing separators so a join never produces `root//child`. Both
+/// separators are trimmed: a store root arrives from the host's path API.
 fn trim_sep(path: &str) -> &str {
     path.trim_end_matches(['/', '\\'])
 }
@@ -112,10 +110,10 @@ fn join(parent: &str, child: &str) -> String {
     }
 }
 
-/// One path component, made safe to write: separators, the characters Windows
-/// reserves, and control characters become `_`; the result is trimmed of the
-/// dots and spaces that would make it a relative path, capped, and replaced
-/// with a fallback when nothing is left.
+/// One path component, made safe to write: separators, Windows-reserved
+/// characters and control characters become `_`; the result is trimmed of the
+/// dots and spaces that would make it relative, capped, and replaced with a
+/// fallback when nothing is left.
 fn component(raw: &str) -> String {
     let cleaned: String = raw
         .chars()
@@ -238,7 +236,6 @@ mod tests {
             format!("/r/{ID}/source.pdf_.._.._x")
         );
     }
-
 
     #[test]
     fn a_migrated_copy_is_named_after_its_pipeline_not_its_source() {

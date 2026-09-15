@@ -1,8 +1,8 @@
-//! The suggestion list under the library's search bar: the books a half-typed query is probably
-//! about, best first, with the characters that matched lit up.
+//! The suggestion list under the library's search bar: the books a half-typed
+//! query is probably about, best first, matched characters lit up.
 //!
-//! A panel, not a page: the shelf filters live behind it, so this answers "take me to that book"
-//! where the grid answers "narrow this shelf".
+//! A panel, not a page: the shelf filters live behind it, so this answers
+//! "take me to that book" where the grid answers "narrow this shelf".
 
 use leptos::prelude::*;
 
@@ -11,7 +11,9 @@ use library_core::query::Suggestion;
 use crate::features::library::cover_thumb::CoverThumb;
 use crate::state::AppState;
 
-/// Spans outside the text are ignored rather than trusted, because a highlight is a courtesy and a courtesy that panics on a stale span takes the bar with it.
+/// Spans outside the text are ignored rather than trusted: a highlight is a
+/// courtesy, and a courtesy that panics on a stale span takes the bar with
+/// it.
 fn pieces(text: &str, spans: &[(usize, usize)]) -> Vec<(String, bool)> {
     let chars: Vec<char> = text.chars().collect();
     let mut out: Vec<(String, bool)> = Vec::with_capacity(spans.len() * 2 + 1);
@@ -66,7 +68,9 @@ pub(crate) fn SearchSuggestions(
                     each=move || {
                         suggestions.get().into_iter().enumerate().collect::<Vec<_>>()
                     }
-                    // Keyed by the id AND its spans: a suggestion whose lit characters never grow as the query does is a row that stopped listening.
+                    // Keyed by the id and its spans: a suggestion whose lit
+                    // characters never grow as the query does is a row that
+                    // stopped listening.
                     key=|(_, s)| {
                         (
                             s.book.id.clone(),
@@ -80,7 +84,9 @@ pub(crate) fn SearchSuggestions(
                         let title = s.book.title();
                         let fallback_letter = title.chars().next().unwrap_or('?').to_string();
                         let author = s.book.author();
-                        // The author when the book has one; the address when the address is what the query hit; nothing otherwise. A row whose title IS its stem says the stem twice.
+                        // The author when the book has one; the address when
+                        // that is what the query hit; nothing otherwise — a row
+                        // whose title is its stem would say the stem twice.
                         let (sub_text, sub_spans) = match (&author, !s.path_spans.is_empty()) {
                             (Some(a), _) => (a.clone(), s.author_spans.clone()),
                             (None, true) => (path.clone(), s.path_spans.clone()),

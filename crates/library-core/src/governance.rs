@@ -1,17 +1,15 @@
 //! One answer to "who owns this path", instead of four.
 //!
-//! Four places each walked the watched-folder list and the shelf list to answer
-//! a variation of one question: which read-at-place tree's ledger speaks for
-//! this ground, and which of its shelves is still standing. They are resolved
-//! once here.
+//! Callers used to each walk the watched-folder and shelf lists for a
+//! variation of one question: which read-at-place tree's ledger speaks for
+//! this ground, and which of its shelves still stands. Resolved once here.
 
-use crate::book::Fingerprint;
 use crate::folder::{rel_under, FolderMode, WatchedFolder};
 use crate::shelf::{ancestors, find as find_shelf, Shelf, ShelfKind};
 
-/// The folder, the rung and the standing shelf that answer for a path. A value
-/// rather than a tuple: the three facts are easy to transpose, and a gate that
-/// read `.1` for a shelf id would be a bug no type catches.
+/// The folder, the rung and the standing shelf that answer for a path. A
+/// named struct rather than a tuple: the three strings are easy to transpose,
+/// and a gate that read `.1` for a shelf id would be a bug no type catches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Coverage {
     pub folder_id: String,
@@ -19,30 +17,31 @@ pub struct Coverage {
     pub shelf_id: String,
 }
 
-/// The seat a SHELF stands on in a tree: which folder's ground it wears, and which
-/// rung of that folder's tree it is. The shelf-shaped twin of [`Coverage`], which
-/// answers the same question from a path's side.
+/// The seat a shelf stands on in a tree: which folder's ground it wears and
+/// which rung of that tree it is. The shelf-shaped twin of [`Coverage`],
+/// which answers the same question from a path's side.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Seat {
     pub folder_id: String,
-    /// The rung of that tree the shelf wears — the rung whose tracking decision a toggle from this shelf writes.
+    /// The rung whose tracking decision a toggle from this shelf writes.
     pub rung: String,
 }
 
-/// The "who owns this path" questions, asked of one snapshot of the two lists every caller already holds.
+/// The "who owns this path" questions, asked of one snapshot of the two lists
+/// every caller already holds.
 pub struct Governance<'a> {
     folders: &'a [WatchedFolder],
     shelves: &'a [Shelf],
 }
 
 impl<'a> Governance<'a> {
-    /// Borrow the two lists a decision is about; nothing is cloned.
+    /// Borrow the two lists; nothing is cloned.
     pub fn new(folders: &'a [WatchedFolder], shelves: &'a [Shelf]) -> Self {
         Self { folders, shelves }
     }
 
-    /// The shelf a folder's ledger names for one of its rungs, when that shelf is still
-    /// standing: the one read behind both [`Self::covering`] and [`Self::family`].
+    /// The shelf a folder's ledger names for a rung, when that shelf still
+    /// stands: the one read behind both [`Self::covering`] and [`Self::family`].
     fn standing_rung<'f>(&self, folder: &'f WatchedFolder, rung: &str) -> Option<&'f String> {
         folder
             .shelf_map
@@ -50,13 +49,12 @@ impl<'a> Governance<'a> {
             .filter(|id| self.shelves.iter().any(|s| s.id == **id))
     }
 
-    /// The standing shelf an in-place tree already holds for `ground`: `ground` IS a
-    /// folder the library reads in place, or a subfolder inside one, and the rung its
-    /// directory names in that tree has a shelf still standing.
+    /// The standing shelf an in-place tree already holds for `ground`: the
+    /// ground is (or is inside) a folder the library reads in place, and the
+    /// rung its directory names has a shelf still standing.
     ///
-    /// A folder's OWN tree answers for it before a tree it merely stands inside — the
-    /// empty rung wins outright — and otherwise the tree whose root sits highest
-    /// does.
+    /// A folder's own tree wins outright (the empty rung); otherwise the tree
+    /// whose root sits highest answers.
     pub fn covering(&self, ground: &str) -> Option<Coverage> {
         let mut rung: Option<Coverage> = None;
         for folder in self.folders.iter().filter(|f| f.mode().reads_in_place()) {
@@ -81,15 +79,15 @@ impl<'a> Governance<'a> {
         rung
     }
 
-    /// The family a ground belongs to but is NOT standing in: the deepest in-place
-    /// folder whose root covers `ground` at a rung of its own, when that folder's
-    /// ledger names no standing shelf for the rung — a slot a removal emptied, or a
-    /// departure — while the shelf its own root is kept on still stands. `None` when
-    /// the covering tree's rung is alive: that is [`covering`]'s answer rather than a
-    /// family to fold back into.
+    /// The family a ground belongs to but is not standing in: the deepest
+    /// in-place folder whose root covers `ground` at a rung of its own, when
+    /// the ledger names no standing shelf for that rung (a slot a removal
+    /// emptied, or a departure) while the folder's root shelf still stands.
+    /// `None` when the covering rung is alive — that is [`Self::covering`]'s
+    /// answer, not a family to fold back into.
     ///
-    /// A tree whose root shelf the reader has taken out is no family: ground under it
-    /// is a start of its own, not a rung of a tree nothing stands on.
+    /// A tree whose root shelf the reader has taken out is no family: ground
+    /// under it is a start of its own.
     pub fn family(&self, ground: &str) -> Option<(String, String)> {
         self.folders
             .iter()
@@ -108,23 +106,22 @@ impl<'a> Governance<'a> {
             })
     }
 
-    /// The tree a shelf stands in: which folder's ground it wears, and which rung of
-    /// that folder's tree it is — a rung's own `rel`, or the rung of the closest folder
-    /// shelf above a shelf the reader made. `None` for a shelf no tree answers for: one
-    /// the reader made at the root, and one that LEFT its tree
-    /// ([`ShelfKind::Departed`]), whose books the library keeps copies of.
+    /// The tree a shelf stands in: a folder rung's own `rel`, or the rung of
+    /// the closest folder shelf above a shelf the reader made. `None` for a
+    /// shelf no tree answers for — one made at the root, or one that left its
+    /// tree ([`ShelfKind::Departed`]).
     pub fn tree_of(&self, shelf_id: &str) -> Option<Seat> {
         let shelf = find_shelf(self.shelves, shelf_id)?;
         let (folder_id, rung) = match &shelf.kind {
             ShelfKind::Folder { folder_id, rel } => {
                 (folder_id.as_str(), rel.as_deref().unwrap_or(""))
             }
-            // A shelf a move took off its tree stands where the reader put it and not on ground
-            // the disk names, so no tree answers for it.
+            // A departed shelf stands where the reader put it, not on ground
+            // the disk names.
             ShelfKind::Departed => return None,
-            // Not a rung of any tree: the closest folder shelf above it is the tree it stands
-            // inside — and a shelf that left its tree ends that ground, so what stands inside
-            // one stands on the reader's own.
+            // Not a rung of any tree: the closest folder shelf above it is
+            // the tree it stands inside — and a departed shelf ends that
+            // ground, so what stands inside one stands on the reader's own.
             ShelfKind::Virtual => ancestors(self.shelves, shelf_id)
                 .iter()
                 .rev()
@@ -143,19 +140,19 @@ impl<'a> Governance<'a> {
         })
     }
 
-    /// [`Self::tree_of`] for the trees that READ IN PLACE: the seat a watch toggle writes to and
-    /// a dot reads. A copying tree answers no seat, because tracking is a promise about the tree
-    /// the books are read from.
+    /// [`Self::tree_of`] restricted to read-in-place trees: the seat a watch
+    /// toggle writes and a dot reads. A copying tree answers no seat —
+    /// tracking is a promise about the tree books are read from.
     pub fn seat_of(&self, shelf_id: &str) -> Option<Seat> {
         let seat = self.tree_of(shelf_id)?;
         let folder = crate::folder::find(self.folders, &seat.folder_id)?;
         folder.mode().reads_in_place().then_some(seat)
     }
 
-    /// Where a shelf's books live, when the library can answer: [`FolderMode::Copy`] for a shelf
-    /// whose books the library keeps copies of — cut from a folder imported that way, or taken off
-    /// a read-at-place tree by a move that paid the copy — the tree's own mode for a shelf that is
-    /// a door onto a directory on disk, and `None` for a shelf no folder answers for.
+    /// Where a shelf's books live: [`FolderMode::Copy`] for a shelf the
+    /// library keeps copies for (cut from a copying import, or departed by a
+    /// move that paid the copy), the tree's own mode for a shelf that is a
+    /// door onto a directory, `None` for a shelf no folder answers for.
     pub fn mode_of(&self, shelf_id: &str) -> Option<FolderMode> {
         if find_shelf(self.shelves, shelf_id)?.kind == ShelfKind::Departed {
             return Some(FolderMode::Copy);
@@ -164,26 +161,19 @@ impl<'a> Governance<'a> {
         crate::folder::find(self.folders, &seat.folder_id).map(|f| f.mode())
     }
 
-    /// Whether the tree a shelf was cut from tracks the rung that shelf stands on —
-    /// the question every watch dot asks, which a single flag for the whole import
-    /// could only answer about the root.
-    pub fn shelf_tracked(&self, shelf_id: &str) -> Option<bool> {
-        let seat = self.seat_of(shelf_id)?;
-        let folder = crate::folder::find(self.folders, &seat.folder_id)?;
-        Some(folder.tracks_rung(&seat.rung))
+    /// Whether the tree a shelf was cut from tracks the rung that shelf
+    /// stands on — the question every watch dot asks. `false` for a shelf no
+    /// tree answers for: nothing tracks it.
+    pub fn shelf_tracked(&self, shelf_id: &str) -> bool {
+        let Some(seat) = self.seat_of(shelf_id) else {
+            return false;
+        };
+        let Some(folder) = crate::folder::find(self.folders, &seat.folder_id) else {
+            return false;
+        };
+        folder.tracks_rung(&seat.rung)
     }
 
-    /// The rung each in-place folder whose ledger answers for `fp` gives `path`, or
-    /// `None` for a folder that names none — a rung the reader deleted since the walk
-    /// that placed the file. An EMPTY list is the only thing the length says: no
-    /// ledger is waiting on this fingerprint, so no departure is owed.
-    pub fn placing_rungs(&self, fp: &Fingerprint, path: &str) -> Vec<Option<String>> {
-        self.folders
-            .iter()
-            .filter(|f| f.mode().reads_in_place() && f.placed.contains(fp))
-            .map(|f| f.rungs_for(path).0.map(str::to_string))
-            .collect()
-    }
 }
 
 #[cfg(test)]
@@ -191,7 +181,7 @@ mod tests {
     use super::*;
     use crate::folder::{FolderMode, FolderOpts};
     use crate::tracking::TrackingTree;
-    use crate::testkit::{departed_shelf, folder_shelf, fp_n};
+    use crate::testkit::{departed_shelf, folder_shelf};
     use std::collections::{BTreeMap, HashSet};
 
     fn folder(id: &str, root: &str, in_place: bool, map: &[(&str, &str)]) -> WatchedFolder {
@@ -249,7 +239,8 @@ mod tests {
 
     #[test]
     fn the_empty_rung_outranks_a_deeper_one() {
-        // Two in-place trees, one nested in the other: a pick of the OUTER root is the outer tree's own door.
+        // Two in-place trees, one nested in the other: a pick of the outer
+        // root is the outer tree's own door.
         let folders = vec![
             folder("outer", "/books", true, &[("", "r")]),
             folder("inner", "/books/Fiction", true, &[("", "fic")]),
@@ -294,8 +285,8 @@ mod tests {
 
     #[test]
     fn of_two_nested_trees_the_longest_relative_rung_answers() {
-        // The tie-break is the longest `rel`, which is the tree whose root sits
-        // HIGHEST. The nested-tree case is also asserted in shelf/mod.rs's family test.
+        // The tie-break is the longest `rel`: the tree whose root sits
+        // highest. Also asserted in shelf/mod.rs's family test.
         let outer = folder("f1", "/books", true, &[("", "or"), ("Fiction", "fic")]);
         let inner = folder("f2", "/books/Fiction", true, &[("", "ir")]);
         let shelves = vec![
@@ -312,44 +303,26 @@ mod tests {
     }
 
     #[test]
-    fn the_placing_rungs_are_the_folders_that_own_the_content() {
-        let fp = fp_n(7);
-        let mut placed = folder("f1", "/books", true, &[("", "r"), ("Fiction", "fic")]);
-        placed.placed.insert(fp);
-        let copying = {
-            let mut f = folder("c1", "/dvds", false, &[("", "x")]);
-            f.placed.insert(fp);
-            f
-        };
-        let unplaced = folder("f2", "/books/Fiction", true, &[("", "y")]);
-        let shelves = vec![folder_shelf("r", "Books", "f1", None, &[], None)];
-        let folders = vec![placed, copying, unplaced];
-        let g = Governance::new(&folders, &shelves);
-        assert_eq!(g.placing_rungs(&fp, "/books/Fiction/dune.pdf"), vec![Some("fic".to_string())]);
-        assert!(g.placing_rungs(&fp_n(99), "/books/Fiction/dune.pdf").is_empty());
-    }
-
-    #[test]
     fn a_watch_dot_is_the_rung_s_answer_not_the_tree_s() {
         let (folders, shelves) = tree();
         let g = Governance::new(&folders, &shelves);
-        assert_eq!(g.shelf_tracked("r"), Some(false));
-        assert_eq!(g.shelf_tracked("sf"), Some(false));
+        assert!(!g.shelf_tracked("r"));
+        assert!(!g.shelf_tracked("sf"));
 
         let mut all = folders.clone();
         all[0].set_tracking("", true);
         let g = Governance::new(&all, &shelves);
-        assert_eq!(g.shelf_tracked("r"), Some(true));
-        assert_eq!(g.shelf_tracked("fic"), Some(true));
-        assert_eq!(g.shelf_tracked("sf"), Some(true), "a rung inherits the root");
+        assert!(g.shelf_tracked("r"));
+        assert!(g.shelf_tracked("fic"));
+        assert!(g.shelf_tracked("sf"), "a rung inherits the root");
 
-        // Turning one rung off is the case the flag could not express: that shelf stops answering on.
+        // Turning one rung off is the case the flag could not express.
         let mut partly = all.clone();
         partly[0].set_tracking("Fiction", false);
         let g = Governance::new(&partly, &shelves);
-        assert_eq!(g.shelf_tracked("r"), Some(true));
-        assert_eq!(g.shelf_tracked("fic"), Some(false), "the rung turned off");
-        assert_eq!(g.shelf_tracked("sf"), Some(false), "and everything below it");
+        assert!(g.shelf_tracked("r"));
+        assert!(!g.shelf_tracked("fic"), "the rung turned off");
+        assert!(!g.shelf_tracked("sf"), "and everything below it");
         assert!(partly[0].tracked());
         assert!(partly[0].opts.watch);
     }
@@ -357,29 +330,30 @@ mod tests {
     #[test]
     fn a_shelf_the_reader_made_answers_for_the_tree_it_stands_inside() {
         let (folders, mut shelves) = tree();
-        // A shelf inside the Fiction rung is not a rung the disk names, but the tree's answer for that rung is its answer.
+        // A shelf inside the Fiction rung is not a rung the disk names, but
+        // the tree's answer for that rung is its answer.
         shelves.push(crate::testkit::shelf("mine2", "Mine", &[], Some("fic")));
         let mut tracked = folders.clone();
         tracked[0].set_tracking("", true);
         let g = Governance::new(&tracked, &shelves);
-        assert_eq!(g.shelf_tracked("mine2"), Some(true));
+        assert!(g.shelf_tracked("mine2"));
         let mut off = tracked.clone();
         off[0].set_tracking("Fiction", false);
-        assert_eq!(Governance::new(&off, &shelves).shelf_tracked("mine2"), Some(false));
+        assert!(!Governance::new(&off, &shelves).shelf_tracked("mine2"));
     }
 
     #[test]
     fn a_shelf_a_move_took_off_its_tree_answers_no_tree() {
         let (folders, mut shelves) = tree();
-        // The reader dragged SciFi out of Fiction and paid the copy, and filed it inside the rung
-        // it left: nothing answers for it any more, while the rung it sits in answers for itself.
+        // SciFi was dragged out of Fiction, the copy paid, and filed inside
+        // the rung it left: nothing answers for it any more.
         shelves.push(departed_shelf("moved", &[], Some("fic")));
         let mut tracked = folders.clone();
         tracked[0].set_tracking("", true);
         let g = Governance::new(&tracked, &shelves);
         assert_eq!(g.tree_of("moved"), None);
         assert_eq!(g.seat_of("moved"), None);
-        assert_eq!(g.shelf_tracked("moved"), None, "no ground, no dot");
+        assert!(!g.shelf_tracked("moved"), "no ground, no dot");
         assert_eq!(g.mode_of("moved"), Some(FolderMode::Copy));
         assert_eq!(g.tree_of("fic").map(|seat| seat.rung), Some("Fiction".to_string()));
     }
@@ -407,24 +381,14 @@ mod tests {
     fn a_shelf_nothing_reads_in_place_has_no_dot_to_draw() {
         let (folders, shelves) = tree();
         let g = Governance::new(&folders, &shelves);
-        assert_eq!(g.shelf_tracked("mine"), None);
-        assert_eq!(g.shelf_tracked("gone"), None);
-        assert_eq!(g.shelf_tracked(crate::shelf::ALL_SHELF), None);
-        // A COPYING folder's shelf has no watch either way: the import sheet does not offer one beside a copy.
+        assert!(!g.shelf_tracked("mine"));
+        assert!(!g.shelf_tracked("gone"));
+        assert!(!g.shelf_tracked(crate::shelf::ALL_SHELF));
+        // A copying folder's shelf has no watch either way: the import sheet
+        // does not offer one beside a copy.
         let copying = vec![folder("c1", "/dvds", false, &[("", "x")])];
         let copy_shelves = vec![folder_shelf("x", "DVDs", "c1", None, &[], None)];
-        assert_eq!(Governance::new(&copying, &copy_shelves).shelf_tracked("x"), None);
-    }
-
-    #[test]
-    fn a_rung_the_reader_deleted_still_counts_as_placed_but_unnamed() {
-        let fp = fp_n(3);
-        let mut f = folder("f1", "/books", true, &[("", "r")]);
-        f.placed.insert(fp);
-        let shelves = vec![folder_shelf("r", "Books", "f1", None, &[], None)];
-        let folders = vec![f];
-        let g = Governance::new(&folders, &shelves);
-        assert_eq!(g.placing_rungs(&fp, "/books/Deep/x.pdf"), vec![None]);
+        assert!(!Governance::new(&copying, &copy_shelves).shelf_tracked("x"));
     }
 
     #[test]

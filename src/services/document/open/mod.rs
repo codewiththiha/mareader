@@ -1,12 +1,9 @@
 //! Opening a document: the dialog flow, the OS "Open with" handoff, the
-//! library's own row, and the shared open sequence.
-//!
-//! One orchestration here plus a module per step — [`seed`] fills the app
-//! state, [`shelf`] records the book, [`outline`] resolves the chapter tree,
-//! [`cover`] renders the shelf art, [`warmup`] primes the thumbnail cache.
-//! Every step after the engine's answer is guarded by the session stamp
-//! ([`super::session`]): all of them can outlive the attempt that started
-//! them.
+//! library's own row, and the shared open sequence — one orchestration plus
+//! a module per step ([`seed`], [`shelf`], [`outline`], [`cover`],
+//! [`warmup`]). Every step after the engine's answer is guarded by the
+//! session stamp ([`super::session`]): all of them can outlive the attempt
+//! that started them.
 //!
 //! [`enter`] is the part the two pipelines share: the identity write, the
 //! gloss marks, the resume clamp, the startup scale and the route flip. A
@@ -22,12 +19,11 @@ mod reflow;
 mod warmup;
 
 use leptos::prelude::*;
-// NOTE: the open flow spawns on the wasm-bindgen-futures executor, NOT
-// `leptos::task::spawn_local`. The latter ties the future to the reactive
+// The open flow spawns on the wasm-bindgen-futures executor, NOT
+// `leptos::task::spawn_local`: the latter ties the future to the reactive
 // owner it is spawned under, so an open started by a book-card click would be
-// CANCELLED the moment `status` flips to `Opening` (unmounting the card,
-// disposing its owner) — the app stuck on "Opening..." forever. The
-// wasm-bindgen executor runs the future to completion regardless of owner.
+// CANCELLED the moment `status` flips to `Opening` — unmounting the card and
+// disposing its owner — leaving the app stuck on "Opening..." forever.
 use wasm_bindgen_futures::spawn_local;
 
 use reader_core::format::{Format, format_of};
@@ -43,14 +39,14 @@ use super::session;
 /// launch) into the shared open flow. Called once from the app root.
 ///
 /// Two paths, one handoff point:
-///   * PULL — `take_pending_file` collects whatever the OS handed the backend
-///     before the webview finished mounting (initial-launch argv on
-///     Windows/Linux, the macOS open-file event at launch). An event emitted
+///   * PULL — `take_pending_file` collects whatever the OS handed the
+///     backend before the webview finished mounting (initial-launch argv on
+///     Windows/Linux, the macos open-file event at launch). An event emitted
 ///     before mount would be lost, so the command is the source of truth.
-///   * PUSH — the backend emits `document-open-file` for files opened while
-///     the app runs (single-instance forward, LaunchServices). The listener
-///     just re-runs the pull: the command clears itself, so an event plus a
-///     stray second pull can never open the same file twice.
+///   * PUSH — the backend emits `document-open-file` while the app runs
+///     (single-instance forward, LaunchServices). The listener just re-runs
+///     the pull: the command clears itself, so an event plus a stray second
+///     pull can never open the same file twice.
 pub fn init_open_file_handling(state: AppState) {
     let st = state;
     spawn_local(async move {
@@ -63,8 +59,7 @@ pub fn init_open_file_handling(state: AppState) {
         return;
     }
 
-    // PUSH — the listener just re-runs the pull (the command clears itself,
-    // so an event + a stray second pull can never open the same file twice).
+    // PUSH: the listener just re-runs the pull (the doc above says why).
     let cb_state = state;
     crate::services::tauri_listen("document-open-file", move |_ev: web_sys::Event| {
         let st = cb_state;
@@ -98,15 +93,13 @@ pub fn open_dialog(state: AppState) {
     });
 }
 
-/// Open a library ROW, which is what every surface on the shelf calls: a book
-/// opens, and a link takes the reader to what it points at instead — a book's
-/// link reveals the book ([`crate::services::library::reveal_book`]: its
-/// shelf, then its card, lit), and a folder's link reveals the shelf
-/// ([`crate::services::library::reveal_shelf`]: its level, then its card,
-/// lit) — because a pointer is not a file and there is nothing to open. Which
-/// kind it points at is the target's own first letter, which the id mint
-/// guarantees is an answer (`library_core::id::is_shelf`). A row that went
-/// between the click and the open opens nothing at all.
+/// Open a library row, which is what every surface on the shelf calls: a
+/// book opens; a link reveals what it points at instead
+/// ([`crate::services::library::reveal_book`] for a book's link,
+/// [`crate::services::library::reveal_shelf`] for a folder's) — a pointer is
+/// not a file and there is nothing to open. The target's kind is its id's
+/// first letter (`library_core::id::is_shelf`). A row that went between the
+/// click and the open opens nothing.
 pub fn open_row(state: AppState, row_id: String) {
     let target = state
         .library
@@ -142,13 +135,12 @@ pub fn open_book(state: AppState, book_id: String) {
         return;
     };
     // A row the library KNOWS is dead — a path check found its address gone —
-    // does not open onto the reader's error screen: the honest answer to a
+    // does not open onto the reader's error screen. The honest answer to a
     // click on a missing book is the Find-again question
     // (`crate::services::library::ask_relink`), which keeps the row, its
-    // shelf and its place in the book exactly as they are and asks where the
-    // file went. Opening anyway would be an error page the reader has to back
-    // out of, with the shelf behind it unchanged — the reload-and-try-again
-    // loop this gate exists to end.
+    // shelf and its place in the book exactly as they are. Opening anyway
+    // would be an error page the reader has to back out of — the
+    // reload-and-try-again loop this gate exists to end.
     if book.missing {
         crate::services::library::ask_relink(state, book_id);
         return;
@@ -161,10 +153,10 @@ pub fn open_book(state: AppState, book_id: String) {
 /// at the saved page if this book was opened before, and records it in the
 /// recent-books library. Drag-drop calls this directly.
 ///
-/// The pipeline fork happens here and only here: PDFs go to the pdf.js engine,
-/// the reflowable formats to the reflow pipeline ([`reflow`]). Both tails
-/// converge on the same state contract, so everything downstream — viewer,
-/// navigation, shelf — is format-agnostic.
+/// The pipeline fork happens here and only here: PDFs go to the pdf.js
+/// engine, the reflowable formats to the reflow pipeline ([`reflow`]). Both
+/// tails converge on the same state contract, so everything downstream —
+/// viewer, navigation, shelf — is format-agnostic.
 pub fn open_path(state: AppState, path: String) {
     open_at(state, None, path);
 }
@@ -188,18 +180,18 @@ fn open_at(state: AppState, book_id: Option<String>, path: String) {
     //
     // An open that arrived as nothing but an address settles onto the row the
     // library already holds for it here, rather than waiting for the tail's
-    // shelf record. Two reasons, and the second is the load-bearing one: the
-    // highlights are keyed by the row's id and are loaded before any tail runs,
-    // so a key derived later would be a key the marks were not stored under; and
-    // a drop of a file already on the shelf should resume where the reader left
-    // it rather than reading as a book the library has never seen.
+    // shelf record: the highlights are keyed by the row's id and are loaded
+    // before any tail runs, so a key derived later would be a key the marks
+    // were not stored under — and a drop of a file already on the shelf
+    // should resume where the reader left it rather than reading as a book
+    // the library has never seen.
     //
     // Only a SHARED row is settled onto. A book of its own is the reader's
     // private instance of the file, and an open that could not name a row has
-    // not said it meant that one — which is the rule `add_book` and
-    // `rows_for_read` already keep, so a drop never hijacks a private book's
-    // resume point or its marks. A file with no row keeps `None` and joins the
-    // library when the tail records the read, exactly as before.
+    // not said it meant that one — the rule `add_book` and `rows_for_read`
+    // already keep, so a drop never hijacks a private book's resume point or
+    // its marks. A file with no row keeps `None` and joins the library when
+    // the tail records the read, exactly as before.
     let book_id = book_id.or_else(|| {
         state.library.books.with_untracked(|books| {
             library_core::book::book_rows(books)
@@ -217,8 +209,8 @@ fn open_at(state: AppState, book_id: Option<String>, path: String) {
     // clobbered by a concurrent page-tracking write from the closing document.
     // The reflowable tail also takes the fractional stream position, when the
     // last session left one. Which ROW answers is the id's business: a book of
-    // its own resumes where its own reader left off rather than where the twin
-    // at the address did.
+    // its own resumes where its own reader left off, not where the twin at
+    // the address did.
     let (saved_page, saved_fraction) = state.library.books.with_untracked(|books| {
         resume_point(books, book_id.as_deref(), &path)
     });
@@ -270,9 +262,10 @@ fn ready(
 
     outline::resolve(state, path.clone(), stamp);
 
-    // Fire index build in the background; result is ignored (search effects
-    // call it too when needed). The page count is read up front: search's own
-    // index uses it to know how many pages to ask the engine for.
+    // Fire the index build in the background; the result is ignored (search
+    // effects call it too when needed). The page count is read up front:
+    // search's own index uses it to know how many pages to ask the engine
+    // for.
     let search_pages = seeded.num_pages;
     spawn_local(async move {
         _ = engine::build_search_index(search_pages).await;

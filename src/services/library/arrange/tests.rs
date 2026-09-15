@@ -36,7 +36,6 @@ fn owned(names: &[&str]) -> Vec<String> {
     names.iter().map(|s| s.to_string()).collect()
 }
 
-
 #[test]
 fn a_drop_on_the_root_puts_one_row_where_the_reader_pointed() {
     let mut rows = list();
@@ -92,7 +91,6 @@ fn an_empty_set_leaves_the_list_alone() {
     assert_eq!(ids(&rows), vec!["a", "b", "c", "d"]);
 }
 
-
 #[test]
 fn a_book_already_on_the_shelf_is_moved_not_duplicated() {
     let mut members = owned(&["a", "b", "c"]);
@@ -118,7 +116,6 @@ fn filing_with_no_index_appends_in_order() {
     place_many(&mut members, &owned(&["b", "c"]), None);
     assert_eq!(members, vec!["a", "b", "c"]);
 }
-
 
 #[test]
 fn each_item_lands_after_the_last_rather_than_all_at_one_place() {
@@ -374,7 +371,6 @@ fn a_departure_s_landing_does_not_bind_the_log_it_just_wrote() {
         "a later gesture binds the log to the row by the address they share"
     );
 }
-
 
 fn reading_folder() -> WatchedFolder {
     WatchedFolder {

@@ -1,9 +1,7 @@
 //! The app-root effects, installed once and in the one order that works.
 //!
-//! These used to be a bare run of calls in `App` with the ordering contract in
-//! comments beside them — nothing enforced it, and two of the steps are
-//! order-dependent in ways that fail silently. One entry point gives the
-//! contract a home.
+//! One entry point gives the ordering contract a home: two of the steps are
+//! order-dependent in ways that fail silently.
 //!
 //! THE ORDER, and why each step is where it is:
 //!
@@ -22,11 +20,10 @@
 //! 5. The app-lifetime Tauri listeners, in any order between them:
 //!    `install_ai_chunk_bridge` (AI chunks) and `install_window_state_bridge`
 //!    (the frameless maximize flag). Then `library_effects`
-//!    (`crate::effects::app::library`), which installs the library's progress
-//!    sink on the shell's own channel, measures every address the library holds
-//!    and rescans the watched folders once it has — before the OS handoff
-//!    below, so a double-clicked book never lands in the middle of that first
-//!    pass.
+//!    (`crate::effects::app::library`): the library's progress sink, the
+//!    startup measurement pass, and a rescan of the watched folders once it
+//!    has — before the OS handoff below, so a double-clicked book never lands
+//!    in the middle of that first pass.
 //! 6. `init_open_file_handling` — LAST, and the step the ordering is really
 //!    for: it can open a document IMMEDIATELY (a double-clicked file hands the
 //!    backend a path before the webview finishes mounting), so every step
@@ -65,32 +62,26 @@ pub(crate) fn install_app_effects(
         return;
     }
 
-    // 1. The look, before the first paint: the palette, and the reflowable
-    //    formats' typography variables.
+    // 1. The look, before the first paint.
     apply_theme(state, appearance);
     apply_typography(state, typography);
     // 2. The paper session, before the first open (see the module doc).
     paper_settings(state);
-    // 3. Motion preferences, for the reader's pipeline and for the CSS.
+    // 3. Motion preferences.
     publish_motion(state);
     // 4. Input and selection.
     shortcuts(state);
     link_navigation(state);
     page_selection(state);
     selection_tracking(state);
-    // 5. One Tauri AI-chunk listener for the app's life; re-broadcasts as a
-    //    window event so the gloss popover never stacks or drops handlers
-    //    across document switches.
+    // 5. One Tauri AI-chunk listener for the app's life (re-broadcast as a
+    //    window event).
     crate::services::ai::install_ai_chunk_bridge();
-    // 5b. The frameless maximize flag: one resize subscription publishing
-    //     into UiState, so the caption cluster never owns a listener.
+    // 5b. The frameless maximize flag.
     crate::services::window::install_window_state_bridge(state);
-    // 5c. The library's own wiring: the sink that folds the shell's progress
-    //     beats into the dock, the startup measurement pass, and a rescan of
-    //     every watched folder when the window comes back.
+    // 5c. The library's own wiring.
     crate::effects::app::library::library_effects(state);
-    // 6. OS file opening: double-click / "Open with" / default-app launch.
-    //    Last, because it can open a document on the spot.
+    // 6. OS file opening — last, because it can open a document on the spot.
     crate::services::document::init_open_file_handling(state);
 }
 

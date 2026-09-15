@@ -21,10 +21,10 @@ use crate::state::AppState;
 /// The raster-only half of the Theme tab: the paper blend and its detection.
 #[component]
 pub(crate) fn PaperSection(state: AppState) -> impl IntoView {
-    // Raster concerns, both of them: blend sampling and edge detection act on
-    // the PDF's always-light bitmaps. A reflowable document paints its paper
-    // and ink straight from the theme tokens, so the section is not merely
-    // inert while one is open — it describes machinery that does not run.
+    // Blend sampling and edge detection act on the PDF's always-light bitmaps;
+    // a reflowable document paints its paper and ink straight from the theme
+    // tokens, so the section is not merely inert while one is open — it
+    // describes machinery that does not run.
     let reflowable = Signal::derive(move || state.reader.reflowable());
     let s = state.settings;
     let blend_off = Signal::derive(move || !s.with(|st| st.layout.blend_mode));

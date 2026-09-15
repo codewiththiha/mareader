@@ -1,8 +1,8 @@
 //! The rename sheet: one field, and the name the shelf shows is the answer.
 //!
-//! A rename here is a DISPLAY name and nothing else — the row keeps its id, its address, its
-//! resume point and every shelf it is filed on, and the file on disk keeps the name it has, which
-//! is what makes the sheet safe to answer without a receipt.
+//! A rename is a display name and nothing else — the row keeps its id,
+//! address, resume point and shelf memberships, and the file on disk keeps
+//! its name — which is what makes the sheet safe to answer without a receipt.
 
 use leptos::ev::KeyboardEvent;
 use leptos::prelude::*;
@@ -16,22 +16,29 @@ use crate::state::AppState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RenameTarget {
-    /// A row — a book or a link; the id is all a rename needs, because the name is re-read at the ask.
+    /// A row — book or link. The id is all a rename needs: the name is
+    /// re-read at the ask.
     Row(String),
-    /// A shelf, committed through the same service the crumb's inline field uses (`crate::services::library::rename_shelf`).
+    /// A shelf, committed through the same service the crumb's inline field
+    /// uses (`crate::services::library::rename_shelf`).
     Shelf(String),
 }
 
-/// Provided by the library page. A context because the ask comes from the right-click's menu, which is a child of the content and no child of the page's modal stack.
+/// Provided by the library page. A context because the ask comes from the
+/// right-click menu, which is a child of the content, not of the page's modal
+/// stack.
 #[derive(Clone, Copy)]
 pub(crate) struct RenameSheet {
     pub open: RwSignal<bool>,
     pub target: RwSignal<Option<RenameTarget>>,
-    /// Seeded with the name the row or shelf shows, so a rename starts from what the reader is looking at.
+    /// Seeded with the name the row or shelf shows, so a rename starts from
+    /// what the reader is looking at.
     pub draft: RwSignal<String>,
-    /// Read at the ask, because a book, a link and a shelf are three sentences about one field.
+    /// Read at the ask: a book, a link and a shelf are three sentences about
+    /// one field.
     pub heading: RwSignal<String>,
-    /// What a rename does NOT touch — the file on disk for a row, nothing for a shelf.
+    /// What a rename does not touch — the file on disk for a row, nothing
+    /// for a shelf.
     pub hint: RwSignal<String>,
 }
 
@@ -48,7 +55,7 @@ impl RenameSheet {
         sheet
     }
 
-    /// A row that is not there any more — removed between the right-click and the ask — is no question.
+    /// A row removed between the right-click and the ask is no question.
     pub fn ask_row(&self, state: AppState, row_id: &str) {
         let Some(row) = state.library.row(row_id) else {
             return;
@@ -75,7 +82,8 @@ impl RenameSheet {
         self.open.set(true);
     }
 
-    /// The root is not a shelf, so `shelf_name`'s empty answer closes this door the way a row that is gone does.
+    /// The root is not a shelf, so `shelf_name`'s empty answer closes this
+    /// door the way a gone row does.
     pub fn ask_shelf(&self, state: AppState, shelf_id: &str) {
         let name = state.library.shelf_name(shelf_id);
         if name.trim().is_empty() {
@@ -91,7 +99,9 @@ impl RenameSheet {
     }
 }
 
-/// A blank is refused rather than stored — the button says so by sleeping, and Enter agrees with it. The row write is `rename_row`'s; the shelf write is the crumb field's own service, so two doors to one act cannot differ.
+/// A blank is refused rather than stored — the button sleeps and Enter
+/// agrees. The row write is `rename_row`'s, the shelf write the crumb field's
+/// service, so two doors to one act cannot differ.
 fn commit(state: AppState, sheet: RenameSheet) {
     let Some(target) = sheet.target.get_untracked() else {
         sheet.open.set(false);
@@ -111,11 +121,14 @@ fn commit(state: AppState, sheet: RenameSheet) {
 
 #[component]
 pub(crate) fn RenameModal(state: AppState, sheet: RenameSheet) -> impl IntoView {
-    // The lane arbitration and the Escape rule are the modal shell's (see `crate::components::primitives::overlay::modal_shell`); closing costs nothing because the draft is re-seeded at the next ask.
+    // Lane arbitration and the Escape rule are the modal shell's (see
+    // `crate::components::primitives::overlay::modal_shell`); closing costs
+    // nothing because the draft is re-seeded at the next ask.
     view! {
         <ModalShell open=sheet.open aria_label="Rename" width="min(92vw, 380px)">
             {move || {
-                // Read at the top so an ask rebuilds the sheet with its own sentence on it and a fresh autofocus on the field.
+                // Read at the top so an ask rebuilds the sheet with its own
+                // sentence and a fresh autofocus.
                 let heading = sheet.heading.get();
                 let hint = sheet.hint.get();
                 let target = sheet.target.get();

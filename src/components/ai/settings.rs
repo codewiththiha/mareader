@@ -22,7 +22,6 @@ use crate::components::settings::common::StyleSelect;
 use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::state::AppState;
 
-/// The "AI Appearance" section of the reader settings modal's Theme tab.
 #[component]
 pub(crate) fn AiAppearanceSection(state: AppState) -> impl IntoView {
     let s = state.settings;

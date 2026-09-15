@@ -1,10 +1,10 @@
 //! The persisted shape of the library, and the migration from the shape it
 //! replaced.
 //!
-//! One key holds the whole thing — books, shelves, watched folders and the
-//! view — because they are one invariant: a shelf member that names no book is
-//! a hole in the grid, and a folder ledger that remembers a fingerprint no book
-//! carries is a book that can never come back.
+//! One key holds books, shelves, watched folders and the view together because
+//! they are one invariant: a shelf member that names no book is a hole in the
+//! grid, and a folder ledger remembering a fingerprint no book carries is a
+//! book that can never come back.
 
 use serde::{Deserialize, Serialize};
 
@@ -15,17 +15,17 @@ use crate::view::LibraryView;
 
 pub mod migrate;
 
-/// The library's localStorage key. `v3` rather than a schema edit under `v2`:
-/// the list changed from books to [`Row`]s, and a `v2` blob this build cannot
-/// parse must not be overwritten by the default before
-/// [`migrate::migrate_v2`] has had a look at it.
+/// The library's localStorage key. A new `v3` key rather than a schema edit
+/// under `v2`: the list changed from books to [`Row`]s, and a `v2` blob this
+/// build cannot parse must not be overwritten by the default before
+/// [`migrate::migrate_v2`] has read it.
 pub const LIBRARY_KEY: &str = "pdfreader.library.v3";
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryBlob {
-    /// Every row, in the order the "All" shelf shows them. This list IS the All
-    /// order — there is no separate shelf for it (see [`crate::shelf`]).
+    /// Every row, in the order the "All" level shows them. This list IS the
+    /// All order; there is no separate shelf for it (see [`crate::shelf`]).
     #[serde(default)]
     pub books: Vec<Row>,
     #[serde(default)]
@@ -41,41 +41,40 @@ impl LibraryBlob {
         self.books.is_empty()
     }
 
-    /// True when some book still carries a placeholder fingerprint, i.e. the
-    /// library has not been checked against the filesystem since it loaded. The
-    /// frontend holds a folder rescan until this clears: scanning against
-    /// unmeasured fingerprints would add a second copy of every migrated book.
+    /// True while some book still carries a placeholder fingerprint — the
+    /// library has not been checked against the filesystem since it loaded.
+    /// The frontend holds folder rescans until this clears: scanning against
+    /// unmeasured fingerprints would re-add every migrated book.
     pub fn awaiting_check(&self) -> bool {
         book_rows(&self.books).any(|b| b.fp_pending)
     }
 }
 
-/// Make a persisted library internally valid: the per-list rules
-/// ([`crate::book::sanitize`], [`crate::folder::sanitize`],
-/// [`crate::view::sanitize`], [`crate::shelf::sanitize`]) plus the two that only
-/// make sense across lists — a shelf member that names no book, and a folder
-/// shelf whose folder is gone. Idempotent.
+/// Make a persisted library internally valid, idempotently: the per-list
+/// rules ([`crate::book::sanitize`], [`crate::folder::sanitize`],
+/// [`crate::view::sanitize`], [`crate::shelf::sanitize`]) plus the two
+/// cross-list ones — a shelf member that names no book, and a folder shelf
+/// whose folder is gone.
 ///
-/// The shelves go LAST and the order is the point: the rules below can drop
-/// shelves, and a member swept before that would be swept against a list that
-/// still holds one.
+/// [`crate::shelf::sanitize`] runs last on purpose: the cross-list rules can
+/// drop shelves, and members swept before that would be swept against a list
+/// that still holds them.
 pub fn sanitize(blob: &mut LibraryBlob) {
     crate::book::sanitize(&mut blob.books);
     crate::folder::sanitize(&mut blob.folders);
     crate::view::sanitize(&mut blob.view);
 
-    // A blob could carry two rows with one id however valid its books look;
-    // `book::sanitize` dedupes by id, so by here the shelves below resolve against
-    // a list whose ids are unique — and whose fingerprints are NOT, because a
-    // duplicate the reader kept is two honest rows of one file.
+    // `book::sanitize` deduped by id, so shelves now resolve against a list
+    // with unique ids — but not unique fingerprints: a kept duplicate is two
+    // honest rows of one file.
     let known: std::collections::HashSet<&str> = blob.books.iter().map(|r| r.id()).collect();
     for shelf in blob.shelves.iter_mut() {
         shelf.books.retain(|m| known.contains(m.as_str()));
     }
 
-    // A folder shelf whose folder was removed has no rescan to refill it and no
-    // watch dot to explain it, so it goes; a virtual shelf is the reader's own, and
-    // so is one that left its tree with its books copied.
+    // A folder shelf whose folder was removed has no rescan to refill it and
+    // no watch dot to explain it, so it goes; virtual and departed shelves are
+    // the reader's own.
     let folders: std::collections::HashSet<&str> =
         blob.folders.iter().map(|f| f.id.as_str()).collect();
     blob.shelves.retain(|s| match &s.kind {
@@ -85,8 +84,8 @@ pub fn sanitize(blob: &mut LibraryBlob) {
 
     crate::shelf::sanitize(&mut blob.shelves);
 
-    // A link may point at a shelf as well as at a book, and the sweep above could
-    // not ask which shelves survived: this one can, with both lists in hand.
+    // Links can target shelves too; only here are both lists in hand to ask
+    // which shelves survived.
     crate::book::drop_dead_shelf_links(&mut blob.books, &blob.shelves);
 }
 
@@ -99,7 +98,6 @@ mod tests {
     use crate::tracking::TrackingTree;
     use std::collections::{BTreeMap, HashSet};
 
-    /// The book a row holds. Every row a migration makes is a book.
     fn at(blob: &LibraryBlob, i: usize) -> &Book {
         blob.books[i].book().expect("a migrated row is a book")
     }
@@ -163,9 +161,8 @@ mod tests {
         );
         assert!(blob.awaiting_check());
         assert!(book_rows(&blob.books).all(|b| b.fp_pending));
-        // The placeholder is derived from the address, so two migrated books never
-        // collide on it: the ledger's fingerprint index is first-wins, and a migration
-        // that collapsed every row onto one stamp would hide all of them but one.
+        // Placeholders derive from the address, so migrated books never
+        // collide: the ledger's fingerprint index is first-wins.
         assert_ne!(
             Fingerprint::placeholder("/a.pdf"),
             Fingerprint::placeholder("/b.pdf")
@@ -268,8 +265,8 @@ mod tests {
         assert_eq!(back.books.len(), 2, "a link is a row the blob carries");
         assert_eq!(back.books[1].target(), Some(target.as_str()));
 
-        // A link at nothing is the one failure mode a link has, so the load that
-        // finds it drops the row and the shelf member that named it.
+        // A link at nothing is dropped on load, with the shelf member that
+        // named it.
         back.books.remove(0);
         let mut orphan = back;
         sanitize(&mut orphan);

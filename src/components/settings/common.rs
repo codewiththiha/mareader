@@ -2,8 +2,8 @@
 //! `StyleSelect` dropdown. The tabs (in their own files) build on these; `modal`
 //! is the shell that hosts them.
 //!
-//! The labelled `Row` these used to sit beside is
-//! [`crate::components::primitives::form::row::Row`] now: the library's import
+//! The labelled `Row` these sit beside is
+//! [`crate::components::primitives::form::row::Row`]: the library's import
 //! sheet and removal receipt are built out of the same rows, and a component two
 //! features reach into a third for is a primitive with the wrong address.
 //! `StyleSelect` stays because it is built on the toolbar's `MenuPopover`, and

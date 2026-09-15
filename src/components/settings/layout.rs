@@ -198,13 +198,13 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     />
                 </Row>
             </Show>
-            // Page Margin is the horizontal (left/right) air around each page,
-            // which No Gap never touches — No Gap only removes the vertical
-            // gap between stacked pages. The two stay fully independent, so
-            // the margin adjuster is live whether or not No Gap is on. The one
-            // exception is the horizontal scroll mode, which never carries a
-            // margin: while it is on, the adjuster is disabled and the stored
-            // value waits, untouched, for the other modes.
+            // Page Margin is the horizontal air around each page, which No Gap
+            // never touches — No Gap only removes the vertical gap between
+            // stacked pages. The two stay fully independent, so the margin
+            // adjuster is live whether or not No Gap is on. The one exception
+            // is the horizontal scroll mode, which never carries a margin:
+            // while it is on, the adjuster is disabled and the stored value
+            // waits, untouched, for the other modes.
             <Row label="Page Margin">
                 <span class="flex items-center gap-3">
                     <span
@@ -258,12 +258,9 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
             </Row>
             // Column Width is the reading measure dial: 100% is the natural
             // column the typography and the page geometry agreed on, and the
-            // ends trade line length for everything else. Text and Markdown
-            // answer it in every mode — the paginated card grows with the
-            // column, the stream's column follows it directly. A PDF's page
-            // is the document's own and has no column to grow, so the dial
-            // has no honest work there and the row leaves the tree for it,
-            // the way No Gap leaves it for text.
+            // ends trade line length for everything else. A PDF's page
+            // is the document's own and has no column to grow, so the row
+            // leaves the tree for it, the way No Gap leaves it for text.
             <Show when=move || reflowable.get()>
                 <Row label="Column Width">
                     <span class="flex w-44 items-center">
@@ -294,11 +291,8 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     title="Refit to width when entering single / two-page modes".to_string()
                 />
             </Row>
-            // Auto Resize exists for mixed-size books — a plate twice the
-            // size of the page before it must re-fit on arrival. A text or
-            // Markdown document is cut from one identical A4 sheet, so a
-            // differently sized page never arrives there and the row stands
-            // down for reflowable documents.
+            // A plate twice the size of the page before it must re-fit on
+            // arrival; in a reflowable document that page never arrives.
             <Show when=move || !reflowable.get()>
                 <Row label="Auto Resize">
                     <Switch
@@ -311,10 +305,6 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     />
                 </Row>
             </Show>
-            // The shadow paints under `.pdf-page` hosts only; a text page
-            // (`.tx-page`) is a transparent frame with no shadow of its own,
-            // so there is nothing for this switch to reach in a reflowable
-            // document and the row leaves the tree for it.
             <Show when=move || !reflowable.get()>
                 <Row label="Page Shadow">
                     <Switch

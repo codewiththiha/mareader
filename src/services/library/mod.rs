@@ -1,7 +1,7 @@
-//! The frontend half of the library's filesystem wire: the typed `invoke` wrappers over the
-//! shell's commands. The one Tauri listener the library keeps for the app's life — the
-//! import-beat sink — lives in `crate::effects::app::library`, where the task list it folds
-//! into is wired.
+//! The frontend half of the library's filesystem wire: typed `invoke`
+//! wrappers over the shell's commands. The one Tauri listener the library
+//! keeps — the import-beat sink — lives in `crate::effects::app::library`,
+//! where the task list it folds into is wired.
 
 pub mod arrange;
 pub mod conflict;
@@ -62,10 +62,10 @@ pub(crate) fn toast(state: AppState, message: String) {
     state.ui.toast.set(Some(Toast::new(message)));
 }
 
-/// The shell's throttled import beats, one channel for the app's life. `pub(crate)` for the
-/// sink that folds them into the dock's task list — the listener is the sink's own, so no
-/// component ever registers a Tauri handler of its own and no window event carries what a
-/// closure could.
+/// The shell's throttled import beats, one channel for the app's life.
+/// `pub(crate)` for the sink that folds them into the dock's task list: the
+/// listener is the sink's own, so no component registers a Tauri handler of
+/// its own.
 pub(crate) const PROGRESS_CHANNEL: &str = "library://progress";
 
 const CMD_SCAN: &str = "scan_folder";
@@ -139,7 +139,9 @@ pub async fn store_books(
     call(CMD_STORE, &StoreArgs { task, requests }).await
 }
 
-/// A failure is the shell's own per-file answer, already a sentence; the caller decides where it goes. The copy's own measurement rides home with it, so the row lands wearing its own identity and no verify trip follows.
+/// A failure is the shell's own per-file answer, already a sentence; the
+/// caller decides where it goes. The copy's measurement rides home with it, so
+/// the row lands wearing its own identity and no verify trip follows.
 pub(crate) async fn copy_one(
     task: &str,
     path: &str,
@@ -236,7 +238,9 @@ struct Options {
     default_path: Option<String>,
 }
 
-/// A picker is the one focus event the window gets that the app caused itself, and the listener that event reaches answers with a walk of every watched folder. A thread-local because the grace is a `Cooldown`'s to hold — a plain value with a rule, not another stamp-and-subtract at this site.
+/// A picker is the one focus event the app caused itself, and the listener
+/// that event reaches would otherwise answer with a walk of every watched
+/// folder. The grace is a `Cooldown` so the rule lives in one tested place.
 static PICKER_OPEN: AtomicBool = AtomicBool::new(false);
 thread_local! {
     static PICKER_CLOSED: std::cell::RefCell<Cooldown> =
@@ -306,4 +310,3 @@ fn describe(error: JsValue) -> String {
         .as_string()
         .unwrap_or_else(|| format!("{error:?}"))
 }
-

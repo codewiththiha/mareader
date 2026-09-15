@@ -58,10 +58,10 @@ pub struct LongPressHandlers {
 }
 
 /// Stop an in-flight press: the finger lifted, drifted past slop, or the
-/// gesture already completed. The timer half is
-/// [`press_core::clear_timer`]'s, which is the same clear the drag wrapper's
-/// hold uses — a stale `setTimeout` calling into a dropped wasm shim is a crash
-/// rather than a wrong answer, and there is one right way to drop it.
+/// gesture already completed. The timer half is [`press_core::clear_timer`]'s —
+/// the same clear the drag wrapper's hold uses, because a stale `setTimeout`
+/// calling into a dropped wasm shim is a crash rather than a wrong answer, and
+/// there is one right way to drop it.
 fn cancel_press(
     press_active: StoredValue<bool, LocalStorage>,
     timer: StoredValue<PendingTimer, LocalStorage>,
@@ -72,8 +72,8 @@ fn cancel_press(
 
 /// Whether a pointer that started at the press origin has stayed within the
 /// slop radius. The arithmetic is [`press_core::outside_radius`]'s, shared with
-/// the drag wrapper's threshold because a slop and a threshold are the same
-/// question asked of two gestures: has this pointer left where it landed.
+/// the drag wrapper's threshold: a slop and a threshold are the same question
+/// asked of two gestures — has this pointer left where it landed.
 fn within_slop(dx: f64, dy: f64, slop_px: f64) -> bool {
     !press_core::outside_radius(dx, dy, slop_px)
 }

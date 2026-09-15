@@ -15,7 +15,6 @@ pub enum MenuItemTone {
     Danger,
 }
 
-/// A menu row.
 #[component]
 pub fn MenuItem(
     /// Leading icon, if any. `None` still renders the aligned w-4 slot so
@@ -62,11 +61,11 @@ pub fn MenuItem(
     let danger = tone == MenuItemTone::Danger;
     let row_class = row_class.unwrap_or("rounded-md px-2 py-1.5");
 
-    // Computed class string (the repo rule only restricts single-token
-    // conditional tuples; a computed string is allowed and avoids two
-    // text-colour utilities fighting each other). Selected uses the same
-    // accent-soft treatment as OptionButton, so every
-    // selected/pressed row in the app speaks one visual language.
+    // A computed class string: the repo rule only restricts single-token
+    // conditional tuples, and a computed string avoids two text-colour
+    // utilities fighting each other. Selected uses the same accent-soft
+    // treatment as OptionButton, so every selected/pressed row in the app
+    // speaks one visual language.
     let class = move || {
         let hover = if disabled { "" } else { "hover:bg-line" };
         let base = format!(

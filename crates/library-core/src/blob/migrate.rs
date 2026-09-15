@@ -1,8 +1,8 @@
-//! The two shapes this library was persisted as before the one it is now, and
-//! the migrations from each.
+//! The two shapes this library was persisted as before the current one, and
+//! the migration from each.
 //!
-//! Here rather than in the app: a migration is a rule about the library's
-//! shape, and a rule is something a test can call.
+//! Lives in the domain crate, not the app: a migration is a rule about the
+//! library's shape, and a rule is something a test can call.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,16 +13,14 @@ use crate::view::LibraryView;
 
 use super::LibraryBlob;
 
-/// The key the previous schema lived under — one book per row and no links.
-/// Read once, on a load that finds no `v3`, and left in place afterwards so a
-/// downgrade still sees the library it wrote.
+/// The previous schema's key — one book per row, no links. Read once on a
+/// load that finds no `v3`, then left in place so a downgrade still sees the
+/// library it wrote.
 pub const V2_KEY: &str = "pdfreader.library.v2";
 
 pub const LEGACY_KEY: &str = "pdfreader.library.v1";
 
-/// The `v2` library: the same shelves and folders, and one BOOK per row. Kept
-/// beside [`LibraryBlob`] because a load that finds no `v3` has to read what
-/// the previous build wrote.
+/// The `v2` library: same shelves and folders, one [`Book`] per row.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlobV2 {
@@ -36,9 +34,8 @@ pub struct BlobV2 {
     pub view: LibraryView,
 }
 
-/// Every book becomes a book ROW, and nothing else moves: the order survives,
-/// the shelves keep their members — the ids they name are the ids the rows
-/// carry — and a library that had no links gains none.
+/// Every book becomes a book [`Row`]; nothing else moves. Order survives and
+/// shelves keep their members — the ids they name are the ids the rows carry.
 pub fn migrate_v2(legacy: BlobV2) -> LibraryBlob {
     LibraryBlob {
         books: legacy.books.into_iter().map(Row::Book).collect(),
@@ -67,10 +64,10 @@ fn default_page() -> u32 {
     1
 }
 
-/// Every row becomes an [`Origin::Linked`] book — read in place was the only
-/// mode the old build had, and a migration that quietly copied two gigabytes of
-/// PDFs into a store would be the worst possible surprise. A `v1` row carries no
-/// measurement, so its fingerprint is a placeholder until the next walk.
+/// Every row becomes an [`Origin::Linked`] book: read-in-place was the only
+/// mode the old build had, and a migration that quietly copied gigabytes of
+/// PDFs into a store would be the worst possible surprise. A `v1` row carries
+/// no measurement, so its fingerprint is a placeholder until the next walk.
 pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
     let books: Vec<Row> = legacy
         .into_iter()
@@ -85,8 +82,8 @@ pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
                 title: crate::text::non_blank(b.title.as_deref()).map(str::to_string),
                 author: None,
                 id,
-                // A migrated book has been read, but the old schema kept no stamp, and
-                // `now_ms` would put every book at the top of a "Last read" sort.
+                // The old schema kept no stamps, and `now_ms` would put every
+                // migrated book at the top of a "Last read" sort.
                 added_ms: 0,
                 last_read_ms: 0,
                 page: b.page.max(1),
@@ -107,4 +104,3 @@ pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
         view: LibraryView::default(),
     }
 }
-

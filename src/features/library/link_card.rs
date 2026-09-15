@@ -1,8 +1,9 @@
-//! A link row: the shelf's own card and row shape, with a pointer's facts on it instead of a
-//! book's.
+//! A link row: the shelf's own card and row shape with a pointer's facts
+//! instead of a book's.
 //!
-//! A link has no address to read, no page to render art from, no resume point and no format.
-//! What it has is a name, a target, and the promise that a tap goes there.
+//! A link has no address to read, no page to render art from, no resume point
+//! and no format — only a name, a target, and the promise that a tap goes
+//! there.
 
 use leptos::prelude::*;
 
@@ -35,8 +36,8 @@ fn link_title(to_shelf: bool) -> &'static str {
 pub(crate) fn LinkCard(
     state: AppState,
     id: String,
-    /// Read back by id rather than captured: a rename that lands while the card stands must
-    /// reach its label and its aria-answer on the same frame.
+    /// Read back by id rather than captured: a rename that lands while the
+    /// card stands must reach its label and aria answer on the same frame.
     name: Signal<String>,
     to_shelf: bool,
 ) -> impl IntoView {
@@ -89,10 +90,12 @@ pub(crate) fn LinkCard(
 pub(crate) fn LinkRow(
     state: AppState,
     id: String,
-    /// Read back by id, for the same reason the card's is: a keyed row is not re-created
-    /// when its content changes, so a captured name is a stale one.
+    /// Read back by id for the same reason as the card's: a keyed row is not
+    /// re-created when its content changes.
     name: Signal<String>,
-    /// The first letter of the target's id, which the mint guarantees answers (`library_core::id::is_shelf`). The words a link wears, and nothing else: the tap's routing is `crate::services::document::open_row`'s.
+    /// The first letter of the target's id, which the mint guarantees
+    /// (`library_core::id::is_shelf`). The words a link wears and nothing
+    /// else; the tap's routing is `crate::services::document::open_row`'s.
     to_shelf: bool,
     depth: usize,
     parent: Option<String>,

@@ -10,14 +10,13 @@
 //!     stream.
 //!
 //!   * OS file opening — double-click / "Open with" / default-app launch.
-//!     The path arrives per platform: macOS `RunEvent::Opened` (at launch and
-//!     while running), argv on Windows/Linux initial launch, and
-//!     single-instance argv forwarding on a second launch. All three queue
-//!     into one `PendingFile` slot, which the frontend collects through
-//!     `take_pending_file` — the authoritative handoff, since an event
-//!     emitted before the webview mounted would be lost.
-//!     `document-open-file` is only the wake-up ping for files arriving while
-//!     it is already mounted.
+//!     The path arrives per platform: macOS `RunEvent::Opened`, argv on
+//!     Windows/Linux initial launch, and single-instance argv forwarding on a
+//!     second launch. All three queue into one `PendingFile` slot, which the
+//!     frontend collects through `take_pending_file` — the authoritative
+//!     handoff, since an event emitted before the webview mounted would be
+//!     lost. `document-open-file` is only the wake-up ping for files arriving
+//!     while it is already mounted.
 
 use std::sync::Mutex;
 
@@ -30,9 +29,8 @@ mod macos;
 /// Every extension the reader opens (lower-case, dot included). The shell's
 /// filesystem gates accept exactly these, so the webview's `read_file_*`
 /// commands are not a general file-read primitive. Derived from the
-/// frontend's `reader_core::format` registry — the source of truth;
-/// tools/check-formats.ts fails CI when the two drift, as it does for the
-/// bundle's file associations in tauri.conf.json.
+/// frontend's `reader_core::format` registry — the source of truth — and
+/// tools/check-formats.ts fails CI when the two drift.
 const DOCUMENT_EXTENSIONS: &[&str] = &[".pdf", ".txt", ".text", ".md", ".markdown", ".mdown"];
 
 /// The OS-opened document path the frontend has not collected yet.
@@ -40,15 +38,15 @@ struct PendingFile(Mutex<Option<String>>);
 
 /// True for anything we should try to open as a document. Also strips
 /// Windows shell quoting: `std::env::args()` does not remove the quotes
-/// Explorer puts around `%1`, so a quoted path would fail the suffix test.
+/// Explorer puts around `%1`, which would fail the suffix test.
 fn is_document_path(raw: &str) -> bool {
     let p = raw.trim().trim_matches('"').to_lowercase();
     DOCUMENT_EXTENSIONS.iter().any(|ext| p.ends_with(ext))
 }
 
 /// Hand a document path to the frontend: queue it for `take_pending_file`
-/// and ping the `document-open-file` event in case the webview is already
-/// listening. (The event name is historical; it carries every format now.)
+/// and ping `document-open-file` in case the webview is already listening.
+/// (The event name is historical; it carries every format now.)
 fn queue_pending(app: &tauri::AppHandle, path: String) {
     let path = path.trim().trim_matches('"').to_string();
     if !is_document_path(&path) {
@@ -61,10 +59,10 @@ fn queue_pending(app: &tauri::AppHandle, path: String) {
     let _ = app.emit("document-open-file", path);
 }
 
-/// Returns the pending OS-opened document path (if any) and clears it. The
-/// frontend pulls once on mount and again on every `document-open-file`
-/// ping, so a launch-time file survives the webview not being ready and a
-/// mid-run file never opens twice.
+/// The pending OS-opened document path (if any), cleared on read. The
+/// frontend pulls once on mount and again on every `document-open-file` ping,
+/// so a launch-time file survives the webview not being ready and a mid-run
+/// file never opens twice.
 #[tauri::command]
 fn take_pending_file(state: tauri::State<'_, PendingFile>) -> Option<String> {
     state.0.lock().ok().and_then(|mut g| g.take())
@@ -73,9 +71,9 @@ fn take_pending_file(state: tauri::State<'_, PendingFile>) -> Option<String> {
 /// Whether a path says it is absolute, in any of the three hosts' spellings:
 /// a POSIX root, a Windows UNC share, or a Windows drive letter. Not a claim
 /// that the path is well-formed — the filesystem call that follows is that —
-/// but the refusal of a relative address both of the crate's filesystem gates
-/// apply. One rule rather than one per gate: a second spelling of "absolute"
-/// is a path one gate admits and the other refuses.
+/// but the refusal of a relative address both filesystem gates apply. One
+/// rule rather than one per gate: a second spelling of "absolute" is a path
+/// one gate admits and the other refuses.
 pub(crate) fn path_looks_absolute(path: &str) -> bool {
     path.starts_with('/')                  // POSIX
         || path.starts_with("\\\\")        // Windows UNC share
@@ -83,11 +81,10 @@ pub(crate) fn path_looks_absolute(path: &str) -> bool {
 }
 
 /// The gate the `read_file_*` and `commands::library` commands apply before
-/// touching the filesystem:
-/// they are exposed to a webview that parses untrusted documents, so
-/// requiring an absolute path with a known document suffix keeps them from
-/// being a general file-read primitive. Every real open path (dialog,
-/// drag-drop, OS handoff) already supplies exactly that.
+/// touching the filesystem. They are exposed to a webview that parses
+/// untrusted documents, so requiring an absolute path with a known document
+/// suffix keeps them from being a general file-read primitive. Every real
+/// open path (dialog, drag-drop, OS handoff) already supplies exactly that.
 pub(crate) fn ensure_readable_document(path: &str) -> Result<(), String> {
     if !path_looks_absolute(path) {
         return Err(format!("refusing to read a non-absolute path: {path}"));
@@ -102,7 +99,7 @@ pub(crate) fn ensure_readable_document(path: &str) -> Result<(), String> {
 /// Read a file's bytes for the webview as an IPC `Response`, so the JS side
 /// receives an `ArrayBuffer` (no JSON round-trip for megabytes). Errors
 /// resolve as a rejected invoke, which the engine falls back from. The read
-/// runs on the blocking pool so a 50 MB book does not stall the async
+/// runs on the blocking pool so a large book does not stall the async
 /// runtime.
 #[tauri::command]
 async fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
@@ -134,8 +131,8 @@ async fn read_file_text(path: String) -> Result<String, String> {
 
 /// Show/hide the native macOS traffic lights with dynamic vertical centering.
 ///
-/// `titleBarStyle: "Overlay"` lets the webview draw under the lights, but
-/// CSS cannot hide or re-center them — they are native NSViews. Delegates to
+/// `titleBarStyle: "Overlay"` lets the webview draw under the lights, but CSS
+/// cannot hide or re-center native NSViews. Delegates to
 /// `macos::traffic_light`, which owns the container geometry:
 ///
 /// ```text
@@ -162,8 +159,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(macos::traffic_light::init())
-        // A PDF double-clicked while the app is already running must land in
-        // the EXISTING window, not open a second one (Windows/Linux).
+        // A file double-clicked while the app is already running must land
+        // in the EXISTING window, not open a second one (Windows/Linux).
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(path) = argv.into_iter().find(|a| is_document_path(a)) {
                 queue_pending(app, path);
@@ -202,7 +199,7 @@ pub fn run() {
                 queue_pending(app_handle, path);
             }
         }
-        // Windows/Linux: the initial launch's PDF path is a plain argv entry
+        // Windows/Linux: the initial launch's file path is a plain argv entry
         // (Explorer "Open with" / double-click under a file association).
         RunEvent::Ready => {
             for arg in std::env::args().skip(1) {

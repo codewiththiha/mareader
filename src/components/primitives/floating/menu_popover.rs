@@ -12,12 +12,12 @@
 //!   forget it.
 //!
 //! It lives beside the primitive it wraps rather than under the titlebar it
-//! often hangs from because its callers are everywhere — the reader's menus,
+//! often hangs from, because its callers are everywhere — the reader's menus,
 //! the settings rows, the library's breadcrumb, view menu, selection bar and
 //! add menu — and a wrapper half the app imports is a primitive with the
-//! wrong address if it sits inside one surface's folder.
+//! wrong address inside one surface's folder.
 //!
-//! Not a second popover primitive: it is a thin, single-purpose composition —
+//! Not a second popover primitive: a thin, single-purpose composition —
 //! holds, policy, pass-through. New policy belongs in its own wrapper, not here.
 
 use leptos::children::ChildrenFn;

@@ -1,18 +1,15 @@
-//! A choice row: a name, and the one line under it that says what choosing it
+//! A choice row: a name, and the line under it that says what choosing it
 //! does.
 //!
-//! Not [`MenuItem`](super::menu_item::MenuItem), which is a command — an icon, a
-//! label, an optional trailing slot, one line tall. This is an ANSWER to a
-//! question a sheet is asking, and the difference is the note: a merge, a replace
-//! and an "as new" are three consequences the reader has to be able to read
-//! before the click, so the note wraps to as many lines as it needs and there is
-//! no icon column competing with it. A glyph beside a sentence is decoration the
-//! reader has to look past.
+//! Not [`MenuItem`](super::menu_item::MenuItem), which is a command — an
+//! icon, a label, one line tall. This is an answer to a question a sheet is
+//! asking, and the difference is the note: a merge, a replace and an "as
+//! new" are consequences the reader must be able to read before the click,
+//! so the note wraps and no icon column competes with it.
 //!
-//! It lives here rather than in the collision sheet that first needed it because
-//! the folder sheet reached sideways into a sibling feature file to borrow it:
-//! two sheets in one feature importing a row shape from a third file in the same
-//! feature is a primitive with the wrong address.
+//! Lives here rather than in the collision sheet that first needed it: two
+//! sheets importing a row shape from a third file in one feature is a
+//! primitive with the wrong address.
 
 use leptos::prelude::*;
 
@@ -21,8 +18,8 @@ use leptos::prelude::*;
 pub fn ChoiceRow(
     /// The answer's own name — "Merge", "Add as new", "Replace".
     label: &'static str,
-    /// What choosing it does, in the sheet's own words. Wraps; a promise the
-    /// reader has to take on faith is not a promise.
+    /// What choosing it does, in the sheet's own words. Wraps: a promise
+    /// the reader has to take on faith is not a promise.
     #[prop(into)]
     note: String,
     on_click: Callback<()>,

@@ -46,7 +46,8 @@ pub fn reveal_shelf(state: AppState, shelf_id: &str) {
     light(state, shelf_id);
 }
 
-/// The FIRST shelf in shelf order, so the answer is the same every time; the root when the book is on no shelf.
+/// The first shelf in shelf order, so the answer is the same every time; the
+/// root when the book is on no shelf.
 fn navigate_to_shelf_of(state: AppState, book_id: &str) {
     let target = state
         .library

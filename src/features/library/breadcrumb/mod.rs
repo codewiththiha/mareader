@@ -1,22 +1,20 @@
 //! The breadcrumb: the library page's only prose, and it is navigation.
 //!
-//! One crumb per level the page is drilled through, `Home` first and the shelf the page is on
-//! last. "Home" is always a button, because it is the way back, and so is every crumb above the
-//! last one: a folder three levels down is three clicks from the root only if the reader can see
-//! all three.
+//! One crumb per level, `Home` first and the open shelf last. Every crumb is
+//! a button — a folder three levels down is three clicks from the root only
+//! if the reader can see all three.
 
 //! ## Crumbs are drop targets
 //!
-//! Every crumb — elided ones included — is a target the drag can land on, so a book can be filed
-//! onto a level the reader is not standing on. The ellipsis is a target as well and a drop on it
-//! is not: it stands for several levels and the reader cannot see which one they would be
-//! choosing.
+//! Every crumb — elided ones included — is a drop target, so a book can be
+//! filed onto a level the reader is not standing on. The ellipsis is not: it
+//! stands for several levels and the reader cannot see which one they would
+//! be choosing.
 
 //! ## The shelf's own menu
 //!
-//! The LAST crumb is a button for a second reason: it is where a shelf the reader made gets its
-//! name changed or gets taken apart, with the rename happening inline in the crumb itself.
-
+//! The last crumb is a button for a second reason: it is where a shelf the
+//! reader made gets renamed (inline) or taken apart.
 
 mod fold;
 mod panel;
@@ -41,28 +39,28 @@ use panel::{EllipsisCrumb, HoverIntent};
 
 const ALL_CRUMB_DOM_ID: &str = "crumb-all";
 
-
-/// `Clone` because the chain crosses a signal, and a `Signal` hands out copies rather than references.
+/// `Clone` because the chain crosses a signal, and a `Signal` hands out
+/// copies rather than references.
 #[derive(Clone)]
 struct Crumb {
     id: String,
     name: String,
-    /// This is the one fact about a removal worth a sentence under the menu row, because it is the one consequence the reader cannot see coming — the shelf comes back when the folder places again.
+    /// The one consequence of a removal worth a sentence under the menu row:
+    /// the reader cannot see it coming — the shelf comes back when the folder
+    /// places again.
     watched: bool,
 }
-
 
 fn current_shelf_id(state: AppState) -> Option<String> {
     let id = state.library.shelf.get_untracked();
     (id != ALL_SHELF).then_some(id)
 }
 
-
-/// Read when an action runs rather than when the crumb is built, so renaming the same shelf twice starts from what it is called now.
+/// Read when an action runs rather than when the crumb is built, so renaming
+/// the same shelf twice starts from its current name.
 fn shelf_name_now(state: AppState, shelf_id: &str) -> String {
     state.library.shelf_name(shelf_id)
 }
-
 
 fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
     Signal::derive(move || {
@@ -89,9 +87,6 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
     })
 }
 
-
-
-
 fn crumb_dom_id(shelf_id: &str) -> String {
     if shelf_id.is_empty() {
         ALL_CRUMB_DOM_ID.to_string()
@@ -100,7 +95,8 @@ fn crumb_dom_id(shelf_id: &str) -> String {
     }
 }
 
-/// One call rather than a `NodeRef` and a rect reader, because a target that outlived the crumb it belonged to would be a way to file onto a level that is no longer shown.
+/// One call rather than a `NodeRef` and a rect reader: a target that
+/// outlived its crumb would be a way to file onto a level no longer shown.
 fn register_crumb(ctrl: &DragController, shelf_id: &str) -> String {
     let dom_id = crumb_dom_id(shelf_id);
     ctrl.registry.register(DropTargetEntry {
@@ -111,8 +107,8 @@ fn register_crumb(ctrl: &DragController, shelf_id: &str) -> String {
     dom_id
 }
 
-
-/// A computed string rather than a conditional class because the hot state is the third of three things deciding the look.
+/// A computed string rather than a conditional class: the hot state is the
+/// third of three things deciding the look.
 fn crumb_class(current: bool, hot: bool) -> String {
     let base = "flex min-w-0 max-w-40 items-center gap-1 rounded-md px-1.5 py-0.5 \
                 transition-colors focus:outline-none focus-visible:ring-2 \
@@ -128,7 +124,6 @@ fn crumb_class(current: bool, hot: bool) -> String {
         format!("{base} {tone}")
     }
 }
-
 
 #[component]
 pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
@@ -147,7 +142,9 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
         }
     });
 
-    // Both move without a window resize: a crumb renamed, a level drilled into, the trailing cluster growing, the flex squeeze settling after the fold's own answer.
+    // Both move without a window resize: a crumb renamed, a level drilled
+    // into, the trailing cluster growing, the flex squeeze settling after the
+    // fold's answer.
     let nav_ref: NodeRef<html::Nav> = NodeRef::new();
     let probe_ref: NodeRef<html::Span> = NodeRef::new();
     let widths: RwSignal<Vec<f64>> = RwSignal::new(Vec::new());
@@ -195,7 +192,9 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
             class="flex min-w-0 items-center gap-0.5 text-sm"
             aria-label="Library location"
         >
-            // Plain spans with no ids and no registrations: a ruler is not a crumb, and a second element carrying a crumb's id would be a second answer for the drag's hit-test and the reveal's scroll.
+            // Plain spans with no ids: a ruler is not a crumb, and a second
+            // element carrying a crumb's id would be a second answer for the
+            // hit-test and the reveal's scroll.
             <span node_ref=probe_ref class="lib-crumb-probe" aria-hidden="true">
                 <span class="lib-crumb-probe-item">
                     <Icon name=IconName::More size=14 />
@@ -227,7 +226,8 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
                 let split = split_sig.get();
                 let (elided, shown) = levels.split_at(split);
                 let last = len.saturating_sub(1);
-                // Left to right has to stay root to leaf, in the bar and in the panel alike.
+                // Left to right stays root to leaf, in the bar and panel
+                // alike.
                 let gap = (!elided.is_empty()).then(|| {
                     view! {
                         <EllipsisCrumb
@@ -254,8 +254,9 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
     }
 }
 
-
-/// Always a button, because it is the way back, and a target with an empty id — the library's spelling of "no shelf", which is what makes a drop here take a book OFF the shelf it was dragged out of.
+/// Always a button — the way back — and a target with an empty id, the
+/// library's spelling of "no shelf", which makes a drop here take a book off
+/// the shelf it was dragged out of.
 #[component]
 fn AllCrumb(state: AppState, ctrl: DragController) -> impl IntoView {
     let dom_id = register_crumb(&ctrl, "");
@@ -287,8 +288,8 @@ fn AllCrumb(state: AppState, ctrl: DragController) -> impl IntoView {
     }
 }
 
-
-/// Its own component so the last crumb's menu state stays out of it — a way back is a link, and a link with a rename field inside it is two controls fighting over one click.
+/// Its own component so the last crumb's menu state stays out of it: a link
+/// with a rename field inside is two controls fighting over one click.
 #[component]
 fn LevelCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoView {
     let id = crumb.id.clone();
@@ -315,8 +316,8 @@ fn LevelCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoV
     }
 }
 
-
-/// Still a drop target, because releasing a held book here files it onto the level the reader is already looking at.
+/// Still a drop target: releasing a held book here files it onto the level
+/// the reader is already looking at.
 #[component]
 fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoView {
     let menu_open = RwSignal::new(false);
@@ -417,7 +418,6 @@ fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl I
     }
 }
 
-
 #[component]
 fn RenameField(
     state: AppState,
@@ -454,9 +454,10 @@ fn RenameField(
     }
 }
 
-/// The one child-width measurement loop, shared by the bar's probe and the panel's ruler:
-/// two engines measuring the same shape with their own loops is how the two drift, and the
-/// panel's rows are packed from the same numbers the bar's split is.
+/// The one child-width measurement loop, shared by the bar's probe and the
+/// panel's ruler: two engines measuring the same shape with their own loops
+/// is how they drift, and the panel packs rows from the same numbers the bar
+/// splits by.
 pub(crate) fn measure_children_widths(node: &web_sys::Element) -> Vec<f64> {
     let kids = node.children();
     let mut widths = Vec::with_capacity(kids.length() as usize);

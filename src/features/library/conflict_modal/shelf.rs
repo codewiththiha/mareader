@@ -1,7 +1,8 @@
 //! The folder's question: a level already holds the name.
 //!
-//! Asked BEFORE the walk rather than after it, because the answer decides what the walk is for.
-//! WHICH answers the sheet offers is the arrival's mode.
+//! Asked before the walk rather than after it, because the answer decides
+//! what the walk is for. Which answers the sheet offers is the arrival's
+//! mode.
 
 use leptos::prelude::*;
 
@@ -25,7 +26,8 @@ pub(super) fn describe_shelf(state: AppState, ask: &ShelfConflictAsk) -> SheetSp
             .iter()
             .any(|f| f.root == ask.root && f.mode().reads_in_place())
     });
-    // The row promises the counter rather than asking the reader to take "the next free name" on faith.
+    // The row promises the counter rather than asking the reader to take
+    // "the next free name" on faith.
     let new_name = state.library.shelves.with_untracked(|shelves| {
         next_shelf_name(shelves, None, &ask.incoming_name)
     });
@@ -91,7 +93,9 @@ pub(super) fn describe_shelf(state: AppState, ask: &ShelfConflictAsk) -> SheetSp
     let choices = conflict::shelf_offers(ask)
         .iter()
         .map(|choice| match choice {
-            // No *as new* — a second shelf of one linked folder is the second instance the family gate exists to prevent — and no *replace*: a linked tree is not the level's to empty.
+            // No *as new* — a second shelf of one linked folder is the
+            // second instance the family gate prevents — and no *replace*: a
+            // linked tree is not the level's to empty.
             Placement::LinkOnly => ChoiceSpec {
                 label: "Make link",
                 note: LINK_NOTE.to_string(),
@@ -102,7 +106,8 @@ pub(super) fn describe_shelf(state: AppState, ask: &ShelfConflictAsk) -> SheetSp
                 note: merge_note.clone(),
                 placement: Placement::Merge,
             },
-            // No pointer — a stored import is a second instance the library owns, and "show me the first" is a light rather than a row.
+            // No pointer: a stored import is a second instance the library
+            // owns, and "show me the first" is a light rather than a row.
             Placement::Open => ChoiceSpec {
                 label: "Show it",
                 note: show_note.clone(),

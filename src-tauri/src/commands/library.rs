@@ -1,9 +1,10 @@
-//! The library's OS touch-points: walking a folder, measuring a file, copying one into the
-//! app's store, and deleting a copy the app made.
+//! The library's OS touch-points: walking a folder, measuring a file, copying
+//! one into the app's store, and deleting a copy the app made.
 //!
-//! Raw IO and nothing else. Every *decision* — which files a folder admits, what a rescan
-//! does about a file it has seen before, where a book lands on a shelf — is `library_core`'s,
-//! running in the frontend where the library state lives.
+//! Raw IO and nothing else. Every decision — which files a folder admits,
+//! what a rescan does about a file it has seen, where a book lands on a
+//! shelf — is `library_core`'s, running in the frontend where the library
+//! state lives.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,16 +23,21 @@ use library_core::wire::{
     BookFileRequest, ImportPhase, ImportProgress, PathCheck, RelocateResult, StoreResult,
 };
 
-/// Mirrored by the frontend in `src/services/library/mod.rs`, which re-broadcasts it as a window event so no component registers a Tauri listener of its own.
+/// Mirrored by the frontend in `src/services/library/mod.rs`, which folds it
+/// into the dock's task list so no component registers a Tauri listener of
+/// its own.
 pub const PROGRESS_EVENT: &str = "library://progress";
 
-/// A tree deeper than this is either a loop this walk did not catch or a directory nobody meant to import; either way the answer is to stop.
+/// A tree deeper than this is either a loop this walk did not catch or a
+/// directory nobody meant to import; either way the answer is to stop.
 const MAX_DEPTH: usize = 12;
 
-/// Past this the JSON crossing the wire is larger than the state it would update, and the honest answer is to ask for a narrower folder.
+/// Past this the JSON crossing the wire is larger than the state it would
+/// update, and the honest answer is to ask for a narrower folder.
 const MAX_FOUND: usize = 20_000;
 
-/// A 2 000-file folder would otherwise push 2 000 messages through IPC in under a second, and the frontend would spend the import repainting a ring.
+/// A 2 000-file folder would otherwise push 2 000 messages through IPC in
+/// under a second, and the frontend would spend the import repainting a ring.
 const EMIT_EVERY: u32 = 8;
 const EMIT_INTERVAL_MS: u128 = 60;
 
@@ -56,7 +62,10 @@ impl Progress {
         }
     }
 
-    /// A dropped emit is not an error: the next beat carries the same totals, and the final one is always flushed. The FIRST file emits too — a three-file import that showed nothing until its final flush would read as a hang — and after that the throttle holds.
+    /// A dropped emit is not an error: the next beat carries the same totals
+    /// and the final one is always flushed. The first file emits too — a
+    /// three-file import that showed nothing until its final flush would read
+    /// as a hang — and after that the throttle holds.
     fn tick(&mut self, app: &AppHandle, name: &str) {
         self.done = self.done.saturating_add(1);
         self.since_emit = self.since_emit.saturating_add(1);
@@ -82,7 +91,8 @@ impl Progress {
     }
 }
 
-/// Runs on the blocking pool: a walk is a syscall per entry, and a large folder would otherwise hold the async runtime for the whole import.
+/// Runs on the blocking pool: a walk is a syscall per entry, and a large
+/// folder would otherwise hold the async runtime for the whole import.
 #[tauri::command]
 pub async fn scan_folder(
     app: AppHandle,
@@ -119,7 +129,9 @@ impl Scan<'_> {
             if self.truncated {
                 return;
             }
-            // `file_type` does not follow the link, which is the point: a symlinked directory is a loop this walk has no business entering.
+            // `file_type` does not follow the link, which is the point: a
+            // symlinked directory is a loop this walk has no business
+            // entering.
             let Ok(kind) = entry.file_type() else {
                 continue;
             };
@@ -197,7 +209,9 @@ fn scan(
     Ok(state.found)
 }
 
-/// One row per path asked about, in the order asked, so the caller can zip the answer against its own list. A path that is refused by the document gate, missing, or unreadable answers `exists: false` with zeroed measurements.
+/// One row per path asked about, in the order asked, so the caller can zip
+/// the answer against its own list. A path refused by the document gate,
+/// missing or unreadable answers `exists: false` with zeroed measurements.
 #[tauri::command]
 pub async fn verify_paths(paths: Vec<String>) -> Result<Vec<PathCheck>, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -234,7 +248,9 @@ fn check_path(path: &str) -> PathCheck {
     }
 }
 
-/// A failure is per-file rather than per-batch: a reader importing a folder with one locked file in it should get the other ninety-nine, plus a line naming the one that did not copy.
+/// A failure is per-file rather than per-batch: a folder with one locked
+/// file in it still imports the other ninety-nine, plus a line naming the one
+/// that did not copy.
 #[tauri::command]
 pub async fn store_books(
     app: AppHandle,
@@ -297,15 +313,16 @@ fn copy_one(
         src: request.from.clone(),
         store: path_to_string(&target),
         error: None,
-        // Measured by the same pass that stamped it: the row lands wearing its copy's
-        // own identity, and the folder that reads the source keeps the source's free.
+        // Measured by the same pass that stamped it: the row lands wearing
+        // its copy's own identity, and the folder that reads the source keeps
+        // the source's free.
         measured: Some(measure_copy(&target)),
     }
 }
 
-/// The copy's own (size, modification time, first bytes) — the same triple [`check_path`]
-/// reads for a file the library is asking about, taken here so the answer rides home with
-/// the copy instead of costing a second trip.
+/// The copy's own (size, mtime, first bytes) — the same triple
+/// [`check_path`] reads — taken here so the answer rides home with the copy
+/// instead of costing a second trip.
 fn measure_copy(target: &Path) -> Fingerprint {
     let Ok(meta) = fs::metadata(target) else {
         return Fingerprint::of(0, 0, &[]);
@@ -313,21 +330,22 @@ fn measure_copy(target: &Path) -> Fingerprint {
     Fingerprint::of(meta.len(), mtime_ms(meta.modified().ok()), &read_head(target))
 }
 
-/// The library measures a file as (size, modification time, first bytes), and a copy owes the
-/// ledger a measurement of ITS OWN: a stored row is known by its copy's fingerprint, so the
-/// source file's stays free for the folder that reads it.
+/// A copy owes the ledger a measurement of its own: a stored row is known by
+/// its copy's fingerprint, so the source file's stays free for the folder
+/// that reads it.
 fn own_stamp(target: &Path) {
     if let Ok(file) = fs::File::options().write(true).open(target) {
         let _ = file.set_times(fs::FileTimes::new().set_modified(SystemTime::now()));
     }
 }
 
-/// The containment check is the whole safety story: the argument arrives from the webview, and
-/// a delete primitive that trusted it would be `rm` with an IPC wrapper. Only a path inside this
-/// app's own store directory is removed, on canonicalised paths so a `..` cannot walk out.
+/// The containment check is the whole safety story: the argument arrives
+/// from the webview, and a delete primitive that trusted it would be `rm`
+/// with an IPC wrapper. Only a path inside this app's own store directory is
+/// removed, on canonicalised paths so a `..` cannot walk out.
 ///
-/// Async like every other fs command here: a sync command runs on the main thread, and a slow
-/// disk holding the sweep would freeze the UI for the length of it.
+/// Async like every other fs command here: a sync command runs on the main
+/// thread, and a slow disk holding the sweep would freeze the UI.
 #[tauri::command]
 pub async fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || delete(&app, &path))
@@ -377,7 +395,9 @@ fn sweep_the_books_folder(root: &Path, deleted: &Path) {
     }
 }
 
-/// WHICH path a row reveals is the frontend's answer, not this one's: a book the library copied names its copy in the store, a book read at its place names the file where it stands.
+/// Which path a row reveals is the frontend's answer, not this one's: a
+/// copied book names its copy in the store, a read-at-place book names the
+/// file where it stands.
 #[tauri::command]
 pub async fn reveal_in_folder(path: String) -> Result<(), String> {
     let target = Path::new(&path);
@@ -501,7 +521,12 @@ fn relocate_one(root: &Path, items: &str, request: &BookFileRequest) -> StoreRes
     {
         return fail(format!("could not create the item directory: {e}"));
     }
-    // An app-data directory that is itself a symlink onto another volume makes a rename cross-device, which the host refuses: copy, then remove the source so the old bucket is not left holding a file nothing points at. A source the host will not release is REPORTED rather than swallowed — the ledger would otherwise believe the book lives in one place while a second copy of it sits in the other.
+    // An app-data directory that is itself a symlink onto another volume
+    // makes a rename cross-device, which the host refuses: copy, then remove
+    // the source so the old bucket is not left holding a file nothing points
+    // at. A source the host will not release is reported rather than
+    // swallowed — the ledger would otherwise believe the book lives in one
+    // place while a second copy sits in the other.
     if let Err(e) = fs::rename(source, &target) {
         if target.exists() {
             return fail(format!("could not move {}: {e}", request.from));
@@ -515,7 +540,9 @@ fn relocate_one(root: &Path, items: &str, request: &BookFileRequest) -> StoreRes
             ));
         }
     }
-    // The row's identity is the measurement of THESE bytes, and re-stamping on a migration would change a fingerprint every ledger entry and tombstone still names — which is also why `measured` stays `None` here: the identity the row already carries is the truth.
+    // The row's identity is the measurement of these bytes; re-stamping on a
+    // migration would change a fingerprint every ledger entry and tombstone
+    // still names — which is why `measured` stays `None` here.
     StoreResult {
         id: request.id.clone(),
         src: request.from.clone(),
@@ -532,12 +559,16 @@ fn same_file(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Canonicalised so a `..` cannot walk out. The nearest EXISTING ancestor is what gets canonicalised and the rest of the path is appended to it, because one end of a move has not been created yet.
+/// Canonicalised so a `..` cannot walk out; see [`contained_in`] for the
+/// not-yet-created end of a move.
 fn inside_store(root: &Path, path: &Path) -> bool {
     contained_in(root, path).is_some()
 }
 
-/// The nearest EXISTING ancestor canonicalised, the rest resolved lexically on top of it: `canonicalize` refuses a path that is not there, and a target that always answered "outside" would refuse every book the migration was asked to move.
+/// The nearest existing ancestor canonicalised, the rest resolved lexically
+/// on top of it: `canonicalize` refuses a path that is not there, and a
+/// target that always answered "outside" would refuse every book the
+/// migration was asked to move.
 fn contained_in(root: &Path, path: &Path) -> Option<PathBuf> {
     let root = root.canonicalize().ok()?;
     let mut existing = path;
@@ -570,7 +601,8 @@ fn store_root(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("no app data directory: {e}"))
 }
 
-/// One folder per book, keyed by the id that never changes. Nothing on disk is named after the source file's stem, so a rename never touches the file.
+/// One folder per book, keyed by the id that never changes: nothing on disk
+/// is named after the source file's stem, so a rename never touches the file.
 fn store_path(app: &AppHandle, src: &str, id: &str) -> Result<PathBuf, String> {
     let root = store_root(app)?;
     let items = store::items_root(&path_to_string(&root));
@@ -578,12 +610,17 @@ fn store_path(app: &AppHandle, src: &str, id: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(store::source_path(&items, id, &ext)))
 }
 
-/// Empty for a name Rust reads as having none (`Makefile`, and a dotfile like `.gitignore`) — which the format registry also refuses, so an extension-less file is never admitted, measured or copied. The spelling is [`library_core::paths::extension`]'s, so a `Path` here and a string in the frontend answer the same.
+/// Empty for a name Rust reads as having none (`Makefile`, `.gitignore`) —
+/// which the format registry also refuses, so an extension-less file is
+/// never admitted, measured or copied. The spelling is
+/// [`library_core::paths::extension`]'s, so a `Path` here and a string in
+/// the frontend answer the same.
 fn extension_of(path: &Path) -> String {
     paths::extension(&path.to_string_lossy())
 }
 
-/// The subfolder half of this string is what a grouped import cuts its shelves from, so it is normalised here rather than at three call sites.
+/// The subfolder half of this string is what a grouped import cuts its
+/// shelves from, so it is normalised here rather than at three call sites.
 fn relative_to(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .map(|p| p.to_string_lossy().into_owned())
@@ -595,7 +632,9 @@ fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// An unreadable head is not a failed scan: the size and the stamp still identify the file, and a book that opens is worth more than a hash that is exact.
+/// An unreadable head is not a failed scan: the size and the stamp still
+/// identify the file, and a book that opens is worth more than a hash that
+/// is exact.
 fn read_head(path: &Path) -> Vec<u8> {
     let Ok(file) = fs::File::open(path) else {
         return Vec::new();
@@ -678,7 +717,8 @@ mod tests {
         assert_eq!(relative_to(root, Path::new("/other/a.pdf")), "/other/a.pdf");
     }
 
-    /// Two of the three hosts this ships on carry the source's stamp across a copy, so the copy's own stamp is the whole of what the ledger's copy rules need.
+    /// Two of the three hosts this ships on carry the source's stamp across
+    /// a copy, so the copy's own stamp is what the ledger's rules need.
     #[test]
     fn a_copy_takes_its_own_modification_time() {
         let dir = std::env::temp_dir().join(format!("pdf-reader-stamp-{}", std::process::id()));
@@ -717,7 +757,8 @@ mod tests {
         own_stamp(Path::new("/this/path/is/not/there/book.pdf"));
     }
 
-    /// The paths are resolved before the sweep the way the command resolves them, because the containment the sweep trusts is `contained_in`'s answer.
+    /// Paths are resolved before the sweep the way the command resolves
+    /// them: the containment the sweep trusts is `contained_in`'s answer.
     #[test]
     fn a_removed_book_takes_its_own_folder_and_nothing_above_it() {
         let root = std::env::temp_dir().join(format!("pdf-reader-sweep-{}", std::process::id()));

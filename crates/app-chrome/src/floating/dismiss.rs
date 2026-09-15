@@ -1,9 +1,6 @@
 //! Shared dismissal mechanics: Escape + outside-press handling with exclusion
 //! selectors, a suspend signal (dragging), and a "topmost overlay only"
-//! registry so two stacked surfaces don't both eat one Escape. Consolidates
-//! the behaviour that used to be duplicated across the primitive popover, the
-//! gloss surface, gloss selection mode, the gloss context menu and the
-//! floating search.
+//! registry so two stacked surfaces don't both eat one Escape.
 //!
 //! Rules baked in:
 //! * outside events landing inside the surface's own refs are ignored
@@ -40,8 +37,8 @@ pub struct DismissPolicy {
     /// Elements matching these selectors count as "inside" (e.g.
     /// `".gloss-mark"`, `".gloss-select-bar"`).
     pub exclude_selectors: Vec<&'static str>,
-    /// While `false` (or while the signal is absent) dismissal is live. Set
-    /// `Some` to suspend it (drag in flight, processing…).
+    /// Dismissal is live while this is true (or while the signal is absent).
+    /// Set `Some` to suspend it conditionally (drag in flight, processing…).
     pub enabled: Option<Signal<bool>>,
     /// Only the most recently opened dismissable surface receives Escape.
     pub topmost_only: bool,
@@ -50,8 +47,7 @@ pub struct DismissPolicy {
 // The topmost-overlay registry. Deliberately `thread_local!`: the WASM UI is
 // single-threaded, so this is an application-global every dismissable surface
 // shares WITHOUT threading a registry handle through props. The cost is that
-// tests must tolerate shared per-thread state — they push and pop
-// symmetrically.
+// tests tolerate shared per-thread state — they push and pop symmetrically.
 thread_local! {
     /// Stack of open dismissable ids, most recent last.
     static DISMISS_STACK: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
@@ -84,12 +80,11 @@ pub fn has_open_dismissable() -> bool {
 /// THIS press is that surface's and peeling both layers in one keydown would
 /// take the modal down with the menu.
 ///
-/// The rule every modal in an app shares, and one listener for it rather than
-/// one per dialog: the window listener exists exactly while `open` is true, so
-/// a closed modal hears nothing and two stacked modals cannot both eat one
-/// press (the lane registry keeps at most one modal open — see the app's
-/// overlay lanes). Install it inside the component that owns the signal, next
-/// to the lane registration.
+/// One listener for the rule every modal shares: it exists exactly while
+/// `open` is true, so a closed modal hears nothing and two stacked modals
+/// cannot both eat one press (the lane registry keeps at most one modal open —
+/// see the app's overlay lanes). Install it inside the component that owns the
+/// signal, next to the lane registration.
 pub fn use_modal_escape(open: RwSignal<bool>) {
     Effect::new(move |_| {
         if !open.get() {
@@ -137,7 +132,6 @@ pub fn use_dismiss(
     let is_inside = std::rc::Rc::new(is_inside);
 
     Effect::new(move |_| {
-        // Gate: visibility AND the optional enabled signal.
         let enabled = policy.enabled.map(|e| e.get()).unwrap_or(true);
         let live = visible.get() && enabled;
 

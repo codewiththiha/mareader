@@ -5,9 +5,8 @@
 //! up to date, so the next open resumes where the reader left off. The write is
 //! `library_core::book::record_read`'s — every row that shares the address moves,
 //! and a row that is a book of its own moves alone — through the same seam an
-//! open records through (`crate::services::document::open::shelf`).
-//! Persistence is debounced: a fast scroll through continuous mode is one
-//! localStorage write, not one per row.
+//! open records through. Persistence is debounced: a fast scroll through
+//! continuous mode is one localStorage write, not one per row.
 //!
 //! Stands down for the whole of a zoom transaction: the page counter is not
 //! trustworthy while one is open — the dominant arm is standing down and a
@@ -53,12 +52,9 @@ pub fn reading_progress(state: AppState) {
             0.0
         };
         let fraction = if streaming { state.reader.stream_fraction() } else { None };
-        // A zoom transaction owns the geometry and the page counter is not
-        // trustworthy while it does: the dominant arm stands down and a held
-        // navigation has not replayed, so the page on show may be the
-        // pre-jump one. The read is TRACKED, so the effect re-runs — with the
-        // settled page — on the frame the transaction closes; nothing is lost
-        // by waiting.
+        // Stand down for the whole of a zoom transaction (see the module doc):
+        // the read is TRACKED, so the effect re-runs — with the settled page —
+        // on the frame the transaction closes, and nothing is lost by waiting.
         if zooming.get() {
             return;
         }
@@ -76,11 +72,11 @@ pub fn reading_progress(state: AppState) {
             return;
         }
 
-        // No-op write guard: only touch the library when the position
-        // actually moved, so position-tracking syncs (which can re-write an
-        // equal page) never dirty the list or trigger a save. A fraction
-        // counts as moved past half a percent — finer steps are scroll noise
-        // the debounce would coalesce anyway.
+        // No-op write guard: only touch the library when the position actually
+        // moved, so position-tracking syncs (which can re-write an equal page)
+        // never dirty the list or trigger a save. A fraction counts as moved
+        // past half a percent — finer steps are scroll noise the debounce
+        // would coalesce anyway.
         //
         // Which rows move is `library_core::book::rows_for_read`'s answer and
         // not the address's: the book the reader opened by name keeps its own

@@ -1,8 +1,9 @@
-//! The list: one row per book and one row per shelf — the level as a tree that unfolds in
-//! place, for a library the reader is scanning rather than browsing.
+//! The list: one row per book and one row per shelf — the level as a tree
+//! that unfolds in place, for scanning rather than browsing.
 //!
-//! Same books, same order, same drag rules as the grid — only the shape of a row changes, so
-//! the order arrives from the same context signal rather than being derived a second time.
+//! Same books, order and drag rules as the grid; only the row shape changes,
+//! so the order arrives from the same context signal rather than being
+//! derived twice.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -31,10 +32,12 @@ use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::SeamVocab;
 use crate::state::AppState;
 
-/// A plain prop bag on purpose: the reader sidebar's shelf tab will mount the same tree inside its own panel.
+/// A plain prop bag on purpose: the sidebar's shelf tab mounts the same tree
+/// inside its own panel.
 #[derive(Clone, Default)]
 pub struct ShelfTree {
-    /// `None` follows the level the page is on, so the list is a view OF that level and the disclosure is how the reader goes deeper without leaving it.
+    /// `None` follows the level the page is on: the list is a view of that
+    /// level, and the disclosure goes deeper without leaving it.
     pub root: Option<String>,
     pub dense: bool,
 }
@@ -61,7 +64,9 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
         dense: tree.dense,
     });
 
-    // One query for both densities — `crate::features::library::content::level_folders` is the grid's doors and this tree's — so a search cannot narrow one and not the other.
+    // One query for both densities
+    // (`crate::features::library::content::level_folders`), so a search
+    // cannot narrow one and not the other.
     let roots = Signal::derive(move || level_folders(state, tree.root.clone()));
 
     view! {
@@ -83,17 +88,19 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
 #[component]
 fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> impl IntoView {
     let ctx = use_context::<TreeCtx>().expect("the list provides the tree context");
-    // The sidebar will mount this tree with no library page under it. The shell asks for the hosts itself and stands the gestures down when they are absent.
+    // The sidebar mounts this tree with no library page under it: the shell
+    // asks for the hosts itself and stands the gestures down when absent.
     let drag = use_context::<DragController>();
 
-    // The prop is the shelf the `For` keyed this row on, and a keyed row is not
-    // re-created when the shelf's CONTENTS change — a book filed into it, a
-    // rename, a shelf nested inside. So everything that can move is read back out
-    // of the state by id and the prop supplies the identity: the rule the grid's
-    // folder card follows (see `crate::features::library::folder_card`).
+    // The prop is the shelf the `For` keyed this row on, and a keyed row is
+    // not re-created when the shelf's contents change. The prop supplies the
+    // identity; everything that can move is read back out of the state by id
+    // (the grid's folder-card rule, see
+    // `crate::features::library::folder_card`).
     let id = shelf.id.clone();
 
-    // A search that hid the matching shelves but kept showing the ones between them would be a filter of the leaves and not of the tree.
+    // Hiding matching shelves while keeping the ones between them would
+    // filter the leaves and not the tree.
     let kids_id = id.clone();
     let kids = Signal::derive(move || {
         let terms = state.library.query.get();
@@ -115,7 +122,8 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     let open_id = id.clone();
     let open = Signal::derive(move || ctx.expanded.with(|set| set.contains(&open_id)));
 
-    // The way deeper is the way in: a reader carrying books should not have to put them down to knock.
+    // Hover-to-expand: a reader carrying books should not have to put them
+    // down to knock.
     let hover_id = id.clone();
     let hover_collapsed = Signal::derive(move || {
         drag.is_some_and(|each| each.live().get() && each.over_folder(&hover_id)) && !open.get()
@@ -163,7 +171,8 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
         });
     });
 
-    // The same wiring the grid's folder card and the book rows wear, with the disclosure's own answers: a tap unfolds, a hold enters the selection with this shelf in it, and a movement lifts it.
+    // The same wiring the grid's cards wear, with the disclosure's own
+    // answers: a tap unfolds, a hold selects, a movement lifts.
     let entry = EntryDescriptor {
         id: id.clone(),
         vocab: SeamVocab::FolderRow,
@@ -172,7 +181,8 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     };
 
     let nav_id = id.clone();
-    // Parked in a `StoredValue` because the member rows are built inside the unfold's `Show`, whose children closure has to stay an `Fn`.
+    // In a `StoredValue` because the member rows are built inside the
+    // unfold's `Show`, whose children closure must stay an `Fn`.
     let members_parent: StoredValue<Option<String>, LocalStorage> =
         StoredValue::new_local(Some(id.clone()));
     let indent = row_indent(depth);
@@ -228,7 +238,8 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
             </EntryShell>
             <Show when=move || open.get()>
                 <For each=move || kids.get() key=|s| s.id.clone() let:child>
-                    // Through `AnyView` because a recursive component whose children named its own opaque return type would be a type that never resolves.
+                    // Through `AnyView`: a recursive component whose children
+                    // named its own opaque return type would never resolve.
                     {view! { <TreeRow state=state shelf=child depth=depth + 1 crop=crop /> }
                         .into_any()}
                 </For>
@@ -240,7 +251,9 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     }
 }
 
-/// The shelf's own order is the base and the view's sort rides over it — the same `library_core::sort::ordered` the page's own level runs — so an unfolded row and the page it mirrors cannot disagree about what comes first.
+/// The shelf's own order with the view's sort over it — the same
+/// `library_core::sort::ordered` the page's level runs — so an unfolded row
+/// and the page it mirrors cannot disagree about what comes first.
 fn row_view(
     state: AppState,
     row: Row,
@@ -255,7 +268,7 @@ fn row_view(
             .into_any(),
         Row::Link { id, target, .. } => {
             let to_shelf = library_core::id::is_shelf(&target);
-            // Read back by id for the same reason the grid's card does.
+            // Read back by id, for the same reason the grid's card does.
             let name = state.library.row_name_signal(&id);
             view! { <LinkRow state=state id=id name=name to_shelf=to_shelf depth=depth parent=parent /> }
                 .into_any()
@@ -280,7 +293,8 @@ fn ListRow(
     book: Book,
     crop: Signal<bool>,
     depth: usize,
-    /// The tree's own id for a row inside an expanded branch, `None` for the flat section, which the session resolves at the drop rather than at the mount.
+    /// The tree's own id for a row inside an expanded branch; `None` for the
+    /// flat section, which the session resolves at the drop, not the mount.
     parent: Option<String>,
 ) -> impl IntoView {
     let ctx = use_context::<TreeCtx>().expect("the list provides the tree context");
@@ -288,8 +302,8 @@ fn ListRow(
 
     let remove_sheet = use_context::<RemoveSheet>();
 
-
-    // The prop supplies the identity; everything that can move is read back by id, because a keyed row is not re-created when its content changes.
+    // The prop supplies the identity; everything that can move is read back
+    // by id, because a keyed row is not re-created when its content changes.
     let id = book.id.clone();
     let facts = book_facts(state, &id);
     let chip = (book.format != Format::Pdf).then(|| book.format.label().to_string());
@@ -297,7 +311,8 @@ fn ListRow(
 
     let check_id = id.clone();
 
-    // The shelf's one press contract, the same one the grid's cards wear. A movement is always a drag here, including from inside a selection.
+    // The same press contract the grid's cards wear. A movement is always a
+    // drag here, including from inside a selection.
     let entry = EntryDescriptor {
         id: id.clone(),
         vocab: SeamVocab::ListRow,

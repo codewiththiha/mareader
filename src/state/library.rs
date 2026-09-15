@@ -1,8 +1,9 @@
-//! The library domain: the books, the shelves they are filed on, the folders watched for new
-//! ones, the cover-art cache, and the view the shelf renders in.
+//! The library domain: the books, the shelves they are filed on, the folders
+//! watched for new ones, the cover-art cache, and the view the shelf renders
+//! in.
 //!
-//! The RULES are not here — they are `library_core`, which is pure and host-tested. This
-//! module is the reactive half: the signals those rules are applied to.
+//! The rules are not here — they are `library_core`, pure and host-tested.
+//! This module is the reactive half: the signals those rules are applied to.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -30,10 +31,13 @@ pub struct CoverImage {
     pub height: f64,
 }
 
-/// Behind an `Arc` because a cover is tens of kilobytes and the map is read out of a signal on every shelf render and cloned whole before every save.
+/// Behind an `Arc`: a cover is tens of kilobytes, and the map is read out of
+/// a signal on every shelf render and cloned whole before every save.
 pub type CoverMap = std::collections::HashMap<String, Arc<CoverImage>>;
 
-/// The shell reports [`ImportPhase`] for the two it can see; `Done` and `Failed` are the frontend's, because only the side that owns the task list knows when the whole run has finished.
+/// The shell reports [`ImportPhase`] for the two phases it can see; `Done`
+/// and `Failed` are the frontend's, because only the side that owns the task
+/// list knows when the whole run has finished.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskPhase {
     Scanning,
@@ -55,7 +59,10 @@ impl TaskPhase {
     }
 }
 
-/// Deliberately a plain value and not a projection of the shell's beat: the run ends with a state write the shell knows nothing about, and a card that only mirrored the last event would sit at "100%" while the books were still being filed.
+/// Deliberately a plain value, not a projection of the shell's beat: the run
+/// ends with a state write the shell knows nothing about, and a card that
+/// only mirrored the last event would sit at "100%" while books were still
+/// being filed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportTask {
     pub id: String,
@@ -63,7 +70,8 @@ pub struct ImportTask {
     pub phase: TaskPhase,
     pub done: u32,
     pub total: u32,
-    /// Questions the reader still owes an answer to; see `crate::services::library::conflict`.
+    /// Questions the reader still owes an answer to; see
+    /// `crate::services::library::conflict`.
     pub waiting: u32,
     pub name: String,
     pub error: Option<String>,
@@ -133,19 +141,25 @@ impl ImportTask {
     }
 }
 
-/// A named value rather than the `(id, nonce)` pair it replaced, because six surfaces ask "am I the one being revealed" and each of them destructured the pair to compare its first half.
+/// The row the shelf is lighting up. Asked through the one shell every shelf
+/// item draws ([`crate::features::library::entry`]), so the pair is read in
+/// one place.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reveal {
-    /// A shelf id is a letter apart from a book's ([`library_core::id::is_shelf`]), so one signal serves both kinds.
+    /// A shelf id is a letter apart from a book's
+    /// ([`library_core::id::is_shelf`]), so one signal serves both kinds.
     pub id: String,
-    /// Monotonic, so revealing one thing twice in a row works twice: a plain `Option<String>` would be unchanged by the second and notify nobody.
+    /// Monotonic, so revealing one thing twice in a row works twice: a plain
+    /// `Option<String>` would be unchanged by the second and notify nobody.
     pub nonce: u64,
 }
 
-/// Both are a report and a highlight — the note is how the reader is told what the import did instead of asking.
+/// Both kinds are a report and a highlight: the note tells the reader what
+/// the import did instead of asking.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NoteKind {
-    /// A re-import of ground the library already reads in place DID walk and reconcile, and found nothing new.
+    /// A re-import of ground the library already reads in place did walk and
+    /// reconcile, and found nothing new.
     NothingNew,
     Returned,
 }
@@ -166,9 +180,9 @@ pub struct AlreadyNote {
     pub kind: NoteKind,
 }
 
-/// One sheet's state: the question it is showing, and whether it is up. The app's four sheets
-/// each spelled this pair on their own — a raise was two writes in an order nothing enforced,
-/// and an "open with nothing asked" was a state the type allowed.
+/// One sheet's state: the question it is showing, and whether it is up. One
+/// spelling of the pair, so a raise cannot be two writes in the wrong order
+/// and "open with nothing asked" is not a state the type allows.
 pub struct Sheet<T: Send + Sync + 'static> {
     pub ask: RwSignal<Option<T>>,
     pub open: RwSignal<bool>,
@@ -192,10 +206,9 @@ impl<T: Send + Sync + 'static> Sheet<T> {
         self.open.set(false);
     }
 
-    /// Close WITHOUT spending the ask: the one sheet whose close is an answer in itself
-    /// (the already-imported note lights its shelf on the way down) — the effect that
-    /// consumes the ask and reveals reads it after this, so the intent is in the type
-    /// rather than in a bare `open.set(false)` three files away.
+    /// Close without spending the ask, for the one sheet whose close is an
+    /// answer in itself (the already-imported note lights its shelf on the way
+    /// down): the consuming effect reads the ask after this.
     pub fn lower(&self) {
         self.open.set(false);
     }
@@ -216,7 +229,9 @@ impl<T: Send + Sync + 'static> Clone for Sheet<T> {
 
 impl<T: Send + Sync + 'static> Copy for Sheet<T> {}
 
-/// The name is captured at the ask rather than read at the click, so a rename that lands while the sheet is up cannot change the question being answered.
+/// The name is captured at the ask rather than read at the click, so a
+/// rename landing while the sheet is up cannot change the question being
+/// answered.
 #[derive(Clone, PartialEq)]
 pub struct RelinkAsk {
     pub book_id: String,
@@ -235,22 +250,31 @@ pub struct LibraryState {
     pub query: RwSignal<String>,
     pub shelf: RwSignal<String>,
     pub tasks: RwSignal<Vec<ImportTask>>,
-    /// Written by a "show it in its shelf" action, cleared by the shelf that scrolled to it. Ask [`Self::is_revealed`] rather than reading the signal.
+    /// Written by a "show it in its shelf" action, cleared by the shelf that
+    /// scrolled to it. Ask [`Self::is_revealed`] rather than reading the
+    /// signal.
     pub reveal: RwSignal<Option<Reveal>>,
     pub selecting: RwSignal<bool>,
-    /// A set rather than a list because toggling is the high-frequency operation and "is this one selected" is asked by every card on every repaint.
+    /// A set rather than a list: toggling is the high-frequency operation and
+    /// membership is asked by every card on every repaint.
     pub selected: RwSignal<HashSet<String>>,
-    /// Raised by the services — a drop, a filing, an import — rather than by a component, which is why it lives here: an import asks from inside a spawned future that outlived every component.
+    /// Raised by the services — a drop, a filing, an import — not by a
+    /// component: an import asks from inside a spawned future that outlived
+    /// every component.
     pub conflict: Sheet<ConflictAsk>,
-    /// One question at a time is the sheet's whole shape, and a batch can raise several: without
-    /// somewhere to put the rest, the second raise would overwrite the first and a placement would
-    /// vanish.
+    /// One question at a time is the sheet's whole shape, and a batch can
+    /// raise several: without somewhere to put the rest, the second raise
+    /// would overwrite the first and a placement would vanish.
     pub conflict_waiting: RwSignal<Vec<ConflictAsk>>,
-    /// Its own sheet rather than a variant of [`Self::conflict`] because a folder has no [`Arrival`](library_core::conflict::Arrival) yet: nothing has been measured when its name is the question.
+    /// Its own sheet rather than a variant of [`Self::conflict`]: a folder
+    /// has no [`Arrival`](library_core::conflict::Arrival) yet — nothing has
+    /// been measured when its name is the question.
     pub shelf_conflict: Sheet<ShelfConflictAsk>,
-    /// Closes WITHOUT a dismiss — the reveal on close reads the ask.
+    /// Closes without a dismiss — the reveal on close reads the ask.
     pub already_imported: Sheet<AlreadyNote>,
-    /// One sheet for every copy the library is about to make of a book it reads in place: the move of a book, the move of a shelf, a level coming apart and a shelf coming off the list are one cost, so they are one question.
+    /// One sheet for every copy the library is about to make of a book it
+    /// reads in place: a book's move, a shelf's move, a level coming apart
+    /// and a shelf leaving the list are one cost, so they are one question.
     pub copy_ask: Sheet<CopyAsk>,
     pub relink: Sheet<RelinkAsk>,
 }
@@ -289,7 +313,8 @@ impl LibraryState {
         }
     }
 
-    /// One read of each rather than three nested reads is one chance to see a library, and a rule asked of lists read at different moments can be asked of two different ones.
+    /// One read of each list rather than nested reads: a rule asked of lists
+    /// read at different moments can be asked of two different libraries.
     pub fn snapshot_rows(&self) -> (Vec<Row>, Vec<Shelf>) {
         (self.books.get_untracked(), self.shelves.get_untracked())
     }
@@ -299,7 +324,8 @@ impl LibraryState {
             .with_untracked(|rows| library_core::book::find_row(rows, row_id).cloned())
     }
 
-    /// Empty for a row that is not there, which is what makes a drag of a row another surface just removed a no-op.
+    /// Empty for a row that is not there, which makes a drag of a row another
+    /// surface just removed a no-op.
     pub fn row_name(&self, row_id: &str) -> String {
         self.row(row_id).map_or_else(String::new, |r| r.display_name())
     }
@@ -319,9 +345,8 @@ impl LibraryState {
         })
     }
 
-    /// The row's own name, read back by id: a keyed card or row is not re-created when its
-    /// content changes, so a name captured at the mount is a name that goes stale — the
-    /// link surfaces read through this for exactly the reason `shelf_name_signal` exists.
+    /// The row's own name, read back by id: a keyed card is not re-created
+    /// when its content changes, so a name captured at the mount goes stale.
     pub fn row_name_signal(&self, row_id: &str) -> Signal<String> {
         let books = self.books;
         let id = row_id.to_string();
@@ -345,22 +370,27 @@ impl LibraryState {
         Signal::derive(move || selected.with(|set| set.contains(&id)))
     }
 
-    /// The question four call sites asked by walking the shelf list and reading its kind: whether a move is a departure, whether a landing is a return, which folder's import menu a card belongs to, and what a folder link's row says.
+    /// The folder a shelf is a rung of, if any: what decides whether a move
+    /// is a departure and whether a landing is a return.
     pub fn shelf_folder_id(&self, shelf_id: &str) -> Option<String> {
         self.shelves.with_untracked(|shelves| {
             shelf::find(shelves, shelf_id).and_then(|s| s.kind.folder_id().map(str::to_string))
         })
     }
 
-    /// A shelf of a read-at-place folder answers with that folder's decision for the rung the shelf stands on, so a subfolder turned off under a tracked root stops showing a dot while the tree above it keeps watching.
+    /// That folder's tracking decision for the rung the shelf stands on, so
+    /// a subfolder turned off under a tracked root stops showing a dot while
+    /// the tree above it keeps watching.
     pub fn shelf_tracked(&self, shelf_id: &str) -> bool {
         self.folders.with(|folders| {
             self.shelves
                 .with(|shelves| Governance::new(folders, shelves).shelf_tracked(shelf_id))
-        }) == Some(true)
+        })
     }
 
-    /// `Copy` for a shelf the library keeps copies of — cut from a folder imported that way, or taken off a read-at-place tree by a move that paid the copy — a read-at-place mode for a shelf that is a door onto a directory on disk, and `None` for a shelf no folder answers for.
+    /// `Copy` for a shelf the library keeps copies of, a read-at-place mode
+    /// for a shelf that is a door onto a directory on disk, and `None` for a
+    /// shelf no folder answers for.
     pub fn shelf_mode(&self, shelf_id: &str) -> Option<FolderMode> {
         self.folders.with(|folders| {
             self.shelves
@@ -373,7 +403,7 @@ impl LibraryState {
             self.shelves.with_untracked(|shelves| {
                 Governance::new(folders, shelves).shelf_tracked(shelf_id)
             })
-        }) == Some(true)
+        })
     }
 
     pub fn folder(&self, folder_id: &str) -> Option<WatchedFolder> {

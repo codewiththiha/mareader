@@ -96,7 +96,10 @@ fn relink_book_on(state: AppState, book_id: String, path: String, on_task: Optio
     });
 }
 
-/// The engine's own picker rather than a second dialog implementation here: it is the same question — "which document?" — with the same filter. Cancel is compared against the engine's own constant rather than a string matched in place: a wording change on either side must be a compile error, not a cancel that quietly turns into an error toast.
+/// The engine's own picker rather than a second dialog implementation: the
+/// same question with the same filter. Cancel is compared against the
+/// engine's constant, so a wording change on either side is a compile error
+/// rather than a cancel that quietly turns into an error toast.
 pub fn relink_dialog(state: AppState, book_id: String) {
     spawn_local(async move {
         match pdf_engine::api::pick_document().await {
@@ -107,7 +110,8 @@ pub fn relink_dialog(state: AppState, book_id: String) {
     });
 }
 
-/// A reader-page open — the sheet lives on the library page — falls back to the file picker itself, which is the answer the sheet's first row would have run.
+/// A reader-page open (the sheet lives on the library page) falls back to
+/// the file picker itself — the answer the sheet's first row would have run.
 pub fn ask_relink(state: AppState, book_id: String) {
     if state.reader.document.status.get_untracked() == DocStatus::Ready {
         relink_dialog(state, book_id);
@@ -122,7 +126,8 @@ pub fn cancel_relink(state: AppState) {
     state.library.relink.dismiss();
 }
 
-/// The walk is the shell's own (`scan_folder`, one measurement per file, every format, no size floor — a book the reader lost is not a file to filter).
+/// The walk is the shell's own (`scan_folder`: one measurement per file,
+/// every format, no size floor — a lost book is not a file to filter).
 pub fn relink_search_folder(state: AppState, book_id: String) {
     spawn_local(async move {
         let known = state.library.books.with_untracked(|rows| {
@@ -171,7 +176,9 @@ pub fn relink_search_folder(state: AppState, book_id: String) {
     });
 }
 
-/// Case aside, because a folder that answers in capitals is still the folder the book lives in. The content is nobody's question here: the relink that follows re-measures the file.
+/// Case aside: a folder that answers in capitals is still the folder the
+/// book lives in. Content is nobody's question here — the relink that
+/// follows re-measures the file.
 fn is_the_book(found_path: &str, name: &str, old_path: &str) -> bool {
     let stem = stem_of(found_path);
     let file = file_name(found_path);

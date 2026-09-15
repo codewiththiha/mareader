@@ -1,7 +1,9 @@
-//! The two ways books arrive, and — inside a watched folder's shelf — the way one comes back.
+//! The two ways books arrive, and — inside a watched folder's shelf — the
+//! way one comes back.
 //!
-//! The shelf's `+` card and the empty state's button open this rather than doing anything
-//! themselves: an import has two sources and the reader should see both from either.
+//! The shelf's `+` card and the empty state's button open this rather than
+//! acting themselves: an import has two sources and the reader should see
+//! both from either.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -26,7 +28,8 @@ use crate::state::AppState;
 #[derive(Debug, Clone, PartialEq)]
 struct RestoreRow {
     item: Recovered,
-    /// Still listed, but disabled: a menu that quietly drops rows is a menu the reader cannot tell from one that never had them.
+    /// Still listed but disabled: a menu that quietly drops rows is
+    /// indistinguishable from one that never had them.
     gone: bool,
 }
 
@@ -66,7 +69,8 @@ impl RestoreRow {
         }
     }
 
-    /// A restore is an explicit act, so it is worth saying out loud that it ignores the folder's filters.
+    /// A restore is an explicit act, so it says out loud that it ignores the
+    /// folder's filters.
     fn hint(&self) -> &'static str {
         match self.item {
             Recovered::Deleted(_) => {
@@ -110,7 +114,8 @@ fn from_files_in(state: AppState, root: String, target: Option<String>) {
     });
 }
 
-/// A folder has options (which formats, how small is too small, whether to copy, whether to watch), and importing one on the strength of a picker alone would have to guess all of them.
+/// A folder has options — formats, size floor, copy, watch — and importing
+/// one on a picker alone would have to guess all of them.
 fn from_directory(sheet: ImportSheet) {
     spawn_local(async move {
         match crate::services::library::pick_folder().await {
@@ -121,7 +126,8 @@ fn from_directory(sheet: ImportSheet) {
     });
 }
 
-/// Nothing at the root: "All" is the library's own order, not a shelf to file onto, so a pick from there leaves its books unfiled.
+/// Nothing at the root: "All" is the library's own order, not a shelf to
+/// file onto, so a pick from there leaves its books unfiled.
 pub(crate) fn add_target(state: AppState) -> Signal<Option<String>> {
     Signal::derive(move || {
         let id = state.library.shelf.get();
@@ -131,7 +137,9 @@ pub(crate) fn add_target(state: AppState) -> Signal<Option<String>> {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AddFace {
-    /// A card and not a toolbar button because the shelf is where the reader is looking when they decide to add to it, and a grid with a hole at the end reads as unfinished.
+    /// A card, not a toolbar button: the shelf is where the reader is looking
+    /// when they decide to add, and a grid with a hole at the end reads as
+    /// unfinished.
     Card,
     Row,
     Empty,
@@ -241,7 +249,9 @@ pub(crate) fn AddMenu(
     });
 
     let rows = RwSignal::new(Vec::<RestoreRow>::new());
-    // "Also show it here" and "go and look at where it went" are different answers, so the list swaps for a two-choice confirm inside the same popover — a confirm that evicted the menu it came from would close the thing the reader was reading.
+    // "Also show it here" and "go and look" are different answers, so the
+    // list swaps for a two-choice confirm inside the same popover — a confirm
+    // that evicted its menu would close what the reader was reading.
     let confirm = RwSignal::new(None::<Recovered>);
 
     Effect::new(move |_| {
@@ -387,7 +397,8 @@ fn deleted_path(row: &RestoreRow) -> Option<String> {
     }
 }
 
-/// Read at click time: a restore has to name the folder it restores through, and the menu outlives the render that built it.
+/// Read at click time: a restore names the folder it restores through, and
+/// the menu outlives the render that built it.
 fn current_folder_id(state: AppState) -> Option<String> {
     let shelf_id = state.library.shelf.get_untracked();
     if shelf_id == ALL_SHELF {
@@ -396,7 +407,8 @@ fn current_folder_id(state: AppState) -> Option<String> {
     state.library.shelf_folder_id(&shelf_id)
 }
 
-/// Its own component because a row is four strings and a branch, and building that inside an enumerated `map` would be a closure per signal handle.
+/// Its own component: a row is four strings and a branch, and building that
+/// inside an enumerated `map` would be a closure per signal handle.
 #[component]
 fn RestoreItem(
     state: AppState,

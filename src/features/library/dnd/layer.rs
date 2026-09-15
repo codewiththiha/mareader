@@ -1,8 +1,8 @@
-//! The drag overlay: one fixed layer, no pointer events of its own, drawn from the controller
-//! and nothing else.
+//! The drag overlay: one fixed layer, no pointer events of its own, drawn
+//! from the controller and nothing else.
 //!
-//! A browser drag image cannot be any of the four things this is: it is one bitmap of the
-//! element the press began on, made before the drag starts, and composited by the engine.
+//! A browser drag image cannot do this: it is one bitmap of the pressed
+//! element, made before the drag starts and composited by the engine.
 
 use leptos::portal::Portal;
 use leptos::prelude::*;
@@ -10,10 +10,9 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 
 use crate::features::library::dnd::controller::{DragController, GhostTile};
+// The fold plate borrows the folder card's own cap rather than spelling a
+// second number beside it.
 use crate::features::library::folder_card::THUMB_CAP;
-
-/// Named after the folder's own plate cap rather than spelled a second time beside it: a promise drawn with a different number of cells than the card it becomes is a promise about a folder the library does not have.
-
 
 #[component]
 pub(crate) fn DragLayer() -> impl IntoView {
@@ -25,7 +24,9 @@ pub(crate) fn DragLayer() -> impl IntoView {
     let at = ctrl.pointer();
     let sunk = ctrl.sink();
     let several = Signal::derive(move || count.get() > 1);
-    // One signal for the whole sunk state — the anchor, the scale AND the transition — because they are one fact: a separate "is animating" flag could disagree on exactly the frame that matters.
+    // One signal for the whole sunk state — anchor, scale and transition —
+    // because they are one fact: a separate "is animating" flag could
+    // disagree on exactly the frame that matters.
     let is_sunk = Signal::derive(move || sunk.get().is_some());
     let style = Signal::derive(move || {
         match sunk.get() {
@@ -93,7 +94,8 @@ fn GhostCard(fan: usize, tile: GhostTile) -> impl IntoView {
     }
 }
 
-/// The folder card's classes rather than a look of its own: the preview is a promise about what the card on this level will look like in a moment.
+/// Wears the folder card's own classes: the preview is a promise about what
+/// the card on this level will look like in a moment.
 #[component]
 fn FoldPlate(filled: usize) -> impl IntoView {
     view! {

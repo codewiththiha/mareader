@@ -1,9 +1,9 @@
-//! The two-answer question, and the two facts that raise it: a loose import of a file that sits
-//! inside a folder the library reads in place, where that folder's book for it is alive and
-//! standing; or a loose import of a file whose content the library already holds.
+//! The two-answer question, and the two facts that raise it: a loose import
+//! of a file inside a folder the library reads in place whose book is alive,
+//! or of a file whose content the library already holds.
 //!
-//! Two answers rather than three, because a pointer at a row on this level is not an option a
-//! covered file has.
+//! Two answers rather than three: a pointer at a row on this level is not an
+//! option a covered file has.
 
 use leptos::prelude::*;
 
@@ -16,14 +16,16 @@ use crate::state::AppState;
 use super::info::{more_waiting, where_line};
 use super::sheet::{AnswerRoute, ChoiceSpec, SheetSpec};
 
-/// The library's own stored copy on this level — a book of its own bytes with its own highlights — or the book the library already holds, gone to and lit. What is left after the stronger question has been asked.
+/// The library's own stored copy on this level, or the book the library
+/// already holds — what is left after the stronger question has been asked.
 pub(super) fn describe_covered(state: AppState, ask: &ConflictAsk) -> SheetSpec {
     let waiting = state
         .library
         .conflict_waiting
         .with_untracked(|w| w.iter().filter(|each| each.kind.is_two_answer()).count());
     let incoming = ask.arrival.name.clone();
-    // Which fact the library noticed decides the sentence, and the two are not the same question. Same two answers, different reason.
+    // Which fact the library noticed decides the sentence: same two answers,
+    // different reason.
     let folder_name = ask
         .kind
         .folder_id()

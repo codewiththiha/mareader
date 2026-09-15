@@ -16,8 +16,8 @@ use super::departure::depart;
 use super::shelves::{nest_shelf, reorder_shelves_to_anchor};
 use crate::services::library::reveal;
 
-/// A value rather than a boolean, because "the drop was after" and "insert after the anchor" are
-/// one fact said at three call sites.
+/// A value rather than a boolean: "the drop was after" and "insert after
+/// the anchor" are one fact said at three call sites.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SeamSide {
     Before,

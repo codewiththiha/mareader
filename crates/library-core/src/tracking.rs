@@ -1,9 +1,8 @@
 //! Tracking as a tree, not a bool.
 //!
-//! A watched folder used to carry one root-level flag for the whole tree it
-//! imported, so no smaller unit could hold a tracking decision. The tree keeps
-//! what the flag could not: a folder tracked at the root with one subfolder
-//! turned off, or the reverse.
+//! One root-level flag could not hold a smaller decision; the tree keeps what
+//! it could not: a folder tracked at the root with one subfolder turned off,
+//! or the reverse.
 
 use std::collections::BTreeMap;
 
@@ -14,23 +13,24 @@ use crate::folder::key_chain;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Track {
-    /// No opinion of its own: inherit the nearest ancestor that has one, and track
-    /// nothing when no ancestor does.
+    /// No opinion of its own: inherit the nearest ancestor that has one;
+    /// track nothing when no ancestor does.
     Inherit,
     On,
-    /// Do not track this rung or, absent a deeper override, anything below it — even under an ancestor that is tracked.
+    /// Do not track this rung or, absent a deeper override, anything below
+    /// it — even under a tracked ancestor.
     Off,
 }
 
-/// Per-rung tracking decisions for one watched folder's tree, keyed by rung path
-/// exactly like [`crate::folder::WatchedFolder::shelf_map`]. Only explicit
-/// `On`/`Off` decisions are stored — an absent rung is an [`Track::Inherit`].
+/// Per-rung tracking decisions for one watched folder's tree, keyed by rung
+/// path like [`crate::folder::WatchedFolder::shelf_map`]. Only explicit
+/// `On`/`Off` decisions are stored; an absent rung inherits.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackingTree {
     /// Rung path to the decision that rung makes for itself and its subtree.
-    /// `Inherit` is never stored, and a blob from before tracking existed has no key
-    /// at all.
+    /// `Inherit` is never stored; a blob from before tracking existed has no
+    /// key at all.
     #[serde(default)]
     overrides: BTreeMap<String, Track>,
 }
@@ -40,17 +40,17 @@ impl TrackingTree {
         Self::default()
     }
 
-    /// A tree that tracks from its root down — the drop-in replacement for the old root-level `watch: true`.
+    /// A tree that tracks from its root down: the drop-in replacement for the
+    /// old root-level `watch: true`.
     pub fn tracking_root() -> Self {
         let mut tree = Self::default();
         tree.set("", Track::On);
         tree
     }
 
-    /// Whether `key` is tracked: the first explicit `On`/`Off` walking from this rung
-    /// up to the root, `false` when the chain carries none. The deepest decision wins
-    /// — a subfolder turned off under a tracked root is off, and one turned back on
-    /// under that is on again.
+    /// Whether `key` is tracked: the first explicit `On`/`Off` walking up to
+    /// the root, `false` when the chain carries none. The deepest decision
+    /// wins.
     pub fn resolve(&self, key: &str) -> bool {
         key_chain(key)
             .into_iter()
@@ -58,26 +58,27 @@ impl TrackingTree {
             .find_map(|rung| match self.overrides.get(rung) {
                 Some(Track::On) => Some(true),
                 Some(Track::Off) => Some(false),
-                // An `Inherit` entry is never stored, but a hand-edited blob could carry one.
+                // Never stored, but a hand-edited blob could carry one.
                 Some(Track::Inherit) | None => None,
             })
             .unwrap_or(false)
     }
 
-    /// The whole tree's own answer: `resolve("")`, the drop-in for the old root-level `watch`.
+    /// The whole tree's own answer: `resolve("")`, the drop-in for the old
+    /// root-level `watch`.
     pub fn tracked(&self) -> bool {
         self.resolve("")
     }
 
-    /// Whether ANY rung carries an explicit [`Track::On`] — the question a focus
-    /// rescan asks, which is not the root's question. A tree whose root the reader
-    /// turned off while one subfolder stayed on still owes a walk.
+    /// Whether any rung carries an explicit [`Track::On`] — the question a
+    /// focus rescan asks. A tree whose root is off while one subfolder stayed
+    /// on still owes a walk.
     pub fn any_on(&self) -> bool {
         self.overrides.values().any(|track| *track == Track::On)
     }
 
-    /// Record a decision for one rung. [`Track::Inherit`] removes the override, so
-    /// the rung falls back to whatever its ancestors say.
+    /// Record a decision for one rung. [`Track::Inherit`] removes the
+    /// override, so the rung falls back to its ancestors.
     pub fn set(&mut self, key: &str, track: Track) {
         if track == Track::Inherit {
             self.overrides.remove(key);
@@ -86,23 +87,23 @@ impl TrackingTree {
         }
     }
 
-    /// The root's decision made as the WHOLE tree's: every rung's override goes with
-    /// it, and the tree answers uniformly from the root again. A reader who turns the
-    /// tree back on is not asking which subfolders a previous hand turned off.
+    /// The root's decision made as the whole tree's: every override goes with
+    /// it. A reader who turns the tree back on is not asking which subfolders
+    /// a previous hand turned off.
     pub fn set_root(&mut self, on: bool) {
         self.overrides.clear();
         self.set("", if on { Track::On } else { Track::Off });
     }
 
-    /// The explicit decision a rung carries, or [`Track::Inherit`] when it has none
-    /// of its own — the state a context-menu toggle shows, as distinct from the
-    /// effective [`resolve`] it inherits.
+    /// The explicit decision a rung carries, or [`Track::Inherit`] — the
+    /// state a context-menu toggle shows, as distinct from the effective
+    /// [`Self::resolve`] answer.
     pub fn track_at(&self, key: &str) -> Track {
         self.overrides.get(key).copied().unwrap_or(Track::Inherit)
     }
 
-    /// Drop every decision in `zone`: the zone's own rung and the whole subtree below
-    /// it, the zone arithmetic [`crate::folder::key_in_zone`] gives a shelf map.
+    /// Drop every decision in `zone` and its subtree, by the same
+    /// [`crate::folder::key_in_zone`] arithmetic the shelf map uses.
     pub fn prune_zone(&mut self, zone: &str) {
         self.overrides
             .retain(|key, _| !crate::folder::key_in_zone(key, zone));

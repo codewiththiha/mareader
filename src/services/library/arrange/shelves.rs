@@ -30,7 +30,8 @@ pub fn create_shelf_and_enter(state: AppState, parent: Option<&str>) -> String {
     id
 }
 
-/// What a bulk "file onto a new shelf" wants: the reader picked books on one shelf and asked for them to be on another, and navigating them away is an answer to a question they did not ask.
+/// A new shelf under the open level, without drilling into it: the reader
+/// asked for the books to be on another shelf, not to navigate there.
 pub fn create_shelf_here(state: AppState) -> String {
     let at = state.library.shelf.get_untracked();
     let parent = (at != ALL_SHELF).then_some(at);
@@ -50,8 +51,9 @@ fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
     id
 }
 
-
-/// The cycle check is `library_core::shelf::reparent`'s and not the caller's: a folder filed inside itself renders on no level at all and can never be opened again, so the rule has to hold for every caller.
+/// The cycle check is `library_core::shelf::reparent`'s, not the caller's: a
+/// folder filed inside itself renders on no level and can never be opened
+/// again, so the rule has to hold for every caller.
 pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> bool {
     let one = [folder_id.to_string()];
     let (clean, departing) = screen_shelf_moves(state, &one, parent);
@@ -72,7 +74,9 @@ pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> boo
     moved
 }
 
-/// The books are memberships and the folders are nestings, and one persist covers the batch. No NAME question is asked: a nesting writes no membership, so nothing arrives on the parent's level.
+/// Books as memberships, folders as nestings, one persist for the batch. No
+/// name question is asked: a nesting writes no membership, so nothing arrives
+/// on the parent's level.
 pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     if folder_ids.is_empty() {
         return;
@@ -97,7 +101,9 @@ pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     }
 }
 
-/// What a drag onto a shelf ROW's edge commits — the sibling seam the list layout draws — and a reorder rather than a filing wherever the two shelves already share a level, which is the common case.
+/// What a drag onto a shelf row's edge commits — the sibling seam the list
+/// layout draws — a reorder rather than a filing wherever the two shelves
+/// already share a level, which is the common case.
 pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, side: SeamSide) {
     if ids.is_empty() {
         return;

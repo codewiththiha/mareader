@@ -1,21 +1,18 @@
 //! Overlay lanes: which floating surfaces may be up at the same time.
 //!
 //! Every overlay used to arbitrate its own exclusivity, and each did it
-//! differently. Menus relied on a side effect of [`use_dismiss`]: a press on
-//! another trigger is an outside press, so the open menu closes *and then* the
-//! other one opens. That works menu-to-menu and nowhere else — a modal is not a
-//! press target, and a toolbar trigger sitting "under" a modal's backdrop is
-//! still clickable because the chrome row lives in a different stacking
-//! context. Which is how the appearance menu and the settings modal ended up
-//! open at once, each half-covered by the other.
+//! differently. Menus relied on a side effect of [`use_dismiss`] — a press on
+//! another trigger is an outside press — which works menu-to-menu and nowhere
+//! else: a modal is not a press target, and a toolbar trigger sitting "under"
+//! a modal's backdrop is still clickable from a different stacking context.
+//! That is how the appearance menu and the settings modal ended up open at
+//! once, each half-covered by the other.
 //!
 //! So exclusivity is state, not a side effect of hit-testing: one registry
 //! ([`OverlayBoard`]) holds who occupies what, and a surface's open signal is
-//! the only store of its visibility — the registry WRITES that signal to evict
-//! a loser. Because arbitration hangs off the signal rather than off a button,
-//! every path into the open state arbitrates the same way: the trigger, Escape,
-//! an outside press, a backdrop click, and another component opening the
-//! surface on the reader's behalf (the reader menu's "Settings…" item).
+//! the only store of its visibility — the registry WRITES that signal to
+//! evict a loser. Because arbitration hangs off the signal rather than off a
+//! button, every path into the open state arbitrates the same way.
 //!
 //! Two rules keep this from becoming a second source of truth:
 //!
@@ -31,10 +28,9 @@
 //! Menus and modals are covered already: `MenuPopover` registers its `open`
 //! signal as [`OverlayPolicy::MENU`] and `SettingsModal` registers its own as
 //! [`OverlayPolicy::MODAL`], so any new menu or modal is exclusive by
-//! construction and cannot forget to be. A surface that wants different
-//! collisions passes its own [`OverlayPolicy`] (`MenuPopover`'s `policy` prop),
-//! and a brand-new KIND of surface adds one lane bit plus the policy that uses
-//! it. Until then `Lanes` is exactly as large as the app's actual collisions.
+//! construction. A surface that wants different collisions passes its own
+//! [`OverlayPolicy`] (`MenuPopover`'s `policy` prop), and a brand-new KIND of
+//! surface adds one lane bit plus the policy that uses it.
 
 use leptos::prelude::*;
 
@@ -67,11 +63,9 @@ impl Lanes {
 /// lanes it takes away from everyone else when it opens.
 ///
 /// Deliberately two fields rather than one symmetric "group" — the
-/// relationships the app needs are not all symmetric. A menu and a modal each
-/// clear the other's lane, so neither can be left stranded under the other; a
-/// surface that occupies nothing and clears nothing (`Lanes::default()` on both)
-/// coexists with everything, which is the opt-out `MenuPopover`'s `policy` prop
-/// offers.
+/// relationships the app needs are not all symmetric, and a surface that
+/// occupies nothing and clears nothing coexists with everything, which is the
+/// opt-out `MenuPopover`'s `policy` prop offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OverlayPolicy {
     /// Lane held while this overlay is open.
@@ -95,9 +89,8 @@ impl OverlayPolicy {
     };
     /// A popover that lives INSIDE a dialog (a settings dropdown, a colour
     /// picker): part of the conversation, not a rival for the window. It
-    /// holds no lane and clears none, so the dialog it belongs to stays open
-    /// while it is up — and it coexists with every other surface, because
-    /// its dismissal is already handled by outside-press hit-testing.
+    /// holds no lane and clears none, so its dialog stays open while it is
+    /// up; dismissal there is outside-press hit-testing, not lanes.
     pub const IN_DIALOG: Self = Self {
         occupies: Lanes::NONE,
         displaces: Lanes::NONE,
@@ -117,9 +110,8 @@ struct Member {
 /// The registry of overlays that participate in lane arbitration.
 ///
 /// Provided once by the app root, so both pages — and anything portaled to
-/// `<body>` — share one table. Without the context (a component mounted in
-/// isolation, a host test) every surface still works, it just arbitrates
-/// nothing, exactly as it did before this module existed.
+/// `<body>` — share one table. Without the context every surface still works,
+/// it just arbitrates nothing, exactly as it did before this module existed.
 #[derive(Clone, Copy)]
 pub struct OverlayBoard {
     members: RwSignal<Vec<Member>>,
@@ -138,8 +130,7 @@ impl Default for OverlayBoard {
 impl OverlayBoard {
     /// Put `open` under `policy`, for as long as the caller's reactive owner
     /// lives: the registration is dropped in `on_cleanup`, so an overlay that
-    /// unmounts (a route change, a `<Show>` branch) never leaves a member whose
-    /// signal nobody reads.
+    /// unmounts never leaves a member whose signal nobody reads.
     pub fn register(self, policy: OverlayPolicy, open: RwSignal<bool>) {
         let token = self.next_token.get_untracked();
         self.next_token.set(token.wrapping_add(1));
@@ -153,8 +144,7 @@ impl OverlayBoard {
 
         // Arbitrate on the STATE, not on the trigger: any write that lands the
         // overlay as open clears its collision set. Effects are deferred, so a
-        // cascade (menu closes the modal, the modal's own effect then finds
-        // itself closed and clears nothing) settles in one batch.
+        // cascade settles in one batch.
         Effect::new(move |_| {
             if open.get() {
                 self.dismiss(token, policy.displaces);
@@ -195,7 +185,7 @@ impl OverlayBoard {
 ///
 /// Called from a component body (where the reactive owner lives). Outside the
 /// app root there is no board, and the surface degrades to "arbitrates
-/// nothing", which is what it did before this module.
+/// nothing".
 pub fn use_overlay_lane(open: RwSignal<bool>, policy: OverlayPolicy) {
     if let Some(board) = use_context::<OverlayBoard>() {
         board.register(policy, open);
@@ -238,10 +228,9 @@ mod tests {
 
     #[test]
     fn the_opt_out_policy_collides_with_nothing() {
-        // This is what a caller passes to `MenuPopover`'s `policy` prop when a
-        // surface is genuinely a peer of the chrome rather than a competitor
-        // — `OverlayPolicy::IN_DIALOG` in its named form. The literal spells
-        // the same thing out, so the two can never drift apart.
+        // What a caller passes to `MenuPopover`'s `policy` prop for a surface
+        // that is a peer of the chrome rather than a competitor. The literal
+        // spells the named form out, so the two can never drift apart.
         let coexist = OverlayPolicy {
             occupies: Lanes::default(),
             displaces: Lanes::default(),

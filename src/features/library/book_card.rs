@@ -1,9 +1,9 @@
-//! One book on the shelf: a cover in a frame, a title, and the two things a library needs
-//! that a recents list never did — a drag handle, and a way back when the address the book
-//! points at dies.
+//! One book on the shelf: a cover in a frame, a title, a drag handle, and a
+//! way back when the address the book points at dies.
 //!
-//! The cover sits in a frame (`.book-cover-wrap` in `styles/components/library/grid.css`)
-//! rather than carrying its own shadow, spine gradient and fore-edge.
+//! The cover sits in a frame (`.book-cover-wrap` in
+//! `styles/components/library/grid.css`) rather than carrying its own shadow,
+//! spine gradient and fore-edge.
 
 use leptos::prelude::*;
 
@@ -25,11 +25,11 @@ use crate::state::reader::DEFAULT_PAGE_ASPECT;
 pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
-
     let id = book.id.clone();
     let facts = book_facts(state, &id);
 
-    // Clamped so a pathological page cannot break the grid; falls back to 3:4 portrait.
+    // Clamped so a pathological aspect cannot break the grid; falls back to
+    // 3:4 portrait.
     let aspect = move || {
         let Some(f) = facts.get() else {
             return DEFAULT_PAGE_ASPECT;
@@ -53,9 +53,8 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     });
     let check_id = id.clone();
 
-    // Opening names the ROW, not its address: the library can hold two rows of one file, and the
-    // address cannot say which of them the reader clicked. The menu's missing flag is read when the
-    // menu is ASKED, because that row is exactly the one a background measurement can change.
+    // Opening names the row, not its address: the library can hold two rows
+    // of one file, and the address cannot say which was clicked.
     let entry = EntryDescriptor {
         id: id.clone(),
         vocab: SeamVocab::GridCard,
@@ -185,9 +184,10 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                                 aria-label="Find this book again"
                                 on:click=move |ev: leptos::ev::MouseEvent| {
                                     ev.stop_propagation();
-                                    // The guarded door: a reader-page open jumps straight to
-                                    // the picker, the library raises the sheet — one function
-                                    // owns which, so the card and the menu cannot differ.
+                                    // One function owns which door an open
+                                    // takes (picker from the reader, sheet
+                                    // from the library), so the card and the
+                                    // menu cannot differ.
                                     ask_relink(state, at.clone());
                                 }
                             >

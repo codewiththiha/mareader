@@ -1,20 +1,16 @@
 //! The modal sheet's chrome: one backdrop, one panel, one lane registration
 //! and one Escape rule, in one place.
 //!
-//! Every sheet in the app — the folder import, the removal receipt, the
-//! name collision's question — used to hand-roll the same four things: the
-//! dimmed fixed backdrop that closes on a click, the rounded panel that stops
-//! the click from reaching it, the overlay lane's arbitration (one modal at a
-//! time, and a menu replaces it rather than stacking under it) and the shared
-//! Escape rule that peels one layer at a time. Four copies of one contract is
-//! four places a sheet can quietly differ about how it closes — and a sheet
-//! that closes differently from its siblings is a sheet the reader has to
-//! relearn.
+//! Every sheet used to hand-roll the same four things: the dimmed backdrop
+//! that closes on a click, the panel that stops the click from reaching it,
+//! the overlay lane's arbitration and the Escape rule that peels one layer
+//! at a time. Four copies of one contract is four places a sheet can quietly
+//! differ about how it closes — and a sheet that closes differently from its
+//! siblings is one the reader has to relearn.
 //!
-//! What is NOT here is the sheet's own face: its header, body and footer are
-//! the children, because those genuinely differ — a receipt's heading carries
-//! a cover, an import's is a sentence. The panel is a flex column with a
-//! scrollable middle, which is the shape all of them already were.
+//! The sheet's own face is not here: header, body and footer are the
+//! children, because those genuinely differ. The panel is a flex column with
+//! a scrollable middle, the shape all of them already were.
 
 use leptos::children::ChildrenFn;
 use leptos::prelude::*;
@@ -26,7 +22,7 @@ use super::lanes::{OverlayPolicy, use_overlay_lane};
 #[component]
 pub fn ModalShell(
     /// Whether the sheet is up. The lane registry and the Escape rule both
-    /// read this signal, and the backdrop's click writes it — a sheet whose
+    /// read this signal and the backdrop's click writes it — a sheet whose
     /// closing means more than "not open" (the conflict sheet's payload has
     /// to go with it) watches the signal in an effect of its own.
     open: RwSignal<bool>,

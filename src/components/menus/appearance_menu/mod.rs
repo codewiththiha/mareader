@@ -3,20 +3,16 @@
 //! Dismissal rules (owned by the shared window-aware `Popover`):
 //! - Outside-click and Escape close it.
 //! - Exclusivity with every other floating surface is NOT a side effect of that
-//!   outside press. It used to be — a press on another toolbar trigger landed
-//!   outside this root, so this popover closed and then the other opened — and
-//!   that story only ever held menu-to-menu: a modal is not a press target, and
-//!   a trigger under a modal's backdrop is still clickable, so this menu and the
-//!   settings modal could end up open at once. `MenuPopover` now registers this
-//!   popover's open signal with the overlay board
+//!   outside press: a modal is not a press target, and a trigger under a modal's
+//!   backdrop is still clickable, so press-driven closing once left this menu and
+//!   the settings modal open at once. `MenuPopover` registers this popover's open
+//!   signal with the overlay board
 //!   ([`crate::components::primitives::overlay::lanes`]) as
 //!   [`OverlayPolicy::MENU`][crate::components::primitives::overlay::lanes::OverlayPolicy],
 //!   and the board evicts whichever surface loses. Nothing here does that work.
-//! - NOTHING inside closes it. The old menu closed on theme selection, which
-//!   made sense when a theme was one click and you were done. It is actively
-//!   wrong now: choosing a preset and then nudging its tint is the normal
-//!   workflow, and a popover that vanished on the first click would make that
-//!   impossible. Every control here is live-preview, so staying open IS the
+//! - NOTHING inside closes it. Choosing a preset and then nudging its tint is the
+//!   normal workflow, and a popover that vanished on the first click would make
+//!   that impossible. Every control here is live-preview, so staying open IS the
 //!   feedback loop.
 //!
 //! The panel scrolls and is clamped/flipped by the Popover, so it can never
@@ -30,11 +26,10 @@
 //! ([`ChromeSurface`], the shell controller's name for the route) and gates
 //! the one section that is a document's business — page texture paints the
 //! PDF's paper bitmaps, so it shows on the reader surface and only while a
-//! raster document is the one open: the same two facts the settings modal's
-//! Paper section gates itself on (`crate::components::settings::paper`). The
-//! shelf has no page to texture; a reflowable document paints its paper from
-//! the theme tokens. Mode, tint, presets and grain are the window's own and
-//! show everywhere.
+//! raster document is the one open (the same two facts the settings modal's
+//! Paper section gates itself on). The shelf has no page to texture; a
+//! reflowable document paints its paper from the theme tokens. Mode, tint,
+//! presets and grain are the window's own and show everywhere.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -52,9 +47,9 @@ use reader_core::settings::Settings;
 /// A structural appearance change (base mode, texture mode, grain mode):
 /// flush any slider scrub still pending so the values the reader was just
 /// dialling land FIRST, then apply the change and mark the appearance dirty
-/// for rebake/persist. Every section's option buttons go through here —
-/// the flush preamble must not be re-typed per call site, or one forgotten
-/// copy silently drops the reader's in-flight dial.
+/// for rebake/persist. Every section's option buttons go through here — the
+/// flush preamble must not be re-typed per call site, or one forgotten copy
+/// silently drops the reader's in-flight dial.
 pub(crate) fn update_appearance(state: AppState, change: impl FnOnce(&mut Settings)) {
     flush_appearance_commit();
     state.settings.update(|s| {

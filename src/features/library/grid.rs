@@ -1,7 +1,7 @@
 //! The grid: the folders at this level, then the books, then the add card.
 //!
-//! One CSS grid holds all three, and a folder is a cell of it exactly like a book's card is —
-//! which is the whole of what makes the library nestable.
+//! One CSS grid holds all three, and a folder is a cell of it exactly like a
+//! book's card — which is what makes the library nestable.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -25,9 +25,9 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
     let columns = Signal::derive(move || state.library.view.with(|v| v.columns_token()));
     let grid_ref: NodeRef<html::Div> = NodeRef::new();
 
-    // Read the computed track count and hand it to the view, so the stepper's `+` starts from what
-    // the shelf is showing (5 → 6) rather than from 1. The write cannot re-layout: `auto_fit` is
-    // deliberately no part of `columns_token`.
+    // Report the computed track count so the stepper's `+` starts from what
+    // the shelf shows (5 → 6) rather than from 1. The write cannot re-layout:
+    // `auto_fit` is deliberately no part of `columns_token`.
     Effect::new(move |_| {
         let Some(node) = grid_ref.get() else {
             return;
@@ -50,7 +50,9 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
             if count == 0 {
                 return;
             }
-            // The clamp is the same one [`LibraryView::report_auto_fit`] applies, because a measurement that clamped one way and a report that clamped another would never compare equal and would write on every resize.
+            // The same clamp [`LibraryView::report_auto_fit`] applies: a
+            // measurement clamped one way and a report clamped another would
+            // never compare equal and would write on every resize.
             let fit = LibraryView::clamped_fit(u8::try_from(count).unwrap_or(COLUMNS_MAX));
             if view.with_untracked(|v| v.auto_fit) != fit {
                 view.update(|v| v.report_auto_fit(fit));
@@ -78,8 +80,8 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
                     }
                     Row::Link { id, target, .. } => {
                         let to_shelf = library_core::id::is_shelf(&target);
-                        // Read back by id: a keyed card is not re-created when the row's
-                        // name changes, so the captured one would go stale.
+                        // Read back by id: a keyed card is not re-created
+                        // when the row's name changes.
                         let name = state.library.row_name_signal(&id);
                         view! { <LinkCard state=state id=id name=name to_shelf=to_shelf /> }.into_any()
                     }

@@ -7,10 +7,9 @@
 //!   * A drag that STARTED inside the window (a text selection, a page image):
 //!     both the DOM and Tauri report it as entering, and the window's
 //!     `dragstart`/`dragend` pair is what tells the two apart — while it is open
-//!     every enter is ignored. The library's own moves are not in that list and
-//!     never reach it: a book being filed rides pointer events end to end
-//!     (`crate::features::library::dnd`), so it raises no DOM `dragstart` for this
-//!     to stand aside from and cannot be mistaken for a document arriving.
+//!     every enter is ignored. The library's own moves never reach it: a book
+//!     being filed rides pointer events end to end (`crate::features::library::dnd`),
+//!     so it raises no DOM `dragstart` and cannot be mistaken for a document arriving.
 //!   * A drag of something else (a PNG, a folder, a URL): the DOM drag names
 //!     its items' kinds and MIME types up front, Tauri names the paths, and
 //!     each is checked against `reader_core::format` — the one registry of
@@ -142,11 +141,10 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
 /// Whether the app is looking at the library rather than at a document.
 ///
 /// Read from the document status and not from the location, because the status IS
-/// the route: `crate::app::routes` navigates to `/reader` when a document is
-/// ready and back to `/` when it is not, so anything short of ready is the
-/// library page. Asking the router instead would mean a hook with no reactive
-/// owner to belong to, from inside a Tauri listener whose closure outlives every
-/// owner the app has.
+/// the route: the app navigates to `/reader` when a document is ready and back
+/// to `/` when it is not, so anything short of ready is the library page. Asking
+/// the router instead would mean a hook with no reactive owner to belong to, from
+/// inside a Tauri listener whose closure outlives every owner the app has.
 fn on_library_page(state: AppState) -> bool {
     state.reader.document.status.get_untracked() != DocStatus::Ready
 }

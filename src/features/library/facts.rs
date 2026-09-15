@@ -1,9 +1,9 @@
-//! The facts about a book that a shelf surface paints, read back out of the library by id on the
-//! frame they are asked for.
+//! The facts about a book that a shelf surface paints, read back out of the
+//! library by id on the frame they are asked for.
 //!
-//! A card and a row are keyed by id, and a keyed row is NOT re-created when its content changes
-//! — a startup measurement marking the book missing, a relink moving its address, a rename, a
-//! fold merging a twin into it — so every fact that can move is read here rather than captured.
+//! A keyed row is not re-created when its content changes — a measurement
+//! marking the book missing, a relink, a rename, a fold — so every fact that
+//! can move is read here rather than captured.
 
 use leptos::prelude::*;
 
@@ -14,7 +14,9 @@ use crate::state::AppState;
 
 #[derive(Clone)]
 pub(crate) struct BookFacts {
-    /// The line a card falls back to when a title the document supplied gives the reader no way to tell two books called "Report" apart — and the key the cover cache answers to, which is why a relink has to move it.
+    /// The fallback line when a document-supplied title cannot tell two books
+    /// called "Report" apart — and the cover cache's key, which is why a relink
+    /// has to move it.
     pub path: String,
     pub title: String,
     pub author: Option<String>,
@@ -30,7 +32,9 @@ impl BookFacts {
     }
 }
 
-/// One derive rather than one per field: the facts all move together, and a surface that read six signals would subscribe six times to one list. `None` is the beat between a removal and the list catching up.
+/// One derive rather than one per field: the facts move together, and six
+/// signals would subscribe six times to one list. `None` is the beat between
+/// a removal and the list catching up.
 pub(crate) fn book_facts(state: AppState, book_id: &str) -> Signal<Option<BookFacts>> {
     let id = book_id.to_string();
     Signal::derive(move || {

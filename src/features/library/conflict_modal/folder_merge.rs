@@ -1,6 +1,7 @@
-//! The compact per-file question a folder merge asks: two names, three answers, and the switch
-//! that gives every waiting question the same answer in one click. Described rather than drawn:
-//! the sheet is [`ConflictSheet`](crate::features::library::conflict_modal)'s.
+//! The compact per-file question a folder merge asks: two names, three
+//! answers, and the switch that answers every waiting question at once.
+//! Described rather than drawn — the sheet is
+//! [`ConflictSheet`](crate::features::library::conflict_modal)'s.
 
 use leptos::prelude::*;
 
@@ -21,7 +22,9 @@ pub(super) fn describe_folder_merge(state: AppState, ask: &ConflictAsk) -> Sheet
     let incoming = ask.arrival.name.clone();
     let existing = ask.existing_name.clone();
     let subtitle = more_waiting(format!("Into “{existing}”"), waiting);
-    // *As new* of the very file the row reads would be a second row of one linked file, which the library does not make. A different file wearing the same name keeps all three, and so does a STORED folder.
+    // *As new* of the very file the row reads would be a second row of one
+    // linked file, which the library does not make. A different file wearing
+    // the same name keeps all three, and so does a stored folder.
     let twin = ask.kind.reads_in_place()
         && state.library.books.with_untracked(|rows| {
             ask.arrival.file.as_ref().is_some_and(|file| {

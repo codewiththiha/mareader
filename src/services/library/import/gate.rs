@@ -1,6 +1,6 @@
-//! The read-at-place gate in front of a folder import: the family questions a pick of
-//! ground answers BEFORE any sheet or walk. The stored arrival asks the family nothing
-//! and goes straight to the level's own name question.
+//! The read-at-place gate in front of a folder import: the family questions
+//! a pick of ground answers before any sheet or walk. A stored arrival asks
+//! the family nothing and goes straight to the level's name question.
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -20,13 +20,11 @@ use crate::services::library::folder_label;
 use crate::state::AppState;
 use crate::time::now_ms;
 
-/// What the folder sheet's answer decided about the run's root, before the run. The default
-/// is the run nobody asked about: mint the folder's root shelf under the folder's own name.
-/// A collision at the level changes that, and the change is a value rather than a branch at
-/// six call sites.
-/// A re-pick of ground a tree already covers: the shelf the pick lit, by the name the note
-/// will show it under. A value rather than the `(String, String)` it was, because a
-/// positional pair's meaning only lived at the call sites.
+/// The shelf a run continues onto when the gate already knows it: a re-pick
+/// of ground a tree covers lights the shelf the pick landed on. The default
+/// run mints the folder's root shelf under the folder's own name; a collision
+/// or a cover changes that through this value rather than a branch at six
+/// call sites.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Continuation {
     pub shelf_id: String,
@@ -47,15 +45,15 @@ pub(crate) struct RootPlan {
     pub into: Option<String>,
     pub continuation: Option<Continuation>,
     pub fold: Option<Fold>,
-    /// The rung of the tree this run walks that the reader's pick answered for — the ground the
-    /// sheet's answers stand for. `""` when the pick IS that tree's own ground, and when a fold
-    /// gives the answers a rung to live on: the run reads the fold's rung then.
+    /// The rung of this run's tree that the reader's pick answered for — the
+    /// ground the sheet's answers stand for. `""` when the pick is the tree's
+    /// own ground; a fold's rung takes over when there is one.
     pub rung: String,
 }
 
 impl RootPlan {
-    /// The rung of the tree this run walks that the reader's pick answered for: the rung a fold
-    /// takes the pick in on, else the ground the gate read off the pick itself.
+    /// The rung the pick answered for: the fold's rung when the pick folds
+    /// into a tree, else the ground the gate read off the pick itself.
     pub(super) fn answered_rung(&self) -> String {
         match &self.fold {
             Some(Fold { rel, .. }) => rel.clone(),
@@ -64,9 +62,10 @@ impl RootPlan {
     }
 }
 
-/// The dock owns the feedback from here on. A folder whose NAME the root level already
-/// holds is a question before it is an import — two shelves of one name on one level are two
-/// doors a reader cannot tell apart. The question goes to the family gate first.
+/// The dock owns the feedback from here on. A folder whose name the root
+/// level already holds is a question before it is an import — two shelves of
+/// one name are two doors a reader cannot tell apart — and a read-at-place
+/// pick answers the family questions first.
 pub fn import_folder(
     state: AppState,
     root: String,
@@ -78,9 +77,10 @@ pub fn import_folder(
     }
     if opts.mode().reads_in_place() {
         if let Some(covered) = covered_shelf(state, &root) {
-            // The walk runs on the reader's ask, on the TREE's ledger and root, so a rung cannot mint a
-            // second instance of itself and the books a removal logged come back wherever in the tree
-            // they stood. The continuation names the shelf the pick meant.
+            // The walk runs on the tree's ledger and root, so a rung cannot
+            // mint a second instance of itself and removed books come back
+            // wherever in the tree they stood. The continuation names the
+            // shelf the pick meant.
             let folders = state.library.folders.get_untracked();
             let fold = folders
                 .iter()
@@ -106,10 +106,11 @@ pub fn import_folder(
             );
             return;
         }
-        // Not covered, but the ground may still be a family's: the rung the pick names was deleted,
-        // or departed as a copy. An import of a folder is the reader wanting it BACK, and back is the
-        // rung its directory names in the tree that covers it — while that tree's own root shelf
-        // stands, because a pick under a tree the reader has taken out is a tree of its own.
+        // Not covered, but the ground may still be a family's: the rung the
+        // pick names was deleted or departed as a copy. An import of a folder
+        // is the reader wanting it back, and back is the rung its directory
+        // names in the tree that covers it — while that tree's root shelf
+        // stands; a pick under a taken-out tree is a tree of its own.
         let fold = {
             let folders = state.library.folders.get_untracked();
             let shelves = state.library.shelves.get_untracked();
@@ -158,22 +159,25 @@ pub fn import_folder(
     proceed_folder(state, root, opts, RootPlan::default());
 }
 
-/// A value rather than a tuple at the call site: the gate's covered branch reconciles on `tree_root` and lights `shelf_id`.
+/// A named value rather than a tuple: the covered branch reconciles on
+/// `tree_root` and lights `shelf_id`.
 pub(super) struct Covered {
     pub shelf_id: String,
     pub shelf_name: String,
-    /// The ledger row of the tree that covers the ground. A tracking decision is written at THIS
-    /// and never at `tree_root`, which is the directory the run reconciles: a row is found by id.
+    /// The ledger row of the tree that covers the ground. Tracking is written
+    /// at this id, never at `tree_root` — that is the directory the run
+    /// reconciles, and a row is found by id.
     pub tree_id: String,
     pub tree_root: String,
-    /// `""` when the ground IS the tree's root, which is what makes the sheet's switch a decision about this rung rather than about the whole import.
+    /// `""` when the ground is the tree's root, which makes the sheet's
+    /// switch a decision about this rung rather than the whole import.
     pub rel: String,
 }
 
-/// What a ground the library already reads answers the import sheet with: the tree covering the
-/// ground the reader picked, the rung that ground IS or stands on in it, that rung's tracking —
-/// and the options the row was imported with, the shelf shape among them, so the sheet opens on
-/// the state the folder is in rather than on whatever the last import was asked for.
+/// What ground the library already reads answers the import sheet with: the
+/// covering tree, the rung the ground is or stands on, that rung's tracking,
+/// and the options the row was imported with (shape included) — so the sheet
+/// opens on the folder's state rather than the last import's answers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GroundWatch {
     pub tree_id: String,
@@ -182,14 +186,15 @@ pub struct GroundWatch {
     pub opts: FolderOpts,
 }
 
-/// The rung a pick of `root` answers for, and the decision that rung carries now — the state the
-/// sheet's switch opens seeded with. A tree whose shelf stands on the ground answers with that
-/// rung, and a tree that has not walked the ground in yet answers with the rung the directory
-/// names for it, because the run the sheet starts folds the picked folder in as exactly that rung.
-/// `None` when no ledger row answers for the ground: nothing there is tracking it, so the switch
-/// writes the landing folder's own root.
+/// The rung a pick of `root` answers for and its current tracking decision —
+/// the state the sheet's switch opens seeded with. A tree whose shelf stands
+/// on the ground answers with that rung; a tree that has not walked it in yet
+/// answers with the rung the directory will fold onto. `None` when no ledger
+/// row answers for the ground: nothing tracks it, so the switch writes the
+/// landing folder's own root.
 pub fn ground_tracking(state: AppState, root: &str) -> Option<GroundWatch> {
-    // One snapshot answers both, so the rung is never read off a tree list the family answer missed.
+    // One snapshot answers both, so the rung is never read off a tree list
+    // the family answer missed.
     let folders = state.library.folders.get_untracked();
     let shelves = state.library.shelves.get_untracked();
     let (tree_id, rung) = match covered_of(&folders, &shelves, root) {
@@ -197,9 +202,9 @@ pub fn ground_tracking(state: AppState, root: &str) -> Option<GroundWatch> {
         None => shelves_ops::family_for(&folders, &shelves, root)?,
     };
     let row = folder_ops::find(&folders, &tree_id)?;
-    // The answers the sheet opens on are the row's, except the shelf shape: the structure question
-    // is answered for the GROUND the reader picked, and a rung a re-import moved answers with the
-    // shape it was moved into from then on.
+    // The sheet opens on the row's answers except the shape: the structure
+    // question belongs to the picked ground, and a rung a re-import moved
+    // answers with the shape it was moved into.
     let mut opts = row.opts.clone();
     opts.groups = row.shape_at(&rung);
     Some(GroundWatch {
@@ -210,9 +215,9 @@ pub fn ground_tracking(state: AppState, root: &str) -> Option<GroundWatch> {
     })
 }
 
-/// The write the sheet owes when a tree covers the ground its switch answered about: the rung the
-/// pick names rather than the tree's root, because the tree's other rungs keep their own answers.
-/// Answers whether the tree's decision changed.
+/// The write the sheet owes when a tree covers the ground its switch answered
+/// about — at the rung the pick names, not the tree's root, so the other
+/// rungs keep their own answers. Answers whether the decision changed.
 pub(super) fn write_rung_tracking(folders: &mut [WatchedFolder], watch: &GroundWatch) -> bool {
     let Some(folder) = folder_ops::find_mut(folders, &watch.tree_id) else {
         return false;
@@ -224,9 +229,9 @@ pub(super) fn write_rung_tracking(folders: &mut [WatchedFolder], watch: &GroundW
     true
 }
 
-/// The walk a new decision owes is the import's own: every door into [`import_folder`] goes on to a
-/// run on that ground, which reads the tree as this write left it — so the write owes no walk of
-/// its own.
+/// The walk a new decision owes is the import's own: every door into
+/// [`import_folder`] goes on to a run that reads the tree as this write left
+/// it, so the write owes no walk of its own.
 fn set_rung_tracking(state: AppState, watch: &GroundWatch) {
     let mut changed = false;
     state.library.folders.update(|folders| {
@@ -243,15 +248,17 @@ pub(super) fn covered_shelf(state: AppState, root: &str) -> Option<Covered> {
     covered_of(&folders, &shelves, root)
 }
 
-/// A folder's own tree answers for it before a tree it stands inside — the empty rung wins —
-/// because the folder's own root shelf is the door the reader meant. Only READ-AT-PLACE trees
-/// answer here: their shelves are the OS folders themselves.
+/// A folder's own tree answers for it before a tree it stands inside — the
+/// empty rung wins — because its own root shelf is the door the reader meant.
+/// Only read-at-place trees answer here: their shelves are the OS folders
+/// themselves.
 pub(super) fn covered_of(
     folders: &[WatchedFolder],
     shelves: &[Shelf],
     root: &str,
 ) -> Option<Covered> {
-    // Both lookups below are guaranteed to land, so the `?` is a shape rather than a second rule.
+    // Both lookups are guaranteed to land; the `?` is a shape, not a second
+    // rule.
     let coverage = Governance::new(folders, shelves).covering(root)?;
     let shelf = shelves_ops::find(shelves, &coverage.shelf_id)?;
     let folder = folder_ops::find(folders, &coverage.folder_id)?;
@@ -264,11 +271,11 @@ pub(super) fn covered_of(
     })
 }
 
-/// The member standing outside the tree: a folder inside `folder`'s ground that reads itself in
-/// place, which the reader made by importing that subfolder on its own — a rung removed first, or
-/// the subfolder picked before the folder above it. The pick of that folder is the ask that takes
-/// it back in, and only while the shelf the member's row is kept on still stands: a shelf that went
-/// is an answer with nothing to move.
+/// The member standing outside the tree: a read-at-place folder inside
+/// `folder`'s ground, made by importing that subfolder on its own — a rung
+/// removed first, or the subfolder picked before the folder above it. Only
+/// while the shelf the member's row is kept on still stands: a shelf that
+/// went is an answer with nothing to move.
 pub(super) fn displaced_member(
     state: AppState,
     folder: &WatchedFolder,
@@ -290,7 +297,9 @@ pub(super) fn displaced_member(
         {
             continue;
         }
-        // By its map first and by its kind second: the map is what its walk files onto, and a map that lost the pointer still leaves a shelf the folder owns.
+        // By its map first, by its kind second: the map is what its walk
+        // files onto, and a map that lost the pointer still leaves a shelf
+        // the folder owns.
         let Some(shelf_id) = other
             .shelf_map
             .get("")
@@ -329,15 +338,18 @@ pub(super) struct DisplacedMember {
     pub(super) shelf_id: String,
 }
 
-/// Bounded by the list rather than by the walk finding its own tail, so a blob that already carries a cycle answers "no" rather than spinning. The chain is `ancestors`' walk (`library_core::shelf::tree`), not a hand-rolled one: one loop that the breadcrumb already owns.
+/// Bounded by the list rather than by the walk finding its own tail, so a
+/// blob carrying a cycle answers "no" rather than spinning. The chain is
+/// `ancestors`' walk (`library_core::shelf::tree`), not a hand-rolled one.
 fn hangs_inside(shelves: &[Shelf], shelf_id: &str, folder_id: &str) -> bool {
     shelves_ops::ancestors(shelves, shelf_id)
         .iter()
         .any(|parent| parent.kind.folder_id() == Some(folder_id))
 }
 
-/// The rungs a folded member brings: every shelf the folded folder owns, keyed the way the tree
-/// that receives it keys its own — the rung the member's directory names, and the ones below it.
+/// The rungs a folded member brings: every shelf the folded folder owns,
+/// keyed the way the receiving tree keys its own — the rung the member's
+/// directory names, and the ones below it.
 fn member_rungs(shelves: &[Shelf], gone_id: &str, rel: &str) -> Vec<(String, String)> {
     shelves
         .iter()
@@ -357,15 +369,16 @@ fn member_rungs(shelves: &[Shelf], gone_id: &str, rel: &str) -> Vec<(String, Str
         .collect()
 }
 
-/// The rungs a run lands on when a member stands outside the tree it belongs to, seeded into the
-/// run's own map before the walk: the walk then places the member's ground on the shelf that
-/// already stands for it instead of minting a rung beside each one. `run_fold` asks the same
-/// question of the same findings when the walk is done, and folds the member's row behind it.
+/// The rungs a run lands on when a member stands outside the tree it belongs
+/// to, seeded into the run's map before the walk: the walk then places the
+/// member's ground on the shelf that already stands for it instead of minting
+/// a rung beside each one. `run_fold` asks the same question after the walk
+/// and folds the member's row behind it.
 ///
-/// Nothing is seeded for a row that keeps no tree — a copying row's shelves are the library's own —
-/// nor for one that keeps its whole ground on a single shelf: the rungs the member stands on are
-/// not rungs of that tree, so its books come onto the root rung with everything else, the
-/// flattening the fold runs for the member it takes in (`flatten_rungs`).
+/// Nothing is seeded for a copying row (its shelves are the library's own) or
+/// for a row keeping its whole ground on one shelf: the member's rungs are
+/// not rungs of that tree, so its books come onto the root rung — the
+/// flattening the fold runs (`flatten_rungs`).
 pub(super) fn seed_member_rungs(state: AppState, folder: &mut WatchedFolder, found: &[FoundFile]) {
     if !folder.mode().reads_in_place() {
         return;
@@ -373,8 +386,9 @@ pub(super) fn seed_member_rungs(state: AppState, folder: &mut WatchedFolder, fou
     let Some(member) = displaced_member(state, folder, found) else {
         return;
     };
-    // A member's ground answers with the shape AT it: where the tree keeps that ground on one
-    // shelf there is no rung for the member's own shelves to come back onto.
+    // A member's ground answers with the shape at it: where the tree keeps
+    // that ground on one shelf there is no rung for the member's shelves to
+    // come back onto.
     if !folder.cuts(&member.rel) {
         return;
     }
@@ -384,16 +398,15 @@ pub(super) fn seed_member_rungs(state: AppState, folder: &mut WatchedFolder, fou
     }
 }
 
-/// Put a displaced member back on the rung its directory names, and fold the folder that was
-/// reading it into the tree that contains it: one ground is read by one folder from here on.
-/// Three writes, in the order that keeps them honest, and the answer is the shelf the member sat
-/// on: the rung a tree that cuts one is put back on, the one shelf a tree that cuts none keeps it
-/// on.
+/// Put a displaced member back on the rung its directory names and fold the
+/// folder that was reading it into the tree that contains it: one ground, one
+/// reader from here on. Three writes, in the order that keeps them honest;
+/// the answer is the shelf the member sat on.
 ///
-/// `run_root` is the root the calling run holds the claim for, when the call comes from one: a tree
-/// ANOTHER run is walking is the one fold to refuse, because that run's clone of the ledger lands
-/// after this write and drops it — while the calling run's own tree is the row it is already
-/// writing, and the fold is the last thing that writes it.
+/// `run_root` is the root the calling run holds the claim for: a tree another
+/// run is walking is the one fold to refuse, because that run's clone of the
+/// ledger lands after this write and drops it. The calling run's own tree is
+/// the row it is already writing, and the fold writes it last.
 pub(crate) fn reclaim_rung(
     state: AppState,
     tree_id: &str,
@@ -409,21 +422,24 @@ pub(crate) fn reclaim_rung(
         let gone = folder_ops::find(folders, gone_id)?.clone();
         Some((tree, gone))
     })?;
-    // Read before anything is written, because the answer is about the shelves that are standing and not about the ones this move is going to mint.
+    // Read before anything is written: the answer is about the shelves
+    // standing, not the ones this move mints.
     let rungs = state
         .library
         .shelves
         .with_untracked(|shelves| member_rungs(shelves, gone_id, rel));
-    // A shelf that went while the note was up is an answer with nothing to move; so is a tree a
-    // different run is walking, whose clone of the ledger lands after this write.
+    // A shelf that went while the note was up is an answer with nothing to
+    // move; so is a tree a different run is walking, whose ledger clone lands
+    // after this write.
     let foreign_walk = root_is_claimed(&tree.root) && run_root != Some(tree.root.as_str());
     if !rungs.iter().any(|(_, id)| id == shelf_id) || foreign_walk {
         return None;
     }
     let root = tree.root.clone();
-    // A ground the shape keeps on one shelf has no rung for the member's directory to become: the
-    // books come onto the rung that ground answers for and the shelves the member stood on go, so an
-    // adoption cannot cut a nested rung into an import that asked for none.
+    // Ground the shape keeps on one shelf has no rung for the member's
+    // directory to become: its books come onto the rung the ground answers
+    // for and its own shelves go, so an adoption cannot cut a nested rung
+    // into an import that asked for none.
     let seat = if tree.cuts(rel) {
         let parent = tree.shelf_chain_for(
             library_core::folder::parent_key(rel).unwrap_or(""),
@@ -528,7 +544,8 @@ pub(crate) fn reclaim_rung(
     Some(seat)
 }
 
-/// The half of [`import_folder`] that is the same whatever the folder sheet decided, and the half its answers call directly.
+/// The half of [`import_folder`] that is the same whatever the folder sheet
+/// decided, and the half its answers call directly.
 pub(crate) fn proceed_folder(
     state: AppState,
     root: String,

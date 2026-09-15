@@ -74,12 +74,10 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // strip's dominant page is whatever offset it last held, so the
     // scroll→page sync is told to stand down FIRST — before the page is
     // written, so no effect can observe the new page against the old strip.
-    // Every other reader of `page` (indicator, reading progress, thumbnails)
-    // sees the resume point from the start; nothing passes through a transient
-    // page 1.
-    //
-    // ALL of this lands BEFORE `status = Ready` flips the route, so the fresh
-    // mount reads a fully seeded state.
+    // Every other reader of `page` sees the resume point from the start;
+    // nothing passes through a transient page 1. ALL of this lands BEFORE
+    // `status = Ready` flips the route, so the fresh mount reads a fully
+    // seeded state.
     state.reader.viewer.awaiting_anchor.set(true);
     state.reader.viewer.page.set(resume);
     state.reader.viewer.scroll_top.set(0.0);
@@ -93,10 +91,10 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // that has no page to fit.
     let (startup_fit, scale) = enter::startup_scale(state, (page1.width, page1.height));
     state.reader.viewer.fit.set(startup_fit);
-    // Seeding the zoom state is correct HERE and nowhere else: this is the
-    // initial scale for a brand-new document, so there is no layout to
-    // animate from and nothing to anchor to. All three scales start in
-    // agreement, with no transition in flight.
+    // The zoom state is seeded HERE and nowhere else: the initial scale for a
+    // brand-new document, so there is no layout to animate from and nothing
+    // to anchor to. All three scales start in agreement, with no transition
+    // in flight.
     state.reader.viewer.zoom.initialize(scale);
 
     Seeded {

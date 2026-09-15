@@ -18,7 +18,9 @@ use crate::state::library::{CoverImage, CoverMap};
 use crate::state::AppState;
 use library_core::book::{Book, Row, book_rows};
 
-/// One number for both renders of the same art — the import queue's and the open pipeline's — because two widths would be two renders and a cache that misses on the other one.
+/// One width for both renders of the same art — the import queue's and the
+/// open pipeline's: two widths would be two renders and a cache that misses
+/// on the other one.
 pub(crate) const COVER_WIDTH: f64 = 240.0;
 
 pub const COVER_CAP: usize = 60;

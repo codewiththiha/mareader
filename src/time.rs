@@ -3,8 +3,8 @@
 //! Milliseconds since the epoch, which is the stamp on a book's join and its
 //! last read, on a tombstone, on a folder's last scan, and the seed of every
 //! id `library_core::id` mints. One function rather than one copy per module
-//! that needs a stamp: the copies were three already, and a clock is exactly
-//! the kind of rule that cannot be allowed to drift per caller.
+//! that needs a stamp: a clock is exactly the kind of rule that cannot be
+//! allowed to drift per caller.
 //!
 //! Off wasm the clock is inert rather than a panic: the wasm-bindgen stubs
 //! abort when called natively, and a stamp nobody persists is fine at zero.

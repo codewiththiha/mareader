@@ -1,17 +1,14 @@
-//! Book and shelf ids.
+//! Book, shelf and folder ids: a timestamp plus a counter, which is all the
+//! guarantee the library needs — ids must be stable across sessions and unique
+//! within one, never unpredictable or sortable across machines.
 //!
-//! An id has to be stable across sessions and unique across a library, but it
-//! never has to be unpredictable or sortable across machines, so a timestamp
-//! plus a counter is all the guarantee the library needs.
-//!
-//! The counter is the crate's own rather than the caller's, and that is a
-//! correctness rule: two folder imports run concurrently, and a seq derived
-//! from a list a task snapshotted before its own walk is the same number
-//! minted twice in one millisecond.
+//! The counter belongs to this crate, not the caller: two folder imports can
+//! run concurrently, and a seq derived from a caller's snapshot of a list is
+//! the same number minted twice in one millisecond.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-/// Relaxed ordering: the webview is single-threaded, so this only has to hand out distinct numbers.
+/// Relaxed ordering: the counter only has to hand out distinct numbers.
 static SEQ: AtomicU32 = AtomicU32::new(0);
 
 fn next_seq() -> u32 {
@@ -22,7 +19,6 @@ pub fn next_id(now_ms: u64) -> String {
     new_id(now_ms, next_seq())
 }
 
-/// One counter across the three kinds is one less thing two mints can disagree about.
 pub fn next_shelf_id(now_ms: u64) -> String {
     new_shelf_id(now_ms, next_seq())
 }
@@ -31,28 +27,21 @@ pub fn next_folder_id(now_ms: u64) -> String {
     new_folder_id(now_ms, next_seq())
 }
 
-/// The dock's run ids: the `t` prefix keeps them out of the book/shelf/folder namespaces the
-/// ledger and the shelves key by, and the same counter guarantees two runs minted in one
-/// millisecond never share a card.
+/// Import-run ids for the dock. The `t` prefix keeps them out of the
+/// book/shelf/folder namespaces the ledger and shelves key by.
 pub fn next_task_id(now_ms: u64) -> String {
     format!("t{now_ms:x}-{}", next_seq())
 }
 
-/// A monotonic per-run counter for "is this the same reveal as the last one": two reveals of
-/// one thing in a row must differ, or the second reads as a repeat of the first and notifies
-/// nobody.
+/// Monotonic nonce so two reveals of the same item in a row never compare
+/// equal and get dropped as a repeat.
 pub fn next_nonce(now_ms: u64) -> u64 {
-    // The millisecond is folded in for the same reason the seq exists: two nonces minted in
-    // one tick by different callers still have to differ, and the shared counter's order
-    // keeps the fold monotonic for the life of the session.
     now_ms.wrapping_mul(1_000).wrapping_add(u64::from(next_seq()))
 }
 
-/// One "has enough time passed" answer, so the cooldowns scattered through the app (a rescan
-/// per focus, a picker's just-closed grace) are one tested thing rather than a stamp and a
-/// subtraction at each site.
-///
-/// Not a static: the caller owns where the cooldown lives, this type only owns the rule.
+/// One tested "has enough time passed" rule shared by the app's cooldowns (a
+/// rescan per focus, a picker's just-closed grace). Not a static: the caller
+/// owns where the cooldown lives, this type only owns the rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cooldown {
     last_ms: Option<u64>,
@@ -64,8 +53,8 @@ impl Cooldown {
         Self { last_ms: None, span_ms }
     }
 
-    /// Whether `now` is past the span since the last arm — and arms itself when it is, so
-    /// asking is the whole of the protocol. A cooldown nobody armed holds nothing back.
+    /// Whether `now` is past the span since the last arm. Arms itself when it
+    /// is, so asking is the whole protocol; an unarmed cooldown holds nothing back.
     pub fn due(&mut self, now_ms: u64) -> bool {
         let due = match self.last_ms {
             None => true,
@@ -77,35 +66,33 @@ impl Cooldown {
         due
     }
 
-    /// Mark the span as running from `now` without asking anything: the picker's "just
-    /// closed" grace is armed by the close, not by a question.
+    /// Start the span at `now` without asking — the picker's just-closed grace
+    /// is armed by the close, not by a question.
     pub fn arm(&mut self, now_ms: u64) {
         self.last_ms = Some(now_ms);
     }
 
-    /// Whether `now` sits inside the span since the last arm — a question that changes
-    /// nothing, for the callers that ask repeatedly (the picker's grace is polled by every
-    /// focus the window gets; polling must not extend it).
+    /// Whether `now` sits inside the span since the last arm. Unlike [`Self::due`]
+    /// this never extends the span, for callers that poll (every window focus
+    /// polls the picker's grace).
     pub fn within(&self, now_ms: u64) -> bool {
         self.last_ms.is_some_and(|last| now_ms.saturating_sub(last) < self.span_ms)
     }
 }
 
-/// Whether a token is a SHELF's id: the letter prefix is what makes the kinds disjoint.
+/// Whether a token is a shelf id. The letter prefix is what keeps the id kinds disjoint.
 pub fn is_shelf(id: &str) -> bool {
     id.starts_with('s')
 }
 
-/// A fresh id: the millisecond it was minted at, plus a per-millisecond counter.
-///
-/// The explicit-seq form is public for the one mint that is deliberately
-/// deterministic, the `v1` migration ([`crate::blob::migrate::migrate_v1`]),
-/// which must produce the same ids if it ever runs twice over the same blob.
+/// Explicit-seq mint, public only for the `v1` migration
+/// ([`crate::blob::migrate::migrate_v1`]), which must be deterministic: running
+/// it twice over the same blob has to produce the same ids.
 pub fn new_id(now_ms: u64, seq: u32) -> String {
     format!("b{now_ms:011x}{seq:04x}")
 }
 
-/// Crate-private, because an id mints off this crate's counter or the next concurrent mint cannot be sure it differs.
+/// Crate-private: an id must mint off this crate's counter, or a concurrent mint cannot be sure it differs.
 fn new_shelf_id(now_ms: u64, seq: u32) -> String {
     format!("s{now_ms:011x}{seq:04x}")
 }

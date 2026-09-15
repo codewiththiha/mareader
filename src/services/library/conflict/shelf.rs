@@ -1,5 +1,5 @@
-//! The folder's own question, asked BEFORE the walk: the level already holds the NAME
-//! the arriving folder would wear.
+//! The folder's own question, asked before the walk: the level already holds
+//! the name the arriving folder would wear.
 
 use leptos::prelude::*;
 
@@ -69,7 +69,6 @@ pub fn answer_shelf(state: AppState, answer: Placement) {
     super::apply_placement(state, &placement, answer);
     cancel_shelf(state);
 }
-
 
 pub(super) fn as_new_shelf(state: AppState, _ask: &PlacementAsk) {
     let Some(pending) = state.library.shelf_conflict.ask.with_untracked(|a| a.clone()) else {

@@ -1,12 +1,14 @@
 //! The reading data a removal kept, waiting for the file it came from.
 //!
-//! Removing a book takes the app's own copy of its file with it — there is nothing left to read
-//! those bytes — but the marks a reader wrote in it, the place they stopped at and any name they
-//! gave it are theirs. So the removal sheet asks, and an answer of *keep* is written down here.
+//! Removing a book takes the app's own copy of its file with it, but the
+//! marks a reader wrote, the place they stopped at and any name they gave it
+//! are theirs: the removal sheet asks, and an answer of *keep* is written
+//! down here.
 //!
-//! A record cannot be keyed by the row it came from: the row is what went. It is keyed by the FILE,
-//! which is the one thing a later import of that book still has in common with it, and [`claim`]
-//! hands the best answer for a file to the import that brings it back.
+//! A record cannot be keyed by the row it came from — the row is what went —
+//! so it is keyed by the file, the one thing a later import still has in
+//! common with it. [`claim`] hands the best record for a file to the import
+//! that brings it back.
 
 use ai_core::gloss::GlossMark;
 use library_core::book::{Book, Fingerprint, stem_of};
@@ -18,36 +20,40 @@ use super::{StorageError, get, parse, set};
 
 const KEPT_KEY: &str = "pdfreader.kept.v1";
 
-/// How many removals' worth of reading data the app holds at once. A ceiling and not no ceiling:
-/// every removal adds, only an import of the same file takes away, and a store that only grows is
-/// a store that ends in a quota error with the reader's library in it.
+/// How many removals' worth of reading data the app holds. A ceiling,
+/// because every removal adds and only an import of the same file takes away:
+/// a store that only grows ends in a quota error with the reader's library in
+/// it.
 const KEPT_CAP: usize = 100;
 
-/// What a removal kept about one book, in enough of its own words to be recognised by the file
-/// that comes back.
+/// What a removal kept about one book, in enough of its own words to be
+/// recognised by the file that comes back.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeptBook {
-    /// The stem a later import is recognised by, derived the way every other name in the app is.
+    /// The stem a later import is recognised by, derived the way every other
+    /// name in the app is.
     ///
-    /// `None` when the library never knew which file the bytes came from — a copy whose provenance
-    /// was lost before this record was written. The copy's OWN name is `source`, which belongs to
-    /// the store and would answer for a reader's file that merely happens to share it, so such a
-    /// record is matched by its bytes alone.
+    /// `None` when the library never knew which file the bytes came from (a
+    /// copy whose provenance was lost). The copy's own name is `source`,
+    /// which belongs to the store and would answer for a reader's file that
+    /// merely shares it, so such a record is matched by its bytes alone.
     #[serde(default)]
     name: Option<String>,
-    /// The address the file was at: for a book the app copied, its SOURCE, because the copy's own
-    /// address is the store's and the import that follows is of the source file.
+    /// The address the file was at: for a copied book, its source — the
+    /// copy's own address is the store's, and the import that follows is of
+    /// the source file.
     address: String,
-    /// `None` for a book the library never measured: a migrated row still carrying `fp_pending`
-    /// holds a placeholder derived from its address, and this store would read the length of that
-    /// address as a file's size.
+    /// `None` for a book the library never measured: a placeholder is derived
+    /// from the address, and this store would read the address's length as a
+    /// file's size.
     #[serde(default)]
     fp: Option<Fingerprint>,
     #[serde(default)]
     format: Format,
-    /// The name the READER gave the book, and only that one. A title the app captured from the
-    /// document is captured again on the next open; a name a person typed is not.
+    /// The name the reader gave the book, and only that one: a title the app
+    /// captured from the document is captured again on the next open; a name a
+    /// person typed is not.
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
@@ -62,9 +68,9 @@ pub struct KeptBook {
     pub marks: Vec<GlossMark>,
 }
 
-/// How much of itself a file shares with a kept record, weakest first. The order is the order an
-/// import takes them in: the same bytes are the strongest thing two files can share, and a name
-/// on its own is the weakest answer the store accepts.
+/// How much of itself a file shares with a kept record, weakest first — the
+/// order an import takes them in: same bytes is the strongest thing two
+/// files can share, a name alone the weakest answer the store accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Confidence {
     /// The name and the kind agree and nothing else does.

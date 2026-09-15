@@ -1,34 +1,27 @@
 //! One gesture wrapper for a card: tap, hold and drag, decided once.
 //!
-//! A shelf card answers to three pointers at once — a tap opens, a hold starts
-//! a multi-select, a movement files the book somewhere else — and the three
-//! arrive as the same `pointerdown`. Handled separately (a click listener, a
-//! long-press primitive, the browser's own drag) they race: the hold completes
-//! and its exhaust click opens the book it was meant to select, or the press
-//! drifts two pixels and cancels a gesture the reader was still making.
+//! A tap opens, a hold starts a multi-select and a movement files the book
+//! elsewhere — and all three arrive as the same `pointerdown`. Handled
+//! separately they race: a completed hold's exhaust click opens the book it
+//! meant to select, or a two-pixel drift cancels a gesture still being made.
+//! So the mode is decided once and locked until release; the first of these
+//! wins and the others become unreachable:
 //!
-//! So the mode is decided ONCE and locked until the pointer is released. The
-//! first of these to happen wins and the other two are then unreachable:
-//!
-//!   * the hold timer fires → [`Mode::Hold`], and the click and the synthetic
-//!     contextmenu that follow it are swallowed;
-//!   * the pointer travels past [`DRAG_THRESHOLD_PX`] → [`Mode::Drag`] when the
-//!     caller allows a drag, [`Mode::Abandoned`] when it does not;
-//!   * the pointer is released having done neither → [`Mode::Tap`].
+//!   * the hold timer fires → [`Mode::Hold`], and the click and synthetic
+//!     contextmenu that follow are swallowed;
+//!   * the pointer travels past [`DRAG_THRESHOLD_PX`] → [`Mode::Drag`] when
+//!     the caller allows a drag, [`Mode::Abandoned`] when it does not;
+//!   * release having done neither → [`Mode::Tap`].
 //!
 //! Travelling past the threshold while nothing is draggable is its own answer
-//! rather than a tap: on a touch surface that movement is a scroll, and opening
-//! the book the reader was scrolling past is exactly the surprise this module
-//! exists to prevent. A touch pointer is therefore never a drag at all, whatever
-//! the caller allows — the scroll and the drag are the same movement, and the one
-//! the reader means is the one the page answers to.
+//! rather than a tap: on a touch surface that movement is a scroll, and a
+//! touch pointer is therefore never a drag, whatever the caller allows.
 //!
-//! The drag this decides is the DECISION and nothing else. What a movement then
-//! does belongs to the caller, which is where the payload, the targets and the
-//! drop live — see `crate::features::library::dnd` for the shelf's. That is why
-//! the drag-start and the drag-end carry coordinates and the wrapper keeps no
-//! drag flag of its own: the visible half of a drag is a session that can hold
-//! four cards at once, and only the session knows which four.
+//! This module owns the decision and nothing else: what a movement then does
+//! (payload, targets, drop) belongs to the caller — see
+//! `crate::features::library::dnd` for the shelf's. That is why drag start
+//! and end carry coordinates and the wrapper keeps no drag flag: the visible
+//! half of a drag is a session that can hold four cards at once.
 
 use std::rc::Rc;
 
@@ -39,30 +32,27 @@ use super::press_core::{self, PendingTimer};
 
 /// What a press has to have begun on for the card to stand aside.
 ///
-/// A card holds controls of its own — the ✕ that asks for a removal receipt, the
-/// relink that finds a book again — and their `click` handlers stop propagation, so
-/// the card never sees the click. It DOES see the `pointerdown` and the
-/// `pointerup` either side of it, because those are not the event a button stops,
-/// and a tap decided from that pair would open the book the reader was asking to
-/// remove. So the press is handed to the control before anything is decided, which
-/// is one rule here rather than a `stop_propagation` on every pointer event of
-/// every control any card ever grows.
+/// A card's own controls (the ✕, the relink) stop their `click`, but not the
+/// `pointerdown`/`pointerup` either side of it — a tap decided from that pair
+/// would open the book the reader was asking to remove. Handing the press to
+/// the control here is one rule rather than a `stop_propagation` on every
+/// pointer event of every control a card ever grows.
 const OWNED_BY_A_CONTROL: &str = "button, a, input, select, textarea, [contenteditable]";
 
 /// How far the pointer may travel before the press commits to a drag.
 ///
-/// Smaller than the long-press primitive's slop (`long_press::SELECT_SLOP_PX`,
-/// which is the distance a HOLD survives) on purpose: a drag has to be decided
-/// before the hold it replaces would have been cancelled, or the two overlap in
-/// a band where the reader gets neither. Six pixels is inside a shaky finger's
-/// drift and outside a deliberate move.
+/// Smaller than the long-press slop (`long_press::SELECT_SLOP_PX`, the
+/// distance a hold survives) on purpose: a drag must be decided before the
+/// hold it replaces would have been cancelled, or the two overlap in a band
+/// where the reader gets neither. Six pixels is inside a shaky finger's drift
+/// and outside a deliberate move.
 pub const DRAG_THRESHOLD_PX: f64 = 6.0;
 
 /// What the gesture decided. Locked from the moment it is anything but
 /// [`Mode::Undecided`] until the pointer is released.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
-    /// Nothing yet: the timer has not fired and the pointer has not travelled.
+    /// Nothing decided yet.
     Undecided,
     /// Released without travelling — the press was an open.
     Tap,
@@ -70,18 +60,18 @@ enum Mode {
     Hold,
     /// The pointer travelled and a drag was allowed — the drag owns it.
     Drag,
-    /// The pointer travelled and nothing was draggable — or nothing was
-    /// draggable with THIS pointer, which on a touch surface is a scroll.
+    /// The pointer travelled and no drag was allowed — or the pointer is a
+    /// finger, whose movement is a scroll.
     Abandoned,
 }
 
 /// What the gesture needs from the caller. Every field is a `Copy` handle, so
 /// one options value can feed all four handlers without being taken apart.
 pub struct DraggableItemOptions {
-    /// How long a press must hold before it becomes a selection. Callers pass
-    /// `long_press::SELECT_PRESS_MS`: a book on a shelf and a stroke on a page
-    /// are one gesture to a reader, and two numbers with the same meaning in
-    /// two directories eventually stop matching.
+    /// How long a press must hold before it becomes a selection. Callers
+    /// pass `long_press::SELECT_PRESS_MS`: a book on a shelf and a stroke on
+    /// a page are one gesture to a reader, and two spellings of one number
+    /// eventually stop matching.
     pub press_ms: i32,
     /// How far the pointer travels before the press commits to a drag.
     pub drag_threshold_px: f64,
@@ -96,38 +86,35 @@ pub struct DraggableItemOptions {
     pub on_tap: Callback<()>,
     /// The hold completed: enter the selection with this card already in it.
     pub on_long_press: Callback<()>,
-    /// The pointer committed to a drag, at the coordinates it committed at. A
-    /// drag that has to be picked up somewhere needs the place it was picked up
-    /// from, and the pointerdown that started the press is six pixels and a
-    /// decision behind by now.
+    /// The pointer committed to a drag, at the coordinates it committed at:
+    /// the pointerdown that started the press is six pixels and a decision
+    /// behind by now.
     pub on_drag_start: Callback<(f64, f64), ()>,
-    /// The pointer is dragging, with its client coordinates. The second type
-    /// argument is spelled out because `Callback`'s answer defaults to its
-    /// question, and a stream of coordinates is not an answer anybody wants back.
+    /// The pointer is dragging, with its client coordinates. The `()` answer
+    /// type is spelled out: a stream of coordinates is not an answer anybody
+    /// wants back.
     pub on_drag_move: Callback<(f64, f64), ()>,
     /// The drag ended on a release, at the coordinates the pointer came up at.
     pub on_drag_end: Callback<(f64, f64), ()>,
-    /// The drag was taken away rather than released — a `pointercancel` from the
-    /// platform, which is a scroll gesture claiming the pointer, the window
-    /// losing focus, or an engine that decided the drag was its own.
+    /// The drag was taken away rather than released — a `pointercancel`:
+    /// a scroll claiming the pointer, the window losing focus, or an engine
+    /// deciding the drag was its own.
     ///
-    /// A separate answer from [`DraggableItemOptions::on_drag_end`] and not a
-    /// flag on it, because the two want opposite things: a release puts down what
-    /// the reader was holding and a cancellation puts it back.
+    /// Separate from [`DraggableItemOptions::on_drag_end`] because the two
+    /// want opposite things: a release puts down what the reader was holding;
+    /// a cancellation puts it back.
     pub on_drag_cancel: Callback<()>,
 }
 
 /// The four pointer handlers to spread onto the element, the live flag a card
-/// paints itself from, and the one-shot probes for the events a completed hold
-/// generates.
+/// paints itself from, and the one-shot probes for the events a completed
+/// hold generates.
 ///
-/// There is no "is dragging" flag here on purpose. The press is this wrapper's
-/// and the DRAG is the caller's: a shelf drag can be holding four cards at once
-/// and drawing a ghost of them somewhere above the page, and the one card the
-/// press began on cannot answer for the other three. So the drag's visible half
-/// is painted from the session that owns it, and what stays here is `pressing` —
-/// the tint on the frame the finger arrives, before anything has been decided,
-/// which is a fact about this element and no other.
+/// There is deliberately no "is dragging" flag: the press is this wrapper's
+/// and the drag is the caller's. A shelf drag can hold four cards at once and
+/// the card the press began on cannot answer for the other three, so the
+/// drag's visible half is painted from the session that owns it. What stays
+/// here is `pressing` — a fact about this element and no other.
 pub struct DraggableItemHandle {
     pub on_pointerdown: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
     pub on_pointermove: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
@@ -144,32 +131,28 @@ pub struct DraggableItemHandle {
     pub swallow_context: Rc<dyn Fn() -> bool>,
 }
 
-/// Stop an in-flight hold. The clear is [`press_core::clear_timer`]'s — the same
-/// one the long-press primitive's cancel uses, because a stale `setTimeout`
-/// calling into a dropped wasm shim is a crash rather than a wrong answer and
-/// there is one right way to drop it.
+/// Stop an in-flight hold through [`press_core::clear_timer`]: a stale
+/// `setTimeout` calling into a dropped wasm shim is a crash rather than a
+/// wrong answer, and there is one right way to drop it.
 fn cancel_hold(timer: StoredValue<PendingTimer, LocalStorage>) {
     press_core::clear_timer(timer);
 }
 
-/// Whether the pointer has left the threshold around its origin. The arithmetic
-/// is [`press_core::outside_radius`]'s, shared with the long-press primitive's
-/// slop: a slop and a threshold are the same question asked of two gestures, and
-/// the boundary counting as inside is what keeps a threshold of zero from firing
-/// on a perfectly still pointer.
+/// Whether the pointer has left the threshold around its origin. The
+/// arithmetic is [`press_core::outside_radius`]'s, shared with the
+/// long-press slop: same question, two gestures, and the boundary counting
+/// as inside keeps a threshold of zero from firing on a still pointer.
 fn travelled(x: f64, y: f64, origin: (f64, f64), threshold_px: f64) -> bool {
     press_core::outside_radius(x - origin.0, y - origin.1, threshold_px)
 }
 
 /// Whether a press that has travelled may become a drag.
 ///
-/// Two refusals with one thing in common: neither is about the pointer's
-/// position. `allowed` is the caller's — a shelf the disk places is not one a hand
-/// gets to place, and the card says so before the press is ever decided. `touch`
-/// is the platform's, and it is a refusal because the movement a finger makes
-/// across a page of covers is a scroll: without a `touch-action` that says
-/// otherwise the two happen at once, and the reader gets a shelf that slides away
-/// under a ghost.
+/// Two refusals, neither about the pointer's position: `allowed` is the
+/// caller's (a shelf the disk places is not one a hand gets to place);
+/// `touch` is the platform's — a finger's movement across a page of covers is
+/// a scroll, and without a `touch-action` saying otherwise the reader gets a
+/// shelf sliding away under a ghost.
 fn may_drag(allowed: bool, touch: bool) -> bool {
     allowed && !touch
 }
@@ -191,10 +174,9 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
 
     let mode = StoredValue::new_local(Mode::Undecided);
     let origin = StoredValue::new_local(None::<(f64, f64)>);
-    // Whether the press belongs to a finger rather than to a mouse or a pen. Held
-    // for the life of the press because the decision it feeds is made later, on
-    // the move that crosses the threshold, and by then the event that could
-    // answer it is gone.
+    // Finger vs mouse/pen, held for the life of the press: the decision it
+    // feeds is made later, on the move that crosses the threshold, by which
+    // time the event that could answer it is gone.
     let touch = StoredValue::new_local(false);
     let timer: StoredValue<PendingTimer, LocalStorage> = StoredValue::new_local(None);
     let suppress_click = StoredValue::new_local(false);
@@ -216,10 +198,10 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
     let on_pointerdown: Rc<dyn Fn(&leptos::ev::PointerEvent)> = Rc::new({
         let reset = Rc::clone(&reset);
         move |ev| {
-            // Only the primary button starts a gesture. A secondary one ends
-            // whatever was in flight rather than joining it: the contextmenu it
-            // brings is the card's to answer, and a pointerup that followed it
-            // into `on_tap` would open the book the reader was asking about.
+            // Only the primary button starts a gesture; a secondary one
+            // ends whatever was in flight: the contextmenu it brings is the
+            // card's to answer, and a pointerup following it into `on_tap`
+            // would open the book the reader was asking about.
             if ev.button() != 0 {
                 reset();
                 return;
@@ -235,28 +217,25 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
             suppress_click.set_value(false);
             suppress_context.set_value(false);
             origin.set_value(Some((ev.client_x() as f64, ev.client_y() as f64)));
-            // A finger's movement is a scroll of the page until it is held long
-            // enough to be a hold, and a drag that fought the scroll would win
-            // the gesture and lose the reader the shelf they were swiping. An
-            // engine that does not say what the pointer is gets the benefit of
-            // the doubt: the empty answer is a mouse's.
+            // A finger's movement is a scroll until held long enough, and a
+            // drag that fought the scroll would lose the reader the shelf
+            // they were swiping. An engine that does not name the pointer
+            // gets the benefit of the doubt: the empty answer is a mouse's.
             touch.set_value(ev.pointer_type() == "touch");
             pressing.set(true);
 
-            // Capture, so the gesture survives the pointer drifting off a narrow
-            // cover and so a drag's own stream keeps arriving here rather than at
-            // whatever the pointer happens to be over.
+            // Capture, so the gesture survives the pointer drifting off a
+            // narrow cover and the drag's stream keeps arriving here.
             //
-            // Captured on the element the handler is BOUND to, not on the event's
-            // target. The target can be a cover `<img>` deep inside a card, and
-            // covers land asynchronously: a background render replacing the node
-            // under a captured press detaches the capture, and the browser
-            // answers with a `pointercancel` that kills the drag in its first
-            // frames — which is how a folder plate full of covers became the one
-            // thing on the shelf that could not be grabbed. The card or row
-            // itself is keyed by id and survives every reactive swap inside it.
-            // (`current_target` IS that element here: this app attaches its
-            // listeners directly, leptos's delegation feature being off.)
+            // Captured on the element the handler is bound to, not the
+            // event's target: the target can be a cover `<img>` deep inside a
+            // card, and covers land asynchronously — a background render
+            // replacing the node under a captured press detaches the capture
+            // and the browser answers with a `pointercancel` that kills the
+            // drag in its first frames. The card itself is keyed by id and
+            // survives every reactive swap inside it. (`current_target` is
+            // that element here: this app attaches listeners directly,
+            // leptos delegation being off.)
             let host = ev
                 .current_target()
                 .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
@@ -267,8 +246,8 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
                 return;
             }
             press_core::arm_timer(timer, press_ms, move || {
-                // Decided once: a hold that fired while the pointer was already
-                // dragging would be a second answer to the same press.
+                // Decided once: a hold firing mid-drag would be a second
+                // answer to the same press.
                 if mode.get_value() != Mode::Undecided {
                     return;
                 }
@@ -304,7 +283,7 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
                     }
                 }
                 Mode::Drag => on_drag_move.run(point),
-                // A hold has already answered this press, and an abandoned one
+                // A hold has already answered this press; an abandoned one
                 // has nothing left to answer with.
                 Mode::Tap | Mode::Hold | Mode::Abandoned => {}
             }
@@ -314,8 +293,7 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
     let on_pointerup: Rc<dyn Fn(&leptos::ev::PointerEvent)> = Rc::new({
         let reset = Rc::clone(&reset);
         move |ev| {
-            // Not our press: no pointerdown of ours is in flight, so there is
-            // nothing to decide and no tap to fire.
+            // Not our press: no pointerdown of ours is in flight.
             if origin.get_value().is_none() {
                 return;
             }
@@ -324,7 +302,8 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
                     mode.set_value(Mode::Tap);
                     on_tap.run(());
                 }
-                // The release point rather than the last sampled move: a fast drag
+                // The release point rather than the last sampled move: a
+                // fast drag
                 // ends with the pointer somewhere no move was reported for, and
                 // where the reader let go is the answer they meant.
                 Mode::Drag => {

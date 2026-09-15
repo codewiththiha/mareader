@@ -1,9 +1,6 @@
-//! One book: its identity, where its bytes live, and where the reader left off.
-//!
-//! This file is the schema — [`Fingerprint`], [`Origin`], [`Book`] and the [`Row`]
-//! a library's list actually holds. The rules that act on rows live in the modules
-//! beside it, one file per question: [`read`], [`merge`], [`check`], [`sanitize`],
-//! [`naming`] and [`query`].
+//! The book schema: [`Fingerprint`], [`Origin`], [`Book`] and the [`Row`] a
+//! library list holds. The rules that act on rows live one module per question:
+//! [`read`], [`merge`], [`check`], [`sanitize`], [`naming`] and [`query`].
 
 use serde::{Deserialize, Serialize};
 
@@ -24,12 +21,13 @@ pub use read::{ReadPoint, record_read, record_read_row, rows_for_read};
 pub use sanitize::{sanitize};
 
 /// Storage guard on the library's size, not a "recent books" cap: it keeps the
-/// persisted blob inside a browser's quota. Past it the least-recently-read books go.
+/// persisted blob inside the browser's quota. Past it, the least-recently-read
+/// books go.
 pub const BOOKS_CAP: usize = 2000;
 
-/// A book's content identity: what a rescan compares a file on disk against.
-/// `size` + `mtime_ms` is what a move preserves, and `head_hash` disambiguates two
-/// different books of exactly the same length and stamp.
+/// A book's content identity, compared against files on disk during a rescan.
+/// `size` + `mtime_ms` survive a move; `head_hash` separates two different
+/// books with the same length and stamp.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Fingerprint {
@@ -39,7 +37,6 @@ pub struct Fingerprint {
 }
 
 impl Fingerprint {
-    /// One call site per side of the wire: the shell's folder walk and the shell's copy.
     pub fn of(size: u64, mtime_ms: u64, head: &[u8]) -> Self {
         Self {
             size,
@@ -48,9 +45,9 @@ impl Fingerprint {
         }
     }
 
-    /// A stand-in for a book the library knows by address only — a row migrated from the
-    /// `v1` schema, which measured nothing. Derived from the address so two books can
-    /// never share one, and stamped `mtime_ms == 0` so it reads as what it is.
+    /// Stand-in fingerprint for a book known by address only (a row migrated
+    /// from the `v1` schema, which measured nothing). Derived from the address
+    /// so two books never share one; `mtime_ms == 0` marks it as a placeholder.
     pub fn placeholder(path: &str) -> Self {
         let bytes = path.as_bytes();
         Self {
@@ -61,21 +58,22 @@ impl Fingerprint {
     }
 }
 
-/// How the app holds a book's bytes. [`Origin::Linked`] is the mode the app always
-/// had — the book IS the path — and stays the default; [`Origin::Stored`] is a copy
-/// inside the app's own store.
+/// How the app holds a book's bytes: [`Origin::Linked`] is the path itself
+/// (the default), [`Origin::Stored`] is a copy inside the app's own store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Origin {
-    /// The app never moves, renames or deletes it; a vanished path is a missing book with a Relink affordance.
+    /// The book is the path; the app never moves, renames or deletes it. A
+    /// vanished path is a missing book with a Relink affordance.
     Linked { src: String },
-    /// `src` is provenance: what the copy was made from, kept so a Relink can copy again from a source that is still there.
+    /// A copy in the store. `src` is provenance — what the copy was made from,
+    /// kept so Relink can copy again while the source still exists.
     Stored { src: Option<String>, store: String },
 }
 
 impl Origin {
-    /// The address every other layer speaks: the cover cache keys on it, the resume point
-    /// is looked up by it, and the shell's `read_file_*` gate is asked about it.
+    /// The address every other layer speaks: cover cache keys, resume-point
+    /// lookups and the shell's `read_file_*` gate all use it.
     pub fn path(&self) -> &str {
         match self {
             Origin::Linked { src } => src,
@@ -94,9 +92,9 @@ impl Origin {
         matches!(self, Origin::Stored { .. })
     }
 
-    /// Whether this is the library's own copy OF `path`. The reason it is a method: a
-    /// folder's moved-out log is only honest when the survivor really is a copy of the
-    /// file the dissolving row read.
+    /// Whether this is the library's own copy of `path`. A folder's moved-out
+    /// log is only honest when the survivor really is a copy of the file the
+    /// dissolving row read.
     pub fn is_store_copy_of(&self, path: &str) -> bool {
         matches!(self, Origin::Stored { src: Some(src), .. } if src == path)
     }
@@ -105,11 +103,12 @@ impl Origin {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Book {
-    /// A book keeps its id through a relink, a rename and a move between shelves: it is the drag payload and the shelf member.
+    /// Stable through a relink, a rename and a move between shelves; it is the
+    /// drag payload and the shelf member.
     pub id: String,
     pub fp: Fingerprint,
-    /// The reader's own name when they renamed the book ([`Book::title_locked`]), else
-    /// the one captured at open time. `None` until one of the two happens, which is why
+    /// The reader's rename ([`Book::title_locked`]), else the title captured at
+    /// open time. `None` until one of the two happens, which is why
     /// [`Book::title`] falls back to the stem rather than storing a guess.
     #[serde(default)]
     pub title: Option<String>,
@@ -127,28 +126,30 @@ pub struct Book {
     pub page: u32,
     #[serde(default)]
     pub num_pages: u32,
-    /// Written only while stream mode is live; `None` everywhere else, where the page above is the whole truth.
+    /// Written only while stream mode is live; `None` elsewhere, where `page`
+    /// is the whole truth.
     #[serde(default)]
     pub fraction: Option<f64>,
-    /// Set by a path check, never by a scan: a missing book keeps its row and its
-    /// membership so a Relink can heal it.
+    /// Set by a path check, never by a scan: a missing book keeps its row and
+    /// shelf membership so Relink can heal it.
     #[serde(default)]
     pub missing: bool,
-    /// The mark a migrated book carries until the first path check replaces it. A rescan
-    /// must not run while any book carries one: real fingerprints compared against
-    /// placeholders match nothing, so a folder would add books the reader already has.
+    /// Placeholder mark a migrated book carries until the first path check
+    /// replaces it. No rescan may run while one is set: a real fingerprint
+    /// never matches a placeholder, so the folder would re-add books the reader
+    /// already has.
     #[serde(default)]
     pub fp_pending: bool,
-    /// The mark the conflict sheet puts on a copy the reader answered *as new*. Two rows
-    /// of one address are otherwise twins — a read and a path check write both, and the
-    /// highlights and cover are keyed by the address — while an independent row reads,
-    /// resumes and moves on its own.
+    /// Marks a copy the conflict sheet answered *as new*. Two rows of one
+    /// address are otherwise twins (reads, path checks, highlights and covers
+    /// are all keyed by the address); an independent row reads, resumes and
+    /// moves on its own.
     #[serde(default)]
     pub independent: bool,
-    /// A name typed into the shelf's rename, or one the conflict sheet minted and the
-    /// reader accepted. [`crate::book::sanitize`] reads it as a promise: the rule that
-    /// drops a filename-shaped title heals download debris a document supplied, and a
-    /// name a person chose is not debris.
+    /// A name the reader typed or accepted from the conflict sheet.
+    /// [`crate::book::sanitize`] treats it as a promise: its rule that drops
+    /// filename-shaped titles heals download debris, and a chosen name is not
+    /// debris.
     #[serde(default)]
     pub title_locked: bool,
 }
@@ -157,16 +158,15 @@ fn default_page() -> u32 {
     1
 }
 
-/// One row of the library's list: a [`Book`], or a [`Row::Link`] that points at one.
-/// The list is what a shelf holds and what the "All" level renders.
-///
-/// A link is the row a second copy of one file would otherwise have been: it has no
-/// fingerprint, no address and no resume point of its own.
+/// One row of the library's list: a [`Book`], or a [`Row::Link`] pointing at
+/// one. A link is the row a second copy of one file would otherwise have been;
+/// it has no fingerprint, address or resume point of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Row {
     Book(Book),
-    /// A pointer at a book: no fingerprint, no page, no address of its own, and nothing measures it. Its name is the target's own at the moment the link was made.
+    /// A pointer at a book. Nothing measures it; its name is the target's at
+    /// the moment the link was made.
     #[serde(rename_all = "camelCase")]
     Link {
         id: String,
@@ -194,7 +194,8 @@ impl Row {
         }
     }
 
-    /// The name the shelf shows and a collision compares: a book's title or the stem of its address (never empty); a link's the name it was made with.
+    /// The name the shelf shows and a collision compares: a book's title or
+    /// address stem (never empty), a link's made-with name.
     pub fn display_name(&self) -> String {
         match self {
             Row::Book(b) => b.title(),
@@ -206,7 +207,6 @@ impl Row {
         matches!(self, Row::Link { .. })
     }
 
-    /// The one question every content rule asks before it looks at a row.
     pub fn book(&self) -> Option<&Book> {
         match self {
             Row::Book(b) => Some(b),
@@ -221,7 +221,6 @@ impl Row {
         }
     }
 
-    /// A link has none, which is why it can never enter a content check.
     pub fn fp(&self) -> Option<Fingerprint> {
         match self {
             Row::Book(b) => Some(b.fp),
@@ -236,7 +235,6 @@ impl Row {
         }
     }
 
-    /// The "Date added" sort's key, which a link has and a book has.
     pub fn added_ms(&self) -> u64 {
         match self {
             Row::Book(b) => b.added_ms,
@@ -245,7 +243,8 @@ impl Row {
     }
 }
 
-/// Every content rule walks this rather than the list: a link has no fingerprint to compare, no address to check and no resume point to write.
+/// What every content rule walks: a link has no fingerprint to compare, no
+/// address to check and no resume point to write.
 pub fn book_rows(rows: &[Row]) -> impl Iterator<Item = &Book> {
     rows.iter().filter_map(Row::book)
 }
@@ -254,7 +253,6 @@ pub fn book_rows_mut(rows: &mut [Row]) -> impl Iterator<Item = &mut Book> {
     rows.iter_mut().filter_map(Row::as_book_mut)
 }
 
-/// What a shelf render, a drag and a removal ask; [`find_by_id`] is the question a content rule asks instead.
 pub fn find_row<'a>(rows: &'a [Row], id: &str) -> Option<&'a Row> {
     rows.iter().find(|r| r.id() == id)
 }
@@ -264,9 +262,8 @@ pub fn find_row_mut<'a>(rows: &'a mut [Row], id: &str) -> Option<&'a mut Row> {
 }
 
 impl Book {
-    /// A book just joined to the library. One constructor rather than a struct literal per
-    /// importing path, so a joined book starts at page 1, with no title of its own and not
-    /// missing, in every one of them.
+    /// One constructor for every importing path, so a joined book always
+    /// starts at page 1, with no title of its own and not missing.
     pub fn new(id: String, fp: Fingerprint, format: Format, origin: Origin, added_ms: u64) -> Self {
         Self {
             id,
@@ -291,19 +288,21 @@ impl Book {
         self.origin.path()
     }
 
-    /// The name to show: the document's own title, else the file stem, else the address.
-    /// Never empty. A STORED book falls back to its SOURCE's stem rather than its store
-    /// address's, where the bytes are always named `source.<ext>`.
+    /// The name to show: the document's title, else the file stem, else the
+    /// address — never empty. A stored book falls back to its source's stem,
+    /// since store bytes are always named `source.<ext>`.
     pub fn title(&self) -> String {
         crate::text::display_or_stem(self.title.as_deref(), self.name_source())
     }
 
-    /// The stem of this book's address — the name a book with no title shows and the name a collision compares.
+    /// The stem of this book's address: the name an untitled book shows and a
+    /// collision compares.
     pub fn stem(&self) -> String {
         stem_of(self.name_source())
     }
 
-    /// One spelling so [`Book::title`] and [`Book::stem`] cannot fall back to different names.
+    /// One spelling so [`Book::title`] and [`Book::stem`] cannot fall back to
+    /// different names.
     fn name_source(&self) -> &str {
         match &self.origin {
             Origin::Stored { src: Some(src), .. } => src,
@@ -315,7 +314,6 @@ impl Book {
         crate::text::non_blank(self.author.as_deref()).map(str::to_string)
     }
 
-    /// What the card's bar and the list row's percentage both draw.
     pub fn progress(&self) -> Option<f64> {
         if self.num_pages == 0 {
             return self.fraction.filter(|f| (0.0..=1.0).contains(f));
@@ -323,10 +321,10 @@ impl Book {
         Some((self.page.min(self.num_pages) as f64 / self.num_pages as f64).clamp(0.0, 1.0))
     }
 
-    /// Take a measurement of THIS book's own bytes as its identity: a stored row is the
-    /// library's own instance of a file, so its fingerprint is the copy's and the source
-    /// address's stays free for whatever folder reads it — which is why a departure can
-    /// leave a book on its shelf and still hand the OS file back to its folder's ledger.
+    /// Take a measurement of this book's own bytes as its identity. A stored
+    /// row's fingerprint is the copy's, which leaves the source address free
+    /// for whatever folder reads it — a departure can leave the book on its
+    /// shelf and still hand the OS file back to the folder's ledger.
     pub fn adopt_measurement(&mut self, measured: Option<Fingerprint>) {
         match measured {
             Some(fp) => {
@@ -337,9 +335,9 @@ impl Book {
         }
     }
 
-    /// Make this row the library's own copy of the file it reads — the one rule both
-    /// conversions ride. Everything the reader put into the row travels with it, and the
-    /// store name is minted from the row's id rather than its title.
+    /// Make this row the library's own copy of the file it reads. Everything
+    /// the reader put into the row travels with it; the store name is minted
+    /// from the row's id rather than its title.
     pub fn become_stored(&mut self, src: &str, store: String, measured: Option<Fingerprint>) {
         if self.title.is_none() {
             self.title = Some(crate::text::display_or_stem(None, src));
@@ -352,17 +350,16 @@ impl Book {
         self.missing = false;
     }
 
-    /// The heal half, and the one every path check and every folder walk goes through: the
-    /// row's identity becomes the measurement, the placeholder mark goes, and the address
-    /// is not missing. A `v1` row's placeholder never matched a measurement, so this is
-    /// also what stops a rescan from adding a second copy.
+    /// The heal every path check and folder walk goes through: the row's
+    /// identity becomes the measurement, the placeholder mark goes, and the
+    /// address is not missing. A `v1` placeholder never matched a measurement,
+    /// so this is also what stops a rescan from adding a second copy.
     pub fn heal(&mut self, fp: Fingerprint) {
         self.fp = fp;
         self.fp_pending = false;
         self.missing = false;
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -533,7 +530,7 @@ mod tests {
         assert_eq!(created.format, Format::Markdown);
         assert_eq!(created.path(), "/books/new.md");
         assert!(!created.origin.is_stored());
-        // The reader proved the file opens and nothing more, so the identity is a placeholder until the next path check measures it.
+        // Opening proved the file exists and nothing more; the next path check measures it.
         assert!(created.fp_pending);
         assert_eq!(created.fp, Fingerprint::placeholder("/books/new.md"));
     }
@@ -557,7 +554,7 @@ mod tests {
 
     #[test]
     fn a_resume_point_is_settled_before_it_is_written() {
-        // The reader hands over whatever the document said; the library is the thing that has to stay valid.
+        // The reader hands over whatever the document said; the library keeps it valid.
         let mut books = rows([linked("a", "/books/one.pdf")]);
         record_read(
             &mut books,
@@ -616,9 +613,9 @@ mod tests {
 
     #[test]
     fn two_rows_of_one_file_share_its_reading_truth() {
-        // A duplicate the reader chose to keep is a second ROW, not a second file: the address
-        // is read, checked and resumed as one, and a heal that reached only the first row would
-        // leave its twin holding a folder's rescan off forever.
+        // A kept duplicate is a second row, not a second file: reads, checks
+        // and heals reach every row at the address, or a twin's placeholder
+        // would hold a folder's rescan off forever.
         let mut books = rows([
             Book {
                 fp_pending: true,
@@ -654,7 +651,6 @@ mod tests {
         assert!(book_rows(&books).all(|b| !b.fp_pending && b.fp == fp(20, 2, 8)));
     }
 
-
     fn private(id: &str, path: &str) -> Book {
         Book {
             independent: true,
@@ -664,18 +660,15 @@ mod tests {
 
     #[test]
     fn two_rows_of_one_file_are_two_books_with_two_ids() {
-        // The marks are keyed by row id, so "removing one of the two takes nothing from the
-        // other" is a property of the storage. What the crate owes is that the two rows are two
-        // ids, and that a shared one and a private one at one address do not resolve to each
-        // other.
+        // Marks are keyed by row id; the crate owes that the two rows are two
+        // ids and never resolve to each other.
         let shared = linked("a", "/books/dune.pdf");
         let own = private("b", "/books/dune.pdf");
         assert_eq!(shared.id, "a");
         assert_eq!(own.id, "b");
         assert_ne!(shared.id, own.id, "two rows, two keys, two mark lists");
         assert!(own.independent && !shared.independent);
-        // An import resolving this address never lands on the private row, which keeps a
-        // reader's own book off a shelf the question never mentioned.
+        // An import resolving this address must never land on the private row.
         let mut list = rows([own.clone()]);
         assert_eq!(add_book(&mut list, shared.clone()), "a", "a private row holds nothing back");
         assert_eq!(list.len(), 2, "so the arrival joins as a book of its own");
@@ -694,7 +687,7 @@ mod tests {
 
     #[test]
     fn a_shared_read_leaves_a_private_book_where_it_was() {
-        // Two rows of one file share their position — unless one is a book of its own, whose position is not a fact about the file.
+        // Two rows of one file share their position — unless one is independent.
         let mut books = rows([linked("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")]);
         at_mut(&mut books, 1).page = 240;
         record_read(
@@ -709,7 +702,7 @@ mod tests {
         assert_eq!(at(&books, 1).page, 240, "and the private one does not");
         assert_eq!(at(&books, 0).last_read_ms, 700);
         assert_eq!(at(&books, 1).last_read_ms, 1, "its stamp is its own too");
-        // A path check is the address's fate rather than the reader's, so it writes every row.
+        // A path check is the address's fate, so it writes every row.
         assert_eq!(
             apply_check(&mut books, &check("/books/dune.pdf", true, 20, 2, 8)).len(),
             2
@@ -719,8 +712,7 @@ mod tests {
 
     #[test]
     fn an_open_that_names_no_row_treats_the_address_as_one_book() {
-        // Independence is an answer to "which row did the reader mean", and an open that
-        // cannot ask it falls back to the address, which is the rule it has always followed.
+        // An open that cannot ask which row was meant falls back to the address.
         let mut books = rows([private("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")]);
         assert_eq!(rows_for_read(&books, None, "/books/dune.pdf"), vec![0, 1]);
         assert!(record_read(
@@ -798,7 +790,7 @@ mod tests {
 
     #[test]
     fn an_import_resolves_to_a_shared_row_and_never_to_a_private_one() {
-        // An import that resolved to a private book would file the reader's own book on a shelf the question never mentioned.
+        // An import must not resolve to a private book.
         let mut books = rows([private("a", "/one/dune.pdf")]);
         let arrival = Book {
             origin: Origin::Linked { src: "/two/dune.pdf".into() },
@@ -872,7 +864,7 @@ mod tests {
 
     #[test]
     fn a_fold_measures_and_unloses_an_address() {
-        // A placeholder yields to a measurement, and an address is dead only when both rows say so.
+        // A placeholder yields to a measurement; an address is dead only when both rows say so.
         let mut pending = linked("a", "/gone/dune.pdf");
         pending.fp = Fingerprint::placeholder("/gone/dune.pdf");
         pending.fp_pending = true;
@@ -890,7 +882,7 @@ mod tests {
         also.missing = true;
         fold_books(&mut both, &also);
         assert!(both.fp_pending && both.missing);
-        // A join stamp of zero is "never", not the epoch.
+        // added_ms == 0 means never, not the epoch.
         let mut never = linked("a", "/one.pdf");
         never.added_ms = 0;
         let joined = {
@@ -950,7 +942,7 @@ mod tests {
 
     #[test]
     fn an_import_files_in_the_order_the_walk_produced() {
-        // One insert at the front per file would reverse a whole folder.
+        // Inserting each file at the front would reverse a whole folder.
         let mut books: Vec<Row> = Vec::new();
         for name in ["a", "b", "c", "d"] {
             let book = Book {
@@ -998,7 +990,7 @@ mod tests {
                 },
                 ..linked("a", "/books/one.pdf")
             },
-            // Same CONTENT twice under two ids is the duplicate a reader chose to keep, which a fingerprint dedupe would take back.
+            // Same content under two ids is a duplicate the reader chose to keep; a fingerprint dedupe would take it back.
             Book {
                 id: "dup".into(),
                 title: Some("one_1".into()),
@@ -1024,7 +1016,7 @@ mod tests {
 
     #[test]
     fn a_title_the_reader_chose_survives_the_debris_rule() {
-        // The title rule hunts what a document supplied; a name the reader typed wears the lock and is nobody's debris.
+        // The title rule hunts document-supplied debris; a reader-typed name is locked.
         let mut books = rows([
             Book {
                 title: Some("0321894073.pdf".into()),
@@ -1051,7 +1043,7 @@ mod tests {
 
     #[test]
     fn a_stored_book_is_named_by_the_file_it_came_from() {
-        // The store names every book's bytes `source.pdf`, so the address's own stem is a layout artifact.
+        // Store bytes are named `source.pdf`, so the store address's stem is a layout artifact.
         let stored = Book {
             origin: Origin::Stored {
                 src: Some("/downloads/dune.pdf".into()),
@@ -1078,8 +1070,8 @@ mod tests {
 
     #[test]
     fn a_store_stem_burnt_into_a_title_is_healed_and_a_readers_own_is_not() {
-        // The open pipeline used to seed the record with the stem of the address it opened, which
-        // for a stored book is the store's own "source": a burn-in the load drops.
+        // A stored book's open-address stem is the store's own "source": a
+        // burn-in the load drops.
         let mut books = rows([
             Book {
                 title: Some("source".into()),
@@ -1111,7 +1103,7 @@ mod tests {
 
     #[test]
     fn a_link_to_a_shelf_survives_the_row_sweep() {
-        // A shelf id is never a book id: a folder link is kept, and which shelves exist is the shelf sweep's question.
+        // A shelf id is never a book id; which shelves exist is the shelf sweep's question.
         let mut books = rows([linked("a", "/books/one.pdf")]);
         books.push(Row::link("l1".into(), "Books".into(), "s1".into(), 1));
         books.push(Row::link("l2".into(), "Gone".into(), "zz".into(), 1));
@@ -1144,7 +1136,7 @@ mod tests {
             ["Dune", "Dune_1", "Neuromancer"].iter().map(|s| s.to_string()).collect();
         assert_eq!(duplicate_title("Dune", &in_use), "Dune_2");
         assert_eq!(duplicate_title("Neuromancer", &in_use), "Neuromancer_1");
-        // Duplicating a duplicate steps instead of stacking: the counter is not part of the name.
+        // Duplicating a duplicate steps instead of stacking.
         assert_eq!(duplicate_title("Dune_1", &in_use), "Dune_2");
         let stepped: std::collections::HashSet<String> = ["Dune", "Dune_1", "Dune_2"]
             .iter()
@@ -1155,7 +1147,7 @@ mod tests {
             ["Dune", "Dune_2"].iter().map(|s| s.to_string()).collect();
         assert_eq!(duplicate_title("Dune", &gaps), "Dune_1");
         assert_eq!(duplicate_title("  ", &std::collections::HashSet::new()), "Book_1");
-        // The minted name survives the sanitizer's title rule, through the exemption in `reader_core::filename`.
+        // The minted name survives the sanitizer via the exemption in `reader_core::filename`.
         assert!(reader_core::filename::is_usable_title("Dune_1"));
         assert!(reader_core::filename::is_usable_title(&duplicate_title("dune", &in_use)));
     }
@@ -1224,7 +1216,7 @@ mod tests {
 
     #[test]
     fn a_blob_from_before_a_field_existed_still_loads() {
-        // Every field carries a default, so a row written by an older build loads rather than dropping the library.
+        // Every field has a default, so a row from an older build loads rather than dropping the library.
         let b: Book = serde_json::from_str(
             r#"{"id":"b1","fp":{"size":1,"mtimeMs":2,"headHash":3},
                 "format":"markdown","origin":{"kind":"linked","src":"/n.md"}}"#,
@@ -1242,8 +1234,7 @@ mod tests {
             Row::link("l1".into(), "Dune".into(), "b1".into(), 1),
             Row::Book(linked("b1", "/a.pdf")),
         ];
-        // A link is a row and `find_row_mut` answers it; a writer of a book's
-        // facts must not be able to reach one this way.
+        // A writer of a book's facts must not reach a link row.
         assert!(find_row_mut(&mut list, "l1").is_some());
         assert!(find_book_mut(&mut list, "l1").is_none());
         find_book_mut(&mut list, "b1").unwrap().missing = true;
@@ -1266,8 +1257,7 @@ mod tests {
         assert!(copy.origin.is_store_copy_of("/src/a.pdf"));
         assert!(!copy.origin.is_store_copy_of("/store/b1.pdf"), "the copy is not its own provenance");
         assert!(!copy.origin.is_store_copy_of("/src/other.pdf"));
-        // A linked book IS the address rather than a copy of it, and a copy
-        // whose source is already gone has no provenance to match.
+        // A linked book is the address, and a copy whose source is gone has no provenance to match.
         assert!(!linked("b2", "/src/a.pdf").origin.is_store_copy_of("/src/a.pdf"));
         let orphan = Book::new(
             "b3".into(),
@@ -1289,17 +1279,15 @@ mod tests {
         b.adopt_measurement(Some(fp(99, 5, 3)));
         assert_eq!(b.fp, fp(99, 5, 3));
         assert!(!b.fp_pending);
-        // An adoption answers "what is this instance", not "is an address
-        // there": the two callers that also clear `missing` are the two that
-        // have just made the bytes their own, and they say so themselves.
+        // Adoption answers "what is this instance", not "is the address there";
+        // callers that made the bytes their own clear `missing` themselves.
         assert!(!b.missing);
     }
 
     #[test]
     fn a_copy_that_could_not_be_weighed_stays_pending() {
-        // A placeholder the startup sweep finishes is honest. A fingerprint
-        // nobody measured would be a guess every later rescan trusts, and a
-        // guess that matched nothing is a book the library adds twice.
+        // A fingerprint nobody measured would be a guess every later rescan
+        // trusts; a guess that matched nothing is a book added twice.
         let mut b = linked("b1", "/src/a.pdf");
         b.adopt_measurement(None);
         assert!(b.fp_pending);
@@ -1308,8 +1296,8 @@ mod tests {
 
     #[test]
     fn a_departure_keeps_the_name_the_shelf_showed() {
-        // The store file is named after the row's id, so a row with no title of
-        // its own would start reading as "b1c2d3" the moment it left.
+        // The store file is named after the row's id, so an untitled row would
+        // read as "b1c2d3" the moment it left.
         let mut b = linked("b1", "/src/Dune.pdf");
         b.become_stored("/src/Dune.pdf", "/store/b1.pdf".into(), Some(fp(9, 9, 9)));
         assert_eq!(b.title.as_deref(), Some("Dune"));
@@ -1323,9 +1311,8 @@ mod tests {
         assert_eq!(b.fp, fp(9, 9, 9), "the copy's own measurement is the identity");
         assert!(!b.fp_pending);
         assert!(!b.missing);
-        // The address the reader opens is the copy's now, and the source is
-        // provenance — which is what leaves the original fingerprint free for
-        // the folder that still reads it.
+        // The opened address is the copy's now and the source is provenance,
+        // leaving the original fingerprint free for the folder that reads it.
         assert_eq!(b.path(), "/store/b1.pdf");
         assert_eq!(b.origin.source(), Some("/src/Dune.pdf"));
     }
@@ -1341,9 +1328,8 @@ mod tests {
 
     #[test]
     fn healing_an_address_brings_a_missing_book_back() {
-        // A migrated row carries a placeholder, and the first walk that finds
-        // the file is what replaces it: until then every watched folder's
-        // rescan is held off, because a real fingerprint matches no placeholder.
+        // The first walk that finds the file replaces the migrated row's
+        // placeholder; until then every watched folder's rescan is held off.
         let mut b = linked("b1", "/src/a.pdf");
         b.missing = true;
         b.fp_pending = true;

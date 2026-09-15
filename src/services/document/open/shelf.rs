@@ -1,11 +1,10 @@
-//! The library's record of the book that was just opened.
-//!
-//! The last step of both open tails, and the only place the reader's own progress
-//! becomes a library row. Everything about the DECISION — whether this address is
-//! a book the library already holds, which rows a read belongs to, what a resume
+//! The library's record of the book that was just opened: the last step of
+//! both open tails, and the only place the reader's own progress becomes a
+//! library row. Everything about the DECISION — whether this address is a book
+//! the library already holds, which rows a read belongs to, what a resume
 //! point is allowed to be — is `library_core::book::record_read` and its
-//! row-addressed `library_core::book::record_read_row`; this is the wiring to the
-//! signals and the save.
+//! row-addressed `record_read_row`; this is the wiring to the signals and the
+//! save.
 
 use leptos::prelude::*;
 
@@ -49,10 +48,10 @@ pub(crate) fn record(state: AppState, path: &str, title: Option<String>, point: 
     crate::storage::persist_library(state.library);
 
     if let Some(book) = created {
-        // The open proved this file is readable and measured nothing about it, so
-        // the row it just created carries a placeholder identity. One metadata
-        // read fixes that, and without it a watched folder would refuse to rescan
-        // until the next launch.
+        // The open proved this file is readable and measured nothing about it,
+        // so the row it just created carries a placeholder identity. One
+        // metadata read fixes that — without it a watched folder would refuse
+        // to rescan until the next launch.
         crate::services::library::verify_one(state, book.path().to_string());
         // A book joining the library can push the cover cache over its budget.
         // Pruning here rather than on a timer is what makes the cap a cap: the

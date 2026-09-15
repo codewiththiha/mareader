@@ -20,10 +20,9 @@ pub fn display_name(title: Option<&str>, path: Option<&str>) -> Option<String> {
 /// Its own function because a persisted name and a displayed name are not the
 /// same question. A shelf record that filled a blank title with the stem of
 /// whatever address the open ran on wrote the store's own `source.pdf` stem
-/// over a stored book — a layout artifact as a name — where the display's own
-/// fallback chain knows to read the source the bytes came from. What a
-/// document supplied is worth persisting; what an address happens to end with
-/// is the fallback's business, at the moment it is shown.
+/// over a stored book — a layout artifact as a name. What a document supplied
+/// is worth persisting; what an address happens to end with is the fallback's
+/// business, at the moment it is shown.
 pub fn document_title(title: Option<&str>) -> Option<String> {
     title
         .map(str::trim)
@@ -56,8 +55,8 @@ pub fn is_usable_title(t: &str) -> bool {
 /// arrived with, still wearing its extension ("0321894073.pdf"), a bare
 /// ISBN/UPC digit run, or a snake-case mangling with underscores where a
 /// person would have typed spaces. In every case the file on disk has usually
-/// been renamed to something a human can read since, so the stem of the
-/// address is the honest name and the metadata is the stale one.
+/// been renamed since, so the stem of the address is the honest name and the
+/// metadata is the stale one.
 fn looks_like_file_name(t: &str) -> bool {
     // A title does not carry its own extension.
     if strip_doc_extension(t) != t {
@@ -78,24 +77,21 @@ fn looks_like_file_name(t: &str) -> bool {
     // Snake-case: a title typed by a person has spaces. The exception is a
     // trailing `_N` copy counter — the name file managers give the second of
     // two files that would collide ("dune_1"), and the convention the
-    // library's own duplicate naming follows
-    // (`library_core::book::duplicate_title`). A name that convention minted
+    // library's own duplicate naming follows. A name that convention minted
     // has to survive the rule that hunts download debris.
     strip_copy_counter(t).contains('_') && !t.contains(' ')
 }
 
 /// Drop a trailing `_N` copy counter ("dune_1" → "dune"), when there is one.
 /// One level, on purpose: a counter is appended to a name that had none, so
-/// "dune_1_2" is not a counter on "dune_1" but a snake-case name in its own
-/// right — and the duplicate namer never mints one (it strips the old counter
-/// before appending the next).
+/// "dune_1_2" is a snake-case name in its own right — and the duplicate namer
+/// never mints one (it strips the old counter before appending the next).
 ///
-/// Public because it is ONE rule with two readers, and the two have to agree or
-/// the convention breaks: this module reads it to spare a name the namer minted
-/// from the download-debris test above, and `library_core::book::duplicate_title`
-/// reads it to step a counter instead of stacking one ("Dune_1" → "Dune_2", not
-/// "Dune_1_1"). Two spellings of it would be two conventions the moment one of
-/// them was edited.
+/// Public because it is ONE rule with two readers, and the two have to agree
+/// or the convention breaks: this module reads it to spare a minted name from
+/// the download-debris test above, and `library_core::book::duplicate_title`
+/// reads it to step a counter instead of stacking one ("Dune_1" → "Dune_2",
+/// not "Dune_1_1").
 pub fn strip_copy_counter(t: &str) -> &str {
     match t.rsplit_once('_') {
         Some((base, counter))
@@ -128,20 +124,20 @@ pub fn file_stem_from_path(path: &str) -> Option<String> {
 /// Extensions this app never admits but a name may still carry: a file the
 /// reader was handed before the format gate learned to refuse it, or a title
 /// typed by hand. Everything the library can actually hold comes from the
-/// registry below.
+/// format registry instead.
 const OFFICE_AND_PRINT: [&str; 7] = ["doc", "docx", "ps", "dvi", "tex", "ppt", "pptx"];
 
 /// Remove a trailing document extension (case-insensitive).
 ///
 /// Read from the format registry rather than typed out here, so a fourth kind
 /// strips its own extension with no edit to this list: a shelf that shows
-/// "notes.md" under a Markdown book is a shelf telling the reader the file
-/// system's business, and the extension was never part of the name — the card
-/// next to it says what KIND of document this is without any of it.
+/// "notes.md" under a Markdown book is telling the reader the file system's
+/// business, and the card next to it already says what KIND of document this
+/// is.
 ///
-/// A title like "Rust 1.75" keeps its ".75": the part after the last dot has to
-/// BE a known extension, and "75" is not one. A leading dot is the whole of a
-/// hidden file's name (".markdown"), not an extension on an empty stem.
+/// A title like "Rust 1.75" keeps its ".75": the part after the last dot has
+/// to BE a known extension, and "75" is not one. A leading dot is the whole
+/// of a hidden file's name (".markdown"), not an extension on an empty stem.
 fn strip_doc_extension(s: &str) -> &str {
     let lower = s.to_lowercase();
     let Some(dot) = lower.rfind('.') else {
@@ -164,8 +160,6 @@ fn strip_doc_extension(s: &str) -> &str {
 mod tests {
     use super::*;
 
-    /// Title-vs-path arbitration: a usable /Title wins, an unusable one falls
-    /// back to the file name.
     #[test]
     fn picks_the_best_available_name() {
         assert_eq!(
@@ -186,8 +180,6 @@ mod tests {
         assert_eq!(display_name(None, None), None);
     }
 
-    /// Extracting a display name from a path: separators (both kinds), and
-    /// extension stripping.
     #[test]
     fn a_download_name_is_not_a_title() {
         // The /Title a downloader leaves behind — an ISBN wearing its

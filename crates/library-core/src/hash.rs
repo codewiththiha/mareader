@@ -1,17 +1,16 @@
-//! The two cheap measurements a [`Fingerprint`](crate::book::Fingerprint) is built from.
-//!
-//! Here rather than in the shell crate that calls them so the library and the
-//! walk that feeds it cannot drift.
+//! The two cheap measurements a [`Fingerprint`](crate::book::Fingerprint) is
+//! built from. Lives here, not in the shell crate that calls it, so the library
+//! and the folder walk cannot drift apart.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Past a PDF's header and into its first objects, and small enough that scanning a two-thousand-file folder costs one partial read per file.
+/// Covers a PDF's header and first objects while staying small enough that
+/// scanning a two-thousand-file folder costs one partial read per file.
 pub const HEAD_BYTES: usize = 8 * 1024;
 
-/// FNV-1a over the leading bytes, 32-bit. Not cryptographic: its job is to
-/// separate two files that happen to share a length and a modification stamp.
-/// Chosen over a hash crate because it is eleven lines, allocation-free and
-/// identical on every host.
+/// FNV-1a over the leading bytes. Not cryptographic — its job is to separate
+/// two files that share a length and a modification stamp. Hand-rolled rather
+/// than a hash crate: allocation-free and identical on every host.
 pub fn head_hash(head: &[u8]) -> u32 {
     let mut hash: u32 = 0x811c_9dc5;
     for byte in head.iter().take(HEAD_BYTES) {
@@ -21,10 +20,9 @@ pub fn head_hash(head: &[u8]) -> u32 {
     hash
 }
 
-/// A file's modification time in milliseconds since the Unix epoch.
-///
-/// A stamp the clock cannot express lands on `0` rather than wrapping, which
-/// would sort a 1904 file after a 2024 one.
+/// Modification time in milliseconds since the Unix epoch. A stamp the clock
+/// cannot express lands on `0` rather than wrapping, which would sort a 1904
+/// file after a 2024 one.
 pub fn mtime_ms(modified: Option<SystemTime>) -> u64 {
     modified
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())

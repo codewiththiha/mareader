@@ -1,5 +1,5 @@
-//! Inline SVG icon sprite (lucide-style strokes). Renders via inner_html so we
-//! never need to touch the svg element nodes.
+//! Inline SVG icon sprite (lucide-style strokes), rendered via inner_html so
+//! nothing ever touches the svg element nodes.
 
 use leptos::prelude::*;
 
@@ -58,7 +58,7 @@ pub enum IconName {
     Folder,
     /// An open eye — the row that turns a folder's watch ON: the library looking
     /// at a directory, which is the whole of what watching one is. A pair with
-    /// [`IconName::EyeOff`] rather than one glyph on a label that flips, because
+    /// [`IconName::EyeOff`] rather than one glyph on a flipping label, because
     /// the row names the action and not the state, and the two actions are
     /// opposites.
     Eye,

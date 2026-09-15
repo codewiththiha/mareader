@@ -1,7 +1,8 @@
 //! The import dock: bottom-left, one card per run, a ring per card.
 //!
-//! Not a toast: an import is a thing the reader started and wants to keep an eye on while they do
-//! something else, so the dock sits clear of the shelf's centre and the toast slot.
+//! Not a toast: an import is something the reader started and watches while
+//! doing something else, so the dock sits clear of the shelf's centre and the
+//! toast slot.
 
 use std::time::Duration;
 
@@ -16,13 +17,16 @@ use crate::state::AppState;
 
 const HOLD_MS: u64 = 1600;
 
-/// The ring's radius, written once: the SVG below draws it, the circumference is derived
-/// from it, and `styles/components/library/dock.css` spells the same product in its
-/// `stroke-dasharray` (CSS cannot read this const — the comment there says the two agree).
+/// The ring's radius, written once: the SVG draws it, the circumference is
+/// derived from it, and `styles/components/library/dock.css` spells the same
+/// product in its `stroke-dasharray` (CSS cannot read this const; the comment
+/// there says the two agree).
 const RING_RADIUS: f64 = 15.0;
 const CIRCUMFERENCE: f64 = 2.0 * std::f64::consts::PI * RING_RADIUS;
 
-/// `inner_html` rather than `view!` because it is what makes the transition work: the two circles are created once and the percentage is a custom property on the wrapper, so a beat moves a number the browser interpolates instead of replacing the node.
+/// `inner_html` rather than `view!` because it makes the transition work:
+/// the circles are created once and the percentage is a custom property, so a
+/// beat moves a number the browser interpolates instead of replacing nodes.
 const RING: &str = "<svg viewBox='0 0 36 36' width='36' height='36' aria-hidden='true'>\
 <circle class='import-ring-track' cx='18' cy='18' r='15'/>\
 <circle class='import-ring-fill' cx='18' cy='18' r='15'/>\
@@ -43,7 +47,9 @@ pub(crate) fn ProgressDock(state: AppState) -> impl IntoView {
     }
 }
 
-/// Reads its task back out of the list by id rather than rendering the row it was handed: `For` keys on the id, so a beat that only changes a count would otherwise never reach the card.
+/// Reads its task back by id rather than rendering the row it was handed:
+/// `For` keys on the id, so a beat that only changes a count would otherwise
+/// never reach the card.
 #[component]
 fn DockCard(state: AppState, id: String) -> impl IntoView {
     let timer_id = id.clone();
@@ -86,7 +92,9 @@ fn DockCard(state: AppState, id: String) -> impl IntoView {
             <span class="import-ring-wrap">
                 <span
                     class=move || {
-                        // The ring spins and stops drawing a fraction, because a scan has no total to draw one of. A frozen ring still reads as "working" because the label next to it says so in words.
+                        // The ring spins without a fraction: a scan has no
+                        // total to draw one of, and the label says "working"
+                        // in words.
                         let base = "import-ring";
                         let Some(current) = task.get() else {
                             return base.to_string();
@@ -167,9 +175,9 @@ fn DockCard(state: AppState, id: String) -> impl IntoView {
                 </span>
             </span>
 
-            // Not offered while the run is still going: a dismiss that silently no-ops is
-            // a button that lies, and a running import has nothing to dismiss yet — its
-            // card leaves on its own the moment it finishes.
+            // Not offered while the run is going: a dismiss that silently
+            // no-ops is a button that lies, and a running card leaves on its
+            // own when it finishes.
             <Show when=move || task.get().is_some_and(|t| t.phase.is_finished())>
                 <button
                     class="icon-ghost import-card-close"
@@ -177,9 +185,8 @@ fn DockCard(state: AppState, id: String) -> impl IntoView {
                     title="Dismiss"
                     aria-label="Dismiss this import"
                     on:click={
-                        // The children closure this button lives in re-runs, so the
-                        // handler takes a copy it can own rather than the card's own
-                        // id — the swatch grid hands its clicks the same way.
+                        // The children closure re-runs, so the handler takes
+                        // a copy it can own rather than the card's id.
                         let id = close_id.clone();
                         move |_| {
                             dismiss_task(state, &id);

@@ -1,8 +1,8 @@
-//! The collision sheet: the level already holds a book of this name, and the question is which
-//! of three things the reader meant.
+//! The collision sheet: the level already holds a book of this name, and the
+//! question is which of three things the reader meant.
 //!
-//! One sheet, one question, three rows — and WHICH three is the arrival's own fact, because an
-//! import and a move are different questions.
+//! One sheet, one question, three rows — and which three is the arrival's own
+//! fact, because an import and a move are different questions.
 
 mod covered;
 mod folder_merge;
@@ -22,7 +22,9 @@ use name_sheet::describe_name;
 use sheet::ConflictSheet;
 use shelf::describe_shelf;
 
-/// The open flag lives on the library state rather than in a provided handle, because the raisers are services: an import asks from inside a spawned future no component owns.
+/// The open flag lives on the library state rather than a provided handle:
+/// the raisers are services, and an import asks from inside a spawned future
+/// no component owns.
 #[component]
 pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
     let open = state.library.conflict.open;
@@ -55,7 +57,9 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
     }
 }
 
-/// A second host rather than a second question on the first, because the two asks live on different states: a book collision is raised from inside a walk that is already running and can queue, and the folder's is asked before the walk starts.
+/// A second host rather than a second question on the first: a book
+/// collision is raised inside a running walk and can queue, while the
+/// folder's is asked before the walk starts.
 #[component]
 pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
     let open = state.library.shelf_conflict.open;

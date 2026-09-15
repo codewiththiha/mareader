@@ -1,6 +1,6 @@
 //! How a shelf is ordered: one comparator over [`Row`], driven by a key and a
-//! direction. No secondary key, deliberately — within a title the address breaks
-//! the tie, which is stable, deterministic and free.
+//! direction. No secondary key, deliberately — ties break on the address,
+//! which is stable, deterministic and free.
 
 use std::cmp::Ordering;
 
@@ -31,26 +31,25 @@ impl SortKey {
         }
     }
 
-    /// True when the key re-orders the list rather than leaving the reader's
-    /// arrangement alone. What disables a drag: a drop into a sorted list would be
-    /// undone by the next render.
+    /// Whether the key leaves the reader's arrangement alone. What disables a
+    /// drag: a drop into a sorted list would be undone by the next render.
     pub fn is_manual(self) -> bool {
         matches!(self, SortKey::Manual)
     }
 }
 
-/// The comparison one key makes, ascending. Ties break on the address, so the
-/// order is total and stable whatever the list started as.
+/// The comparison one key makes, ascending, ties breaking on the address so
+/// the order is total and stable.
 ///
-/// A link is a row like any other and has an answer for every key: its name
-/// sorts as a title, it has no author, it was added when it was made, and its
-/// tie-break is its own id because it has no address.
+/// A link answers every key too: its name sorts as a title, it has no author,
+/// it was added when it was made, and its tie-break is its own id.
 fn ascending(a: &Row, b: &Row, key: SortKey) -> Ordering {
     let primary = match key {
         SortKey::Manual => Ordering::Equal,
         SortKey::Title => natural(&a.display_name(), &b.display_name()),
         SortKey::Author => match (author_of(a), author_of(b)) {
-            // No author sorts after every author, so a shelf of named books has no blanks in it.
+            // No author sorts after every author, so a shelf of named books
+            // has no blanks in it.
             (None, None) => Ordering::Equal,
             (None, Some(_)) => Ordering::Greater,
             (Some(_), None) => Ordering::Less,
@@ -66,7 +65,7 @@ fn author_of(row: &Row) -> Option<String> {
     row.book().and_then(Book::author)
 }
 
-/// A link has never been read, which sorts it with the books nobody has opened.
+/// A link has never been read, which sorts it with the unopened books.
 fn last_read_of(row: &Row) -> u64 {
     row.book().map_or(0, |b| b.last_read_ms)
 }
@@ -79,9 +78,9 @@ fn tiebreak(row: &Row) -> &str {
     }
 }
 
-/// Case-insensitive compare that also puts "chapter 2" before "chapter 10":
-/// digit runs are compared by value, which is the only part of this that is not
-/// `eq_ignore_ascii_case`. Non-ASCII keeps its byte order.
+/// Case-insensitive compare that puts "chapter 2" before "chapter 10": digit
+/// runs compare by value; everything else is `eq_ignore_ascii_case`. Non-ASCII
+/// keeps its byte order.
 fn natural(a: &str, b: &str) -> Ordering {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     let (mut i, mut j) = (0, 0);
@@ -96,8 +95,8 @@ fn natural(a: &str, b: &str) -> Ordering {
             while j < b.len() && b[j].is_ascii_digit() {
                 j += 1;
             }
-            // Leading zeros are not significant: "01" and "1" are the same number, and
-            // comparing the stripped runs keeps them adjacent.
+            // Leading zeros are not significant: "01" and "1" are the same
+            // number, and stripped runs keep them adjacent.
             let na = strip_zeros(&a[si..i]);
             let nb = strip_zeros(&b[sj..j]);
             let ord = na.len().cmp(&nb.len()).then_with(|| na.cmp(nb));

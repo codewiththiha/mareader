@@ -1,16 +1,14 @@
 //! The app's window-`CustomEvent` protocol: every event name in one table,
-//! plus the one typed dispatcher.
+//! plus the typed dispatchers.
 //!
 //! Window CustomEvents are the app's cross-cutting message mechanism — they
 //! cross layer boundaries (services → components, engine JS → Rust) without
 //! either side holding a signal from the other. Three of these names are also
-//! a protocol with the imperative engine, which dispatches
-//! `pdfreader:navigate`, `pdfreader:selection-pages` and
-//! `pdfreader:selection-detail` from plain JS and declares them in
-//! `public/engine/events.ts`. `tools/check-events.ts` fails CI when the two
-//! tables disagree or when a name is spelled as a literal elsewhere — a
-//! mismatch is not a compile error on either side, only a dispatch into a
-//! window nobody is listening on.
+//! a protocol with the imperative engine, which dispatches them from plain JS
+//! and declares them in `public/engine/events.ts`. `tools/check-events.ts`
+//! fails CI when the two tables disagree or when a name is spelled as a
+//! literal elsewhere — a mismatch is not a compile error on either side, only
+//! a dispatch into a window nobody is listening on.
 
 use serde::Serialize;
 
@@ -32,8 +30,7 @@ pub const REVEAL_ACTIVE_EVENT: &str = "pdfreader:reveal-active";
 /// Cmd/Ctrl+F when no document is open — the shortcut means "search what you are
 /// looking at", and on the library page that is the shelf, not a document. A
 /// window event rather than a signal because the bar owns its own input node and
-/// the shortcut layer must not know the library page exists
-/// (`crate::effects::app::shortcuts::window`).
+/// the shortcut layer must not know the library page exists.
 pub const FOCUS_LIBRARY_SEARCH_EVENT: &str = "pdfreader:focus-library-search";
 
 /// Dispatch a typed CustomEvent on `window` with `payload` as its detail.

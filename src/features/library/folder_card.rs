@@ -1,6 +1,6 @@
-//! A shelf on the page, drawn as a folder: a 2×2 plate of what is inside it — covers for its
-//! books and a plate of their own for its folders, recursively — then its name and what it
-//! holds.
+//! A shelf on the page, drawn as a folder: a 2×2 plate of what is inside it
+//! — covers for its books, a plate of their own for its folders, recursively
+//! — then its name and what it holds.
 
 use leptos::prelude::*;
 
@@ -15,16 +15,17 @@ use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::SeamVocab;
 use crate::state::AppState;
 
-/// Two by two: a folder is recognised by what is inside it, and past four cells the plate is a
-/// mosaic nobody reads. Always four cells whatever the folder holds, so one book is one cover and
-/// three hatched quarters rather than one big rectangle that reads as a book card.
+/// Two by two: past four cells the plate is a mosaic nobody reads. Always
+/// four cells whatever the folder holds, so one book is one cover and three
+/// hatched quarters rather than a rectangle that reads as a book card.
 pub(crate) const THUMB_CAP: usize = 4;
 
 const PLATE_DEPTH: usize = 2;
 
 #[component]
 pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
-    // A keyed row is not re-created when the shelf's CONTENTS change, so everything that can move is read back out of the state by id, and the prop supplies only the identity.
+    // A keyed row is not re-created when the shelf's contents change: the
+    // prop supplies the identity, everything that can move is read back by id.
     let id = shelf.id.clone();
 
     let name = state.library.shelf_name_signal(&id);
@@ -42,7 +43,8 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         (books, inside)
     });
 
-    // The question is the rung's and not the whole import's, so a subfolder turned off under a watched tree stops breathing while the tree above it keeps watching.
+    // The question is the rung's, not the whole import's: a subfolder turned
+    // off under a watched tree stops breathing while the tree keeps watching.
     let dot_id = id.clone();
     let watched = Signal::derive(move || state.library.shelf_tracked(&dot_id));
 
@@ -51,7 +53,8 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
 
     let check_id = id.clone();
 
-    // The folder's own answers: "open" drills the breadcrumb route, and the right-click asks about a folder. A set being selected is not a reason to refuse a drag.
+    // The folder's own answers: open drills the route, right-click asks about
+    // a folder. A live selection is not a reason to refuse a drag.
     let open_id = id.clone();
     let open = Callback::new(move |_| state.library.shelf.set(open_id.clone()));
     let entry = EntryDescriptor {
@@ -105,7 +108,9 @@ enum PlateItem {
     Book(Book),
 }
 
-/// Folders first, then books — a plate that disagreed with the page about what is inside the folder would be a preview of something else. Books and folders share the four cells rather than each having their own four.
+/// Folders first, then books — a plate that disagreed with the page about the
+/// folder's contents would preview something else. Books and folders share
+/// the four cells rather than each getting their own.
 fn plate_items(state: AppState, shelf_id: &str) -> Vec<PlateItem> {
     let (folders, members): (Vec<String>, Vec<String>) =
         state.library.shelves.with(|shelves| {
@@ -133,7 +138,8 @@ fn plate_items(state: AppState, shelf_id: &str) -> Vec<PlateItem> {
     out
 }
 
-/// Recursive on purpose: a cell that holds a folder holds that folder's OWN plate, because "what is inside this folder" is the same question at every depth.
+/// Recursive on purpose: a cell that holds a folder holds that folder's own
+/// plate — "what is inside" is the same question at every depth.
 #[component]
 fn Plate(state: AppState, shelf_id: String, depth: usize) -> impl IntoView {
     let items = Signal::derive(move || plate_items(state, &shelf_id));
@@ -183,7 +189,8 @@ fn CoverCell(state: AppState, book: Book) -> impl IntoView {
     let path = book.path().to_string();
     let empty_path = path.clone();
     let alt = book.title();
-    // Read at the build rather than tracked here — the plate's items signal re-fires on every change to the books list, and the cell this rebuilds is the cell that knows.
+    // Read at the build rather than tracked here: the items signal re-fires
+    // on every books-list change, and this rebuilds only the cell that knows.
     let missing = book.missing;
     view! {
         <span
@@ -221,7 +228,9 @@ fn CoverCell(state: AppState, book: Book) -> impl IntoView {
     }
 }
 
-/// Both halves: "3 books" on a folder with two shelves inside it would leave out the rest of the library down that path. Shared with the list's tree rows.
+/// Counts both halves: "3 books" on a folder with shelves inside it would
+/// leave out the rest of the library down that path. Shared with the list's
+/// tree rows.
 pub(crate) fn summary(counts: (usize, usize)) -> String {
     let (books, inside) = counts;
     let mut parts: Vec<String> = Vec::with_capacity(2);

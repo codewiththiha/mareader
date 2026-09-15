@@ -4,13 +4,9 @@
 
 use super::{ancestors, find, Shelf, ShelfKind};
 
-/// The family a ground directory belongs to but is not standing in: the deepest
-/// in-place folder whose root covers `ground` at a rung of its own, when the rung
-/// that folder's ledger names for it is not standing — a slot a removal emptied,
-/// or a departure — while the shelf its own root is kept on still stands. `None`
-/// when no in-place tree covers the ground, when the covering tree's rung is
-/// alive, and when the reader has taken the tree itself out: ground under a tree
-/// nothing stands on is a start of its own rather than a rung of that tree.
+/// The family a ground directory belongs to but is not standing in —
+/// [`crate::governance::Governance::family`] with the folder and shelf lists
+/// passed in.
 pub fn family_for(
     folders: &[crate::folder::WatchedFolder],
     shelves: &[Shelf],
@@ -19,14 +15,13 @@ pub fn family_for(
     crate::governance::Governance::new(folders, shelves).family(ground)
 }
 
-/// Whether moving this shelf under `parent` is a departure that owes a copy: a
-/// shelf cut from a READ-AT-PLACE folder, leaving the seat the folder's own
+/// Whether moving this shelf under `parent` is a departure that owes a copy:
+/// a shelf cut from a read-at-place folder, leaving the seat the folder's
 /// ledger names for its rung.
 ///
-/// Each negative is the book departure's rule read one level up: a shelf that is
-/// nobody's rung — one the reader made, and one a move already took off its tree —
-/// is the reader's own, a shelf of a COPYING folder is the library's own once more,
-/// and a shelf with no folder above it has no ground to leave.
+/// Each negative is the book departure's rule one level up: a shelf that is
+/// nobody's rung is the reader's own, a copying folder's shelf is the
+/// library's own already, and a re-order on the current seat moves nothing.
 pub fn departs_on_move(
     shelves: &[Shelf],
     folders: &[crate::folder::WatchedFolder],
@@ -45,7 +40,7 @@ pub fn departs_on_move(
     else {
         return false;
     };
-    // A re-order on the seat the shelf already hangs on is the folder's own business.
+    // A re-order on the current seat is the folder's own business.
     if shelf.parent.as_deref() == parent {
         return false;
     }
@@ -54,10 +49,10 @@ pub fn departs_on_move(
     seat.map(String::as_str) != parent
 }
 
-/// A batch of requested shelf moves, split into the half that lands as it is and
-/// the half that owes the departure's ask. One rule per shelf,
-/// [`departs_on_move`] against the requested parent, and the departures named in
-/// the order the gesture gave.
+/// Split a batch of requested shelf moves into the half that lands as it is
+/// and the half that owes the departure's ask, in the order the gesture gave.
+/// A departing shelf nested inside another departing shelf rides along rather
+/// than asking twice.
 pub fn departing_moves(
     shelves: &[Shelf],
     folders: &[crate::folder::WatchedFolder],
@@ -73,8 +68,8 @@ pub fn departing_moves(
             clean.push(id.clone());
         }
     }
-    // The riders, collected before the retain: a filter that read `departing`
-    // while the retain held it would be two borrows of one list.
+    // Riders collected before the retain: filtering against `departing`
+    // while the retain holds it would be two borrows of one list.
     let riders: Vec<String> = departing
         .iter()
         .filter(|id| {

@@ -10,7 +10,8 @@ fn fp(n: u32) -> Fingerprint {
     library_core::testkit::fp_n(n)
 }
 
-/// The cover queue skips anything that is not a PDF, so a host test that lands a book never starts the wasm render chain.
+/// The cover queue skips anything that is not a PDF, so a host test that
+/// lands a book never starts the wasm render chain.
 fn row(id: &str, title: &str, path: &str, n: u32) -> Row {
     Row::Book(Book {
         title: Some(title.to_string()),

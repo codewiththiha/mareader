@@ -1,14 +1,16 @@
-//! What a drop MEANS, decided from four facts and nothing else: what is held, what is under
-//! the pointer, which part of the target's box the pointer is on, and how long it has been
-//! there.
+//! What a drop means, decided from four facts: what is held, what is under
+//! the pointer, which part of the target's box the pointer is on, and how long
+//! it has been there.
 //!
-//! Pure on purpose — no DOM, no signals, no state — which is what makes the table testable on
-//! the host rather than in a browser.
+//! Pure on purpose — no DOM, no signals, no state — which makes the table
+//! testable on the host rather than in a browser.
 
 use super::target::DropTargetKind;
 use crate::features::library::folder_card::THUMB_CAP;
 
-/// Two, because a shelf of one is a shelf the view menu already makes. The book under the pointer is the second one, so the offer starts at the first item held.
+/// Two, because a shelf of one is a shelf the view menu already makes. The
+/// book under the pointer counts as the second, so the offer starts at the
+/// first item held.
 pub const FOLD_MIN_ITEMS: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +30,8 @@ impl Band {
 pub enum DropEffect {
     InsertBefore {
         book_id: String,
-        /// Named by the effect rather than re-derived at the commit: a nested tree row's container is not the open level.
+        /// Named by the effect rather than re-derived at the commit: a nested
+        /// tree row's container is not the open level.
         shelf: Option<String>,
         after: bool,
     },
@@ -36,7 +39,8 @@ pub enum DropEffect {
     FileToShelf { shelf_id: String },
     NestInto { folder_id: String },
     CreateFolder { with_book_id: String },
-    /// Distinct from "nothing under the pointer", which is a `None` effect, so a card can tell "not a target" from "a target that says no".
+    /// Distinct from "nothing under the pointer" (a `None` effect), so a card
+    /// can tell "not a target" from "a target that says no".
     Refused,
 }
 
@@ -67,7 +71,8 @@ impl DropEffect {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FoldPreview {
-    /// Capped at the plate's own cap, because a preview that showed seven cells would be a preview of a shape the library does not draw.
+    /// Capped at the plate's own cap: a preview showing more cells would
+    /// preview a shape the library does not draw.
     pub filled: usize,
     pub with_book_id: String,
 }
@@ -80,7 +85,8 @@ pub struct DropQuery<'a> {
     pub target_id: &'a str,
     pub target_is_held: bool,
     pub can_nest: bool,
-    /// The PARENT's `can_nest` answer, because filing beside a shelf is filing into the level that holds it.
+    /// The parent's `can_nest` answer: filing beside a shelf is filing into
+    /// the level that holds it.
     pub can_sibling: bool,
     pub band: Band,
     pub target_shelf: Option<&'a str>,
@@ -93,7 +99,8 @@ impl DropQuery<'_> {
     }
 }
 
-/// The bug this used to have: a target that counted itself made a drag of two onto one of them a shelf that held that member twice.
+/// Held items plus the target. A target that counted itself made a drag of
+/// two onto one a shelf holding that member twice.
 pub fn fold_items(query: &DropQuery<'_>) -> usize {
     query.held() + 1
 }
@@ -103,7 +110,9 @@ pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
         DropTargetKind::Book => {
             let id = query.target_id;
             let shelf = query.target_shelf.map(str::to_string);
-            // A book the pointer is already carrying is a POSITION and never a partner — including the single book dragged onto itself, which is a reorder that lands where it started and so is the no-op it looks like.
+            // A book the pointer is already carrying is a position and never
+            // a partner — including a single book dragged onto itself, which
+            // lands where it started: the no-op it looks like.
             if query.target_is_held {
                 return DropEffect::InsertBefore {
                     book_id: id.to_string(),
@@ -111,11 +120,14 @@ pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
                     after: false,
                 };
             }
-            // A row is a seam BETWEEN books and a shelf is not a book, so there is no position to take and no fold to brew.
+            // A row is a seam between books and a shelf is not a book: no
+            // position to take and no fold to brew.
             if query.held_books == 0 {
                 return DropEffect::Refused;
             }
-            // The dwell is the whole of the difference, and it is not a refinement: without it a reorder would be unreachable, because every card a drag crossed would be offering a new shelf.
+            // The dwell is the whole difference, and not a refinement:
+            // without it a reorder would be unreachable, because every card a
+            // drag crossed would offer a new shelf.
             if query.dwell_armed && fold_items(&query) >= FOLD_MIN_ITEMS {
                 return DropEffect::CreateFolder {
                     with_book_id: id.to_string(),
@@ -129,7 +141,9 @@ pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
         }
         DropTargetKind::Folder => {
             let id = query.target_id;
-            // A book is always welcome, and a shelf is welcome unless filing it here would put it inside itself, which is a folder no level renders and a reader can never open again.
+            // A book is always welcome; a shelf is welcome unless filing it
+            // here would put it inside itself — a folder no level renders and
+            // a reader can never open again.
             if query.band == Band::Middle || query.held_books > 0 || query.held_folders == 0 {
                 if query.held_folders > 0 && !query.can_nest {
                     return DropEffect::Refused;

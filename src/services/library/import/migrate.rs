@@ -1,9 +1,10 @@
 //! The one-time move of every stored copy into the book's own item folder.
 //!
-//! The store used to be flat and name-derived — `<Library>/<format>/<stem>_<id>.<ext>` — and
-//! is now one folder per book (`<Library>/items/<id>/source.<ext>`,
-//! [`library_core::store`]). Copies made before that change keep the address recorded in
-//! their row, so they still open, but they are the ones this pass moves.
+//! The store used to be flat and name-derived
+//! (`<Library>/<format>/<stem>_<id>.<ext>`) and is now one folder per book
+//! (`<Library>/items/<id>/source.<ext>`, [`library_core::store`]). Older
+//! copies keep the address recorded in their row and still open; this pass
+//! moves them.
 
 use std::collections::HashMap;
 
@@ -16,7 +17,8 @@ use library_core::wire::{BookFileRequest, RelocateResult};
 use crate::services::library as ipc;
 use crate::state::AppState;
 
-/// Fire and forget: a book whose copy could not be moved still opens at the address it has, which is not a reason to interrupt a launch.
+/// Fire and forget: a book whose copy could not be moved still opens at the
+/// address it has — no reason to interrupt a launch.
 pub fn migrate_store_layout(state: AppState) {
     if !tauri_bridge::has_tauri() {
         return;
@@ -35,9 +37,9 @@ pub fn migrate_store_layout(state: AppState) {
     });
 }
 
-/// The candidate list is built WITHOUT the store root, because `<app_data_dir>` is the
-/// shell's answer and only the pass that does the moving can hand it back, so the rows are
-/// filtered against the paths the shell actually answered for.
+/// The candidate list is built without the store root: `<app_data_dir>` is
+/// the shell's answer, so rows are filtered against the paths the shell
+/// actually answered for.
 async fn run(state: AppState, candidates: Vec<(String, String)>) {
     let requests: Vec<BookFileRequest> = candidates
         .iter()
@@ -56,11 +58,11 @@ async fn run(state: AppState, candidates: Vec<(String, String)>) {
     if answer.root.is_empty() {
         return;
     }
-    // id -> where its copy lived and where it lives now, for the rows whose address actually
-    // changed: the shell answers an already-migrated row with the address it wore, and rewriting
-    // that row would be a write, a persist and a cover re-key for nothing. Matched by ID rather
-    // than zipped by position — every result carries its own id, so the order the answers come
-    // back in stops being a load-bearing contract across a process boundary.
+    // id -> (old address, new address) for the rows whose address actually
+    // changed: the shell answers an already-migrated row with the address it
+    // wore, and rewriting that row would be a write, a persist and a cover
+    // re-key for nothing. Matched by id rather than zipped by position, so
+    // answer order is not a contract across a process boundary.
     let by_id: HashMap<String, &library_core::wire::StoreResult> = answer
         .results
         .iter()
@@ -78,9 +80,8 @@ async fn run(state: AppState, candidates: Vec<(String, String)>) {
         return;
     }
 
-    // The address is the only thing that moves: the fingerprint, the provenance and the resume
-    // point all describe bytes that have not changed. A row that arrived with a pending
-    // measurement keeps it.
+    // The address is the only thing that moves: fingerprint, provenance and
+    // resume point describe bytes that have not changed.
     let mut rewritten = 0usize;
     state.library.books.update(|rows| {
         for book in book_rows_mut(rows) {
@@ -102,11 +103,10 @@ async fn run(state: AppState, candidates: Vec<(String, String)>) {
 
 /// Carry each moved book's cover across to its new address.
 ///
-/// The cover cache is keyed by the address a book reads, so a move orphans the
-/// art under a key nothing asks about any more and leaves the card showing a
-/// fallback until the book is opened again. A re-key rather than a re-render: the
-/// image is the same page of the same bytes, and a shelf of forty migrated books
-/// is forty renders nobody asked for.
+/// The cover cache is keyed by address, so a move orphans the art under a key
+/// nothing asks about and the card shows a fallback until the book is opened
+/// again. A re-key rather than a re-render: same bytes, same page — forty
+/// migrated books are not forty renders.
 fn rekey_covers(state: AppState, moved: &HashMap<String, (String, String)>) {
     let mut changed = false;
     state.library.covers.update(|covers| {

@@ -49,7 +49,9 @@ fn sweep_and_walk_into(
         arrange::purge_books(state, &doomed, ReadingData::Keep);
     }
     if super::copies::copies_over_standing_tree(state, &root, &opts) {
-        // The unbound walk files the copies into the shelf the sweep just emptied and leaves the tree's ledger alone: the bound run would convert the very tree the reader did NOT ask to convert.
+        // The unbound walk files the copies into the shelf the sweep just
+        // emptied and leaves the tree's ledger alone: the bound run would
+        // convert the very tree the reader did not ask to convert.
         super::copies::copies_beside_tree(
             state,
             root,
@@ -71,7 +73,9 @@ fn sweep_and_walk_into(
     );
 }
 
-/// A stored book on one of its shelves — a copy that came home — is NOT among them: the replace is about the instances that read the OS folder.
+/// The linked rows of a read-at-place tree at `root`. A stored book on one
+/// of its shelves — a copy that came home — is not among them: the replace
+/// is about the instances that read the OS folder.
 pub fn replace_rows_of_tree(state: AppState, root: &str) -> Vec<String> {
     let placed: HashSet<Fingerprint> = state.library.folders.with_untracked(|folders| {
         folders
@@ -89,7 +93,9 @@ pub fn replace_rows_of_tree(state: AppState, root: &str) -> Vec<String> {
         .with_untracked(|rows| ledger::linked_rows_of(rows, &placed))
 }
 
-/// The copy import that follows spends those logs as it lands, so the shelf comes back holding only the library's copies, in the names the shelves showed.
+/// Purge the tree's linked rows. The copy import that follows spends their
+/// logs as it lands, so the shelf comes back holding only the library's
+/// copies, in the names the shelves showed.
 pub(crate) fn purge_folder_linked_books(state: AppState, root: &str) {
     let doomed = replace_rows_of_tree(state, root);
     if !doomed.is_empty() {
@@ -98,9 +104,9 @@ pub(crate) fn purge_folder_linked_books(state: AppState, root: &str) {
     }
 }
 
-/// The check and the claim run in one synchronous step (the webview is single-threaded, and
-/// nothing awaits between them): a run the reader already started refuses the answer with the
-/// double-import sentence.
+/// The check and the claim run in one synchronous step — the webview is
+/// single-threaded and nothing awaits between them — so a run the reader
+/// already started refuses with the double-import sentence.
 pub(crate) fn replace_folder_with_copies(state: AppState, root: String, opts: FolderOpts) {
     let walking = root.clone();
     gate_root(state, &root, move || {

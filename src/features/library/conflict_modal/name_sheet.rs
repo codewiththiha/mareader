@@ -1,5 +1,6 @@
-//! The name question: an arrival whose name a row on this level already carries, and the answers
-//! — the import's or the move's, decided by what is arriving. Described rather than drawn:
+//! The name question: an arrival whose name a row on this level already
+//! carries. The answers are the import's or the move's, decided by what is
+//! arriving. Described rather than drawn —
 //! [`ConflictSheet`](crate::features::library::conflict_modal) draws it.
 
 use leptos::prelude::*;
@@ -12,11 +13,13 @@ use crate::state::AppState;
 use super::info::{more_waiting, where_line};
 use super::sheet::{AnswerRoute, ChoiceSpec, SheetSpec};
 
-/// Every sentence here is built off one snapshot of the library, because a row that counted one way and answered another is a receipt for something else.
+/// Every sentence is built off one snapshot of the library: a row that
+/// counted one way and answered another is a receipt for something else.
 pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
     let where_line = where_line(state, &ask.arrival.shelf_id);
     let import = ask.arrival.is_import();
-    // The apply's own list rather than a condition the sheet re-derives, so a row the sheet renders is a row the answer will take.
+    // The apply's own list rather than a re-derived condition, so a row the
+    // sheet renders is a row the answer will take.
     let offers = conflict::offers_for(state, ask);
     let existing_name = ask.existing_name.clone();
     let (rows, shelves) = state.library.snapshot_rows();
@@ -26,7 +29,8 @@ pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
         &ask.arrival.shelf_id,
         &ask.arrival.name,
     );
-    // A count taken from the address would promise a loss the merge cannot make, because a twin still reading that address keeps its own marks.
+    // A count from the address would promise a loss the merge cannot make: a
+    // twin still reading that address keeps its own marks.
     let marks = crate::storage::load_gloss()
         .get(&ask.existing_id)
         .map(Vec::len)
@@ -115,9 +119,9 @@ pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
         })
         .collect();
 
-    // Only the questions this sheet answers: the covered and merge kinds wait behind other
-    // sheets with other answers, and a count that included them would promise an apply-all
-    // this sheet cannot run.
+    // Only the questions this sheet answers: covered and merge kinds wait
+    // behind other sheets, and counting them would promise an apply-all this
+    // sheet cannot run.
     let waiting = state
         .library
         .conflict_waiting

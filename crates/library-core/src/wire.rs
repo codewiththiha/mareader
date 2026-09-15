@@ -1,37 +1,42 @@
-//! The wire contract between the shell's filesystem commands and the frontend
-//! that drives them. Both sides depend on this crate, so these types are
-//! declared ONCE rather than mirrored (the AI chunk stream's envelope is written
-//! twice and held together by a contract test).
+//! The wire contract between the shell's filesystem commands and the
+//! frontend that drives them. Both sides depend on this crate, so these types
+//! are declared once rather than mirrored.
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ImportPhase {
-    /// Walking a folder. The total is not known yet, which is what the dock reads as "indeterminate".
+    /// Walking a folder. The total is not known yet, which the dock reads as
+    /// indeterminate.
     Scan,
     Copy,
 }
 
-/// One progress beat, emitted on the shell's `library://progress` channel and re-broadcast as a window event by `src/services/library/mod.rs`.
+/// One progress beat, emitted on the shell's `library://progress` channel
+/// and re-broadcast as a window event by `src/services/library/mod.rs`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportProgress {
-    /// The import run this beat belongs to, so two runs in flight never have their counts mixed.
+    /// The import run this beat belongs to, so two runs in flight never mix
+    /// their counts.
     pub task: String,
     pub phase: ImportPhase,
     pub done: u32,
-    /// `0` during a scan (the count is not known until the walk ends), the request count during a copy.
+    /// `0` during a scan (the count is unknown until the walk ends); the
+    /// request count during a copy.
     pub total: u32,
     pub name: String,
 }
 
-/// One row per path asked about, in the order asked, so the caller can zip the answer against its own list.
+/// One row per path asked about, in the order asked, so the caller can zip
+/// the answer against its own list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PathCheck {
     pub path: String,
-    /// False for a path that is gone, unreadable, a directory, or refused by the shell's document gate.
+    /// False for a path that is gone, unreadable, a directory, or refused by
+    /// the shell's document gate.
     pub exists: bool,
     pub size: u64,
     pub mtime_ms: u64,
@@ -39,8 +44,9 @@ pub struct PathCheck {
 }
 
 impl PathCheck {
-    /// The measurement as a fingerprint, or `None` when the address did not resolve:
-    /// the caller marks that book `missing` rather than re-stamping it with zeros.
+    /// The measurement as a fingerprint, or `None` when the address did not
+    /// resolve — the caller marks that book `missing` rather than re-stamping
+    /// it with zeros.
     pub fn fingerprint(&self) -> Option<crate::book::Fingerprint> {
         self.exists.then_some(crate::book::Fingerprint {
             size: self.size,
@@ -50,15 +56,14 @@ impl PathCheck {
     }
 }
 
-/// One file the library is about to act on, from the webview's side of the wire: the
-/// address the bytes come from and the book's id (which becomes part of the stored
-/// name so two books with the same title cannot collide). One shape for both commands
-/// that take it — a copy's source and a relocation's current address are the same
-/// question, "where do the bytes stand now" — so the two sides' fail constructors are
-/// one too. The address leads and the id follows, the order both shapes it replaces
-/// already spelled, so the wire bytes of a relocation are unchanged by the unification.
+/// One file the library is about to act on: the address the bytes come from
+/// and the book's id, which becomes part of the stored name so two books with
+/// the same title cannot collide. One shape for both commands that take it —
+/// a copy's source and a relocation's current address are the same question —
+/// with the field order the pre-unification shapes already spelled, so a
+/// relocation's wire bytes are unchanged.
 ///
-/// For a relocation, `from` is the copy's current address in the old flat store
+/// For a relocation, `from` is the copy's address in the old flat store
 /// (`<root>/<format>/<stem>_<id>.<ext>`) that [`crate::store`]'s item layout
 /// (`<root>/items/<id>/source.<ext>`) replaces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -68,10 +73,10 @@ pub struct BookFileRequest {
     pub id: String,
 }
 
-/// What a relocation pass produced: one row per request, plus the store root the
-/// shell moved them inside. The root rides along because the frontend cannot
-/// compute it — `<app_data_dir>` is the shell's answer — and it needs it to tell
-/// a copy still in the old bucket from one already in its item folder.
+/// What a relocation pass produced: one row per request, plus the store root
+/// the shell moved them inside. The root rides along because the frontend
+/// cannot compute `<app_data_dir>` and needs it to tell a copy still in the
+/// old bucket from one already in its item folder.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelocateResult {
@@ -80,7 +85,8 @@ pub struct RelocateResult {
     pub results: Vec<StoreResult>,
 }
 
-/// A failure is per-file rather than per-batch: a folder with one locked file in it should still import the other ninety-nine.
+/// A failure is per-file rather than per-batch: a folder with one locked
+/// file in it still imports the other ninety-nine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreResult {
@@ -88,11 +94,11 @@ pub struct StoreResult {
     pub src: String,
     pub store: String,
     pub error: Option<String>,
-    /// The copy's own measurement, taken by the same pass that stamped it: the backend
-    /// reads the head to stamp a copy anyway, so answering with the fingerprint costs no
-    /// second trip and the row never wears the source file's identity (which stays free
-    /// for the folder that reads it). `None` for a failed copy, and for a relocation —
-    /// the bytes did not change, so the identity the row already carries is the truth.
+    /// The copy's own measurement, taken by the pass that stamped it: the
+    /// backend reads the head anyway, so answering costs no second trip and
+    /// the row never wears the source's identity (which stays free for the
+    /// folder that reads it). `None` for a failed copy, and for a relocation —
+    /// the bytes did not change.
     #[serde(default)]
     pub measured: Option<crate::book::Fingerprint>,
 }

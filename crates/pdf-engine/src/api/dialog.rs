@@ -6,9 +6,9 @@ use super::{
     reflect_set, KEY_DIRECTORY, KEY_DOCUMENTS, KEY_EXTENSIONS, KEY_FILTERS, KEY_MULTIPLE, KEY_NAME,
 };
 
-/// The sentence a cancelled pick answers with. A constant rather than a string matched in
-/// place at each caller: the two sides of the comparison are in different crates, and a
-/// wording change on one side must show up here rather than silently turn cancels into
+/// The sentence a cancelled pick answers with. A constant rather than a string matched
+/// in place at each caller: the two sides of the comparison are in different crates, and
+/// a wording change on one side must show up here rather than silently turn cancels into
 /// error toasts.
 pub const CANCELLED: &str = "Open cancelled";
 
@@ -20,9 +20,9 @@ pub async fn pick_document() -> Result<String, String> {
 
 /// The same dialog asking for a DIRECTORY instead: what a search picks its
 /// ground with — the app's Find-again sheet walks the folder the reader names
-/// looking for the book's own name (the app's `services::library::arrange`). No
-/// extension filter: a folder has no suffix to filter on. Same cancel
-/// contract, so a caller treats the two doors alike.
+/// looking for the book's own name. No extension filter: a folder has no
+/// suffix to filter on. Same cancel contract, so a caller treats the two
+/// doors alike.
 pub async fn pick_directory() -> Result<String, String> {
     pick(true).await
 }
