@@ -108,8 +108,9 @@
 }
 
 /* Where a folder's books live: "Copied" for books in the library's own store, "On disk" for
-   books read where they sit. It shares a row with the watched dot, and it is the quietest thing on
-   the plate on purpose — it is true of nearly every card. */
+   books read where they sit, and "Mixed" when both live on the same shelf. It shares a row with
+   the watched dot, and it is the quietest thing on the plate on purpose — it is true of nearly
+   every card. */
 .folder-mode {
   padding: 1px 6px;
   border: 1px solid var(--color-line);
@@ -120,6 +121,14 @@
   line-height: 1.5;
   letter-spacing: 0.02em;
   white-space: nowrap;
+}
+
+/* Mixed content: on-disk and stored books on the same shelf. Slightly louder than the
+   single-kind badges so the reader notices the shelf holds two kinds. */
+.folder-mode-mixed {
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-line));
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-paper) 88%);
+  color: color-mix(in srgb, var(--color-ink) 80%, var(--color-muted));
 }
 
 /* A watched folder's dot. It breathes rather than blinks: the badge is chrome the reader is not

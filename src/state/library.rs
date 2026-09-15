@@ -398,6 +398,36 @@ impl LibraryState {
         })
     }
 
+    /// What a shelf actually holds: on-disk, stored copies, mixed, or nothing.
+    /// The badge that fixes the duplicate-inside-read-at-place bug — a
+    /// duplicated folder's books are stored even though its seat still says
+    /// "On disk".
+    #[allow(dead_code)]
+    pub fn shelf_content_kind(&self, shelf_id: &str) -> library_core::shelf::ContentKind {
+        self.shelves.with(|shelves| {
+            self.books.with(|rows| {
+                shelf::find(shelves, shelf_id)
+                    .map(|shelf| shelf::content_kind(rows, shelf))
+                    .unwrap_or(library_core::shelf::ContentKind::Empty)
+            })
+        })
+    }
+
+    /// Recursive version: counts the shelf and all shelves below it, so a
+    /// folder whose children hold stored copies is not still labelled "On
+    /// disk" when it has no direct books.
+    #[allow(dead_code)]
+    pub fn shelf_content_kind_recursive(
+        &self,
+        shelf_id: &str,
+    ) -> library_core::shelf::ContentKind {
+        self.shelves.with(|shelves| {
+            self.books.with(|rows| {
+                shelf::content_kind_recursive(rows, shelves, shelf_id)
+            })
+        })
+    }
+
     pub fn shelf_tracked_untracked(&self, shelf_id: &str) -> bool {
         self.folders.with_untracked(|folders| {
             self.shelves.with_untracked(|shelves| {

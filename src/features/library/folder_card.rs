@@ -6,7 +6,7 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
-use library_core::shelf::{Shelf, children_of, find};
+use library_core::shelf::{children_of, find, ContentKind, Shelf};
 use library_core::text::plural;
 
 use crate::features::library::entry::{EntryDescriptor, EntryShell};
@@ -51,6 +51,25 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     let mode_id = id.clone();
     let mode = Signal::derive(move || state.library.shelf_mode(&mode_id));
 
+    let content_id = id.clone();
+    let content = Signal::derive(move || {
+        state.library.shelves.with(|shelves| {
+            state.library.books.with(|rows| {
+                // Recursive so a folder whose children hold stored copies is not
+                // still labelled "On disk". Direct content wins for the fast
+                // path, but an empty direct shelf falls back to its subtree.
+                let direct = find(shelves, &content_id)
+                    .map(|shelf| library_core::shelf::content_kind(rows, shelf))
+                    .unwrap_or(ContentKind::Empty);
+                if direct != ContentKind::Empty {
+                    direct
+                } else {
+                    library_core::shelf::content_kind_recursive(rows, shelves, &content_id)
+                }
+            })
+        })
+    });
+
     let check_id = id.clone();
 
     // The folder's own answers: open drills the route, right-click asks about
@@ -78,15 +97,34 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
             </div>
             <div class="folder-badges">
                 {move || {
-                    mode.get().map(|mode| {
-                        let title = if mode.copies_files() {
-                            "Every book here is a copy the library keeps — the folder on disk can go."
-                        } else {
-                            "These books stay in their folder on disk; the library only remembers \
-                             where they are."
-                        };
-                        view! { <span class="folder-mode" title=title>{mode.badge()}</span> }
-                    })
+                    let kind = content.get();
+                    if kind != ContentKind::Empty {
+                        let badge = kind.badge().unwrap_or_default();
+                        let title = kind.tooltip().unwrap_or_default();
+                        let mixed = kind.is_mixed();
+                        view! {
+                            <span
+                                class="folder-mode"
+                                class=("folder-mode-mixed", mixed)
+                                title=title
+                            >
+                                {badge}
+                            </span>
+                        }
+                            .into_any()
+                    } else {
+                        mode.get()
+                            .map(|mode| {
+                                let title = if mode.copies_files() {
+                                    "Every book here is a copy the library keeps — the folder on disk can go."
+                                } else {
+                                    "These books stay in their folder on disk; the library only remembers \
+                                     where they are."
+                                };
+                                view! { <span class="folder-mode" title=title>{mode.badge()}</span> }
+                            })
+                            .into_any()
+                    }
                 }}
                 {move || {
                     watched.get().then(|| {
