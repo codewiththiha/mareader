@@ -52,10 +52,10 @@ fn anchor_for(detail: &SelectionDetail, state: AppState) -> Option<PageAnchor> {
     if reflow {
         // The tracker walked the offsets out of the range while it had it; the
         // app's job is to project them onto the layout as it stands now.
-        if let Some(spot) = detail.spot {
-            if let Some(anchor) = reflow_anchor::anchor_of(reader, &spot) {
-                return Some(anchor);
-            }
+        if let Some(spot) = detail.spot
+            && let Some(anchor) = reflow_anchor::anchor_of(reader, &spot)
+        {
+            return Some(anchor);
         }
     }
 

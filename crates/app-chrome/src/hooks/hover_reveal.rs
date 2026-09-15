@@ -47,6 +47,9 @@ impl Default for HoverConfig {
     }
 }
 
+/// One pointer edge, cloned out to every element that binds it.
+type Handler = Rc<dyn Fn()>;
+
 /// A reveal controller: the visibility to render from, plus the two pointer
 /// edges to bind on every element that belongs to the surface.
 #[derive(Clone)]
@@ -55,8 +58,8 @@ pub struct HoverReveal {
     /// inside the hook: the reveal owns the writes, and a consumer that could
     /// set it would desynchronise the timer.
     pub visible: Signal<bool>,
-    enter: Rc<dyn Fn()>,
-    leave: Rc<dyn Fn()>,
+    enter: Handler,
+    leave: Handler,
 }
 
 impl HoverReveal {
@@ -71,7 +74,7 @@ impl HoverReveal {
     /// A fresh `(enter, leave)` pair to move into one element's handlers.
     /// Call it once per element — a surface made of a band and a row binds
     /// twice, and both edges feed the same `hovered` truth.
-    pub fn bind(&self) -> (Rc<dyn Fn()>, Rc<dyn Fn()>) {
+    pub fn bind(&self) -> (Handler, Handler) {
         (Rc::clone(&self.enter), Rc::clone(&self.leave))
     }
 }

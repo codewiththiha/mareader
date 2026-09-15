@@ -63,12 +63,12 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
             Vec::new()
         };
         let opening = !rows.is_empty() && !open.get_untracked();
-        if opening {
-            if let Some(node) = anchor.get_untracked() {
-                let wide = node.get_bounding_client_rect().width();
-                if wide > 0.0 {
-                    panel_width.set(wide as u32);
-                }
+        if opening
+            && let Some(node) = anchor.get_untracked()
+        {
+            let wide = node.get_bounding_client_rect().width();
+            if wide > 0.0 {
+                panel_width.set(wide as u32);
             }
         }
         suggestions.set(rows);

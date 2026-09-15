@@ -126,6 +126,11 @@ pub(super) struct PendingCopy {
     pub(super) measured: Option<Fingerprint>,
 }
 
+/// One copy queued for the store batch, before the landing names it: the id
+/// it will land as, the file to copy, the title a spent tombstone remembered,
+/// and the slot the placement asked for.
+type QueuedCopy = (String, FoundFile, Option<String>, Option<usize>);
+
 /// Answer each file by the ground it stands on: a file of a read-at-place
 /// folder is that folder's business first; the rest land as stored copies,
 /// except the ones whose name the target level already holds, which ask (see
@@ -167,7 +172,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     let (clean, conflicts) = conflict::screen(state, arrivals);
 
     let now = now_ms();
-    let mut pending: Vec<(String, FoundFile, Option<String>, Option<usize>)> = Vec::new();
+    let mut pending: Vec<QueuedCopy> = Vec::new();
     let mut stone_landings: Vec<String> = Vec::new();
     for arrival in &clean {
         let Some(file) = arrival.file.clone() else {

@@ -826,8 +826,7 @@ mod tests {
 
     #[test]
     fn a_sub_thousand_byte_threshold_still_prints_honestly() {
-        let mut o = FolderOpts::default();
-        o.min_size = 512;
+        let o = FolderOpts { min_size: 512, ..Default::default() };
         assert_eq!(o.min_size_label(), "0.5 KB");
     }
 

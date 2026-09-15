@@ -455,10 +455,12 @@ mod tests {
 
     #[test]
     fn settings_round_trip_with_fonts() {
-        let mut s = TextSettings::default();
-        s.default_font = FontChoice::System(SystemFont::Baskerville);
-        s.mono_font = FontChoice::System(SystemFont::Consolas);
-        s.serif_font = FontChoice::BuiltIn("future".into());
+        let s = TextSettings {
+            default_font: FontChoice::System(SystemFont::Baskerville),
+            mono_font: FontChoice::System(SystemFont::Consolas),
+            serif_font: FontChoice::BuiltIn("future".into()),
+            ..Default::default()
+        };
         let json = serde_json::to_string(&s).unwrap();
         let back: TextSettings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);

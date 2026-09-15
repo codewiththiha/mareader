@@ -396,13 +396,11 @@ mod tests {
         assert!(!may_drag(false, true));
     }
 
-    #[test]
-    fn a_drag_threshold_smaller_than_the_hold_slop_leaves_no_band_between_them() {
-        // The two numbers are in different modules and one rule holds them
-        // together: a drag must be decided before the hold it replaces would
-        // have been cancelled, so the reader is never in a band where the
-        // pointer has travelled far enough to lose the selection and not far
-        // enough to have a drag.
-        assert!(DRAG_THRESHOLD_PX < SELECT_SLOP_PX);
-    }
+    // The two numbers are in different modules and one rule holds them
+    // together: a drag must be decided before the hold it replaces would
+    // have been cancelled, so the reader is never in a band where the
+    // pointer has travelled far enough to lose the selection and not far
+    // enough to have a drag. A compile-time constant rather than a test: a
+    // build that breaks the rule cannot ship at all.
+    const _: () = assert!(DRAG_THRESHOLD_PX < SELECT_SLOP_PX);
 }

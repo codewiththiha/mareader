@@ -126,14 +126,12 @@ fn drain(state: AppState) {
             let was = *dirty.borrow();
             *dirty.borrow_mut() = false;
             was
-        }) {
-            if let Err(e) = state
-                .library
-                .covers
-                .with_untracked(crate::storage::save_covers)
-            {
-                e.report();
-            }
+        }) && let Err(e) = state
+            .library
+            .covers
+            .with_untracked(crate::storage::save_covers)
+        {
+            e.report();
         }
         return;
     };

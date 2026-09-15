@@ -437,7 +437,7 @@ fn land_the_tree(
                 );
                 dup.title = Some(shown.clone());
                 dup.title_locked = true;
-                dup.adopt_measurement(measured.clone());
+                dup.adopt_measurement(*measured);
                 crate::storage::copy_gloss(&book.id, new_id);
                 mapped.insert(old.clone(), new_id.clone());
                 rows.push(Row::Book(dup));

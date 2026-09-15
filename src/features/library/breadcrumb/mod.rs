@@ -80,7 +80,7 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
                     watched,
                 }
             };
-            let mut chain: Vec<Crumb> = ancestors(shelves, &id).into_iter().map(|s| of(s)).collect();
+            let mut chain: Vec<Crumb> = ancestors(shelves, &id).into_iter().map(of).collect();
             chain.push(of(current));
             chain
         })

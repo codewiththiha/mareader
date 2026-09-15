@@ -191,8 +191,7 @@ mod tests {
 
     #[test]
     fn a_pinned_count_steps_inside_its_range() {
-        let mut v = LibraryView::default();
-        v.columns = Some(6);
+        let mut v = LibraryView { columns: Some(6), ..Default::default() };
         assert_eq!(v.columns_token(), "6");
         assert!(v.columns_enabled());
         v.step_columns(1);
@@ -223,8 +222,7 @@ mod tests {
 
     #[test]
     fn stepping_from_auto_pins_what_auto_was_showing() {
-        let mut v = LibraryView::default();
-        v.auto_fit = 7;
+        let mut v = LibraryView { auto_fit: 7, ..Default::default() };
         assert_eq!(v.columns, None, "Auto still owns the layout");
         v.step_columns(1);
         assert_eq!(

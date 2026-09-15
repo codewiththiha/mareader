@@ -187,10 +187,12 @@ mod tests {
 
     #[test]
     fn css_variables_carry_the_full_contract() {
-        let mut s = TextSettings::default();
-        s.justify = true;
-        s.hyphenation = true;
-        s.font_size = 18.0;
+        let s = TextSettings {
+            justify: true,
+            hyphenation: true,
+            font_size: 18.0,
+            ..Default::default()
+        };
         let vars: Vec<String> = css_variables(&s).into_iter().map(|(k, v)| format!("{k}:{v}")).collect();
         let joined = vars.join(";");
         assert!(joined.contains("--tx-font-size:18px"), "{joined}");

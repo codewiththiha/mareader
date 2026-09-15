@@ -55,6 +55,10 @@ pub fn raf_coalesce(f: impl Fn() + 'static) -> impl Fn() + Clone + 'static {
 /// A slot holding the pending frame's id, so a stop can cancel it.
 type RafId = Rc<Cell<Option<i32>>>;
 
+/// The loop's own step, and the trampoline that keeps re-queueing it: one
+/// frame callback reads the slot and calls whatever is parked in it.
+type Step = Rc<dyn Fn()>;
+
 fn cancel(raf: &RafId) {
     if let Some(id) = raf.take()
         && let Some(w) = web_sys::window()
@@ -98,7 +102,7 @@ pub struct FrameLoop {
     /// The step, parked where the frame callback can find it. The callback
     /// holds only a WEAK reference, so replacing this slot is what retargets a
     /// running loop and dropping it is what ends one.
-    slot: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    slot: Rc<RefCell<Option<Step>>>,
     alive: Rc<Cell<bool>>,
     raf: RafId,
 }
@@ -130,7 +134,7 @@ impl FrameLoop {
         let weak = Rc::downgrade(&self.slot);
         let step = Rc::new(step);
 
-        let trampoline: Rc<dyn Fn()> = Rc::new(move || {
+        let trampoline: Step = Rc::new(move || {
             if !alive.get() {
                 return;
             }

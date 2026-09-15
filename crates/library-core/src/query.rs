@@ -154,6 +154,10 @@ pub struct Suggestion {
     pub score: i32,
 }
 
+/// One term's best field hit: the weighted score, which field won it, and
+/// the spans that field lit up.
+type BestHit = (i32, usize, Vec<(usize, usize)>);
+
 /// Score one book against every term, keeping the best field per term and
 /// weighting them as a reader means them: name first, author second, address
 /// last. `None` when any term misses every field.
@@ -170,7 +174,7 @@ fn rank(book: &Book, query: &str) -> Option<Suggestion> {
             term_match(path, term),
         ];
         let weights = [3i32, 2, 1];
-        let mut best: Option<(i32, usize, Vec<(usize, usize)>)> = None;
+        let mut best: Option<BestHit> = None;
         for (field, candidate) in candidates.into_iter().enumerate() {
             let Some(m) = candidate else { continue };
             let weighted = weights[field] * m.score;

@@ -191,11 +191,11 @@ pub(super) fn bind_returned(state: AppState, row_id: &str, shelf_id: &str) {
                 None => !measured && same_name(&entry.label(), &name),
             }
         };
-        if let Some(entry) = folder.ignored.iter_mut().find(|entry| is_the_one(entry)) {
-            if entry.returned_row.as_deref() != Some(row_id) {
-                entry.returned_row = Some(row_id.to_string());
-                bound = true;
-            }
+        if let Some(entry) = folder.ignored.iter_mut().find(|entry| is_the_one(entry))
+            && entry.returned_row.as_deref() != Some(row_id)
+        {
+            entry.returned_row = Some(row_id.to_string());
+            bound = true;
         }
     });
     if bound {

@@ -107,10 +107,10 @@ fn write_read(
         book.fraction = point.fraction;
         book.last_read_ms = now_ms;
         book.missing = false;
-        if crate::text::non_blank(book.title.as_deref()).is_none() {
-            if let Some(t) = title {
-                book.title = Some(t.to_string());
-            }
+        if crate::text::non_blank(book.title.as_deref()).is_none()
+            && let Some(t) = title
+        {
+            book.title = Some(t.to_string());
         }
         if book.author.is_none() {
             book.author = author.map(str::to_string);

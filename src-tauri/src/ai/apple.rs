@@ -81,15 +81,15 @@ fn map_err(e: BridgeError) -> AiError {
 /// content, so a chunk that echoes an empty array never wipes the synonyms
 /// that arrived earlier.
 fn merge_partial(acc: &mut WordInfo, val: &serde_json::Value) {
-    if let Some(s) = val.get("pos").and_then(|v| v.as_str()) {
-        if !s.trim().is_empty() {
-            acc.pos = s.to_string();
-        }
+    if let Some(s) = val.get("pos").and_then(|v| v.as_str())
+        && !s.trim().is_empty()
+    {
+        acc.pos = s.to_string();
     }
-    if let Some(s) = val.get("meaning").and_then(|v| v.as_str()) {
-        if !s.trim().is_empty() {
-            acc.meaning = s.to_string();
-        }
+    if let Some(s) = val.get("meaning").and_then(|v| v.as_str())
+        && !s.trim().is_empty()
+    {
+        acc.meaning = s.to_string();
     }
     if let Some(a) = val.get("synonyms").and_then(|v| v.as_array()) {
         let items: Vec<String> = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();

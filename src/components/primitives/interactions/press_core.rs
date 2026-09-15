@@ -56,8 +56,7 @@ pub fn arm_timer(
     let Some(win) = web_sys::window() else {
         return;
     };
-    let mut on_fire = on_fire;
-    let cb = Closure::<dyn FnMut()>::new(move || on_fire());
+    let cb = Closure::<dyn FnMut()>::new(on_fire);
     let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
     if let Ok(handle) = win.set_timeout_with_callback_and_timeout_and_arguments_0(&f, after_ms) {
         timer.set_value(Some((handle, cb)));

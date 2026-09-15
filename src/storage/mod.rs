@@ -238,7 +238,7 @@ pub fn persist_library(library: LibraryState) {
 /// the cap in `crate::services::library::covers::COVER_CAP` is only a real quota if the
 /// images are written back after a prune, not just dropped from memory.
 pub fn persist_covers(library: LibraryState) {
-    if let Err(e) = library.covers.with_untracked(|covers| save_covers(covers)) {
+    if let Err(e) = library.covers.with_untracked(save_covers) {
         e.report();
     }
 }

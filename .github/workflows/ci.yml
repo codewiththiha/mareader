@@ -118,14 +118,12 @@ jobs:
           fi
           cp /tmp/Cargo.lock.committed Cargo.lock
 
-      # Clippy is gated with `-D warnings`. The allow-list below is the complete
-      # set of lints this workspace trips today — re-derived by running the step
-      # with every `-A` removed, on the host and on the wasm frontend — and it
-      # carries ESTABLISHED style rather than new sloppiness (e.g.
-      # `clone_on_copy` for the idiomatic Leptos `state.clone()` on a `Copy`
-      # AppState). It is deliberately short: a lint that stops firing should be
-      # dropped from here, not left as a permanent exemption.
-      # New code is still held to `-D warnings`.
+      # Clippy is gated with `-D warnings` and NO allow-list: the six lints that
+      # used to be exempted here were fixed at their sites instead, so a warning
+      # anywhere in the workspace is a red run. A lint that is genuinely wrong
+      # for one site gets a reasoned `#[allow]` there — where a reader meets the
+      # code and the reason — rather than a blanket exemption that silences the
+      # whole workspace forever.
       #
       # There is no `cargo fmt --check` anywhere in this workflow, and that is a
       # decision rather than an oversight: the codebase is hand-formatted in a
@@ -145,23 +143,17 @@ jobs:
       # to resolve quietly. check-versions now reads the lock as well and names
       # the file, which is a better error than this one.
       - name: Clippy (deny warnings)
-        run: |
-          cargo clippy --workspace --all-targets --exclude pdf --locked -- -D warnings \
-            -A clippy::clone_on_copy \
-            -A clippy::field_reassign_with_default \
-            -A clippy::collapsible_if \
-            -A clippy::redundant_closure \
-            -A clippy::type_complexity \
-            -A clippy::assertions_on_constants
+        run: cargo clippy --workspace --all-targets --exclude pdf --locked -- -D warnings
 
       # The frontend is Rust compiled to wasm; verify it compiles for the wasm
       # target without a full `trunk build` (that lives in the release pipeline).
       #
-      # Warnings here are printed but not fatal, and that is a weighed choice
-      # rather than a gap: denying them means putting `-D warnings` in RUSTFLAGS,
-      # which re-keys every dependency artifact for the target and burns the
-      # warm wasm cache to lint the handful of `cfg(target_arch = "wasm32")`
-      # sites whose host twins clippy has already held to `-D warnings`.
+      # Warnings are fatal here too — this is the only lane that compiles the
+      # `cfg(target_arch = "wasm32")` sites the host lanes never see. The deny
+      # rides in every crate's own `[lints.rust] warnings = "deny"` rather than
+      # in RUSTFLAGS: the table applies to this workspace's crates and nothing
+      # else, so dependency artifacts keep the warm cache keys a RUSTFLAGS edit
+      # would throw away.
       - name: Check wasm frontend
         run: cargo check --target wasm32-unknown-unknown --locked
 
@@ -280,6 +272,17 @@ jobs:
       - name: Verify comment paths resolve
         run: node scripts/check-doc-paths.js
 
+      # Dead code is deleted, not annotated. An `allow(dead_code)` or
+      # `allow(unused…)` outlives the code it excuses, and no compile lane can
+      # see a suppression sitting on wasm-only or platform-gated code — so this
+      # one reads the tree instead, and holds on every target at once.
+      - name: Verify no dead-code suppressions
+        run: |
+          if grep -rn --include='*.rs' -E '#!?\[(allow|expect)\((dead_code|unused)' src crates src-tauri tests; then
+            echo "::error::dead-code suppressions are not allowed — delete the code or use it"
+            exit 1
+          fi
+
       # The engine and the app agree on three window-event names, declared once
       # in Rust and once in TypeScript. A disagreement is silent at build time.
       - name: Verify the window-event tables agree
@@ -336,14 +339,7 @@ jobs:
           printf '<!doctype html><title>PDF Reader</title>' > dist/index.html
 
       - name: Clippy (deny warnings)
-        run: |
-          cargo clippy -p pdf --all-targets --locked -- -D warnings \
-            -A clippy::clone_on_copy \
-            -A clippy::field_reassign_with_default \
-            -A clippy::collapsible_if \
-            -A clippy::redundant_closure \
-            -A clippy::type_complexity \
-            -A clippy::assertions_on_constants
+        run: cargo clippy -p pdf --all-targets --locked -- -D warnings
 
       # The AiChunk wire-contract tests live in this crate; without this step
       # they compile nowhere and run nowhere.
