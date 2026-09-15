@@ -23,9 +23,9 @@ fn fold(c: char) -> char {
 /// One match: its score and the character spans it lit up, merged so a
 /// consecutive run is one span.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Match {
-    pub score: i32,
-    pub spans: Vec<(usize, usize)>,
+struct Match {
+    score: i32,
+    spans: Vec<(usize, usize)>,
 }
 
 fn merge_spans(indices: &[usize]) -> Vec<(usize, usize)> {
@@ -45,7 +45,7 @@ fn merge_spans(indices: &[usize]) -> Vec<(usize, usize)> {
 ///
 /// The scatter floor is two points per term character — a dropped-vowel shape
 /// (`mthmtcl`, `dne`) clears it; a sprinkle across a long field does not.
-pub fn term_match(field: &str, term: &str) -> Option<Match> {
+fn term_match(field: &str, term: &str) -> Option<Match> {
     let term: Vec<char> = term.chars().map(fold).collect();
     let q = term.len();
     if q == 0 {

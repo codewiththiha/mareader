@@ -9,7 +9,7 @@ use crate::appearance::{Appearance, BaseMode};
 /// own transformation on top: PDF through a CSS filter chain over the
 /// raster plus UI-token overrides, text by shifting these values directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BaseTokens {
+pub(crate) struct BaseTokens {
     pub paper: &'static str,
     pub ink: &'static str,
     pub muted: &'static str,
@@ -35,7 +35,7 @@ impl BaseTokens {
     }
 }
 
-pub fn base_tokens(mode: BaseMode) -> BaseTokens {
+pub(crate) fn base_tokens(mode: BaseMode) -> BaseTokens {
     match mode {
         BaseMode::Light => BaseTokens {
             paper: "#ffffff",

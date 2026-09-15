@@ -160,7 +160,7 @@ fn known_action(folder: &WatchedFolder, known: &KnownBook, file: &FoundFile) -> 
 /// An explicit import's decision: the same questions as [`decide`], except a
 /// tombstone is lifted rather than honoured (the lift lands via
 /// [`restore_deleted`]) and content another folder placed is still added.
-pub fn decide_import(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> ScanAction {
+fn decide_import(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> ScanAction {
     match registry.get(&file.fp) {
         None => ScanAction::Add(file.clone()),
         Some(known) => {

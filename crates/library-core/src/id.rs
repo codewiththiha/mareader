@@ -33,12 +33,6 @@ pub fn next_task_id(now_ms: u64) -> String {
     format!("t{now_ms:x}-{}", next_seq())
 }
 
-/// Monotonic nonce so two reveals of the same item in a row never compare
-/// equal and get dropped as a repeat.
-pub fn next_nonce(now_ms: u64) -> u64 {
-    now_ms.wrapping_mul(1_000).wrapping_add(u64::from(next_seq()))
-}
-
 /// One tested "has enough time passed" rule shared by the app's cooldowns (a
 /// rescan per focus, a picker's just-closed grace). Not a static: the caller
 /// owns where the cooldown lives, this type only owns the rule.
@@ -156,12 +150,6 @@ mod tests {
         assert!(!is_shelf(&task));
         // Two runs minted in one millisecond still get two cards.
         assert_ne!(next_task_id(now), next_task_id(now));
-    }
-
-    #[test]
-    fn nonces_minted_together_never_agree() {
-        assert_ne!(next_nonce(7), next_nonce(7));
-        assert_ne!(next_nonce(7), next_nonce(8));
     }
 
     #[test]

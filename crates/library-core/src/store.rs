@@ -1,21 +1,16 @@
 //! Where a book's bytes live on disk: one folder per book, keyed by an id
 //! that never changes.
 //!
-//! Every file a book owns — source, cover, highlights — sits in the folder its
-//! id names, so a merge or a delete is one directory. Names are not
-//! title-derived: renaming a book moves nothing on disk.
+//! The folder is the unit a removal sweeps whole, and nothing on disk wears a
+//! title: renaming a book moves nothing. Covers and highlights are NOT files
+//! here — they persist in the app's own storage — so the only byte this module
+//! names is the stored source.
 
-pub const ITEMS_DIR: &str = "items";
+const ITEMS_DIR: &str = "items";
 
 /// The stem a stored book's bytes wear inside its item folder (`source.pdf`,
 /// `source.md`): one predictable name, the format carried by the suffix.
 const SOURCE_STEM: &str = "source";
-
-pub const COVER_FILE: &str = "cover.webp";
-
-pub const MARKS_FILE: &str = "marks.json";
-
-pub const META_FILE: &str = "meta.json";
 
 /// The item-folder root under a store root: `<store_root>/items`. Keeping
 /// everything below one root is what the delete command's containment check
@@ -27,7 +22,7 @@ pub fn items_root(store_root: &str) -> String {
 /// The folder one book owns: `<items_root>/<id>`. The id is sanitised into a
 /// single component rather than trusted: a hand-edited blob must not turn a
 /// folder name into a traversal.
-pub fn item_dir(items_root: &str, book_id: &str) -> String {
+fn item_dir(items_root: &str, book_id: &str) -> String {
     join(trim_sep(items_root), &component(book_id))
 }
 
@@ -46,18 +41,6 @@ pub fn source_path(items_root: &str, book_id: &str, ext: &str) -> String {
     join(&item_dir(items_root, book_id), &file)
 }
 
-pub fn cover_path(items_root: &str, book_id: &str) -> String {
-    join(&item_dir(items_root, book_id), COVER_FILE)
-}
-
-pub fn marks_path(items_root: &str, book_id: &str) -> String {
-    join(&item_dir(items_root, book_id), MARKS_FILE)
-}
-
-pub fn meta_path(items_root: &str, book_id: &str) -> String {
-    join(&item_dir(items_root, book_id), META_FILE)
-}
-
 /// The extension a migrated source keeps in its new name: every supported
 /// extension lower-cased. `None` for one the registry does not know, which
 /// keeps its old name rather than being renamed into something no reader can
@@ -67,33 +50,6 @@ pub fn migrated_ext(ext: &str) -> Option<&'static str> {
         "other" => None,
         dir => Some(dir),
     }
-}
-
-/// The id a copy in the old flat store was named with: the token after its
-/// last underscore (the old name was `<stem>_<id>.<ext>`, and an id never
-/// carries one). `None` for a name with no seam — a file this app did not
-/// write.
-pub fn flat_store_id(file_name: &str) -> Option<String> {
-    let stem = file_name.rsplit_once('.').map_or(file_name, |(stem, _)| stem);
-    stem.rsplit_once('_')
-        .map(|(_, id)| id.to_string())
-        .filter(|id| !id.is_empty())
-}
-
-/// Whether a recorded store address still sits in the old flat bucket and is
-/// a candidate for the one-time migration: directly inside one of the three
-/// format directories under the store root, as `<root>/pdf/dune_ab12.pdf`.
-pub fn is_flat_store_path(store_root: &str, path: &str) -> bool {
-    // A directory edge rather than a string prefix, so `/Library-old/x` is
-    // not under `/Library`.
-    let Some(rest) = crate::folder::rel_under(path, store_root) else {
-        return false;
-    };
-    let mut parts = rest.split('/');
-    let (Some(dir), Some(_file), None) = (parts.next(), parts.next(), parts.next()) else {
-        return false;
-    };
-    matches!(dir, "pdf" | "text" | "markdown")
 }
 
 /// Drop trailing separators so a join never produces `root//child`. Both
@@ -174,31 +130,10 @@ mod tests {
     }
 
     #[test]
-    fn the_cover_marks_and_meta_live_beside_the_source() {
+    fn the_source_lives_inside_the_folder_the_id_names() {
         let dir = format!("/app/Library/items/{ID}");
-        assert_eq!(cover_path("/app/Library/items", ID), format!("{dir}/{COVER_FILE}"));
-        assert_eq!(marks_path("/app/Library/items", ID), format!("{dir}/{MARKS_FILE}"));
-        assert_eq!(meta_path("/app/Library/items", ID), format!("{dir}/{META_FILE}"));
-        // Every file a book owns is inside the one folder its id names, which is the
-        // whole of the colocation: a merge or a delete is one directory.
-        for path in [
-            source_path("/app/Library/items", ID, "pdf"),
-            cover_path("/app/Library/items", ID),
-            marks_path("/app/Library/items", ID),
-            meta_path("/app/Library/items", ID),
-        ] {
-            assert!(path.starts_with(&format!("{dir}/")), "{path} escapes {dir}");
-        }
-    }
-
-    #[test]
-    fn a_linked_and_a_stored_book_share_one_folder_shape() {
-        // The point of giving a linked book an item folder too: its cover and marks
-        // land where a stored book's do, so "where does this book's stuff live" does
-        // not branch on the origin. Only `source.*` is the stored book's alone.
-        let stored = item_dir("/app/Library/items", ID);
-        assert_eq!(cover_path("/app/Library/items", ID), format!("{stored}/{COVER_FILE}"));
-        assert_eq!(marks_path("/app/Library/items", ID), format!("{stored}/{MARKS_FILE}"));
+        let path = source_path("/app/Library/items", ID, "pdf");
+        assert!(path.starts_with(&format!("{dir}/")), "{path} escapes {dir}");
     }
 
     #[test]
@@ -248,43 +183,11 @@ mod tests {
     }
 
     #[test]
-    fn the_id_an_old_copy_was_named_with_is_the_token_after_its_last_underscore() {
-        assert_eq!(flat_store_id("dune_ab12cd.pdf").as_deref(), Some("ab12cd"));
-        assert_eq!(
-            flat_store_id("my_big_book_b018c4f9e2a0.pdf").as_deref(),
-            Some("b018c4f9e2a0")
-        );
-        assert_eq!(flat_store_id("dune.pdf"), None);
-        assert_eq!(flat_store_id("dune_.pdf"), None, "an empty id is no id");
-        assert_eq!(flat_store_id(""), None);
-        assert_eq!(flat_store_id("dune_ab12").as_deref(), Some("ab12"));
-    }
-
-    #[test]
-    fn only_the_three_format_buckets_are_the_old_layout() {
-        let root = "/app/Library";
-        assert!(is_flat_store_path(root, "/app/Library/pdf/dune_ab12.pdf"));
-        assert!(is_flat_store_path(root, "/app/Library/text/notes_ab12.txt"));
-        assert!(is_flat_store_path(root, "/app/Library/markdown/a_ab12.md"));
-        assert!(!is_flat_store_path(root, &source_path("/app/Library/items", ID, "pdf")));
-        assert!(!is_flat_store_path(root, "/app/Library/items/x/y.pdf"));
-        assert!(!is_flat_store_path(root, "/app/Library/other/a_ab12.epub"));
-        assert!(!is_flat_store_path(root, "/books/dune.pdf"));
-        assert!(!is_flat_store_path(root, "/app/Library-old/pdf/dune_ab12.pdf"));
-        assert!(is_flat_store_path("/app/Library/", "/app/Library/pdf/dune_ab12.pdf"));
-        assert!(!is_flat_store_path(root, "/app/Library/pdf/2024/dune_ab12.pdf"));
-    }
-
-    #[test]
     fn a_migrated_address_is_the_item_path_under_its_new_name() {
         let root = "/app/Library";
-        let old = format!("/app/Library/pdf/my_big_book_{ID}.pdf");
-        assert!(is_flat_store_path(root, &old));
-        let id = flat_store_id(&format!("my_big_book_{ID}.pdf")).expect("a seam");
-        assert_eq!(id, ID, "the seam is the id the copy was named with");
         let ext = migrated_ext("pdf").expect("a known format");
         assert_eq!(
-            source_path(&items_root(root), &id, ext),
+            source_path(&items_root(root), ID, ext),
             format!("/app/Library/items/{ID}/source.pdf")
         );
     }

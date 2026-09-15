@@ -72,7 +72,7 @@ fn is_topmost(id: u64) -> bool {
 /// answer to Escape through [`use_modal_escape`] — read this to defer to the
 /// layer above: one press peels one layer, the dropdown first and the modal
 /// only once nothing sits on top.
-pub fn has_open_dismissable() -> bool {
+fn has_open_dismissable() -> bool {
     DISMISS_STACK.with(|s| !s.borrow().is_empty())
 }
 

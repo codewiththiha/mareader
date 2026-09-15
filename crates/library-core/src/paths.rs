@@ -1,10 +1,12 @@
-//! Path-part spelling: the one place a file name, a stem, an extension or a
-//! folder label is taken apart.
+//! Path-part spelling: the one place a file name, an extension or a folder
+//! label is taken apart.
 //!
-//! These four jobs used to be done by six functions in three idioms across
-//! the services, the shell and the import, and a Windows path answered
+//! These jobs used to be done by six functions in three idioms across the
+//! services, the shell and the import, and a Windows path answered
 //! differently depending on which door it came in. Everything here is pure,
-//! host-tested, and shared by the frontend and the shell.
+//! host-tested, and shared by the frontend and the shell. (The stem — the
+//! name without its extension — is `reader_core::filename`'s job, where the
+//! title fallback lives.)
 
 /// The last segment of a path, either separator, no trailing empties: what a
 /// shelf shows a file by. Empty for an all-separator path and for a bare drive
@@ -19,16 +21,6 @@ pub fn file_name(path: &str) -> String {
         return String::new();
     }
     trimmed.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
-}
-
-/// The name without its extension: the title a document wears when it
-/// supplies none. A dotfile (`.gitignore`) is all stem.
-pub fn file_stem(path: &str) -> String {
-    let name = file_name(path);
-    match name.rsplit_once('.') {
-        Some((stem, _)) if !stem.is_empty() => stem.to_string(),
-        _ => name,
-    }
 }
 
 /// Lower case, no dot: the key the format registry answers by. Empty for a
@@ -71,13 +63,6 @@ mod tests {
         assert_eq!(dir_label("C:\\"), "C:\\");
         assert_eq!(dir_label("/Users/me/Books"), "Books");
         assert_eq!(dir_label("/Users/me/Books/"), "Books");
-    }
-
-    #[test]
-    fn a_stem_is_the_name_without_its_extension() {
-        assert_eq!(file_stem("/books/notes.markdown"), "notes");
-        assert_eq!(file_stem("/books/.gitignore"), ".gitignore");
-        assert_eq!(file_stem("/books/Makefile"), "Makefile");
     }
 
     #[test]

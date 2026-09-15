@@ -29,7 +29,7 @@ pub mod render;
 pub mod search;
 pub mod theme;
 
-pub use dialog::{pick_directory, pick_document};
+pub use dialog::pick_document;
 pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
 pub use paper::{sample_paper_page, set_paper, set_paper_active, take_paper_frame, PaperFrame};
 pub use render::{
@@ -95,7 +95,6 @@ js_keys! {
     // Native dialog options (built once per dialog open — still hoisted so
     // the pattern is uniform and the picker never allocates a key twice).
     KEY_MULTIPLE => "multiple",
-    KEY_DIRECTORY => "directory",
     KEY_FILTERS => "filters",
     KEY_EXTENSIONS => "extensions",
     KEY_DOCUMENTS => "Documents",

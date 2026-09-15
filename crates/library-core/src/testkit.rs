@@ -60,18 +60,6 @@ pub fn markdown_row(id: &str) -> Row {
     Row::Book(markdown_book(id))
 }
 
-/// A book whose display name is `title` — what a collision, a sort and a receipt read.
-pub fn titled_book(id: &str, title: &str) -> Book {
-    Book {
-        title: Some(title.to_string()),
-        ..book(id)
-    }
-}
-
-pub fn titled_row(id: &str, title: &str) -> Row {
-    Row::Book(titled_book(id, title))
-}
-
 /// A book row at `path`, for the tests where the id and the address differ.
 pub fn book_at(id: &str, path: &str) -> Book {
     Book {

@@ -450,7 +450,6 @@ struct WalkPlan {
 /// The diff stage: everything between the walk's raw findings and the copy
 /// batch. Decides against the snapshot; the only thing it writes is the
 /// folder's own ledger row.
-#[allow(clippy::too_many_arguments)]
 fn plan_the_walk(
     state: AppState,
     folder: &mut WatchedFolder,

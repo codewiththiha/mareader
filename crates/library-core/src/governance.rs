@@ -110,7 +110,7 @@ impl<'a> Governance<'a> {
     /// the closest folder shelf above a shelf the reader made. `None` for a
     /// shelf no tree answers for — one made at the root, or one that left its
     /// tree ([`ShelfKind::Departed`]).
-    pub fn tree_of(&self, shelf_id: &str) -> Option<Seat> {
+    fn tree_of(&self, shelf_id: &str) -> Option<Seat> {
         let shelf = find_shelf(self.shelves, shelf_id)?;
         let (folder_id, rung) = match &shelf.kind {
             ShelfKind::Folder { folder_id, rel } => {

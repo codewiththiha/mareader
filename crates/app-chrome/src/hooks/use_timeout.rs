@@ -112,7 +112,7 @@ pub fn use_debounce_for(duration: impl Fn() -> Duration + 'static, on_fire: impl
 /// schedules a hide after `delay` unless `postpone` says the surface is held
 /// open (an open popover, an open search, a pin…).
 #[derive(Clone)]
-pub struct HoverVisibility {
+pub(crate) struct HoverVisibility {
     pub visible: RwSignal<bool>,
     pub show: Rc<dyn Fn()>,
     pub hide_later: Rc<dyn Fn()>,
@@ -121,7 +121,10 @@ pub struct HoverVisibility {
 /// Build a hover-visibility controller owned by the current reactive owner.
 /// The postponed check runs both when the hide is scheduled and when the
 /// timer fires, so a hold acquired mid-grace also keeps the surface up.
-pub fn use_hover_visibility(delay: Duration, postpone: impl Fn() -> bool + 'static) -> HoverVisibility {
+pub(crate) fn use_hover_visibility(
+    delay: Duration,
+    postpone: impl Fn() -> bool + 'static,
+) -> HoverVisibility {
     let visible = RwSignal::new(false);
     let handle = StoredValue::new_local(None::<TimeoutHandle>);
     let postpone = Rc::new(postpone);

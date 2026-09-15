@@ -26,7 +26,7 @@ use library_core::wire::{
 /// Mirrored by the frontend in `src/services/library/mod.rs`, which folds it
 /// into the dock's task list so no component registers a Tauri listener of
 /// its own.
-pub const PROGRESS_EVENT: &str = "library://progress";
+const PROGRESS_EVENT: &str = "library://progress";
 
 /// A tree deeper than this is either a loop this walk did not catch or a
 /// directory nobody meant to import; either way the answer is to stop.
