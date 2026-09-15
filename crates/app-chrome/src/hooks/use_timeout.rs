@@ -28,7 +28,6 @@ impl Debouncer {
         self.trigger.with_value(|f| f());
     }
 
-    /// Cancel a pending fire.
     pub fn cancel(&self) {
         self.clear_handle();
     }

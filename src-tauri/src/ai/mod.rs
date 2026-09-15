@@ -20,7 +20,6 @@ pub mod traits;
 // platforms AND the runtime fallback when the Swift bridge fails to start.
 pub mod mock;
 
-// Apple Silicon Implementation
 #[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]
 pub mod apple;
 

@@ -34,8 +34,6 @@
 /// nothing but a slightly shorter jump.
 pub const MAX_SCROLL_FRAME_S: f64 = 0.05;
 
-/// Seconds between `prev_ms` and `now_ms`, clamped to `max_s`.
-///
 /// `prev_ms` being `NAN` — the sentinel a loop writes when it arms — means
 /// there is no previous frame, and the answer is `0.0`: the first frame of a
 /// loop moves nothing, and the second one starts the motion at a real rate.

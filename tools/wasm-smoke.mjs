@@ -1,5 +1,4 @@
 // Mount the real wasm bundle in Node, the way the webview does.
-//
 // CI compiles the frontend and runs the host tests, but neither ever MOUNTS
 // the app: a panic on the library page's first frame is invisible to both —
 // the bundle builds, the tests pass, and the reader gets a blank window whose
@@ -9,14 +8,12 @@
 // gone, a link row, a watched folder, a cover), the bundle is required — and
 // for a bin crate, requiring runs `main` — and the script asserts that the
 // shelf actually painted, with no panic on the way.
-//
 // It used to run in CI on every push and cost more than it caught: the mount
 // itself is four seconds, but the wasm codegen that feeds it is a minute of a
 // runner's time to re-prove what `cargo check --target wasm32-unknown-unknown`
 // has already established. Run it by hand before a release, or after touching
 // the startup path (the library's first frame, the measure-and-rescan, the
 // storage read) — that is where a blank window comes from.
-//
 // Two passes, because the app has two environments:
 //   node tools/wasm-smoke.mjs            plain browser: no window.__TAURI__,
 //                                        so every shell call is skipped.
@@ -26,15 +23,12 @@
 //                                        gone), scan_folder walks an empty
 //                                        folder, so the startup passes —
 //                                        verify, then rescan — run for real.
-//
 // Prereqs, which nothing installs for you any more:
-//
 //   cargo build --target wasm32-unknown-unknown --bin pdf-reader
 //   wasm-bindgen --target nodejs --out-dir smoke \
 //     target/wasm32-unknown-unknown/debug/pdf-reader.wasm
 //   printf '{"type":"commonjs"}\n' > smoke/package.json
 //   npm install --no-save --no-package-lock jsdom
-//
 // The `wasm-bindgen` CLI has to be the version Cargo.lock pins or the glue it
 // emits will not agree with the bundle. The package.json is there because the
 // repo is an ES module and the nodejs glue is CommonJS: the directory it lands
@@ -49,11 +43,9 @@ import { JSDOM, VirtualConsole } from 'jsdom';
 const WITH_TAURI = process.env.SMOKE_TAURI === '1';
 const SMOKE_DIR = path.resolve('smoke');
 
-// ---------------------------------------------------------------------------
 // The seed: a library a reader could actually have. Shapes must match the
 // serde wire format exactly (LibraryBlob/Row/Book/Fingerprint/Origin/Shelf/
 // WatchedFolder are all camelCase; Row and Origin are tagged on "kind").
-// ---------------------------------------------------------------------------
 
 const fp = { size: 1000, mtimeMs: 1_700_000_000_000, headHash: 7 };
 
@@ -106,11 +98,9 @@ const covers = Object.fromEntries(
 // both are serde defaults, and a missing default is a mount the reader never
 // gets past.
 
-// ---------------------------------------------------------------------------
 // The environment. jsdom is the webview; the shims below are only for APIs
 // jsdom lacks that every real webview has — a shim here must never stand in
 // for something the bundle should find missing.
-// ---------------------------------------------------------------------------
 
 const errors = [];
 const notes = [];
@@ -230,7 +220,6 @@ if (WITH_TAURI) {
 
 // The bundle reaches for these as bare globals, the way it would off
 // window.* in the webview.
-//
 // Defined rather than assigned, because Node has grown several of them as
 // getter-only accessors of its own — `navigator` since 21 — and an assignment
 // to one throws in a module, which is strict. The throw has nothing to do with
@@ -342,11 +331,9 @@ process.on('unhandledRejection', (reason) => {
   errors.push(`unhandledRejection: ${reason && (reason.stack || reason.message || reason)}`);
 });
 
-// ---------------------------------------------------------------------------
 // The mount. For a bin crate the bound module runs `main` on require, so this
 // call IS the app starting: if the first frame panics, it throws here, and
 // console_error_panic_hook has already put the message in `errors`.
-// ---------------------------------------------------------------------------
 
 const glueName = existsSync(SMOKE_DIR)
   ? readdirSync(SMOKE_DIR).find((f) => f.endsWith('.js') && !f.endsWith('.d.ts'))

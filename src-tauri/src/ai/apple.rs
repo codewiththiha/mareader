@@ -133,7 +133,7 @@ impl AiProvider for AppleAiProvider {
             .system(WORD_INFO_SYSTEM_PROMPT)
             .user(&prompt)
             .schema(schema)
-            .stream_structured(true); // Enable streaming of JSON snapshots
+            .stream_structured(true);
 
         Box::pin(stream! {
             let mut stream = Box::pin(bridge.stream(request));
@@ -176,7 +176,7 @@ impl AiProvider for AppleAiProvider {
                         yield AiChunk::Error(map_err(e));
                         break;
                     }
-                    _ => {} // Ignore other events
+                    _ => {}
                 }
             }
         })

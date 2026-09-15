@@ -55,7 +55,6 @@ pub fn raf_coalesce(f: impl Fn() + 'static) -> impl Fn() + Clone + 'static {
 /// A slot holding the pending frame's id, so a stop can cancel it.
 type RafId = Rc<Cell<Option<i32>>>;
 
-/// Cancel the frame this loop has queued, if any.
 fn cancel(raf: &RafId) {
     if let Some(id) = raf.take()
         && let Some(w) = web_sys::window()

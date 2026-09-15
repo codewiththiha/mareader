@@ -138,7 +138,6 @@ pub struct ShellController {
     /// master already applied — `state.reader.viewer.motion`).
     no_slide: Signal<bool>,
 
-    // ---- open/close slide machine ------------------------------------
     /// The panel a reopen should restore (also the panel kept painted
     /// through a close slide).
     last_panel: RwSignal<SidebarMode>,
@@ -282,7 +281,6 @@ impl ShellController {
         }
     }
 
-    // ---- the question API ---------------------------------------------
     // Every rule about how the shell lays out lives in one of these methods
     // — a consumer that recomputes one of them by hand is a bug.
 
@@ -386,8 +384,6 @@ impl ShellController {
         self.no_slide
     }
 
-    // ---- panel paint (consumed by the rail's panel hosts) --------------
-
     /// Whether `panel` should stay painted this frame. Open: only the
     /// active panel. Closing: the panel that was showing, for the whole
     /// slide, so it can fade and clip with the rail labels instead of
@@ -435,8 +431,6 @@ impl ShellController {
             )
         })
     }
-
-    // ---- actions --------------------------------------------------------
 
     /// Toggle from the titlebar's switch: open the default panel (Thumbs)
     /// when closed, close whatever is open.

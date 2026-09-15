@@ -1,7 +1,6 @@
 // The paper pipeline's EYES. Every colour decision — detection, the per-page
 // palette, the scroll interpolation — lives in the `pdf-paper` crate behind
 // the Rust paper session; this module only moves pixels across the boundary:
-//
 // * `stashPaperFrame` — the renderer parks each live raster's raw frame at
 //   the one moment the page's own paper is still unbaked; the Rust session
 //   drains it after each successful render via `takePaperFrame`.
@@ -9,7 +8,6 @@
 //   look-ahead; resolves only after a yield, so a burst of samples never
 //   starves live renders.
 // * `setPaper` — publish (or clear) `--pdf-paper`.
-//
 // Nothing is persisted: the palette is rebuilt from live frames every time a
 // book opens. Cost per frame: one <=96x96 downscale and one pixel readback —
 // and none while blend mode is off, the common case (the session gates the
@@ -48,9 +46,7 @@ export function setPaperActive(on: boolean): void {
  * allocation per page flip. */
 let scratch: HTMLCanvasElement | null = null;
 
-// --------------------------------------------------------------------------
 // Pixels
-// --------------------------------------------------------------------------
 
 /** Downscale `src` to ≤ SAMPLE_EDGE and read its pixels back. */
 function downscale(src: HTMLCanvasElement): PaperFrame | null {
@@ -107,9 +103,7 @@ export function takePaperFrame(
   return frame ? { ok: true, ...frame } : null;
 }
 
-// --------------------------------------------------------------------------
 // Public API (pdfEngine facade)
-// --------------------------------------------------------------------------
 
 /** Publish `hex` as `--pdf-paper` (empty string clears it). A baked
  *  backdrop cannot re-derive this colour with the compositor — its pages

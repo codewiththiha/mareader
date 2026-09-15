@@ -14,22 +14,19 @@ use std::collections::HashSet;
 /// Id of the continuous viewer's scroll container.
 pub const PAGE_LIST_ID: &str = "page-list";
 
-/// Id of the single-page view's container.
 pub const SINGLE_PAGE_CONTAINER_ID: &str = "single-page-container";
 
 /// Id of the horizontal strip's scroll container.
 pub const H_PAGE_LIST_ID: &str = "h-page-list";
 
-/// Id of the dual-page (spread) view's container.
+/// Id of the spread view's container.
 pub const DUAL_PAGE_CONTAINER_ID: &str = "dual-page-container";
 
 /// Id of the toolbar's row (the flex container the title measures inside).
 pub const TOOLBAR_ROW_ID: &str = "toolbar-row";
 
-/// Id of the toolbar's leading control cluster.
 pub const TOOLBAR_LEADING_ID: &str = "toolbar-leading";
 
-/// Id of the toolbar's trailing control cluster.
 pub const TOOLBAR_TRAILING_ID: &str = "toolbar-trailing";
 
 /// Id of the center slot's content (the centered title). The shell reads its
@@ -69,7 +66,6 @@ pub fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
     out
 }
 
-/// The element with `id`, if the document is available and it exists.
 pub fn by_id(id: &str) -> Option<web_sys::Element> {
     web_sys::window()
         .and_then(|w| w.document())
@@ -95,12 +91,10 @@ pub fn by_id_warn(id: &'static str) -> Option<web_sys::Element> {
     el
 }
 
-/// The continuous viewer's scroll container, if it is mounted.
 pub fn page_list() -> Option<web_sys::Element> {
     by_id(PAGE_LIST_ID)
 }
 
-/// The horizontal strip's scroll container, if it is mounted.
 pub fn h_page_list() -> Option<web_sys::Element> {
     by_id(H_PAGE_LIST_ID)
 }

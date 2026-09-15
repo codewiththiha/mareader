@@ -13,7 +13,7 @@ const readerSrc = readFileSync(
   "utf8",
 );
 
-// ---------- the smallest DOM the tracker reads ----------
+// the smallest DOM the tracker reads
 
 type Attrs = Record<string, string>;
 
@@ -135,7 +135,7 @@ class FakeSelection {
   }
 }
 
-// ---------- sandbox ----------
+// sandbox
 
 type Dispatched = { type: string; detail: unknown };
 

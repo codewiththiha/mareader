@@ -33,7 +33,6 @@ pub struct SearchItem {
 }
 
 impl SearchItem {
-    /// Build an index item, precomputing the lowercase copy.
     pub fn new(text: impl Into<String>, x: f64, y: f64, w: f64, h: f64) -> Self {
         let text = text.into();
         Self {
@@ -65,17 +64,14 @@ pub struct SearchIndex {
 }
 
 impl SearchIndex {
-    /// Create an empty index.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Number of pages indexed so far.
     pub fn page_count(&self) -> u32 {
         self.pages.len() as u32
     }
 
-    /// True when nothing is indexed yet.
     pub fn is_empty(&self) -> bool {
         self.pages.is_empty()
     }
@@ -86,7 +82,6 @@ impl SearchIndex {
         self.pages.insert(page.page, page);
     }
 
-    /// Drop everything (new document, rebuild).
     pub fn clear(&mut self) {
         self.pages.clear();
     }

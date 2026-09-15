@@ -40,7 +40,6 @@ pub use reflow::ReflowContent;
 
 #[derive(Clone, Copy)]
 pub struct DocumentState {
-    // --- identity ------------------------------------------------------------
     pub status: RwSignal<DocStatus>,
     /// Which pipeline the open document renders through. PDF while nothing
     /// is open (the historical default), so chrome that branches on it has
@@ -74,7 +73,6 @@ pub struct DocumentState {
     /// shows "resolving" instead of a definitive "No outline" for a book
     /// whose chapters are merely not back yet.
     pub outline_pending: RwSignal<bool>,
-    // --- content -------------------------------------------------------------
     /// The pages, per format. Exactly one half belongs to the open document.
     pub content: DocumentContent,
 }

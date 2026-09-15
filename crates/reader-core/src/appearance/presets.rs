@@ -47,7 +47,6 @@ fn preset(id: &str, name: &str, group: &str, appearance: Appearance) -> Preset {
 /// stay deleted.
 pub fn builtin_presets() -> Vec<Preset> {
     vec![
-        // --- the retired themes, reconstructed -------------------------------
         // Sepia was `sepia(0.35) contrast(0.95) saturate(0.9)` on light paper:
         // a warm brown at sepia()'s own hue, so no rotation and a mid strength.
         preset("sepia", "Sepia", "Classic", Appearance {
@@ -70,7 +69,6 @@ pub fn builtin_presets() -> Vec<Preset> {
             tint_strength: 35,
             ..Default::default()
         }),
-        // --- a couple that show off the new axes -----------------------------
         preset("parchment", "Parchment", "Classic", Appearance {
             base: BaseMode::Light,
             tint_hue: 40,

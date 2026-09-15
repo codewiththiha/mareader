@@ -92,7 +92,8 @@ struct PendingScroll {
     attempts: u32,
 }
 
-/// The engine.
+/// The framework-free core: layout, windowing and scroll state in one
+/// value, driven by the adapter in [`crate::Virtualizer`].
 pub struct VirtualizerCore {
     layout: LayoutKind,
     budget: Budget,
@@ -115,7 +116,7 @@ pub struct VirtualizerCore {
 }
 
 impl VirtualizerCore {
-    /// Build an engine around an initial layout.
+    /// Build a core around its initial layout.
     pub fn new(layout: LayoutKind, config: CoreConfig) -> Self {
         let mut this = Self {
             layout,
@@ -160,7 +161,7 @@ impl VirtualizerCore {
         self.rewindow()
     }
 
-    /// The container resized.
+    /// The visible extent changed; re-window against it.
     pub fn on_viewport(&mut self, vp: Viewport) -> Step {
         let current = self.viewport;
         let main_changed = (vp.main - current.main).abs() > self.eps;
@@ -217,13 +218,14 @@ impl VirtualizerCore {
         step
     }
 
-    /// Extra indices that must stay mounted.
+    /// Replace the extra indices that must stay mounted.
     pub fn set_pinned(&mut self, pinned: Option<(usize, usize)>) -> Step {
         self.pinned = pinned;
         self.rewindow()
     }
 
-    /// The item count changed.
+    /// The item count changed; `sizes` estimates the items the layout has
+    /// not measured.
     pub fn set_count(&mut self, count: usize, sizes: &dyn Fn(usize) -> f64) -> Step {
         if count == self.layout.item_count() {
             return self.rewindow();
@@ -288,12 +290,12 @@ impl VirtualizerCore {
         step
     }
 
-    /// Queue a measured size.
+    /// Queue one measured size for the next [`Self::flush`].
     pub fn queue_size(&mut self, index: usize, size: f64) {
         self.queue.push((index, size.max(0.0)));
     }
 
-    /// Stop flushing.
+    /// Hold queued measurements until [`Self::resume`].
     pub fn suspend(&mut self) {
         self.suspended = true;
     }
@@ -427,8 +429,6 @@ impl VirtualizerCore {
         }
     }
 
-    /// Scroll to an item with an alignment.
-    ///
     /// Same instant-adoption contract as [`Self::scroll_to_offset`]. The
     /// pending-scroll bookkeeping is armed for BOTH behaviors so a
     /// measurement that moves the target can re-aim an in-flight scroll;
@@ -464,7 +464,7 @@ impl VirtualizerCore {
         }
     }
 
-    /// Current mount window.
+    /// The current mount window; `None` before the first layout.
     pub fn range(&self) -> Option<Window> {
         self.range
     }

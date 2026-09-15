@@ -17,9 +17,11 @@ use leptos::children::ChildrenFn;
 use leptos::html;
 use leptos::prelude::*;
 
+use wasm_bindgen::JsCast;
+
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
-use app_chrome::floating::position::{place_at_anchor, placement_options};
-use app_chrome::floating::types::{PlacementSide, Size, node_within_any};
+use app_chrome::floating::position::{panel_size, place_at_anchor, viewport};
+use app_chrome::floating::types::{PlacementOptions, PlacementSide, node_within_any};
 use app_chrome::hooks::use_window_event::use_window_event;
 
 #[component]
@@ -65,27 +67,16 @@ pub fn Popover(
         // The trigger wrapper is the only anchor: a popover whose trigger is
         // not mounted has nothing to be placed against.
         let Some(a) = anchor.get() else { return };
-        let Some(win) = web_sys::window() else {
-            return;
+        let panel = panel_size(
+            panel_ref.get().map(|p| p.unchecked_into::<web_sys::Element>()),
+            (width.get() as f64, 200.0),
+        );
+        let opts = PlacementOptions {
+            side: placement,
+            gap: 4.0,
+            margin: margin as f64,
+            viewport: viewport(),
         };
-        let win_w = win
-            .inner_width()
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(1280.0);
-        let win_h = win
-            .inner_height()
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(800.0);
-        let panel = panel_ref
-            .get()
-            .map(|p| {
-                let r = p.get_bounding_client_rect();
-                Size::new(r.width().max(1.0), r.height().max(1.0))
-            })
-            .unwrap_or(Size::new(width.get() as f64, 200.0));
-        let opts = placement_options(placement, 4.0, margin as f64, Size::new(win_w, win_h));
         let placed = place_at_anchor(&a, panel.w, panel.h, &opts, coordinate_space);
         let rect = placed.rect;
         style_sig.set(format!(

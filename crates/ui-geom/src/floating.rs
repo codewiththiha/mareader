@@ -62,7 +62,6 @@ impl Rect {
     pub fn left(self) -> f64 {
         self.x
     }
-    /// Vertical center of the rect.
     fn center_y(self) -> f64 {
         self.y + self.h * 0.5
     }
@@ -88,13 +87,9 @@ pub struct FloatBox {
 }
 
 impl FloatBox {
-    /// One explicit-Euler spring step over all five fields. Returns
-    /// `(next_box, next_velocity)`. dt is clamped by the caller so long
-    /// frames never blow the integrator past its stability bound.
-    ///
-    /// The step itself is `crate::spring::spring_axis` — the same
-    /// integrator the gloss card steps — so the floating panels and the word
-    /// card cannot drift out of tune.
+    /// One explicit-Euler spring step over all five fields, via
+    /// [`crate::spring::spring_axis`]; returns `(next_box, next_velocity)`.
+    /// The caller clamps `dt` to [`crate::spring::MAX_FRAME_S`].
     pub fn step(&self, vel: &FloatBox, target: &FloatBox, dt: f64) -> (FloatBox, FloatBox) {
         let (x, vx) = crate::spring::spring_axis(self.x, vel.x, target.x, dt);
         let (y, vy) = crate::spring::spring_axis(self.y, vel.y, target.y, dt);

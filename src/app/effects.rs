@@ -62,26 +62,17 @@ pub(crate) fn install_app_effects(
         return;
     }
 
-    // 1. The look, before the first paint.
     apply_theme(state, appearance);
     apply_typography(state, typography);
-    // 2. The paper session, before the first open (see the module doc).
     paper_settings(state);
-    // 3. Motion preferences.
     publish_motion(state);
-    // 4. Input and selection.
     shortcuts(state);
     link_navigation(state);
     page_selection(state);
     selection_tracking(state);
-    // 5. One Tauri AI-chunk listener for the app's life (re-broadcast as a
-    //    window event).
     crate::services::ai::install_ai_chunk_bridge();
-    // 5b. The frameless maximize flag.
     crate::services::window::install_window_state_bridge(state);
-    // 5c. The library's own wiring.
     crate::effects::app::library::library_effects(state);
-    // 6. OS file opening — last, because it can open a document on the spot.
     crate::services::document::init_open_file_handling(state);
 }
 

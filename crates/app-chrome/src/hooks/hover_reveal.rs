@@ -61,12 +61,10 @@ pub struct HoverReveal {
 }
 
 impl HoverReveal {
-    /// Pointer entered one of the surface's elements.
     pub fn enter(&self) {
         (self.enter)();
     }
 
-    /// Pointer left one of the surface's elements.
     pub fn leave(&self) {
         (self.leave)();
     }

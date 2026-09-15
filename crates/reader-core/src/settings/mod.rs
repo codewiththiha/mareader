@@ -167,7 +167,6 @@ impl Settings {
 
 /// Ensures a persisted `Settings` is internally valid.
 pub fn sanitize(settings: &mut Settings) {
-    // --- validation ----------------------------------------------------------
     settings.appearance.sanitize();
     typography::sanitize(&mut settings.text);
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);

@@ -66,11 +66,6 @@ impl AutoCenter {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Pure timing rules
-// ---------------------------------------------------------------------------
-
-
 /// Content-coordinate offset that vertically centers a row of height
 /// `cell_h` whose top sits at `row_top`, in a viewport `vh` tall.
 fn center_offset(row_top: f64, cell_h: f64, vh: f64) -> Option<f64> {
@@ -133,11 +128,6 @@ fn glide_verdict(
     GlideVerdict::Fire(target.unwrap())
 }
 
-
-
-// ---------------------------------------------------------------------------
-// Wiring
-// ---------------------------------------------------------------------------
 
 
 /// Warm the thumbnail cache around the page the glide just centered on: the
@@ -392,10 +382,6 @@ fn install_lifetime_cleanup(auto: &AutoCenter) {
         step_slot.set_value(None);
     });
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

@@ -128,7 +128,6 @@ pub(crate) fn host_id_for_axis(axis: Axis, page: u32) -> String {
     )
 }
 
-/// The canvas id of a strip page, by axis.
 pub(crate) fn canvas_id_for_axis(axis: Axis, page: u32) -> String {
     canvas_id_for_mode(
         match axis {

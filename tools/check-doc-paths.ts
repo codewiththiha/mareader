@@ -1,6 +1,5 @@
 // Doc-path check — the third piece of cheap insurance in this pipeline,
 // after `check-versions.ts` and `check-formats.ts`.
-//
 // Comments in this repo name the modules and files that make a design work,
 // and a rename leaves that prose pointing at nothing. So every module path
 // (`crate::a::b`, `super::x`) and every file path with a slash
@@ -9,7 +8,6 @@
 // deliberately shallow — the module exists and the last name is declared or
 // re-exported there — and conservative: an unknown first segment is assumed
 // external and skipped, and a glob re-export passes anything.
-//
 // TypeScript source; Trunk's pre-build hook compiles it to
 // `scripts/check-doc-paths.js` so CI can run it with plain `node`.
 
@@ -27,9 +25,7 @@ const RUST_FILES = ALL_FILES.filter(
     (file.startsWith("src/") || file.startsWith("crates/") || file.startsWith("src-tauri/")),
 );
 
-// ---------------------------------------------------------------------------
 // Crate roots, so `ai_core::gloss` knows which `src/` it starts from.
-// ---------------------------------------------------------------------------
 const CRATE_ROOTS = new Map<string, string>();
 for (const cargo of ALL_FILES.filter((file) => file.endsWith("Cargo.toml"))) {
   if (cargo.includes("/tests/") || cargo.includes("target/")) continue;
@@ -207,12 +203,10 @@ for (const file of RUST_FILES) {
   });
 }
 
-// ---------------------------------------------------------------------------
 // Stylesheet comments: the same claim, in files the Rust pass never reads. A
 // stylesheet names the module that writes its tokens, as often a directory
 // or extension-less path as a file — which FILE_PATH above cannot match — so
 // styles/*.css gets its own root-prefixed pattern.
-// ---------------------------------------------------------------------------
 
 /** Every directory in the tree, so an extension-less module path resolves. */
 const DIRS = new Set<string>();
@@ -258,14 +252,12 @@ for (const file of CSS_FILES) {
   }
 }
 
-// ---------------------------------------------------------------------------
 // The two prose documents: the NAMES they put in backticks. Component names
 // are what a rename leaves behind most often, in prose no compiler reads.
 // Only README.md and ARCHITECTURE.md are checked: a Rust doc comment names
 // external types constantly (`Closure`, `NSWindow`) and an allowlist for
 // those is unmaintainable, while these two documents describe this app — a
 // capitalised name in them is ours until proven otherwise.
-// ---------------------------------------------------------------------------
 
 /** Capitalised names the documents use that are not workspace declarations:
  *  keyboard keys a shortcut table has to spell, and platform types the app
@@ -303,12 +295,10 @@ for (const file of ["README.md", "ARCHITECTURE.md"].filter(isFile)) {
   });
 }
 
-// ---------------------------------------------------------------------------
 // The documented engine surface. `window.PDFReader` is written down three
 // times: the TypeScript type, the Rust bridge (pinned against the built
 // facade by crates/pdf-engine/tests/engine_contract.rs), and the README's
 // Engine API table. This checks the third against the first.
-// ---------------------------------------------------------------------------
 
 /** The member names of the facade's type, as declared. */
 function apiMembers(): Set<string> {
@@ -342,7 +332,6 @@ if (apiAt >= 0) {
   });
 }
 
-// ---------------------------------------------------------------------------
 // The two prose documents: the PATHS they put in backticks. A module path in
 // prose carries no crate prefix to anchor it — `anchor::x` in a document
 // means "wherever anchor lives" — so resolution starts from the NAME: every
@@ -350,7 +339,6 @@ if (apiAt >= 0) {
 // tried against each module that could be its first segment (plus the crate
 // root when the name is a crate). An ambiguous name is not an error: the
 // path is good if ANY reading holds.
-// ---------------------------------------------------------------------------
 
 /** Every Rust module in the tree, by the name a document would call it. */
 const MODULES_BY_NAME = new Map<string, string[]>();

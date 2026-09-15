@@ -206,7 +206,6 @@ impl VirtualizerInner {
         }
     }
 
-    /// Apply an engine step.
     pub(crate) fn apply(self: &Rc<Self>, step: Step) {
         if step.layout_changed {
             self.layout_version.update(|version| *version += 1);
@@ -232,7 +231,6 @@ impl VirtualizerInner {
         write_if_changed(self.scroll_top, self.core.borrow().scroll_top());
     }
 
-    /// rAF-coalesced scroll handling.
     pub(crate) fn handle_scroll(self: &Rc<Self>, dom_top: f64) {
         if !self.scroll_feedback.get() {
             // A programmatic gesture owns the surface: its anchored writes are
@@ -261,7 +259,6 @@ impl VirtualizerInner {
         self.arm_scroll_end();
     }
 
-    /// ε-guarded viewport updates.
     pub(crate) fn handle_viewport(self: &Rc<Self>, vp: Viewport) {
         let current = self.viewport.get_untracked();
         let eps = self.options.measure_epsilon;
@@ -273,7 +270,6 @@ impl VirtualizerInner {
         self.apply(step);
     }
 
-    /// Arm the once-per-frame measurement flush.
     pub(crate) fn arm_flush(self: &Rc<Self>) {
         if self.flush_armed.get() || self.core.borrow().suspended() {
             return;
@@ -289,7 +285,6 @@ impl VirtualizerInner {
         });
     }
 
-    /// Debounced scroll-idle timer.
     pub(crate) fn arm_scroll_end(self: &Rc<Self>) {
         if let Some(handle) = self.scroll_end_timer.borrow_mut().take() {
             handle.clear();
@@ -309,7 +304,6 @@ impl VirtualizerInner {
         }
     }
 
-    /// Release every DOM handle.
     pub(crate) fn dispose(&self) {
         self.teardown_bindings();
         if let Some(handle) = self.scroll_end_timer.borrow_mut().take() {

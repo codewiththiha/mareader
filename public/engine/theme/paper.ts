@@ -36,7 +36,6 @@ export function paperInfo(pipeline: PipelineCache): PaperInfo {
   return info;
 }
 
-// --- Baked backdrop paper ---------------------------------------------------
 // Re-deriving the document paper in CSS (filter + blend over --pdf-paper) is
 // only valid while the canvases are RAW: the compositor performs the same
 // operation on the same inputs, so page and gutter composite identically.
@@ -45,7 +44,6 @@ export function paperInfo(pipeline: PipelineCache): PaperInfo {
 // multiply (light) and screen (dark) are identity on the paper, which is why
 // the double pass hid there; dim's soft-light is not, and re-applying it
 // moved the gutter away from the page.
-//
 // So the engine publishes the themed paper itself: the detected paper run
 // through the SAME filter kernel + blend composite the baker uses, exposed as
 // --pdf-paper-baked for the backdrop rule in styles/components/shell.css.
