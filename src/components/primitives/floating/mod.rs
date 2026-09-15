@@ -1,5 +1,6 @@
-//! The anchored floating surfaces: popover, context menu and the floating
-//! card.
+//! The anchored floating surfaces: popover, context menu, the floating
+//! card, and the app's menu popover — the popover plus the two policies
+//! (titlebar hold, overlay lane) every anchored menu shares.
 //!
 //! The plumbing they sit on is chrome and lives in the `app-chrome` crate:
 //! placement glue ([`app_chrome::floating::position`]), shared dismissal
@@ -11,4 +12,5 @@
 
 pub mod context_menu;
 pub mod floating_card;
+pub mod menu_popover;
 pub mod popover;

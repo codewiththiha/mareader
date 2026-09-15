@@ -54,11 +54,16 @@ const INGEST_EPSILON: f64 = 2.0;
 /// one per frame.
 const INGEST_DEBOUNCE_MS: u64 = 120;
 
+/// The batch a flush lands: the document's identity and the display scale it
+/// was measured against — either changing while reports wait is a reason to
+/// drop them — beside the `(block index, scale-1 height)` reports themselves.
+type PendingBatch = (usize, f64, Vec<(usize, f64)>);
+
 thread_local! {
     /// The batch the next flush will land, with the identity of the document
     /// and display scale it was measured against: either changing while a
     /// batch waits is a reason to drop the stale reports.
-    static PENDING: RefCell<(usize, f64, Vec<(usize, f64)>)> = const { RefCell::new((0, 1.0, Vec::new())) };
+    static PENDING: RefCell<PendingBatch> = const { RefCell::new((0, 1.0, Vec::new())) };
     /// The installed flush. `None` outside the reader's lifetime: an ingest
     /// with nobody home is a report nobody owes an answer to.
     static FLUSHER: RefCell<Option<Debouncer>> = const { RefCell::new(None) };
@@ -219,11 +224,11 @@ fn applied_heights(current: &[f64], batch: &[(usize, f64)], scale: f64) -> Optio
     let mut moved = false;
     let epsilon = INGEST_EPSILON / scale;
     for &(index, height) in batch {
-        if let Some(slot) = next.get_mut(index) {
-            if (*slot - height).abs() > epsilon {
-                *slot = height;
-                moved = true;
-            }
+        if let Some(slot) = next.get_mut(index)
+            && (*slot - height).abs() > epsilon
+        {
+            *slot = height;
+            moved = true;
         }
     }
     moved.then_some(next)

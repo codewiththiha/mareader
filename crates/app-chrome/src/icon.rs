@@ -1,5 +1,5 @@
-//! Inline SVG icon sprite (lucide-style strokes). Renders via inner_html so we
-//! never need to touch the svg element nodes.
+//! Inline SVG icon sprite (lucide-style strokes), rendered via inner_html so
+//! nothing ever touches the svg element nodes.
 
 use leptos::prelude::*;
 
@@ -43,6 +43,31 @@ pub enum IconName {
     Drop,
     /// Counter-clockwise arrow — the undo affordance on toasts.
     Undo,
+    /// Two chain links — a library row that points at a book rather than being
+    /// one. Its own glyph rather than a borrowed arrow, because the row it sits
+    /// on is the one thing on a shelf that is not a file.
+    Link,
+    /// Two sheets, one behind the other — the shelf's "Duplicate": a second
+    /// instance of the row under the pointer. A copy of a document rather than
+    /// a folder or a link, because what it makes is one more book.
+    Copy,
+    /// A plain folder — the "Reveal in folder" row: the OS's own file manager,
+    /// opened on the item inside the directory it lives in. `Open`'s folder
+    /// wears a line across it because that one opens a book; this one is the
+    /// directory itself, and the two rows sit in the same menu.
+    Folder,
+    /// An open eye — the row that turns a folder's watch ON: the library looking
+    /// at a directory, which is the whole of what watching one is. A pair with
+    /// [`IconName::EyeOff`] rather than one glyph on a flipping label, because
+    /// the row names the action and not the state, and the two actions are
+    /// opposites.
+    Eye,
+    /// The same eye, struck through — the row that turns a folder's watch OFF.
+    EyeOff,
+    /// A pencil — the row that renames the thing under the pointer: a name is
+    /// written rather than a document edited, which is the whole of what the
+    /// row does.
+    Pencil,
     Settings,
     Layout,
     /// The settings tab for the reflowable formats' typography.
@@ -76,7 +101,13 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Dim => ("0 0 24 24", "<circle cx='12' cy='12' r='9'/><path d='M12 3v18'/>"),
         IconName::Plus => ("0 0 24 24", "<path d='M12 5v14M5 12h14'/>"),
         IconName::Close => ("0 0 24 24", "<path d='M18 6 6 18M6 6l12 12'/>"),
+        IconName::Link => ("0 0 24 24", "<path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/><path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/>"),
+        IconName::Copy => ("0 0 24 24", "<rect x='8' y='8' width='14' height='14' rx='2'/><path d='M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2'/>"),
+        IconName::Folder => ("0 0 24 24", "<path d='M2 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/>"),
+        IconName::Eye => ("0 0 24 24", "<path d='M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0'/><circle cx='12' cy='12' r='3'/>"),
+        IconName::EyeOff => ("0 0 24 24", "<path d='M10.73 5.08A10.75 10.75 0 0 1 12 5a10.75 10.75 0 0 1 9.94 6.65 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-4.43 5.14'/><path d='M6.61 6.61A10.75 10.75 0 0 0 2.06 11.65a1 1 0 0 0 0 .7 10.75 10.75 0 0 0 15.31 5.04'/><path d='M14.12 14.12a3 3 0 1 1-4.24-4.24'/><path d='m2 2 20 20'/>"),
         IconName::Check => ("0 0 24 24", "<path d='M20 6 9 17l-5-5'/>"),
+        IconName::Pencil => ("0 0 24 24", "<path d='M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/>"),
         IconName::SinglePage => ("0 0 24 24", "<rect x='4' y='3' width='16' height='18' rx='2'/><path d='M4 9h16'/>"),
         IconName::DualPage => ("0 0 24 24", "<rect x='3' y='4' width='8.5' height='16' rx='1.5'/><rect x='12.5' y='4' width='8.5' height='16' rx='1.5'/>"),
         IconName::Continuous => ("0 0 24 24", "<rect x='4' y='3' width='16' height='4' rx='1'/><rect x='4' y='10' width='16' height='4' rx='1'/><rect x='4' y='17' width='16' height='4' rx='1'/>"),

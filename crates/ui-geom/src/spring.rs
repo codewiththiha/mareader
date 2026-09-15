@@ -7,16 +7,15 @@
 //! two cannot drift apart — which is the whole reason the physics sits in a
 //! crate of its own rather than in whichever feature got it first.
 
-/// Spring stiffness for animated boxes. Public because the pair is the
-/// contract itself: two surfaces (the floating panels and the gloss card)
-/// ride this one integrator precisely so they cannot drift out of tune, and
-/// a rider that wants to pin the feel in its own tests has to be able to
-/// name the tuning rather than re-derive it.
-pub const SPRING_STIFFNESS: f64 = 210.0;
+/// Spring stiffness for animated boxes. The pair is the tuning every rider
+/// shares — the floating panels and the gloss card both step
+/// [`spring_axis`], which is what keeps them from drifting apart; the
+/// integrator is the contract, and nothing outside this module names the
+/// numbers it runs on.
+const SPRING_STIFFNESS: f64 = 210.0;
 
-/// Spring damping for animated boxes. See [`SPRING_STIFFNESS`] for why the
-/// pair is public.
-pub const SPRING_DAMPING: f64 = 26.0;
+/// Spring damping for animated boxes; see [`SPRING_STIFFNESS`].
+const SPRING_DAMPING: f64 = 26.0;
 
 /// The longest frame the integrator is stepped on, in seconds.
 ///

@@ -1,7 +1,7 @@
-//! App-shell wrapper around the floating [`Popover`] primitive. The
-//! primitive reports open-state transitions through `on_open_change` and
-//! knows nothing about the chrome layer; this wrapper owns the two pieces of
-//! shell policy every anchored menu shares:
+//! The app's anchored MENU: the floating [`Popover`] primitive plus the two
+//! pieces of policy every menu in the app shares. The primitive reports
+//! open-state transitions through `on_open_change` and knows nothing about
+//! the chrome layer; this wrapper owns:
 //!
 //! * **holding the reader titlebar open while the menu is up**, so the bar
 //!   does not auto-hide under your hand mid-click (the sidebar's More menu
@@ -11,7 +11,13 @@
 //!   HERE is what makes that automatic for every menu, so a new one cannot
 //!   forget it.
 //!
-//! Not a second popover primitive: it is a thin, single-purpose composition —
+//! It lives beside the primitive it wraps rather than under the titlebar it
+//! often hangs from, because its callers are everywhere — the reader's menus,
+//! the settings rows, the library's breadcrumb, view menu, selection bar and
+//! add menu — and a wrapper half the app imports is a primitive with the
+//! wrong address inside one surface's folder.
+//!
+//! Not a second popover primitive: a thin, single-purpose composition —
 //! holds, policy, pass-through. New policy belongs in its own wrapper, not here.
 
 use leptos::children::ChildrenFn;
@@ -27,8 +33,11 @@ use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_l
 pub fn MenuPopover(
     open: RwSignal<bool>,
     anchor: NodeRef<html::Div>,
-    #[prop(default = 256)]
-    width: u32,
+    /// The panel's width in CSS px — reactive for the one menu that measures
+    /// itself (the breadcrumb's folded chain); every other menu passes a
+    /// number.
+    #[prop(into, default = Signal::stored(256u32))]
+    width: Signal<u32>,
     #[prop(default = 8)]
     margin: u32,
     #[prop(optional, into)]

@@ -24,6 +24,7 @@ optional paper textures and film grain, all persisted between sessions.
   - [Appearance system](#appearance-system)
   - [Presets](#presets)
   - [Opening documents](#opening-documents)
+  - [Library](#library)
   - [Interface](#interface)
   - [Persistence](#persistence)
   - [Accessibility and motion](#accessibility-and-motion)
@@ -290,23 +291,388 @@ The toolbar title measures the live geometry of the surrounding controls and tru
 genuine collision, adapting as the window resizes. Only widths are measured, never positions, so
 there is no feedback loop between the label and the layout.
 
+### Library
+
+The `/` route is a library, not a list of the last twenty things you opened. A book is an
+**address** — a folder you imported read in place keeps its books at the paths they stand at, and a
+file you imported on its own is a copy the library stores under its own roof. No in-app move ever
+touches a file you own.
+
+- **Two ways to hold a book.** *Read in place* is a folder import's default and the only mode the
+  app ever had — the book is the path it was opened from, and the app never moves, renames or
+  deletes it. *Copy into the store* puts the bytes under the app's own data directory, so a book
+  survives its source folder being renamed or deleted, and keeps the source path as provenance for
+  a relink. Each stored book owns one folder under the id that never changes, so no name that can
+  be renamed is ever on disk and two books called `report.pdf` cannot collide — and removing a
+  stored book takes its folder with it, so a book that is gone leaves no directory behind. A file imported on its own — picked from the dialog or dropped on the library — is
+  always a store copy: there is no folder behind it to rescan or answer for it, and a copy is a
+  book the library owns outright, with its own highlights and its own place in it.
+- **Import a folder.** The sheet asks five questions and nothing else: which formats (as an include
+  or an exclude list), how large a file has to be to count as a book, whether to read in place or
+  copy, whether to watch for new books, and whether subfolders become shelves. Every answer is
+  stored with the folder, and the sheet opens on the answers the folder already has, so a re-import
+  asks only what you mean to change. Picking the other shelf structure is a re-shape rather than a
+  second import: one shelf for everything brings that ground's books back onto the rung it answers
+  for and takes out the rungs that answer has no place for, a shelf for each folder puts each of them
+  under the rung its own address names, and a shelf you made inside a rung that goes comes up with
+  it. The answer stands for the ground you picked, so re-importing one subfolder re-files that
+  subfolder's books — the folders a one-shelf import had spread end up under their own shelves
+  rather than beside them — while the rest of the tree keeps the shelves it stands on. The watch
+  answer belongs to the folder being imported: when it is part of a tree the library already
+  reads, the switch opens on the state that tree is in and answers for this subfolder alone — the tree above
+  keeps watching its own — and what the switch shows is always the value that lands.
+- **Watched folders rescan when the app opens or returns to the foreground**, not through a
+  filesystem watcher — a watcher fires while you are still copying files in, which is exactly when a
+  half-written PDF is most likely to be measured. Only genuinely new files are ever added: a book
+  you dragged to another shelf keeps its fingerprint in that folder's ledger, and a book you removed
+  leaves a tombstone, so neither comes back on the next pass. Watching is a per-subfolder decision:
+  a folder shelf's right-click turns its own rung — the whole tree from the root shelf, and only
+  that subfolder from a rung of it, with the rest of the tree keeping its own answer — and a
+  rescan adds files only under the rungs that are watched. The root's row is the whole folder's
+  decision: turning it back on brings every subfolder on with it, and turning it off leaves none
+  secretly watching.
+- **A shelf is a level, not a row.** In the grid a shelf is a folder card — one cell of the same
+  grid the books are cells of, wearing a 2×2 plate of what is inside it (covers for its books,
+  plates of their own for its folders, recursively) and a count of both halves — which is what
+  lets a shelf be filed inside another shelf. The dense list draws the same level as a tree: a
+  shelf row unfolds in place, as deep as the forest goes, while its Open drills the breadcrumb
+  route, because unfolding is a way of looking and must not move you. A hold on a row enters the
+  selection and a movement lifts it — books and folders alike at both densities. Filing a book is a drag from
+  a card to a folder, to a crumb or to another card, and the only thing a drop edits is an
+  ordered list of ids.
+- **One drag, and it is the app's own.** Nothing on the shelf rides the browser's drag-and-drop: a
+  press that moves becomes a session that knows what it is holding, where the pointer is and which
+  target is under it, so a drag can carry a whole selection at once with a ghost of their covers,
+  can be dropped on a breadcrumb crumb to file onto a level you are not looking at, and can be
+  folded into a new shelf by resting over a book for a moment — which is a gesture the browser's
+  drag cannot report, because it never says how long a hover lasted. Escape puts everything back,
+  and a card that fades while held always fades back.
+- **Resting on a crumb says so.** A crumb is the one place on the page smaller than the ghost
+  hovering it, so it is the one place the ghost shrinks: hold a drag still over a breadcrumb crumb for
+  420ms and it sits at a third of its size on the crumb's centre, leaving the name of the level you
+  are about to file onto readable instead of covered. Nothing on the shelf itself sinks — a folder
+  card already wears the loudest marker the shelf has, and a book is a position rather than a
+  container, so it answers at once with the insertion line and, after 650ms of resting, with the
+  folder card's own plate filling in — one cell per item the new shelf would hold, so a single book
+  rested on another is a shelf of the two. A book you are already carrying is never a partner:
+  dragging onto yourself, or onto one of your own selected cards, reorders instead of counting that
+  book twice. While the ghost is parked a move costs one comparison against a cached box, and the
+  transition that glides it in is the parked state itself, so the follow resumes exactly under the
+  hand on the first move out.
+- **The view is a set of knobs, not a set of modes.** Grid or list, Auto or two to ten columns,
+  covers fitted to their own aspect ratio or cropped to A4, and a sort by manual order, title,
+  author, date added or last read. Titles sort with their volume numbers as numbers, so "Volume 2"
+  comes before "Volume 10".
+- **The search bar answers while you type.** The shelf behind it filters on every keystroke — by
+  name, author or address, in any combination of words, case never mattering — and under the pill a
+  panel offers up to seven books the query is probably about, strongest match first, with the
+  characters that matched lit in the accent. The matching is fuzzy in the forgiving direction: a
+  dropped vowel or a half-remembered spelling still finds the book (`mthmtcl prfs` finds
+  *Mathematical Proofs*), but a query whose letters only sprinkle across a long title is not a
+  match — a search that matched everything would be a shuffle, not a search. `Up arrow` and
+  `Down arrow` move through the panel, `Enter` goes to the chosen book on its own shelf and lights
+  it up, and `Escape` peels one layer at a time — the suggestions first, the text second. Nothing
+  is indexed: the whole answer is one pass over the library per keystroke, computed when you type
+  and not a moment else.
+- **A missing book stays on the shelf.** An address that stops resolving is a badge and a Relink
+  affordance, never a silent removal: the row keeps its resume point and every shelf it is on, so
+  finding the file again puts you back on the page you were on. It greys where the library shows
+  it — its card, its list row, and the plate of any folder that previews it.
+- **Shelves you make yourself.** The view menu's *New shelf* row creates one and drills into it.
+  Taking a shelf apart is the selection bar's receipt: select the folder and *Remove* itemises what
+  survives it — every book stays in the library, the shelves inside it move up a level, and a shelf
+  cut from a watched folder says the folder keeps watching.
+  The crumb of the shelf you are on carries its own popover: *Rename…* replaces the label with a
+  field in place — Enter commits, Escape cancels — and *Remove shelf* is the same receipt the
+  selection bar gives, with a note when the shelf was cut from a watched folder.
+- **The breadcrumb keeps three crumbs and elides the rest behind `…`.** A chain has no end and a title
+  bar does. The ellipsis is its own affordance rather than an arrow on a crumb, because an arrow on the
+  third level whose panel lists the first and second reads as "deeper than three" when those levels are
+  shallower. Hovering it opens the elided levels drawn the way the bar draws them — `2 > 3 > 4 >`
+  wrapping to `5 > 6` — in a rectangle whose width the window sets, so a resized window re-wraps the
+  chain with nothing measured and nothing listening. ArrowDown opens it too, since those levels are on
+  no other surface. Every crumb is a drop target, which is what makes a deep level reachable with a
+  hand full of books; the ellipsis itself is a place to rest and not a place to drop.
+- **A right-click is a menu, per kind of thing.** A book gets Open, Select, Rename…, Duplicate,
+  Reveal in folder, Find again when its address died, and Remove; a folder gets Open, Select,
+  Rename…, Duplicate, Reveal in folder, the watch toggle for the seat its shelf stands on — the
+  whole tree from the root shelf, only that subfolder from a rung of it — a New shelf filed inside
+  the one you asked whichever level the page is on, and Take shelf apart; a card already in a selection
+  gets the set's menu — New shelf from these, Duplicate, Remove, Clear — because a right-click on
+  one of several things means all of them; and the empty shelf gets New shelf and Select all.
+  **Reveal in folder** opens the OS file manager on the thing itself: a book the library copied
+  reveals the copy in the library's store, a book read at its place reveals the file where it
+  stands, a link reveals what it points at, and a folder shelf reveals the directory its tree cut
+  it from — with no row at all for a shelf the reader owns, which has no directory to show.
+  **Rename…** opens one field, seeded with the name the thing already shows, and commits on Enter.
+  It renames what the library SHOWS and nothing on disk: the file a book reads keeps the name it
+  has, which is what makes the row safe to rename at all — its id, its address, its resume point,
+  its highlights and every shelf it is filed on all stay put, and only the label changes. A link
+  renames its own name, and a shelf renames the shelf, both the same gesture from the same menu.
+  A name you type is yours and survives as-is: a title that looks like a filename is dropped when
+  it came from a document's own metadata, which is where such titles are download debris, but not
+  when a reader typed it at this sheet.
+  **Duplicate** makes a second instance of the thing under the pointer, and nothing about it is
+  shared with what it came from: a book, whatever its origin — read at its place or already the
+  library's own copy — gets a second copy in the library's own store, nothing is written beside
+  your files, the row wears the level's counter name (a duplicate of a duplicate steps rather
+  than stacks), and the highlights ride along as the copy's own list, so a stroke explained in
+  one book never reaches the other. A link at a book duplicates the same way — the copy is of
+  what it opens, filed beside the link itself — while a link at a shelf stays a link, because a
+  level holds no bytes to store. Either way the duplicate is its own row — its own
+  name on the level's counter, its own resume point and its own highlights — filed right behind the row
+  you pointed at, on every shelf that row is on. A SHELF duplicates as a second tree of your own
+  holding fresh copies of the books inside it — one store batch and one card for the whole run,
+  and a member the store refused is dropped rather than shared — in the level's
+  counter name and right behind the shelf it came from. A folder's shelf copies as one of yours
+  rather than as a second shelf of the folder, because one directory is one linked shelf, and the
+  fresh copies measure as their own books, so no rescan ever re-hangs them. No row carries a second line explaining itself:
+  a right-click is a reader who knows what the rows mean. One host answers all four, so the menu
+  is the same menu wherever it was asked
+  from, and a right-click never starts a drag: a menu row is clicked by a pointer that has already
+  been released, and a session begun from one would have no release to end it.
+- **Removing a book shows you the receipt first.** The sheet itemises what goes with it — the resume
+  point, the highlights, the cached cover, every shelf it was filed on — and leaves out the rows for
+  things the book does not have. A copy the app made goes with the book: the store is never left
+  holding a file nothing can read, and the file it was copied from is never touched. What you wrote in
+  the book is the one thing the sheet asks about — leave the switch off and the marks, the place you
+  stopped at and any name you gave it wait for the file to come back, onto the book that importing it
+  again lands as. There is no undo toast, because the sheet is the safety and the folder's import menu
+  is the undo.
+- **Removing a shelf can take everything inside it with it.** Off — the default — the books inside stay
+  in the library and the shelves inside move up a level, and a shelf the folder reads in place asks the
+  one copy question first: **Copy and remove**, or **Let the folder make it again** for the answer that
+  stores nothing and leaves the level to the folder's next import. On, the books are purged by the same
+  receipt a selected book gets and the shelves inside are taken apart too, deepest first. The switch is
+  offered only when there is something inside to decide about, and every row on the sheet, the data
+  switch and the confirm button's own wording all describe the set the removal will actually take
+  rather than the one you clicked — so a cascade that reaches stored copies is a cascade that shows you
+  the copies first.
+- **Moving a read-at-place book out of its folder makes it the library's own.** Bytes go into the
+  store: the book becomes a stored copy — its name, its place in it and its highlights all travel
+  with it — and the folder records a moved-out log, so no rescan files
+  the OS copy back and no menu offers it as a book that is gone. Importing that file again brings
+  the linked book back beside the copy that left, and lights it up: two books of one content, each
+  with one address. Dragging the stored copy back onto a shelf of the folder it left binds the log
+  to it by name, and from then on importing the file just lights that copy up — unless you renamed
+  it, in which case the folder does not recognise it and the import brings the linked book back
+  instead. What ties the book to its folder is the rung its own file stands on, not the folder's
+  shelves, so a drag between two rungs of one watched folder departs as well; only a re-order on the
+  rung the book is already on, and the move of any book the library already stores, copies nothing
+  and stays the membership edit a drag has always been. The move that does copy asks first, in the
+  one sheet every copy asks in — the same sheet a shelf move, a level coming apart and a shelf
+  coming off the list ask in — and the books land where you dropped them.
+- **One sheet asks for every copy the library makes.** A read-at-place book leaving the ground that
+  made it — dragged out to the root, filed on a shelf the folder's tree does not name, moved off its
+  rung — a shelf moved off the seat its folder's tree names, a level of that tree taken apart, and a
+  shelf taken off the list are four gestures and one cost, so one sheet names the action you are in
+  the middle of, counts the books the copies are, promises where they land, and offers the copy —
+  or, for the two gestures that have a way home, the place back instead. Nothing is copied without
+  it: the folders on disk are untouched either way, and the copy is the library's own — bytes in the
+  store, its own highlights, its own place in it — while the files the folders read stay exactly
+  where they are.
+- **Taking a level of a read-at-place tree apart copies its books first.** The rung holds books the
+  folder placed there, and taking it apart takes them off the ground that made them: the sheet says
+  how many leave and which shelf above them they come up to, **Copy and take apart** makes them the
+  library's own before the level goes, and the level below a hole still hangs inside the tree. What
+  the folder's tree still answers for is never touched: a seat below the level keeps its own books,
+  and a book the library already stores is never copied a second time. The removal sheet asks the
+  same question about a shelf coming off the list, and there the answer the menus cannot offer is
+  still open — let the folder make the level again on its next import, and the books stay where they
+  are.
+- **Moving a shelf a folder reads in place is a departure, and the sheet says which copy it costs.**
+  The shelf IS the OS directory — the way a linked book is the OS file — so a hand taking it off the
+  seat the folder's tree names asks in the one sheet every copy asks in, which names the folder that
+  reads the shelf, counts the books the copy costs and promises the name the copy will wear at the
+  level it lands on. Confirm, and the shelf and every read-at-place book standing on it become the
+  library's own copies — bytes into the store, names, highlights and places in them travelling
+  along — and the copy takes the level's next free name, which keeps the folder's own name free for
+  the original. The copy is a book and a shelf of their own, bound to nothing: no rescan, no import
+  and no light ever answers through it, and importing the folder again brings the original back on
+  the seats the disk names, in the old names, lit inside its family. Cancel leaves the shelf where
+  the tree put it.
+- **A move inside the shelf's own family never has to cost a copy.** Dropping a read-at-place
+  shelf on a rung of a tree its directory belongs to — the tree it was cut from, or the family
+  that covers a folder you imported on its own — offers a third answer beside the copy and the
+  cancel: **Put it back in its place**. A shelf you imported on its own folds back into the
+  family tree, on the rung its directory names, with the folder that was reading it folded into
+  the tree's ledger; a shelf an older build left off its seat simply reseats, and the disk owns
+  the place again. Nothing is copied either way, the files are never touched, and the light
+  lands on the shelf where it went home. A re-order among its own siblings copies nothing, and a
+  shelf of a folder the library COPIES moves freely, the way a stored book does.
+- **A watched folder can give a book back.** Its import menu keeps a tombstone per removal — the name
+  the shelf showed, how long ago it went, how big it is — and offers the book back after measuring the
+  file to check it is still there. An explicit restore ignores the folder's format and size filters,
+  because an explicit ask is an explicit choice. So does an explicit re-import of the same file, from
+  whichever side it comes: the log is spent, the book returns wearing the name the shelf showed, and
+  it is lit up where it lands — and until that ask, every rescan stays silent about the file, which
+  is what the log is for. The same menu answers the other question without
+  walking anything: a book still inside the folder on disk but no longer on any shelf the folder owns
+  is offered as a move, with two answers — file it here as well, which is a second membership and no
+  second copy, or go and look at where it went, which closes the menu, moves the breadcrumb and lights
+  up the card it scrolled to.
+- **A book whose file moved or vanished is a question, not an error.** Every focus re-measures the
+  addresses the library holds before it walks the watched folders, so a shelf notices a file that
+  disappeared instead of finding out when you click it. A book whose address no longer resolves
+  stays on the shelf — greyed, with its place in it and its highlights — and opening it raises the
+  Find-again sheet: pick the file it is now, or name a folder and the app walks inside it looking
+  for the book's own name. A match is re-measured and healed, a miss says so in one sentence, and
+  Cancel changes nothing.
+- **An import reports from the corner.** One card per run in the bottom-left, with a ring that spins
+  while the folder is walked and fills while files are copied. It stays put when you open a book,
+  because the run outlives the page that started it.
+- **Dropping files on the library files them**; dropping them anywhere else still opens one. Both go
+  through the same admission, which is the format registry.
+- **A shelf that already holds the name asks.** Importing a file, dragging a book or filing one onto
+  a level that already holds a book OF THAT NAME — the same name, not the same bytes; a second
+  format of one title is a second book and is simply placed — used to do nothing at all, which read
+  as the book vanishing into the shelf. Now it asks, and what it asks depends on which side of the
+  question has a book of its own.
+- **Importing a file onto a shelf that has the name asks what to put there**, with the three answers
+  a reader can mean: **Already imported** adds nothing and takes you to the book you have, on the
+  shelf it is filed on, with its card lit up; **Add as new** keeps both and names the arrival `1_1`,
+  `1_2` and so on, the counter a file manager appends, counted against that shelf's own names and
+  promised on the row before you click; **Make link** puts a pointer on the shelf instead of a copy.
+  A file has no book of its own yet, so none of these answers can cost you one. Home is a level like
+  any other and asks the same question of the books nobody has filed. **Add as new** lands a copy
+  the library stores and owns — a book of its own bytes with its own highlights and its own place
+  in it, even when it is the very file the library already reads in place — so no row is ever
+  withheld: nothing a file's answers can do is a second door on one linked file.
+- **Dragging a book onto a shelf that has the name asks which book the shelf keeps.** Both sides are
+  books you already have, so the three answers are the three things a reader can mean about them:
+  **Merge** folds the one you dragged into the one that was there — the further place in it wins, so
+  a merge never sends you backwards, the page count is the best either knew, names fill gaps rather
+  than overwrite, and the moved book's other shelves and its highlights join the survivor instead of
+  leaving with it, the shelf it was dragged OFF excepted, because that departure is the move you
+  made and a merge that put the survivor back there would be a move that never happened; **Replace** sends the book that was there out of the library and seats yours in
+  its place, on every shelf it was filed on, and the row says how many highlights leave with it
+  before you click; **As new** keeps both, yours under the next free name beside it. The two sheets
+  are two different types in the code, so a file can never be offered a replace — and a move is
+  offered a link in exactly one shape: when the book you dragged reads a file at its place and the
+  book on the level is the library's own stored copy, **Make link** takes Replace's slot, because
+  neither side is yours to destroy. The dragged book becomes a pointer, the file stays on disk and
+  the copy stays in the store.
+- **Re-importing a folder the library reads in place continues it.** The walk runs, as the
+  explicit import it is: files the folder gained join the shelf as linked books, books you had
+  removed or moved away — whose logs have been keeping rescans quiet — come back in their old
+  names, and the books that were already there keep every bit of their data, because nothing
+  about them is a question. A book the folder still holds but its shelf no longer does comes back
+  too, which is the merge half of a re-import and the half no ledger table can answer: a book you
+  filed onto a shelf of your own, and a book whose shelf you took apart, are each a file the walk
+  finds and the library holds, so each is a *nothing to do* to the rescan's table. The re-import
+  files them back onto the rung their own directory names — as a second membership and not a move,
+  so the shelf you carried a book to keeps it. What a FOLDER import lights is the FOLDER: you stay on the level
+  that holds it and its card lights up — only a file import goes to a book and lights that.
+  Only a walk that found nothing new says so: the *already imported* note, which lights the
+  shelf when you close it. Picking a SUBFOLDER of a tree the library reads in place is the same
+  reconciliation, not a sentence that skips it: the tree's walk runs on the tree's ledger — a
+  linked folder cannot mint a second instance of itself, or of a rung inside its own tree — so
+  a book you removed inside the nested folder comes back on a re-import of the nested folder
+  exactly as on a re-import of the root, and the light lands on the rung you picked. A shelf of
+  the library's own copies can mint another of anything, so a stored folder still asks the name
+  question.
+- **A folder you import back goes home to its family.** Picking a folder whose directory stands
+  inside a tree the library reads in place, when the tree no longer holds a shelf for it — you
+  removed the rung, or it left as a copy — imports it back INTO that tree: the walk runs on the
+  folder's own ledger, so the books that left come back in their old names, and the shelf lands
+  on the rung its directory names, inside the nesting, lit where it stands. The same happens at
+  the end of any import of the outer tree that finds one of its folders standing outside it: an
+  import is you asking for the folder, and a member outside its family is an ask answered — the
+  note that rises is the report of the shelf that went home, not a question about it — and the
+  books land on the shelves that folder already stands on rather than beside them. Take the whole
+  tree out and its ground stops being anyone's family: importing one of its subfolders afterwards
+  gives you that subfolder at the top of the library under its own name, with the root shelf you
+  removed left where you put it — and importing the root again puts the subfolder back under it,
+  as its sub shelf. A root that keeps the whole of its ground on one shelf has no rung to hang a
+  sub shelf on, so that re-import brings the subfolder's books onto the one shelf and takes the
+  sub shelf out: the shape you imported with is what the books come back to.
+- **A copies import is the library's own business, and asks only the level's name question.**
+  Turning read-at-place off means *the library should own these books* — a second instance of
+  its own, unrelated to any tree — so the import checks one thing: the name at the level it
+  lands on. Nothing holds it and the copies simply import. Something does, and the sheet offers
+  the level's own three: **Show it** imports nothing and lights the shelf that is here where it
+  stands; **Replace** sends the books that shelf holds out of the library — the row says how
+  many before you click, highlights and all — and seats the arriving copies on it, which of a
+  folder's own read-at-place tree is the log-spending sweep, so the copies come back in the
+  names the shelves showed; **Add as new** mints the counter-named second shelf, and of ground
+  the library already reads in place its books are copies of their own — independent books of
+  their own bytes beside the linked ones the old tree keeps reading. A copies import of a
+  subfolder of a read-at-place tree is no different: it is not related to the tree, only the
+  level's names can ask, and the ground the tree still reads is no obstacle — every file the
+  library reads in place becomes a book of its own on the copies shelf, an independent copy of
+  its own bytes beside the linked book the tree keeps, never a silent "Imported 0 books". The tree
+  itself is untouched by a copies run — still linked, still watched, its ledger its own — because a
+  copies answer asks for a second instance, not a conversion; only **Replace** of the tree's own
+  shelf converts.
+- **Importing a FOLDER whose name the level already holds asks its own question**, before the walk
+  rather than after it, and which answers it asks is the arrival's mode: a copies import gets the
+  three above — **Show it**, **Replace**, **Add as new** (`Books_1`, promised on the row) — and a
+  read-at-place arrival of a DIFFERENT folder's name gets two, since as new of a linked folder is
+  the second instance the family rule exists to prevent: **Make link** imports nothing and leaves
+  a pointer that lights the folder where it is when you tap it; **Merge into it** files the
+  folder's books onto the shelf that is here, and a book whose name a shelf already holds is
+  asked one by one on a compact sheet — Merge, Replace or As new — at every level of the tree
+  that already stands, not only the top, with an apply-to-all switch for a reader who has seen
+  enough of the folder to answer for the rest. As new is withheld when the arriving file is the
+  very file the shelf's book reads: two rows of one linked file are a duplicate, and the library
+  does not make those. Books nothing collides with simply go in.
+- **Importing a file puts a book where you dropped it.** A file the library already holds somewhere
+  else is not a reason for a shelf to stay empty: importing `notes.md` into a second folder gives
+  that folder its own book — a copy of its own, with its own highlights and its own place in it —
+  and the first folder keeps the one it had. The same file imported twice onto ONE shelf is the
+  collision above, and asks.
+- **Importing a file a read-at-place folder already holds asks before it copies.** The file stands
+  inside a folder the library reads where it is, and that folder's book for it is alive and
+  standing: a second linked row of one read-at-place file is the one duplicate the library never
+  makes, so the import asks — *import a copy here*, which stores the file as a book of its own on
+  the level you dropped on, or *show the imported one*, which adds nothing and lights the book the
+  folder holds, wherever in its tree it stands. A file whose folder never placed it is no question
+  and simply imports as a copy. And a file the folder's log remembers — removed, or moved out as a
+  copy that has since gone — is not a question either: the import spends the log and the book comes
+  back where the FOLDER holds it, in the name the shelf showed, lit up, because a book that
+  reappeared somewhere new is a book the reader cannot find.
+- **A link is a row, not a book.** It carries the name of the book it points at and nothing else —
+  no file, no cover of its own, no page, no highlights, no second copy of a two-gigabyte PDF — and
+  tapping it goes to that book wherever in the library it is filed and lights its card up. Because
+  it is not a book it is invisible to everything a book is checked by: it never collides, never
+  blocks a collision, is never offered back by a watched folder and never queues a cover render. It
+  can be dragged, selected, right-clicked and removed like any other row, and removing it takes
+  nothing but itself; removing the book it points at takes the link with it, because a pointer at
+  nothing is the one thing a link must never be.
+- **Two books of one file are two books.** Answering *add as new* to a second copy of the same file
+  gives the second one its own name, its own highlights and its own place in it: read one to page
+  90 and the other stays where it was, highlight a word in one and the other does not light up, and
+  removing either takes nothing from the other. A book nobody asked to separate still shares the
+  file's own truth with its twin — one resume point, one highlight list, one removal — because two
+  rows of one address are two names for one book until a reader says otherwise.
+
+
 ### Interface
 
 - Glass toolbar with sidebar toggle, open button, document title, centred page navigation, zoom
   popover, view-mode switch, search and an overflow menu.
+- A library bar of its own: a breadcrumb starting at Home on the left, a search bar in the centre
+  slot that filters the shelf as it is typed and suggests books underneath, and a view menu and
+  appearance menu on the right — the appearance menu without its page
+  texture section, because the shelf has no page. No Open button and no settings gear: adding books
+  is a shelf affordance ([Library](#library)), and settings are about reading, so the gear lives on
+  the reader's bar. The bar's pin is remembered per route — the shelf's bar starts pinned, and
+  unhitching the reader's bar does not move it.
 - Overflow menu with fullscreen and a keyboard shortcut reference.
 - Animated sidebar with an outline and thumbnails rail. Panels stay mounted while the sidebar is
   collapsed, so thumbnails survive a toggle without re-rendering.
 - Status bar showing the current page position, rendered as a click-through overlay.
 - Toast notifications for errors, auto-dismissed after about 3.5 seconds.
 - Tooltips on the icon controls.
-- A placeholder view with drag-and-drop affordance when no document is open.
+- The library is what is on screen when no document is open, and it keeps the drag-and-drop
+  affordance: a drop there files the documents rather than opening the first of them.
 
 ### Persistence
 
 Settings are stored in local storage under `pdfreader.settings.v1` and cover appearance, the
-active preset, user presets, default zoom, the layout and motion switches, and the last opened
-path. A group added later simply defaults: a document opened by an older build keeps the behaviour
+active preset, user presets, default zoom, the layout and motion switches, the two title-bar pins
+(the reader's and the library's — separate memories, and the library's starts pinned), and the
+last opened path. A group added later simply defaults: a document opened by an older build keeps the behaviour
 it had, because every new switch defaults to what the app used to do.
 
 The appearance model changed shape during development, from six fixed themes to base mode plus
@@ -314,6 +680,25 @@ computed tint plus presets, but the storage key was deliberately not bumped. A n
 silently reset every reader's last-opened file and zoom as well. Instead the retired fields are
 retained as optional values, migrated on load to the preset that reproduces the theme previously
 in use, and dropped when writing, so the migration runs at most once.
+
+The library is a separate blob under `pdfreader.library.v2`, holding the books, their shelves, the
+watched folders and their ledgers, and the view — one key because they are one invariant: a shelf
+member that names no book is a hole in the grid. It is deliberately *not* part of the settings blob,
+because a resume point moves on every page turn while settings repaint the theme on every write. The
+cover cache stays on its own key for the same reason: a cover is a base64 JPEG, and putting the art in
+the same blob would make turning a page re-serialise the whole shelf's covers.
+
+A watched folder's blob also carries its ledger: the fingerprints it has placed, a tombstone per
+deliberate removal, and what its last scan saw. That is what lets a rescan be honest and a restore menu
+open without walking a directory tree, and it is bounded by the library's own cap — a folder cannot have
+placed more books than the library holds.
+
+A previous build's recent-books list (`pdfreader.library.v1`) is migrated on first load rather than
+discarded: every row becomes a book read in place, in the order the reader had it, with its resume
+point intact. The migrated rows carry a placeholder fingerprint until the startup pass measures
+them, and a watched folder will not rescan against a placeholder — a real fingerprint matches none,
+so every book the folder already held would be added a second time. The old key is left in place, so
+a downgrade still finds the library it wrote.
 
 Writes are debounced by 350 milliseconds so dragging a slider does not hammer local storage.
 
@@ -358,7 +743,7 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Action | Shortcut |
 |--------|----------|
 | Open document | `Cmd/Ctrl` + `O` |
-| Search | `Cmd/Ctrl` + `F` |
+| Search — the document while one is open, the library's shelf filter while it is not | `Cmd/Ctrl` + `F` |
 | Fit width | `Cmd/Ctrl` + `0` |
 | Single page view | `Cmd/Ctrl` + `1` |
 | Continuous view | `Cmd/Ctrl` + `2` |
@@ -371,7 +756,9 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Screen up / down | `Page Up` / `Page Down` |
 | Screen down / up | `Space` / `Shift` + `Space` |
 | Auto-scroll on or off (the two scrolling modes) | `Shift` + `A` |
-| Dismiss overlay or search | `Escape` |
+| Move through the library's search suggestions | `Up arrow` / `Down arrow` in the search bar |
+| Go to the chosen suggestion's book, on its shelf | `Enter` in the search bar |
+| Dismiss overlay or search; close the library's suggestions, or clear its search | `Escape` |
 
 In continuous mode the reader owns the arrow keys and scrolls the page list directly. Leaving them
 to the browser meant scrolling whatever held focus, which was usually a text-layer span; when
@@ -437,9 +824,12 @@ src/
   app/                    bootstrap, routes, the shell that hosts the sidebar
   components/
     primitives/           button, switch, popover, floating positioning,
-                          motion and interaction hooks (the chrome's own
-                          primitives — icon, icon button, tooltip, the
-                          generic DOM/timer hooks — live in app-chrome)
+                          motion and interaction hooks (the long-press, the
+                          pointer-drag stream, and the card wrapper that
+                          decides between a tap, a hold and a drag; the
+                          chrome's own primitives — icon, icon button,
+                          tooltip, the generic DOM/timer hooks — live in
+                          app-chrome)
     shell/                the unified application shell: the ShellController
                           (one source of truth for layout), the titlebar
                           family, the sidebar rail family
@@ -467,17 +857,31 @@ src/
                           appearance section of the settings modal
     app_overlays/         drag-and-drop feedback, toast host
   effects/
-    app/                  window title, shortcuts, persistence wiring
+    app/                  window title, shortcuts, persistence wiring,
+                          drag-and-drop admission, and the library's
+                          app-lifetime wiring (startup measurement, focus
+                          rescan, the progress sink)
     reader/               fit and zoom follow, page tracking
     appearance/           the appearance-to-CSS bridge (shared, raster,
                           reflow)
   features/
-    library/              the shelf: book cards, empty state, sorting
+    library/              the library page: its three-slot bar (breadcrumb,
+                          search, view menu), the grid and the list, book cards
+                          and the folder cards a shelf nests in, the two ways in
+                          (add card, empty state) and the sheet they open, the
+                          import dock, and the drag both views share (the
+                          session and its sink, the targets, the table that
+                          decides what a drop means, and the layer that
+                          draws it)
     reader/               the reader page and its two virtualizers
   state/                  the reactive state tree: app (chrome + UI), reader
                           (document, viewer, zoom, search, gloss, AI selection),
                           library
-  services/               the document open pipeline, the AI chunk bridge
+  services/               the document open pipeline, the AI chunk bridge, and
+                          the library's filesystem wire (the shell's invoke
+                          wrappers and progress bridge, the import orchestration
+                          that runs the ledger, and the moves a reader makes by
+                          hand)
   storage/                loads and saves over localStorage (settings,
                           library, covers, gloss marks)
   zoom/                   the zoom pipeline: posted commands, target
@@ -515,6 +919,13 @@ crates/
                           line-bounded subdivision a tight page pack needs
   md-core/                Markdown: construct classification, prose subdivision,
                           front-matter metadata and the heading outline
+  library-core/           the library's domain: the book and its fingerprint,
+                          the two origins (read in place, copied into the
+                          store), shelves and watched folders, the scan
+                          predicate, the rescan ledger that answers
+                          add/relink/skip, the sort, the persisted blob and its
+                          migration, the merge rule for two rows of one book,
+                          and the wire types the shell and the frontend share
   pdf-engine/             wasm-bindgen bridge to the imperative engine
   pdf-paper/              the blend backdrop's colour brain: the detection
                           area, dominant-colour detection (whole page or edge
@@ -544,14 +955,21 @@ public/
   vendor/pdfjs/           vendored pdf.js build, worker, viewer CSS, cmaps
   samples/                five fixture PDFs for manual testing (the smoke test
                           runs against stubs, not these)
-src-tauri/                native shell, AI providers, capabilities, icons
+src-tauri/                native shell, AI providers, the library's filesystem
+                          commands (folder walk, path check, store copy and
+                          delete), capabilities, icons
 styles/
   input.css               Tailwind v4 entry point assembling the design system
   tokens.css              the @theme block, base palettes and runtime vars
   page_host.css           the .pdf-page host, its canvas and the zoom snapshot
   text.css                the reflowable page host and the continuous stream
   textures.css, noise.css texture modes, and the grain overlay + its crawl
-  library.css             the bookshelf and its drag overlay
+  components/library/     the bookshelf, one file per surface: the grid and its
+                          book cards, the folder's cover plate, the list rows,
+                          the import dock's ring, the reveal, the drag layer a
+                          held set is carried in, the breadcrumb's elided chain,
+                          the multi-select a hold starts, and the search
+                          suggestions
   components/             shell, title bar, animations, ai, gloss, appearance,
                           thumbnails, pdf.js's text layer, and the search-hit
                           box both format families share
@@ -686,7 +1104,8 @@ bundle's selection tracker — the last in a sandbox with no engine and no pdf.j
 which is the point of it.
 
 Five small scripts guard facts that are written down more than once, where nothing else
-would notice a drift: `check-versions.ts` (the app version in four files),
+would notice a drift: `check-versions.ts` (the app version in four files, plus the two
+lockfile entries cargo derives from them),
 `check-formats.ts` (the openable formats in the reader-core registry, the shell's
 filesystem gate and the bundle's file associations), `check-doc-paths.ts` (every module and
 file path named in a Rust comment still resolves, every path named in a stylesheet comment,

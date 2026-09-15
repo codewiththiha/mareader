@@ -1,6 +1,13 @@
-//! Shared pieces of the reader settings modal: the tab switcher, the labelled
-//! `Row` wrapper, and the generic `StyleSelect` dropdown. The tabs (in their
-//! own files) build on these; `modal` is the shell that hosts them.
+//! Shared pieces of the reader settings modal: the tab switcher and the generic
+//! `StyleSelect` dropdown. The tabs (in their own files) build on these; `modal`
+//! is the shell that hosts them.
+//!
+//! The labelled `Row` these sit beside is
+//! [`crate::components::primitives::form::row::Row`]: the library's import
+//! sheet and removal receipt are built out of the same rows, and a component two
+//! features reach into a third for is a primitive with the wrong address.
+//! `StyleSelect` stays because it is built on the toolbar's `MenuPopover`, and
+//! moving it would make `primitives` depend on `shell` — the wrong way round.
 //!
 //! `TabButton` takes the tab to display as a SEPARATE signal from the one it
 //! writes, because the tab set is not fixed: the Animations tab only exists
@@ -10,7 +17,7 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
@@ -57,16 +64,6 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 }
 
 #[component]
-pub(crate) fn Row(label: &'static str, children: Children) -> impl IntoView {
-    view! {
-        <div class="flex items-center justify-between gap-3 px-4 py-3.5">
-            <span class="text-sm text-ink">{label}</span>
-            {children()}
-        </div>
-    }
-}
-
-#[component]
 pub(crate) fn StyleSelect<T>(
     value: Signal<T>,
     on_change: Callback<T>,
@@ -98,7 +95,7 @@ disabled:cursor-not-allowed disabled:opacity-45"
             <MenuPopover
                 open=open
                 anchor=root_ref
-                width=190
+                width=190u32
                 class="p-1".to_string()
                 // A dropdown INSIDE the settings modal is part of the dialog,
                 // not a competitor for the window: the default MENU policy
@@ -119,25 +116,17 @@ disabled:cursor-not-allowed disabled:opacity-45"
                             // takes its own clone now that T is no longer Copy.
                             let v_selected = v.clone();
                             let v_for_click = v.clone();
-                            let v_for_check = v.clone();
                             let label = (*l).to_string();
                             view! {
                                 <MenuItem
                                     label=label
                                     selected=Signal::derive(move || value.get() == v_selected)
+                                    check=true
                                     on_click=move || {
                                         on_change.run(v_for_click.clone());
                                         open.set(false);
                                     }
-                                >
-                                    <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
-                                        {move || {
-                                            (value.get() == v_for_check).then(|| {
-                                                view! { <Icon name=IconName::Check size=14 /> }
-                                            })
-                                        }}
-                                    </span>
-                                </MenuItem>
+                                />
                             }
                         })
                         .collect_view()

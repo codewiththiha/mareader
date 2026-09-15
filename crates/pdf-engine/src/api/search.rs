@@ -121,7 +121,6 @@ pub fn set_active_match(page: u32, index: i32) {
     bridge::set_active_match(page, index);
 }
 
-/// Drop every highlight and the active match, and clear the query context.
 pub fn clear_highlights() {
     if !super::guard_pdf_reader() {
         return;
@@ -129,7 +128,6 @@ pub fn clear_highlights() {
     bridge::clear_highlights();
 }
 
-/// Forget the current document's index (teardown path).
 pub fn clear_index() {
     with(|i| i.clear());
 }

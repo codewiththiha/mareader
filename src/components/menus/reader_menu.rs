@@ -6,7 +6,7 @@ use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use crate::components::primitives::menu::kbd::Kbd;
@@ -61,11 +61,10 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
             <MenuPopover
                 open=open
                 anchor=root_ref
-                width=300
+                width=300u32
                 coordinate_space="toolbar-row"
                 class="p-2".to_string()
             >
-                // ── Zoom row: readout centered, steppers around it ──
                 <div class="flex items-center justify-between px-2 py-1">
                     <IconButton
                         icon=IconName::ZoomOut
@@ -79,7 +78,6 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                         on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(1), true)
                     />
                 </div>
-                // ── 4 view modes | separator | fit width / fit page ──
                 <div class="flex items-center justify-center gap-1 px-2 py-1">
                     <ModeButton state=state m=ViewMode::Single icon=IconName::SinglePage title="Single page" />
                     <ModeButton state=state m=ViewMode::Spread icon=IconName::DualPage title="Two pages" />
@@ -89,7 +87,7 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                     <FitButton state=state f=FitMode::Width icon=IconName::FitWidth title="Fit width" />
                     <FitButton state=state f=FitMode::Page icon=IconName::FitPage title="Fit page" />
                 </div>
-                <div class="my-1"><Separator vertical=false /></div>
+                <Separator vertical=false spacing="my-1" />
                 // ── Auto scroll: disabled + dimmed on paginated modes ──
                 {move || {
                     let disabled = !mode.get().can_scroll();
@@ -105,13 +103,13 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                         </MenuItem>
                     }
                 }}
-                <div class="my-1"><Separator vertical=false /></div>
+                <Separator vertical=false spacing="my-1" />
                 <MenuItem
                     icon=IconName::Settings
                     label="Settings…".to_string()
                     on_click=move || { open.set(false); settings_open.set(true); }
                 />
-                <div class="my-1"><Separator vertical=false /></div>
+                <Separator vertical=false spacing="my-1" />
                 <MenuItem
                     icon=IconName::Keyboard
                     label="Keyboard Shortcuts".to_string()

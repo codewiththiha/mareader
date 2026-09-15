@@ -24,8 +24,8 @@
 //! other; both are pure colour computation over the shared
 //! [`appearance::Appearance`], so the host test suite holds every number they
 //! produce to account. The engine bridge that APPLIES the raster pipeline
-//! stays in the app crate. The floating-box geometry and spring are
-//! deliberately NOT here — they live in `ui-geom`, a dependency-free leaf.
+//! stays in the app crate, and the floating-box geometry and spring stay in
+//! `ui-geom`, a dependency-free leaf.
 
 pub mod appearance;
 pub mod filename;
@@ -36,5 +36,5 @@ pub mod settings;
 pub mod view;
 pub mod zoom_math;
 
-pub use format::{DocumentKind, Format, extensions, first_supported, format_of, is_supported_mime, is_supported_path, kind_list, kind_names, SUPPORTED};
+pub use format::{DocumentKind, Format, SUPPORTED, extensions, first_supported, format_from_ext, format_of, is_supported_mime, is_supported_path, kind_list, kind_names};
 pub use outline::OutlineNode;

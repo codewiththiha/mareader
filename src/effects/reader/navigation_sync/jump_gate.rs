@@ -119,7 +119,6 @@ mod tests {
         assert_eq!(gate.pending(), None);
     }
 
-    /// An ordinary page change with no transaction in flight jumps at once.
     #[test]
     fn an_ordinary_page_change_jumps_immediately() {
         let gate = JumpGate::default();

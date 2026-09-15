@@ -121,12 +121,12 @@ impl ZoomController {
         // the freezes with it, nothing rendering until the next zoom).
         let settle = use_debounce(Duration::from_millis(config::FOLLOW_SETTLE_MS), move || {
             let zoom = state.viewer.zoom;
-            if let Some(t) = zoom.transition.get_untracked() {
-                // Only ever a follow: a transaction that was opened or
-                // replaced in the meantime carries its own commit.
-                if t.following {
-                    finish_transition(&state, &t);
-                }
+            // Only ever a follow: a transaction that was opened or
+            // replaced in the meantime carries its own commit.
+            if let Some(t) = zoom.transition.get_untracked()
+                && t.following
+            {
+                finish_transition(&state, &t);
             }
         });
 

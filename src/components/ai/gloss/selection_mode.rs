@@ -2,16 +2,16 @@
 //! long-press gesture constants (the gesture itself lives in
 //! [`super::mark_layer`], implemented by the primitive `long_press`), the exit
 //! paths (Escape / clean tap outside), the right-click context-menu
-//! listener, and the undo pipeline that every removal path parks through.
+//! listener, and the undo pipeline every removal path parks through.
 //!
 //! Selection state itself lives on `state.reader.gloss` so every page's
 //! `GlossMarkLayer` and the reader-level bar share one source of truth.
 //! Marks mutate it directly (toggling is high-frequency); only the context
 //! menu travels as a CustomEvent, mirroring `GLOSS_OPEN_EVENT`.
 //!
-//! Dismissal (Escape / outside press) for selection mode and for the context
-//! menu comes from the primitive `use_dismiss`; this module owns only the
-//! semantics (exit selection, close menu, park undo).
+//! Dismissal (Escape / outside press) comes from the primitive `use_dismiss`;
+//! this module owns only the semantics (exit selection, close menu, park
+//! undo).
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,11 +27,13 @@ use crate::state::AppState;
 
 pub use crate::events::GLOSS_CONTEXT_EVENT;
 
-/// How long a press must hold before it becomes a selection gesture.
-pub const LONG_PRESS_MS: i32 = 450;
-
-/// Pointer may drift this far (px) during a long-press without cancelling it.
-pub const LONG_PRESS_SLOP_PX: f64 = 8.0;
+/// How long a press must hold before it becomes a selection gesture, and how far
+/// it may drift. Re-exported from the primitive that owns them, so the library's
+/// shelf and a page's highlights answer "how long is a long press?" with one
+/// number rather than two that happen to match.
+pub use crate::components::primitives::interactions::long_press::{
+    SELECT_PRESS_MS as LONG_PRESS_MS, SELECT_SLOP_PX as LONG_PRESS_SLOP_PX,
+};
 
 /// How long the undo toast stays up before the removal is final.
 pub const UNDO_WINDOW_MS: i32 = 6000;
@@ -71,7 +73,6 @@ pub fn dispatch_gloss_context(x: f64, y: f64, id: &str) {
     );
 }
 
-/// Toggle one id in the selection set.
 pub fn toggle_selected(selected: RwSignal<HashSet<String>>, id: &str) {
     selected.update(|s| {
         if !s.remove(id) {
@@ -86,7 +87,7 @@ pub fn exit_selection(state: AppState) {
     state.reader.gloss.selected_marks.set(HashSet::new());
 }
 
-/// Park a removed batch for undo and arm the auto-dismiss timer.
+/// Park a removed batch for undo; an empty batch parks nothing.
 pub fn park_undo(
     undo: RwSignal<Option<UndoBatch>>,
     marks: Vec<GlossMark>,

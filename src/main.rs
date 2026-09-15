@@ -7,6 +7,7 @@ mod features;
 mod services;
 mod state;
 mod storage;
+mod time;
 mod zoom;
 
 use app::*;

@@ -1,0 +1,110 @@
+/* The bar's suggestions: the panel under the library's search pill. The surface, the placement
+   and the dismissal are the popover every bar menu hangs from — fixed, so the centre slot's
+   clipping cannot reach it. What is here is only the rows. */
+.lib-suggest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lib-suggest-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.3125rem 0.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+/* The one chosen row — by the arrows or by the pointer, which move the same
+   cursor — in the app's one "this is the one" colour. */
+.lib-suggest-row-active {
+  background: var(--color-accent-soft);
+}
+/* The shelf's 3:4 plate, at a row's height: the cover the grid already
+   rendered when it has one, the title's first letter when it does not. */
+.lib-suggest-thumb {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.8333rem;
+  overflow: hidden;
+  border-radius: 0.1875rem;
+  background: var(--color-line);
+}
+.lib-suggest-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.lib-suggest-thumb > span {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+.lib-suggest-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+.lib-suggest-title,
+.lib-suggest-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.lib-suggest-title {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--color-ink);
+}
+.lib-suggest-sub {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  color: var(--color-muted);
+}
+/* The characters the query hit, in the accent: the fuzzy half of the search
+   has to SHOW its work, because a row that matched on letters the reader
+   cannot see lit is a row that looks like a mistake. */
+.lib-suggest-hit {
+  font-weight: 600;
+  color: var(--color-accent);
+}
+.lib-suggest-foot {
+  margin-top: 0.25rem;
+  padding: 0.375rem 0.5rem 0.125rem;
+  border-top: 1px solid var(--color-line);
+  font-size: 0.6875rem;
+  color: var(--color-muted);
+}
+
+/* A link row: the shelf's own card and row shape, worn by a pointer rather
+   than by a book. It is not a copy and must not read as one — no page-1 art
+   exists for it, so the plate keeps the fallback's letters and gains a dashed
+   frame, and the row steps back a little behind the books beside it. */
+.book-link .book-cover-wrap {
+  opacity: 0.82;
+}
+
+.book-link .book-cover-fallback {
+  outline: 1px dashed currentColor;
+  outline-offset: -7px;
+}
+
+.book-link-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  color: inherit;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

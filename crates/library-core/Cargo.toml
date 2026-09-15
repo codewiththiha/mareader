@@ -1,0 +1,28 @@
+[package]
+name = "library-core"
+version = "0.1.0"
+edition = "2024"
+description = "The library's domain: the book and its fingerprint, the two ways a book is held (read in place or copied into the store), shelves and watched folders, the scan predicate, the rescan ledger that decides add/relink/skip, the sort, the persisted view, and the merge rule that folds two rows of one book back into one. No wasm, no DOM, no leptos, no filesystem — unit-testable on the host."
+license = "MIT"
+
+[dependencies]
+# The format registry (which kinds a folder scan may admit) and the filename
+# policy (the title a book shows when its document carries none). Both are
+# leaves of the graph; nothing here may depend back on this crate.
+reader-core = { path = "../reader-core" }
+serde = { version = "1", features = ["derive"] }
+
+[features]
+# Compiles `testkit`, the fixture builders the app crate's host tests share
+# with this crate's own. Off in every real build.
+test-util = []
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints.rust]
+# Warnings are denied, not printed: a gate that only shows up in the log is a
+# gate that gets read past. The priority applies the group first, so the
+# individual levels below it remain deliberate overrides.
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "forbid"

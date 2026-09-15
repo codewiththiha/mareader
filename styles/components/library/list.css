@@ -1,0 +1,85 @@
+/* The list layout: one row per book. The same books in the same order as the grid, so nothing here carries a decision — only a shape. */
+.lib-list {
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+}
+.lib-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.12s ease;
+}
+.lib-row:hover {
+  background: color-mix(in srgb, var(--color-line) 45%, transparent);
+}
+.lib-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+/* The tree's shelf row: a book row's shape wearing a disclosure. The indent is
+   an inline style — the depth scale lives with the tree that owns it — and the
+   tighter gap is all the row itself needs: chevron, glyph and name sit closer
+   than a cover sits to its title, because they are one noun. */
+.lib-row-shelf {
+  gap: 0.5rem;
+}
+.lib-row-cover {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: 2.6rem;
+  aspect-ratio: 210 / 297;
+  overflow: hidden;
+  border-radius: 2px 4px 4px 2px;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--color-accent) 18%, var(--color-paper)),
+    var(--color-paper) 74%
+  );
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.16);
+}
+.lib-row-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+/* The dense tree's stand-in for the cover: at sidebar width the format IS the
+   art — the kind of thing the row is, in the footprint the cover would have
+   had, so rows still line up and the eye still lands on the same corner. */
+.lib-row-ext {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  padding: 0.125rem 0;
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  color: var(--color-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+/* The row's trailing 22px button, named for what it IS and not for the one action it first carried: a shelf row's opens the shelf, and only a book row's is the removal's ✕. */
+.lib-row-action {
+  width: 22px;
+  height: 22px;
+}
+.lib-row:hover .lib-row-action,
+.lib-row:focus-visible .lib-row-action,
+.lib-row-action:focus-visible {
+  opacity: 1;
+}
+.lib-row-action:hover {
+  border-color: var(--color-line);
+  background: var(--color-surface);
+  color: var(--color-ink);
+}

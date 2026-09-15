@@ -7,13 +7,12 @@ import vm from "node:vm";
 // and evaluates it in a vm sandbox; the bundle carries no module syntax, so
 // it runs as-is with no source rewriting.
 
-
 const engineSrc = readFileSync(
   new URL("../../public/pdfEngine.js", import.meta.url),
   "utf8"
 );
 
-// ---------- canvas stub (pixel-accurate) ----------
+// canvas stub (pixel-accurate)
 export class FakeCtx {
   canvas: FakeCanvas;
   filter = "none";
@@ -357,7 +356,7 @@ export const fakeWindow: FakeWindow = {
   },
 };
 
-// ---------- pdf.js stub ----------
+// pdf.js stub
 // Per-page paint colours, defaulting to paper white. The blend-scope test
 // paints distinct pages so detection and the continuous interpolation have
 // something to tell apart; every other scenario sees the same all-white
@@ -595,7 +594,6 @@ export function assertClose(actual: Uint8ClampedArray, expected: number[], label
   }
 }
 
-
 // Canvas allocation tracking: render.test.ts turns this on; theme.test.ts
 // asserts against it (the identity-pipeline fast path must allocate zero
 // page-sized bake canvases).
@@ -617,7 +615,6 @@ export function setFakeComputed(v: {
 }): void {
   fakeComputed = v;
 }
-
 
 export type {
   EngineResult,

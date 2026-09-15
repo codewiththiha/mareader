@@ -1,0 +1,365 @@
+/* Library bookshelf. A book is a cover in a frame with a line of prose under it, and a folder is a
+   2×2 plate of the covers inside it with the same line under it — one shape for both, at every
+   depth. Colours come from the themed tokens. */
+/* The column count is a custom property rather than a class per count: the view menu writes one token (--lib-cols, from `library_core::view::LibraryView::columns_token`) and the grid reads it. */
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--lib-cols, auto-fill), minmax(9.5rem, 1fr));
+  gap: 2rem 1.5rem;
+  padding-bottom: 2rem;
+}
+
+/* The two card kinds share a column and a rhythm, and differ in what fills the
+   box: the frame is the book's, the plate is the folder's. */
+.book-card,
+.folder-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.book-card:focus-visible {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+/* The frame: one element owns the clip, the radius, the shadow and the lift, so the cover inside
+   can be whatever ratio its document has and the progress bar can sit flush with the bottom of the
+   ART. The lift is a straight translate, not the old lean and rotate. */
+.book-cover-wrap {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--color-surface);
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 0.12),
+    0 6px 16px -6px rgb(0 0 0 / 0.30);
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease;
+}
+.book-card:hover .book-cover-wrap,
+.book-card:focus-visible .book-cover-wrap {
+  transform: translateY(-4px);
+  box-shadow:
+    0 4px 8px rgb(0 0 0 / 0.14),
+    0 14px 30px -8px rgb(0 0 0 / 0.40);
+}
+.book-card:active .book-cover-wrap {
+  transform: translateY(-2px) scale(0.99);
+}
+
+/* The cover's own ratio is written inline per book by
+   `src/features/library/book_card.rs` (clamped there, so a pathological page
+   cannot break the grid); this is only the default and the fill. */
+.book-cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 210 / 297;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.book-cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+
+/* Fallback when no page-1 render is cached: a themed generated cover
+   carrying the title, so a book is never a bare rectangle. */
+.book-cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background:
+    radial-gradient(120% 90% at 18% 0%, color-mix(in srgb, var(--color-accent) 55%, var(--color-paper)) 0%, transparent 62%),
+    linear-gradient(160deg, color-mix(in srgb, var(--color-accent) 26%, var(--color-paper)), var(--color-paper) 72%);
+  color: var(--color-ink);
+}
+.book-cover-fallback span {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+/* The line under the box. Two rows and no more: a shelf is scanned by its art
+   and a card that grows a third row makes every other card's art move. */
+.book-info,
+.folder-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.book-title,
+.folder-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  line-height: 1.3;
+  color: var(--color-ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.book-page,
+.book-author,
+.folder-count {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+.folder-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Reading progress, flush with the bottom of the frame rather than under the
+   title: it is a fact about the cover the reader is looking at, and the frame is
+   the box that gives it something to be flush with. Rounded on the right only,
+   so a full bar meets the frame's own radius instead of overhanging it. */
+.book-progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: color-mix(in srgb, var(--color-line) 60%, transparent);
+}
+.book-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 0 2px 2px 0;
+  background: var(--color-accent);
+  transition: width 0.3s ease;
+}
+
+/* The remove button, and the relink a missing book grows, wear one chrome: revealed on hover/focus and kept inside the card, because the frame clips. The per-button rules are position and ink only. */
+.book-remove,
+.book-relink {
+  position: absolute;
+  top: 6px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  border-color: var(--color-line);
+  background: var(--color-surface);
+  transform: scale(0.85);
+  transition: opacity 0.14s ease, transform 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+.book-remove {
+  right: 6px;
+}
+.book-card:hover .book-remove,
+.book-card:focus-visible .book-remove,
+.book-remove:focus-visible,
+.book-card:hover .book-relink,
+.book-card:focus-visible .book-relink,
+.book-relink:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.book-remove:hover {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  color: var(--color-ink);
+}
+
+/* Full-screen while a file drag is over the window. pointer-events: none so the window-level drop handlers keep receiving the drag. */
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drag-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-paper) 74%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  backdrop-filter: blur(8px) saturate(1.1);
+  pointer-events: none;
+  animation: drag-overlay-in 0.16s ease-out both;
+}
+
+.drag-dropzone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 2.75rem 4rem;
+  border-radius: 1.5rem;
+  border: 2px dashed color-mix(in srgb, var(--color-accent) 60%, var(--color-line));
+  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
+  box-shadow: 0 30px 70px -30px rgb(0 0 0 / 0.5);
+  text-align: center;
+}
+
+.drag-dropzone::before {
+  content: "";
+  position: absolute;
+  inset: -22%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(
+    50% 50% at 50% 50%,
+    color-mix(in srgb, var(--color-accent) 30%, transparent),
+    transparent 70%
+  );
+}
+
+.drag-dropzone-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  color: var(--color-accent);
+}
+
+.drag-dropzone-title {
+  font-size: 1.35rem;
+  font-weight: 650;
+  color: var(--color-ink);
+}
+
+.drag-dropzone-sub {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
+@keyframes drag-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Covers: the two treatments the view menu offers. "Fit" is the shelf the app has always had —
+   every cover at its document's own aspect ratio, clamped in `src/features/library/book_card.rs`;
+   "crop" is one ratio for all of them. Only the fill changes here, because the box's ratio is the
+   card's inline style. */
+.book-cover-crop .book-cover-img,
+.book-cover-crop .lib-row-img {
+  object-fit: cover;
+}
+
+/* The author line, which a list has room for and a card only has room for
+   instead of the resume hint. One row, because the title already takes two. */
+.book-author {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The format chip lives on the row only: at list density a reader scans names rather than art, so the kind of thing a row is earns its place there. */
+.lib-row-format {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--color-line);
+  border-radius: 9999px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* A book whose address died. The card stays: a missing book is not a removed one, and the reader decides between finding it again and letting it go. */
+.book-missing .book-cover-wrap,
+.row-missing .lib-row-cover {
+  filter: grayscale(1) opacity(0.62);
+}
+
+.book-missing-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+/* The remove button's twin, one button to its left. Two affordances on a missing card and one on a healthy one, which is the whole of the difference. */
+.book-relink {
+  right: 32px;
+}
+.book-relink:hover {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  color: var(--color-accent);
+}
+
+/* On the card rather than on the frame, so it can stand in the gutter to the card's left instead of crossing the art. */
+.book-drop-before {
+  position: relative;
+}
+.book-drop-before::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 1.6rem;
+  left: -0.85rem;
+  width: 2px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+}
+.row-drop-before {
+  box-shadow: inset 0 2px 0 var(--color-accent);
+}
+/* The mirror seam: the bottom half of a list row is "after". The top rule and this one are the two halves of one row, never both lit, because the band that paints them is the band the commit resolves its index from. */
+.row-drop-after {
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+/* The add card: a cover's shape with nothing on it. Same box as a book, dashed instead of painted, and no shadow — an add affordance casting a book's shadow would read as an empty volume. */
+.book-add {
+  cursor: default;
+}
+.book-add-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 210 / 297;
+  border: 1px dashed var(--color-line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  box-shadow: none;
+  color: var(--color-muted);
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+.book-add:hover .book-add-cover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+.book-add-cover:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}

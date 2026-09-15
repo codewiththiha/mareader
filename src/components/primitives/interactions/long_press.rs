@@ -8,8 +8,22 @@
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+
+use super::press_core::{self, PendingTimer};
+
+/// How long a press must hold before it becomes a SELECTION gesture.
+///
+/// Owned here rather than by either feature that uses it, because the two — a
+/// highlight on a page and a book on a shelf — are the same gesture to a reader,
+/// and two constants with the same meaning in two feature directories are two
+/// numbers that eventually stop matching.
+pub const SELECT_PRESS_MS: i32 = 450;
+
+/// How far the pointer may drift during that hold without cancelling it. A touch
+/// drag is never perfectly still, and a slop tight enough to demand stillness is a
+/// gesture that feels broken on a trackpad.
+pub const SELECT_SLOP_PX: f64 = 8.0;
 
 /// What the gesture needs from the caller.
 pub struct LongPressOptions {
@@ -43,35 +57,25 @@ pub struct LongPressHandlers {
     pub swallow_context: Rc<dyn Fn() -> bool>,
 }
 
-/// A pending hold timer: the JS timeout handle plus the wasm-shim closure it
-/// keeps alive. Parked in a `StoredValue` so a re-run or cleanup cannot free
-/// the closure while the timeout is still queued.
-type PendingTimer = Option<(i32, Closure<dyn FnMut()>)>;
-
 /// Stop an in-flight press: the finger lifted, drifted past slop, or the
-/// gesture already completed. Clears the pending timer (harmless if it
-/// already fired) and drops the parked closure.
+/// gesture already completed. The timer half is [`press_core::clear_timer`]'s —
+/// the same clear the drag wrapper's hold uses, because a stale `setTimeout`
+/// calling into a dropped wasm shim is a crash rather than a wrong answer, and
+/// there is one right way to drop it.
 fn cancel_press(
     press_active: StoredValue<bool, LocalStorage>,
     timer: StoredValue<PendingTimer, LocalStorage>,
 ) {
     press_active.set_value(false);
-    timer.with_value(|t| {
-        if let Some((handle, _)) = t
-            && let Some(win) = web_sys::window()
-        {
-            win.clear_timeout_with_handle(*handle);
-        }
-    });
-    timer.set_value(None);
+    press_core::clear_timer(timer);
 }
 
 /// Whether a pointer that started at the press origin has stayed within the
-/// slop radius. Both sides squared — no sqrt, and a slop of zero means any
-/// drift at all cancels the gesture. The boundary itself counts as inside,
-/// matching the strict `>` of the original inline cancel check.
+/// slop radius. The arithmetic is [`press_core::outside_radius`]'s, shared with
+/// the drag wrapper's threshold: a slop and a threshold are the same question
+/// asked of two gestures — has this pointer left where it landed.
 fn within_slop(dx: f64, dy: f64, slop_px: f64) -> bool {
-    dx * dx + dy * dy <= slop_px * slop_px
+    !press_core::outside_radius(dx, dy, slop_px)
 }
 
 /// Build the long-press handlers, owned by the current reactive owner.
@@ -110,10 +114,7 @@ pub fn use_long_press(options: LongPressOptions) -> LongPressHandlers {
         suppress_context.set_value(false);
         press_start.set_value(Some((ev.client_x(), ev.client_y())));
 
-        let Some(win) = web_sys::window() else {
-            return;
-        };
-        let cb = Closure::<dyn FnMut()>::new(move || {
+        press_core::arm_timer(timer, press_ms, move || {
             if !press_active.get_value() {
                 return;
             }
@@ -123,11 +124,6 @@ pub fn use_long_press(options: LongPressOptions) -> LongPressHandlers {
             suppress_context.set_value(true);
             on_press.run(());
         });
-        let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
-        if let Ok(handle) = win.set_timeout_with_callback_and_timeout_and_arguments_0(&f, press_ms)
-        {
-            timer.set_value(Some((handle, cb)));
-        }
     });
 
     let cancel_move = Rc::clone(&cancel);

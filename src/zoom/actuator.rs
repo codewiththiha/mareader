@@ -47,9 +47,7 @@ use crate::state::reader::ReaderState;
 /// `ReaderPage` — but resizing a strip's items is done only here.
 #[derive(Clone)]
 pub struct ZoomActuator {
-    /// The continuous (vertical) strip's virtualizer.
     pub vertical: Virtualizer,
-    /// The horizontal strip's virtualizer.
     pub horizontal: Virtualizer,
 }
 

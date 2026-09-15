@@ -14,7 +14,6 @@
 //! Shared kernel because BOTH pipelines compute in this space: the PDF tint
 //! emits OKLCH UI tokens, the text palette derives its page colours in OKLCH.
 
-/// sRGB gamma -> linear.
 fn srgb_to_linear(c: f64) -> f64 {
     if c <= 0.04045 {
         c / 12.92
@@ -23,7 +22,6 @@ fn srgb_to_linear(c: f64) -> f64 {
     }
 }
 
-/// Parse `#rrggbb` into linear-light RGB in 0..=1.
 fn hex_to_linear(hex: &str) -> Option<(f64, f64, f64)> {
     let h = hex.trim().trim_start_matches('#');
     if h.len() != 6 {

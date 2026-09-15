@@ -15,11 +15,25 @@ use crate::storage::{load_covers, load_library, load_settings};
 /// visible flash of the wrong palette, a shelf a frame late a visible empty
 /// state.
 pub(crate) fn create_app_state() -> AppState {
+    // One blob becomes four signals rather than one, so a page turn (which
+    // writes a resume point) does not notify the shelves, and a column nudge
+    // does not notify the books. The blob is loaded once and split here; the
+    // storage module never sees a signal.
+    let library = load_library();
+    // The highlights are keyed by row id, and a map written by a build that keyed
+    // them by address is carried across here — with the row list in hand, which
+    // is the only moment the two can be matched up. Before the state exists,
+    // because the first open reads its marks straight out of storage.
+    crate::storage::migrate_gloss_keys(&library.books);
     AppState {
         settings: RwSignal::new(load_settings()),
         library: crate::state::library::LibraryState {
-            books: RwSignal::new(load_library()),
+            books: RwSignal::new(library.books),
+            shelves: RwSignal::new(library.shelves),
+            folders: RwSignal::new(library.folders),
+            view: RwSignal::new(library.view),
             covers: RwSignal::new(load_covers()),
+            ..crate::state::library::LibraryState::default()
         },
         ..AppState::default()
     }

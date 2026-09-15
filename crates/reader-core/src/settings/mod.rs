@@ -18,14 +18,14 @@ mod animation;
 mod gloss;
 mod layout;
 
-// The reflowable formats' typography SCHEMA is kept with the rest of the
-// persisted settings, because the field names are the storage contract. The CSS
-// it resolves into is `reflow_core::typography`, which re-exports these names
-// so a component can read a knob and paint it from one import — hence `pub`.
+// The reflowable formats' typography SCHEMA lives with the rest of the
+// persisted settings, because the field names are the storage contract. The
+// CSS it resolves into is `reflow_core::typography`, which re-exports these
+// names so a component reads a knob and paints it from one import — hence
+// `pub`.
 pub mod typography;
 
-/// The layout tab's policy (indicator, floating label, page frame, blend) and
-/// the animations tab's switches are schemas that live in their own files;
+/// The layout tab's and animations tab's schemas live in their own files;
 /// re-exported so every persisted knob is still reached as
 /// `reader_core::settings::<Type>`.
 pub use animation::AnimationSettings;
@@ -35,14 +35,14 @@ pub use layout::{
 };
 pub use typography::TextSettings;
 
-/// The AI word card's knobs are part of the persisted schema — the flat
-/// `gloss_*` field names below are storage, so the types live here rather
-/// than in `ai-core`, which stays free of anything the settings model owns.
+/// The AI word card's knobs are part of the persisted schema, so the types
+/// live here rather than in `ai-core`, which stays free of anything the
+/// settings model owns.
 pub use gloss::{default_custom_gloss, default_gloss_opacity, is_hex6, GlossColor, GlossDensity};
 
-/// Which pixels of a page carry the paper colour. Owned by `pdf-paper` (the
-/// detector and the paint both speak it); re-exported here because the
-/// settings model is the one place a reader's persisted knobs live.
+/// Which pixels of a page carry the paper colour. Owned by `pdf-paper`;
+/// re-exported here because the settings model is the one place a reader's
+/// persisted knobs live.
 pub use pdf_paper::PaperArea;
 
 pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
@@ -55,17 +55,26 @@ pub struct Settings {
     /// The live look. Edited directly by the appearance controls.
     pub appearance: Appearance,
     /// Id of the preset currently selected, if the live look still matches
-    /// it. A manual edit selects another preset when the resulting appearance
-    /// matches it, and clears the selection only when no preset matches.
+    /// it. A manual edit re-selects when the resulting look matches a preset,
+    /// and clears the selection only when no preset matches.
     pub active_preset: Option<String>,
     /// User-saved presets (built-ins are code, not storage).
     pub user_presets: Vec<Preset>,
     pub default_zoom: f64,
     pub last_path: Option<String>,
-    /// Pin the titlebar open (no auto-hide). Persisted; `serde(default)`
-    /// migrates pre-pin blobs to unpinned.
+    /// Pin the READER's titlebar open (no auto-hide). One field per bar
+    /// rather than one for both, because the two routes are two surfaces with
+    /// two lives: unhitching the bar out of a document's way says nothing
+    /// about the shelf, whose bar is navigation and starts pinned — see
+    /// [`Settings::library_titlebar_pinned`].
     #[serde(default)]
     pub titlebar_pinned: bool,
+    /// Pin the LIBRARY's own titlebar. The shelf's bar is how you move, so
+    /// it defaults to pinned: navigation a reader has to hover to find is
+    /// navigation the shelf is hiding. Blobs saved before the two bars had
+    /// separate memories load pinned.
+    #[serde(default = "default_library_titlebar_pinned")]
+    pub library_titlebar_pinned: bool,
     #[serde(default)]
     pub layout: LayoutSettings,
     #[serde(default)]
@@ -77,15 +86,13 @@ pub struct Settings {
     #[serde(default = "default_custom_gloss")]
     pub gloss_custom: String,
     /// The AI word card's spacing. Blobs saved before the field existed
-    /// deserialize as Compact — the card had grown visibly airy and the denser
-    /// layout is the better default even for readers who never open
-    /// Settings.
+    /// deserialize as Compact — the denser layout is the better default even
+    /// for readers who never open Settings.
     #[serde(default)]
     pub gloss_density: GlossDensity,
-    /// Typography of the reflowable formats (plain text and Markdown): fonts,
-    /// spacing, justification, the book layout. PDFs never read this — their
-    /// type is baked into the page. Blobs saved before the text formats
-    /// existed load the defaults.
+    /// Typography of the reflowable formats: fonts, spacing, justification,
+    /// the book layout. PDFs never read this — their type is baked into the
+    /// page. Blobs saved before the text formats existed load the defaults.
     #[serde(default)]
     pub text: TextSettings,
 }
@@ -94,14 +101,14 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             appearance: Appearance::default(),
-            // No preset matches a fresh install's plain Light look: the bases
-            // are the Mode section's buttons, not presets, so "custom" is the
-            // honest reading of the default state.
+            // No preset matches a fresh install's plain look: the bases are
+            // the Mode section's buttons, not presets.
             active_preset: None,
             user_presets: Vec::new(),
             default_zoom: 1.0,
             last_path: None,
             titlebar_pinned: false,
+            library_titlebar_pinned: default_library_titlebar_pinned(),
             layout: LayoutSettings::default(),
             animations: AnimationSettings::default(),
             gloss_color: GlossColor::default(),
@@ -111,6 +118,11 @@ impl Default for Settings {
             text: TextSettings::default(),
         }
     }
+}
+
+/// [`Settings::library_titlebar_pinned`]'s default, which predates the field.
+fn default_library_titlebar_pinned() -> bool {
+    true
 }
 
 impl Settings {
@@ -155,7 +167,6 @@ impl Settings {
 
 /// Ensures a persisted `Settings` is internally valid.
 pub fn sanitize(settings: &mut Settings) {
-    // --- validation ----------------------------------------------------------
     settings.appearance.sanitize();
     typography::sanitize(&mut settings.text);
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
@@ -165,8 +176,8 @@ pub fn sanitize(settings: &mut Settings) {
         .layout
         .column_width_pct
         .clamp(layout::MIN_COLUMN_WIDTH_PCT, layout::MAX_COLUMN_WIDTH_PCT);
-    // A startup fit of `None` is meaningless (the reader would not know how to
-    // size the first page); retry to the default `FitMode::Page`.
+    // A startup fit of `None` is meaningless (the reader would not know how
+    // to size the first page); fall back to `FitMode::Page`.
     if settings.layout.default_fit == crate::zoom_math::FitMode::None {
         settings.layout.default_fit = layout::default_startup_fit();
     }
@@ -232,8 +243,8 @@ mod tests {
 
     #[test]
     fn editing_back_onto_a_preset_reselects_it() {
-        // Nice-to-have that avoids a lying UI: if you dial the sliders to
-        // exactly Green, the menu should say Green.
+        // If you dial the sliders to exactly Green, the menu should say
+        // Green — anything else is a lying UI.
         let mut s = Settings::default();
         s.apply_preset("sepia");
         s.appearance = builtin_presets().into_iter().find(|p| p.id == "green").unwrap().appearance;
@@ -260,8 +271,8 @@ mod tests {
     fn a_stale_plain_base_selection_is_dropped_not_dangled() {
         // Settings persisted while Light/Dark/Dim were presets carry their
         // ids as `active_preset`; the sanitizer clears the selection (the look
-        // itself lives in `appearance` and survives) rather than leave the
-        // menu highlighting a swatch that no longer exists.
+        // itself lives in `appearance` and survives) rather than highlight a
+        // swatch that no longer exists.
         let mut s = Settings {
             active_preset: Some("light".to_string()),
             ..Settings::default()
@@ -302,10 +313,9 @@ mod tests {
         // Startup fit defaults to Fit Page.
         assert_eq!(s.default_fit, crate::zoom_math::FitMode::Page);
 
-        // Deserializing an empty JSON layout object fills in the defaults. A
-        // blob saved BEFORE `auto_resize` existed is exactly this shape, so
-        // the assertion is also the promise that an existing install keeps the
-        // behaviour it had.
+        // A blob saved BEFORE `auto_resize` existed is exactly this shape, so
+        // these assertions are also the promise that an existing install keeps
+        // the behaviour it had.
         let s: LayoutSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.page_margin, 0.0);
         assert!(s.auto_scale);
@@ -341,9 +351,9 @@ mod tests {
 
     #[test]
     fn a_blob_from_the_fixed_mode_era_still_loads() {
-        // Older builds persisted a paper mode and a scan budget alongside
-        // the switch. Both are gone; a blob that still carries them must
-        // load cleanly with the switch and area it named.
+        // Older builds persisted a paper mode and a scan budget alongside the
+        // switch. Both are gone; a blob that still carries them must load
+        // cleanly with the switch and area it named.
         let s: LayoutSettings = serde_json::from_str(
             r#"{"blend_mode":true,"blend_scope":"fixed","blend_area":"edges","blend_scan_pages":100}"#,
         )

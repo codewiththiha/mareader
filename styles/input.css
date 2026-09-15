@@ -28,5 +28,25 @@
 @import "./components/ai.css";         /* AI blur-fade, shimmer, the Explain pill's entrance */
 @import "./components/gloss.css";      /* word-card morph surface + highlighter stroke */
 @import "./components/appearance.css"; /* hue strip, preset thumbnails, link layer */
-@import "./library.css";               /* bookshelf + drag overlay */
+/* The library, one file per surface, in the order the cascade needs: a
+   rearranged split would be a split that changed the look. The CI web lane
+   compiles this through `npm run build:css`, so a missing file or a dead
+   @apply fails there.
+
+   One prefix for the feature: lib-, and the component prefixes under it
+   (book-, folder-, import-, row-, drag-). Neither spelling is written with
+   its leading dot here on purpose: a dead selector in a comment is a class
+   name nothing can grep for. The element ids keep their own scheme (crumb-…,
+   library-level); SeamVocab in `src/features/library/shelf_item.rs` is the
+   one table that decides which state class a surface wears. */
+@import "./components/library/shared.css"; /* the ghost icon button every library surface reveals on hover */
+@import "./components/library/grid.css";     /* the shelf grid, the book card, its covers, a dead address, the add card */
+@import "./components/library/folder.css";   /* a shelf drawn as a folder: the 2x2 plate and its three states */
+@import "./components/library/list.css";     /* the list layout: one row per book, the same order as the grid */
+@import "./components/library/dock.css";     /* the import dock, bottom-left, clear of the shelf's centre */
+@import "./components/library/reveal.css";   /* the reveal: a card the reader was taken to, and the sheets' thumbnail */
+@import "./components/library/drag.css";     /* the drag layer: what the pointer is carrying */
+@import "./components/library/crumbs.css";   /* the elided levels: the chain behind the breadcrumb's ellipsis */
+@import "./components/library/select.css";   /* the multi-select a hold starts: dimming, the ring, the check */
+@import "./components/library/suggest.css";  /* the bar's suggestions: the panel under the library's search pill */
 @import "./text.css";                  /* text pages (TXT, Markdown), the continuous stream */

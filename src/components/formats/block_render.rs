@@ -28,9 +28,7 @@ use crate::state::ReaderState;
 /// Which format's renderer a block gets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockRender {
-    /// Verbatim, hard line breaks preserved.
     Plain,
-    /// One top-level construct, rendered as Markdown.
     Markdown,
 }
 
@@ -60,7 +58,6 @@ pub fn BlockView(
     /// element a measurement reads never gains an absolutely positioned
     /// child.
     state: ReaderState,
-    /// The block to paint.
     block: TextBlock,
     /// Which format's view paints inside the wrapper.
     render: BlockRender,

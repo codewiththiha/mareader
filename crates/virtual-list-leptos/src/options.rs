@@ -122,7 +122,7 @@ impl VirtualizerOptions {
         }
     }
 
-    /// A grid virtualizer. `estimate_size` returns the row pitch.
+    /// A grid virtualizer; `estimate_size` returns the row pitch.
     pub fn grid(
         count: impl Into<Signal<usize>>,
         estimate_size: impl Fn(usize) -> f64 + 'static,
@@ -147,76 +147,72 @@ impl VirtualizerOptions {
         Self::list(count, estimate_size).render_band(0.75)
     }
 
-    /// The render band, in viewport screens around the viewport (see
-    /// [`Self::render_screens`]). `0` — the default — disables it: pages
-    /// mode, where everything the window mounts renders fully.
+    /// Sets [`Self::render_screens`]; `0` disables the band.
     pub fn render_band(mut self, screens: f64) -> Self {
         self.render_screens = screens.max(0.0);
         self
     }
 
-    /// Gap between list items.
+    /// Sets [`Self::gap`].
     pub fn gap(mut self, gap: f64) -> Self {
         self.gap = gap;
         self
     }
 
-    /// Mount budget.
+    /// Sets [`Self::budget`].
     pub fn budget(mut self, budget: Budget) -> Self {
         self.budget = budget;
         self
     }
 
-    /// Scroll axis.
+    /// Sets [`Self::axis`].
     pub fn axis(mut self, axis: Axis) -> Self {
         self.axis = axis;
         self
     }
 
-    /// Content padding `(before, after)`.
+    /// Sets [`Self::padding_start`] and [`Self::padding_end`].
     pub fn padding(mut self, start: f64, end: f64) -> Self {
         self.padding_start = start;
         self.padding_end = end;
         self
     }
 
-    /// Layout epoch signal.
+    /// Sets [`Self::epoch`].
     pub fn epoch(mut self, epoch: Signal<u64>) -> Self {
         self.epoch = Some(epoch);
         self
     }
 
-    /// Reactive pinned indices.
+    /// Sets [`Self::pinned`].
     pub fn pinned(mut self, pinned: Signal<Option<(usize, usize)>>) -> Self {
         self.pinned = Some(pinned);
         self
     }
 
-    /// Initial viewport and scroll offset.
+    /// Sets [`Self::initial_viewport`] and [`Self::initial_offset`].
     pub fn initial(mut self, viewport: Viewport, offset: f64) -> Self {
         self.initial_viewport = viewport;
         self.initial_offset = offset;
         self
     }
 
-    /// Zombie retention: how long an evicted item stays rendered after the
-    /// window moves past it (`grace_ms`), and how many such items may be
-    /// retained at once. `grace_ms == 0` disables retention. The grace can
-    /// be temporarily raised later (a zoom holds items across its geometry
-    /// commit) with [`Virtualizer::set_retention_grace`](crate::Virtualizer::set_retention_grace).
+    /// The grace can be raised later — a zoom holds items across its
+    /// geometry commit — with
+    /// [`Virtualizer::set_retention_grace`](crate::Virtualizer::set_retention_grace).
     pub fn retention(mut self, grace_ms: u32, max_retained: usize) -> Self {
         self.retention_grace_ms = grace_ms;
         self.retention_max = max_retained;
         self
     }
 
-    /// Measurement and viewport epsilon.
+    /// Sets [`Self::measure_epsilon`].
     pub fn epsilon(mut self, eps: f64) -> Self {
         self.measure_epsilon = eps;
         self
     }
 
-    /// Max scroll-to re-aims.
+    /// Sets [`Self::max_scroll_retries`].
     pub fn max_retries(mut self, retries: u32) -> Self {
         self.max_scroll_retries = retries;
         self

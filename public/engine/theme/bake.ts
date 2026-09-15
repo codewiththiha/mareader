@@ -3,7 +3,6 @@
 // and would regress dark-mode inversion (the reason this baker exists).
 // Intermediates recycle the shared scratch canvas so a bake never pins a
 // second full-page buffer after it returns.
-//
 // The per-pixel loop runs in a Worker (theme/bake.worker.ts, bundled to
 // public/bake.worker.js) when the webview has one — a 4K page is ~8M
 // iterations. Without a Worker (the Node smoke harness, exotic webviews) the
@@ -24,8 +23,6 @@ import {
 import { pipelineIsIdentity } from "./pipeline";
 import { paperInfo } from "./paper";
 import { applyFilterToData, isIdentityFilter } from "./filterKernel";
-
-// --- Worker routing --------------------------------------------------------
 
 type BakeResponse = {
   id: number;
@@ -113,8 +110,6 @@ function workerApply(
   });
 }
 
-// --- Filter application ----------------------------------------------------
-
 async function applyFilterPixels(
   src: HTMLCanvasElement,
   filterString: string,
@@ -164,8 +159,6 @@ async function applyFilterPixels(
   octx.putImageData(img, 0, 0);
   return out;
 }
-
-// --- Raster helpers (unchanged semantics) -----------------------------------
 
 export function rasterToCanvas(src: HTMLCanvasElement | ImageBitmap): {
   canvas: HTMLCanvasElement;

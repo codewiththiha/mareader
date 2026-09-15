@@ -47,9 +47,7 @@ pub(crate) const SETTLED_EPSILON: f64 = 0.0005;
 /// How (and whether) a zoom animates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ZoomAnimationConfig {
-    /// Whether zooms tween at all; `false` lands on the first frame.
     pub enabled: bool,
-    /// Tween duration in milliseconds.
     pub duration_ms: f64,
 }
 
@@ -59,20 +57,15 @@ pub(crate) struct ZoomRetentionConfig {
     /// Grace period items evicted by a zoom commit keep their DOM, in
     /// milliseconds. Should outlive the tween itself.
     pub grace_ms: u32,
-    /// Hard ceiling on simultaneously retained items.
     pub max_zombies: usize,
 }
 
 /// The zoom behaviour profile for one view mode.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ZoomProfile {
-    /// Smallest scale the reader can settle at.
     pub min: f64,
-    /// Largest scale the reader can settle at.
     pub max: f64,
-    /// How the transition to a new scale animates.
     pub animation: ZoomAnimationConfig,
-    /// How the virtualization window is bridged across the commit.
     pub retention: ZoomRetentionConfig,
 }
 

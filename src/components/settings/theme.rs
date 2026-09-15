@@ -19,7 +19,7 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
     view! {
         <AiAppearanceSection state=state />
         <PaperSection state=state />
-        <div class="mt-5"><Separator vertical=false /></div>
+        <Separator vertical=false spacing="mt-5" />
         <p class="mt-2 text-xs text-muted">
             "Colour, tint, textures and presets live in the palette menu on the title bar."
         </p>

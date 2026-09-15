@@ -2,13 +2,21 @@
 
 use wasm_bindgen::JsValue;
 
-use super::{
-    reflect_set, KEY_DIRECTORY, KEY_DOCUMENTS, KEY_EXTENSIONS, KEY_FILTERS, KEY_MULTIPLE, KEY_NAME,
-};
+use super::{reflect_set, KEY_DOCUMENTS, KEY_EXTENSIONS, KEY_FILTERS, KEY_MULTIPLE, KEY_NAME};
+
+/// The sentence a cancelled pick answers with. A constant rather than a string matched
+/// in place at each caller: the two sides of the comparison are in different crates, and
+/// a wording change on one side must show up here rather than silently turn cancels into
+/// error toasts.
+pub const CANCELLED: &str = "Open cancelled";
 
 /// Native open-file dialog (Tauri dialog plugin), admitting every format the
 /// reader opens. Returns the chosen path, or `Err` on cancel / no plugin.
 pub async fn pick_document() -> Result<String, String> {
+    pick().await
+}
+
+async fn pick() -> Result<String, String> {
     if !tauri_bridge::has_tauri() {
         return Err(
             "Open dialog only available in the desktop app. Drag and drop a document instead."
@@ -18,7 +26,6 @@ pub async fn pick_document() -> Result<String, String> {
 
     let opts: JsValue = js_sys::Object::new().into();
     _ = reflect_set(&opts, &KEY_MULTIPLE, &JsValue::FALSE);
-    _ = reflect_set(&opts, &KEY_DIRECTORY, &JsValue::FALSE);
     let filter: JsValue = js_sys::Object::new().into();
     let filter_name = KEY_DOCUMENTS.with(|v| v.clone());
     _ = reflect_set(&filter, &KEY_NAME, &filter_name);
@@ -37,6 +44,6 @@ pub async fn pick_document() -> Result<String, String> {
     })?;
     match value.as_string() {
         Some(path) if !path.is_empty() => Ok(path),
-        _ => Err("Open cancelled".to_string()),
+        _ => Err(CANCELLED.to_string()),
     }
 }

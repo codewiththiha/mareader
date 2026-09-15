@@ -6,7 +6,7 @@
 use leptos::prelude::*;
 
 use reader_core::format::Format;
-use reader_core::filename::display_name;
+use reader_core::filename::document_title;
 use pdf_engine::types::{OpenResult, PageSize};
 
 use super::enter;
@@ -26,7 +26,7 @@ pub(super) struct Seeded {
 pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u32) -> Seeded {
     let page1 = open.page1_size;
     let num_pages = open.num_pages;
-    let name = display_name(open.title.as_deref(), Some(path));
+    let name = document_title(open.title.as_deref());
 
     // Document identity, through the step both open tails share
     // ([`super::enter`]). The format flips BACK here: a PDF opening over a
@@ -65,7 +65,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // Gloss highlights for THIS document, loaded where the reflowable tail
     // loads them: before anything mounts, so the first painted page already
     // carries them. For a PDF they are page-space rects, not DOM state.
-    enter::load_marks(state, path);
+    enter::load_marks(state);
 
     let resume = enter::resume_page(saved_page, num_pages);
 
@@ -74,12 +74,10 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // strip's dominant page is whatever offset it last held, so the
     // scroll→page sync is told to stand down FIRST — before the page is
     // written, so no effect can observe the new page against the old strip.
-    // Every other reader of `page` (indicator, reading progress, thumbnails)
-    // sees the resume point from the start; nothing passes through a transient
-    // page 1.
-    //
-    // ALL of this lands BEFORE `status = Ready` flips the route, so the fresh
-    // mount reads a fully seeded state.
+    // Every other reader of `page` sees the resume point from the start;
+    // nothing passes through a transient page 1. ALL of this lands BEFORE
+    // `status = Ready` flips the route, so the fresh mount reads a fully
+    // seeded state.
     state.reader.viewer.awaiting_anchor.set(true);
     state.reader.viewer.page.set(resume);
     state.reader.viewer.scroll_top.set(0.0);
@@ -93,10 +91,10 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // that has no page to fit.
     let (startup_fit, scale) = enter::startup_scale(state, (page1.width, page1.height));
     state.reader.viewer.fit.set(startup_fit);
-    // Seeding the zoom state is correct HERE and nowhere else: this is the
-    // initial scale for a brand-new document, so there is no layout to
-    // animate from and nothing to anchor to. All three scales start in
-    // agreement, with no transition in flight.
+    // The zoom state is seeded HERE and nowhere else: the initial scale for a
+    // brand-new document, so there is no layout to animate from and nothing
+    // to anchor to. All three scales start in agreement, with no transition
+    // in flight.
     state.reader.viewer.zoom.initialize(scale);
 
     Seeded {

@@ -69,7 +69,7 @@ pub trait Layout {
     /// hint — amortized `O(1)` for continuous scrolling.
     fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize;
 
-    /// Items overlapping `[top, top + extent)`, or `None` if none do.
+    /// Items overlapping the half-open span `[top, top + extent)`.
     fn overlapping(&self, top: f64, extent: f64) -> Option<Window>;
 
     /// Items at least partly on screen. Shorthand for `overlapping` with the

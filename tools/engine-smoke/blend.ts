@@ -32,7 +32,7 @@ export async function run(): Promise<void> {
   // told to.
   setFakePageColors({ 1: "#404040", 2: "#ffffff", 3: "#a0a0a0", 4: "#ffffff", 5: "#ffffff" });
 
-  // --- a live render parks its raw frame for the session to drain ----------
+  // a live render parks its raw frame for the session to drain
   const opened = await PDFReader.open("/fake/blend-book.pdf");
   if (!opened.ok) throw new Error("open failed: " + JSON.stringify(opened));
   PDFReader.registerPage(1, "blend-1-cv", "blend-1-pg");
@@ -54,7 +54,7 @@ export async function run(): Promise<void> {
   }
   console.log("paper frame stash ok: page 1's raw pixels handed over + drained");
 
-  // --- setPaper publishes; nothing is written to storage --------------------
+  // setPaper publishes; nothing is written to storage
   PDFReader.setPaper("#404040");
   if (paper() !== "#404040") {
     throw new Error("setPaper should publish --pdf-paper, got " + paper());
@@ -72,7 +72,7 @@ export async function run(): Promise<void> {
   }
   console.log("paper publish ok: --pdf-paper set, repainted, cleared; storage untouched");
 
-  // --- offscreen samples carry the page's own paint -------------------------
+  // offscreen samples carry the page's own paint
   const sample2 = await PDFReader.samplePaperPage(2);
   if (!sample2.ok || !sample2.data || sample2.page !== 2) {
     throw new Error("samplePaperPage(2) should resolve a frame, got " + JSON.stringify(sample2));
@@ -92,7 +92,7 @@ export async function run(): Promise<void> {
   }
   console.log("paper samples ok: offscreen pages 2 + 3 + a frameless skip past the end");
 
-  // --- a new document drops the previous book's undrained frames -----------
+  // a new document drops the previous book's undrained frames
   PDFReader.registerPage(2, "blend-2-cv", "blend-2-pg");
   const r2 = await PDFReader.renderPage("blend-2-cv", 1.0, true);
   if (!r2.ok) throw new Error("render page 2 failed: " + JSON.stringify(r2));
@@ -113,7 +113,7 @@ export async function run(): Promise<void> {
   }
   console.log("paper stash lifecycle ok: re-render re-stashes, reopen clears");
 
-  // --- the stash is gated on the blend switch -------------------------------
+  // the stash is gated on the blend switch
   // While the session says blend is off, a live render pays nothing on the
   // paper pipeline: no downscale, no readback, no stash.
   PDFReader.setPaperActive(false);

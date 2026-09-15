@@ -17,9 +17,7 @@
 /// Which renderer a block belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockKind {
-    /// Plain text: rendered verbatim, hard line breaks preserved.
     Text,
-    /// Markdown source: one top-level construct, rendered as Markdown.
     Markdown,
 }
 
@@ -38,7 +36,6 @@ pub struct TextBlock {
 }
 
 impl TextBlock {
-    /// A first-class (non-continuation) block.
     pub fn new(kind: BlockKind, text: impl Into<String>) -> Self {
         Self { kind, text: text.into(), continuation: false }
     }
@@ -152,12 +149,10 @@ fn fence_marker_of(trimmed: &str) -> &'static str {
 /// startswith toggle gets wrong.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FenceTracker {
-    /// The marker of the open fence (``` or ~~~), "" while outside.
     marker: &'static str,
 }
 
 impl FenceTracker {
-    /// Whether the scan is currently inside a fenced block.
     pub fn inside(&self) -> bool {
         !self.marker.is_empty()
     }
