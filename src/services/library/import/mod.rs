@@ -27,9 +27,12 @@ pub use migrate::migrate_store_layout;
 pub use replace::replace_rows_of_tree;
 pub use restore::restore_deleted_book;
 pub use tasks::dismiss_task;
-pub use verify::{
-    rescan_watched, set_shelf_watch, shelf_watch, verify_library, verify_one,
-};
+pub use verify::{rescan_watched, set_shelf_watch, shelf_watch, verify_one};
+
+/// The card lifecycle for the single-copy runs that live outside this module — a relink, a
+/// duplicate, a replace's conversion, a batch of departures: the beats those copies earn
+/// need a card to land on, and the runs that minted phantom ids were emissions nobody saw.
+pub(crate) use tasks::{begin_task, fail_task, finish_task};
 
 pub(crate) use copies::{copies_beside_tree, copies_over_standing_tree, CopiesDest};
 pub(crate) use files::{land_stored_copy, land_stored_copy_settling, settle_ledger};
@@ -47,7 +50,11 @@ pub(super) enum Asked {
     OnFocus,
 }
 
-pub(super) fn shelf_name(key: &str, root: &str) -> String {
+/// The label a rung goes by on the shelf: the last segment of its key, the folder's own
+/// name for the root. Called `rung_label` rather than `shelf_name` because that older name
+/// is [`crate::state::library::LibraryState::shelf_name`]'s — a shelf's name by its ID —
+/// and two jobs wearing one name is a lookup that finds the wrong one.
+pub(super) fn rung_label(key: &str, root: &str) -> String {
     match key.rsplit('/').next() {
         Some(last) if !last.is_empty() => last.to_string(),
         _ => folder_label(root),

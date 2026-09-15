@@ -214,6 +214,27 @@ pub struct WatchedFolder {
     pub shapes: ShapeTree,
 }
 
+impl WatchedFolder {
+    /// A row that has never been walked: no placements, no logs, no rungs. The one
+    /// constructor so a new folder starts with the same empty ledger everywhere it is
+    /// minted — a field added to the struct is a field this fills, not one six call
+    /// sites each have to remember.
+    pub fn new(id: impl Into<String>, root: impl Into<String>, opts: FolderOpts) -> Self {
+        Self {
+            id: id.into(),
+            root: root.into(),
+            opts,
+            placed: HashSet::new(),
+            ignored: Vec::new(),
+            last_seen: Vec::new(),
+            shelf_map: BTreeMap::new(),
+            scanned_ms: 0,
+            tracking: TrackingTree::default(),
+            shapes: ShapeTree::default(),
+        }
+    }
+}
+
 /// The path of `path` relative to `root`, `/`-separated, with no leading or trailing
 /// separator. `Some("")` when the two name the same directory, `None` when `path` is
 /// not inside `root` at all — a directory edge rather than a string prefix, which is

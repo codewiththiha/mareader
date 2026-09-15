@@ -71,6 +71,14 @@ impl AskKind {
         matches!(self, AskKind::FolderMerge { mode, .. } if mode.reads_in_place())
     }
 
+    /// Whether this is the level's own NAME question — the one the three-answer sheet
+    /// renders. The waiting count behind that sheet counts only these: "3 more waiting"
+    /// that included a covered file's two-answer question would promise a batch the
+    /// sheet's own answers can never consume.
+    pub fn is_name_question(&self) -> bool {
+        matches!(self, AskKind::NameCollision)
+    }
+
     pub fn is_folder_merge(&self) -> bool {
         matches!(self, AskKind::FolderMerge { .. })
     }
@@ -191,14 +199,14 @@ fn link_to(state: AppState, ask: &PlacementAsk) {
 
 fn merge_into(state: AppState, ask: &PlacementAsk) {
     match &ask.existing {
-        Scope::Book { row_id } => name::merge_into_row(state, ask, row_id),
+        Scope::Book { .. } => name::merge_into_row(state, ask),
         Scope::Shelf { shelf_id } => shelf::merge_into_shelf(state, ask, shelf_id),
     }
 }
 
 fn replace_with(state: AppState, ask: &PlacementAsk) {
     match &ask.existing {
-        Scope::Book { row_id } => name::replace_row(state, ask, row_id),
+        Scope::Book { .. } => name::replace_row(state, ask),
         Scope::Shelf { shelf_id } => shelf::replace_shelf(state, ask, shelf_id),
     }
 }

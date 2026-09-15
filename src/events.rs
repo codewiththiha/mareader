@@ -16,10 +16,6 @@ use serde::Serialize;
 
 /// AI chunk stream, bridged from the Tauri backend by `services::ai`.
 pub const AI_CHUNK_EVENT: &str = "pdfreader:ai-chunk";
-/// One library import progress beat, bridged from the shell's folder scan and
-/// store copy by `services::library`. Carries an `ImportProgress`
-/// (`library_core::wire`) as its detail.
-pub const IMPORT_PROGRESS_EVENT: &str = "pdfreader:import-progress";
 /// Open the gloss card for a mark (carries the `GlossMark` as detail).
 pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
 /// Ask for a mark's remove menu (carries the `ContextTarget` as detail).

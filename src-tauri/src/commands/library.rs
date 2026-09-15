@@ -15,11 +15,11 @@ use tauri::{AppHandle, Emitter, Manager};
 use library_core::book::Fingerprint;
 use library_core::folder::FolderOpts;
 use library_core::hash::{HEAD_BYTES, head_hash, mtime_ms};
+use library_core::paths;
 use library_core::scan::FoundFile;
 use library_core::store;
 use library_core::wire::{
-    ImportPhase, ImportProgress, PathCheck, RelocateRequest, RelocateResult, StoreRequest,
-    StoreResult,
+    BookFileRequest, ImportPhase, ImportProgress, PathCheck, RelocateResult, StoreResult,
 };
 
 /// Mirrored by the frontend in `src/services/library/mod.rs`, which re-broadcasts it as a window event so no component registers a Tauri listener of its own.
@@ -56,11 +56,11 @@ impl Progress {
         }
     }
 
-    /// A dropped emit is not an error: the next beat carries the same totals, and the final one is always flushed.
+    /// A dropped emit is not an error: the next beat carries the same totals, and the final one is always flushed. The FIRST file emits too — a three-file import that showed nothing until its final flush would read as a hang — and after that the throttle holds.
     fn tick(&mut self, app: &AppHandle, name: &str) {
         self.done = self.done.saturating_add(1);
         self.since_emit = self.since_emit.saturating_add(1);
-        if self.since_emit < EMIT_EVERY && self.last.elapsed().as_millis() < EMIT_INTERVAL_MS {
+        if self.done > 1 && self.since_emit < EMIT_EVERY && self.last.elapsed().as_millis() < EMIT_INTERVAL_MS {
             return;
         }
         self.flush(app, name);
@@ -239,18 +239,18 @@ fn check_path(path: &str) -> PathCheck {
 pub async fn store_books(
     app: AppHandle,
     task: String,
-    requests: Vec<StoreRequest>,
+    requests: Vec<BookFileRequest>,
 ) -> Result<Vec<StoreResult>, String> {
     tauri::async_runtime::spawn_blocking(move || store(&app, &task, &requests))
         .await
         .map_err(|e| format!("store worker failed: {e}"))
 }
 
-fn store(app: &AppHandle, task: &str, requests: &[StoreRequest]) -> Vec<StoreResult> {
+fn store(app: &AppHandle, task: &str, requests: &[BookFileRequest]) -> Vec<StoreResult> {
     let mut progress = Progress::new(task, ImportPhase::Copy, requests.len() as u32);
     let mut out = Vec::with_capacity(requests.len());
     for request in requests {
-        let name = Path::new(&request.path)
+        let name = Path::new(&request.from)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
@@ -264,20 +264,21 @@ fn store(app: &AppHandle, task: &str, requests: &[StoreRequest]) -> Vec<StoreRes
 
 fn copy_one(
     app: &AppHandle,
-    request: &StoreRequest,
+    request: &BookFileRequest,
     progress: &mut Progress,
     name: &str,
 ) -> StoreResult {
     let fail = |error: String| StoreResult {
         id: request.id.clone(),
-        src: request.path.clone(),
+        src: request.from.clone(),
         store: String::new(),
         error: Some(error),
+        measured: None,
     };
-    if crate::ensure_readable_document(&request.path).is_err() {
-        return fail(format!("not a document this app may copy: {}", request.path));
+    if crate::ensure_readable_document(&request.from).is_err() {
+        return fail(format!("not a document this app may copy: {}", request.from));
     }
-    let target = match store_path(app, &request.path, &request.id) {
+    let target = match store_path(app, &request.from, &request.id) {
         Ok(t) => t,
         Err(e) => return fail(e),
     };
@@ -286,17 +287,30 @@ fn copy_one(
     {
         return fail(format!("could not create the store directory: {e}"));
     }
-    if let Err(e) = fs::copy(&request.path, &target) {
-        return fail(format!("could not copy {}: {e}", request.path));
+    if let Err(e) = fs::copy(&request.from, &target) {
+        return fail(format!("could not copy {}: {e}", request.from));
     }
     own_stamp(&target);
     progress.tick(app, name);
     StoreResult {
         id: request.id.clone(),
-        src: request.path.clone(),
+        src: request.from.clone(),
         store: path_to_string(&target),
         error: None,
+        // Measured by the same pass that stamped it: the row lands wearing its copy's
+        // own identity, and the folder that reads the source keeps the source's free.
+        measured: Some(measure_copy(&target)),
     }
+}
+
+/// The copy's own (size, modification time, first bytes) — the same triple [`check_path`]
+/// reads for a file the library is asking about, taken here so the answer rides home with
+/// the copy instead of costing a second trip.
+fn measure_copy(target: &Path) -> Fingerprint {
+    let Ok(meta) = fs::metadata(target) else {
+        return Fingerprint::of(0, 0, &[]);
+    };
+    Fingerprint::of(meta.len(), mtime_ms(meta.modified().ok()), &read_head(target))
 }
 
 /// The library measures a file as (size, modification time, first bytes), and a copy owes the
@@ -311,10 +325,19 @@ fn own_stamp(target: &Path) {
 /// The containment check is the whole safety story: the argument arrives from the webview, and
 /// a delete primitive that trusted it would be `rm` with an IPC wrapper. Only a path inside this
 /// app's own store directory is removed, on canonicalised paths so a `..` cannot walk out.
+///
+/// Async like every other fs command here: a sync command runs on the main thread, and a slow
+/// disk holding the sweep would freeze the UI for the length of it.
 #[tauri::command]
-pub fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
-    let root = store_root(&app)?;
-    let target = PathBuf::from(&path);
+pub async fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || delete(&app, &path))
+        .await
+        .map_err(|e| format!("delete worker failed: {e}"))?
+}
+
+fn delete(app: &AppHandle, path: &str) -> Result<(), String> {
+    let root = store_root(app)?;
+    let target = PathBuf::from(path);
     let Some(target) = contained_in(&root, &target) else {
         return Err(format!("refusing to delete a file outside the store: {path}"));
     };
@@ -404,20 +427,29 @@ pub async fn reveal_in_folder(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn relocate_stored(
     app: AppHandle,
-    requests: Vec<RelocateRequest>,
+    requests: Vec<BookFileRequest>,
 ) -> Result<RelocateResult, String> {
     tauri::async_runtime::spawn_blocking(move || relocate(&app, &requests))
         .await
         .map_err(|e| format!("relocate worker failed: {e}"))
 }
 
-fn relocate(app: &AppHandle, requests: &[RelocateRequest]) -> RelocateResult {
+fn relocate(app: &AppHandle, requests: &[BookFileRequest]) -> RelocateResult {
     let root = match store_root(app) {
         Ok(root) => root,
         Err(_) => {
             return RelocateResult {
                 root: String::new(),
-                results: requests.iter().map(|r| relocated_fail(r, NO_ROOT.to_string())).collect(),
+                results: requests
+                    .iter()
+                    .map(|r| StoreResult {
+                        id: r.id.clone(),
+                        src: r.from.clone(),
+                        store: String::new(),
+                        error: Some(NO_ROOT.to_string()),
+                        measured: None,
+                    })
+                    .collect(),
             }
         }
     };
@@ -434,8 +466,15 @@ fn relocate(app: &AppHandle, requests: &[RelocateRequest]) -> RelocateResult {
 
 const NO_ROOT: &str = "no store directory";
 
-fn relocate_one(root: &Path, items: &str, request: &RelocateRequest) -> StoreResult {
-    let fail = |error: String| relocated_fail(request, error);
+fn relocate_one(root: &Path, items: &str, request: &BookFileRequest) -> StoreResult {
+    let fail = |error: String| StoreResult {
+        id: request.id.clone(),
+        src: request.from.clone(),
+        store: String::new(),
+        error: Some(error),
+        // A failed move answers with no measurement, exactly as a failed copy does.
+        measured: None,
+    };
     let source = Path::new(&request.from);
     if !inside_store(root, source) {
         return fail(format!("refusing to move a file outside the store: {}", request.from));
@@ -454,6 +493,7 @@ fn relocate_one(root: &Path, items: &str, request: &RelocateRequest) -> StoreRes
             src: request.from.clone(),
             store: path_to_string(&target),
             error: None,
+            measured: None,
         };
     }
     if let Some(parent) = target.parent()
@@ -461,7 +501,7 @@ fn relocate_one(root: &Path, items: &str, request: &RelocateRequest) -> StoreRes
     {
         return fail(format!("could not create the item directory: {e}"));
     }
-    // An app-data directory that is itself a symlink onto another volume makes a rename cross-device, which the host refuses: copy, then remove the source so the old bucket is not left holding a file nothing points at.
+    // An app-data directory that is itself a symlink onto another volume makes a rename cross-device, which the host refuses: copy, then remove the source so the old bucket is not left holding a file nothing points at. A source the host will not release is REPORTED rather than swallowed — the ledger would otherwise believe the book lives in one place while a second copy of it sits in the other.
     if let Err(e) = fs::rename(source, &target) {
         if target.exists() {
             return fail(format!("could not move {}: {e}", request.from));
@@ -469,23 +509,19 @@ fn relocate_one(root: &Path, items: &str, request: &RelocateRequest) -> StoreRes
         if let Err(e) = fs::copy(source, &target) {
             return fail(format!("could not move {}: {e}", request.from));
         }
-        let _ = fs::remove_file(source);
+        if let Err(e) = fs::remove_file(source) {
+            return fail(format!(
+                "copied to the new store, but the old copy stayed behind: {e}"
+            ));
+        }
     }
-    // The row's identity is the measurement of THESE bytes, and re-stamping on a migration would change a fingerprint every ledger entry and tombstone still names.
+    // The row's identity is the measurement of THESE bytes, and re-stamping on a migration would change a fingerprint every ledger entry and tombstone still names — which is also why `measured` stays `None` here: the identity the row already carries is the truth.
     StoreResult {
         id: request.id.clone(),
         src: request.from.clone(),
         store: path_to_string(&target),
         error: None,
-    }
-}
-
-fn relocated_fail(request: &RelocateRequest, error: String) -> StoreResult {
-    StoreResult {
-        id: request.id.clone(),
-        src: request.from.clone(),
-        store: String::new(),
-        error: Some(error),
+        measured: None,
     }
 }
 
@@ -542,11 +578,9 @@ fn store_path(app: &AppHandle, src: &str, id: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(store::source_path(&items, id, &ext)))
 }
 
-/// Empty for a name Rust reads as having none (`Makefile`, and a dotfile like `.gitignore`) — which the format registry also refuses, so an extension-less file is never admitted, measured or copied.
+/// Empty for a name Rust reads as having none (`Makefile`, and a dotfile like `.gitignore`) — which the format registry also refuses, so an extension-less file is never admitted, measured or copied. The spelling is [`library_core::paths::extension`]'s, so a `Path` here and a string in the frontend answer the same.
 fn extension_of(path: &Path) -> String {
-    path.extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default()
+    paths::extension(&path.to_string_lossy())
 }
 
 /// The subfolder half of this string is what a grouped import cuts its shelves from, so it is normalised here rather than at three call sites.

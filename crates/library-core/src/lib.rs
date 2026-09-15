@@ -25,6 +25,7 @@ pub mod governance;
 pub mod hash;
 pub mod id;
 pub mod ledger;
+pub mod paths;
 pub mod query;
 pub mod scan;
 pub mod shape;

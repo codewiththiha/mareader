@@ -2,7 +2,7 @@
 //! copy whatever the options say to copy, and write the result in one go. The stages
 //! are the functions below; [`run_folder`] is the order they run in.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 
@@ -13,25 +13,22 @@ use library_core::conflict::Arrival;
 use library_core::folder::{
     self as folder_ops, dir_of_rung, key_in_zone, rel_under, FolderMode, FolderOpts, WatchedFolder,
 };
-use library_core::tracking::TrackingTree;
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::{subfolder_of, FoundFile};
-use library_core::shape::ShapeTree;
-use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
-use reader_core::format::Format;
+use library_core::shelf::{self as shelves_ops, Shelf};
 
-use super::copy::{copy_batch, measure_stores};
-use super::gate::{run_fold, seed_member_rungs, RootPlan};
+use super::copy::{copy_batch, Landed};
+use super::gate::{run_fold, seed_member_rungs, Continuation, Fold, RootPlan};
 use super::kept;
 use super::restore::take_represented;
-use super::tasks::{fail, finish_task, push_task, update_task, FailMode};
-use super::{rel_of, shelf_name, Asked};
+use super::tasks::{fail, finish_task, push_task, run_total, update_task, FailMode};
+use super::{rel_of, rung_label, Asked};
 use crate::services::library::conflict::{self, ConflictAsk};
 use crate::services::library::covers;
 use crate::services::library::reveal;
 use crate::services::library::folder_label;
-use crate::services::library as wire;
+use crate::services::library as ipc;
 use crate::state::library::{ImportTask, NoteKind};
 use crate::state::AppState;
 use crate::time::now_ms;
@@ -55,21 +52,20 @@ fn chain_for(
         |rung| match (rung.is_empty(), planned_name) {
             // The folder sheet's *as new* answer: the root rung wears the counter name it promised.
             (true, Some(name)) => name.clone(),
-            _ => shelf_name(rung, root),
+            _ => rung_label(rung, root),
         },
         |rung, id, name, parent| {
-            new_shelves.push(Shelf {
-                id: id.to_string(),
+            let mut minted = Shelf::folder_shelf(
+                id,
                 name,
-                kind: ShelfKind::Folder {
-                    folder_id: folder_id.clone(),
-                    rel: rel_of(rung),
-                },
-                books: Vec::new(),
+                &folder_id,
+                rel_of(rung),
                 parent,
-                // Minted by the scan, so the scan owns its rung — until a hand moves it, which is `reparent`'s mark.
-                manual_parent: merged,
-            });
+            );
+            // Minted by the scan, so the scan owns its rung — until a hand moves it, which is
+            // `reparent`'s mark to clear.
+            minted.manual_parent = merged;
+            new_shelves.push(minted);
         },
     )
 }
@@ -120,17 +116,8 @@ pub(super) fn resolve_folder(
     plan: &RootPlan,
 ) -> WatchedFolder {
     let standing = folders.iter().find(|f| f.root == root);
-    let mut folder = standing.cloned().unwrap_or_else(|| WatchedFolder {
-        id: id::next_folder_id(now_ms()),
-        root: root.to_string(),
-        opts: opts.clone(),
-        placed: HashSet::new(),
-        ignored: Vec::new(),
-        shelf_map: BTreeMap::new(),
-        last_seen: Vec::new(),
-        scanned_ms: 0,
-        tracking: TrackingTree::default(),
-        shapes: ShapeTree::default(),
+    let mut folder = standing.cloned().unwrap_or_else(|| {
+        WatchedFolder::new(id::next_folder_id(now_ms()), root.to_string(), opts.clone())
     });
     // A CONTINUATION of a standing tree is a re-pick of ground the tree already covers, and the
     // sheet's answers there stand for the RUNG the pick names — written onto that rung by the run
@@ -335,9 +322,12 @@ pub(super) fn returned_memberships(
 
 /// A value rather than eight arguments: every one of them is a fact about the RUN and not about the file.
 pub(super) struct Landing<'a> {
-    pub(super) copies: &'a HashMap<String, String>,
-    pub(super) copy_measured: &'a HashMap<String, Fingerprint>,
-    pub(super) copy_paths: &'a HashSet<String>,
+    /// The copies that came home, each with its own measurement beside it: the row adopts
+    /// the measurement as it is minted, so there is no second pass over the copies.
+    pub(super) copies: &'a HashMap<String, Landed>,
+    /// Owned rather than borrowed, because the landing takes the walk by `&mut` while the
+    /// mints read this — the set moves out of the plan and into the run's facts.
+    pub(super) copy_paths: HashSet<String>,
     pub(super) planned_name: &'a Option<String>,
     pub(super) root: &'a str,
     pub(super) mode: FolderMode,
@@ -375,7 +365,7 @@ pub(super) fn mint_walked_row(
             src: file.path.clone(),
         }
     } else {
-        let Some(store) = landing.copies.get(&book_id) else {
+        let Some((store, _)) = landing.copies.get(&book_id) else {
             return Minted::CopyFailed;
         };
         Origin::Stored {
@@ -384,14 +374,14 @@ pub(super) fn mint_walked_row(
         }
     };
     let stone = ledger::find_tombstone(folder, &file.fp).cloned();
-    let store_at = match &origin {
-        Origin::Stored { store, .. } => Some(store.clone()),
-        Origin::Linked { .. } => None,
-    };
+    let own_measurement = landing
+        .copies
+        .get(&book_id)
+        .and_then(|(_, measured)| *measured);
     let mut book = Book::new(
         book_id,
         file.fp,
-        file.format().unwrap_or(Format::Pdf),
+        file.admitted_format(),
         origin,
         landing.now,
     );
@@ -408,12 +398,7 @@ pub(super) fn mint_walked_row(
         });
     let placed_id = if own_copy {
         book.independent = true;
-        book.adopt_measurement(
-            store_at
-                .as_ref()
-                .and_then(|store| landing.copy_measured.get(store))
-                .copied(),
-        );
+        book.adopt_measurement(own_measurement);
         let id = book.id.clone();
         books.push(Row::Book(book));
         id
@@ -677,16 +662,14 @@ pub(super) fn flatten_rungs(state: AppState, from: &str, seat: &str) {
             .filter(|id| id.as_str() != seat)
             .cloned()
             .collect();
-        let mut held: Vec<String> = Vec::new();
+        // A set rather than a growing list: the whole tree's books pass through here, and
+        // "is this one already taken" was a scan per book.
+        let mut held: HashSet<String> = HashSet::new();
         for rung in &own {
             let Some(shelf) = shelves_ops::find(shelves, rung) else {
                 continue;
             };
-            for book_id in &shelf.books {
-                if !held.contains(book_id) {
-                    held.push(book_id.clone());
-                }
-            }
+            held.extend(shelf.books.iter().cloned());
         }
         if let Some(shelf) = shelves_ops::find_mut(shelves, seat) {
             for book_id in held {
@@ -849,37 +832,21 @@ struct LandTally {
 
 /// The diff's answer, written to the LIVE lists rather than to the snapshot: a walk of a big
 /// folder takes seconds, and a reader who opens a book during one must not have that read
-/// overwritten by the write at the end.
-#[allow(clippy::too_many_arguments)]
+/// overwritten by the write at the end. Everything the mints need about the RUN arrives in
+/// the [`Landing`] — the value exists so this signature does not grow a field at a time.
 fn land_the_walk(
     state: AppState,
     folder: &mut WatchedFolder,
     walk: &mut WalkPlan,
     pending: Vec<(String, &FoundFile)>,
-    copies: &HashMap<String, String>,
-    copy_measured: &HashMap<String, Fingerprint>,
-    root: &str,
-    planned_name: &Option<String>,
-    merged: bool,
-    now: u64,
+    landing: &Landing<'_>,
 ) -> LandTally {
     let mut placed = 0u32;
     let mut relink_count = 0usize;
     let mut healed_here = 0usize;
     let mut new_shelves: Vec<Shelf> = Vec::new();
     let mut placements: Vec<(String, String)> = Vec::new();
-    let mode = folder.mode();
     let relinks = std::mem::take(&mut walk.relinks);
-    let landing = Landing {
-        copies,
-        copy_measured,
-        copy_paths: &walk.copy_paths,
-        planned_name,
-        root,
-        mode,
-        merged,
-        now,
-    };
 
     state.library.books.update(|books| {
         for (book_id, to) in relinks {
@@ -956,7 +923,7 @@ pub(super) async fn run_folder(
     } else {
         FailMode::Toast
     };
-    let mut found = match wire::scan_folder(&task, &root, &opts).await {
+    let mut found = match ipc::scan_folder(&task, &root, &opts).await {
         Ok(found) => found,
         Err(message) => return fail(state, &task, message, fail_mode),
     };
@@ -972,7 +939,7 @@ pub(super) async fn run_folder(
     let moved_shape = shape_moved(
         &folders,
         &root,
-        plan.fold.as_ref().map(|(tree, _)| tree.as_str()),
+        plan.fold.as_ref().map(|Fold { tree_id, .. }| tree_id.as_str()),
         &answered,
         &opts,
     );
@@ -1045,7 +1012,7 @@ pub(super) async fn run_folder(
                 None => match reshaped.as_deref() {
                     Some(seat) => reveal::reveal_shelf(state, seat),
                     None => {
-                        if let Some((shelf_id, name)) = plan.continuation.clone() {
+                        if let Some(Continuation { shelf_id, name }) = plan.continuation.clone() {
                             conflict::raise_note(state, shelf_id, name, NoteKind::NothingNew);
                         }
                     }
@@ -1071,7 +1038,7 @@ pub(super) async fn run_folder(
         .map(|file| (id::next_id(now), file))
         .collect();
     let replaced = walk.replacements.len();
-    let expected = (pending.len() + walk.relinked + walk.healed + replaced) as u32;
+    let expected = run_total(pending.len() as u32, walk.relinked + walk.healed + replaced, 0);
     if quiet {
         let mut card = ImportTask::new(task.clone(), folder_label(&root));
         card.total = expected;
@@ -1088,31 +1055,22 @@ pub(super) async fn run_folder(
             Err(message) => return fail(state, &task, message, fail_mode),
         }
     };
-    // The copy run's copies are measured in one pass before a row is promised: an independent copy
-    // of a file a tree still reads in place must not wear the ORIGINAL's fingerprint.
-    let copy_measured: HashMap<String, Fingerprint> = if !walk.copy_paths.is_empty() {
-        let stores: Vec<String> = pending
-            .iter()
-            .filter(|(_, file)| walk.copy_paths.contains(&file.path))
-            .filter_map(|(book_id, _)| copies.get(book_id).cloned())
-            .collect();
-        measure_stores(stores).await
-    } else {
-        HashMap::new()
-    };
 
-    let tally = land_the_walk(
-        state,
-        &mut folder,
-        &mut walk,
-        pending,
-        &copies,
-        &copy_measured,
-        &root,
-        &plan.rename,
-        plan.into.is_some(),
+    // The run's facts in one value, the copy set moving out of the walk it was planned in:
+    // the landing takes the walk by `&mut`, and the mints read the set through the value.
+    // Each copy already carries its own measurement home — an independent copy of a file a
+    // tree still reads in place never wears the ORIGINAL's fingerprint, and no second pass
+    // over the stores is owed.
+    let landing = Landing {
+        copies: &copies,
+        copy_paths: std::mem::take(&mut walk.copy_paths),
+        planned_name: &plan.rename,
+        root: &root,
+        mode: folder.mode(),
+        merged: plan.into.is_some(),
         now,
-    );
+    };
+    let tally = land_the_walk(state, &mut folder, &mut walk, pending, &landing);
 
     // A shape the reader answered the other way re-files the books the landing left where they
     // stood: what the walk brings home is the files that are new, not the tree already here. A
@@ -1153,7 +1111,6 @@ pub(super) async fn run_folder(
     // What a FOLDER import reveals is the folder: the shelf the reader's pick named, lit on the
     // level that holds it — the reader stays outside, where the folder is visible. For a re-pick
     // that is the RUNG, because the rung is the ground the reader asked about.
-    let represented_count = walk.represented.len() as u32;
     if !quiet {
         match folded {
             Some((shelf_id, name)) => {
@@ -1163,7 +1120,7 @@ pub(super) async fn run_folder(
                 let light = plan
                     .continuation
                     .as_ref()
-                    .map(|(shelf_id, _)| shelf_id.clone())
+                    .map(|Continuation { shelf_id, .. }| shelf_id.clone())
                     .or(reshaped.clone())
                     .or_else(|| root_rung.clone());
                 if let Some(shelf_id) = light {
@@ -1180,7 +1137,13 @@ pub(super) async fn run_folder(
     }
 
     let healed = walk.healed + tally.healed;
-    let total = tally.placed + (tally.relinked + healed + replaced) as u32 + represented_count;
+    // The same arithmetic the expected count came from, represented rows included at the
+    // finish where the reader is told what the run lit up (see `run_total`).
+    let total = run_total(
+        tally.placed,
+        tally.relinked + healed + replaced,
+        walk.represented.len(),
+    );
     finish_task(state, &task, total, waiting);
 }
 

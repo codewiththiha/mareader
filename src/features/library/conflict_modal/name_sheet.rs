@@ -115,7 +115,13 @@ pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
         })
         .collect();
 
-    let waiting = state.library.conflict_waiting.with_untracked(|w| w.len());
+    // Only the questions this sheet answers: the covered and merge kinds wait behind other
+    // sheets with other answers, and a count that included them would promise an apply-all
+    // this sheet cannot run.
+    let waiting = state
+        .library
+        .conflict_waiting
+        .with_untracked(|w| w.iter().filter(|each| each.kind.is_name_question()).count());
     SheetSpec {
         heading: ask.arrival.name.clone(),
         subtitle: more_waiting(format!("Already {where_line}"), waiting),

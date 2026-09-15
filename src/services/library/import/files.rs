@@ -11,21 +11,22 @@ use library_core::conflict::Arrival;
 use library_core::folder::{self as folder_ops};
 use library_core::id;
 use library_core::ledger;
+use library_core::paths;
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops};
 use library_core::wire::PathCheck;
-use reader_core::format::{Format, is_supported_path};
+use reader_core::format::is_supported_path;
 
-use super::copy::{copy_batch, measure_stores};
+use super::copy::copy_batch;
 use super::kept;
 use super::restore::{covered_fate, lift_stone_for, restore_covered_file, take_represented, CoveredFate};
-use super::tasks::{fail, finish_task, push_task, task_id, FailMode};
+use super::tasks::{begin_task, fail, finish_task, push_task, run_total, task_id, FailMode};
 use super::verify::apply_checks;
 use crate::services::library::conflict::{self, ConflictAsk};
 use crate::services::library::covers;
 use crate::services::library::reveal;
-use crate::services::library::{file_name, toast};
-use crate::services::library as wire;
+use crate::services::library::file_name;
+use crate::services::library as ipc;
 use crate::state::library::ImportTask;
 use crate::state::AppState;
 use crate::time::now_ms;
@@ -94,6 +95,9 @@ pub(super) fn screen_content(
         let Some(held) = ledger::existing_for(&rows, file.fp) else {
             return true;
         };
+        // A row whose address died is not an answer to the question — the reader cannot be
+        // taken to it — so the file stays in the walk and lands as the library's own copy
+        // beside the row that went missing.
         if held.missing {
             return true;
         }
@@ -108,12 +112,25 @@ pub(super) fn screen_content(
     asks
 }
 
+/// One copy a run is about to land, with everything the landing needs: the measurement the
+/// shell sent home with the copy, the name a spent log owed the row, and the index the
+/// gesture held. A value rather than the four-tuple it replaced, because positional
+/// `Option`s answer no questions about what they are.
+pub(super) struct PendingCopy {
+    pub(super) book_id: String,
+    pub(super) file: FoundFile,
+    pub(super) title: Option<String>,
+    pub(super) index: Option<usize>,
+    pub(super) store: String,
+    pub(super) measured: Option<Fingerprint>,
+}
+
 /// Answer each file by the ground it stands on — a file of a read-at-place folder is that
 /// folder's business first, and the rest land as the library's own stored copies, except the
 /// ones whose NAME the target level already holds, which ask (see
 /// [`crate::services::library::conflict`]).
 async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Option<String>) {
-    let checks = match wire::verify_paths(paths).await {
+    let checks = match ipc::verify_paths(paths).await {
         Ok(checks) => checks,
         Err(message) => return fail(state, &task, message, FailMode::Toast),
     };
@@ -181,35 +198,35 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
             }
         }
     };
-    let stores: Vec<String> = pending
-        .iter()
-        .filter_map(|(book_id, _, _, _)| copies.get(book_id).cloned())
+
+    // The batched landing: one write per collection for the whole drop — the pattern the
+    // folder run proved — so a five-hundred-file drop is two reactive pulses rather than
+    // three per file, each re-running every sort and filter the page subscribes to.
+    let landed_batch: Vec<PendingCopy> = pending
+        .into_iter()
+        .filter_map(|(book_id, file, title, index)| {
+            let (store, measured) = copies.get(&book_id)?.clone();
+            Some(PendingCopy {
+                book_id,
+                file,
+                title,
+                index,
+                store,
+                measured,
+            })
+        })
         .collect();
-    let measured = measure_stores(stores).await;
-    let mut landed = 0u32;
-    for (book_id, file, title, index) in pending {
-        let Some(store) = copies.get(&book_id) else {
-            continue;
-        };
-        mint_stored_row(
-            state,
-            book_id.clone(),
-            &file,
-            store.clone(),
-            title,
-            &shelf_id,
-            index,
-        );
-        adopt_copy_measurement(state, &book_id, measured.get(store).copied());
-        landed += 1;
-    }
+    let landed = land_stored_batch(state, landed_batch, |_| shelf_id.clone());
+
     let stone_landings: Vec<String> = stone_landings
         .into_iter()
         .filter(|book_id| copies.contains_key(book_id))
         .collect();
-    let placed = landed
-        + (restored.len() + stone_landings.len()) as u32
-        + represented.len() as u32;
+    let placed = run_total(
+        landed,
+        restored.len() + stone_landings.len(),
+        represented.len(),
+    );
     let waiting = (conflicts.len() + covered_asks.len() + held_asks.len()) as u32;
     if placed > 0 {
         covers::backfill_missing(state);
@@ -278,6 +295,68 @@ pub(crate) fn mint_stored_row(
     )
 }
 
+/// The batch of stored copies a run just made, landed in one write per collection: the
+/// books with their measurements already adopted (the shell sent them home with the copies),
+/// then the placements. `seat_of` answers the shelf the copy at each index lands on — the
+/// one level a drop names, or the rung each file's subfolder cut.
+///
+/// Answers how many landed; a copy the store refused never reaches here, because the caller
+/// filtered the batch against the results first.
+pub(super) fn land_stored_batch(
+    state: AppState,
+    batch: Vec<PendingCopy>,
+    seat_of: impl Fn(usize) -> String,
+) -> u32 {
+    let now = now_ms();
+    // The independence check reads the list as it stands before the batch lands, exactly as
+    // the single-row mint did — one read for the whole batch rather than one per file, and
+    // taken BEFORE the write rather than inside it.
+    let independents: Vec<bool> = state.library.books.with_untracked(|rows| {
+        batch
+            .iter()
+            .map(|each| book_rows(rows).any(|b| b.path() == each.file.path))
+            .collect()
+    });
+    state.library.books.update(|rows| {
+        for (each, independent) in batch.iter().zip(independents) {
+            let mut book = Book {
+                title: each.title.clone(),
+                independent,
+                ..Book::new(
+                    each.book_id.clone(),
+                    each.file.fp,
+                    each.file.admitted_format(),
+                    Origin::Stored {
+                        src: Some(each.file.path.clone()),
+                        store: each.store.clone(),
+                    },
+                    now,
+                )
+            };
+            // The copy's own measurement becomes the row's identity and the source file's
+            // fingerprint stays free, so an OS file that keeps its own can still be placed
+            // by any folder that reads it, as its own linked book.
+            book.adopt_measurement(each.measured);
+            let placed_id = book.id.clone();
+            rows.push(Row::Book(book));
+            // A file that comes back is the file that left: whatever a removal kept for it lands here.
+            kept::reclaim(rows, &each.file, &placed_id);
+        }
+    });
+    state.library.shelves.update(|shelves| {
+        for (at, each) in batch.iter().enumerate() {
+            let shelf_id = seat_of(at);
+            // The root has no member list to place into, so the write is skipped rather than made and answered with nothing.
+            if shelf_id != shelves_ops::ALL_SHELF
+                && let Some(shelf) = shelves_ops::find_mut(shelves, &shelf_id)
+            {
+                shelves_ops::place(&mut shelf.books, &each.book_id, each.index);
+            }
+        }
+    });
+    batch.len() as u32
+}
+
 /// The single-file form of the batch [`run_files`] lands, for the two answers that place a
 /// file after a question. The copy is made BEFORE the row is promised: a failure to copy is
 /// a toast and a level left untouched.
@@ -301,9 +380,11 @@ pub(crate) fn land_stored_copy_settling(
     settle: Option<(String, Fingerprint)>,
 ) {
     let book_id = id::next_id(now_ms());
-    let task = format!("import-{book_id}");
+    // A card the beats can find: the shell throttles its emissions per task id, and an id
+    // the dock does not hold is a ring nobody sees.
+    let task = begin_task(state, file_name(&file.path));
     spawn_local(async move {
-        match wire::copy_and_measure(&task, &file.path, &book_id).await {
+        match ipc::copy_one(&task, &file.path, &book_id).await {
             Ok((store, measured)) => {
                 let placed =
                     mint_stored_row(state, book_id, &file, store, name, &shelf_id, index);
@@ -313,8 +394,9 @@ pub(crate) fn land_stored_copy_settling(
                 }
                 covers::backfill_missing(state);
                 crate::storage::persist_library(state.library);
+                finish_task(state, &task, 1, 0);
             }
-            Err(message) => toast(state, message),
+            Err(message) => fail(state, &task, message, FailMode::Toast),
         }
     });
 }
@@ -350,7 +432,7 @@ fn mint_row(
         ..Book::new(
             book_id.unwrap_or_else(|| id::next_id(now)),
             file.fp,
-            file.format().unwrap_or(Format::Pdf),
+            file.admitted_format(),
             origin,
             now,
         )
@@ -380,15 +462,10 @@ pub(super) fn found_from_check(check: &PathCheck) -> Option<FoundFile> {
         return None;
     }
     let fp = check.fingerprint()?;
-    let name = file_name(&check.path);
-    let ext = name
-        .rsplit_once('.')
-        .map(|(_, ext)| ext.to_lowercase())
-        .unwrap_or_default();
     Some(FoundFile {
-        rel: name,
+        rel: paths::file_name(&check.path),
         path: check.path.clone(),
-        ext,
+        ext: paths::extension(&check.path),
         size: check.size,
         fp,
     })

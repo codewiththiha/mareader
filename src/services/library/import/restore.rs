@@ -11,13 +11,12 @@ use library_core::id;
 use library_core::ledger;
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops};
-use reader_core::format::Format;
 
 use super::files::{found_from_check, land_file, settle_ledger};
 use super::tasks::{fail, finish_task, push_task, task_id, FailMode};
 use super::root_shelf_of;
 use crate::services::library::covers;
-use crate::services::library as wire;
+use crate::services::library as ipc;
 use crate::state::library::ImportTask;
 use crate::state::AppState;
 use crate::time::now_ms;
@@ -74,7 +73,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
     let task = task_id();
     push_task(state, ImportTask::new(task.clone(), entry.label()));
     spawn_local(async move {
-        let checks = match wire::verify_paths(vec![entry.last_path.clone()]).await {
+        let checks = match ipc::verify_paths(vec![entry.last_path.clone()]).await {
             Ok(checks) => checks,
             Err(message) => return fail(state, &task, message, FailMode::Toast),
         };
@@ -97,7 +96,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
                 None,
             )
         } else {
-            match wire::copy_and_measure(&task, &found.path, &book_id).await {
+            match ipc::copy_one(&task, &found.path, &book_id).await {
                 Ok((store, measured)) => (
                     Origin::Stored {
                         src: Some(found.path.clone()),
@@ -114,7 +113,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
             ..Book::new(
                 book_id,
                 found.fp,
-                found.format().unwrap_or(Format::Pdf),
+                found.admitted_format(),
                 origin,
                 now,
             )
@@ -183,14 +182,15 @@ pub(super) enum CoveredFate {
 /// A living row at the file's very address answers FIRST, and the order is the walk's own
 /// rather than a preference: an explicit folder run reads the registry before it reads the
 /// logs.
+///
+/// One read of each collection answers the whole question — the four passes this used to
+/// make over the same folders re-derived the same rows between decisions.
 pub(super) fn covered_fate(state: AppState, file: &FoundFile) -> CoveredFate {
-    let covering: Vec<String> = state.library.folders.with_untracked(|folders| {
-        folders
-            .iter()
-            .filter(|f| f.mode().reads_in_place() && rel_under(&file.path, &f.root).is_some())
-            .map(|f| f.id.clone())
-            .collect()
-    });
+    let folders = state.library.folders.get_untracked();
+    let covering: Vec<&library_core::folder::WatchedFolder> = folders
+        .iter()
+        .filter(|f| f.mode().reads_in_place() && rel_under(&file.path, &f.root).is_some())
+        .collect();
     if covering.is_empty() {
         return CoveredFate::Ordinary;
     }
@@ -200,55 +200,33 @@ pub(super) fn covered_fate(state: AppState, file: &FoundFile) -> CoveredFate {
             .map(|b| b.id.clone())
     });
     if let Some(row_id) = row_id {
-        let folder_id = state
-            .library
-            .folders
-            .with_untracked(|folders| {
-                covering
-                    .iter()
-                    .find(|id| {
-                        folders
-                            .iter()
-                            .any(|f| &f.id == *id && f.placed.contains(&file.fp))
-                    })
-                    .cloned()
-            })
-            .unwrap_or_else(|| covering[0].clone());
+        let folder_id = covering
+            .iter()
+            .find(|f| f.placed.contains(&file.fp))
+            .map_or_else(|| covering[0].id.clone(), |f| f.id.clone());
         return CoveredFate::Ask { folder_id, row_id };
     }
-    let stoned = state.library.folders.with_untracked(|folders| {
-        covering.iter().find_map(|id| {
-            folder_ops::find(folders, id)
-                .and_then(|f| ledger::find_tombstone(f, &file.fp).cloned())
-                .map(|stone| (id.clone(), stone))
-        })
+    let stoned = covering.iter().find_map(|f| {
+        ledger::find_tombstone(f, &file.fp)
+            .cloned()
+            .map(|stone| (f.id.clone(), stone))
     });
     if let Some((folder_id, stone)) = stoned {
         return CoveredFate::Restore { folder_id, stone };
     }
-    let placed_by = state.library.folders.with_untracked(|folders| {
-        covering
-            .iter()
-            .find(|id| {
-                folders
-                    .iter()
-                    .any(|f| &f.id == *id && f.placed.contains(&file.fp))
-            })
-            .cloned()
-    });
-    match placed_by {
-        Some(folder_id) => {
+    match covering.iter().find(|f| f.placed.contains(&file.fp)) {
+        Some(folder) => {
             let title = state.library.books.with_untracked(|rows| {
                 book_rows(rows)
                     .find(|b| b.origin.is_store_copy_of(&file.path))
                     .and_then(|b| b.title.clone())
             });
             CoveredFate::Restore {
-                folder_id,
+                folder_id: folder.id.clone(),
                 stone: Tombstone {
                     fp: file.fp,
                     title,
-                    format: file.format().unwrap_or(Format::Pdf),
+                    format: file.admitted_format(),
                     last_path: file.path.clone(),
                     shelf_id: None,
                     removed_ms: now_ms(),

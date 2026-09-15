@@ -109,7 +109,6 @@ pub fn file_cover(state: AppState, path: String, data_url: String, width: f64, h
             }),
         );
     });
-    prune_now(state);
     DIRTY.with(|dirty| *dirty.borrow_mut() = true);
 }
 
@@ -117,6 +116,10 @@ fn drain(state: AppState) {
     let next = QUEUE.with(|queue| queue.borrow_mut().pop());
     let Some(path) = next else {
         DRAINING.with(|draining| *draining.borrow_mut() = false);
+        // Pruned HERE rather than after every insert: a sixty-cover backfill was sixty full
+        // recency sorts, and the queue running dry is exactly the moment the cap is worth
+        // enforcing — the covers that will compete for it have all landed.
+        prune_now(state);
         if DIRTY.with(|dirty| {
             let was = *dirty.borrow();
             *dirty.borrow_mut() = false;

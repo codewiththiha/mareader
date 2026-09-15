@@ -13,7 +13,7 @@ use crate::features::library::dnd::controller::{DragController, GhostTile};
 use crate::features::library::folder_card::THUMB_CAP;
 
 /// Named after the folder's own plate cap rather than spelled a second time beside it: a promise drawn with a different number of cells than the card it becomes is a promise about a folder the library does not have.
-const GHOST_TILES: usize = THUMB_CAP;
+
 
 #[component]
 pub(crate) fn DragLayer() -> impl IntoView {
@@ -56,7 +56,7 @@ pub(crate) fn DragLayer() -> impl IntoView {
                             view! {
                                 {tiles
                                     .into_iter()
-                                    .take(GHOST_TILES)
+                                    .take(THUMB_CAP)
                                     .enumerate()
                                     .map(|(fan, tile)| view! { <GhostCard fan=fan tile=tile /> })
                                     .collect_view()}

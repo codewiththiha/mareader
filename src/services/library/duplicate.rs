@@ -15,20 +15,24 @@ use library_core::id;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 
 use crate::services::library::covers;
+use crate::services::library::import;
 use crate::services::library::toast;
-use crate::services::library as wire;
+use crate::services::library as ipc;
 use crate::state::AppState;
 use crate::time::now_ms;
 
 pub fn duplicate_row(state: AppState, row_id: &str) {
-    duplicate_rows(state, std::slice::from_ref(&row_id.to_string()));
+    duplicate_entries(state, std::slice::from_ref(&row_id.to_string()));
 }
 
 pub fn duplicate_shelf(state: AppState, shelf_id: &str) {
-    duplicate_rows(state, std::slice::from_ref(&shelf_id.to_string()));
+    duplicate_entries(state, std::slice::from_ref(&shelf_id.to_string()));
 }
 
-pub fn duplicate_rows(state: AppState, ids: &[String]) {
+/// The name says ENTRIES because a shelf's rows and the shelves themselves are both in the
+/// list — `duplicate_rows` said only half of what it did, and the half it said was the half
+/// the caller could already see.
+pub fn duplicate_entries(state: AppState, ids: &[String]) {
     if ids.is_empty() {
         return;
     }
@@ -97,12 +101,14 @@ fn duplicate_link(state: AppState, row_id: &str, name: &str, target: &str) -> St
 
 async fn duplicate_book(state: AppState, book: Book) -> Option<String> {
     let book_id = id::next_id(now_ms());
-    let task = format!("duplicate-{book_id}");
+    // A card for the copy: the shell's beats for it need somewhere to land, and the duplicate
+    // of a big document is a copy the reader is waiting on like any other.
+    let task = import::begin_task(state, book.title());
     let from = book.path().to_string();
-    let (new_store, measured) = match wire::copy_and_measure(&task, &from, &book_id).await {
+    let (new_store, measured) = match ipc::copy_one(&task, &from, &book_id).await {
         Ok(pair) => pair,
         Err(message) => {
-            toast(state, message);
+            import::fail_task(state, &task, message);
             return None;
         }
     };
@@ -125,6 +131,7 @@ async fn duplicate_book(state: AppState, book: Book) -> Option<String> {
     let dup_id = dup.id.clone();
     state.library.books.update(|rows| rows.push(Row::Book(dup)));
     file_beside(state, &original_id, &dup_id);
+    import::finish_task(state, &task, 1, 0);
     Some(title)
 }
 

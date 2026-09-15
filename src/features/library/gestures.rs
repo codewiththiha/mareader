@@ -134,15 +134,16 @@ pub(crate) fn folder_policy(
 pub(crate) fn link_policy(
     state: AppState,
     id: &str,
-    name: &str,
+    name: Signal<String>,
     container: Option<String>,
 ) -> ShelfItemPolicy {
     let open_id = id.to_string();
     let menu_id = id.to_string();
-    let label = name.to_string();
     ShelfItemPolicy {
         id: id.to_string(),
-        label: Signal::stored(label),
+        // Reactive like its book and folder cousins: a link renamed while its card stands
+        // keeps an aria-answer that names it, rather than the name it was mounted with.
+        label: name,
         draggable: Signal::derive(|| true),
         open: Callback::new(move |_| document::open_row(state, open_id.clone())),
         menu_target: Callback::new(move |_| MenuTarget::Book {

@@ -159,13 +159,7 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
             let Some(probe) = probe_ref.get() else {
                 return;
             };
-            let kids = probe.children();
-            let mut ws = Vec::with_capacity(kids.length() as usize);
-            for index in 0..kids.length() {
-                if let Some(kid) = kids.item(index) {
-                    ws.push(kid.get_bounding_client_rect().width());
-                }
-            }
+            let ws = measure_children_widths(&probe);
             if widths.get_untracked() != ws {
                 widths.set(ws);
             }
@@ -460,3 +454,16 @@ fn RenameField(
     }
 }
 
+/// The one child-width measurement loop, shared by the bar's probe and the panel's ruler:
+/// two engines measuring the same shape with their own loops is how the two drift, and the
+/// panel's rows are packed from the same numbers the bar's split is.
+pub(crate) fn measure_children_widths(node: &web_sys::Element) -> Vec<f64> {
+    let kids = node.children();
+    let mut widths = Vec::with_capacity(kids.length() as usize);
+    for index in 0..kids.length() {
+        if let Some(kid) = kids.item(index) {
+            widths.push(kid.get_bounding_client_rect().width());
+        }
+    }
+    widths
+}

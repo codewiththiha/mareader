@@ -70,19 +70,8 @@
 }
 /* The row's trailing 22px button, named for what it IS and not for the one action it first carried: a shelf row's opens the shelf, and only a book row's is the removal's ✕. */
 .lib-row-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
   width: 22px;
   height: 22px;
-  border-radius: 9999px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--color-muted);
-  opacity: 0;
-  cursor: pointer;
-  transition: opacity 0.14s ease, color 0.14s ease, background 0.14s ease;
 }
 .lib-row:hover .lib-row-action,
 .lib-row:focus-visible .lib-row-action,

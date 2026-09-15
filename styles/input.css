@@ -45,6 +45,7 @@
    classes; the Rust side spells both, and SeamVocab in
    `src/features/library/shelf_item.rs` is the one table that decides which state
    class a surface wears. */
+@import "./components/library/shared.css"; /* the ghost icon button every library surface reveals on hover */
 @import "./components/library/grid.css";     /* the shelf grid, the book card, its covers, a dead address, the add card */
 @import "./components/library/folder.css";   /* a shelf drawn as a folder: the 2x2 plate and its three states */
 @import "./components/library/list.css";     /* the list layout: one row per book, the same order as the grid */

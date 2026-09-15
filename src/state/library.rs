@@ -14,7 +14,6 @@ use library_core::blob::LibraryBlob;
 use library_core::book::Row;
 use library_core::folder::{self as folder_ops, FolderMode, WatchedFolder};
 use library_core::governance::Governance;
-use library_core::id;
 use library_core::shelf::{self, ALL_SHELF, Shelf};
 use library_core::text::plural;
 use library_core::view::LibraryView;
@@ -22,7 +21,6 @@ use library_core::wire::{ImportPhase, ImportProgress};
 
 use crate::services::library::arrange::CopyAsk;
 use crate::services::library::conflict::{ConflictAsk, ShelfConflictAsk};
-use crate::time::now_ms;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -193,6 +191,14 @@ impl<T: Send + Sync + 'static> Sheet<T> {
         self.ask.set(None);
         self.open.set(false);
     }
+
+    /// Close WITHOUT spending the ask: the one sheet whose close is an answer in itself
+    /// (the already-imported note lights its shelf on the way down) — the effect that
+    /// consumes the ask and reveals reads it after this, so the intent is in the type
+    /// rather than in a bare `open.set(false)` three files away.
+    pub fn lower(&self) {
+        self.open.set(false);
+    }
 }
 
 impl<T: Send + Sync + 'static> Default for Sheet<T> {
@@ -313,6 +319,20 @@ impl LibraryState {
         })
     }
 
+    /// The row's own name, read back by id: a keyed card or row is not re-created when its
+    /// content changes, so a name captured at the mount is a name that goes stale — the
+    /// link surfaces read through this for exactly the reason `shelf_name_signal` exists.
+    pub fn row_name_signal(&self, row_id: &str) -> Signal<String> {
+        let books = self.books;
+        let id = row_id.to_string();
+        Signal::derive(move || {
+            books.with(|rows| {
+                library_core::book::find_row(rows, &id)
+                    .map_or_else(String::new, |r| r.display_name())
+            })
+        })
+    }
+
     pub fn is_revealed(&self, id: &str) -> Signal<bool> {
         let reveal = self.reveal;
         let id = id.to_string();
@@ -359,41 +379,6 @@ impl LibraryState {
     pub fn folder(&self, folder_id: &str) -> Option<WatchedFolder> {
         self.folders
             .with_untracked(|folders| folder_ops::find(folders, folder_id).cloned())
-    }
-
-    /// A book's new title is LOCKED, and the lock is the difference between a name the reader chose and a name a document supplied.
-    pub fn rename_row(&self, row_id: &str, name: &str) {
-        self.books.update(|rows| {
-            let Some(row) = library_core::book::find_row_mut(rows, row_id) else {
-                return;
-            };
-            match row {
-                Row::Book(b) => {
-                    b.title = Some(name.to_string());
-                    b.title_locked = true;
-                }
-                Row::Link { name: own, .. } => *own = name.to_string(),
-            }
-        });
-    }
-
-    /// The name is the target's own at this moment, which is what makes the row recognisable on the shelf beside the book it points at.
-    pub fn add_link(&self, name: &str, target: &str, shelf_id: &str) -> String {
-        let now = now_ms();
-        let link_id = id::next_id(now);
-        let made = link_id.clone();
-        self.books.update(|rows| {
-            rows.push(Row::link(link_id, name.to_string(), target.to_string(), now));
-        });
-        if shelf_id != ALL_SHELF {
-            self.shelves.update(|shelves| {
-                if let Some(shelf) = shelf::find_mut(shelves, shelf_id) {
-                    shelf::shelf_add(shelf, &made);
-                }
-            });
-        }
-        crate::storage::persist_library(*self);
-        made
     }
 }
 

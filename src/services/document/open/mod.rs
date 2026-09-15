@@ -78,14 +78,14 @@ pub fn init_open_file_handling(state: AppState) {
 
 /// Native open-dialog flow: pick a file, then run the shared open-flow.
 ///
-/// Cancel ("Open cancelled") is a silent no-op; any other error surfaces on the
-/// doc status / status bar.
+/// Cancel (the engine's own [`CANCELLED`](pdf_engine::api::dialog::CANCELLED) sentence) is a
+/// silent no-op; any other error surfaces on the doc status / status bar.
 pub fn open_dialog(state: AppState) {
     spawn_local(async move {
         match engine::pick_document().await {
             Ok(path) => open_path(state, path),
             Err(msg) => {
-                if msg != "Open cancelled" {
+                if msg != pdf_engine::api::dialog::CANCELLED {
                     state.reader.document.error.set(Some(msg.clone()));
                     state.reader.document.status.set(DocStatus::Error);
                     state.ui.toast.set(Some(Toast::new(format!(

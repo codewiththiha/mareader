@@ -6,6 +6,12 @@ use super::{
     reflect_set, KEY_DIRECTORY, KEY_DOCUMENTS, KEY_EXTENSIONS, KEY_FILTERS, KEY_MULTIPLE, KEY_NAME,
 };
 
+/// The sentence a cancelled pick answers with. A constant rather than a string matched in
+/// place at each caller: the two sides of the comparison are in different crates, and a
+/// wording change on one side must show up here rather than silently turn cancels into
+/// error toasts.
+pub const CANCELLED: &str = "Open cancelled";
+
 /// Native open-file dialog (Tauri dialog plugin), admitting every format the
 /// reader opens. Returns the chosen path, or `Err` on cancel / no plugin.
 pub async fn pick_document() -> Result<String, String> {
@@ -56,6 +62,6 @@ async fn pick(directory: bool) -> Result<String, String> {
     })?;
     match value.as_string() {
         Some(path) if !path.is_empty() => Ok(path),
-        _ => Err("Open cancelled".to_string()),
+        _ => Err(CANCELLED.to_string()),
     }
 }

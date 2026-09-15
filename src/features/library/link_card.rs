@@ -32,7 +32,14 @@ fn link_title(to_shelf: bool) -> &'static str {
 }
 
 #[component]
-pub(crate) fn LinkCard(state: AppState, id: String, name: String, to_shelf: bool) -> impl IntoView {
+pub(crate) fn LinkCard(
+    state: AppState,
+    id: String,
+    /// Read back by id rather than captured: a rename that lands while the card stands must
+    /// reach its label and its aria-answer on the same frame.
+    name: Signal<String>,
+    to_shelf: bool,
+) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
     let remove_id = id.clone();
@@ -40,7 +47,7 @@ pub(crate) fn LinkCard(state: AppState, id: String, name: String, to_shelf: bool
         id: id.clone(),
         vocab: SeamVocab::GridCard,
         base_class: "book-card book-link",
-        policy: link_policy(state, &id, &name, None),
+        policy: link_policy(state, &id, name, None),
     };
     let remove = move |ev: leptos::ev::MouseEvent| {
         ev.stop_propagation();
@@ -52,7 +59,7 @@ pub(crate) fn LinkCard(state: AppState, id: String, name: String, to_shelf: bool
             <div class="book-cover-wrap">
                 <div class="book-cover" style:aspect-ratio="210 / 297">
                     <div class="book-cover-fallback">
-                        <span>{name.clone()}</span>
+                        <span>{move || name.get()}</span>
                     </div>
                     <span class="book-link-badge" title=link_title(to_shelf)>
                         <Icon name=IconName::Link size=11 />
@@ -61,15 +68,15 @@ pub(crate) fn LinkCard(state: AppState, id: String, name: String, to_shelf: bool
             </div>
 
             <div class="book-info">
-                <span class="book-title" title=name.clone()>{name.clone()}</span>
+                <span class="book-title" title=move || name.get()>{move || name.get()}</span>
                 <span class="book-page">{link_line(to_shelf)}</span>
             </div>
 
             <button
                 type="button"
-                class="book-remove"
+                class="icon-ghost book-remove"
                 title="Remove this link"
-                aria-label=move || format!("Remove the link to {}", name.clone())
+                aria-label=move || format!("Remove the link to {}", name.get())
                 on:click=remove
             >
                 <Icon name=IconName::Close size=12 />
@@ -82,7 +89,9 @@ pub(crate) fn LinkCard(state: AppState, id: String, name: String, to_shelf: bool
 pub(crate) fn LinkRow(
     state: AppState,
     id: String,
-    name: String,
+    /// Read back by id, for the same reason the card's is: a keyed row is not re-created
+    /// when its content changes, so a captured name is a stale one.
+    name: Signal<String>,
     /// The first letter of the target's id, which the mint guarantees answers (`library_core::id::is_shelf`). The words a link wears, and nothing else: the tap's routing is `crate::services::document::open_row`'s.
     to_shelf: bool,
     depth: usize,
@@ -95,10 +104,9 @@ pub(crate) fn LinkRow(
         id: id.clone(),
         vocab: SeamVocab::ListRow,
         base_class: "lib-row book-link",
-        policy: link_policy(state, &id, &name, parent),
+        policy: link_policy(state, &id, name, parent),
     };
     let indent = row_indent(depth);
-    let tooltip = name.clone();
 
     view! {
         <EntryShell state=state entry=entry style=indent>
@@ -106,8 +114,8 @@ pub(crate) fn LinkRow(
                 <Icon name=IconName::Link size=12 />
             </span>
             <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-semibold text-ink" title=tooltip.clone()>
-                    {name.clone()}
+                <span class="block truncate text-sm font-semibold text-ink" title=move || name.get()>
+                    {move || name.get()}
                 </span>
                 <span class="block truncate text-xs text-muted">{link_line(to_shelf)}</span>
             </span>
@@ -116,10 +124,10 @@ pub(crate) fn LinkRow(
                     let at = remove_id.clone();
                     view! {
                         <button
-                            class="lib-row-action"
+                            class="icon-ghost lib-row-action"
                             type="button"
                             title="Remove this link"
-                            aria-label=format!("Remove the link to {}", name.clone())
+                            aria-label=move || format!("Remove the link to {}", name.get())
                             on:click=move |ev: leptos::ev::MouseEvent| {
                                 ev.stop_propagation();
                                 sheet.ask(&at);

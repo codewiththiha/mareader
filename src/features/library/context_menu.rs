@@ -20,8 +20,8 @@ use crate::features::library::selection::{
 };
 use crate::services::document;
 use crate::services::library::{
-    ask_shelf_apart, create_shelf_and_enter, duplicate_row, duplicate_rows, duplicate_shelf,
-    path_of_row, path_of_shelf, relink_dialog, reveal_in_folder, set_shelf_watch, shelf_watch,
+    ask_shelf_apart, create_shelf_and_enter, duplicate_entries, duplicate_row, duplicate_shelf,
+    ask_relink, path_of_row, path_of_shelf, reveal_in_folder, set_shelf_watch, shelf_watch,
 };
 use crate::state::AppState;
 
@@ -377,7 +377,10 @@ fn BookMenu(
             "Find again…",
             Callback::new(move |_| {
                 close.run(());
-                relink_dialog(state, find_id.clone());
+                // Through the guarded door rather than the picker's: one function decides
+                // whether a reader-page open goes straight to the dialog or the sheet comes
+                // up, and a second caller of the raw picker was a second answer to drift.
+                ask_relink(state, find_id.clone());
             }),
         ));
     }
@@ -492,7 +495,7 @@ fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>
                 .library
                 .selected
                 .with_untracked(|set| set.iter().cloned().collect());
-            duplicate_rows(state, &ids);
+            duplicate_entries(state, &ids);
         }),
     ));
     items.push(

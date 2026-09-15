@@ -92,20 +92,10 @@
   font-variant-numeric: tabular-nums;
   color: var(--color-ink);
 }
+/* The card's dismiss, on the shared ghost (shared.css): a size and a hover is all its own. */
 .import-card-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
   width: 20px;
   height: 20px;
-  border-radius: 9999px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--color-muted);
-  opacity: 0;
-  cursor: pointer;
-  transition: opacity 0.14s ease, color 0.14s ease, background 0.14s ease;
 }
 .import-card:hover .import-card-close,
 .import-card-close:focus-visible {

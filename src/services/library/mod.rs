@@ -1,5 +1,7 @@
-//! The frontend half of the library's filesystem wire: one Tauri listener for the app's life
-//! ([`install_import_bridge`]) and the typed `invoke` wrappers over the shell's commands.
+//! The frontend half of the library's filesystem wire: the typed `invoke` wrappers over the
+//! shell's commands. The one Tauri listener the library keeps for the app's life — the
+//! import-beat sink — lives in `crate::effects::app::library`, where the task list it folds
+//! into is wired.
 
 pub mod arrange;
 pub mod conflict;
@@ -9,37 +11,22 @@ pub mod import;
 pub mod reveal;
 
 pub use arrange::{
-    CopyAnswer, CopyAsk, ReadingData, SeamSide, also_show, answer_copy, ask_relink, ask_shelf_apart,
-    cancel_copy, cancel_relink, create_shelf_and_enter, create_shelf_here, file_many, memberships,
-    move_many_to_shelf, nest_many, nest_shelf, relink_dialog, relink_search_folder, remove_entries,
-    rename_shelf, reorder_shelves_to_anchor, unfile_books,
+    CopyAnswer, CopyAsk, ReadingData, SeamSide, add_link, also_show, answer_copy, ask_relink,
+    ask_shelf_apart, cancel_copy, cancel_relink, create_shelf_and_enter, create_shelf_here,
+    file_many, memberships, move_many_to_shelf, nest_many, nest_shelf, relink_dialog,
+    relink_search_folder, remove_entries, rename_row, rename_shelf, reorder_shelves_to_anchor,
+    unfile_books,
 };
 pub use covers::backfill_missing;
-pub use duplicate::{duplicate_row, duplicate_rows, duplicate_shelf};
+pub use duplicate::{duplicate_entries, duplicate_row, duplicate_shelf};
 pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 pub use import::{
     dismiss_task, ground_tracking, import_files, import_folder, migrate_store_layout,
-    rescan_watched, restore_deleted_book, set_shelf_watch, shelf_watch, verify_library, verify_one,
+    rescan_watched, restore_deleted_book, set_shelf_watch, shelf_watch, verify_one,
     GroundWatch,
 };
 
-pub(super) fn file_name(path: &str) -> String {
-    path.trim_end_matches(['/', '\\'])
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(path)
-        .to_string()
-}
-
-/// The fallback is the path itself, because a root ("/", "C:\\") has no last segment to show.
-pub(crate) fn folder_label(root: &str) -> String {
-    let name = file_name(root);
-    if name.is_empty() {
-        root.to_string()
-    } else {
-        name
-    }
-}
+pub(crate) use library_core::paths::{dir_label as folder_label, file_name};
 
 #[cfg(test)]
 mod tests {
@@ -54,7 +41,7 @@ mod tests {
     }
 }
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -62,23 +49,24 @@ use wasm_bindgen::JsValue;
 
 use library_core::book::Fingerprint;
 use library_core::folder::FolderOpts;
+use library_core::id::Cooldown;
 use library_core::scan::FoundFile;
-use library_core::wire::{
-    ImportProgress, PathCheck, RelocateRequest, RelocateResult, StoreRequest, StoreResult,
-};
+use library_core::wire::{BookFileRequest, PathCheck, RelocateResult, StoreResult};
 
 use leptos::prelude::*;
 
 use crate::state::{AppState, Toast};
 use crate::time::now_ms;
 
-pub use crate::events::IMPORT_PROGRESS_EVENT;
-
 pub(crate) fn toast(state: AppState, message: String) {
     state.ui.toast.set(Some(Toast::new(message)));
 }
 
-const PROGRESS_CHANNEL: &str = "library://progress";
+/// The shell's throttled import beats, one channel for the app's life. `pub(crate)` for the
+/// sink that folds them into the dock's task list — the listener is the sink's own, so no
+/// component ever registers a Tauri handler of its own and no window event carries what a
+/// closure could.
+pub(crate) const PROGRESS_CHANNEL: &str = "library://progress";
 
 const CMD_SCAN: &str = "scan_folder";
 const CMD_VERIFY: &str = "verify_paths";
@@ -119,12 +107,12 @@ struct PathsArgs {
 #[derive(Serialize)]
 struct StoreArgs<'a> {
     task: &'a str,
-    requests: &'a [StoreRequest],
+    requests: &'a [BookFileRequest],
 }
 
 #[derive(Serialize)]
 struct RelocateArgs<'a> {
-    requests: &'a [RelocateRequest],
+    requests: &'a [BookFileRequest],
 }
 
 #[derive(Serialize)]
@@ -146,20 +134,24 @@ pub async fn verify_paths(paths: Vec<String>) -> Result<Vec<PathCheck>, String> 
 
 pub async fn store_books(
     task: &str,
-    requests: &[StoreRequest],
+    requests: &[BookFileRequest],
 ) -> Result<Vec<StoreResult>, String> {
     call(CMD_STORE, &StoreArgs { task, requests }).await
 }
 
-/// A failure is the shell's own per-file answer, already a sentence; the caller decides where it goes.
-pub(crate) async fn copy_one_to_store(task: &str, path: &str, id: &str) -> Result<String, String> {
-    let requests = [StoreRequest {
-        path: path.to_string(),
+/// A failure is the shell's own per-file answer, already a sentence; the caller decides where it goes. The copy's own measurement rides home with it, so the row lands wearing its own identity and no verify trip follows.
+pub(crate) async fn copy_one(
+    task: &str,
+    path: &str,
+    id: &str,
+) -> Result<(String, Option<Fingerprint>), String> {
+    let requests = [BookFileRequest {
+        from: path.to_string(),
         id: id.to_string(),
     }];
     match store_books(task, &requests).await {
         Ok(results) => match results.into_iter().next() {
-            Some(result) if result.is_ok() => Ok(result.store),
+            Some(result) if result.is_ok() => Ok((result.store, result.measured)),
             Some(result) => Err(result
                 .error
                 .unwrap_or_else(|| "Could not copy that file.".to_string())),
@@ -169,23 +161,8 @@ pub(crate) async fn copy_one_to_store(task: &str, path: &str, id: &str) -> Resul
     }
 }
 
-/// `None` for the fingerprint leaves the row the pending mark the startup sweep finishes.
-pub(crate) async fn copy_and_measure(
-    task: &str,
-    path: &str,
-    id: &str,
-) -> Result<(String, Option<Fingerprint>), String> {
-    let store = copy_one_to_store(task, path, id).await?;
-    let measured = verify_paths(vec![store.clone()])
-        .await
-        .ok()
-        .and_then(|checks| checks.into_iter().next())
-        .and_then(|check| check.fingerprint());
-    Ok((store, measured))
-}
-
 pub async fn relocate_stored(
-    requests: &[RelocateRequest],
+    requests: &[BookFileRequest],
 ) -> Result<RelocateResult, String> {
     call(CMD_RELOCATE, &RelocateArgs { requests }).await
 }
@@ -259,9 +236,12 @@ struct Options {
     default_path: Option<String>,
 }
 
-/// A picker is the one focus event the window gets that the app caused itself, and the listener that event reaches answers with a walk of every watched folder.
+/// A picker is the one focus event the window gets that the app caused itself, and the listener that event reaches answers with a walk of every watched folder. A thread-local because the grace is a `Cooldown`'s to hold — a plain value with a rule, not another stamp-and-subtract at this site.
 static PICKER_OPEN: AtomicBool = AtomicBool::new(false);
-static PICKER_CLOSED: AtomicU64 = AtomicU64::new(0);
+thread_local! {
+    static PICKER_CLOSED: std::cell::RefCell<Cooldown> =
+        std::cell::RefCell::new(Cooldown::new(PICKER_GRACE_MS));
+}
 
 const PICKER_GRACE_MS: u64 = 1_000;
 
@@ -269,8 +249,7 @@ pub(crate) fn picker_focus() -> bool {
     if PICKER_OPEN.load(Ordering::Relaxed) {
         return true;
     }
-    let closed = PICKER_CLOSED.load(Ordering::Relaxed);
-    closed != 0 && now_ms().saturating_sub(closed) < PICKER_GRACE_MS
+    PICKER_CLOSED.with(|closed| closed.borrow().within(now_ms()))
 }
 
 async fn pick(options: Options) -> Result<Option<Vec<String>>, String> {
@@ -299,7 +278,7 @@ async fn pick(options: Options) -> Result<Option<Vec<String>>, String> {
     PICKER_OPEN.store(true, Ordering::Relaxed);
     let opened = tauri_bridge::open(opts).await;
     PICKER_OPEN.store(false, Ordering::Relaxed);
-    PICKER_CLOSED.store(now_ms(), Ordering::Relaxed);
+    PICKER_CLOSED.with(|closed| closed.borrow_mut().arm(now_ms()));
     let value = opened.map_err(|e| format!("Dialog failed: {}", describe(e)))?;
     if value.is_null() || value.is_undefined() {
         return Ok(None);
@@ -328,21 +307,3 @@ fn describe(error: JsValue) -> String {
         .unwrap_or_else(|| format!("{error:?}"))
 }
 
-/// Must be called inside the app reactive owner: `tauri_listen` parks its closure in that owner, and a dropped closure would free the wasm function-table entry Tauri's JS still holds.
-pub fn install_import_bridge() {
-    if !tauri_bridge::has_tauri() {
-        return;
-    }
-    crate::services::tauri_listen(PROGRESS_CHANNEL, move |ev: web_sys::Event| {
-        let value: &JsValue = ev.as_ref();
-        let Ok(payload) = js_sys::Reflect::get(value, &"payload".into()) else {
-            return;
-        };
-        match serde_wasm_bindgen::from_value::<ImportProgress>(payload) {
-            Ok(beat) => crate::events::dispatch_typed_event(IMPORT_PROGRESS_EVENT, &beat),
-            Err(e) => {
-                web_sys::console::warn_1(&format!("[library] bad progress payload: {e}").into());
-            }
-        }
-    });
-}

@@ -31,6 +31,15 @@ impl FoundFile {
         format_from_ext(&self.ext)
     }
 
+    /// The format the file was admitted by, for the mints that follow a walk: a file the
+    /// registry refused never reaches one, so `None` here means a `FoundFile` built by
+    /// hand rather than by a scan — and the fallback is named rather than scattered
+    /// `unwrap_or(Format::Pdf)` shields at every mint, each implying an impossible state
+    /// the next reader would have to re-derive.
+    pub fn admitted_format(&self) -> Format {
+        self.format().unwrap_or(Format::Pdf)
+    }
+
     pub fn subfolder(&self) -> &str {
         subfolder_of(&self.rel)
     }

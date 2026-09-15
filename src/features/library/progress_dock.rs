@@ -16,8 +16,11 @@ use crate::state::AppState;
 
 const HOLD_MS: u64 = 1600;
 
-/// Written down once here and once in `styles/components/library/dock.css`, where the dash array lives; the two have to agree or the ring ends short of full.
-const CIRCUMFERENCE: f64 = 94.248;
+/// The ring's radius, written once: the SVG below draws it, the circumference is derived
+/// from it, and `styles/components/library/dock.css` spells the same product in its
+/// `stroke-dasharray` (CSS cannot read this const — the comment there says the two agree).
+const RING_RADIUS: f64 = 15.0;
+const CIRCUMFERENCE: f64 = 2.0 * std::f64::consts::PI * RING_RADIUS;
 
 /// `inner_html` rather than `view!` because it is what makes the transition work: the two circles are created once and the percentage is a custom property on the wrapper, so a beat moves a number the browser interpolates instead of replacing the node.
 const RING: &str = "<svg viewBox='0 0 36 36' width='36' height='36' aria-hidden='true'>\
@@ -164,22 +167,22 @@ fn DockCard(state: AppState, id: String) -> impl IntoView {
                 </span>
             </span>
 
-            <button
-                class="import-card-close"
-                type="button"
-                title="Dismiss"
-                aria-label="Dismiss this import"
-                on:click=move |_| {
-                    let Some(current) = task.get_untracked() else {
-                        return;
-                    };
-                    if current.phase.is_finished() {
+            // Not offered while the run is still going: a dismiss that silently no-ops is
+            // a button that lies, and a running import has nothing to dismiss yet — its
+            // card leaves on its own the moment it finishes.
+            <Show when=move || task.get().is_some_and(|t| t.phase.is_finished())>
+                <button
+                    class="icon-ghost import-card-close"
+                    type="button"
+                    title="Dismiss"
+                    aria-label="Dismiss this import"
+                    on:click=move |_| {
                         dismiss_task(state, &close_id);
                     }
-                }
-            >
-                <Icon name=IconName::Close size=11 />
-            </button>
+                >
+                    <Icon name=IconName::Close size=11 />
+                </button>
+            </Show>
         </div>
     }
 }

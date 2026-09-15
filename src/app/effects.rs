@@ -20,13 +20,13 @@
 //!    pipeline and by CSS the app does not model.
 //! 4. The input and selection arms, in any order among themselves.
 //! 5. The app-lifetime Tauri listeners, in any order between them:
-//!    `install_ai_chunk_bridge` (AI chunks), `install_import_bridge` (the
-//!    library's progress beats) and `install_window_state_bridge` (the
-//!    frameless maximize flag). Then `library_effects`
-//!    (`crate::effects::app::library`), which installs the progress sink,
-//!    measures every address the library holds and rescans the watched folders
-//!    once it has — before the OS handoff below, so a double-clicked book never
-//!    lands in the middle of that first pass.
+//!    `install_ai_chunk_bridge` (AI chunks) and `install_window_state_bridge`
+//!    (the frameless maximize flag). Then `library_effects`
+//!    (`crate::effects::app::library`), which installs the library's progress
+//!    sink on the shell's own channel, measures every address the library holds
+//!    and rescans the watched folders once it has — before the OS handoff
+//!    below, so a double-clicked book never lands in the middle of that first
+//!    pass.
 //! 6. `init_open_file_handling` — LAST, and the step the ordering is really
 //!    for: it can open a document IMMEDIATELY (a double-clicked file hands the
 //!    backend a path before the webview finishes mounting), so every step
@@ -82,10 +82,6 @@ pub(crate) fn install_app_effects(
     //    window event so the gloss popover never stacks or drops handlers
     //    across document switches.
     crate::services::ai::install_ai_chunk_bridge();
-    // 5a. The library's import beats: one listener, re-broadcast as a window
-    //     event, so the progress dock can mount and unmount with the page
-    //     without ever stacking a Tauri handler.
-    crate::services::library::install_import_bridge();
     // 5b. The frameless maximize flag: one resize subscription publishing
     //     into UiState, so the caption cluster never owns a listener.
     crate::services::window::install_window_state_bridge(state);

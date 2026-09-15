@@ -10,9 +10,10 @@ use library_core::folder::{self as folder_ops, Tombstone, WatchedFolder};
 use library_core::ledger::tombstone;
 use library_core::shelf::ALL_SHELF;
 
-use crate::services::library::covers::{self, prune_now};
+use crate::services::library::import;
 use crate::services::library::toast;
-use crate::services::library as wire;
+use crate::services::library::covers::{self, prune_now};
+use crate::services::library as ipc;
 use crate::state::AppState;
 use crate::time::now_ms;
 
@@ -61,14 +62,29 @@ fn converts_on_move(books: &[Row], folders: &[WatchedFolder], row_id: &str, to: 
 /// The ONE "a book is leaving the ground that made it" primitive, so the copy a move buys, the copy
 /// a level coming apart buys and the copy a removal buys are one write. A book the store refused is
 /// left out of the answer, which is how the caller knows to leave that book where it was.
+///
+/// `task` names the card the copy's beats land on: a batch of departures shares one card, and a
+/// lone departure (a replace's conversion) carries one of its own.
 pub(super) async fn depart(state: AppState, rows: &[String]) -> Vec<String> {
+    // Nothing to convert is no run to report — no card, no count.
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    // One card for the whole gesture: fifty books leaving their ground is one thing the
+    // reader asked for, not fifty, and every copy's beats land on this one card.
+    let label = match rows.len() {
+        1 => state.library.row_name(&rows[0]),
+        n => format!("{n} books"),
+    };
+    let task = import::begin_task(state, label);
     let mut departed: Vec<String> = Vec::with_capacity(rows.len());
     for id in rows {
-        match convert_to_stored(state, id).await {
+        match convert_to_stored(state, id, &task).await {
             Ok(()) => departed.push(id.clone()),
             Err(message) => toast(state, message),
         }
     }
+    import::finish_task(state, &task, departed.len() as u32, 0);
     covers::backfill_missing(state);
     departed
 }
@@ -76,7 +92,11 @@ pub(super) async fn depart(state: AppState, rows: &[String]) -> Vec<String> {
 /// Make a read-at-place book the library's own stored copy: the departure half of a move, and
 /// the only byte a hand-move ever writes. Why a move copies: the book is leaving the ground
 /// that made it.
-pub(crate) async fn convert_to_stored(state: AppState, row_id: &str) -> Result<(), String> {
+pub(crate) async fn convert_to_stored(
+    state: AppState,
+    row_id: &str,
+    task: &str,
+) -> Result<(), String> {
     let Some(book) = state.library.books.with_untracked(|rows| {
         find_row(rows, row_id)
             .and_then(|row| row.book())
@@ -88,8 +108,7 @@ pub(crate) async fn convert_to_stored(state: AppState, row_id: &str) -> Result<(
         return Ok(());
     }
     let path = book.path().to_string();
-    let (store, measured) =
-        wire::copy_and_measure(&format!("move-{row_id}"), &path, row_id).await?;
+    let (store, measured) = ipc::copy_one(task, &path, row_id).await?;
 
     write_moved_stones(state, &book, None);
 
@@ -106,6 +125,9 @@ pub(crate) async fn convert_to_stored(state: AppState, row_id: &str) -> Result<(
 /// Every folder that placed its fingerprint records that the book left as the library's own
 /// copy rather than died. `returned_row` names the row the file is represented by, for the two
 /// answers that dissolve a linked row into a book the library already holds.
+///
+/// Persists nothing itself: every caller — a departure, a merge, a link at the copy — ends its
+/// own transaction with a persist, and this row is one write inside it.
 pub(crate) fn write_moved_stones(state: AppState, book: &Book, returned_row: Option<&str>) {
     let home = {
         let shelves = state.library.shelves.get_untracked();
@@ -125,19 +147,22 @@ pub(crate) fn write_moved_stones(state: AppState, book: &Book, returned_row: Opt
         .library
         .folders
         .update(|folders| tombstone(folders, &entry));
-    crate::storage::persist_library(state.library);
 }
 
-/// The bind is by NAME, which is the whole of the condition: the log remembers the name the
-/// shelf showed, and a row wearing that exact name is the copy that came home.
+/// The bind is by FINGERPRINT for a row that was measured, and by name only for one still
+/// wearing its pending placeholder: two books called "Dune" in one folder are two logs, and
+/// the name alone cannot say whose copy came home — the log's own fp can, and does.
 pub(super) fn bind_returned(state: AppState, row_id: &str, shelf_id: &str) {
     if shelf_id == ALL_SHELF {
         return;
     }
-    let Some(name) = state.library.books.with_untracked(|rows| {
+    let Some((name, fp, measured)) = state.library.books.with_untracked(|rows| {
         find_row(rows, row_id)
             .filter(|row| row.book().is_some_and(|b| b.origin.is_stored()))
-            .map(|row| row.display_name())
+            .map(|row| {
+                let book = row.book().expect("the filter above held");
+                (row.display_name(), book.fp, !book.fp_pending)
+            })
     }) else {
         return;
     };
@@ -149,11 +174,17 @@ pub(super) fn bind_returned(state: AppState, row_id: &str, shelf_id: &str) {
         let Some(folder) = folder_ops::find_mut(folders, &folder_id) else {
             return;
         };
-        if let Some(entry) = folder
-            .ignored
-            .iter_mut()
-            .find(|entry| entry.moved && same_name(&entry.label(), &name))
-        {
+        let is_the_one = |entry: &Tombstone| {
+            if !entry.moved {
+                return false;
+            }
+            if measured {
+                entry.fp == fp
+            } else {
+                same_name(&entry.label(), &name)
+            }
+        };
+        if let Some(entry) = folder.ignored.iter_mut().find(|entry| is_the_one(entry)) {
             if entry.returned_row.as_deref() != Some(row_id) {
                 entry.returned_row = Some(row_id.to_string());
                 bound = true;

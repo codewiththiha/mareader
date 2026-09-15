@@ -9,30 +9,48 @@ use wasm_bindgen_futures::spawn_local;
 use library_core::book::{find_book_mut, find_row, stem_of, Origin};
 use library_core::folder::FolderOpts;
 use library_core::scan::selectable_formats;
+use pdf_engine::api::dialog::CANCELLED;
 use pdf_engine::types::DocStatus;
 
 use super::super::{file_name, pick_folder};
 use crate::services::library::covers::{self, prune_now};
+use crate::services::library::import;
 use crate::services::library::toast;
-use crate::services::library as wire;
+use crate::services::library as ipc;
 use crate::state::library::RelinkAsk;
 use crate::state::AppState;
 
 /// A linked book takes the new address. A stored book does NOT become linked — that would
 /// quietly turn "the app keeps its own copy" back into "the app reads your folder again" —
 /// so the pick is copied into the store once more, from wherever the file lives now.
+///
+/// The new copy is MEASURED before the row is written to it: the backend stamps a copy with
+/// its own time, so healing the row with the PICKED file's fingerprint would leave it
+/// describing a file it does not stand at — the next verify pass would mark and heal it
+/// unpredictably, and the ledger's placed-matching could mis-fire. The measurement the
+/// copy came home with is the row's, exactly as every other landing takes it.
 fn relink_book(state: AppState, book_id: String, path: String) {
+    relink_book_on(state, book_id, path, None);
+}
+
+/// [`relink_book`] when a card for the gesture is already up — a Find-again search that
+/// ends in a relink keeps the one card its scan started, rather than lighting a second
+/// beside the first for the copy the first was leading to.
+fn relink_book_on(state: AppState, book_id: String, path: String, on_task: Option<String>) {
     if !tauri_bridge::has_tauri() {
         return;
     }
     spawn_local(async move {
-        let checks = match wire::verify_paths(vec![path.clone()]).await {
+        let name = state.library.row_name(&book_id);
+        let task = on_task.unwrap_or_else(|| import::begin_task(state, name));
+        let checks = match ipc::verify_paths(vec![path.clone()]).await {
             Ok(checks) => checks,
-            Err(message) => return toast(state, message),
+            Err(message) => return import::fail_task(state, &task, message),
         };
         let Some(fp) = checks.first().and_then(|c| c.fingerprint()) else {
-            return toast(
+            return import::fail_task(
                 state,
+                &task,
                 "That file is not there any more. Pick the book's current location.".to_string(),
             );
         };
@@ -43,13 +61,12 @@ fn relink_book(state: AppState, book_id: String, path: String) {
             return;
         };
 
-        let store = match origin {
+        let stored = match origin {
             Origin::Linked { .. } => None,
             Origin::Stored { .. } => {
-                let task = format!("relink-{book_id}");
-                match wire::copy_one_to_store(&task, &path, &book_id).await {
-                    Ok(store) => Some(store),
-                    Err(message) => return toast(state, message),
+                match ipc::copy_one(&task, &path, &book_id).await {
+                    Ok((store, measured)) => Some((store, measured)),
+                    Err(message) => return import::fail_task(state, &task, message),
                 }
             }
         };
@@ -62,8 +79,9 @@ fn relink_book(state: AppState, book_id: String, path: String) {
                 Origin::Linked { src } => *src = path.clone(),
                 Origin::Stored { src, store: at } => {
                     *src = Some(path.clone());
-                    if let Some(store) = store.as_ref() {
+                    if let Some((store, measured)) = stored.as_ref() {
                         *at = store.clone();
+                        book.adopt_measurement(*measured);
                     }
                 }
             }
@@ -74,15 +92,16 @@ fn relink_book(state: AppState, book_id: String, path: String) {
         crate::storage::persist_library(state.library);
         crate::storage::persist_covers(state.library);
         covers::backfill_missing(state);
+        import::finish_task(state, &task, 1, 0);
     });
 }
 
-/// The engine's own picker rather than a second dialog implementation here: it is the same question — "which document?" — with the same filter.
+/// The engine's own picker rather than a second dialog implementation here: it is the same question — "which document?" — with the same filter. Cancel is compared against the engine's own constant rather than a string matched in place: a wording change on either side must be a compile error, not a cancel that quietly turns into an error toast.
 pub fn relink_dialog(state: AppState, book_id: String) {
     spawn_local(async move {
         match pdf_engine::api::pick_document().await {
             Ok(path) => relink_book(state, book_id, path),
-            Err(message) if message == "Open cancelled" => {}
+            Err(message) if message == CANCELLED => {}
             Err(message) => toast(state, message),
         }
     });
@@ -119,26 +138,35 @@ pub fn relink_search_folder(state: AppState, book_id: String) {
             Ok(None) => return,
             Err(message) => return toast(state, message),
         };
-        let task = format!("relink-{book_id}");
+        // One card for the whole gesture: the scan's beats and the copy's beats land on it
+        // in sequence, which is what "looking for the book, then bringing it home" reads as.
+        let task = import::begin_task(state, name.clone());
         let opts = FolderOpts {
             formats: selectable_formats().into_iter().collect(),
             include_selected: true,
             min_size: 0,
             ..FolderOpts::default()
         };
-        let found = match wire::scan_folder(&task, &root, &opts).await {
+        let found = match ipc::scan_folder(&task, &root, &opts).await {
             Ok(found) => found,
-            Err(message) => return toast(state, message),
+            Err(message) => return import::fail_task(state, &task, message),
         };
         match found
             .iter()
             .find(|file| is_the_book(&file.path, &name, &old_path))
         {
-            Some(file) => relink_book(state, book_id, file.path.clone()),
-            None => toast(
-                state,
-                format!("Nothing called “{name}” inside that folder."),
-            ),
+            Some(file) => {
+                relink_book_on(state, book_id, file.path.clone(), Some(task));
+            }
+            None => {
+                toast(
+                    state,
+                    format!("Nothing called “{name}” inside that folder."),
+                );
+                // Nothing found is no run to report: the toast carries the news, and the
+                // card goes rather than finishing on a count it never counted.
+                import::dismiss_task(state, &task);
+            }
         }
     });
 }

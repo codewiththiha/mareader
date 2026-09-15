@@ -11,7 +11,7 @@ use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::form::text_input::TextInput;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
-use crate::services::library::rename_shelf;
+use crate::services::library::{rename_row, rename_shelf};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,10 +104,7 @@ fn commit(state: AppState, sheet: RenameSheet) {
     }
     sheet.open.set(false);
     match target {
-        RenameTarget::Row(row_id) => {
-            state.library.rename_row(&row_id, name);
-            crate::storage::persist_library(state.library);
-        }
+        RenameTarget::Row(row_id) => rename_row(state, &row_id, name),
         RenameTarget::Shelf(shelf_id) => rename_shelf(state, &shelf_id, name),
     }
 }

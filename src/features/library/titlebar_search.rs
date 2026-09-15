@@ -4,6 +4,8 @@
 //! it borrows the LOOK and nothing else: an always-present pill that narrows the grid on the
 //! spot.
 
+use std::time::Duration;
+
 use leptos::html;
 use leptos::prelude::*;
 
@@ -17,6 +19,11 @@ use crate::events::FOCUS_LIBRARY_SEARCH_EVENT;
 use crate::features::library::search_suggest::SearchSuggestions;
 use crate::services::library::reveal_book;
 use crate::state::AppState;
+
+/// The quiet gap between a keystroke and the suggestion scan over every row in the library:
+/// long enough to let a fast typist's letters land, short enough that the panel still feels
+/// like it answers the typing.
+const SUGGEST_DEBOUNCE_MS: u64 = 90;
 
 fn placeholder(state: AppState) -> Signal<String> {
     Signal::derive(move || {
@@ -68,6 +75,25 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
         open.set(!suggestions.with_untracked(|s| s.is_empty()));
     };
 
+    // The suggest pass is debounced, the query write is not: the shelf filters on every
+    // keystroke because that is what typing into it means, while the suggestion panel is a
+    // scan over every row in the library and a fast typist would run it once per letter.
+    // One pending timer, replaced by each keystroke, so only the last one lands.
+    let pending_show: RwSignal<Option<TimeoutHandle>> = RwSignal::new(None);
+    let queue_show = move || {
+        if let Some(handle) = pending_show.get_untracked() {
+            handle.clear();
+        }
+        let handle =
+            set_timeout_with_handle(show, Duration::from_millis(SUGGEST_DEBOUNCE_MS)).ok();
+        pending_show.set(handle);
+    };
+    on_cleanup(move || {
+        if let Some(handle) = pending_show.get_untracked() {
+            handle.clear();
+        }
+    });
+
     let pick = move |id: String| {
         reveal_book(state, &id);
         open.set(false);
@@ -115,7 +141,7 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
                     prop:value=move || state.library.query.get()
                     on:input=move |ev| {
                         state.library.query.set(event_target_value(&ev));
-                        show();
+                        queue_show();
                     }
                     on:focus=move |_| show()
                     on:blur=move |_| open.set(false)

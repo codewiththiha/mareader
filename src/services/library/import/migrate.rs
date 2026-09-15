@@ -11,9 +11,9 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{book_rows, book_rows_mut, Origin};
-use library_core::wire::RelocateRequest;
+use library_core::wire::{BookFileRequest, RelocateResult};
 
-use crate::services::library as wire;
+use crate::services::library as ipc;
 use crate::state::AppState;
 
 /// Fire and forget: a book whose copy could not be moved still opens at the address it has, which is not a reason to interrupt a launch.
@@ -39,14 +39,14 @@ pub fn migrate_store_layout(state: AppState) {
 /// shell's answer and only the pass that does the moving can hand it back, so the rows are
 /// filtered against the paths the shell actually answered for.
 async fn run(state: AppState, candidates: Vec<(String, String)>) {
-    let requests: Vec<RelocateRequest> = candidates
+    let requests: Vec<BookFileRequest> = candidates
         .iter()
-        .map(|(id, from)| RelocateRequest {
+        .map(|(id, from)| BookFileRequest {
             id: id.clone(),
             from: from.clone(),
         })
         .collect();
-    let answer = match wire::relocate_stored(&requests).await {
+    let answer: RelocateResult = match ipc::relocate_stored(&requests).await {
         Ok(answer) => answer,
         Err(message) => {
             web_sys::console::warn_1(&format!("[library] store migration failed: {message}").into());
@@ -58,13 +58,21 @@ async fn run(state: AppState, candidates: Vec<(String, String)>) {
     }
     // id -> where its copy lived and where it lives now, for the rows whose address actually
     // changed: the shell answers an already-migrated row with the address it wore, and rewriting
-    // that row would be a write, a persist and a cover re-key for nothing.
-    let results = answer.results.into_iter();
+    // that row would be a write, a persist and a cover re-key for nothing. Matched by ID rather
+    // than zipped by position — every result carries its own id, so the order the answers come
+    // back in stops being a load-bearing contract across a process boundary.
+    let by_id: HashMap<String, &library_core::wire::StoreResult> = answer
+        .results
+        .iter()
+        .map(|result| (result.id.clone(), result))
+        .collect();
     let moved: HashMap<String, (String, String)> = candidates
         .into_iter()
-        .zip(results)
-        .filter(|((_, from), result)| result.is_ok() && &result.store != from)
-        .map(|((id, from), result)| (id, (from, result.store)))
+        .filter_map(|(id, from)| {
+            let result = by_id.get(&id)?;
+            (result.is_ok() && result.store != from)
+                .then(|| (id, (from, result.store.clone())))
+        })
         .collect();
     if moved.is_empty() {
         return;

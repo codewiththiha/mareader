@@ -1,6 +1,8 @@
 //! The level's own name question, and the answers it has: an import's three (go to
 //! the row that is here, add as new, make a link) and a move's four.
 
+use std::collections::HashSet;
+
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -14,7 +16,7 @@ use crate::services::library::arrange::{
     purge_books, unlist_row, write_moved_stones, Departed,
 };
 use crate::services::library::covers;
-use crate::services::library::toast;
+use crate::services::library::import;
 use crate::state::AppState;
 
 /// The one answer function the name sheet calls, whichever shape the question is: an
@@ -66,11 +68,11 @@ pub(super) fn link_to_row(state: AppState, ask: &PlacementAsk, row_id: &str) {
     crate::storage::persist_library(state.library);
 }
 
-pub(super) fn merge_into_row(state: AppState, ask: &PlacementAsk, _row_id: &str) {
+pub(super) fn merge_into_row(state: AppState, ask: &PlacementAsk) {
     merge(state, &ask_of(ask));
 }
 
-pub(super) fn replace_row(state: AppState, ask: &PlacementAsk, _row_id: &str) {
+pub(super) fn replace_row(state: AppState, ask: &PlacementAsk) {
     replace(state, &ask_of(ask));
 }
 
@@ -126,7 +128,7 @@ fn merge(state: AppState, ask: &ConflictAsk) {
     {
         write_moved_stones(state, gone, Some(&survivor));
     }
-    let inherited: Vec<String> = memberships(state, &gone_id)
+    let inherited: HashSet<String> = memberships(state, &gone_id)
         .into_iter()
         .map(|(id, _)| id)
         // The level the move left is the one shelf the survivor does NOT take over: the departure
@@ -166,11 +168,18 @@ fn replace(state: AppState, ask: &ConflictAsk) {
     let index = seat.or(ask.arrival.index);
     // A read-at-place arrival becomes the library's own copy before it is seated, and the seating waits for the copy.
     if tauri_bridge::has_tauri() && converts_on_move_to(state, &moved_id, &shelf_id) {
+        let name = state.library.row_name(&moved_id);
         spawn_local(async move {
-            let departed = match convert_to_stored(state, &moved_id).await {
-                Ok(()) => Departed::ThisGesture,
+            // A card of its own: the replace's copy is one file through the store, and its
+            // beats deserve a ring exactly as an import's do.
+            let task = import::begin_task(state, name);
+            let departed = match convert_to_stored(state, &moved_id, &task).await {
+                Ok(()) => {
+                    import::finish_task(state, &task, 1, 0);
+                    Departed::ThisGesture
+                }
                 Err(message) => {
-                    toast(state, message);
+                    import::fail_task(state, &task, message);
                     Departed::No
                 }
             };
@@ -212,9 +221,7 @@ fn add_link_at_target(state: AppState, ask: &ConflictAsk, target: &str) {
     } else {
         name
     };
-    state
-        .library
-        .add_link(&name, target, &ask.arrival.shelf_id);
+    crate::services::library::arrange::add_link(state, &name, target, &ask.arrival.shelf_id);
 }
 
 /// A moved row is renamed and then moved: the rename is what frees the collision, and a
@@ -223,7 +230,7 @@ fn as_new(state: AppState, ask: &ConflictAsk) {
     let name = minted_name(state, ask);
     match &ask.arrival.moving {
         Some(row_id) => {
-            state.library.rename_row(row_id, &name);
+            crate::services::library::arrange::rename_row(state, row_id, &name);
             move_row(
                 state,
                 row_id,

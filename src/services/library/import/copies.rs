@@ -14,19 +14,17 @@ use library_core::folder::{key_chain, FolderOpts};
 use library_core::id;
 use library_core::ledger;
 use library_core::scan::FoundFile;
-use library_core::shelf::{Shelf, ShelfKind};
+use library_core::shelf::Shelf;
 
-use super::claim::{already_importing, claim_root, when_root_is_free};
-use super::copy::{copy_batch, measure_stores};
-use super::files::{adopt_copy_measurement, mint_stored_row};
+use super::claim::{claim_root, start_guarded};
+use super::copy::copy_batch;
+use super::files::{land_stored_batch, PendingCopy};
 use super::folder::heal_by_address;
-use super::tasks::{fail, finish_task, push_task, task_id, update_task, FailMode};
-use super::{shelf_name, Asked};
+use super::tasks::{fail, finish_task, run_total, update_task, FailMode};
+use super::{rung_label, Asked};
 use crate::services::library::covers;
 use crate::services::library::reveal;
-use crate::services::library::folder_label;
-use crate::services::library as wire;
-use crate::state::library::ImportTask;
+use crate::services::library as ipc;
 use crate::state::AppState;
 use crate::time::now_ms;
 
@@ -58,16 +56,9 @@ pub(crate) fn copies_beside_tree(
     opts: FolderOpts,
     dest: CopiesDest,
 ) {
-    let task = task_id();
-    let card = task.clone();
-    let walking = root.clone();
-    if !when_root_is_free(&root, move || {
-        start_copies_run(state, walking, opts, dest, card)
-    }) {
-        already_importing(state, &root);
-        return;
-    }
-    push_task(state, ImportTask::new(task, folder_label(&root)));
+    start_guarded(state, &root, move |state, task, root| {
+        start_copies_run(state, root, opts, dest, task)
+    });
 }
 
 fn start_copies_run(
@@ -94,7 +85,7 @@ async fn run_copies(
     opts: FolderOpts,
     dest: CopiesDest,
 ) {
-    let found = match wire::scan_folder(&task, &root, &opts).await {
+    let found = match ipc::scan_folder(&task, &root, &opts).await {
         Ok(found) => found,
         Err(message) => return fail(state, &task, message, FailMode::Toast),
     };
@@ -118,36 +109,50 @@ async fn run_copies(
         .iter()
         .map(|file| (id::next_id(now), file))
         .collect();
-    let expected = (pending.len() + healed.len()) as u32;
+    let expected = run_total(pending.len() as u32, healed.len(), 0);
     update_task(state, &task, move |t| t.total = expected);
     let copies = match copy_batch(state, &task, &pending).await {
         Ok(copies) => copies,
         Err(message) => return fail(state, &task, message, FailMode::Toast),
     };
-    let stores: Vec<String> = pending
-        .iter()
-        .filter_map(|(book_id, _)| copies.get(book_id).cloned())
-        .collect();
-    let measured = measure_stores(stores).await;
 
+    // The batch the landing takes: one entry per copy that came home, with the measurement
+    // the shell sent beside it.
+    let batch: Vec<PendingCopy> = pending
+        .iter()
+        .filter_map(|(book_id, file)| {
+            let (store, measured) = copies.get(book_id)?.clone();
+            Some(PendingCopy {
+                book_id: book_id.clone(),
+                file: (*file).clone(),
+                title: None,
+                index: None,
+                store,
+                measured,
+            })
+        })
+        .collect();
+
+    // The seat each copy lands on, resolved in the batch's own order BEFORE the landing
+    // writes: the root shelf is minted once, and a grouped run cuts each file's rung under
+    // it — rungs the placement then files onto.
     let mut root_shelf: Option<String> = None;
     let mut rungs: BTreeMap<String, String> = BTreeMap::new();
-    let mut landed = 0u32;
-    for (book_id, file) in pending {
-        let Some(store) = copies.get(&book_id) else {
-            continue;
-        };
-        let on_shelf = root_shelf.get_or_insert_with(|| dest_shelf(state, &dest, now));
-        let shelf_id = if opts.groups {
-            rung_shelf(state, &root, on_shelf, &mut rungs, file.subfolder(), now)
-        } else {
-            on_shelf.clone()
-        };
-        // The shelf shows the source's stem, which is the name the reader knows the file by.
-        mint_stored_row(state, book_id.clone(), file, store.clone(), None, &shelf_id, None);
-        adopt_copy_measurement(state, &book_id, measured.get(store).copied());
-        landed += 1;
-    }
+    let seats: Vec<String> = batch
+        .iter()
+        .map(|each| {
+            let on_shelf = root_shelf
+                .get_or_insert_with(|| dest_shelf(state, &dest, now))
+                .clone();
+            if opts.groups {
+                rung_shelf(state, &root, &on_shelf, &mut rungs, each.file.subfolder(), now)
+            } else {
+                on_shelf
+            }
+        })
+        .collect();
+    let landed = land_stored_batch(state, batch, |at| seats[at].clone());
+
     crate::storage::persist_library(state.library);
     if landed > 0 {
         covers::backfill_missing(state);
@@ -157,7 +162,7 @@ async fn run_copies(
         (_, Some(minted)) => reveal::reveal_shelf(state, minted),
         _ => {}
     }
-    finish_task(state, &task, landed + healed.len() as u32, 0);
+    finish_task(state, &task, run_total(landed, healed.len(), 0), 0);
 }
 
 /// The *replace*'s standing target, or the counter-named shelf of the reader's own the *as new* promised.
@@ -174,17 +179,7 @@ fn dest_shelf(state: AppState, dest: &CopiesDest, now: u64) -> String {
                     .as_deref()
                     .and_then(|after| shelves.iter().position(|s| s.id == after))
                     .map_or(shelves.len(), |at| at + 1);
-                shelves.insert(
-                    at,
-                    Shelf {
-                        id: made,
-                        name,
-                        kind: ShelfKind::Virtual,
-                        books: Vec::new(),
-                        parent: None,
-                        manual_parent: false,
-                    },
-                );
+                shelves.insert(at, Shelf::virtual_shelf(made, name, None));
             });
             id
         }
@@ -211,17 +206,10 @@ fn rung_shelf(
         }
         let id = id::next_shelf_id(now);
         let made = id.clone();
-        let name = shelf_name(rung, root);
+        let name = rung_label(rung, root);
         let hung = parent.clone();
         state.library.shelves.update(|shelves| {
-            shelves.push(Shelf {
-                id: made,
-                name,
-                kind: ShelfKind::Virtual,
-                books: Vec::new(),
-                parent: Some(hung),
-                manual_parent: false,
-            })
+            shelves.push(Shelf::virtual_shelf(made, name, Some(hung)))
         });
         rungs.insert(rung.to_string(), id.clone());
         parent = id;

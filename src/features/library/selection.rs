@@ -136,16 +136,16 @@ pub(crate) fn payload_for(
 
 /// The set has no order, but a drop does: three books put down before a card land in whatever order the payload names them, and an order a hash iteration chose is one the reader cannot predict.
 fn in_page_order(state: AppState, ids: Vec<String>) -> Vec<String> {
+    // Two set lookups rather than two list scans: the page's order is asked per gesture,
+    // over a selection that can be every card on the level.
+    let wanted: HashSet<String> = ids.iter().cloned().collect();
     let mut ordered: Vec<String> = level_rows(state)
         .into_iter()
         .map(|row| row.id().to_string())
-        .filter(|id| ids.contains(id))
+        .filter(|id| wanted.contains(id))
         .collect();
-    let rest: Vec<String> = ids
-        .into_iter()
-        .filter(|id| !ordered.contains(id))
-        .collect();
-    ordered.extend(rest);
+    let placed: HashSet<&str> = ordered.iter().map(String::as_str).collect();
+    ordered.extend(ids.into_iter().filter(|id| !placed.contains(id.as_str())));
     ordered
 }
 

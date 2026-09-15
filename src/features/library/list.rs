@@ -214,7 +214,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                     </span>
                 </Show>
                 <button
-                    class="lib-row-action"
+                    class="icon-ghost lib-row-action"
                     type="button"
                     title="Open shelf"
                     aria-label=move || format!("Open the {} shelf", name.get())
@@ -253,8 +253,10 @@ fn row_view(
             <ListRow state=state book=book crop=crop depth=depth parent=parent />
         }
             .into_any(),
-        Row::Link { id, name, target, .. } => {
+        Row::Link { id, target, .. } => {
             let to_shelf = library_core::id::is_shelf(&target);
+            // Read back by id for the same reason the grid's card does.
+            let name = state.library.row_name_signal(&id);
             view! { <LinkRow state=state id=id name=name to_shelf=to_shelf depth=depth parent=parent /> }
                 .into_any()
         }
@@ -394,7 +396,7 @@ fn ListRow(
                     let at = remove_id.clone();
                     view! {
                         <button
-                            class="lib-row-action"
+                            class="icon-ghost lib-row-action"
                             type="button"
                             title="Remove from library"
                             aria-label="Remove from library"

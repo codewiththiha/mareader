@@ -82,3 +82,35 @@ where
         Some(Asked::Explicitly) => false,
     }
 }
+
+/// One spelling for the guarded start the run doors share — a folder import, a copies run:
+/// the claim, the card and the double-import sentence in one place, so the ordering (the
+/// run starts inside the claim's ask, and the card goes up only when there is a run) stops
+/// being copy-paste folklore at each door.
+///
+/// `launch` receives the task id its progress beats will echo and the root it walks; a root
+/// held by a rescan queues the launch for the walk's own release, which is `when_root_is_free`'s
+/// rule rather than this one's.
+pub(super) fn start_guarded(
+    state: AppState,
+    root: &str,
+    launch: impl FnOnce(AppState, String, String) + 'static,
+) {
+    let task = super::tasks::task_id();
+    let card = task.clone();
+    let walking = root.to_string();
+    if !when_root_is_free(root, move || launch(state, task, walking)) {
+        already_importing(state, root);
+        return;
+    }
+    super::tasks::push_task(state, crate::state::library::ImportTask::new(card, folder_label(root)));
+}
+
+/// The claim gate without a card of its own, for the doors whose run and card come from
+/// somewhere deeper in (a replace that hands its root to `proceed_folder`): the same
+/// refusal sentence, no second card for one run.
+pub(super) fn gate_root(state: AppState, root: &str, launch: impl FnOnce() + 'static) {
+    if !when_root_is_free(root, launch) {
+        already_importing(state, root);
+    }
+}

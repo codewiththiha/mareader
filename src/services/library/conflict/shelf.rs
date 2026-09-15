@@ -109,9 +109,12 @@ pub(super) fn as_new_shelf(state: AppState, _ask: &PlacementAsk) {
 }
 
 pub(super) fn link_to_shelf(state: AppState, ask: &PlacementAsk, shelf_id: &str) {
-    state
-        .library
-        .add_link(&ask.existing_name, shelf_id, shelf::ALL_SHELF);
+    crate::services::library::arrange::add_link(
+        state,
+        &ask.existing_name,
+        shelf_id,
+        shelf::ALL_SHELF,
+    );
     toast(state, format!("Linked to {}.", ask.existing_name));
 }
 

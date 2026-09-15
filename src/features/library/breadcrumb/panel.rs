@@ -116,13 +116,7 @@ pub(super) fn EllipsisCrumb(
         if budget <= 0.0 {
             return;
         }
-        let kids = ruler.children();
-        let mut widths: Vec<f64> = Vec::with_capacity(kids.length() as usize);
-        for index in 0..kids.length() {
-            if let Some(crumb) = kids.item(index) {
-                widths.push(crumb.get_bounding_client_rect().width());
-            }
-        }
+        let widths = super::measure_children_widths(&ruler);
         if widths.is_empty() {
             return;
         }

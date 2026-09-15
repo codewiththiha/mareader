@@ -23,8 +23,8 @@ pub use asking::{CopyAnswer, CopyAsk, answer_copy, cancel_copy, remove_entries};
 pub use shelf_apart::ask_shelf_apart;
 pub use shelf_departure::SeamSide;
 pub use shelves::{
-    create_shelf_and_enter, create_shelf_here, memberships, nest_many, nest_shelf, rename_shelf,
-    reorder_shelves_to_anchor,
+    add_link, create_shelf_and_enter, create_shelf_here, memberships, nest_many, nest_shelf,
+    rename_row, rename_shelf, reorder_shelves_to_anchor,
 };
 
 pub(crate) use departure::{convert_to_stored, converts_on_move_to, write_moved_stones};

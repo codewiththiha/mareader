@@ -50,23 +50,20 @@ impl PathCheck {
     }
 }
 
+/// One file the library is about to act on, from the webview's side of the wire: the
+/// book's id (which becomes part of the stored name so two books with the same title
+/// cannot collide) and the address the bytes come from. One shape for both commands that
+/// take it — a copy's source and a relocation's current address are the same question,
+/// "where do the bytes stand now" — so the two sides' fail constructors are one too.
+///
+/// For a relocation, `from` is the copy's current address in the old flat store
+/// (`<root>/<format>/<stem>_<id>.<ext>`) that [`crate::store`]'s item layout
+/// (`<root>/items/<id>/source.<ext>`) replaces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StoreRequest {
-    pub path: String,
-    /// The book's id, which becomes part of the stored name so two books with the same title cannot collide.
+pub struct BookFileRequest {
     pub id: String,
-}
-
-/// One stored copy to move into its own item folder, for `relocate_stored`. The
-/// old flat store named a copy after the file it came from
-/// (`<root>/<format>/<stem>_<id>.<ext>`); [`crate::store`] names it after the
-/// book (`<root>/items/<id>/source.<ext>`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RelocateRequest {
     pub from: String,
-    pub id: String,
 }
 
 /// What a relocation pass produced: one row per request, plus the store root the
@@ -89,6 +86,13 @@ pub struct StoreResult {
     pub src: String,
     pub store: String,
     pub error: Option<String>,
+    /// The copy's own measurement, taken by the same pass that stamped it: the backend
+    /// reads the head to stamp a copy anyway, so answering with the fingerprint costs no
+    /// second trip and the row never wears the source file's identity (which stays free
+    /// for the folder that reads it). `None` for a failed copy, and for a relocation —
+    /// the bytes did not change, so the identity the row already carries is the truth.
+    #[serde(default)]
+    pub measured: Option<crate::book::Fingerprint>,
 }
 
 impl StoreResult {
@@ -155,7 +159,7 @@ mod tests {
 
     #[test]
     fn a_relocation_crosses_the_wire_in_camel_case_and_comes_back_in_order() {
-        let requests = [RelocateRequest {
+        let requests = [BookFileRequest {
             from: "/app/Library/pdf/dune_ab12.pdf".into(),
             id: "ab12".into(),
         }];
@@ -167,12 +171,14 @@ mod tests {
         assert!(!json.contains("\"from_\""), "no snake_case keys: {json}");
         assert!(!json.contains("\"_id\""), "no snake_case keys: {json}");
         assert!(json.starts_with("[{\"from\""), "{json}");
-        let back: Vec<RelocateRequest> = serde_json::from_str(&json).unwrap();
+        let back: Vec<BookFileRequest> = serde_json::from_str(&json).unwrap();
         assert_eq!(back, requests);
 
         // The answer carries the root beside the rows, because the frontend
         // cannot compute `<app_data_dir>` itself and needs it to recognise a copy
-        // that has not moved yet.
+        // that has not moved yet. `measured` is absent from a relocation's rows:
+        // the bytes did not change, so the identity the row already carries is
+        // the truth, and `#[serde(default)]` reads the gap as `None`.
         let answer: RelocateResult = serde_json::from_str(
             r#"{"root":"/app/Library","results":[
                 {"id":"ab12","src":"/app/Library/pdf/dune_ab12.pdf",
@@ -182,6 +188,7 @@ mod tests {
         assert_eq!(answer.root, "/app/Library");
         assert_eq!(answer.results.len(), 1);
         assert!(answer.results[0].is_ok());
+        assert_eq!(answer.results[0].measured, None);
         let none: RelocateResult =
             serde_json::from_str(r#"{"root":"","results":[]}"#).unwrap();
         assert!(none.root.is_empty() && none.results.is_empty());
@@ -194,6 +201,7 @@ mod tests {
             src: "/downloads/a.pdf".into(),
             store: "/app/Library/pdf/a_b1.pdf".into(),
             error: None,
+            measured: None,
         };
         assert!(ok.is_ok());
         let failed = StoreResult {
@@ -207,7 +215,38 @@ mod tests {
             src: "/downloads/a.pdf".into(),
             store: String::new(),
             error: None,
+            measured: None,
         };
         assert!(!empty.is_ok());
+    }
+
+    #[test]
+    fn a_copys_own_measurement_crosses_with_it() {
+        // The shell stamps a copy and reads its head in one pass; the row lands with
+        // the copy's identity rather than the source file's, and no second verify trip
+        // follows the batch home.
+        let landed: StoreResult = serde_json::from_str(
+            r#"{"id":"b1","src":"/downloads/a.pdf",
+                "store":"/app/Library/items/b1/source.pdf","error":null,
+                "measured":{"size":10,"mtimeMs":20,"headHash":30}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            landed.measured,
+            Some(crate::book::Fingerprint {
+                size: 10,
+                mtime_ms: 20,
+                head_hash: 30
+            })
+        );
+        // A row written before the field existed answers `None`, not an error: the
+        // pending flag the startup sweep finishes is exactly what a missing
+        // measurement means.
+        let legacy: StoreResult = serde_json::from_str(
+            r#"{"id":"b1","src":"/downloads/a.pdf",
+                "store":"/app/Library/items/b1/source.pdf","error":null}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy.measured, None);
     }
 }

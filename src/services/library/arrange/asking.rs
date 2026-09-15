@@ -86,16 +86,6 @@ pub struct CopyAsk {
 
 const UNTOUCHED: &str = "The folder on disk is untouched.";
 
-/// The action's own wording: the count belongs to the subject, and "1 Take shelf apart" is not a
-/// sentence.
-fn doing(count: usize, one: &str, many: &str) -> String {
-    if count == 1 {
-        one.to_string()
-    } else {
-        many.to_string()
-    }
-}
-
 impl CopyAsk {
     /// A book move: the rows the gate screened read in place, and the ground they are leaving.
     pub(super) fn of_rows(state: AppState, ids: &[String], hand: RowMove) -> Option<Self> {
@@ -218,7 +208,7 @@ impl CopyAsk {
             });
         }
         Some(Self {
-            action: doing(names.len(), "Move shelf", "Move shelves"),
+            action: plural(names.len(), "Move shelf", "Move shelves"),
             subject,
             lines,
             options,
@@ -318,7 +308,7 @@ impl CopyAsk {
         };
         let lines = vec![kept, again];
         Some(Self {
-            action: doing(names.len(), "Remove shelf", "Remove shelves"),
+            action: plural(names.len(), "Remove shelf", "Remove shelves"),
             subject: plural(names.len(), "shelf", "shelves"),
             lines,
             options: vec![

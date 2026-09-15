@@ -10,7 +10,7 @@ use library_core::folder::FolderOpts;
 use library_core::ledger;
 use library_core::shelf::{self as shelves_ops};
 
-use super::claim::{already_importing, when_root_is_free};
+use super::claim::gate_root;
 use super::gate::{proceed_folder, RootPlan};
 use crate::services::library::arrange::{self, ReadingData};
 use crate::state::AppState;
@@ -24,12 +24,9 @@ pub(crate) fn replace_shelf_with_folder(
     opts: FolderOpts,
     existing_id: String,
 ) {
-    let walking = root.clone();
-    if !when_root_is_free(&root, move || {
-        sweep_and_walk_into(state, walking, opts, existing_id)
-    }) {
-        already_importing(state, &root);
-    }
+    gate_root(state, &root, move || {
+        sweep_and_walk_into(state, root, opts, existing_id)
+    });
 }
 
 fn sweep_and_walk_into(
@@ -105,10 +102,8 @@ pub(crate) fn purge_folder_linked_books(state: AppState, root: &str) {
 /// double-import sentence.
 pub(crate) fn replace_folder_with_copies(state: AppState, root: String, opts: FolderOpts) {
     let walking = root.clone();
-    if !when_root_is_free(&root, move || {
+    gate_root(state, &root, move || {
         purge_folder_linked_books(state, &walking);
         proceed_folder(state, walking, opts, RootPlan::default());
-    }) {
-        already_importing(state, &root);
-    }
+    });
 }

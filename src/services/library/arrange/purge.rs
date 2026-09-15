@@ -14,7 +14,7 @@ use library_core::ledger::tombstone;
 use library_core::shelf;
 
 use crate::services::library::covers::prune_now;
-use crate::services::library as wire;
+use crate::services::library as ipc;
 use crate::state::AppState;
 use crate::time::now_ms;
 
@@ -131,7 +131,7 @@ fn sweep_book(state: AppState, book: &Book) {
         covers.remove(path);
     });
     if book.origin.is_stored() {
-        wire::delete_stored(path);
+        ipc::delete_stored(path);
     }
 }
 

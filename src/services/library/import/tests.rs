@@ -10,11 +10,11 @@ use super::folder::{
 };
 use super::gate::{
     covered_shelf, displaced_member, ground_tracking, reclaim_rung, run_fold, seed_member_rungs,
-    write_rung_tracking, GroundWatch, RootPlan,
+    write_rung_tracking, Continuation, Fold, GroundWatch, RootPlan,
 };
 use super::replace::{purge_folder_linked_books, replace_rows_of_tree};
 use super::restore::{covered_fate, restore_covered_file, CoveredFate};
-use super::{rel_of, shelf_name, Asked};
+use super::{rel_of, rung_label, Asked};
 use crate::state::AppState;
 use leptos::prelude::*;
 use library_core::book::{Book, Fingerprint, Origin, Row};
@@ -253,7 +253,7 @@ fn a_continuation_run_keeps_the_tree_s_own_root_decision() {
         "/books",
         FolderOpts::default(),
         &RootPlan {
-            continuation: Some(("s1".into(), "Books".into())),
+            continuation: Some(Continuation { shelf_id: "s1".into(), name: "Books".into() })),
             ..RootPlan::default()
         },
     );
@@ -273,7 +273,7 @@ fn a_continuation_run_keeps_the_tree_s_own_root_decision() {
             ..FolderOpts::default()
         },
         &RootPlan {
-            continuation: Some(("s2".into(), "Music".into())),
+            continuation: Some(Continuation { shelf_id: "s2".into(), name: "Music".into() })),
             ..RootPlan::default()
         },
     );
@@ -458,9 +458,9 @@ fn the_watch_on_ground_nothing_watches_is_the_sheets_to_set() {
 
 #[test]
 fn a_shelf_is_called_by_its_subfolder_and_the_root_by_its_folder() {
-    assert_eq!(shelf_name("scifi", "/Users/me/Books"), "scifi");
-    assert_eq!(shelf_name("scifi/deep", "/Users/me/Books"), "deep");
-    assert_eq!(shelf_name("", "/Users/me/Books"), "Books");
+    assert_eq!(rung_label("scifi", "/Users/me/Books"), "scifi");
+    assert_eq!(rung_label("scifi/deep", "/Users/me/Books"), "deep");
+    assert_eq!(rung_label("", "/Users/me/Books"), "Books");
 }
 
 #[test]
@@ -745,14 +745,12 @@ fn a_walk_mints_the_link_beside_the_copy_that_holds_its_fingerprint() {
 
     let mut books = state.library.books.get_untracked();
     let mut folder = state.library.folders.get_untracked().remove(0);
-    let empty_copies: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    let empty_measured: std::collections::HashMap<String, Fingerprint> = std::collections::HashMap::new();
-    let empty_copy_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let empty_copies: std::collections::HashMap<String, (String, Option<Fingerprint>)> =
+        std::collections::HashMap::new();
     let planned_name: Option<String> = None;
     let landing = Landing {
         copies: &empty_copies,
-        copy_measured: &empty_measured,
-        copy_paths: &empty_copy_paths,
+        copy_paths: std::collections::HashSet::new(),
         planned_name: &planned_name,
         root: "/books",
         mode: folder.mode(),
@@ -800,15 +798,16 @@ fn a_copying_folder_never_mints_a_second_copy_of_its_own_file() {
 
     let mut books = state.library.books.get_untracked();
     let mut folder = state.library.folders.get_untracked().remove(0);
-    let mut copies: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    copies.insert("b2".to_string(), "/store/b2.md".to_string());
-    let empty_measured: std::collections::HashMap<String, Fingerprint> = std::collections::HashMap::new();
-    let empty_copies: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut copies: std::collections::HashMap<String, (String, Option<Fingerprint>)> =
+        std::collections::HashMap::new();
+    copies.insert(
+        "b2".to_string(),
+        ("/store/b2.md".to_string(), None),
+    );
     let planned_name: Option<String> = None;
     let landing = Landing {
         copies: &copies,
-        copy_measured: &empty_measured,
-        copy_paths: &empty_copies,
+        copy_paths: std::collections::HashSet::new(),
         planned_name: &planned_name,
         root: "/books",
         mode: folder.mode(),
@@ -1136,7 +1135,7 @@ fn a_tree_another_run_is_walking_is_not_folded_into() {
     let (state, _owner) = displaced_state();
     let inner = state.library.folder("f2").expect("the picked folder");
     let plan = RootPlan {
-        fold: Some(("f1".to_string(), "mid/deep".to_string())),
+        fold: Some(Fold { tree_id: "f1".to_string(), rel: "mid/deep".to_string() })),
         ..Default::default()
     };
     let _theirs = claim_root("/root", Asked::OnFocus).expect("the tree's own run");
@@ -1186,13 +1185,13 @@ fn the_sheet_opens_on_the_answers_the_folder_already_has() {
 #[test]
 fn the_shape_answer_stands_for_the_rung_the_pick_named() {
     let folded = RootPlan {
-        fold: Some(("f1".to_string(), "Fiction".to_string())),
+        fold: Some(Fold { tree_id: "f1".to_string(), rel: "Fiction".to_string() })),
         rung: String::new(),
         ..Default::default()
     };
     assert_eq!(folded.answered_rung(), "Fiction", "a fold gives the answer its rung");
     let covered = RootPlan {
-        continuation: Some(("s1".to_string(), "Books".to_string())),
+        continuation: Some(Continuation { shelf_id: "s1".to_string(), name: "Books".to_string() })),
         rung: "Fiction".to_string(),
         ..Default::default()
     };
@@ -1489,7 +1488,7 @@ fn the_books_a_fold_into_a_nested_ground_come_home_to_its_rungs() {
     ]);
     let walk = vec![found_under("/root", "/root/main/dune.md", 7)];
     let plan = RootPlan {
-        fold: Some(("f1".to_string(), "main".to_string())),
+        fold: Some(Fold { tree_id: "f1".to_string(), rel: "main".to_string() })),
         ..Default::default()
     };
     let pick = state.library.folder("f2").expect("the picked folder");
@@ -1618,7 +1617,7 @@ fn the_planned_fold_seats_the_run_s_own_shelf() {
     let (state, _owner) = displaced_state();
     let inner = state.library.folder("f2").expect("the picked folder");
     let plan = RootPlan {
-        fold: Some(("f1".to_string(), "mid/deep".to_string())),
+        fold: Some(Fold { tree_id: "f1".to_string(), rel: "mid/deep".to_string() })),
         ..Default::default()
     };
     let folded = run_fold(state, &plan, &inner, Some("s3"), &[])

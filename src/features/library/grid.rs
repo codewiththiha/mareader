@@ -76,8 +76,11 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
                     Row::Book(book) => {
                         view! { <BookCard state=state book=book crop=crop /> }.into_any()
                     }
-                    Row::Link { id, name, target, .. } => {
+                    Row::Link { id, target, .. } => {
                         let to_shelf = library_core::id::is_shelf(&target);
+                        // Read back by id: a keyed card is not re-created when the row's
+                        // name changes, so the captured one would go stale.
+                        let name = state.library.row_name_signal(&id);
                         view! { <LinkCard state=state id=id name=name to_shelf=to_shelf /> }.into_any()
                     }
                 }}

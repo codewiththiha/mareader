@@ -11,13 +11,12 @@ use library_core::id;
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 
-use super::claim::{already_importing, claim_root, root_is_claimed, when_root_is_free};
+use super::claim::{claim_root, root_is_claimed, start_guarded};
 use super::folder::{flatten_rungs, page_shelves, run_folder};
-use super::tasks::{finish_task, push_task, task_id};
-use super::{rel_of, root_shelf_of, shelf_name, Asked};
+use super::tasks::finish_task;
+use super::{rel_of, root_shelf_of, rung_label, Asked};
 use crate::services::library::conflict;
 use crate::services::library::folder_label;
-use crate::state::library::ImportTask;
 use crate::state::AppState;
 use crate::time::now_ms;
 
@@ -25,12 +24,29 @@ use crate::time::now_ms;
 /// is the run nobody asked about: mint the folder's root shelf under the folder's own name.
 /// A collision at the level changes that, and the change is a value rather than a branch at
 /// six call sites.
+/// A re-pick of ground a tree already covers: the shelf the pick lit, by the name the note
+/// will show it under. A value rather than the `(String, String)` it was, because a
+/// positional pair's meaning only lived at the call sites.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Continuation {
+    pub shelf_id: String,
+    pub name: String,
+}
+
+/// A pick folded into the tree that contains it: the tree's ledger row, and the rung the
+/// pick's directory names inside it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Fold {
+    pub tree_id: String,
+    pub rel: String,
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct RootPlan {
     pub rename: Option<String>,
     pub into: Option<String>,
-    pub continuation: Option<(String, String)>,
-    pub fold: Option<(String, String)>,
+    pub continuation: Option<Continuation>,
+    pub fold: Option<Fold>,
     /// The rung of the tree this run walks that the reader's pick answered for — the ground the
     /// sheet's answers stand for. `""` when the pick IS that tree's own ground, and when a fold
     /// gives the answers a rung to live on: the run reads the fold's rung then.
@@ -42,7 +58,7 @@ impl RootPlan {
     /// takes the pick in on, else the ground the gate read off the pick itself.
     pub(super) fn answered_rung(&self) -> String {
         match &self.fold {
-            Some((_, rel)) => rel.clone(),
+            Some(Fold { rel, .. }) => rel.clone(),
             None => self.rung.clone(),
         }
     }
@@ -72,13 +88,17 @@ pub fn import_folder(
                 .and_then(|f| {
                     let shelves = state.library.shelves.get_untracked();
                     shelves_ops::family_for(&folders, &shelves, &f.root)
-                });
+                })
+                .map(|(tree_id, rel)| Fold { tree_id, rel });
             proceed_folder(
                 state,
                 covered.tree_root,
                 opts,
                 RootPlan {
-                    continuation: Some((covered.shelf_id, covered.shelf_name)),
+                    continuation: Some(Continuation {
+                        shelf_id: covered.shelf_id,
+                        name: covered.shelf_name,
+                    }),
                     rung: covered.rel,
                     fold,
                     ..Default::default()
@@ -95,6 +115,7 @@ pub fn import_folder(
             let shelves = state.library.shelves.get_untracked();
             shelves_ops::family_for(&folders, &shelves, &root)
         };
+        let fold = fold.map(|(tree_id, rel)| Fold { tree_id, rel });
         if let Some(fold) = fold {
             proceed_folder(
                 state,
@@ -308,22 +329,11 @@ pub(super) struct DisplacedMember {
     pub(super) shelf_id: String,
 }
 
-/// Bounded by the list rather than by the walk finding its own tail, so a blob that already carries a cycle answers "no" rather than spinning.
+/// Bounded by the list rather than by the walk finding its own tail, so a blob that already carries a cycle answers "no" rather than spinning. The chain is `ancestors`' walk (`library_core::shelf::tree`), not a hand-rolled one: one loop that the breadcrumb already owns.
 fn hangs_inside(shelves: &[Shelf], shelf_id: &str, folder_id: &str) -> bool {
-    let mut current = shelves_ops::find(shelves, shelf_id).and_then(|s| s.parent.clone());
-    for _ in 0..=shelves.len() {
-        let Some(id) = current else {
-            return false;
-        };
-        let Some(parent) = shelves_ops::find(shelves, &id) else {
-            return false;
-        };
-        if parent.kind.folder_id() == Some(folder_id) {
-            return true;
-        }
-        current = parent.parent.clone();
-    }
-    false
+    shelves_ops::ancestors(shelves, shelf_id)
+        .iter()
+        .any(|parent| parent.kind.folder_id() == Some(folder_id))
 }
 
 /// The rungs a folded member brings: every shelf the folded folder owns, keyed the way the tree
@@ -418,19 +428,15 @@ pub(crate) fn reclaim_rung(
         let parent = tree.shelf_chain_for(
             library_core::folder::parent_key(rel).unwrap_or(""),
             |_| id::next_shelf_id(now),
-            |rung| shelf_name(rung, &root),
+            |rung| rung_label(rung, &root),
             |rung, id, name, parent| {
-                minted.push(Shelf {
-                    id: id.to_string(),
+                minted.push(Shelf::folder_shelf(
+                    id,
                     name,
-                    kind: ShelfKind::Folder {
-                        folder_id: tree_id.to_string(),
-                        rel: rel_of(rung),
-                    },
-                    books: Vec::new(),
+                    tree_id,
+                    rel_of(rung),
                     parent,
-                    manual_parent: false,
-                });
+                ));
             },
         );
         for (key, id) in &rungs {
@@ -479,19 +485,15 @@ pub(crate) fn reclaim_rung(
                 tree.shelf_chain_for(
                     "",
                     |_| id::next_shelf_id(now),
-                    |rung| shelf_name(rung, &root),
+                    |rung| rung_label(rung, &root),
                     |rung, id, name, parent| {
-                        minted.push(Shelf {
-                            id: id.to_string(),
+                        minted.push(Shelf::folder_shelf(
+                            id,
                             name,
-                            kind: ShelfKind::Folder {
-                                folder_id: tree_id.to_string(),
-                                rel: rel_of(rung),
-                            },
-                            books: Vec::new(),
+                            tree_id,
+                            rel_of(rung),
                             parent,
-                            manual_parent: false,
-                        });
+                        ));
                     },
                 )
             }
@@ -535,16 +537,9 @@ pub(crate) fn proceed_folder(
 ) {
     // A folder already being imported is an import already answering this ask: racing it would
     // clobber its ledger write. A RESCAN of the same tree is not refused — an ask outranks it.
-    let task = task_id();
-    let card = task.clone();
-    let walking = root.clone();
-    if !when_root_is_free(&root, move || {
-        start_folder_run(state, walking, opts, plan, card)
-    }) {
-        already_importing(state, &root);
-        return;
-    }
-    push_task(state, ImportTask::new(task, folder_label(&root)));
+    start_guarded(state, &root, move |state, task, root| {
+        start_folder_run(state, root, opts, plan, task)
+    });
 }
 
 /// One shape for the two starts an import has, because the two owe the same run and the same card.
@@ -577,7 +572,7 @@ pub(super) fn run_fold(
     root_rung: Option<&str>,
     found: &[FoundFile],
 ) -> Option<(String, String)> {
-    let seated = if let Some((tree, rel)) = &plan.fold {
+    let seated = if let Some(Fold { tree_id: tree, rel }) = &plan.fold {
         let rung = root_rung?;
         reclaim_rung(state, tree, &folder.id, rel, rung, Some(&folder.root))?
     } else {

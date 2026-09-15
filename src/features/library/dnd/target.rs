@@ -66,17 +66,25 @@ impl DropTargetRegistry {
         on_cleanup(move || entries.update(|list| list.retain(|each| each.token != token)));
     }
 
-    /// Walked in reverse, so the targets that registered last are asked first: a level's empty space registers when the page mounts and the cards on it register after, so a card is found before the space it sits in.
+    /// One `elementFromPoint` and a walk up from what it found, rather than a rect read for
+    /// every registered target on every pointermove: a two-hundred-card grid was two hundred
+    /// forced layout reads per mouse event, each one a chance to invalidate the layout the
+    /// next one read. The walk up finds the nearest registered ancestor, which is the same
+    /// "card before the level it sits in" the reverse-registration order used to give — the
+    /// card is a DOM descendant of the level, so the pointer's deepest element reaches it
+    /// first — and among targets sharing one node the reverse order still decides.
     pub fn hit_test(&self, x: f64, y: f64) -> Option<DropTargetId> {
+        let hit = web_sys::window()?.document()?.element_from_point(x, y)?;
         self.entries.with_untracked(|list| {
-            list.iter().rev().find_map(|each| {
-                let rect = by_id(&each.entry.dom_id)?.get_bounding_client_rect();
-                let inside = x >= rect.left()
-                    && x <= rect.right()
-                    && y >= rect.top()
-                    && y <= rect.bottom();
-                inside.then(|| each.entry.id.clone())
-            })
+            let mut node: Option<web_sys::Element> = Some(hit);
+            while let Some(el) = node {
+                let dom_id = el.id();
+                if let Some(each) = list.iter().rev().find(|each| each.entry.dom_id == dom_id) {
+                    return Some(each.entry.id.clone());
+                }
+                node = el.parent_element();
+            }
+            None
         })
     }
 

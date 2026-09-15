@@ -94,6 +94,47 @@ impl Shelf {
     pub fn is_folder(&self) -> bool {
         self.kind.folder_id().is_some()
     }
+
+    /// A shelf the reader made (or a copy's landing level): no folder answers for it. The
+    /// one constructor for the six-field literal, so "which fields exist on a shelf" is
+    /// answered here rather than spelled out at every mint.
+    pub fn virtual_shelf(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        parent: Option<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            kind: ShelfKind::Virtual,
+            books: Vec::new(),
+            parent,
+            manual_parent: false,
+        }
+    }
+
+    /// A rung a folder's tree cut: `rel` is the subfolder it stands for, `None` for the
+    /// root itself. `manual_parent` is the scan's to set when a hand moves the rung off the
+    /// seat the tree names for it — a minted rung starts on the tree's own ground.
+    pub fn folder_shelf(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        folder_id: impl Into<String>,
+        rel: Option<String>,
+        parent: Option<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            kind: ShelfKind::Folder {
+                folder_id: folder_id.into(),
+                rel,
+            },
+            books: Vec::new(),
+            parent,
+            manual_parent: false,
+        }
+    }
 }
 
 /// `None` for [`ALL_SHELF`]: the caller falls back to the whole book list.

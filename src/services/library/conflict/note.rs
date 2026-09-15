@@ -18,6 +18,9 @@ pub fn raise_note(state: AppState, shelf_id: String, name: String, kind: NoteKin
 }
 
 /// The highlight is the modal's own close effect's job, so every way out ends on the shelf being lit.
+/// [`Sheet::lower`] rather than a bare `open.set(false)`: the ask STAYS for the effect that
+/// consumes it and reveals — the type says "closed, question still held", which is the whole
+/// difference between this sheet and a dismissed one.
 pub fn close_already_imported(state: AppState) {
-    state.library.already_imported.open.set(false);
+    state.library.already_imported.lower();
 }

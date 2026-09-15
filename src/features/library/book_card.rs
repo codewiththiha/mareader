@@ -17,7 +17,7 @@ use crate::features::library::facts::book_facts;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::SeamVocab;
-use crate::services::library::relink_dialog;
+use crate::services::library::ask_relink;
 use crate::state::AppState;
 use crate::state::reader::DEFAULT_PAGE_ASPECT;
 
@@ -179,13 +179,16 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                         let at = relink_id.clone();
                         view! {
                             <button
-                                class="book-relink"
+                                class="icon-ghost book-relink"
                                 type="button"
                                 title="Find this book again"
                                 aria-label="Find this book again"
                                 on:click=move |ev: leptos::ev::MouseEvent| {
                                     ev.stop_propagation();
-                                    relink_dialog(state, at.clone());
+                                    // The guarded door: a reader-page open jumps straight to
+                                    // the picker, the library raises the sheet — one function
+                                    // owns which, so the card and the menu cannot differ.
+                                    ask_relink(state, at.clone());
                                 }
                             >
                                 <Icon name=IconName::Open size=11 />
@@ -194,7 +197,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                     })
             }}
             <button
-                class="book-remove"
+                class="icon-ghost book-remove"
                 type="button"
                 title="Remove from library"
                 aria-label="Remove from library"

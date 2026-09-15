@@ -5,7 +5,9 @@
 
 use leptos::prelude::*;
 
+use library_core::book::Row;
 use library_core::folder as folder_ops;
+use library_core::id;
 use library_core::shelf::{self as shelf, Shelf, ALL_SHELF};
 
 use crate::state::AppState;
@@ -39,17 +41,12 @@ fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
     let id = library_core::id::next_shelf_id(now_ms());
     let made = id.clone();
     state.library.shelves.update(|shelves| {
-        shelves.push(Shelf {
-            id: made,
-            name: "New shelf".to_string(),
-            kind: library_core::shelf::ShelfKind::Virtual,
-            books: Vec::new(),
-            parent,
-            manual_parent: false,
-        });
+        shelves.push(Shelf::virtual_shelf(made, "New shelf", parent));
     });
-    // A belt-and-braces tick for an open search: re-setting the query guarantees the folder filter and the shelves-inside derive are seen together on the frame the shelf lands.
-    state.library.query.set(state.library.query.get_untracked());
+    // The folder list derives off `shelves` and the search filter off `query`, and both are
+    // read tracked inside the page's own derives — a new shelf re-runs them on its own; the
+    // old self-set of the query (a notification forced through a write of the same value)
+    // was belt-and-braces the derives did not need.
     id
 }
 
@@ -165,6 +162,47 @@ pub fn rename_shelf(state: AppState, shelf_id: &str, name: &str) {
         }
     });
     crate::storage::persist_library(state.library);
+}
+
+/// A book's new title is LOCKED, and the lock is the difference between a name the reader
+/// chose and a name a document supplied. A service rather than a method on the state: the
+/// write is one half of the rename and the persist is the other, and a modal that touched
+/// storage directly was a second caller of the pair that could drift from the first.
+pub fn rename_row(state: AppState, row_id: &str, name: &str) {
+    state.library.books.update(|rows| {
+        let Some(row) = library_core::book::find_row_mut(rows, row_id) else {
+            return;
+        };
+        match row {
+            Row::Book(b) => {
+                b.title = Some(name.to_string());
+                b.title_locked = true;
+            }
+            Row::Link { name: own, .. } => *own = name.to_string(),
+        }
+    });
+    crate::storage::persist_library(state.library);
+}
+
+/// The name is the target's own at this moment, which is what makes the row recognisable on
+/// the shelf beside the book it points at. A service for the same reason [`rename_row`] is:
+/// state holds signals, the rules (id, order, seat, persist) are a transaction.
+pub fn add_link(state: AppState, name: &str, target: &str, shelf_id: &str) -> String {
+    let now = now_ms();
+    let link_id = id::next_id(now);
+    let made = link_id.clone();
+    state.library.books.update(|rows| {
+        rows.push(Row::link(link_id, name.to_string(), target.to_string(), now));
+    });
+    if shelf_id != ALL_SHELF {
+        state.library.shelves.update(|shelves| {
+            if let Some(shelf) = shelf::find_mut(shelves, shelf_id) {
+                shelf::shelf_add(shelf, &made);
+            }
+        });
+    }
+    crate::storage::persist_library(state.library);
+    made
 }
 
 /// The books stay in the library — a shelf is a list of ids and never held a byte — and the page

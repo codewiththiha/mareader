@@ -18,7 +18,7 @@ use super::gate::RootPlan;
 use super::tasks::task_id;
 use super::Asked;
 use crate::services::library::{folder_label, picker_focus, toast};
-use crate::services::library as wire;
+use crate::services::library as ipc;
 use crate::state::AppState;
 
 /// Called on startup and whenever the window regains focus; both moments owe both passes, measure first.
@@ -32,7 +32,7 @@ pub fn rescan_watched(state: AppState) {
         .with_untracked(|rows| book_rows(rows).map(|b| b.path().to_string()).collect());
     spawn_local(async move {
         if !paths.is_empty() {
-            match wire::verify_paths(paths).await {
+            match ipc::verify_paths(paths).await {
                 Ok(checks) => apply_checks(state, &checks),
                 Err(message) => {
                     web_sys::console::warn_1(&format!("[library] verify failed: {message}").into());
@@ -89,11 +89,6 @@ pub(super) fn walk_one(state: AppState, root: String, opts: FolderOpts) {
     });
 }
 
-/// One function under two names because the two moments read differently — a launch owes the reader a library that knows what it holds, a focus owes a shelf that noticed the folder — and the work is one.
-pub fn verify_library(state: AppState) {
-    rescan_watched(state);
-}
-
 /// Called when a book joins the library through the reader rather than through an import: an
 /// open proves the file is there and measures nothing, so the row it leaves behind carries a
 /// placeholder — and a placeholder is exactly what [`rescan_watched`] refuses to diff
@@ -103,7 +98,7 @@ pub fn verify_one(state: AppState, path: String) {
         return;
     }
     spawn_local(async move {
-        match wire::verify_paths(vec![path]).await {
+        match ipc::verify_paths(vec![path]).await {
             Ok(checks) => apply_checks(state, &checks),
             Err(message) => {
                 web_sys::console::warn_1(&format!("[library] verify failed: {message}").into());
@@ -112,7 +107,7 @@ pub fn verify_one(state: AppState, path: String) {
     });
 }
 
-/// Split out of [`verify_library`] because a relink asks for exactly the same thing about one address.
+/// Split out of [`rescan_watched`] because a relink asks for exactly the same thing about one address.
 pub(super) fn apply_checks(state: AppState, checks: &[PathCheck]) {
     let mut changed = false;
     state.library.books.update(|rows| {
