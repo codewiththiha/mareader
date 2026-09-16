@@ -21,8 +21,10 @@
 //! # Modules
 //!
 //!   * [`pdf`] / [`reflow`] — the two bridges, and the projection each one needs.
-//!   * [`refresh`] — the fingerprints a stroke layer re-derives on.
 //!   * [`watch`] — the glued-to-the-page watcher and its exit bands.
+//!   * the invalidation fingerprints a stroke layer re-derives on, which are a
+//!     viewer concern and re-exported from
+//!     [`crate::components::viewer::refresh`] below.
 //!
 //! What stays here is the shared half: the resolver type and the trait both
 //! bridges implement, the format dispatch ([`anchor_screen_box`],
