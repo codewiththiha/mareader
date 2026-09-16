@@ -147,21 +147,51 @@ impl ViewerSignals {
         self.anchor_generation.get_untracked() == generation
     }
 
-    /// Reset the reading position (page + scroll) on document close. Kept
-    /// separate from a full reset: fit/zoom state is the reader's, not the
-    /// document's.
+    /// Reset the reading position on document close. Kept separate from a full
+    /// reset: fit/zoom state is the reader's, not the document's.
+    ///
+    /// Every field is named, so a field added to the struct has to be assigned
+    /// to one of the two groups here rather than falling through unreset. The
+    /// handles are `Copy`, so this binds the signals the struct already holds;
+    /// `Self::default()` would allocate a fresh arena node per field on every
+    /// close and leak them.
     pub fn reset_position(&self) {
-        self.page.set(1);
-        self.scroll_top.set(0.0);
+        let Self {
+            // Document-scoped: belongs to the page range just closed.
+            page,
+            scroll_top,
+            selected_pages,
+            auto_scroll,
+            page_gap,
+            page_margin,
+            awaiting_anchor,
+            anchor_generation,
+            first_paint,
+            // Reader-scoped: the next document inherits the reader's own
+            // layout, fit and prefs, so these deliberately survive.
+            mode: _,
+            fit: _,
+            zoom: _,
+            container_size: _,
+            column_width_pct: _,
+            motion: _,
+        } = *self;
+        page.set(1);
+        scroll_top.set(0.0);
+        // The selection belonged to the pages just unmounted. The engine
+        // clears it too, when teardown collapses the DOM selection, but that
+        // is a side effect of the view going away rather than anything this
+        // close asked for — and a range left behind would pin pages of the
+        // next document at indices it does not have.
+        selected_pages.set(None);
+        auto_scroll.set(false);
+        page_gap.set(PAGE_GAP);
+        page_margin.set(0.0);
         // Invalidate any frame queued by a strip that is being torn down.
-        self.anchor_generation
-            .update(|generation| *generation = generation.wrapping_add(1));
-        self.awaiting_anchor.set(false);
-        self.auto_scroll.set(false);
-        self.page_gap.set(PAGE_GAP);
-        self.page_margin.set(0.0);
+        anchor_generation.update(|generation| *generation = generation.wrapping_add(1));
+        awaiting_anchor.set(false);
         // Re-arm the first-paint cover: the next open gets its own gate.
-        self.first_paint.set(false);
+        first_paint.set(false);
     }
 
     /// True while a zoom transaction is in flight: renders are suspended,
