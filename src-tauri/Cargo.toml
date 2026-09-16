@@ -29,6 +29,10 @@ serde_json = "1"
 # does the deciding, but the MEASUREMENTS have to be one definition or a book
 # imported on Monday is a different book to the rescan on Tuesday.
 library-core = { path = "../crates/library-core" }
+# The same reasoning for the AI half: which selections count as a word is one
+# rule, and the invoke boundary gate is a second chance for it to disagree
+# with the pill the reader actually sees.
+ai-core = { path = "../crates/ai-core" }
 dotenvy = "0.15"      # Loads the .env file (FM_BRIDGE_BIN) before Tauri boots
 futures = "0.3"       # Handles fm-bridge's async streams
 async-stream = "0.3"  # Wraps the AI output chunks into a stream

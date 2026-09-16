@@ -2530,6 +2530,7 @@ dependencies = [
 name = "mareader-shell"
 version = "0.1.1"
 dependencies = [
+ "ai-core",
  "async-stream",
  "dotenvy",
  "fm-bridge",

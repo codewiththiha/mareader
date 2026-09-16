@@ -1,9 +1,9 @@
 //! The format-agnostic core of the AI reading features: the wire types of the
 //! word-explanation backend ([`types`]), the gloss card's geometry and spring
-//! ([`gloss`], stepping `ui_geom::spring`), and the Tauri `explain_word`
-//! kickoff ([`bridge`]).
+//! ([`gloss`], stepping `ui_geom::spring`), and the `explain_word` kickoff
+//! ([`bridge`], whose `has_tauri` probe is what makes it inert off-wasm).
 //!
-//! Its one dependency is `reader-core`, and only for what the reader owns:
+//! It depends on `reader-core` for what the reader owns:
 //! the word card's *settings* are flat `gloss_*` fields of the persisted
 //! `Settings` blob, so `GlossColor` and `GlossDensity` live there. The card's
 //! spring comes from `ui-geom` — the same leaf the floating panels step,
