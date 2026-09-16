@@ -18,8 +18,8 @@ use super::geometry::GlossBox;
 /// the page mounts. That is what makes the highlight survive scroll, zoom,
 /// remounts and sessions.
 ///
-/// The field names are the serde schema persisted to localStorage
-/// (`pdfreader.gloss.v1`) — do not rename.
+/// The field names are the serde schema persisted under
+/// `mareader.gloss.v2` — do not rename.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlossMark<A = PageAnchor> {
     pub id: String,
@@ -52,7 +52,7 @@ impl<A> std::ops::Deref for GlossMark<A> {
 ///
 /// The scheme lives here rather than at the capture sites because an id is
 /// load-bearing twice over: the key a mark is persisted under
-/// (`pdfreader.gloss.v1`) and the key a re-click on its stroke toggles by.
+/// (`mareader.gloss.v2`) and the key a re-click on its stroke toggles by.
 /// Three call sites used to format it identically — three chances for one to
 /// drift and a mark to become unreachable by the code that saved it.
 ///
