@@ -56,7 +56,6 @@ impl Lanes {
     const fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
-
 }
 
 /// What one overlay participates in: the lane it holds while open, and the
