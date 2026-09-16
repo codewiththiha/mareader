@@ -274,16 +274,27 @@ mod tests {
     }
 
     #[test]
-    fn a_detail_switch_moves_exactly_one_motion() {
-        // The tab offers one switch per motion, so each has to own precisely
-        // the one it names — and the master has to stay out of their way.
-        let p = AnimationSettings {
-            zoom: false,
-            ..AnimationSettings::default()
-        };
-        let m = Motion::from_prefs(&p);
-        assert!(!m.zoom);
-        assert!(m.sidebar_slide && m.canvas_resize);
-        assert!(m.scroll_glide);
+    fn each_detail_owns_exactly_the_motion_it_names() {
+        // `scroll_glide` is spelled `scroll_jumps` in the settings, so this
+        // projection is the only place the two vocabularies meet — a crossed
+        // wire there moves the wrong motion, which is why every line is
+        // exercised rather than the one that happens to share a name.
+        macro_rules! drops_exactly {
+            ($pref:ident -> $motion:ident) => {{
+                let mut prefs = AnimationSettings::default();
+                prefs.$pref = false;
+                let m = Motion::from_prefs(&prefs);
+                assert!(!m.$motion, "{} must drop its own motion", stringify!($pref));
+                let dropped = [m.sidebar_slide, m.canvas_resize, m.zoom, m.scroll_glide]
+                    .iter()
+                    .filter(|on| !**on)
+                    .count();
+                assert_eq!(dropped, 1, "{} must drop nothing else", stringify!($pref));
+            }};
+        }
+        drops_exactly!(sidebar_slide -> sidebar_slide);
+        drops_exactly!(canvas_resize -> canvas_resize);
+        drops_exactly!(zoom -> zoom);
+        drops_exactly!(scroll_jumps -> scroll_glide);
     }
 }
