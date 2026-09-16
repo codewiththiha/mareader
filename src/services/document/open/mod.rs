@@ -79,16 +79,8 @@ pub fn open_dialog(state: AppState) {
     spawn_local(async move {
         match engine::pick_document().await {
             Ok(path) => open_path(state, path),
-            Err(msg) => {
-                if msg != pdf_engine::api::dialog::CANCELLED {
-                    state.reader.document.error.set(Some(msg.clone()));
-                    state.reader.document.status.set(DocStatus::Error);
-                    state.ui.toast.set(Some(Toast::new(format!(
-                        "Could not open document: {}",
-                        msg
-                    ))));
-                }
-            }
+            Err(msg) if msg != pdf_engine::api::dialog::CANCELLED => fail(state, msg),
+            Err(_) => {}
         }
     });
 }
