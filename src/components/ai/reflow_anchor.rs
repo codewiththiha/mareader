@@ -46,6 +46,7 @@ use app_chrome::hooks::dom::range_rects;
 use crate::components::formats::reflow::spot::{clamp_span, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
 use crate::dom_contract::BLOCK_INDEX_ATTR;
+use crate::effects::app::theme::document_element;
 use crate::state::reader::ReflowContent;
 use crate::state::ReaderState;
 
@@ -288,12 +289,8 @@ pub fn spot_screen_box_in(
     // page host, a row's own box does not bound its text, and only a handful
     // of hosts are mounted at a time — nothing to win and a wrong `None` to
     // lose.
-    if mode == ViewMode::ScrollVertical
-        && let Some(document) = web_sys::window().and_then(|w| w.document())
-    {
-        let viewport = document
-            .document_element()
-            .map_or(0.0, |root| root.client_height() as f64);
+    if mode == ViewMode::ScrollVertical {
+        let viewport = document_element().map_or(0.0, |root| root.client_height() as f64);
         if viewport > 0.0 {
             let slack = viewport * OFFSCREEN_SLACK;
             let rect = el.get_bounding_client_rect();
