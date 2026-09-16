@@ -20,8 +20,8 @@
 //! whenever the typography moves, so its spot is a block index and a
 //! character range travelling in `GlossMark::context` as a tagged envelope
 //! the app owns (`components::ai::reflow_anchor`) — pixels re-derived at
-//! watch time, never stored. Implementing [`gloss::mark::MarkAnchor`] is only
-//! the right move when the identity is as durable as a rect.
+//! watch time, never stored. Both still carry a [`gloss::mark::PageAnchor`],
+//! so the persisted schema has exactly one shape.
 //!
 //! Pure modules; `cargo test -p ai-core` on the host.
 

@@ -1,6 +1,6 @@
-//! The gloss domain: the word card's geometry and spring, the persisted
-//! gloss mark, and the [`mark::MarkAnchor`] trait that lets a document format
-//! say where a mark sits without the AI feature knowing the format.
+//! The gloss domain: the word card's geometry and spring, and the persisted
+//! gloss mark whose [`mark::PageAnchor`] says where a mark sits in the
+//! document without the AI feature knowing anything about the page.
 //!
 //! Pure — no wasm, no DOM, no leptos — unit-testable on the host via
 //! `cargo test -p ai-core gloss`.
@@ -12,4 +12,4 @@ pub use geometry::{
     boxes_close, is_glossable, is_hintable, place_card, step_spring, GlossBox, MAX_CARD_H_FRAC,
     MIN_CARD_H, MIN_CARD_W,
 };
-pub use mark::{mark_id, GlossMark, MarkAnchor, PageAnchor, ReflowSpot};
+pub use mark::{mark_id, GlossMark, PageAnchor, ReflowSpot};
