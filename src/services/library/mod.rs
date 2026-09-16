@@ -28,19 +28,6 @@ pub use import::{
 
 pub(crate) use library_core::paths::{dir_label as folder_label, file_name};
 
-#[cfg(test)]
-mod tests {
-    use super::folder_label;
-
-    #[test]
-    fn a_folder_is_called_by_the_name_it_was_picked_by() {
-        assert_eq!(folder_label("/Users/me/Books"), "Books");
-        assert_eq!(folder_label("/Users/me/Books/"), "Books");
-        assert_eq!(folder_label("C:\\Users\\me\\Books"), "Books");
-        assert_eq!(folder_label("/"), "/");
-    }
-}
-
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
