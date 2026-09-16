@@ -27,7 +27,7 @@ pub(crate) fn EntryShell(
     #[prop(optional)]
     extra_classes: Vec<(String, Signal<bool>)>,
     #[prop(optional)]
-    style: Option<String>,
+    style: String,
     #[prop(optional)]
     aria_expanded: Option<Signal<bool>>,
     #[prop(optional)]
@@ -45,7 +45,6 @@ pub(crate) fn EntryShell(
     // list surfaces layer their own facts on top (a dead address is grey).
     let mut classes = vec![(vocab.reveal().to_string(), state.library.is_revealed(&id))];
     classes.extend(extra_classes);
-    let style = style.unwrap_or_default();
 
     view! {
         <ShelfItemShell
