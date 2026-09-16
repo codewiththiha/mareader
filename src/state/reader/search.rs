@@ -23,14 +23,21 @@ pub struct SearchState {
 impl SearchState {
     /// Back to the no-search state (fresh document or close). The floating
     /// overlay must not linger after opening/closing a document.
+    ///
+    /// Every field is bound with no `..` rest, so a field added to the struct is
+    /// a compile error here rather than a value carried over from the document
+    /// just closed. The handles are `Copy`, so this binds the signals the
+    /// struct already holds; `Self::default()` would allocate a fresh arena node
+    /// per field on every close and leak them.
     pub fn reset(&self) {
-        self.query.set(String::new());
-        self.total.set(0);
-        self.matches.set(Vec::new());
-        self.active.set(None);
-        self.index_built.set(false);
-        self.visible.set(false);
-        self.dismissed.set(false);
+        let Self { query, total, matches, active, index_built, visible, dismissed } = *self;
+        query.set(String::new());
+        total.set(0);
+        matches.set(Vec::new());
+        active.set(None);
+        index_built.set(false);
+        visible.set(false);
+        dismissed.set(false);
     }
 }
 
