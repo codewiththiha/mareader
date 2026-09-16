@@ -26,7 +26,7 @@ use crate::state::AppState;
 /// The Explain click does **not** flip `popover_open` and hope `detail` survives:
 /// it builds a self-contained [`GlossMark`] at click time and dispatches the
 /// same `mareader:gloss-open` event the persisted stroke uses. The popover's
-/// listener bumps `open_req` and sets `pending_mark`, so the open effect is
+/// listener bumps `open.request` and sets `open.pending`, so the open effect is
 /// guaranteed to run with a mark in hand — no race against the exit-watch
 /// clearing `detail`, and no stale-`true` suppression across documents.
 ///
@@ -198,8 +198,8 @@ pub fn SelectionPill(state: AppState) -> impl IntoView {
                                 }
                             });
                         if let Some(m) = mark {
-                            // Self-contained open: bumps open_req with the
-                            // mark in hand. Never races detail being cleared.
+                            // Self-contained open: bumps the open request with
+                            // the mark in hand. Never races detail being cleared.
                             request_gloss_open(&m);
                         } else {
                             // Don't leave a stale open flag if capture failed.
