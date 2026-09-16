@@ -125,10 +125,10 @@ impl Tween {
                     // container stops moving. Going idle here instead of
                     // re-arming lets the next frame own the next rAF: `arm`
                     // adopts whatever transition is on the signal.
-                                        return false;
+                    return false;
                 }
                 finish_transition(&state, &t);
-                                return false;
+                return false;
             }
             let progress = ((js_sys::Date::now() - t.start_ms) / duration).clamp(0.0, 1.0);
             let visual = t.from + (t.to - t.from) * ease_out_cubic(progress);
