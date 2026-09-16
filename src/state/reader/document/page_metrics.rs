@@ -22,6 +22,11 @@ use leptos::prelude::*;
 
 use pdf_engine::types::PageSize;
 
+/// How close two laid-out heights must be to count as the same one: half a
+/// CSS pixel. These are heights at a fractional scale, so re-measuring the
+/// same cut must not read as a change because the scale rounded differently.
+const HEIGHT_EPSILON: f64 = 0.5;
+
 /// The open document's page sizes, at scale 1 and as laid out.
 #[derive(Clone, Copy, Default)]
 pub struct PageMetrics {
@@ -51,6 +56,17 @@ impl PageMetrics {
         css_heights.set(Vec::new());
     }
 
+    /// Whether the laid-out heights already are `sizes`, within
+    /// [`HEIGHT_EPSILON`]. The write guard every writer of `css_heights` owes
+    /// the virtualizers' geometry epoch: a write that changes nothing still
+    /// bumps the epoch, and the epoch rebuilds both page layouts.
+    pub fn heights_agree(&self, sizes: &[f64]) -> bool {
+        self.css_heights.with_untracked(|store| {
+            store.len() == sizes.len()
+                && store.iter().zip(sizes).all(|(a, b)| (a - b).abs() < HEIGHT_EPSILON)
+        })
+    }
+
     /// Publish a page count whose pages are all one size — a reflowable cut,
     /// where A4 is the one fixed point.
     ///
@@ -62,10 +78,6 @@ impl PageMetrics {
     /// has nothing to tell them, and a zoom never reaches this at all (the
     /// stream rescales itself; the paged modes go through
     /// `crate::effects::reader::reflow_layout`).
-    ///
-    /// The height tolerance is half a CSS pixel: these are laid-out heights at
-    /// a fractional scale, and re-measuring the same cut must not read as a
-    /// change because the scale rounded differently.
     pub fn publish_uniform(&self, count: u32, size: &PageSize, css_height: f64) {
         let pages = count as usize;
         let sizes_current = self
@@ -74,11 +86,9 @@ impl PageMetrics {
         if !sizes_current {
             self.intrinsic.set(vec![size.clone(); pages]);
         }
-        let heights_current = self.css_heights.with_untracked(|store| {
-            store.len() == pages && store.iter().all(|h| (h - css_height).abs() < 0.5)
-        });
-        if !heights_current {
-            self.css_heights.set(vec![css_height; pages]);
+        let heights = vec![css_height; pages];
+        if !self.heights_agree(&heights) {
+            self.css_heights.set(heights);
         }
     }
 
