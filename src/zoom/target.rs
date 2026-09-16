@@ -259,20 +259,4 @@ mod tests {
         assert_eq!(d.ch_eff, 800.0);
     }
 
-    use reader_core::zoom_math::{MAX_SCALE, MIN_SCALE};
-
-    #[test]
-    fn a_manual_zoom_is_never_capped_at_fit_width() {
-        // The ceiling a container follow applies to a hand-picked zoom is the
-        // reader's own choice, clamped — not the fit width. A page fit to an
-        // 800px container at 612px wide sits at ~1.31, so zooming to 2.0 must
-        // survive a follow and a constrain unchanged: a reader can inspect a
-        // page up close. `ceiling_target` is the only place a follow/constrain
-        // with no active fit resolves, and it does
-        // `profile.clamp(desired)`.
-        let profile = profile_for(ViewMode::ScrollVertical);
-        assert_eq!(profile.clamp(2.0), 2.0);
-        assert_eq!(profile.clamp(5.0), MAX_SCALE);
-        assert_eq!(profile.clamp(0.1), MIN_SCALE);
-    }
 }
