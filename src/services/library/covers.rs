@@ -114,6 +114,11 @@ pub fn file_cover(state: AppState, path: String, data_url: String, width: f64, h
     DIRTY.with(|dirty| *dirty.borrow_mut() = true);
 }
 
+/// Whether a cover was filed since the last save, clearing the flag.
+fn take_dirty() -> bool {
+    DIRTY.with(|dirty| std::mem::take(&mut *dirty.borrow_mut()))
+}
+
 fn drain(state: AppState) {
     let next = QUEUE.with(|queue| queue.borrow_mut().pop());
     let Some(path) = next else {
@@ -122,16 +127,8 @@ fn drain(state: AppState) {
         // recency sorts, and the queue running dry is exactly the moment the cap is worth
         // enforcing — the covers that will compete for it have all landed.
         prune_now(state);
-        if DIRTY.with(|dirty| {
-            let was = *dirty.borrow();
-            *dirty.borrow_mut() = false;
-            was
-        }) && let Err(e) = state
-            .library
-            .covers
-            .with_untracked(crate::storage::save_covers)
-        {
-            e.report();
+        if take_dirty() {
+            crate::storage::persist_covers(state.library);
         }
         return;
     };
