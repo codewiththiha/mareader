@@ -51,6 +51,9 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     let missing_class = Signal::derive(move || {
         facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
     });
+    let book_title = Signal::derive(move || {
+        facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+    });
     let check_id = id.clone();
 
     // Opening names the row, not its address: the library can hold two rows
@@ -93,9 +96,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                         path=Signal::derive(move || {
                             facts.with(|f| f.as_ref().map(|x| x.path.clone()).unwrap_or_default())
                         })
-                        alt=Signal::derive(move || {
-                            facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
-                        })
+                        alt=book_title
                         img_class="book-cover-img"
                         fallback=Callback::new(move |_| {
                             let Some(f) = facts.get() else {
@@ -111,7 +112,8 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                         })
                     />
                     {move || {
-                        facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
+                        missing_class
+                            .get()
                             .then(|| {
                                 view! {
                                     <span class="book-missing-badge" title="This file is not where the library left it">
@@ -143,13 +145,9 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             <div class="book-info">
                 <span
                     class="book-title"
-                    title=move || {
-                        facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
-                    }
+                    title=move || book_title.get()
                 >
-                    {move || {
-                        facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
-                    }}
+                    {move || book_title.get()}
                 </span>
                 {move || {
                     let Some(f) = facts.get() else {
@@ -173,28 +171,27 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             </div>
 
             {move || {
-                facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
-                    .then(|| {
-                        let at = relink_id.clone();
-                        view! {
-                            <button
-                                class="icon-ghost book-relink"
-                                type="button"
-                                title="Find this book again"
-                                aria-label="Find this book again"
-                                on:click=move |ev: leptos::ev::MouseEvent| {
-                                    ev.stop_propagation();
-                                    // One function owns which door an open
-                                    // takes (picker from the reader, sheet
-                                    // from the library), so the card and the
-                                    // menu cannot differ.
-                                    ask_relink(state, at.clone());
-                                }
-                            >
-                                <Icon name=IconName::Open size=11 />
-                            </button>
-                        }
-                    })
+                missing_class.get().then(|| {
+                    let at = relink_id.clone();
+                    view! {
+                        <button
+                            class="icon-ghost book-relink"
+                            type="button"
+                            title="Find this book again"
+                            aria-label="Find this book again"
+                            on:click=move |ev: leptos::ev::MouseEvent| {
+                                ev.stop_propagation();
+                                // One function owns which door an open
+                                // takes (picker from the reader, sheet
+                                // from the library), so the card and the
+                                // menu cannot differ.
+                                ask_relink(state, at.clone());
+                            }
+                        >
+                            <Icon name=IconName::Open size=11 />
+                        </button>
+                    }
+                })
             }}
             <button
                 class="icon-ghost book-remove"
