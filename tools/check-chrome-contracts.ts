@@ -7,6 +7,8 @@
 //   2. the title-bar height (wasm constant ↔ native fallback) and the
 //      traffic-light inset (native constant ↔ tauri.conf.json)
 //   3. the z-index scale (app_chrome::layers ↔ styles/tokens.css)
+//   4. the sidebar's motion durations and its traffic-light gutter
+//      (shell controller constants ↔ the rail's Tailwind classes)
 //
 // None of these can fail a build when it drifts. A renamed channel means the
 // progress ring never moves; a title-bar height that disagrees means the
@@ -178,6 +180,85 @@ if (rustTokens.length > 0 && cssTokens.length > 0 && !sameOrder) {
 
 if (rustTokens.length > 0 && cssTokens.length > 0 && sameOrder) {
   console.log(`z-index scale agrees on ${cssTokens.length} layers, in stacking order`);
+}
+
+// ── 4. The sidebar's motion and gutter ─────────────────────────────────────
+// Both are a Rust number and a Tailwind class that cannot see each other, and
+// both were guarded by a comment on the class asking the next reader to keep
+// it in step.
+//
+//   motion — the close machine holds the panel and its live canvases for
+//            exactly as long as the rail takes to get out of the way, so the
+//            hold and the transition have to land on the same frame. A hold
+//            that outlasts the slide releases the bar's inset a timer late;
+//            one that ends early drops the canvases mid-slide.
+//   gutter — the traffic-light corner is reserved twice: by the bar's row
+//            padding, and by the rail header's own while the rail owns that
+//            corner. Different widths put the lights off-centre in one of
+//            them, which is the title-bar-height failure one section up.
+const SHELL_CONTROLLER = "src/components/shell/controller/mod.rs";
+const SIDEBAR_ASIDE = "src/components/shell/sidebar/container.rs";
+const SIDEBAR_OVERLAY = "src/components/shell/sidebar/overlay.rs";
+const SIDEBAR_HEADER = "src/components/shell/sidebar/header.rs";
+
+/** The one `duration-N` a quoted class list carries. Unquoted mentions in
+ * doc comments are prose and must not be counted as the declaration. */
+function tailwindDuration(file: string, label: string): string {
+  return sole(/"[^"\n]*\bduration-(\d+)\b[^"\n]*"/g, read(file), `${file} (${label})`);
+}
+
+/** The one `pl-[Npx]` a quoted class list carries. */
+function tailwindPaddingPx(file: string, label: string): string {
+  return sole(/"[^"\n]*\bpl-\[(\d+)px\][^"\n]*"/g, read(file), `${file} (${label})`);
+}
+
+function agreeNumber(label: string, unit: string, values: [file: string, value: string][]): void {
+  const nums = values.map(([, v]) => Number(v));
+  if (nums.every((n) => n === nums[0])) {
+    console.log(`${label}: ${nums[0]}${unit}`);
+    return;
+  }
+  fail(`${label} disagrees across its declarations:`);
+  for (const [file, value] of values) fail(`    ${file}: ${value}`);
+}
+
+const slideMs = sole(
+  /^pub\(crate\) const SIDEBAR_SLIDE_MS: u64 = (\d+);/gm,
+  read(SHELL_CONTROLLER),
+  `${SHELL_CONTROLLER} (SIDEBAR_SLIDE_MS)`,
+);
+const fadeMs = sole(
+  /^pub\(crate\) const SIDEBAR_FADE_MS: u64 = (\d+);/gm,
+  read(SHELL_CONTROLLER),
+  `${SHELL_CONTROLLER} (SIDEBAR_FADE_MS)`,
+);
+const gutterPx = sole(
+  /^const TRAFFIC_LIGHTS_GUTTER_PX: f64 = ([\d.]+);/gm,
+  read(SHELL_CONTROLLER),
+  `${SHELL_CONTROLLER} (TRAFFIC_LIGHTS_GUTTER_PX)`,
+);
+
+const asideMs = tailwindDuration(SIDEBAR_ASIDE, "docked aside width tween");
+const overlayMs = tailwindDuration(SIDEBAR_OVERLAY, "floating wrapper fade");
+const headerPx = tailwindPaddingPx(SIDEBAR_HEADER, "rail header chrome row");
+
+if (slideMs && asideMs) {
+  agreeNumber("docked rail slide", "ms", [
+    [SHELL_CONTROLLER, slideMs],
+    [SIDEBAR_ASIDE, asideMs],
+  ]);
+}
+if (fadeMs && overlayMs) {
+  agreeNumber("floating rail fade", "ms", [
+    [SHELL_CONTROLLER, fadeMs],
+    [SIDEBAR_OVERLAY, overlayMs],
+  ]);
+}
+if (gutterPx && headerPx) {
+  agreeNumber("traffic-light gutter", "px", [
+    [SHELL_CONTROLLER, gutterPx],
+    [SIDEBAR_HEADER, headerPx],
+  ]);
 }
 
 // ── verdict ─────────────────────────────────────────────────────────────────
