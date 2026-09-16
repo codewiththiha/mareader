@@ -41,7 +41,10 @@ use crate::state::{AppState, AppearanceSignal};
 
 use crate::effects::appearance::{is_scrubbing, raster, reflow, schedule_save};
 
-fn document_element() -> Option<web_sys::Element> {
+/// The `<html>` element, or `None` off wasm and before the document exists.
+/// The one way this layer reaches the DOM's root: the effects that paint a
+/// class or an attribute on it used to spell the three-hop walk themselves.
+pub(crate) fn document_element() -> Option<web_sys::Element> {
     web_sys::window()
         .and_then(|w| w.document())
         .and_then(|d| d.document_element())
@@ -221,10 +224,7 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
 
     Effect::new(move || {
         let (color, custom, opacity) = gloss.get();
-        let Some(el) = document_element() else {
-            return;
-        };
-        let Some(style) = el.dyn_into::<web_sys::HtmlElement>().ok().map(|h| h.style()) else {
+        let Some(style) = html_style() else {
             return;
         };
         match color.resolve(&custom) {
