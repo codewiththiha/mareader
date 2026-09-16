@@ -25,7 +25,7 @@ use library_core::wire::{
 
 /// Mirrored by the frontend in `src/services/library/mod.rs`, which folds it
 /// into the dock's task list so no component registers a Tauri listener of
-/// its own.
+/// its own. `tools/check-chrome-contracts.ts` fails CI when the two drift.
 const PROGRESS_EVENT: &str = "library://progress";
 
 /// A tree deeper than this is either a loop this walk did not catch or a

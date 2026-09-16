@@ -19,10 +19,11 @@
   --canvas-blend: multiply;
   --noise-opacity: 0;
 
-  /* Z-index scale — the one layering decision for floating UI, embedded as
-     z-[var(--z-…)] utilities via the constants in
-     crates/app-chrome/src/layers.rs. Layer intent lives here, not at call
-     sites: controls 30 · bars 40 · popover 50 · selection bar 60 ·
+  /* Z-index scale — the one layering decision for floating UI, embedded via
+     the constants in crates/app-chrome/src/layers.rs, which
+     tools/check-chrome-contracts.ts keeps in step with this table. Layer
+     intent lives here, not at call sites, and the order is the stacking
+     order: controls 30 · bars 40 · popover 50 · selection bar 60 ·
      context menu 70 · AI selection 80 · drag overlay 90 · toast 100 */
   --z-controls: 30;
   --z-bar: 40;

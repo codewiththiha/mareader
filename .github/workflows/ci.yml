@@ -294,6 +294,15 @@ jobs:
       - name: Verify the DOM contract agrees
         run: node scripts/check-dom-contract.js
 
+      # The window frame's numbers are declared on both sides of the IPC
+      # boundary — the import progress channel, the title-bar height and
+      # traffic-light inset, the z-index scale — each with a comment asking the
+      # reader to keep it in sync. A drift in any of them is silent: a progress
+      # ring that never moves, traffic lights sitting off-centre, a popover
+      # painting under the page.
+      - name: Verify the chrome contracts agree
+        run: node scripts/check-chrome-contracts.js
+
       # The imperative engine (public/pdfEngine.ts) is browser code; run its
       # stub-based smoke test (compiled to scripts/test-engine-smoke.js by the
       # TypeScript build step above) to catch regressions in open /
