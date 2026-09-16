@@ -1,8 +1,6 @@
 //! The level's own name question, and the answers it has: an import's three (go to
 //! the row that is here, add as new, make a link) and a move's four.
 
-use std::collections::HashSet;
-
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -92,6 +90,18 @@ fn ask_of(ask: &PlacementAsk) -> ConflictAsk {
 /// One question in one place, because the two answers that dissolve a row — a merge into
 /// the copy and a link at it — both write the folder's moved-out log on this condition
 /// and nothing else.
+/// File a row onto every shelf named, in one write: the shelves a dissolved row
+/// held are the shelves its survivor takes over.
+fn file_on_all(state: AppState, row_id: &str, shelves_named: &[String]) {
+    state.library.shelves.update(|shelves| {
+        for one in shelves.iter_mut() {
+            if shelves_named.contains(&one.id) {
+                shelf::shelf_add(one, row_id);
+            }
+        }
+    });
+}
+
 fn survivor_is_the_copy_of(state: AppState, survivor: &str, gone: &Book) -> bool {
     state
         .library
@@ -128,20 +138,14 @@ fn merge(state: AppState, ask: &ConflictAsk) {
     {
         write_moved_stones(state, gone, Some(&survivor));
     }
-    let inherited: HashSet<String> = memberships(state, &gone_id)
+    let inherited: Vec<String> = memberships(state, &gone_id)
         .into_iter()
         .map(|(id, _)| id)
         // The level the move left is the one shelf the survivor does NOT take over: the departure
         // is the point of the move.
         .filter(|id| ask.arrival.from.as_deref() != Some(id.as_str()))
         .collect();
-    state.library.shelves.update(|shelves| {
-        for one in shelves.iter_mut() {
-            if inherited.contains(&one.id) {
-                shelf::shelf_add(one, &survivor);
-            }
-        }
-    });
+    file_on_all(state, &survivor, &inherited);
     drop_row(state, &gone_id);
 }
 
@@ -202,13 +206,7 @@ fn seat_replace(
     departed: Departed,
 ) {
     move_row(state, moved_id, shelf_id, index, departed);
-    state.library.shelves.update(|shelves| {
-        for one in shelves.iter_mut() {
-            if inherited.contains(&one.id) {
-                shelf::shelf_add(one, moved_id);
-            }
-        }
-    });
+    file_on_all(state, moved_id, inherited);
     crate::storage::persist_library(state.library);
 }
 
