@@ -139,6 +139,32 @@ pub fn set(key: &str, value: &str) -> Result<(), StorageError> {
     })
 }
 
+/// Serialize for storage, naming the operation a failure is reported against.
+/// The four savers were four copies of this one `map_err`.
+fn encode<T: serde::Serialize + ?Sized>(op: &'static str, value: &T) -> Result<String, StorageError> {
+    serde_json::to_string(value).map_err(|e| StorageError {
+        op,
+        detail: format!("serialize failed: {e}"),
+    })
+}
+
+/// Read a store under its current key, falling back to the name it wore before
+/// the rename, then to the type's default when neither is present or parses.
+///
+/// The retired key is read and never written: the first save after a load is
+/// what moves a reader onto the new name, and a downgrade still finds the data
+/// it wrote.
+fn load_keyed<T: serde::de::DeserializeOwned + Default>(
+    op: &'static str,
+    key: &str,
+    retired: &str,
+) -> T {
+    get(key)
+        .or_else(|| get(retired))
+        .map(|raw| parse(op, &raw))
+        .unwrap_or_default()
+}
+
 fn parse<T: serde::de::DeserializeOwned + Default>(op: &'static str, raw: &str) -> T {
     match serde_json::from_str(raw) {
         Ok(v) => v,
@@ -153,20 +179,13 @@ fn parse<T: serde::de::DeserializeOwned + Default>(op: &'static str, raw: &str) 
 
 /// Load persisted settings; invalid values fall back to defaults + sanitize.
 pub fn load_settings() -> Settings {
-    let mut settings = get(SETTINGS_KEY)
-        .or_else(|| get(RETIRED_SETTINGS_KEY))
-        .map(|raw| parse("settings", &raw))
-        .unwrap_or_default();
+    let mut settings: Settings = load_keyed("settings", SETTINGS_KEY, RETIRED_SETTINGS_KEY);
     sanitize(&mut settings);
     settings
 }
 
 pub fn save_settings(settings: &Settings) -> Result<(), StorageError> {
-    let json = serde_json::to_string(settings).map_err(|e| StorageError {
-        op: "save_settings",
-        detail: format!("serialize failed: {e}"),
-    })?;
-    set(SETTINGS_KEY, &json)
+    set(SETTINGS_KEY, &encode("save_settings", settings)?)
 }
 
 /// Load the library: the current blob when there is one, else the previous
@@ -206,19 +225,13 @@ pub fn load_library() -> LibraryBlob {
 }
 
 pub fn save_library(blob: &LibraryBlob) -> Result<(), StorageError> {
-    let json = serde_json::to_string(blob).map_err(|e| StorageError {
-        op: "save_library",
-        detail: format!("serialize failed: {e}"),
-    })?;
-    set(LIBRARY_KEY, &json)
+    set(LIBRARY_KEY, &encode("save_library", blob)?)
 }
 
 /// Load the cover-art map (path -> page-1 JPEG data URL).
 pub fn load_covers() -> CoverMap {
-    let stored: HashMap<String, CoverImage> = get(COVERS_KEY)
-        .or_else(|| get(RETIRED_COVERS_KEY))
-        .map(|raw| parse("covers", &raw))
-        .unwrap_or_default();
+    let stored: HashMap<String, CoverImage> =
+        load_keyed("covers", COVERS_KEY, RETIRED_COVERS_KEY);
     stored
         .into_iter()
         .map(|(path, cover)| (path, Arc::new(cover)))
@@ -233,11 +246,7 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
         .iter()
         .map(|(path, cover)| (path.as_str(), cover.as_ref()))
         .collect();
-    let json = serde_json::to_string(&borrowed).map_err(|e| StorageError {
-        op: "save_covers",
-        detail: format!("serialize failed: {e}"),
-    })?;
-    set(COVERS_KEY, &json)
+    set(COVERS_KEY, &encode("save_covers", &borrowed)?)
 }
 
 /// Write the library's current blob, reporting a failure instead of returning
@@ -332,18 +341,11 @@ pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
 
 /// Load every book's gloss highlights, keyed by row id.
 pub fn load_gloss() -> HashMap<String, Vec<GlossMark>> {
-    get(GLOSS_KEY)
-        .or_else(|| get(RETIRED_GLOSS_KEY))
-        .map(|raw| parse("gloss", &raw))
-        .unwrap_or_default()
+    load_keyed("gloss", GLOSS_KEY, RETIRED_GLOSS_KEY)
 }
 
 fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError> {
-    let json = serde_json::to_string(all).map_err(|e| StorageError {
-        op: "save_gloss",
-        detail: format!("serialize failed: {e}"),
-    })?;
-    set(GLOSS_KEY, &json)
+    set(GLOSS_KEY, &encode("save_gloss", all)?)
 }
 
 /// Drop one row's marks: the reader's data goes with the book, not into
