@@ -104,6 +104,22 @@ pub(super) struct Snapshot<'a> {
     pub(super) copy_paths: &'a HashSet<String>,
 }
 
+impl Snapshot<'_> {
+    /// The row that answers for a found file: by content identity first, which
+    /// is the ledger's answer, and by address second for a migrated row whose
+    /// placeholder identity no measurement ever matched.
+    pub(super) fn known_row(&self, file: &FoundFile) -> Option<String> {
+        self.registry
+            .get(&file.fp)
+            .map(|known| known.id.clone())
+            .or_else(|| {
+                book_rows(self.books)
+                    .find(|b| b.path() == file.path)
+                    .map(|b| b.id.clone())
+            })
+    }
+}
+
 /// Importing a folder the library already watches continues that row's
 /// `placed` and `ignored` sets — the whole point of them: re-importing is how
 /// a reader would otherwise get back every book they deleted last week.
@@ -193,47 +209,17 @@ fn planned_placements(
     let mut replacements = Vec::new();
     let mut asks = Vec::new();
     for file in snap.found {
-        // By content identity first (the ledger's answer), by address second
-        // for a migrated row whose placeholder no measurement matched.
-        let known = snap
-            .registry
-            .get(&file.fp)
-            .map(|k| k.id.clone())
-            .or_else(|| {
-                book_rows(snap.books)
-                    .find(|b| b.path() == file.path)
-                    .map(|b| b.id.clone())
-            });
-        let Some(row_id) = known else {
+        let Some(row_id) = snap.known_row(file) else {
             continue;
         };
         if snap.copy_paths.contains(&file.path) {
             continue;
         }
-        let key = folder.shelf_key(file);
-        let target = plan.into.as_deref().and_then(|into| {
-            if key.is_empty() {
-                Some(into.to_string())
-            } else {
-                folder.shelf_map.get(&key).cloned()
-            }
-        });
-        if let Some(target) = target {
-            let arrival = Arrival::import(file.clone(), target, None);
-            if let Some(existing_id) =
-                library_core::conflict::collide(snap.books, &shelves_now, &arrival)
-            {
-                let existing_name =
-                    conflict::existing_name_of(snap.books, &existing_id, &arrival);
-                asks.push(ConflictAsk::folder_merge(
-                    arrival,
-                    existing_id,
-                    existing_name,
-                    folder.mode(),
-                    folder.id.clone(),
-                ));
-                continue;
-            }
+        if let Some(into) = plan.into.as_deref()
+            && let Some(ask) = merge_collision(snap, &shelves_now, folder, into, file)
+        {
+            asks.push(ask);
+            continue;
         }
         replacements.push((row_id, file.clone()));
     }
@@ -255,33 +241,42 @@ fn screen_merge_adds(
     };
     let shelves_now = state.library.shelves.get_untracked();
     let mut asks = Vec::new();
-    adds.retain(|file| {
-        let key = folder.shelf_key(file);
-        let target = if key.is_empty() {
-            Some(into.clone())
-        } else {
-            folder.shelf_map.get(&key).cloned()
-        };
-        let Some(target) = target else {
-            return true;
-        };
-        let arrival = Arrival::import(file.clone(), target, None);
-        match library_core::conflict::collide(snap.books, &shelves_now, &arrival) {
-            Some(existing_id) => {
-                let existing_name = conflict::existing_name_of(snap.books, &existing_id, &arrival);
-                asks.push(ConflictAsk::folder_merge(
-                    arrival,
-                    existing_id,
-                    existing_name,
-                    folder.mode(),
-                    folder.id.clone(),
-                ));
-                false
-            }
-            None => true,
+    adds.retain(|file| match merge_collision(snap, &shelves_now, folder, &into, file) {
+        Some(ask) => {
+            asks.push(ask);
+            false
         }
+        None => true,
     });
     asks
+}
+
+/// The merge's question about one file: the rung the merge files it onto, and
+/// whether that rung already holds its name. `None` when the merge has no seat
+/// for the file's rung, or when the seat is free.
+fn merge_collision(
+    snap: &Snapshot<'_>,
+    shelves_now: &[Shelf],
+    folder: &WatchedFolder,
+    into: &str,
+    file: &FoundFile,
+) -> Option<ConflictAsk> {
+    let key = folder.shelf_key(file);
+    let target = if key.is_empty() {
+        into.to_string()
+    } else {
+        folder.shelf_map.get(&key).cloned()?
+    };
+    let arrival = Arrival::import(file.clone(), target, None);
+    let existing_id = library_core::conflict::collide(snap.books, shelves_now, &arrival)?;
+    let existing_name = conflict::existing_name_of(snap.books, &existing_id, &arrival);
+    Some(ConflictAsk::folder_merge(
+        arrival,
+        existing_id,
+        existing_name,
+        folder.mode(),
+        folder.id.clone(),
+    ))
 }
 
 /// The merge half of a re-pick — the half the ledger's table cannot answer.
@@ -302,16 +297,7 @@ pub(super) fn returned_memberships(
         if snap.copy_paths.contains(&file.path) {
             continue;
         }
-        let Some(row_id) = snap
-            .registry
-            .get(&file.fp)
-            .map(|known| known.id.clone())
-            .or_else(|| {
-                book_rows(snap.books)
-                    .find(|b| b.path() == file.path)
-                    .map(|b| b.id.clone())
-            })
-        else {
+        let Some(row_id) = snap.known_row(file) else {
             continue;
         };
         // Which shelves a book is on is the shelf module's question; which
