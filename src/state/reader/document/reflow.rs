@@ -265,8 +265,7 @@ impl ReflowContent {
         let total = v.total_size().get_untracked();
         let viewport = v.viewport().get_untracked().main;
         let offset = v.scroll_offset().get_untracked();
-        let extent = (total - viewport).max(0.0);
-        Some(if extent > 0.0 { (offset / extent).clamp(0.0, 1.0) } else { 0.0 })
+        Some(reader_core::view::scroll_fraction(offset, total, viewport))
     }
 }
 

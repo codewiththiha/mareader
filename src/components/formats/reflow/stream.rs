@@ -436,11 +436,7 @@ pub fn ReflowStreamLayout(
         let st = state.viewer.scroll_top.get();
         let (_, ch) = state.viewer.container_size.get();
         let total = state.document.content.reflow.stream_total.get();
-        if total > ch && total > 0.0 {
-            (st / (total - ch)).clamp(0.0, 1.0)
-        } else {
-            0.0
-        }
+        reader_core::view::scroll_fraction(st, total, ch)
     };
 
     view! {
@@ -618,8 +614,10 @@ fn anchor_stream(state: ReaderState, v: &Virtualizer) {
                 state.document.content.reflow.resume_fraction.set(None);
                 let total = aim.total_size().get_untracked();
                 let viewport = aim.viewport().get_untracked().main;
-                let extent = (total - viewport).max(0.0);
-                aim.scroll_to_offset(fraction * extent, ScrollMode::Instant);
+                aim.scroll_to_offset(
+                    reader_core::view::fraction_offset(fraction, total, viewport),
+                    ScrollMode::Instant,
+                );
             } else {
                 let page = state.viewer.page.get_untracked();
                 let block = state

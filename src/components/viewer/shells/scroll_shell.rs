@@ -110,12 +110,7 @@ pub fn ScrollShell(
             Axis::Vertical => ch,
             Axis::Horizontal => cw,
         };
-        let total = total_size.get();
-        if total > extent && total > 0.0 {
-            (st / (total - extent)).clamp(0.0, 1.0)
-        } else {
-            0.0
-        }
+        reader_core::view::scroll_fraction(st, total_size.get(), extent)
     };
 
     view! {
