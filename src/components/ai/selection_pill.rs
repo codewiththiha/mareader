@@ -25,7 +25,7 @@ use crate::state::AppState;
 ///
 /// The Explain click does **not** flip `popover_open` and hope `detail` survives:
 /// it builds a self-contained [`GlossMark`] at click time and dispatches the
-/// same `pdfreader:gloss-open` event the persisted stroke uses. The popover's
+/// same `mareader:gloss-open` event the persisted stroke uses. The popover's
 /// listener bumps `open_req` and sets `pending_mark`, so the open effect is
 /// guaranteed to run with a mark in hand — no race against the exit-watch
 /// clearing `detail`, and no stale-`true` suppression across documents.

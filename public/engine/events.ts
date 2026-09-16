@@ -7,13 +7,13 @@
 // appears. The app's full table is `src/events.rs` (which also holds the
 // events the app dispatches to itself); only these three cross in this
 // direction. `tools/check-events.ts` fails CI when the tables disagree or a
-// raw `pdfreader:` literal appears anywhere but the tables.
+// raw `pdfreader:` or `mareader:` literal appears anywhere but the tables.
 
 /** Internal link jump: the engine's link layer asks the app to turn to a page. */
-export const NAVIGATE_EVENT = "pdfreader:navigate";
+export const NAVIGATE_EVENT = "mareader:navigate";
 
 /** Page-range selection, for virtualization pinning (detail may be null). */
-export const SELECTION_PAGES_EVENT = "pdfreader:selection-pages";
+export const SELECTION_PAGES_EVENT = "mareader:selection-pages";
 
 /** Text-selection detail — word, sentence, rect, host, spot — for the AI pill. */
-export const SELECTION_DETAIL_EVENT = "pdfreader:selection-detail";
+export const SELECTION_DETAIL_EVENT = "mareader:selection-detail";

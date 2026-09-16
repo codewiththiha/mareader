@@ -2,7 +2,7 @@
 //!
 //! The engine's selectionchange listener debounces the native selection,
 //! measures its bounding rect, grabs the surrounding sentence, and dispatches
-//! a `pdfreader:selection-detail` CustomEvent with
+//! a `mareader:selection-detail` CustomEvent with
 //! `{ text, context, rect, host, spot }` (rect in viewport CSS px, host the
 //! format family that painted it, spot a reflowable selection's durable
 //! identity) — or `null` to clear. Collapses caused by pressing inside the AI

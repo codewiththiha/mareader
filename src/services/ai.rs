@@ -2,7 +2,7 @@
 //!
 //! Owns the app-lifetime side of the wire protocol:
 //! [`install_ai_chunk_bridge`] registers ONE Tauri listener that re-broadcasts
-//! each chunk as a window `CustomEvent` (`pdfreader:ai-chunk`), and
+//! each chunk as a window `CustomEvent` (`mareader:ai-chunk`), and
 //! [`invoke_explain_word`] starts a run through `ai_core::bridge`. The gloss
 //! popover (and anything else) listens on the window, so document switches
 //! never stack dead Tauri handlers or drop the live one.

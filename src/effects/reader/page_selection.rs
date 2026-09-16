@@ -2,7 +2,7 @@
 //!
 //! The engine's selectionchange listener walks the DOM from the selection's
 //! anchor and focus up to the nearest page host, parses the page index from
-//! its id, and dispatches a `pdfreader:selection-pages` CustomEvent with
+//! its id, and dispatches a `mareader:selection-pages` CustomEvent with
 //! `{ first, last }` (1-based, inclusive) — or `null` to clear.
 //!
 //! This effect is the single place that turns the event into a write on
@@ -15,7 +15,7 @@ use wasm_bindgen::JsValue;
 
 use crate::state::AppState;
 
-/// The JS protocol of the `pdfreader:selection-pages` event detail: `null`
+/// The JS protocol of the `mareader:selection-pages` event detail: `null`
 /// (clear) or `{ first, last }` — 1-based, inclusive. One typed decoder for
 /// the whole protocol, so the effect below stays about reactivity, not about
 /// picking fields off a `JsValue`.

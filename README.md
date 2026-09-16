@@ -1,4 +1,4 @@
-# PDF Reader
+# Mareader
 
 A desktop document reader built for long-form reading. Native Tauri v2 shell, Rust/WebAssembly
 interface written in Leptos, and Mozilla's pdf.js vendored locally as the PDF rendering engine.
@@ -161,7 +161,7 @@ as real text in the DOM.
 - Zooming in at 500 percent, or out at 25 percent, does nothing at all rather than wrapping to the
   other end of the preset ladder — and it leaves the active fit mode alone, so leaning on a button
   that has nothing left to do cannot quietly take you out of fit width.
-- The reader keeps written motion principles (see ARCHITECTURE.md): no entrance animations on
+- The reader keeps written motion principles (see Mareader.md): no entrance animations on
   document content, no per-frame virtualizer work, one bounded zombie bridge across commits.
 
 ### Motion
@@ -669,7 +669,7 @@ touches a file you own.
 
 ### Persistence
 
-Settings are stored in local storage under `pdfreader.settings.v1` and cover appearance, the
+Settings are stored in local storage under `mareader.settings.v1` and cover appearance, the
 active preset, user presets, default zoom, the layout and motion switches, the two title-bar pins
 (the reader's and the library's — separate memories, and the library's starts pinned), and the
 last opened path. A group added later simply defaults: a document opened by an older build keeps the behaviour
@@ -681,7 +681,7 @@ silently reset every reader's last-opened file and zoom as well. Instead the ret
 retained as optional values, migrated on load to the preset that reproduces the theme previously
 in use, and dropped when writing, so the migration runs at most once.
 
-The library is a separate blob under `pdfreader.library.v2`, holding the books, their shelves, the
+The library is a separate blob under `mareader.library.v3`, holding the books, their shelves, the
 watched folders and their ledgers, and the view — one key because they are one invariant: a shelf
 member that names no book is a hole in the grid. It is deliberately *not* part of the settings blob,
 because a resume point moves on every page turn while settings repaint the theme on every write. The
@@ -1049,8 +1049,8 @@ cargo install tauri-cli --version "^2" --locked
 ### Installation
 
 ```bash
-git clone https://github.com/codewiththiha/pdf-reader.git
-cd pdf-reader
+git clone https://github.com/codewiththiha/mareader.git
+cd mareader
 npm install
 ```
 
@@ -1086,11 +1086,11 @@ configuration targets all available formats and ships icons for macOS, Windows a
 ### Tests
 
 ```bash
-cargo test --workspace --exclude pdf
+cargo test --workspace --exclude mareader-shell
 ```
 
-The manifest root is also the `pdf-reader` app package, so a bare `cargo test` would test
-only the app and silently skip every member crate. The `pdf` shell crate is excluded because
+The manifest root is also the `mareader` app package, so a bare `cargo test` would test
+only the app and silently skip every member crate. The `mareader-shell` crate is excluded because
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 

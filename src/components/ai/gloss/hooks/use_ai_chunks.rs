@@ -1,5 +1,5 @@
 //! Chunk ingestion: one window listener (fed by the app-lifetime Tauri
-//! bridge in `services::ai`) that turns `pdfreader:ai-chunk` events into
+//! bridge in `services::ai`) that turns `mareader:ai-chunk` events into
 //! state transitions. Listening here — not on Tauri directly — means
 //! unmount cleans up a plain window listener and never stacks/drops dead
 //! Tauri handlers across document switches.

@@ -252,7 +252,7 @@ fn arm_glide(g: Glide) {
     timer.set_value(handle);
 }
 
-/// The "take me to where I am" gesture: a `pdfreader:reveal-active`
+/// The "take me to where I am" gesture: a `mareader:reveal-active`
 /// event (re-clicking the active sidebar tab) smooth-scrolls onto the
 /// current page and hands the panel back to the reader.
 fn install_reveal_listener(

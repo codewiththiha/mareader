@@ -7,7 +7,7 @@
 //! Night survive as presets.
 //!
 //! CONTRACT: the field names below are the serde schema persisted inside
-//! `pdfreader.settings.v1`. Do not rename them.
+//! `mareader.settings.v1`. Do not rename them.
 
 use serde::{Deserialize, Serialize};
 

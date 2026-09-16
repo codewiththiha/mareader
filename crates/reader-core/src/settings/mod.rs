@@ -1,7 +1,7 @@
 //! Persisted user settings.
 //!
 //! CONTRACT: field names below are the serde schema persisted to localStorage
-//! under `pdfreader.settings.v1`. Do not rename fields.
+//! under `mareader.settings.v1`. Do not rename fields.
 //!
 //! SCHEMA EVOLUTION: the storage key outlives every schema change on purpose
 //! — bumping it would reset everyone's last-opened file and zoom. Unknown
@@ -45,7 +45,12 @@ pub use gloss::{default_custom_gloss, default_gloss_opacity, is_hex6, GlossColor
 /// persisted knobs live.
 pub use pdf_paper::PaperArea;
 
-pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
+pub const SETTINGS_KEY: &str = "mareader.settings.v1";
+
+/// The key this one replaced when the app was still named `pdf-reader`. Read
+/// once by [`crate::settings`] readers that find no blob under the current
+/// key; never written, so a reader who downgrades still finds what they saved.
+pub const RETIRED_SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
 /// `serde(default)` for the flags that were on before they were a switch.
 pub(crate) fn on_true() -> bool { true }

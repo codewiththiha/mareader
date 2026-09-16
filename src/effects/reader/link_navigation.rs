@@ -3,7 +3,7 @@
 //! The engine's link layer cannot navigate by itself: page position is Rust
 //! state (`viewer.page`), and the scroll/settle machinery in `navigation_sync`
 //! is what makes a jump land cleanly instead of fighting the scroll observer.
-//! An internal link dispatches a `pdfreader:navigate` CustomEvent and this
+//! An internal link dispatches a `mareader:navigate` CustomEvent and this
 //! effect is the single place that turns it into a page change — the same
 //! entry point the outline and thumbnails use.
 //!

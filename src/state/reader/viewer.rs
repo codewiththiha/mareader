@@ -83,7 +83,7 @@ pub struct ViewerSignals {
     ///
     /// The engine's selectionchange listener walks the DOM from the
     /// selection's anchor and focus up to the nearest page host, parses the
-    /// page from its id, and dispatches `pdfreader:selection-pages`;
+    /// page from its id, and dispatches `mareader:selection-pages`;
     /// `effects::reader::page_selection` is the single writer of this signal,
     /// and `features::reader::virtualizers` merges the range into the
     /// virtualizer's PINNED window so the selected pages stay mounted while

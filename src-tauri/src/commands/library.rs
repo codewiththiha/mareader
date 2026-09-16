@@ -675,7 +675,7 @@ mod tests {
 
     #[test]
     fn a_relocation_stays_inside_the_store() {
-        let dir = std::env::temp_dir().join(format!("pdf-reader-move-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mareader-move-{}", std::process::id()));
         let store = dir.join("Library");
         let bucket = store.join("pdf");
         let outside = dir.join("books");
@@ -721,7 +721,7 @@ mod tests {
     /// a copy, so the copy's own stamp is what the ledger's rules need.
     #[test]
     fn a_copy_takes_its_own_modification_time() {
-        let dir = std::env::temp_dir().join(format!("pdf-reader-stamp-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mareader-stamp-{}", std::process::id()));
         fs::create_dir_all(&dir).expect("a scratch directory");
         let path = dir.join("book.pdf");
         fs::write(&path, b"%PDF-1.7 a book").expect("a scratch file");
@@ -761,7 +761,7 @@ mod tests {
     /// them: the containment the sweep trusts is `contained_in`'s answer.
     #[test]
     fn a_removed_book_takes_its_own_folder_and_nothing_above_it() {
-        let root = std::env::temp_dir().join(format!("pdf-reader-sweep-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("mareader-sweep-{}", std::process::id()));
         let item = root.join("items").join("b1");
         let legacy = root.join("pdf");
         fs::create_dir_all(&item).expect("an item folder");

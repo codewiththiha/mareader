@@ -5,7 +5,7 @@
 //! only mechanism, and users can build their own without anyone writing CSS.
 //!
 //! CONTRACT: `Preset`/`PresetGroup` field names are the serde schema persisted
-//! inside `pdfreader.settings.v1`.
+//! inside `mareader.settings.v1`.
 
 use serde::{Deserialize, Serialize};
 

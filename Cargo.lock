@@ -2497,6 +2497,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "mareader"
+version = "0.1.1"
+dependencies = [
+ "ai-core",
+ "app-chrome",
+ "console_error_panic_hook",
+ "js-sys",
+ "leptos",
+ "leptos-md",
+ "leptos_router",
+ "library-core",
+ "md-core",
+ "pdf-core",
+ "pdf-engine",
+ "pdf-paper",
+ "reader-core",
+ "reflow-core",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "tauri-bridge",
+ "txt-core",
+ "virtual-list",
+ "virtual-list-leptos",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "mareader-shell"
+version = "0.1.1"
+dependencies = [
+ "async-stream",
+ "dotenvy",
+ "fm-bridge",
+ "futures",
+ "library-core",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-foundation",
+ "raw-window-handle",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-single-instance",
+ "tokio",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2952,29 +3005,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
-name = "pdf"
-version = "0.8.0"
-dependencies = [
- "async-stream",
- "dotenvy",
- "fm-bridge",
- "futures",
- "library-core",
- "objc2",
- "objc2-app-kit",
- "objc2-core-foundation",
- "objc2-foundation",
- "raw-window-handle",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-single-instance",
- "tokio",
-]
-
-[[package]]
 name = "pdf-core"
 version = "0.5.0"
 dependencies = [
@@ -3007,36 +3037,6 @@ version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "pdf-reader"
-version = "0.8.0"
-dependencies = [
- "ai-core",
- "app-chrome",
- "console_error_panic_hook",
- "js-sys",
- "leptos",
- "leptos-md",
- "leptos_router",
- "library-core",
- "md-core",
- "pdf-core",
- "pdf-engine",
- "pdf-paper",
- "reader-core",
- "reflow-core",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "tauri-bridge",
- "txt-core",
- "virtual-list",
- "virtual-list-leptos",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]

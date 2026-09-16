@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # No system packages are installed here on purpose: nothing in this lane
-      # compiles the `pdf` Tauri shell (clippy and rustdoc exclude it, the wasm
+      # compiles the `mareader-shell` Tauri shell (clippy and rustdoc exclude it, the wasm
       # check targets the pure-Rust frontend), so webkit2gtk & co. would be dead
       # weight. The shell is linted natively by the macOS lane below and fully
       # built by the release pipeline.
@@ -134,7 +134,7 @@ jobs:
       # `--workspace`, like the test lane: a bare `cargo clippy` selects only the
       # root package, which would silently leave pdf-core (the zoom ladder and
       # fit maths), pdf-engine, pdf-paper, and both virtual-list crates out of
-      # the lint. `pdf` is excluded here and linted natively on the macOS lane,
+      # the lint. `mareader-shell` is excluded here and linted natively on the macOS lane,
       # which is also where its tests run.
       #
       # `--locked` is what caught Cargo.lock still calling the shell crate 0.7.0
@@ -143,7 +143,7 @@ jobs:
       # to resolve quietly. check-versions now reads the lock as well and names
       # the file, which is a better error than this one.
       - name: Clippy (deny warnings)
-        run: cargo clippy --workspace --all-targets --exclude pdf --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --exclude mareader-shell --locked -- -D warnings
 
       # The frontend is Rust compiled to wasm; verify it compiles for the wasm
       # target without a full `trunk build` (that lives in the release pipeline).
@@ -169,7 +169,7 @@ jobs:
       # built and tried:
       #
       #   RUSTDOCFLAGS='-D rustdoc::broken_intra_doc_links' \
-      #     cargo doc --no-deps --document-private-items --workspace --exclude pdf
+      #     cargo doc --no-deps --document-private-items --workspace --exclude mareader-shell
       #
       # It works, and it is not a small find: 33 unresolved intra-doc links
       # across the three crates rustdoc reached before cargo stopped the build
@@ -205,17 +205,17 @@ jobs:
           shared-key: test-cache
 
       # --workspace, not a bare `cargo test`: the manifest root is also the
-      # `pdf-reader` package, so a bare run tests only the app and silently
+      # `mareader` package, so a bare run tests only the app and silently
       # skips every member crate — pdf-core (the zoom ladder and fit maths),
       # virtual-list and virtual-list-leptos (the geometry kernel and its
       # anchor arithmetic). Those hold the invariants the reader depends on.
       #
-      # `pdf` (the Tauri shell) is excluded: `tauri::generate_context!`
+      # `mareader-shell` (the Tauri shell) is excluded: `tauri::generate_context!`
       # resolves `frontendDist` at compile time and panics when `../dist`
       # does not exist, and the frontend is only built by the release
       # pipeline. Its tests run on the macOS lane, which compiles it natively.
       - name: Tests
-        run: cargo test --workspace --exclude pdf --locked
+        run: cargo test --workspace --exclude mareader-shell --locked
 
   web:
     name: Web (TypeScript, CSS, engine, contracts)
@@ -336,12 +336,12 @@ jobs:
       - name: Stub the frontend dist
         run: |
           mkdir -p dist
-          printf '<!doctype html><title>PDF Reader</title>' > dist/index.html
+          printf '<!doctype html><title>Mareader</title>' > dist/index.html
 
       - name: Clippy (deny warnings)
-        run: cargo clippy -p pdf --all-targets --locked -- -D warnings
+        run: cargo clippy -p mareader-shell --all-targets --locked -- -D warnings
 
       # The AiChunk wire-contract tests live in this crate; without this step
       # they compile nowhere and run nowhere.
       - name: Tests (shell crate)
-        run: cargo test -p pdf --locked
+        run: cargo test -p mareader-shell --locked

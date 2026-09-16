@@ -118,7 +118,7 @@ for (const name of engine.keys()) {
 // a literal works the day it is written and stops matching the day the table
 // moves, and looking at the table will not find it.
 
-const LITERAL = /["']pdfreader:[A-Za-z0-9._-]+["']/g;
+const LITERAL = /["'](?:pdfreader|mareader):[A-Za-z0-9._-]+["']/g;
 
 for (const [file, text] of TEXTS) {
   if (file === APP_TABLE || file === ENGINE_TABLE) continue;

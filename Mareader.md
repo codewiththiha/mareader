@@ -284,7 +284,7 @@ generalised instead of the feature being forked per format.
   document's block row, whichever the selection is inside — and a row is the
   better sentence anyway: a page of type is thousands of characters, and a word
   is disambiguated by its clause.
-- **The event grew two optional fields.** `pdfreader:selection-detail` now
+- **The event grew two optional fields.** `mareader:selection-detail` now
   carries `{ text, context, rect, host, spot }`. `host` says which family painted
   the selection, so the app decides the pipeline from the event rather than from
   the open document and a selection that outlives a document switch cannot be
@@ -1041,7 +1041,7 @@ list and host-tested, including the cycle a blob caught between two writes can s
 One row of that receipt is a question rather than a cost, and it is the only one. The app's own
 copy goes with the book: a file nothing will read again is not worth a switch, and removing a book
 has always meant the store losing it. What the READER wrote is theirs — the marks, the place they
-stopped at and any name they gave the book — so it is stowed instead, in `pdfreader.kept.v1`
+stopped at and any name they gave the book — so it is stowed instead, in `mareader.kept.v1`
 (`storage::kept`), keyed by the FILE rather than by the row that went. The switch drops it instead,
 and the sheet says what keeping it means: the next import to land that file as a row of its own
 puts it back (`import::kept`), matched by the file's name and by how much else agrees with the

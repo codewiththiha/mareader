@@ -16,7 +16,7 @@ pub struct SelectionRect {
 }
 
 /// Everything the AI feature needs about the current text selection, as
-/// dispatched by the engine's `pdfreader:selection-detail` event. The two
+/// dispatched by the engine's `mareader:selection-detail` event. The two
 /// optional fields are the format half of the protocol, and both default so a
 /// PDF's event — which carries neither — deserializes unchanged.
 #[derive(Debug, Clone, PartialEq, Deserialize)]

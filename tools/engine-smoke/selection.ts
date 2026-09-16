@@ -182,8 +182,8 @@ function take(type: string): unknown {
   return dispatched.splice(at, 1)[0].detail;
 }
 
-const PAGES = "pdfreader:selection-pages";
-const DETAIL = "pdfreader:selection-detail";
+const PAGES = "mareader:selection-pages";
+const DETAIL = "mareader:selection-detail";
 
 function host(kind: string, page: number, blockIndex: string | null, text: string) {
   const node = new FakeText(text);
