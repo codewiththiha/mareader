@@ -16,14 +16,19 @@ pub use crate::events::dispatch_typed_event;
 /// owner; malformed payloads are dropped rather than panicking.
 pub fn use_typed_event<T: DeserializeOwned>(name: &'static str, on_event: impl Fn(T) + 'static) {
     let on_event = Rc::new(on_event);
-    let handle = window_event_listener(
-        leptos::ev::Custom::new(name),
-        move |ev: web_sys::CustomEvent| {
-            if let Ok(v) = serde_wasm_bindgen::from_value::<T>(ev.detail()) {
-                on_event(v);
-            }
-        },
-    );
+    listen(name, move |ev: web_sys::CustomEvent| {
+        if let Ok(v) = serde_wasm_bindgen::from_value::<T>(ev.detail()) {
+            on_event(v);
+        }
+    });
+}
+
+/// Register one window CustomEvent listener for the current owner and remove
+/// it on cleanup — the half both hooks share, and the half that matters,
+/// because a Leptos window listener does NOT unregister when its handle is
+/// dropped.
+fn listen(name: &'static str, handler: impl Fn(web_sys::CustomEvent) + 'static) {
+    let handle = window_event_listener(leptos::ev::Custom::new(name), handler);
     on_cleanup(move || handle.remove());
 }
 
@@ -39,9 +44,5 @@ pub fn use_typed_event<T: DeserializeOwned>(name: &'static str, on_event: impl F
 /// now has to.
 pub fn use_raw_event(name: &'static str, on_detail: impl Fn(&JsValue) + 'static) {
     let on_detail = Rc::new(on_detail);
-    let handle = window_event_listener(
-        leptos::ev::Custom::new(name),
-        move |ev: web_sys::CustomEvent| on_detail(&ev.detail()),
-    );
-    on_cleanup(move || handle.remove());
+    listen(name, move |ev: web_sys::CustomEvent| on_detail(&ev.detail()));
 }
