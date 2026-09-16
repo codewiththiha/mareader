@@ -613,13 +613,18 @@ pub(super) fn shape_moved(
 /// name a rung the first minted, and the id is what makes a rung the same
 /// rung.
 pub(super) fn page_shelves(state: AppState, minted: Vec<Shelf>) {
-    state.library.shelves.update(|shelves| {
-        for shelf in minted {
-            if !shelves.iter().any(|s| s.id == shelf.id) {
-                shelves.push(shelf);
-            }
+    state.library.shelves.update(|shelves| page_into(shelves, minted));
+}
+
+/// [`page_shelves`] for a caller already inside a shelf write: the paging
+/// rides the write it has rather than making a second one, which is what
+/// `land_the_walk` and the fold's seat owe — one pulse per collection.
+pub(super) fn page_into(shelves: &mut Vec<Shelf>, minted: Vec<Shelf>) {
+    for shelf in minted {
+        if !shelves.iter().any(|s| s.id == shelf.id) {
+            shelves.push(shelf);
         }
-    });
+    }
 }
 
 /// The shelf a rung of the shape stands on: the one the tree already wears
@@ -899,11 +904,7 @@ fn land_the_walk(
     });
 
     state.library.shelves.update(|shelves| {
-        for shelf in new_shelves {
-            if !shelves.iter().any(|s| s.id == shelf.id) {
-                shelves.push(shelf);
-            }
-        }
+        page_into(shelves, new_shelves);
         for (book_id, shelf_id) in &placements {
             let Some(shelf) = shelves_ops::find_mut(shelves, shelf_id) else {
                 continue;

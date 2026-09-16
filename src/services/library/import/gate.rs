@@ -12,7 +12,7 @@ use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 
 use super::claim::{claim_root, root_is_claimed, start_guarded};
-use super::folder::{flatten_rungs, page_shelves, run_folder};
+use super::folder::{flatten_rungs, page_into, page_shelves, run_folder};
 use super::tasks::finish_task;
 use super::{rel_of, root_shelf_of, rung_label, Asked};
 use crate::services::library::conflict;
@@ -459,11 +459,7 @@ pub(crate) fn reclaim_rung(
             tree.shelf_map.insert(key.clone(), id.clone());
         }
         state.library.shelves.update(|shelves| {
-            for shelf in minted {
-                if !shelves.iter().any(|s| s.id == shelf.id) {
-                    shelves.push(shelf);
-                }
-            }
+            page_into(shelves, minted);
             let nestable = shelves_ops::can_nest(shelves, shelf_id, &parent);
             for (key, id) in &rungs {
                 let Some(shelf) = shelves_ops::find_mut(shelves, id) else {
