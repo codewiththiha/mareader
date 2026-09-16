@@ -36,7 +36,7 @@ use crate::time::now_ms;
 /// One spelling for the two loops a folder run mints through — the books it
 /// adds and the books the library already held — so a rung cannot be minted
 /// twice under two spellings of its own name.
-fn chain_for(
+pub(super) fn chain_for(
     folder: &mut WatchedFolder,
     key: &str,
     now: u64,

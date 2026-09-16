@@ -7,14 +7,13 @@ use wasm_bindgen_futures::spawn_local;
 
 use library_core::folder::{self as folder_ops, rel_under, FolderOpts, WatchedFolder};
 use library_core::governance::Governance;
-use library_core::id;
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 
 use super::claim::{claim_root, root_is_claimed, start_guarded};
-use super::folder::{flatten_rungs, page_into, page_shelves, run_folder};
+use super::folder::{chain_for, flatten_rungs, page_into, page_shelves, run_folder};
 use super::tasks::finish_task;
-use super::{rel_of, root_shelf_of, rung_label, Asked};
+use super::{rel_of, root_shelf_of, Asked};
 use crate::services::library::conflict;
 use crate::services::library::folder_label;
 use crate::state::AppState;
@@ -441,19 +440,14 @@ pub(crate) fn reclaim_rung(
     // for and its own shelves go, so an adoption cannot cut a nested rung
     // into an import that asked for none.
     let seat = if tree.cuts(rel) {
-        let parent = tree.shelf_chain_for(
+        let parent = chain_for(
+            &mut tree,
             library_core::folder::parent_key(rel).unwrap_or(""),
-            |_| id::next_shelf_id(now),
-            |rung| rung_label(rung, &root),
-            |rung, id, name, parent| {
-                minted.push(Shelf::folder_shelf(
-                    id,
-                    name,
-                    tree_id,
-                    rel_of(rung),
-                    parent,
-                ));
-            },
+            now,
+            &root,
+            &None,
+            false,
+            &mut minted,
         );
         for (key, id) in &rungs {
             tree.shelf_map.insert(key.clone(), id.clone());
@@ -494,20 +488,7 @@ pub(crate) fn reclaim_rung(
             Some(seat) => seat,
             None => {
                 tree.shelf_map.remove("");
-                tree.shelf_chain_for(
-                    "",
-                    |_| id::next_shelf_id(now),
-                    |rung| rung_label(rung, &root),
-                    |rung, id, name, parent| {
-                        minted.push(Shelf::folder_shelf(
-                            id,
-                            name,
-                            tree_id,
-                            rel_of(rung),
-                            parent,
-                        ));
-                    },
-                )
+                chain_for(&mut tree, "", now, &root, &None, false, &mut minted)
             }
         };
         page_shelves(state, minted);
