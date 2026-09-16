@@ -179,7 +179,7 @@ pub fn delete_stored(path: &str) {
     let path = path.to_string();
     wasm_bindgen_futures::spawn_local(async move {
         if let Err(e) = tauri_bridge::invoke(CMD_DELETE, args).await {
-            let detail = e.as_string().unwrap_or_else(|| format!("{e:?}"));
+            let detail = describe(e);
             web_sys::console::warn_1(&format!("[library] could not delete {path}: {detail}").into());
         }
     });
