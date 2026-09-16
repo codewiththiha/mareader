@@ -689,9 +689,7 @@ pub(super) fn flatten_rungs(state: AppState, from: &str, seat: &str) {
         }
         if let Some(shelf) = shelves_ops::find_mut(shelves, seat) {
             for book_id in held {
-                if !shelf.books.contains(&book_id) {
-                    shelf.books.push(book_id);
-                }
+                shelves_ops::shelf_add(shelf, &book_id);
             }
         }
         for shelf in shelves.iter_mut() {
@@ -802,9 +800,7 @@ pub(super) fn reshape_the_tree(
             let Some(shelf) = shelves_ops::find_mut(shelves, seat) else {
                 continue;
             };
-            if !shelf.books.contains(book_id) {
-                shelf.books.push(book_id.clone());
-            }
+            shelves_ops::shelf_add(shelf, book_id);
         }
         for shelf in shelves.iter_mut() {
             if shelf
@@ -912,9 +908,7 @@ fn land_the_walk(
             let Some(shelf) = shelves_ops::find_mut(shelves, shelf_id) else {
                 continue;
             };
-            if !shelf.books.iter().any(|m| m == book_id) {
-                shelves_ops::place(&mut shelf.books, book_id, None);
-            }
+            shelves_ops::shelf_add(shelf, book_id);
         }
     });
 
