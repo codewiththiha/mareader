@@ -19,7 +19,6 @@ use crate::state::AppState;
 use leptos::prelude::*;
 use library_core::book::{Book, Fingerprint, Origin, Row};
 use library_core::folder::{FolderOpts, Tombstone, WatchedFolder};
-use library_core::tracking::TrackingTree;
 use library_core::scan::FoundFile;
 use library_core::shelf::Shelf;
 use reader_core::format::Format;
@@ -483,16 +482,9 @@ fn fp(n: u32) -> Fingerprint {
 
 fn folder(id: &str, root: &str, placed: &[u32], ignored: Vec<Tombstone>) -> WatchedFolder {
     WatchedFolder {
-        id: id.to_string(),
-        root: root.to_string(),
-        opts: FolderOpts::default(),
         placed: placed.iter().copied().map(fp).collect(),
         ignored,
-        shelf_map: Default::default(),
-        last_seen: Vec::new(),
-        scanned_ms: 0,
-        tracking: TrackingTree::default(),
-        shapes: library_core::shape::ShapeTree::default(),
+        ..library_core::testkit::watched_folder(id, root)
     }
 }
 
