@@ -228,7 +228,7 @@ pub(super) fn receipt(
             } else {
                 children_of(&all, Some(s.id.as_str())).len()
             },
-            watched: state.library.shelf_tracked_untracked(&s.id),
+            watched: state.library.shelf_tracked_now(&s.id),
         })
         .collect();
     let mut marks = 0usize;

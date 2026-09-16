@@ -410,7 +410,8 @@ impl LibraryState {
         })
     }
 
-    pub fn shelf_tracked_untracked(&self, shelf_id: &str) -> bool {
+    /// Same, read untracked — for a callback that must not subscribe.
+    pub fn shelf_tracked_now(&self, shelf_id: &str) -> bool {
         self.folders.with_untracked(|folders| {
             self.shelves.with_untracked(|shelves| {
                 Governance::new(folders, shelves).shelf_tracked(shelf_id)

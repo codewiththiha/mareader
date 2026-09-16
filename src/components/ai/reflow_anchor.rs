@@ -200,7 +200,7 @@ fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sy
     // other mode scopes to the host first, which keeps a row that is mounted
     // somewhere unexpected (a page mid-remount) from answering for a block the
     // reader is not looking at.
-    let hostless = mode == ViewMode::ScrollVertical && state.reflowable_untracked();
+    let hostless = mode == ViewMode::ScrollVertical && state.reflowable_now();
     if !hostless
         && let Some(page) = page_of_block(state.document.content.reflow, block)
     {

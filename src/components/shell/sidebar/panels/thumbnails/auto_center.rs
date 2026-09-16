@@ -153,7 +153,7 @@ fn snap_to_page(virtualizer: Virtualizer, state: ReaderState, page: u32) {
         if vh <= 1.0 {
             return;
         }
-        let aspect = state.document.page1_aspect_untracked();
+        let aspect = state.document.page1_aspect_now();
         if let Some(target) = center_target(&virtualizer, page, aspect, vh) {
             virtualizer.scroll_to_offset(target, ScrollMode::Instant);
         }

@@ -38,7 +38,7 @@ const REVEAL_MARGIN: f64 = 24.0;
 
 /// Run the query and store the flat match list.
 pub async fn run_search(state: ReaderState) {
-    if state.reflowable_untracked() {
+    if state.reflowable_now() {
         run_reflow_search(state);
         return;
     }
@@ -124,7 +124,7 @@ pub fn clear_search(state: ReaderState) {
     // A reflowable document's boxes are painted by the rows themselves, off the
     // query and the match list below, so there is nothing to clear on the engine
     // side — and the call must not reach an engine that has no document.
-    if !state.reflowable_untracked() {
+    if !state.reflowable_now() {
         engine::clear_highlights();
     }
     state.search.total.set(0);
@@ -145,7 +145,7 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
     // Only the engine has to be TOLD which match is current: it owns the boxes
     // it paints into the page's text layer. A reflowable document's rows read
     // `search.active` themselves and re-class the box that answers to it.
-    if !state.reflowable_untracked() {
+    if !state.reflowable_now() {
         engine::set_active_match(m.page, m.index as i32);
     }
 
@@ -196,7 +196,7 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
     // the fallback for a match whose cut has since been repacked by a
     // typography change, where the stored block may no longer be the one on
     // screen.
-    if state.reflowable_untracked() {
+    if state.reflowable_now() {
         let Some(stream) = state.document.content.reflow.stream_handle() else {
             return;
         };

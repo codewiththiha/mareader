@@ -181,7 +181,7 @@ impl DocumentState {
 
     /// Same, read untracked — for rAF/scroll callbacks that must not
     /// subscribe to geometry.
-    pub fn page1_aspect_untracked(&self) -> f64 {
+    pub fn page1_aspect_now(&self) -> f64 {
         page_aspect(self.content.metrics.page1_size.get_untracked())
     }
 

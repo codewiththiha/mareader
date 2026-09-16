@@ -127,7 +127,7 @@ pub fn anchor_screen_box(
     scale: f64,
 ) -> Option<GlossBox> {
     let mode = state.viewer.mode.get_untracked();
-    if state.reflowable_untracked() {
+    if state.reflowable_now() {
         let bridge = ReflowAnchorBridge { state, spot, mode };
         return bridge.screen_box(anchor, scale);
     }
@@ -166,7 +166,7 @@ pub fn stroke_resolver(
     host_id: Option<String>,
 ) -> Callback<(GlossMark, f64), Option<GlossBox>> {
     Callback::new(move |(mark, scale): (GlossMark, f64)| {
-        if state.reflowable_untracked() {
+        if state.reflowable_now() {
             let mode = state.viewer.mode.get_untracked();
             let host = host_id.as_deref().and_then(by_id);
             // A reflowable mark belongs to whichever page its block sits on

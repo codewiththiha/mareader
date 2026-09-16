@@ -54,7 +54,7 @@ pub fn SelectionPill(state: AppState) -> impl IntoView {
     let resolve = anchor_resolver(state.reader, spot);
     // A reflowable document re-cuts its pages when the typography or the column
     // width moves, which relocates a selection without anything scrolling.
-    let invalidate = if state.reader.reflowable_untracked() {
+    let invalidate = if state.reader.reflowable_now() {
         reflow_invalidation(state.reader)
     } else {
         no_invalidation()

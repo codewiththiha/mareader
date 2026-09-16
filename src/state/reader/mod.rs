@@ -68,7 +68,7 @@ impl ReaderState {
     }
 
     /// The same question for an effect or a callback that must not subscribe.
-    pub fn reflowable_untracked(&self) -> bool {
+    pub fn reflowable_now(&self) -> bool {
         self.document.format.get_untracked().is_reflowable()
     }
 
