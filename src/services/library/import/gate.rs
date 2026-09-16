@@ -11,7 +11,8 @@ use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 
 use super::claim::{claim_root, root_is_claimed, start_guarded};
-use super::folder::{chain_for, flatten_rungs, page_into, page_shelves, run_folder};
+use super::folder::{chain_for, page_into, page_shelves, run_folder};
+use super::reshape::flatten_rungs;
 use super::tasks::finish_task;
 use super::{rel_of, root_shelf_of, Asked};
 use crate::services::library::conflict;

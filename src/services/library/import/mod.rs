@@ -14,6 +14,7 @@ mod gate;
 mod kept;
 mod migrate;
 mod replace;
+mod reshape;
 mod restore;
 mod tasks;
 mod verify;

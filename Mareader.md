@@ -773,7 +773,7 @@ its copies being the library's own second instance, unrelated to any tree:
   for the directory rather than onto a twin minted beside it, and the fold hangs that shelf on
   the rung the directory names; a tree that keeps the whole of its ground on ONE shelf seeds
   nothing, and the fold brings the member's books onto that shelf and takes the member's own
-  shelves out (`import::folder::flatten_rungs`), because the shape the reader imported with cuts
+  shelves out (`import::reshape::flatten_rungs`), because the shape the reader imported with cuts
   no rungs. Either fold puts the member back, folds the folder that was reading it into the tree's
   ledger and retires it — the watch that row answered for its own root becoming the watch of the
   rung it becomes, since the row the answer was written on is the one the fold retires; for a
@@ -786,14 +786,14 @@ its copies being the library's own second instance, unrelated to any tree:
   carries the row's own options beside the rung's tracking, so the sheet shows the shape and the
   filters the folder is in rather than the last import's, and the shelf-structure question is a
   question the reader can answer the same way by not touching it. Answering it the other way
-  re-shapes the tree the row already reads (`import::folder::reshape_the_tree`): the one-shelf
+  re-shapes the tree the row already reads (`import::reshape::reshape_the_tree`): the one-shelf
   answer brings the answered ground's books onto the rung that ground answers for and takes out the
   rungs it has no place for, and the shelf-per-folder answer re-files each of them onto the rung its
   own address names — both reusing the rungs that stand and minting none beside them, so the other
   shape can never grow a second tree next to the first. The answer stands for the ground the pick
   named, so the tree above it keeps the shape it stands on. A pick of a SUBFOLDER answers the
   shape for the tree it is about to become a rung of, so the re-shape runs on the row the fold took
-  the pick into (`import::folder::reshape_row`), once the fold has the pick's ground inside it: the
+  the pick into (`import::reshape::reshape_row`), once the fold has the pick's ground inside it: the
   books the one-shelf tree held spread come home to the rungs their own addresses name, and the run
   that found nothing new lights the shelf its books went back to rather than reporting nothing new.
   A rescan re-reads the row's answers, which is why only a re-import can move a tree this way.

@@ -5,9 +5,9 @@ use std::rc::Rc;
 use super::claim::{claim_root, root_is_claimed, when_root_is_free};
 use super::files::{land_file, screen_content};
 use super::folder::{
-    mint_walked_row, reshape_row, reshape_the_tree, resolve_folder, returned_memberships,
-    shape_moved, write_shape, Landing, Minted, Snapshot,
+    mint_walked_row, resolve_folder, returned_memberships, Landing, Minted, Snapshot,
 };
+use super::reshape::{reshape_row, reshape_the_tree, shape_moved, write_shape};
 use super::gate::{
     covered_shelf, displaced_member, ground_tracking, reclaim_rung, run_fold, seed_member_rungs,
     write_rung_tracking, Continuation, Fold, GroundWatch, RootPlan,
