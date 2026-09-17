@@ -1363,3 +1363,38 @@ see — a duplicate, and the removal, with the watched-folder note when one appl
 door to those acts beside the right-click's folder menu, and both renames — the crumb's field and
 the sheet — commit through the one service, so two doors to one act cannot differ about what it
 means.
+
+## Known gaps: two gates deliberately not run
+
+Both were built and tried. Both stay off for the same reason — a gate that is
+red on the day it lands teaches people to read past red — and both belong to a
+dedicated commit rather than to a check nobody can act on.
+
+### cargo fmt --check
+
+The codebase is hand-formatted in a style rustfmt >=1.9x would rewrite across
+roughly forty files, so the gate would fail on pre-existing code. The one-time
+formatting pass is the prerequisite, and it is a large mechanical diff that
+should not share a commit with anything else.
+
+### rustdoc's broken intra-doc links
+
+The gate that was tried:
+
+```
+RUSTDOCFLAGS='-D rustdoc::broken_intra_doc_links' \
+  cargo doc --no-deps --document-private-items --workspace --exclude mareader-shell
+```
+
+It works, and it is not a small find: 33 unresolved intra-doc links across the
+three crates rustdoc reached before cargo stopped the build — app-chrome,
+pdf-engine and the app itself — with the other eleven never getting far enough
+to be counted. They are the same failure `check-doc-paths` exists for, in the
+one form it cannot read: a `//!` that names a sibling module without `super::`,
+a `search` that is both a function and a module, a `ScrollShell` left behind
+when its shell moved module.
+
+Not all of them can be fixed with a path. `GlossMark::context` points at a
+struct field, and rustdoc has no link form for one at any prefix, so those are
+prose rewrites — and the eleven undocumented crates cannot be enumerated short
+of running rustdoc until they can.

@@ -108,7 +108,7 @@ jobs:
       # once without the flag, print what cargo actually wanted to change, then
       # put the committed file back so every gate below still sees the lock
       # exactly as it is in git.
-      - name: Show what --locked would reject
+      - name: Show what --locked would reject (advisory)
         run: |
           cp Cargo.lock /tmp/Cargo.lock.committed
           cargo metadata --format-version 1 > /dev/null || true
@@ -125,11 +125,9 @@ jobs:
       # code and the reason — rather than a blanket exemption that silences the
       # whole workspace forever.
       #
-      # There is no `cargo fmt --check` anywhere in this workflow, and that is a
-      # decision rather than an oversight: the codebase is hand-formatted in a
-      # style rustfmt >=1.9x would rewrite across ~40 files, so the gate would
-      # fail on pre-existing code. A one-time formatting pass belongs in a
-      # dedicated commit, not in a check that is red from the day it lands.
+      # No `cargo fmt --check` here, deliberately: the tree is hand-formatted in
+      # a style rustfmt would rewrite across ~40 files, so the gate would be red
+      # on the day it landed. Mareader.md, "Known gaps".
       #
       # `--workspace`, like the test lane: a bare `cargo clippy` selects only the
       # root package, which would silently leave pdf-core (the zoom ladder and
@@ -165,28 +163,9 @@ jobs:
       - name: Check app-chrome standalone
         run: cargo check -p app-chrome --target wasm32-unknown-unknown --locked
 
-      # NOT RUN, and the reason is worth writing down because the gate was
-      # built and tried:
-      #
-      #   RUSTDOCFLAGS='-D rustdoc::broken_intra_doc_links' \
-      #     cargo doc --no-deps --document-private-items --workspace --exclude mareader-shell
-      #
-      # It works, and it is not a small find: 33 unresolved intra-doc links
-      # across the three crates rustdoc reached before cargo stopped the build
-      # (app-chrome, pdf-engine and the app itself), the other eleven never
-      # getting far enough to be counted. They are the same failure
-      # check-doc-paths exists for, in the one form it cannot read: a `//!`
-      # that names a sibling module without `super::`, a `[`search`]` that is
-      # both a function and a module, a `[`ScrollShell`]` left behind when its
-      # shell moved module.
-      #
-      # It is not turned on because not all of them can be fixed with a path.
-      # `[`GlossMark::context`]` points at a struct FIELD, and rustdoc has no
-      # link form for one at any prefix, so those are prose rewrites — and the
-      # eleven undocumented crates cannot be enumerated short of running
-      # rustdoc until they can. Repairing the lot is a dedicated commit,
-      # the same call the missing `cargo fmt --check` above makes: a gate that
-      # is red on the day it lands teaches people to read past red.
+      # No rustdoc link gate, deliberately: it finds 33 unresolved intra-doc
+      # links across three crates today, and repairing them is a dedicated
+      # commit. Mareader.md, "Known gaps".
 
   test:
     name: Test (workspace)
