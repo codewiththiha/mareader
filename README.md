@@ -739,11 +739,13 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
   freed heap to its own free lists rather than the kernel, and the WebAssembly linear memory only
   grows, so the footprint of a long reading session does not come back down on its own. It stays
   reclaimable under pressure, and Reload Window — a row in the reader's and the shelf's menus —
-  resets it in place, a restart without the quit.
+  resets it in place, a restart without the quit. It flushes the reading position the progress
+  debounce is still holding before it goes, so the book reopens where the reload found you, and it
+  lands on the shelf rather than in a reader with nothing in it.
 - The full-text search index builds on the first search rather than at open, so a book nobody
   searches never pays the per-page extraction, and the WebAssembly heap logs its size at open,
-  close, zoom commit and index build (`[mem]` lines in the webview console): the plateau of a
-  latch reads differently there from the climb of a leak.
+  close, zoom commit, index build and reload (`[mem]` lines in the webview console): the plateau of
+  a latch reads differently there from the climb of a leak.
 
 ---
 

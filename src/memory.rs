@@ -8,12 +8,18 @@
 //! invisible from the outside: Activity Monitor folds the heap into the
 //! webview's total, where canvas surfaces and JSC dominate. So the app
 //! charts the heap itself, one console line at each point that moves it —
-//! open, close, zoom commit, search-index build.
+//! open, close, zoom commit, search-index build, and the reload that resets
+//! it.
 //!
 //! The trace is the leak-versus-latch test: a heap that steps up once per
 //! book and never steps down is the ratchet working as the platform
 //! dictates; a heap that climbs per open/close CYCLE is a leak, and this log
 //! is where that shows up first. Mareader.md, "The memory model".
+//!
+//! Read the shape, not the level, and only against the same build: a dev
+//! wasm heap carries bookkeeping a release one does not, so a number taken
+//! under `trunk serve` and one taken from a bundled app are two different
+//! instruments. The step-per-book and flat-across-zooms shape holds in both.
 //!
 //! Off wasm the probe is inert rather than a panic: the wasm-bindgen stubs
 //! abort when called natively — the same rule `crate::time` runs its clock

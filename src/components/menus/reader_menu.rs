@@ -134,10 +134,10 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                 <MenuItem
                     icon=IconName::Reload
                     label="Reload Window".to_string()
-                    sublabel="Restarts in place; frees the memory this session latched".to_string()
+                    sublabel="Restarts in place; your place is kept, the memory is not".to_string()
                     on_click=move || {
                         open.set(false);
-                        app_chrome::window::api::reload_window();
+                        crate::services::reload::reload_app(state);
                     }
                 />
                 <div class="mt-1 flex items-center justify-between border-t border-line px-1 py-1">

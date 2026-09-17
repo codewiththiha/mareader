@@ -218,10 +218,10 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                 <MenuItem
                     icon=IconName::Reload
                     label="Reload Window".to_string()
-                    sublabel="Restarts in place; frees the memory this session latched".to_string()
+                    sublabel="Restarts in place; your place is kept, the memory is not".to_string()
                     on_click=move || {
                         open.set(false);
-                        app_chrome::window::api::reload_window();
+                        crate::services::reload::reload_app(state);
                     }
                 />
             </MenuPopover>
