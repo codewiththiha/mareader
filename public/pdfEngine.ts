@@ -82,6 +82,12 @@ function cancelAndReleasePages(): void {
 
 async function destroy(): Promise<void> {
   try {
+    // The advisory worker cleanup, run while the document is still alive:
+    // pdf.cleanup() drops the resolved-page and font caches pdf.js holds for
+    // it. Nothing after this point can — the teardown below nulls the
+    // document and fires the worker's death, so a shelf-side sweep() arriving
+    // after destroy resolves finds no document to clean.
+    session.sweepPdf();
     cancelAndReleasePages();
     session.stateByCanvasId.clear();
     for (const task of session.thumbTasks.values()) {

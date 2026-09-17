@@ -61,6 +61,13 @@ pub fn close_document(state: AppState) {
     // destroy() is idempotent.
     spawn_local(async move {
         _ = engine::destroy().await;
+        // Finish the job: destroy() runs the advisory worker cleanup itself
+        // now (only it can — later the document is gone), and this tail sweep
+        // is the idempotent one the shelf deserves, catching anything that
+        // re-landed while the teardown was resolving (a fast close → reopen
+        // re-registers hosts before this future wakes).
+        engine::sweep();
+        engine::sweep_snapshots();
     });
 
     // One call sheds everything the open flow wrote — the identity, the outline
