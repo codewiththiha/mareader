@@ -18,3 +18,22 @@
   transition: opacity 0.14s ease, color 0.14s ease, background 0.14s ease,
     border-color 0.14s ease;
 }
+
+/* The one format chip the library's two densities share: the uppercase kind
+   of a thing, in the footprint the cover would have had. grid.css adds the
+   list row's padding and list.css the sidebar's — the two chips used to be
+   written out in full, five declarations each, and only their padding had
+   ever meant to differ. */
+.lib-format {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-line);
+  border-radius: 9999px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}

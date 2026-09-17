@@ -53,20 +53,10 @@
    art — the kind of thing the row is, in the footprint the cover would have
    had, so rows still line up and the eye still lands on the same corner. */
 .lib-row-ext {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
   width: 2.6rem;
   padding: 0.125rem 0;
-  border: 1px solid var(--color-line);
   border-radius: 4px;
   background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-  color: var(--color-muted);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 /* The row's trailing 22px button, named for what it IS and not for the one action it first carried: a shelf row's opens the shelf, and only a book row's is the removal's ✕. */
 .lib-row-action {

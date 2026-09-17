@@ -270,15 +270,7 @@
 
 /* The format chip lives on the row only: at list density a reader scans names rather than art, so the kind of thing a row is earns its place there. */
 .lib-row-format {
-  flex: 0 0 auto;
   padding: 1px 5px;
-  border: 1px solid var(--color-line);
-  border-radius: 9999px;
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-muted);
 }
 
 /* A book whose address died. The card stays: a missing book is not a removed one, and the reader decides between finding it again and letting it go. */
