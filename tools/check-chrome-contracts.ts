@@ -9,6 +9,8 @@
 //   3. the z-index scale (app_chrome::layers ↔ styles/tokens.css)
 //   4. the sidebar's motion durations and its traffic-light gutter
 //      (shell controller constants ↔ the rail's Tailwind classes)
+//   5. the import dock's progress ring (one Rust radius ↔ the SVG markup ↔
+//      three numbers in the stylesheet)
 //
 // None of these can fail a build when it drifts. A renamed channel means the
 // progress ring never moves; a title-bar height that disagrees means the
@@ -259,6 +261,110 @@ if (gutterPx && headerPx) {
     [SHELL_CONTROLLER, gutterPx],
     [SIDEBAR_HEADER, headerPx],
   ]);
+}
+
+// ── 5. The import dock's progress ring ─────────────────────────────────────
+// One radius is written four times: the Rust const, the `r` attribute of both
+// SVG circles, and — as the product `2 * pi * r` — the stylesheet's
+// `stroke-dasharray` and the `stroke-dashoffset` fallback behind it. CSS
+// cannot read the const, so the stylesheet spells the product out longhand and
+// the two sides were kept in step by a comment on each. A radius that moves
+// without the stylesheet leaves a ring that stops short of full at 100%, which
+// reads as an import that never finishes.
+const PROGRESS_DOCK = "src/features/library/progress_dock.rs";
+const DOCK_CSS = "styles/components/library/dock.css";
+
+const ringRadius = sole(
+  /^const RING_RADIUS: f64 = ([\d.]+);/gm,
+  read(PROGRESS_DOCK),
+  `${PROGRESS_DOCK} (RING_RADIUS)`,
+);
+
+if (ringRadius) {
+  const radius = Number(ringRadius);
+
+  // The whole check rests on the ring's circumference being 2 * pi * r, which
+  // the app computes once and never spells out numerically. Read the formula
+  // rather than assume it: the stylesheet agrees with the product, so a change
+  // to how the product is taken would otherwise look like agreement.
+  const formula = sole(
+    /^const CIRCUMFERENCE: f64 = ([^;]+);/gm,
+    read(PROGRESS_DOCK),
+    `${PROGRESS_DOCK} (CIRCUMFERENCE)`,
+  );
+  if (formula && !/2\.0\s*\*\s*std::f64::consts::PI\s*\*\s*RING_RADIUS/.test(formula)) {
+    fail(
+      `${PROGRESS_DOCK}: CIRCUMFERENCE is ${formula.trim()}, but this check and the ` +
+        `stylesheet's stroke-dasharray both assume 2.0 * pi * RING_RADIUS`,
+    );
+  }
+
+  const circumference = 2 * Math.PI * radius;
+
+  // The markup draws the circle, so its `r` is a fourth copy of the radius.
+  const svgRadii = [...read(PROGRESS_DOCK).matchAll(/\bcx='18' cy='18' r='([\d.]+)'/g)].map(
+    (m) => Number(m[1]),
+  );
+  if (svgRadii.length === 0) {
+    fail(`${PROGRESS_DOCK}: no <circle r='…'> in the ring markup to compare RING_RADIUS against`);
+  }
+  for (const r of svgRadii) {
+    if (r !== radius) {
+      fail(`${PROGRESS_DOCK}: the SVG circle's r is ${r}, but RING_RADIUS is ${ringRadius}`);
+    }
+  }
+
+  // The stylesheet carries the product, twice: the dash length, and the
+  // offset that hides the whole ring before the first progress write lands.
+  // It is hand-rounded to three decimals, so compare within half of that.
+  const TOL = 0.0005;
+  const dockCss = read(DOCK_CSS);
+  const dash = sole(
+    /^  stroke-dasharray: ([\d.]+);/gm,
+    dockCss,
+    `${DOCK_CSS} (stroke-dasharray)`,
+  );
+  const offsetFallback = sole(
+    /stroke-dashoffset: var\(--ring-offset, ([\d.]+)\)/g,
+    dockCss,
+    `${DOCK_CSS} (stroke-dashoffset fallback)`,
+  );
+  for (const [what, value] of [
+    ["stroke-dasharray", dash],
+    ["stroke-dashoffset fallback", offsetFallback],
+  ] as const) {
+    if (!value) continue;
+    if (Math.abs(Number(value) - circumference) > TOL) {
+      fail(
+        `${DOCK_CSS}: ${what} is ${value}, but 2 * pi * RING_RADIUS(${ringRadius}) ` +
+          `is ${circumference.toFixed(3)} — the ring stops short of full at 100%`,
+      );
+    }
+  }
+
+  // The scanning state parks the dash at a fixed fraction of the circle so a
+  // quarter arc spins: a radius change moves the circumference under it and
+  // the arc silently becomes some other size.
+  const spin = sole(
+    /^  stroke-dashoffset: ([\d.]+);/gm,
+    dockCss,
+    `${DOCK_CSS} (spin stroke-dashoffset)`,
+  );
+  if (spin) {
+    const shown = 1 - Number(spin) / circumference;
+    if (Math.abs(shown - 0.25) > 0.01) {
+      fail(
+        `${DOCK_CSS}: the scan arc shows ${(shown * 100).toFixed(1)}% of the ring, ` +
+          `not the quarter turn its comment describes`,
+      );
+    }
+  }
+
+  if (!failures.some((line) => line.startsWith(DOCK_CSS) || line.startsWith(PROGRESS_DOCK))) {
+    console.log(
+      `progress ring agrees: r=${ringRadius}, circumference ${circumference.toFixed(3)}`,
+    );
+  }
 }
 
 // ── verdict ─────────────────────────────────────────────────────────────────

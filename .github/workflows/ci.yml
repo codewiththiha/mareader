@@ -294,12 +294,13 @@ jobs:
       - name: Verify the DOM contract agrees
         run: node scripts/check-dom-contract.js
 
-      # The window frame's numbers are declared on both sides of the IPC
-      # boundary — the import progress channel, the title-bar height and
-      # traffic-light inset, the z-index scale — each with a comment asking the
+      # Numbers declared on both sides of a boundary no compiler spans: the
+      # import progress channel, the title-bar height and traffic-light inset,
+      # the z-index scale, the sidebar's motion and gutter, and the import
+      # dock's progress ring. Each used to carry only a comment asking the
       # reader to keep it in sync. A drift in any of them is silent: a progress
       # ring that never moves, traffic lights sitting off-centre, a popover
-      # painting under the page.
+      # painting under the page, a rail that releases its canvases a frame late.
       - name: Verify the chrome contracts agree
         run: node scripts/check-chrome-contracts.js
 

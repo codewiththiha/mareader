@@ -19,8 +19,9 @@ const HOLD_MS: u64 = 1600;
 
 /// The ring's radius, written once: the SVG draws it, the circumference is
 /// derived from it, and `styles/components/library/dock.css` spells the same
-/// product in its `stroke-dasharray` (CSS cannot read this const; the comment
-/// there says the two agree).
+/// product in its `stroke-dasharray`. CSS cannot read this const, so
+/// `tools/check-chrome-contracts.ts` computes the product and fails CI when
+/// the two disagree.
 const RING_RADIUS: f64 = 15.0;
 const CIRCUMFERENCE: f64 = 2.0 * std::f64::consts::PI * RING_RADIUS;
 
