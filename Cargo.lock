@@ -2519,6 +2519,7 @@ dependencies = [
  "serde_json",
  "tauri-bridge",
  "txt-core",
+ "ui-geom",
  "virtual-list",
  "virtual-list-leptos",
  "wasm-bindgen",

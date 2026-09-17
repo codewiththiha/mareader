@@ -83,6 +83,10 @@ pdf-engine = { path = "crates/pdf-engine" }
 pdf-paper = { path = "crates/pdf-paper" }
 tauri-bridge = { path = "crates/tauri-bridge" }
 app-chrome = { path = "crates/app-chrome" }
+# The geometry primitives. The motion spring rides `ui_geom::spring`'s
+# integrator, so it clamps to that crate's frame ceiling rather than
+# restating the number.
+ui-geom = { path = "crates/ui-geom" }
 # The format cores. `reader-core` is everything a reader needs that no format
 # owns (the format list, the view modes, the settings, the colour pipeline);
 # `pdf-core` is the PDF's geometry and text index; `reflow-core` is the shared

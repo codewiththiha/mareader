@@ -23,17 +23,12 @@ use leptos::prelude::*;
 
 use app_chrome::floating::types::FloatBox;
 use app_chrome::hooks::use_raf::FrameLoop;
+use ui_geom::spring::MAX_FRAME_S;
 
 use super::frame::frame_delta;
 
 /// The largest field magnitude that counts as "stopped" for loop teardown.
 const SETTLE_EPS: f64 = 0.6;
-
-/// The longest frame the integrator trusts, in seconds. Tighter than a
-/// scrolling loop's bound (see [`super::frame`]) because this is a stability
-/// limit, not a legibility one: a step much larger than a frame makes the
-/// spring overshoot its target and wobble on the way back.
-const MAX_INTEGRATOR_FRAME_S: f64 = 0.032;
 
 /// A value the spring can drive: five numeric fields with a step, a closeness
 /// test and a magnitude test.
@@ -133,7 +128,7 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
             let now = js_sys::Date::now();
             // Long frames clamp to the integrator's stability bound, and the
             // first frame after arming (the `NAN` above) passes no time.
-            let dt = frame_delta(last_ms.get_value(), now, MAX_INTEGRATOR_FRAME_S);
+            let dt = frame_delta(last_ms.get_value(), now, MAX_FRAME_S);
             last_ms.set_value(now);
 
             if snap.get_untracked() {
