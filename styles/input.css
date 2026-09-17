@@ -13,6 +13,15 @@
 @source "../src";
 @source "../crates";
 
+/* The check scripts quote class names as prose — the chrome-contract checker
+   spells the z-scale's shape out in its failure messages and comments — and
+   the scanner reads every literal it meets as UI. Those quotes used to ship
+   dead rules into this file, and the wildcarded one (a `--z-*` standing in
+   for "any layer") produced an invalid custom-property reference the CSS
+   optimiser warned about on every build. Nothing under tools/ renders, so
+   nothing under it is a class source. */
+@source not "../tools";
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 @import "./tokens.css";                /* @theme, base palettes, runtime vars */
