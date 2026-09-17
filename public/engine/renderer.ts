@@ -437,14 +437,24 @@ export async function renderPage(
 }
 
 /** Re-render pages that have no unbaked raw so slider scrub can start
- *  without applying CSS filters on already-baked pixels. */
-export async function preparePagesForScrub(): Promise<void> {
+ *  without applying CSS filters on already-baked pixels — the scrub entry's
+ *  background half. `onRendered` fires per page the moment its raw pixels
+ *  have landed and been tagged, in the same turn, so the caller can drop
+ *  that page's snapshot cover with no paint in between. */
+export async function preparePagesForScrub(
+  onRendered?: (canvasId: string) => void,
+): Promise<void> {
   const jobs: Array<() => Promise<unknown>> = [];
   for (const [id, st] of session.stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
     if (st.rawCanvas && st.rawCanvas !== st.canvas) continue;
     if (!st.rawCanvas) {
-      jobs.push(() => renderPageInternal(id, st.scale || 1, false));
+      jobs.push(async () => {
+        const rendered = await renderPageInternal(id, st.scale || 1, false);
+        // A failed render keeps its cover — settled pixels beat a wiped
+        // canvas — and the caller's final sweep releases it.
+        if (rendered.ok) onRendered?.(id);
+      });
     }
   }
   if (jobs.length) await runLimited(jobs, 2);

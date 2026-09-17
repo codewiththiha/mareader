@@ -50,8 +50,16 @@ export async function run(): Promise<void> {
   if (!isScrubActive()) {
     throw new Error("entering scrub must raise the appearance-scrubbing class the CSS keys off");
   }
-  const scrubPx = cv0._ctx.getImageData(0, 0, 1, 1).data;
-  if (scrubPx[0]! < 200 || scrubPx[1]! < 200 || scrubPx[2]! < 200) {
+  // Entry swaps in whatever raw it holds synchronously and re-renders the
+  // raw-less stragglers in the BACKGROUND — the first drag frame must not
+  // wait on pdf.js. Drive the harness clock until the straggler lands.
+  const isRawish = (px: Uint8ClampedArray): boolean => px[0]! >= 200 && px[1]! >= 200 && px[2]! >= 200;
+  let scrubPx = cv0._ctx.getImageData(0, 0, 1, 1).data;
+  for (let turn = 0; turn < 100 && !isRawish(scrubPx); turn += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    scrubPx = cv0._ctx.getImageData(0, 0, 1, 1).data;
+  }
+  if (!isRawish(scrubPx)) {
     throw new Error(
       "scrub should show raw page pixels, got [" +
         Array.from(scrubPx).slice(0, 3).join(",") +

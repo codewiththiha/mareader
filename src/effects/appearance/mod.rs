@@ -216,19 +216,23 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
                 return;
             }
             COMMIT_PAYLOAD.with(|p| p.set(None));
-            // Commit final variables first so the theme applier paints them
-            // (and records the signature) while the scrub still owns the
-            // canvases — its engine refresh stands down for exactly that
-            // window. Leaving scrub afterwards hands the engine one final
-            // bake, at the settled values, on its serialized theme queue: one
-            // bake per drag, not one per tick.
+            // End the gesture before committing it. Leaving scrub clears the
+            // flag and queues the one final bake at the settled values; the
+            // settings write that follows wakes the theme effect OUTSIDE that
+            // window instead of inside it. The commit used to land first, so
+            // the effect the write woke raced the scrub flag on its way down
+            // and its engine refresh crossed the bridge while the gesture's
+            // own exit bake was still in flight. Now whatever the effect
+            // queues serializes behind the exit on the engine's theme queue
+            // and converges there as a same-fingerprint no-op: one bake per
+            // drag, not one per tick and not two at the end.
+            if patch_needs_canvas_scrub(patch) {
+                leave_scrub();
+            }
             settings.update(|s| {
                 apply_scrub(&mut s.appearance, patch);
                 s.touch_appearance();
             });
-            if patch_needs_canvas_scrub(patch) {
-                leave_scrub();
-            }
         },
         Duration::from_millis(COMMIT_MS),
     )

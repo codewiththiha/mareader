@@ -15,9 +15,11 @@
 //! Inline properties rather than CSS blocks because the tint is continuous —
 //! any hue, any strength — which a stylesheet cannot enumerate. The
 //! stylesheet keeps the STRUCTURE (which var drives what) and the base
-//! palettes; computed values are pushed here. Setting a property to the empty
-//! string removes the override and lets the stylesheet's own value win again,
-//! which is how a tint is cleanly un-applied.
+//! palettes; computed values are pushed here. The token push rebuilds the
+//! root's declaration block in one write: a tint that goes away is a token
+//! omitted from the rebuild, which lets the stylesheet's own value win
+//! again — the clean un-apply the old per-property writes spelled as an
+//! empty-string set.
 //!
 //! Slider RAM: writing `settings` on every `input` event made WKWebView
 //! allocate a fresh filter intermediate per visible page per tick — the 1.2GB
@@ -130,21 +132,47 @@ pub fn paint_appearance_now(a: Appearance, ink_contrast: f64) {
     paint_shared(&a);
 
     let Some(style) = html_style() else { return };
-    // The PDF token set: clear the seven overridable tokens first so a
-    // removed tint cannot leave a stale override behind, then write the
-    // filter/blend pair and whatever overrides the tint produces.
-    for token in raster::UI_TOKENS {
-        _ = style.remove_property(token);
+    // The PDF token set: the filter/blend pair (always) and whatever
+    // overrides the tint produces (empty when no tint is active). The text
+    // token set, always written alongside: the namespaces are disjoint, so
+    // both formats find their own tokens waiting and a format swap needs no
+    // extra wiring.
+    let raster_vars = raster::token_vars(&a);
+    let reflow_vars = reflow::token_vars(&a, ink_contrast);
+
+    // All of it lands as ONE cssText write. Per-property writes each dirty
+    // the root's style on their own — some fifteen invalidations per painted
+    // frame, and the scrub path paints one per animation frame for the
+    // length of a drag, each of which WKWebView may answer with its own
+    // recalc — where a single serialized block costs one. The tokens this
+    // layer owns are rebuilt from scratch, so the seven UI overrides a
+    // removed tint leaves behind are gone by omission rather than by a
+    // remove_property pass; everything else on the root — the engine's
+    // --pdf-paper publish, the gloss dials, paint_shared's own writes —
+    // rides through the rebuild verbatim.
+    let owned = |name: &str| {
+        raster::UI_TOKENS.contains(&name)
+            || raster_vars.iter().any(|(n, _)| *n == name)
+            || reflow_vars.iter().any(|(n, _)| *n == name)
+    };
+    let mut buf = String::with_capacity(512);
+    for decl in style.css_text().split(';') {
+        let Some((name, _)) = decl.split_once(':') else { continue };
+        let name = name.trim();
+        if name.is_empty() || owned(name) {
+            continue;
+        }
+        buf.push_str(decl.trim());
+        buf.push(';');
     }
-    for (name, value) in raster::token_vars(&a) {
-        _ = style.set_property(name, &value);
+    for (name, value) in raster_vars.iter().chain(reflow_vars.iter()) {
+        buf.push_str(name);
+        buf.push(':');
+        buf.push_str(value);
+        buf.push(';');
     }
-    // The text token set, always written alongside: the namespaces are
-    // disjoint, so both formats find their own tokens waiting and a format
-    // swap needs no extra wiring.
-    for (name, value) in reflow::token_vars(&a, ink_contrast) {
-        _ = style.set_property(name, &value);
-    }
+    // NB: the cssText setter cannot fail — no Result to discard here.
+    style.set_css_text(&buf);
 }
 
 pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {

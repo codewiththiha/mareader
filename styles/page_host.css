@@ -138,3 +138,12 @@ html.appearance-scrubbing .pdf-page::before {
 .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }
+
+/* The same cover, restated for the scrub window: entering a tint drag
+   snapshots every page that must re-render to recover its raw
+   (public/engine/theme/scrub.ts), and the wipe those re-renders begin with
+   is exactly the flash this hides. Spelled at the higher specificity so no
+   appearance-scrubbing rule can accidentally outvote it. */
+html.appearance-scrubbing .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
+  visibility: hidden;
+}
