@@ -8,7 +8,7 @@
 // highlights.ts.
 
 import type { TextItem } from "./types";
-import { fail, failFrom } from "./canvas";
+import { fail, failFrom } from "./errors";
 import { refreshHighlights } from "./highlights";
 import { session } from "./state";
 

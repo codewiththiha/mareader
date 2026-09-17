@@ -1,7 +1,8 @@
 // LRU thumbnail cache + blit / render.
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
-import { el, fail, failFrom, offscreenFor, releaseCanvas, showBaked, showRaw } from "./canvas";
+import { el, offscreenFor, releaseCanvas, showBaked, showRaw } from "./canvas";
+import { fail, failFrom } from "./errors";
 import { bakeRaster } from "./theme/bake";
 import { readPipeline, pipelineCache } from "./theme/pipeline";
 import {

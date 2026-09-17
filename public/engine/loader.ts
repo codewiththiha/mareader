@@ -11,7 +11,8 @@ import type {
   OutlineItem,
   PDFDocumentProxy,
 } from "./types";
-import { errorInfo, fail, failFrom, offscreenFor, releaseCanvas } from "./canvas";
+import { offscreenFor, releaseCanvas } from "./canvas";
+import { errorInfo, fail, failFrom } from "./errors";
 import { resetPaperForDocument } from "./paper";
 import { session } from "./state";
 

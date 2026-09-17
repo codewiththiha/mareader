@@ -4,7 +4,8 @@ import type {
   PageState,
   RenderResult,
 } from "./types";
-import { el, fail, failFrom, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
+import { el, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
+import { fail, failFrom } from "./errors";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
