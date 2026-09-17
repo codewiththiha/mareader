@@ -21,6 +21,7 @@ import {
   hasThumb,
   prefetchThumb,
   renderThumb,
+  resetThumbLane,
 } from "./engine/thumbnails";
 import {
   clearHighlights,
@@ -96,6 +97,10 @@ async function destroy(): Promise<void> {
     session.thumbTasks.clear();
     session.thumbCancelled.clear();
     session.thumbLive.clear();
+    // The lane's queued jobs and per-id generation counters belong to this
+    // document: the epoch invalidates the queue, and the counters go with it
+    // so the next document's recycled `thumb-{page}` ids start clean.
+    resetThumbLane();
     for (const entry of session.thumbCache.values()) session.releaseThumbEntry(entry);
     session.thumbCache.clear();
     session.setSearchQuery("");
