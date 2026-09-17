@@ -138,6 +138,10 @@ async function settleCanvasTheme(): Promise<void> {
  */
 export async function setScrubModeInternal(on: boolean): Promise<void> {
   if (session.themeScrubActive === on) return;
+  // Both edges of the window are worth remembering: a render baking just
+  // after either one is a render a follow-up drag may want raw, so it keeps
+  // its unbaked raster (renderer.ts). Outside the window bakes drop theirs.
+  session.noteScrub();
 
   if (on) {
     // The global class delimits the scrub window for the CSS that keys off

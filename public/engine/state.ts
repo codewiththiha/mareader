@@ -50,7 +50,16 @@ function memoryScaledPixelCeiling(): number {
 
 export const PAGE_MAX_PIXELS = memoryScaledPixelCeiling();
 
-const RAW_IDLE_MS = 10_000;
+// A retained raw is only worth its full-page surface while a tint scrub can
+// still plausibly restore it; the idle timer is the short tail of that
+// window, not a standing keep-alive.
+const RAW_IDLE_MS = 2_000;
+/** How long after a scrub transition a bake still retains its unbaked raw,
+ *  so back-to-back drags restore without a re-render. Outside the window the
+ *  raw is dropped at the bake and the scrub path re-renders on demand
+ *  (preparePagesForScrub) — a raw nobody will ask for is pure peak
+ *  inflation, and the footprint latches onto the peak. */
+const SCRUB_RAW_RETAIN_MS = 30_000;
 const SWEEP_IDLE_MS = 30_000;
 
 /** The engine's per-document session state: the pdf.js document proxy, live
@@ -91,6 +100,11 @@ class EngineSession {
 
   themeScrubActive = false;
 
+  /** The last scrub-mode transition (Date.now()), recorded by the theme
+   *  queue on the way in AND out. A bake retains its unbaked raw only while
+   *  a scrub inside SCRUB_RAW_RETAIN_MS of this is plausible. */
+  lastScrubAt = 0;
+
   private idleTimer: ReturnType<typeof setTimeout> | 0 = 0;
   private rawTimers = new WeakMap<PageState, ReturnType<typeof setTimeout>>();
 
@@ -128,6 +142,19 @@ class EngineSession {
 
   setThemeScrubActive(on: boolean): void {
     this.themeScrubActive = on;
+  }
+
+  /** Remember a scrub transition: bakes landing inside the retention window
+   *  keep their unbaked raw so the next drag restores without a re-render. */
+  noteScrub(): void {
+    this.lastScrubAt = Date.now();
+  }
+
+  /** Whether a tint scrub is plausible right now — the retention gate for
+   *  the unbaked raw a bake just produced. Zero means "never scrubbed this
+   *  session", which is not plausible. */
+  scrubIsPlausible(): boolean {
+    return this.lastScrubAt > 0 && Date.now() - this.lastScrubAt < SCRUB_RAW_RETAIN_MS;
   }
 
   bumpRenderCount(): number {
