@@ -30,10 +30,12 @@ export const THUMB_CACHE_MAX = 16;
  *  not the target: US-Letter at 100% zoom on a 2x display is ~1.5M px, at
  *  200% ~7.8M. 16M keeps the FULL native devicePixelRatio through ~200% zoom
  *  on any display; total GPU memory is bounded by the 3-page mounted ceiling
- *  (RENDER_BUDGET), not by this. The ceiling scales with the device's
- *  reported memory (navigator.deviceMemory, Chromium-only; elsewhere the
- *  base applies) so a 16 GB machine can push ~200% on a 3x display without
- *  hitting the cap. */
+ *  (RENDER_BUDGET), not by this. The ceiling used to DOUBLE on machines
+ *  reporting >= 8 GB; that bought no visible sharpness (16M already covers
+ *  ~200% at dpr 2) and made every transient surface a zoom commit stacks —
+ *  scratch, bake output, snapshot mask — twice the cost, permanently: the
+ *  webview's footprint latches onto the session's dirty high-water mark and
+ *  never hands it back. Low-memory devices still get half the base. */
 const PAGE_MAX_PIXELS_BASE = 16 * 1024 * 1024;
 
 function memoryScaledPixelCeiling(): number {
@@ -43,7 +45,6 @@ function memoryScaledPixelCeiling(): number {
   const nav = typeof navigator !== "undefined" ? (navigator as { deviceMemory?: number }) : undefined;
   const memory = nav && nav.deviceMemory;
   if (typeof memory !== "number" || !(memory > 0)) return PAGE_MAX_PIXELS_BASE;
-  if (memory >= 8) return PAGE_MAX_PIXELS_BASE * 2;
   if (memory >= 4) return PAGE_MAX_PIXELS_BASE;
   return PAGE_MAX_PIXELS_BASE / 2;
 }
