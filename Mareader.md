@@ -179,6 +179,14 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   to the shelf — the app sweeps the worker's caches and drops the masks any
   superseded render left behind (`sweep` / `sweepSnapshots` on the engine
   facade).
+- A page a scroll fling sweeps into the mount window stays on its thumbnail
+  underlay until the scroller settles — the virtualizer's scroll-end window,
+  published as a signal (`crates/virtual-list-leptos/src/virtualizer.rs`) —
+  and rasterises once, when the strip is quiet. A two-second fling through a
+  long book costs the handful of pages it ends on, not an
+  allocate/render/discard cycle per page flown past: the churn, not the
+  mounted ceiling, is what drives the engine's resource cache to the mark
+  the footprint latches onto.
 
 **The retentions were bugs.** Three teardown paths used to leave live
 references behind, which is what read as hundreds of MB of private memory on
@@ -188,10 +196,14 @@ effect's owner; a boot registration whose owner died before the microtask ran
 no longer revives a dead canvas in the engine; and the full-text index is
 keyed by the document's pdf.js fingerprint, so a reopen of the same book
 adopts the retained index instead of re-extracting every page — each rebuild
-ratcheted the wasm heap another step up. The one lever deliberately not
-pulled is a pressure valve that recreates the webview after very long
-sessions: it trades reading continuity for a number the next book latches
-right back.
+ratcheted the wasm heap another step up — and the thumbnail lane's per-page
+generation counters reset with the document they were issued for. The
+platform levers stay weighed and unpulled: a CPU-backed-canvas hint
+(`willReadFrequently`) trades compositor speed for a smaller GPU cache and
+wants an A/B measurement before it ships anywhere; cache-budget engine flags
+are WebView2-only; and a pressure valve that recreates the webview after
+very long sessions trades reading continuity for a number the next book
+latches right back.
 
 ## Formats: one host, one pipeline per family
 
