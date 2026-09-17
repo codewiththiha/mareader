@@ -64,18 +64,25 @@ declare global {
   var PDFReader: PDFReaderApi;
 }
 
+/** Cancel and release every live page surface. Shared by `destroy` and the
+ *  `pagehide` handler: both must stop in-flight renders and free the surfaces,
+ *  and only one of them goes on to null the document out. */
+function cancelAndReleasePages(): void {
+  for (const st of session.stateByCanvasId.values()) {
+    st.dead = true;
+    try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
+    try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
+    if (st.queueHandle) {
+      cancelAnimationFrame(st.queueHandle);
+      st.queueHandle = 0;
+    }
+    session.releasePageSurfaces(st);
+  }
+}
+
 async function destroy(): Promise<void> {
   try {
-    for (const st of session.stateByCanvasId.values()) {
-      st.dead = true;
-      try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
-      try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
-      if (st.queueHandle) {
-        cancelAnimationFrame(st.queueHandle);
-        st.queueHandle = 0;
-      }
-      session.releasePageSurfaces(st);
-    }
+    cancelAndReleasePages();
     session.stateByCanvasId.clear();
     for (const task of session.thumbTasks.values()) {
       try { task.cancel(); } catch (_) { /* ignore */ }
@@ -177,16 +184,7 @@ function stats(): Stats {
 }
 
 function releaseAllSurfaces(): void {
-  for (const st of session.stateByCanvasId.values()) {
-    st.dead = true;
-    try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
-    try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
-    if (st.queueHandle) {
-      cancelAnimationFrame(st.queueHandle);
-      st.queueHandle = 0;
-    }
-    session.releasePageSurfaces(st);
-  }
+  cancelAndReleasePages();
   for (const entry of session.thumbCache.values()) session.releaseThumbEntry(entry);
   try {
     document.querySelectorAll("canvas").forEach((c) => releaseCanvas(c as HTMLCanvasElement));
