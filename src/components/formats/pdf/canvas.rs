@@ -123,6 +123,14 @@ pub fn PdfPageCanvas(
     /// stands down entirely. Absent for hosts outside a virtualized strip.
     #[prop(optional)]
     dormant: Option<Signal<bool, LocalStorage>>,
+    /// Whether the strip's scroll has SETTLED — the virtualizer's scroll-end
+    /// window, published as a signal. While it reads false, an UNPAINTED page
+    /// stays on its thumbnail underlay instead of starting a full-resolution
+    /// rasterisation: the fling gate. `None` (the default) means nothing to
+    /// wait for — hosts outside a virtualized strip (single, spread) mount a
+    /// page or two and sweep nothing past.
+    #[prop(optional)]
+    settled: Option<Signal<bool>>,
     /// True while a real zoom *gesture* owns the layout. Distinct from
     /// `zoom_animating`, which every resize-driven animation also holds — a
     /// fit slide, a window drag carrying a hand-picked zoom — for the whole
@@ -341,6 +349,23 @@ pub fn PdfPageCanvas(
         // out — but ONLY if `painted == true`. A wiped canvas (cancelled
         // render) must re-render.
         if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
+            return;
+        }
+        // SCROLL-FLING GATE. An unpainted page the scroller is still sweeping
+        // past stays on its thumbnail underlay until the strip settles: a
+        // full-resolution rasterisation for every page a fling flies past
+        // creates, paints and discards a full-page surface every few frames,
+        // and that churn — not the mounted ceiling — is what pushes the
+        // webview's resource cache, and the footprint latched onto it, to its
+        // high-water mark. `settled` is read TRACKED, so the settle itself
+        // re-runs this effect and the crisp render lands then, paced by the
+        // engine's render lane. A render already in flight is never touched —
+        // the gate only governs STARTING one, and the underlay blit below is
+        // the same one the cold first paint uses.
+        if !painted.get() && settled.as_ref().is_some_and(|s| !s.get()) {
+            if !(gw > 0.0 && gh > 0.0) {
+                engine::blit_thumb(&cid_effect, page);
+            }
             return;
         }
         let page_no = page;
