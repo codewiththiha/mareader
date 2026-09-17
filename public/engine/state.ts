@@ -17,7 +17,10 @@ import type {
 import { disposeScratch, releaseCanvas } from "./canvas";
 import { PAGE_SNAPSHOT_SELECTOR, TEXT_LAYER_SELECTOR } from "./dom-contract";
 
-export const ENGINE_VERSION = "0.5.0"; // 0.5.0: search fully ported to Rust (extractPageText + setSearchContext); registerPage became typed args
+// The engine's own API version, served as `PDFReader.version()`. It tracks the
+// JS surface rather than the app release, and unlike the six sources
+// `tools/check-versions.ts` compares, nothing here checks it against them.
+export const ENGINE_VERSION = "0.5.0";
 
 /** Cap kept tight: each thumb is a pair of rasters. 16 keeps several
  *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
