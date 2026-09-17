@@ -36,7 +36,7 @@ pub use render::{
     blit_thumb, cancel_thumb, has_thumb, prefetch_thumb, register_page, render_page, render_thumb,
     unregister_page,
 };
-pub use search::{build_search_index, clear_highlights, search, set_active_match};
+pub use search::{build_search_index, clear_highlights, scope_to_document, search, set_active_match};
 pub use theme::{refresh_theme, set_scrub_mode, sweep, sweep_snapshots};
 
 /// Error returned by any engine call: the engine-side error `name` and

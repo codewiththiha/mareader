@@ -307,6 +307,12 @@ export async function open(path: string): Promise<OpenResult> {
       numPages: session.numPages,
       title,
       author,
+      // The permanent content fingerprint pdf.js derived from these exact
+      // bytes: the identity the Rust search index caches under, so a reopen
+      // of the same file adopts the retained index instead of re-extracting
+      // every page. The optional chain is for engine stubs without the field
+      // (the Node smoke harness's older fakes); they get the path fallback.
+      fingerprint: doc.fingerprints?.[0] ?? null,
       // The outline is deliberately NOT resolved here — see resolveOutline.
       outline: [],
       page1Size: { width: vp.width, height: vp.height },

@@ -68,7 +68,7 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- 1,015 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
+- 1,018 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
   layer, and six scripts that keep facts written down twice from drifting.
 
 ---
@@ -1095,7 +1095,7 @@ only the app and silently skip every member crate. The `mareader-shell` crate is
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-1,015 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+1,018 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
 migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
 the animation loops share, and the virtual-list windowing invariants. On top of that, the

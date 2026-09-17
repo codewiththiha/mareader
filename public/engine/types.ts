@@ -17,6 +17,10 @@ export type LoadingTask = {
 
 export type PDFDocumentProxy = {
   numPages: number;
+  /** Content hashes of the file: `[permanent, temporary]`. The permanent
+   *  fingerprint is the document's identity across opens — the search index
+   *  caches under it so a reopen adopts the retained index. */
+  fingerprints: string[];
   getPage: (n: number) => Promise<PDFPageProxy>;
   getMetadata: () => Promise<{ info?: { Title?: string | null; Author?: string | null } }>;
   getOutline: () => Promise<OutlineItem[] | null>;
@@ -126,6 +130,10 @@ export type OpenResult = Result<{
   numPages: number;
   title: string | null;
   author: string | null;
+  /** The document's permanent pdf.js fingerprint — the content identity the
+   *  Rust search index caches under. Null only for engines that predate the
+   *  field, where the index falls back to the path. */
+  fingerprint: string | null;
   /** Deliberately empty: the chapter tree resolves via `resolveOutline`
    * after the reader is up — flattening it would hold `open` hostage to a
    * worker round trip per destination. */

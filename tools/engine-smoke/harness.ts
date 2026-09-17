@@ -402,6 +402,9 @@ const fakePdf = {
   getOutline: async () => [],
   getPageIndex: async () => 0,
   getDestination: async () => null,
+  // [permanent, temporary] like the real pdf.js: the open payload must carry
+  // the PERMANENT one — the search index's cache identity.
+  fingerprints: ["smoke-permanent", "smoke-temporary"],
   cleanup: async () => {},
 };
 const fakeLoadingTask = { promise: Promise.resolve(fakePdf), destroy: async () => {} };
@@ -464,6 +467,7 @@ interface OpenPayload {
   numPages: number;
   title: string | null;
   author: string | null;
+  fingerprint: string | null;
   outline: unknown[];
   page1Size: { width: number; height: number };
   pageHeights: number[];

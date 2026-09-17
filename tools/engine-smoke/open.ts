@@ -4,6 +4,12 @@ export async function run(): Promise<void> {
   const opened = await PDFReader.open("/fake/book.pdf");
   if (!opened.ok) throw new Error("open failed: " + JSON.stringify(opened));
   console.log("open ok:", opened.numPages, "pages");
+  // The open payload carries the document's PERMANENT content fingerprint —
+  // the identity the Rust search index caches under, so reopening the same
+  // bytes skips the full text re-extraction.
+  if (opened.fingerprint !== "smoke-permanent") {
+    throw new Error("open must report the permanent fingerprint, got " + opened.fingerprint);
+  }
   // The chapter tree is no longer open's to resolve — it arrives on its own
   // call once the reader is up (flattening it is a worker round trip per
   // destination, which used to hold every open hostage).

@@ -21,13 +21,19 @@ pub struct PageSize {
 /// silent `depth: 0` instead of a compile error.
 pub use pdf_core::outline::OutlineEntry;
 
-/// `{ok:true, numPages, title, author, outline, page1Size, pageHeights}` — engine.open().
+/// `{ok:true, numPages, title, author, fingerprint, outline, page1Size, pageHeights}` — engine.open().
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenResult {
     pub num_pages: u32,
     pub title: Option<String>,
     pub author: Option<String>,
+    /// The document's permanent pdf.js content fingerprint — the identity the
+    /// search index caches under, so reopening the same bytes adopts the
+    /// retained index instead of re-extracting every page. Null only for
+    /// engine builds predating the field; the index falls back to the path.
+    #[serde(default)]
+    pub fingerprint: Option<String>,
     pub outline: Vec<OutlineEntry>,
     pub page1_size: PageSize,
     /// Intrinsic (scale-1) height of every page, in document order.
