@@ -735,6 +735,15 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
   could invoke a dropped closure and abort the WebAssembly runtime.
 - Device pixel ratio is respected when sizing canvases, so pages stay crisp on high-density
   displays.
+- The memory number the OS reports is a high-water mark, not a reservation: the webview returns
+  freed heap to its own free lists rather than the kernel, and the WebAssembly linear memory only
+  grows, so the footprint of a long reading session does not come back down on its own. It stays
+  reclaimable under pressure, and Reload Window — a row in the reader's and the shelf's menus —
+  resets it in place, a restart without the quit.
+- The full-text search index builds on the first search rather than at open, so a book nobody
+  searches never pays the per-page extraction, and the WebAssembly heap logs its size at open,
+  close, zoom commit and index build (`[mem]` lines in the webview console): the plateau of a
+  latch reads differently there from the climb of a leak.
 
 ---
 

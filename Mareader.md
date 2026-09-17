@@ -165,9 +165,11 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
 
 - Full-size renders share one two-deep lane in `public/engine/renderer.ts`
   (the thumbnail lane's pattern), so a commit queues instead of stampeding.
-- The pixel ceiling stays at 16M px everywhere (`public/engine/state.ts`):
-  that already covers ~200% zoom at dpr 2, and the doubled ceiling bought
-  only larger transients, not sharper pages.
+- The pixel ceiling is 12M px everywhere (`public/engine/state.ts`): that
+  still covers ~245% zoom at dpr 2 — past where anyone is inspecting rather
+  than reading — and every transient a commit stacks is a quarter smaller
+  than the 16M this used to be. The doubled ceiling before that bought only
+  larger transients, not sharper pages.
 - A bake retains its unbaked raw only while a tint scrub is plausible —
   inside 30s of the last scrub transition — and drops it at the bake
   otherwise; the scrub path re-renders on demand.
@@ -175,10 +177,10 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   page (`src/components/formats/pdf/canvas_host.rs`): the mask exists to cover
   the frames until that render lands, which is not worth a third full-page
   layer.
-- Where reading work ends — the zoom commit, the retention grace, the return
-  to the shelf — the app sweeps the worker's caches and drops the masks any
-  superseded render left behind (`sweep` / `sweepSnapshots` on the engine
-  facade).
+- Where reading work ends — the zoom commit, the mode flip, the retention
+  grace, the return to the shelf — the app sweeps the worker's caches and
+  drops the masks any superseded render left behind (`sweep` /
+  `sweepSnapshots` on the engine facade).
 - A page a scroll fling sweeps into the mount window stays on its thumbnail
   underlay until the scroller settles — the virtualizer's scroll-end window,
   published as a signal (`crates/virtual-list-leptos/src/virtualizer.rs`) —
@@ -187,6 +189,13 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   allocate/render/discard cycle per page flown past: the churn, not the
   mounted ceiling, is what drives the engine's resource cache to the mark
   the footprint latches onto.
+- The full-text index builds on the first search, never at open
+  (`src/effects/reader/search.rs`): extraction is the one wasm-side cost
+  that scales with the BOOK — a worker round trip per page, landing in a
+  heap that only grows — so an open-time build charged every book that
+  ratchet whether or not anyone ever searched it. One build runs at a time;
+  keystroke runs fired mid-build skip, and the builder queries the latest
+  text when it lands.
 
 **The retentions were bugs.** Three teardown paths used to leave live
 references behind, which is what read as hundreds of MB of private memory on
@@ -197,13 +206,25 @@ no longer revives a dead canvas in the engine; and the full-text index is
 keyed by the document's pdf.js fingerprint, so a reopen of the same book
 adopts the retained index instead of re-extracting every page — each rebuild
 ratcheted the wasm heap another step up — and the thumbnail lane's per-page
-generation counters reset with the document they were issued for. The
-platform levers stay weighed and unpulled: a CPU-backed-canvas hint
+generation counters reset with the document they were issued for.
+
+The heap is charted from inside, because from outside it is invisible: the
+OS's number folds the wasm linear memory into the webview's total, where
+canvas surfaces dominate. `src/memory.rs` logs the heap's byte length at
+open, close, zoom commit and index build (`[mem]` lines in the webview
+console), and the trace IS the leak-versus-latch test — steps up once per
+book, flat across a session's zooms, never back down: that is the ratchet
+working as the platform dictates. A climb per open/close cycle would be a
+leak, and the log is where one shows up first.
+
+The platform levers stay weighed and unpulled: a CPU-backed-canvas hint
 (`willReadFrequently`) trades compositor speed for a smaller GPU cache and
 wants an A/B measurement before it ships anywhere; cache-budget engine flags
-are WebView2-only; and a pressure valve that recreates the webview after
-very long sessions trades reading continuity for a number the next book
-latches right back.
+are WebView2-only; and an AUTOMATIC pressure valve that recreates the webview
+after very long sessions still trades reading continuity for a number the
+next book latches right back. What shipped instead is the manual one: Reload
+Window — a row in the reader's ⋯ menu and the shelf's — is the force-quit
+minus the quit, offered rather than imposed.
 
 ## Formats: one host, one pipeline per family
 
