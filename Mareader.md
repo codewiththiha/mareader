@@ -1,8 +1,9 @@
 # Architecture
 
-> Scope note: this document covers the virtualization, motion and format-pipeline design — the
-> parts of the reader with the most subtle invariants. For the feature tour, build setup and the
-> crate map, see the README.
+> Scope note: this document covers the design with the most subtle invariants —
+> virtualization, motion, the format pipeline, the host protocol the AI layer finds a word
+> through, and the library's addresses, shelves and rescan ledger. The library is most of it.
+> For the feature tour, build setup and the crate map, see the README.
 
 This repo now splits virtual scrolling into three layers.
 
