@@ -4,6 +4,7 @@
 
 pub mod auto_scroll;
 pub mod blend_backdrop;
+pub mod first_paint;
 pub mod layout_prefs;
 pub mod link_navigation;
 pub mod mode_change;
