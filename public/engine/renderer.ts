@@ -316,6 +316,28 @@ export async function renderPageInternal(
   return { ok: true, width: cssW, height: cssH, scale };
 }
 
+// Full-size renders share ONE bounded lane, the thumbnail lane's pattern.
+// The per-canvas rAF below coalesces a single page's requests; it never
+// limited how many pages rasterise at once, so a zoom commit re-rendered
+// every mounted page in parallel and each in-flight render held several
+// full-page surfaces (scratch, bake output) at the same time. The footprint
+// latches onto that summed peak, which is what made one commit cost
+// hundreds of MB it never handed back. Queued jobs re-check their
+// generation at the front of the lane, so a page that unmounted or was
+// superseded while waiting drops without touching pdf.js.
+const PAGE_RENDER_LIMIT = 2;
+let pageActive = 0;
+const pageQueue: Array<() => void> = [];
+
+function pumpPageQueue(): void {
+  while (pageActive < PAGE_RENDER_LIMIT && pageQueue.length > 0) {
+    const next = pageQueue.shift();
+    if (!next) return;
+    pageActive += 1;
+    next();
+  }
+}
+
 async function runLimited<T>(jobs: Array<() => Promise<T>>, limit = 2): Promise<T[]> {
   const out: T[] = [];
   let i = 0;
@@ -362,11 +384,26 @@ export async function renderPage(
         resolve(fail("cancelled", "Render cancelled"));
         return;
       }
-      try {
-        renderPageInternal(canvasId, scale, !!renderText).then(resolve);
-      } catch (e) {
-        resolve(failFrom(e));
-      }
+      pageQueue.push(() => {
+        const finish = () => {
+          pageActive -= 1;
+          pumpPageQueue();
+        };
+        // The page unmounted, or a newer scale superseded this job, while it
+        // waited for a lane slot. Drop it without touching pdf.js.
+        if (st.dead || st.queueGen !== gen) {
+          resolve(fail("cancelled", "Render cancelled"));
+          finish();
+          return;
+        }
+        renderPageInternal(canvasId, scale, !!renderText)
+          .then(resolve)
+          .catch((e: unknown) => {
+            resolve(failFrom(e));
+          })
+          .finally(finish);
+      });
+      pumpPageQueue();
     });
   });
 }
