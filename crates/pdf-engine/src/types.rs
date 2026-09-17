@@ -53,7 +53,6 @@ pub struct RenderResult {
     pub scale: f64,
 }
 
-///
 /// The old `cached` flag (the engine blitted an already-rendered bitmap
 /// synchronously) arrived with the promise — too late for the cell's first
 /// composited frame — and was left unread. What actually removed the flicker

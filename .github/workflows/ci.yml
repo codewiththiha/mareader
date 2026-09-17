@@ -260,10 +260,10 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      # Type-checks tsconfig.json with --noEmit and then emits the tools, so the
-      # separate `check:ts` pass this lane used to run first put the same
-      # compiler over the same files twice for the same answer. What the steps
-      # below consume is the emission: scripts/*.js and the three engine bundles.
+      # Type-checks tsconfig.json with --noEmit and then emits the tools, so a
+      # separate type-check step would put the same compiler over the same files
+      # twice for the same answer. What the steps below consume is the emission:
+      # scripts/*.js and the three engine bundles.
       - name: Build TypeScript
         run: npm run build:ts
 
