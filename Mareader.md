@@ -142,6 +142,57 @@ The thumbnail sidebar is a separate grid virtualizer:
 
 That keeps list and grid virtualization on the same geometry stack while letting each surface keep its own rendering policy.
 
+## The memory model: peaks, latches and the floor
+
+The footprint the reader shows in Activity Monitor is three stacked facts, and
+only two of them are the app's.
+
+**The floor is the platform's.** WKWebView's memory number is a physical
+footprint: private dirty pages, plus pages already freed but not yet reclaimed
+(`MADV_FREE`, which a machine under no pressure never reclaims), plus
+GPU-backed canvas surfaces. JSC's heap, bmalloc and the wasm linear memory
+only grow — freed blocks go back to their own free lists, not to the OS. The
+library after a read therefore never reads like the library cold, and no app
+code can make it: only kernel pressure or the death of the process gives a
+footprint back. Everything the app can do is keep the high-water mark low,
+because the footprint latches onto the highest peak the session reached.
+
+**The peaks are the app's.** Every transient full-page surface is a permanent
+cost, and a zoom commit used to stack four of them per mounted page — the live
+canvas, the snapshot mask, the unbaked raw and the bake output — with no bound
+on how many pages rasterised at once, under a pixel ceiling that doubled to
+32M (~128 MB per layer) on big-memory machines. What holds the peak down now:
+
+- Full-size renders share one two-deep lane in `public/engine/renderer.ts`
+  (the thumbnail lane's pattern), so a commit queues instead of stampeding.
+- The pixel ceiling stays at 16M px everywhere (`public/engine/state.ts`):
+  that already covers ~200% zoom at dpr 2, and the doubled ceiling bought
+  only larger transients, not sharper pages.
+- A bake retains its unbaked raw only while a tint scrub is plausible —
+  inside 30s of the last scrub transition — and drops it at the bake
+  otherwise; the scrub path re-renders on demand.
+- A zoom stretch skips the snapshot mask when a render is queued for the same
+  page (`src/components/formats/pdf/canvas_host.rs`): the mask exists to cover
+  the frames until that render lands, which is not worth a third full-page
+  layer.
+- Where reading work ends — the zoom commit, the retention grace, the return
+  to the shelf — the app sweeps the worker's caches and drops the masks any
+  superseded render left behind (`sweep` / `sweepSnapshots` on the engine
+  facade).
+
+**The retentions were bugs.** Three teardown paths used to leave live
+references behind, which is what read as hundreds of MB of private memory on
+the empty shelf: the container's ResizeObserver now dies with its shell by
+explicit contract instead of riding the disposal order of the install
+effect's owner; a boot registration whose owner died before the microtask ran
+no longer revives a dead canvas in the engine; and the full-text index is
+keyed by the document's pdf.js fingerprint, so a reopen of the same book
+adopts the retained index instead of re-extracting every page — each rebuild
+ratcheted the wasm heap another step up. The one lever deliberately not
+pulled is a pressure valve that recreates the webview after very long
+sessions: it trades reading continuity for a number the next book latches
+right back.
+
 ## Formats: one host, one pipeline per family
 
 The reader has two axes that must not multiply: how a document is *viewed* (single,
