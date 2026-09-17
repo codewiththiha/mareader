@@ -49,7 +49,10 @@ export function paperInfo(pipeline: PipelineCache): PaperInfo {
 // --pdf-paper-baked for the backdrop rule in styles/components/shell.css.
 // Both stages reuse the baker's own implementations (filterKernel + a canvas
 // globalCompositeOperation blend), so backdrop and baked rasters agree by
-// construction, not by a second copy of the maths.
+// construction, not by a second copy of the maths. A third stage folds in
+// the page's texture overlay — grain the compositor lays OVER the baked
+// raster but not over the flat backdrop — so a page edge meeting the gutter
+// on a fractional device pixel mixes the same colour on both sides.
 
 /** Parse the `#rrggbb` the paper session publishes; null on anything else. */
 function parsePaperHex(hex: string): [number, number, number] | null {
@@ -68,6 +71,27 @@ function toPaperHex(rgb: [number, number, number]): string {
     "#" +
     rgb.map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, "0")).join("")
   );
+}
+
+/** The page texture overlay's average effect on the paper under it, as a
+ *  multiplier on the flat colour: 1 when no texture is on, else a small
+ *  darkening (multiply, light family) or lightening (screen, dark family)
+ *  scaled by the dial. `--tex-opacity` is the dial as the compositor sees it
+ *  — the Rust paint (src/effects/app/theme.rs) publishes zero when no
+ *  texture mode is on, so a persisted opacity cannot leak through. */
+function textureShiftFactor(): number {
+  let opacity = 0;
+  try {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue("--tex-opacity");
+    opacity = parseFloat(raw || "0") || 0;
+  } catch (_) {
+    return 1;
+  }
+  if (!(opacity > 0)) return 1;
+  const dark = document.documentElement.classList.contains("dark");
+  // The strokes are sparse — the overlay's mean effect on a flat colour is
+  // a small fraction of the dial, not the dial itself.
+  return dark ? 1 + opacity * 0.06 : 1 - opacity * 0.08;
 }
 
 /** The detected paper run through one pass of the current filter + blend —
@@ -108,6 +132,17 @@ function bakedPaperHex(pipeline: PipelineCache): string | null {
     releaseScratch(c);
   } catch (_) {
     /* the filtered colour alone is closer than none */
+  }
+
+  // Stage three — the texture overlay. The page's ::before grain rides OVER
+  // the baked raster (styles/textures.css); the backdrop carries only the
+  // flat colour published here. Approximate the overlay's mean effect so
+  // the two meet at the page edge — worst case is Parchment, paper grain
+  // at 85% over a warm tint, where the untextured gutter used to show as a
+  // seam along fractional device pixels.
+  const factor = textureShiftFactor();
+  if (factor !== 1) {
+    out = [out[0] * factor, out[1] * factor, out[2] * factor];
   }
   return toPaperHex(out);
 }

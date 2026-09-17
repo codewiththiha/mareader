@@ -36,7 +36,7 @@ use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
 use reader_core::appearance::shared::{noise, texture};
-use reader_core::appearance::Appearance;
+use reader_core::appearance::{Appearance, TextureMode};
 use reader_core::format::Format;
 use reader_core::settings::GlossColor;
 use crate::state::{AppState, AppearanceSignal};
@@ -99,6 +99,19 @@ fn paint_shared(a: &Appearance) {
         for (name, value) in texture::css_vars(a) {
             let _ = style.set_property(name, &value);
         }
+        // The texture overlay's EFFECTIVE strength, as the compositor sees
+        // it: the opacity dial persists independently of the mode, so None
+        // publishes a hard zero. The engine folds this into the backdrop
+        // paper it publishes (public/engine/theme/paper.ts) — the page's
+        // ::before grain rides over the baked raster and shifts the colour
+        // the page edge actually shows, and a backdrop that does not carry
+        // the same shift leaves a seam along a fractional device pixel.
+        let tex_op = if a.texture == TextureMode::None {
+            0.0
+        } else {
+            a.texture_opacity as f64 / 100.0
+        };
+        let _ = style.set_property("--tex-opacity", &format!("{tex_op:.3}"));
     }
 
     if kick {
