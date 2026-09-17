@@ -12,9 +12,7 @@ use reader_core::settings::{
 };
 
 use crate::components::primitives::form::row::Row;
-use crate::components::settings::common::StyleSelect;
-use app_chrome::icon::IconName;
-use app_chrome::icon_button::IconButton;
+use crate::components::settings::common::{StepperRow, StyleSelect};
 use crate::components::primitives::form::slider::Slider;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::controls::switch::Switch;
@@ -114,49 +112,31 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                         .to_string()
                 />
             </Row>
-            <Row label="Label Width Limit">
-                <span class="flex items-center gap-3">
-                    <span class="w-10 text-right text-sm tabular-nums text-ink">
-                        {move || {
-                            format!("{}%", s.with(|st| st.layout.floating_label_max_pct) as u32)
-                        }}
-                    </span>
-                    <span class="flex gap-1.5">
-                        <IconButton
-                            icon=IconName::Minus
-                            size=14
-                            title="Lower the width limit"
-                            class="rounded-full bg-line/60 hover:bg-line".to_string()
-                            disabled=Signal::derive(move || {
-                                label_off.get()
-                                    || s.with(|st| st.layout.floating_label_max_pct) <= 10.0
-                            })
-                            on_click=move || {
-                                s.update(|st| {
-                                    st.layout.floating_label_max_pct =
-                                        (st.layout.floating_label_max_pct - 10.0).clamp(10.0, 100.0);
-                                })
-                            }
-                        />
-                        <IconButton
-                            icon=IconName::Plus
-                            size=14
-                            title="Raise the width limit"
-                            class="rounded-full bg-line/60 hover:bg-line".to_string()
-                            disabled=Signal::derive(move || {
-                                label_off.get()
-                                    || s.with(|st| st.layout.floating_label_max_pct) >= 100.0
-                            })
-                            on_click=move || {
-                                s.update(|st| {
-                                    st.layout.floating_label_max_pct =
-                                        (st.layout.floating_label_max_pct + 10.0).clamp(10.0, 100.0);
-                                })
-                            }
-                        />
-                    </span>
-                </span>
-            </Row>
+            <StepperRow
+                label="Label Width Limit"
+                display=Signal::derive(move || {
+                    format!("{}%", s.with(|st| st.layout.floating_label_max_pct) as u32)
+                })
+                minus_disabled=Signal::derive(move || {
+                    label_off.get() || s.with(|st| st.layout.floating_label_max_pct) <= 10.0
+                })
+                plus_disabled=Signal::derive(move || {
+                    label_off.get() || s.with(|st| st.layout.floating_label_max_pct) >= 100.0
+                })
+                on_minus=Callback::new(move |_| {
+                    s.update(|st| {
+                        st.layout.floating_label_max_pct =
+                            (st.layout.floating_label_max_pct - 10.0).clamp(10.0, 100.0);
+                    });
+                })
+                on_plus=Callback::new(move |_| {
+                    s.update(|st| {
+                        st.layout.floating_label_max_pct =
+                            (st.layout.floating_label_max_pct + 10.0).clamp(10.0, 100.0);
+                    });
+                })
+                title="label width".to_string()
+            />
             <Row label="Progress Bar">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.progress_bar))
@@ -205,57 +185,34 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
             // is the horizontal scroll mode, which never carries a margin:
             // while it is on, the adjuster is disabled and the stored value
             // waits, untouched, for the other modes.
-            <Row label="Page Margin">
-                <span class="flex items-center gap-3">
-                    <span
-                        class="w-10 text-right text-sm tabular-nums text-ink"
-                        class=("opacity-45", move || horizontal_mode.get())
-                    >
-                        {move || {
-                            let m = s.with(|st| st.layout.page_margin) as u32;
-                            if m == 0 {
-                                "Off".into()
-                            } else {
-                                format!("{m}")
-                            }
-                        }}
-                    </span>
-                    <span class="flex gap-1.5">
-                        <IconButton
-                            icon=IconName::Minus
-                            size=14
-                            title="Less margin"
-                            class="rounded-full bg-line/60 hover:bg-line".to_string()
-                            disabled=Signal::derive(move || {
-                                horizontal_mode.get()
-                                    || s.with(|st| st.layout.page_margin) <= 0.0
-                            })
-                            on_click=move || {
-                                s.update(|st| {
-                                    st.layout.page_margin =
-                                        (st.layout.page_margin - 4.0).clamp(0.0, 64.0);
-                                })
-                            }
-                        />
-                        <IconButton
-                            icon=IconName::Plus
-                            size=14
-                            title="More margin"
-                            class="rounded-full bg-line/60 hover:bg-line".to_string()
-                            disabled=Signal::derive(move || {
-                                horizontal_mode.get()
-                                    || s.with(|st| st.layout.page_margin) >= 64.0
-                            })
-                            on_click=move || {
-                                s.update(|st| {
-                                    st.layout.page_margin =
-                                        (st.layout.page_margin + 4.0).clamp(0.0, 64.0);
-                                })
-                            }
-                        />
-                    </span>
-                </span>
-            </Row>
+            <StepperRow
+                label="Page Margin"
+                display=Signal::derive(move || {
+                    let m = s.with(|st| st.layout.page_margin) as u32;
+                    if m == 0 {
+                        "Off".into()
+                    } else {
+                        format!("{m}")
+                    }
+                })
+                minus_disabled=Signal::derive(move || {
+                    horizontal_mode.get() || s.with(|st| st.layout.page_margin) <= 0.0
+                })
+                plus_disabled=Signal::derive(move || {
+                    horizontal_mode.get() || s.with(|st| st.layout.page_margin) >= 64.0
+                })
+                on_minus=Callback::new(move |_| {
+                    s.update(|st| {
+                        st.layout.page_margin = (st.layout.page_margin - 4.0).clamp(0.0, 64.0);
+                    });
+                })
+                on_plus=Callback::new(move |_| {
+                    s.update(|st| {
+                        st.layout.page_margin = (st.layout.page_margin + 4.0).clamp(0.0, 64.0);
+                    });
+                })
+                title="margin".to_string()
+            />
             // Column Width is the reading measure dial: 100% is the natural
             // column the typography and the page geometry agreed on, and the
             // ends trade line length for everything else. A PDF's page
