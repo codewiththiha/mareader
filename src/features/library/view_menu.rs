@@ -12,7 +12,7 @@ use app_chrome::icon_button::IconButton;
 use library_core::sort::SortKey;
 use library_core::view::{CoverFit, LibraryLayout, LibraryView};
 
-use crate::components::primitives::controls::option_button::OptionButton;
+use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::services::library::create_shelf_and_enter;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
@@ -102,15 +102,15 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                 <Separator spacing="my-1.5" />
                 <SectionLabel text="Columns" />
                 <div class="flex items-center justify-between gap-2 px-1 py-1">
-                    <OptionButton
-                        selected=auto
+                    <ToggleButton
+                        active=auto
                         on_click=move || {
                             set_view(state, LibraryView::auto_columns);
                         }
                         variant_class="px-2 py-1 text-xs"
                     >
                         <span>"Auto"</span>
-                    </OptionButton>
+                    </ToggleButton>
                     <div class="flex items-center gap-0.5">
                         <IconButton
                             icon=IconName::Minus
@@ -165,8 +165,8 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                     has_direction.get().then(|| {
                         view! {
                             <div class="mb-1 flex gap-1.5 px-1">
-                                <OptionButton
-                                    selected=Signal::derive(move || ascending.get())
+                                <ToggleButton
+                                    active=Signal::derive(move || ascending.get())
                                     on_click=move || {
                                         set_view(state, |v| v.sort_asc = true);
                                     }
@@ -175,9 +175,9 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                                 >
                                     <Icon name=IconName::ChevronUp size=12 />
                                     <span>"Ascending"</span>
-                                </OptionButton>
-                                <OptionButton
-                                    selected=Signal::derive(move || !ascending.get())
+                                </ToggleButton>
+                                <ToggleButton
+                                    active=Signal::derive(move || !ascending.get())
                                     on_click=move || {
                                         set_view(state, |v| v.sort_asc = false);
                                     }
@@ -186,7 +186,7 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                                 >
                                     <Icon name=IconName::ChevronDown size=12 />
                                     <span>"Descending"</span>
-                                </OptionButton>
+                                </ToggleButton>
                             </div>
                         }
                     })

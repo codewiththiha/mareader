@@ -13,7 +13,7 @@ use crate::components::menus::appearance_menu::hue_picker::HuePicker;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::form::slider::Slider;
 use reader_core::appearance::BaseMode;
-use crate::components::primitives::controls::option_button::OptionButton;
+use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::components::settings::fonts::update_text;
 use crate::state::AppState;
 use crate::effects::appearance::{AppearanceScrub, preview_appearance};
@@ -50,8 +50,8 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                 .map(|b| {
                     let selected = Signal::derive(move || current_base() == b);
                     view! {
-                        <OptionButton
-                            selected=selected
+                        <ToggleButton
+                            active=selected
                             on_click=move || {
                                 // Keep the hue the reader was just dialling,
                                 // then switch family.
@@ -64,7 +64,7 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                         >
                             <Icon name=base_icon(b) size=16 />
                             <span>{b.label()}</span>
-                        </OptionButton>
+                        </ToggleButton>
                     }
                 })
                 .collect_view()}
