@@ -27,7 +27,7 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use super::canvas_host::{remove_snapshots, stretch_host};
+use super::canvas_host::{remove_snapshots, stretch_host, LastGeo};
 use crate::dom_contract::{HOST_PDF, TEXT_LAYER_CLASS};
 use pdf_core::pixel_grid::snap_px;
 use leptos::task::spawn_local;
@@ -223,7 +223,14 @@ pub fn PdfPageCanvas(
         if lw <= 0.0 || lh <= 0.0 || ls <= 0.0 || (ls - s).abs() <= 1e-9 {
             return;
         }
-        stretch_host(&hid_stretch, &cid_stretch, lw, lh, ls, s, false);
+        stretch_host(
+            &hid_stretch,
+            &cid_stretch,
+            LastGeo { w: lw, h: lh, scale: ls },
+            s,
+            false,
+            false,
+        );
     });
 
     Effect::new(move || {
@@ -308,11 +315,11 @@ pub fn PdfPageCanvas(
         // THIS scale AND the canvas still has its bitmap (`painted == true`),
         // re-rendering would only WIPE the live canvas (pdf.js reassigns
         // `canvas.width/height` on render start) without producing a different
-        // bitmap. Because `(gs - s).abs() <= 1e-9`, the `stretch_host(...,
-        // mask=true)` guard below is skipped too — so no `.page-snapshot`
-        // overlay is created to mask the wipe — and the user sees the canvas
-        // disappear until a scroll re-renders it. Bail out — but ONLY if
-        // `painted == true`. A wiped canvas (cancelled render) must re-render.
+        // bitmap. Because `(gs - s).abs() <= 1e-9`, the `stretch_host` guard
+        // below is skipped too — nothing resizes or covers the host — and the
+        // user sees the canvas disappear until a scroll re-renders it. Bail
+        // out — but ONLY if `painted == true`. A wiped canvas (cancelled
+        // render) must re-render.
         if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
             return;
         }
@@ -332,12 +339,17 @@ pub fn PdfPageCanvas(
 
         // Flicker guards, for renders the stretch effect did NOT precede —
         // e.g. the search nudge, or a fit refit that lands straight on
-        // render_scale. Sizes the host to the incoming scale and masks the
-        // canvas before pdf.js wipes it. When a zoom gesture just ended the
-        // stretch effect has already done this and the mask is reused.
+        // render_scale. Sizes the host to the incoming scale before pdf.js
+        // wipes the canvas. The snapshot mask is asked for but SKIPPED: this
+        // run queues the render itself, and a mask would stack a full-size
+        // RGBA copy on top of the raw + bake surfaces that render allocates
+        // — three full-page layers per page at a zoom commit, which is
+        // exactly the peak the webview's footprint latches onto. The
+        // stretched bitmap stays visible until the queued render starts,
+        // frames from now (canvas_host::stretch_host).
         let (lw, lh, ls) = geo.get_value();
         if lw > 0.0 && lh > 0.0 && ls > 0.0 && (ls - s).abs() > 1e-9 {
-            stretch_host(&hid, &cid, lw, lh, ls, s, true);
+            stretch_host(&hid, &cid, LastGeo { w: lw, h: lh, scale: ls }, s, true, true);
         }
 
         // First paint for this host: drop in the sidebar's cached thumbnail,
