@@ -165,7 +165,6 @@ impl ZoomController {
             // POSITION is captured: the layout relayouts continuously and the
             // actuator holds the reader's view still itself, frame by
             // frame.
-            let mode = state.viewer.mode.get_untracked();
             let transition = ZoomTransition {
                 from: display,
                 to: target,
@@ -179,7 +178,7 @@ impl ZoomController {
             // Bridge the relayouts before they happen: raise the strips'
             // zombie grace so pages the moving window evicts keep their DOM
             // past the animation's end.
-            let retention = config::profile_for(mode).retention;
+            let retention = config::zoom_profile().retention;
             actuator.vertical.set_retention_grace(retention.grace_ms);
             actuator.horizontal.set_retention_grace(retention.grace_ms);
             // The transition goes up BEFORE anything moves: the frames it

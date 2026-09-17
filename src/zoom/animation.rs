@@ -106,8 +106,7 @@ impl Tween {
             let Some(t) = state.viewer.zoom.transition.get_untracked() else {
                 return false;
             };
-            let mode = state.viewer.mode.get_untracked();
-            let duration = config::profile_for(mode).duration_ms();
+            let duration = config::zoom_profile().duration_ms();
             // Five reasons not to interpolate: the poster asked for the first
             // frame, this is a container follow (it must sit in the window,
             // not chase it), the profile has no duration, the OS asked for

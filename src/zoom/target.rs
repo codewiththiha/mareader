@@ -18,7 +18,7 @@ use reader_core::zoom_math::{FitMode, clamp_scale, fit_scale, nearest_zoom};
 
 use crate::state::reader::{ReaderState, ZoomCommand};
 
-use super::config::{SETTLED_EPSILON, ZoomProfile, profile_for};
+use super::config::{SETTLED_EPSILON, ZoomProfile, zoom_profile};
 
 /// Resolve a command to the scale it wants, or `None` when it must stand down
 /// (nothing to re-resolve, an unmeasured container, an unmeasured document).
@@ -29,7 +29,7 @@ use super::config::{SETTLED_EPSILON, ZoomProfile, profile_for};
 /// subscribes to the command signal and nothing else.
 pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f64>) -> Option<f64> {
     let zoom = state.viewer.zoom;
-    let profile = profile_for(state.viewer.mode.get_untracked());
+    let profile = zoom_profile();
     match cmd {
         ZoomCommand::Step(dir) => {
             // Step from the in-flight target while a tween runs, else from the
