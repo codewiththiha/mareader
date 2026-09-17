@@ -47,8 +47,7 @@
 //! for the stream (see `effects::reader::navigation_sync`), because both
 //! would speak page-cut geometry to a scroller that holds blocks.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::sync::Arc;
 
 use leptos::html;
@@ -70,6 +69,7 @@ use super::block_render;
 use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::page_host::block_row_id;
+use crate::epoch::epoch_signal;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use super::page::content_style;
 use crate::state::reader::TypographySignal;
@@ -133,18 +133,16 @@ pub fn ReflowStreamLayout(
             .with_untracked(|h| h.get(index).copied().unwrap_or(FALLBACK_BLOCK_H))
             * state.viewer.zoom.visual_scale()
     };
-    let epoch = Signal::derive(move || {
-        let mut hasher = DefaultHasher::new();
+    let epoch = epoch_signal(move |hasher| {
         state
             .document
             .content
             .reflow
             .blocks
-            .with(|blocks| (Arc::as_ptr(blocks) as usize).hash(&mut hasher));
+            .with(|blocks| (Arc::as_ptr(blocks) as usize).hash(hasher));
         let heights = state.document.content.reflow.heights.get();
-        (Arc::as_ptr(&heights) as usize).hash(&mut hasher);
-        heights.len().hash(&mut hasher);
-        hasher.finish()
+        (Arc::as_ptr(&heights) as usize).hash(hasher);
+        heights.len().hash(hasher);
     });
     let initial_vh = {
         let (_, height) = state.viewer.container_size.get_untracked();

@@ -6,8 +6,11 @@
 //! fingerprints for that, as `Signal<u64>` so an unchanged re-measure notifies
 //! nobody.
 
+use std::hash::Hash;
+
 use leptos::prelude::*;
 
+use crate::epoch::epoch_signal;
 use crate::state::ReaderState;
 
 /// What a layer painted over a page re-derives on.
@@ -18,16 +21,13 @@ use crate::state::ReaderState;
 /// all three are in the fingerprint. It is a `u64` rather than the values
 /// themselves so an unchanged re-measure notifies nothing.
 pub fn layer_refresh(state: ReaderState) -> Signal<u64> {
-    Signal::derive(move || {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        state.viewer.zoom.display.get().to_bits().hash(&mut hasher);
+    epoch_signal(move |hasher| {
+        state.viewer.zoom.display.get().to_bits().hash(hasher);
         if state.reflowable() {
-            state.viewer.scroll_top.get().to_bits().hash(&mut hasher);
-            state.viewer.container_size.get().0.to_bits().hash(&mut hasher);
+            state.viewer.scroll_top.get().to_bits().hash(hasher);
+            state.viewer.container_size.get().0.to_bits().hash(hasher);
             let _ = reflow_invalidation(state).get();
         }
-        hasher.finish()
     })
 }
 
@@ -65,20 +65,17 @@ pub fn no_invalidation() -> Signal<u64> {
 /// nothing, and the cost of that is one wake of the consumers, which is less
 /// than the hash it replaced.
 pub fn reflow_invalidation(state: ReaderState) -> Signal<u64> {
-    Signal::derive(move || {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    epoch_signal(move |hasher| {
         // `ViewMode` is `Eq` but not `Hash`, and its discriminant is all a
         // fingerprint needs.
-        (state.viewer.mode.get() as u8).hash(&mut hasher);
-        state.document.content.reflow.cut_generation.get().hash(&mut hasher);
+        (state.viewer.mode.get() as u8).hash(hasher);
+        state.document.content.reflow.cut_generation.get().hash(hasher);
         let geo = state.document.content.reflow.geometry.get();
-        geo.content_width.to_bits().hash(&mut hasher);
-        geo.content_height.to_bits().hash(&mut hasher);
+        geo.content_width.to_bits().hash(hasher);
+        geo.content_height.to_bits().hash(hasher);
         // The stream re-lays its blocks when the reading column's width moves
         // (a window resize, a page-margin change) without the page cut moving.
-        state.document.content.reflow.stream_total.get().to_bits().hash(&mut hasher);
-        state.viewer.container_size.get().0.to_bits().hash(&mut hasher);
-        hasher.finish()
+        state.document.content.reflow.stream_total.get().to_bits().hash(hasher);
+        state.viewer.container_size.get().0.to_bits().hash(hasher);
     })
 }
