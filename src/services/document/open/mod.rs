@@ -254,14 +254,12 @@ fn ready(
 
     outline::resolve(state, path.clone(), stamp);
 
-    // Fire the index build in the background; the result is ignored (search
-    // effects call it too when needed). The page count is read up front:
-    // search's own index uses it to know how many pages to ask the engine
-    // for.
-    let search_pages = seeded.num_pages;
-    spawn_local(async move {
-        _ = engine::build_search_index(search_pages).await;
-    });
+    // No eager search-index build here, deliberately: extraction costs one
+    // worker round trip per page and the index it fills lives on the wasm
+    // heap, which never shrinks — an open-time build charged every book that
+    // ratchet whether or not anyone ever searched it. The first search
+    // builds the index instead (`crate::effects::reader::search`), and a
+    // reopen of the same bytes adopts the retained one.
 
     shelf::record(
         state,

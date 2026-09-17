@@ -1,11 +1,17 @@
-//! Search pipeline: build the index once, run the query as the reader types,
-//! and step through matches — scrolling each into view rather than jumping to
-//! the top of its page.
+//! Search pipeline: build the index on the first query, run the query as the
+//! reader types, and step through matches — scrolling each into view rather
+//! than jumping to the top of its page.
 //!
 //! The pipeline forks by format at [`run_search`] and nowhere else: PDF
 //! indexes through the engine, text documents scan their own blocks in Rust.
 //! Both tails converge on the same flat `SearchMatch` list, so the results UI
 //! and the match-stepping maths serve either.
+//!
+//! The PDF index is lazy on purpose: extraction costs a worker round trip per
+//! page and the index lives on the wasm heap, which only ever grows, so an
+//! open-time build would ratchet the footprint of every book nobody searched.
+//! The build therefore belongs to the first search that needs it — one build
+//! at a time, guarded by `SearchState::building`.
 //!
 //! The tails answer "where is this hit" differently, and each `SearchMatch`
 //! carries the half its format has: a PDF a rect in page space (the engine
@@ -43,10 +49,23 @@ pub async fn run_search(state: ReaderState) {
         return;
     }
     if !state.search.index_built.get_untracked() {
-        // The index build extracts ~3 pages per turn (see
-        // pdf_engine::api::search::SEARCH_PAGE_CONCURRENCY); the page count
-        // comes from the open flow, which alone knows the document size.
-        match engine::build_search_index(state.document.num_pages.get_untracked()).await {
+        // One build at a time. The first search of a big book takes seconds —
+        // a worker round trip per page, ~3 pages per turn (see
+        // pdf_engine::api::search::SEARCH_PAGE_CONCURRENCY) — and every
+        // keystroke meanwhile fires another run. A second concurrent
+        // extraction would be pure wasm churn, the exact heap ratchet the
+        // lazy build exists to avoid; the building task queries the LATEST
+        // text when it lands, so this run's whole job is to not duplicate
+        // it.
+        if state.search.building.get_untracked() {
+            return;
+        }
+        state.search.building.set(true);
+        // The page count comes from the open flow, which alone knows the
+        // document size.
+        let built = engine::build_search_index(state.document.num_pages.get_untracked()).await;
+        state.search.building.set(false);
+        match built {
             Ok(_) => state.search.index_built.set(true),
             Err(e) => {
                 web_sys::console::warn_1(&format!("[search] build index: {e}").into());
@@ -134,6 +153,14 @@ pub fn clear_search(state: ReaderState) {
 }
 
 pub fn dismiss_search(state: ReaderState) {
+    // Hiding the bar disposes the overlay's owner, and the search runs are
+    // owner-scoped tasks (`floating_search` spawns through
+    // `leptos::task::spawn_local`): an index build in flight dies with them.
+    // Clear the flag BEFORE that disposal so the next search rebuilds
+    // instead of waiting on a task that will never land. The half-extracted
+    // index it leaves is safe — the engine records a build only when one
+    // COMPLETES, so the rebuild starts from a clear.
+    state.search.building.set(false);
     state.search.visible.set(false);
 }
 

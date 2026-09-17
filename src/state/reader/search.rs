@@ -13,6 +13,13 @@ pub struct SearchState {
     /// Index into `matches` of the one the reader is currently on.
     pub active: RwSignal<Option<usize>>,
     pub index_built: RwSignal<bool>,
+    /// A PDF index build is in flight. Every keystroke fires a search run,
+    /// and the first search of a big book takes seconds to build its index;
+    /// the runs that arrive mid-build skip the build instead of stacking a
+    /// second extraction — the building task queries the latest text when it
+    /// lands. Cleared when the build ends, when the overlay is dismissed
+    /// (which cancels the owner-scoped task), and on reset.
+    pub building: RwSignal<bool>,
     /// Floating-search overlay visibility; read+written by shortcuts.
     pub visible: RwSignal<bool>,
     /// The bar has been dismissed but its highlights are still on screen,
@@ -30,12 +37,13 @@ impl SearchState {
     /// struct already holds; `Self::default()` would allocate a fresh arena node
     /// per field on every close and leak them.
     pub fn reset(&self) {
-        let Self { query, total, matches, active, index_built, visible, dismissed } = *self;
+        let Self { query, total, matches, active, index_built, building, visible, dismissed } = *self;
         query.set(String::new());
         total.set(0);
         matches.set(Vec::new());
         active.set(None);
         index_built.set(false);
+        building.set(false);
         visible.set(false);
         dismissed.set(false);
     }
@@ -49,6 +57,7 @@ impl Default for SearchState {
             matches: RwSignal::new(Vec::new()),
             active: RwSignal::new(None),
             index_built: RwSignal::new(false),
+            building: RwSignal::new(false),
             visible: RwSignal::new(false),
             dismissed: RwSignal::new(false),
         }

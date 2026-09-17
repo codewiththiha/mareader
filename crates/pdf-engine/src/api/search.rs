@@ -4,15 +4,17 @@
 //! The pdf.js worker can only extract text in the browser, so the engine hands
 //! each page over via `bridge::extract_page_text` and everything after that —
 //! lowercasing, occurrence matching, snippet building, result ordering —
-//! happens here, on the wasm heap. The index is built on document open (and
-//! lazily by the search effect if it isn't) — or ADOPTED, when the retained
-//! one was built for the same document: the open flow scopes the index to the
-//! document's pdf.js content fingerprint ([`scope_to_document`]), and a
-//! reopen of the same bytes skips the extraction entirely. A full rebuild per
-//! open/close cycle churned the worker and the wasm heap — and wasm memory
-//! only ever grows, so every cycle ratcheted the footprint up. After the
-//! build, a query is a pure in-Rust scan: no pdf.js round trip, no per-query
-//! extraction.
+//! happens here, on the wasm heap. The index is built LAZILY: the document's
+//! first search pays the extraction, never the open flow — a build scales
+//! with the book and lands on a wasm heap that only grows, so an eager build
+//! would ratchet the footprint of every book nobody ever searched. A retained
+//! index is ADOPTED when it was built for the same document: the open flow
+//! scopes the index to the document's pdf.js content fingerprint
+//! ([`scope_to_document`]), and a reopen of the same bytes skips the
+//! extraction entirely. A full rebuild per open/close cycle churned the
+//! worker and the wasm heap — and wasm memory only ever grows, so every
+//! cycle ratcheted the footprint up. After the build, a query is a pure
+//! in-Rust scan: no pdf.js round trip, no per-query extraction.
 //!
 //! Extraction is concurrent in bounded batches ([`SEARCH_PAGE_CONCURRENCY`]
 //! pages in flight per turn), so the worker is never flooded and live renders
