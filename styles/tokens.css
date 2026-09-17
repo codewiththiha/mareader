@@ -44,6 +44,14 @@
      stay separable at a glance. Amber is far enough round the wheel from
      every built-in accent and survives both blend directions. */
   --match-current: #f59e0b;
+
+  /* The two grain tiles, as data URIs. Constants — no var() inside — so
+     they can live at the root: the grain is the fractal-noise page texture
+     (styles/textures.css) and the film grain (styles/noise.css), each of
+     which the appearance swatch in styles/components/appearance.css paints
+     a preview of. */
+  --grain-tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  --noise-tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* Lifted and warmed for the dark canvases, where screen washes a mid amber
@@ -125,4 +133,65 @@
   --tx-ink-table-border: var(--tx-ink);
   --tx-ink-table-head: var(--tx-ink);
   --tx-ink-hr: var(--tx-ink);
+}
+
+/* The five texture patterns, defined ONCE and read by the three surfaces
+   that wear one: a PDF page's own layer, a reflowable document's scroller
+   (styles/textures.css) and an appearance swatch's miniature page
+   (styles/components/appearance.css).
+
+   They live here rather than beside the rules that use them because the
+   three surfaces are unrelated elements — none inherits from another — so
+   a definition on any one of them would have to be written three times,
+   which is how the grain tile and the five gradients came to be copied
+   into all three.
+
+   What CANNOT be hoisted is the pitch: --tex-unit and --tex-line are
+   derived from --tex-scale, and a custom property resolves the var()s in
+   its own value at computed-value time on the element that declares it.
+   Declaring them at the root would freeze them against the root's scale
+   and the pattern would stop following zoom, so every surface still
+   declares --tex-scale and --tex-stroke beside each other and these
+   patterns resolve against those. */
+.pdf-page::before,
+.preset-page::before,
+:is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"] {
+  --tex-unit: calc(26px * var(--tex-scale));
+  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  /* One stroke token, so the swatch can preview its own rule colour while
+     the other two read the theme's. */
+  --tex-paper-image: var(--grain-tile);
+  --tex-lined-image: repeating-linear-gradient(
+    to bottom,
+    var(--tex-stroke) 0 var(--tex-line),
+    transparent var(--tex-line) var(--tex-unit)
+  );
+  --tex-grid-image: repeating-linear-gradient(
+      to bottom,
+      var(--tex-stroke) 0 var(--tex-line),
+      transparent var(--tex-line) var(--tex-unit)
+    ),
+    repeating-linear-gradient(
+      to right,
+      var(--tex-stroke) 0 var(--tex-line),
+      transparent var(--tex-line) var(--tex-unit)
+    );
+  --tex-dotted-image: radial-gradient(
+    var(--tex-stroke) calc(1px * var(--tex-scale)),
+    transparent calc(1.5px * var(--tex-scale))
+  );
+  --tex-cross-image: repeating-linear-gradient(
+      to bottom,
+      var(--tex-stroke) 0 var(--tex-line),
+      transparent var(--tex-line) var(--tex-unit)
+    ),
+    repeating-linear-gradient(
+      to right,
+      var(--tex-stroke) 0 var(--tex-line),
+      transparent var(--tex-line) var(--tex-unit)
+    ),
+    radial-gradient(
+      var(--tex-stroke) calc(1.5px * var(--tex-scale)),
+      transparent calc(2px * var(--tex-scale))
+    );
 }

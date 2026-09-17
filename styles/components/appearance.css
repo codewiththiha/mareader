@@ -96,7 +96,10 @@
 /* The swatch re-declares .pdf-page's texture chain locally: .preset-page is
    not a .pdf-page, and making it one would drag in the host's shadow, flex
    and sizing rules. z-index 2 keeps the texture above the stand-in canvas.
-   Everything consumed here lives in the private --ps-* namespace. */
+   Everything consumed here lives in the private --ps-* namespace, apart from
+   the five patterns it shares with the page and the scroller
+   (styles/tokens.css) — the swatch previews a preset's OWN strokes, so it
+   feeds the shared patterns its own --tex-stroke. */
 .preset-page::before {
   content: "";
   position: absolute;
@@ -105,42 +108,33 @@
   pointer-events: none;
   opacity: var(--ps-tex-opacity, 0.9);
   --tex-scale: var(--ps-tex-scale, 1);
-  /* Restated beside --tex-scale on purpose: a custom property resolves its
-     own var()s before inheriting, so the derived pair cannot live on :root
-     and still follow this swatch's scale (see styles/textures.css). */
-  --tex-unit: calc(26px * var(--tex-scale));
-  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  --tex-stroke: var(--ps-texture-line, rgba(15, 23, 42, 0.16));
   background-origin: border-box;
   background-position: 0 0;
 }
 
 .preset-page.texture-paper::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
-  background-color: var(--ps-texture-paper, rgba(15,23,42,0.05));
+  background-image: var(--tex-paper-image);
+  background-color: var(--ps-texture-paper, rgba(15, 23, 42, 0.05));
   background-blend-mode: var(--ps-texture-blend, multiply);
   background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
 }
 
 .preset-page.texture-lined::before {
-  background-image: repeating-linear-gradient(to bottom, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+  background-image: var(--tex-lined-image);
 }
 
 .preset-page.texture-grid::before {
-  background-image:
-    repeating-linear-gradient(to bottom, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    repeating-linear-gradient(to right, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+  background-image: var(--tex-grid-image);
 }
 
 .preset-page.texture-dotted::before {
-  background-image: radial-gradient(var(--ps-texture-line, rgba(15,23,42,0.16)) calc(1px * var(--tex-scale)), transparent calc(1.5px * var(--tex-scale)));
+  background-image: var(--tex-dotted-image);
   background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
 }
 
 .preset-page.texture-cross::before {
-  background-image:
-    repeating-linear-gradient(to bottom, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    repeating-linear-gradient(to right, var(--ps-texture-line, rgba(15,23,42,0.16)) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    radial-gradient(var(--ps-texture-line, rgba(15,23,42,0.16)) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
+  background-image: var(--tex-cross-image);
   background-size: var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit);
 }
 
@@ -157,7 +151,7 @@
   pointer-events: none;
   opacity: var(--ps-noise-opacity, 0);
   mix-blend-mode: var(--ps-noise-blend, multiply);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-image: var(--noise-tile);
   background-size: 40px 40px;
 }
 
