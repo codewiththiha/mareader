@@ -10,12 +10,13 @@ leptos_router = "0.8"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-# Trimmed to what src/ actually uses (audited after the feature-folder
-# refactor): window/document/element access, the html::Div/Span node refs,
-# classList + inline style writes, drag-drop (DragEvent + DataTransfer),
-# scroll anchoring, resize observation, the reveal CustomEvent, the
-# non-passive wheel listener the horizontal strip needs (AddEventListenerOptions),
-# and the navigator user-agent read behind the platform probe (services/platform.rs).
+# What the app reaches for through web-sys: window/document/element access,
+# the html::Div node refs, classList + inline style writes, drag-drop
+# (DragEvent + DataTransfer), scroll anchoring, resize observation, the
+# reveal CustomEvent, and the non-passive wheel listener the horizontal strip
+# needs (AddEventListenerOptions). The navigator user-agent read behind the
+# platform probe is crates/app-chrome/src/platform.rs, and that crate
+# declares the features it needs on its own.
 web-sys = { version = "0.3", features = [
   "Window",
   "Navigator",
@@ -23,7 +24,6 @@ web-sys = { version = "0.3", features = [
   "Element",
   "HtmlElement",
   "HtmlDivElement",
-  "HtmlSpanElement",
   "HtmlCanvasElement",
   "HtmlInputElement",
   "HtmlButtonElement",
@@ -34,7 +34,6 @@ web-sys = { version = "0.3", features = [
   "DomTokenList",
   "CssStyleDeclaration",
   "CanvasRenderingContext2d",
-  "ImageData",
   "Event",
   "MouseEvent",
   "KeyboardEvent",
