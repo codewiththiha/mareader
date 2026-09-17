@@ -31,7 +31,12 @@ pub fn ScrollShell(
         Axis::Vertical => PAGE_LIST_ID,
         Axis::Horizontal => H_PAGE_LIST_ID,
     };
-    observe_content_size(scroller_id, state.viewer.container_size);
+    // The container observation's teardown belongs to THIS shell's owner,
+    // explicitly: an observer that outlived its scroller would retain the
+    // element — and every page canvas mounted inside it — for the life of
+    // the app.
+    let stop_observing = observe_content_size(scroller_id, state.viewer.container_size);
+    on_cleanup(stop_observing);
     // This strip is about to be placed on `viewer.page` (see `anchor_to_page`);
     // until it is, the scroll→page sync must not read it. Idempotent with the
     // open flow and the mode flip, which raise the flag before the mount.

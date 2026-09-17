@@ -108,7 +108,11 @@ pub fn ReflowStreamLayout(
         use_context::<TypographySignal>().expect("TypographySignal must be provided by app bootstrap");
     let texture_class = texture_class(state);
     let tx_zoom = zoom_style(state);
-    observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
+    // The container observation dies with this layout, explicitly: an
+    // observer outliving its scroller retains the element and everything
+    // mounted inside it.
+    let stop_observing = observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
+    on_cleanup(stop_observing);
     // The stream takes the mount anchor's flag exactly like a page strip:
     // raised here for a remount, and by the open flow for a document that
     // arrives over a mounted reader. The anchor below consumes it.
