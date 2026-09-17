@@ -17,7 +17,7 @@ impl Appearance {
         if !self.has_tint() {
             return None;
         }
-        let t = self.tint_strength as f64 / 100.0;
+        let t = self.tint_amount();
         let target_h = ui_hue_oklch(self.tint_hue as f64);
         let hex = self
             .base_palette()
@@ -35,7 +35,7 @@ impl Appearance {
         if !self.has_tint() {
             return Vec::new();
         }
-        let t = self.tint_strength as f64 / 100.0;
+        let t = self.tint_amount();
         // tint_hue is an sRGB angle; the tokens are emitted in OKLCH.
         let target_h = ui_hue_oklch(self.tint_hue as f64);
 

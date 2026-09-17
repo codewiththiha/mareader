@@ -46,33 +46,36 @@ fn preset(id: &str, name: &str, group: &str, appearance: Appearance) -> Preset {
 /// hard-coded themes — the compatibility guarantee that lets those CSS blocks
 /// stay deleted.
 pub fn builtin_presets() -> Vec<Preset> {
+    // The strengths are on the doubled tint curve (full effect at 50 —
+    // `Appearance::tint_amount`), so each classic carries half the number
+    // it did under the old /100 mapping and renders the same look.
     vec![
         // Sepia was `sepia(0.35) contrast(0.95) saturate(0.9)` on light paper:
         // a warm brown at sepia()'s own hue, so no rotation and a mid strength.
         preset("sepia", "Sepia", "Classic", Appearance {
             base: BaseMode::Light,
             tint_hue: 34,
-            tint_strength: 45,
+            tint_strength: 23,
             ..Default::default()
         }),
         // Green was sepia+hue-rotate(70deg) => 34 + 70 ≈ 104, a soft leaf green.
         preset("green", "Green", "Classic", Appearance {
             base: BaseMode::Light,
             tint_hue: 104,
-            tint_strength: 40,
+            tint_strength: 20,
             ..Default::default()
         }),
         // Night was the dark invert with a green cast layered over it.
         preset("night", "Night", "Classic", Appearance {
             base: BaseMode::Dark,
             tint_hue: 110,
-            tint_strength: 35,
+            tint_strength: 18,
             ..Default::default()
         }),
         preset("parchment", "Parchment", "Classic", Appearance {
             base: BaseMode::Light,
             tint_hue: 40,
-            tint_strength: 55,
+            tint_strength: 28,
             texture: TextureMode::Paper,
             texture_opacity: 85,
             texture_scale: 110,
@@ -82,7 +85,7 @@ pub fn builtin_presets() -> Vec<Preset> {
         preset("cinema", "Cinema", "Classic", Appearance {
             base: BaseMode::Dim,
             tint_hue: 220,
-            tint_strength: 30,
+            tint_strength: 15,
             texture: TextureMode::None,
             noise: NoiseMode::Animated,
             noise_intensity: 30,
@@ -193,15 +196,20 @@ mod tests {
         assert!(sepia.appearance.has_tint());
         // Sepia sits at sepia()'s own hue, so it needs no rotation.
         assert_eq!(sepia.appearance.tint_hue, 34);
+        // Halved strengths: the doubled curve renders the classic looks
+        // from half the number (Appearance::tint_amount).
+        assert_eq!(sepia.appearance.tint_strength, 23);
 
         let green = find("green");
         assert_eq!(green.appearance.base, BaseMode::Light);
         // The old CSS was sepia + hue-rotate(70deg) == 34 + 70.
         assert_eq!(green.appearance.tint_hue, 104);
+        assert_eq!(green.appearance.tint_strength, 20);
 
         let night = find("night");
         assert_eq!(night.appearance.base, BaseMode::Dark);
         assert!(night.appearance.has_tint(), "Night is dark WITH a green cast");
+        assert_eq!(night.appearance.tint_strength, 18);
         assert!(night.appearance.canvas_filter().contains("invert"));
     }
 
@@ -212,10 +220,11 @@ mod tests {
         let p = find("parchment");
         assert_eq!(p.appearance.texture, TextureMode::Paper);
         assert_eq!(p.appearance.noise, NoiseMode::Static);
-        assert!(p.appearance.tint_strength > 0);
+        assert_eq!(p.appearance.tint_strength, 28);
 
         let c = find("cinema");
         assert_eq!(c.appearance.noise, NoiseMode::Animated);
+        assert_eq!(c.appearance.tint_strength, 15);
     }
 
     #[test]

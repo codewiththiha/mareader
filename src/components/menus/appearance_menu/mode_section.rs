@@ -80,10 +80,13 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                     // reads as a broken control. Give it a visible-but-gentle
                     // default so the choice lands — locally AND in the scrub,
                     // because Settings is not written until the drag pauses.
+                    // 18 rather than the old 35: the doubled tint curve
+                    // (Appearance::tint_amount) reaches the same look at half
+                    // the number.
                     let mut st = strength.get_untracked().round().clamp(0.0, 100.0) as u8;
                     if st == 0 {
-                        st = 35;
-                        set_strength.set(35.0);
+                        st = 18;
+                        set_strength.set(18.0);
                     }
                     preview_appearance(
                         state.settings,
@@ -111,7 +114,7 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                         AppearanceScrub::Tint { hue, strength: v as u8 },
                     );
                 }
-                label="Tint strength"
+                label="Strength"
             />
         </div>
 

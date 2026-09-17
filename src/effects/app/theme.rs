@@ -21,7 +21,7 @@
 //!
 //! Slider RAM: writing `settings` on every `input` event made WKWebView
 //! allocate a fresh filter intermediate per visible page per tick — the 1.2GB
-//! spike while dragging Colour / Tint strength. Sliders now live-paint CSS at
+//! spike while dragging Colour / Strength. Sliders now live-paint CSS at
 //! most once per animation frame and commit the Settings signal (and
 //! localStorage) only after the gesture pauses. The filter STRING is
 //! unchanged, so the look is byte-identical.
