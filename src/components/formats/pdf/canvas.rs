@@ -174,7 +174,19 @@ pub fn PdfPageCanvas(
     let cid = canvas_id.clone();
     let cid_effect = canvas_id.clone();
     let hid_effect = host_id.clone();
-    on_cleanup(move || engine::unregister_page(&cid));
+    // Raised the moment this owner dies. The boot microtask below is NOT
+    // owner-bound — `queue_microtask` runs whatever was queued even after the
+    // component unmounted — so without this flag a fast fling remount could
+    // land the microtask AFTER the cleanup's unregister and re-register a
+    // dead canvas, leaving the engine a PageState nothing ever drops again.
+    // A StoredValue, not an Rc<Cell<_>>: the cleanup closure must be
+    // Send + Sync, and the slot doubles as the truth — a handle whose arena
+    // item is already gone reads None, which is a dead owner by definition.
+    let disposed = StoredValue::new_local(false);
+    on_cleanup(move || {
+        let _ = disposed.try_set_value(true);
+        engine::unregister_page(&cid);
+    });
 
     // Register after this view is flushed to the DOM. The render effect can
     // otherwise call register_page before getElementById sees the canvas.
@@ -182,7 +194,15 @@ pub fn PdfPageCanvas(
     let cid_boot = canvas_id.clone();
     let hid_boot = host_id.clone();
     let registered_boot = registered.clone();
+    let disposed_boot = disposed;
     queue_microtask(move || {
+        // The owner died between the mount and this microtask: its cleanup
+        // has already told the engine to forget this canvas, and registering
+        // now would revive an entry no future unregister targets. A None
+        // reads as disposed too — the arena item went with the owner.
+        if disposed_boot.try_get_value().unwrap_or(true) {
+            return;
+        }
         debug_assert!(
             app_chrome::hooks::dom::by_id(&cid_boot).is_some(),
             "PdfPageCanvas canvas must be in the DOM before register_page"
