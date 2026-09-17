@@ -1,7 +1,6 @@
-import { EngineResult, PDFReader, RenderPayload } from "./harness.js";
+import { PDFReader } from "./harness.js";
 
 export async function run(): Promise<void> {
-  // 9. unregister + destroy
   PDFReader.unregisterPage("cont-0-cv");
   PDFReader.unregisterPage("cont-1-cv");
   await PDFReader.destroy();

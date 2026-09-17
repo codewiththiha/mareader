@@ -1,7 +1,7 @@
 import { PDFReader } from "./harness.js";
 
 export async function run(): Promise<void> {
-  // 11. Search extraction surface — the data source of the Rust index.
+  // The search extraction surface — the data source of the Rust index.
   // The harness pdf has no text items, so an extraction must still resolve
   // `{ok:true, page, items:[]}` (an empty book page is a valid page).
   const extracted = await PDFReader.extractPageText(1);

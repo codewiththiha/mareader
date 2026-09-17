@@ -11,7 +11,7 @@ import {
 } from "./harness.js";
 
 export async function run(): Promise<void> {
-  // 3. DARK MODE REGRESSION TEST. The theme is pre-rendered into every
+  // DARK MODE REGRESSION. The theme is pre-rendered into every
   // raster, so a refresh must bake the new look into the pages on screen.
   const beforeDark = created.length;
   setFakeComputed({
@@ -29,7 +29,7 @@ export async function run(): Promise<void> {
   assertClose(darkPx, darkExpect, "dark refreshTheme bake");
   console.log("refreshTheme (dark) ok: page pixel", Array.from(darkPx).slice(0, 3), "expected", darkExpect);
 
-  // 4. render another page while dark.
+  // Rendering another page while dark must bake it too.
   PDFReader.registerPage(2, "cont-1-cv", "cont-1-pg");
   const r2 = await PDFReader.renderPage("cont-1-cv", 1.5, true);
   if (!r2.ok) throw new Error("render2 failed: " + JSON.stringify(r2));
@@ -43,7 +43,7 @@ export async function run(): Promise<void> {
   assertClose(darkPx2, darkExpect, "dark render bake");
   console.log("render ok (dark/baked):", r2.width, "x", r2.height, `(${darkAllocs} canvases)`);
 
-  // 5. Scrub mode — the real-time compositing window a slider drag runs in —
+  // Scrub mode — the real-time compositing window a slider drag runs in —
   // must expose raw pixels under the live CSS filter, and re-bake them on
   // exit.
   await PDFReader.setScrubMode(true);
@@ -67,7 +67,7 @@ export async function run(): Promise<void> {
   assertClose(afterScrub, darkExpect, "scrub off rebake");
   console.log("scrub off ok (rebaked)", Array.from(afterScrub).slice(0, 3));
 
-  // 11. DIM check.
+  // The dim base.
   setFakeComputed({
     "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)",
     "--canvas-blend": "soft-light",
@@ -86,7 +86,7 @@ export async function run(): Promise<void> {
   assertClose(dimPx, dimExpect, "dim bake");
   console.log("dim bake ok: page pixel", Array.from(dimPx).slice(0, 3), "expected", dimExpect);
 
-  // 12. A DARK PRESET WITH A TINT.
+  // A DARK PRESET WITH A TINT.
   setFakeComputed({
     "--canvas-filter": "invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02) sepia(0.193) saturate(1.21) hue-rotate(76deg)",
     "--canvas-blend": "screen",
@@ -105,7 +105,7 @@ export async function run(): Promise<void> {
   assertClose(nightPx, nightExpect, "dark+tint bake");
   console.log("dark+tint bake ok: page pixel", Array.from(nightPx).slice(0, 3), "expected", nightExpect);
 
-  // 13. THE PRE-RENDERED BACKDROP PAPER. A baked page already carries the
+  // THE PRE-RENDERED BACKDROP PAPER. A baked page already carries the
   // themed paper in its pixels, so the backdrop must not run the filter +
   // blend a second time over the detected colour — the engine publishes the
   // pre-themed paper as --pdf-paper-baked instead. multiply and screen are

@@ -1,12 +1,6 @@
-import {
-  EngineResult,
-  OpenPayload,
-  PDFReader,
-  fakeWindow,
-} from "./harness.js";
+import { PDFReader, fakeWindow } from "./harness.js";
 
 export async function run(): Promise<void> {
-  // 1. open
   const opened = await PDFReader.open("/fake/book.pdf");
   if (!opened.ok) throw new Error("open failed: " + JSON.stringify(opened));
   console.log("open ok:", opened.numPages, "pages");
@@ -22,7 +16,7 @@ export async function run(): Promise<void> {
   }
   console.log("resolveOutline ok");
 
-  // 10. OS file handoff wrapper
+  // The OS file handoff wrapper.
   const none = await PDFReader.takePendingFile();
   if (none !== null) throw new Error("takePendingFile should resolve null, got " + none);
   let queuedPath: string | null = null;

@@ -594,7 +594,7 @@ export function assertClose(actual: Uint8ClampedArray, expected: number[], label
   }
 }
 
-// Canvas allocation tracking: render.test.ts turns this on; theme.test.ts
+// Canvas allocation tracking: render.ts turns this on; theme.ts
 // asserts against it (the identity-pipeline fast path must allocate zero
 // page-sized bake canvases).
 export const created: FakeCanvas[] = [];

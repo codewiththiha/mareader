@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+
+import { exportedStrings } from "../repo.js";
 
 // The READER bundle: the format-agnostic half of the browser side, today
 // the selection tracker. This scenario deliberately does NOT import
@@ -182,9 +185,6 @@ function take(type: string): unknown {
   return dispatched.splice(at, 1)[0].detail;
 }
 
-const PAGES = "mareader:selection-pages";
-const DETAIL = "mareader:selection-detail";
-
 function host(kind: string, page: number, blockIndex: string | null, text: string) {
   const node = new FakeText(text);
   const rowAttrs: Attrs = kind === "reflow" && blockIndex !== null
@@ -207,6 +207,23 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function run(): Promise<void> {
   vm.createContext(sandbox);
   vm.runInContext(readerSrc, sandbox, { filename: "readerEngine.js" });
+
+  // The event names come from the engine's table rather than being spelled
+  // here: the module that declares them reaches the browser only inside the
+  // esbuild bundles, so there is no compiled events.js to import, and its
+  // source is parsed by the same helper `check-events.ts` reads it with. A
+  // rename then moves this scenario instead of failing it as a missing event.
+  // An absolute path, not a repo-relative one: this file is two directories
+  // down in both tools/ and scripts/, so import.meta.url is the only anchor
+  // that survives the compile.
+  const events = exportedStrings(
+    fileURLToPath(new URL("../../public/engine/events.ts", import.meta.url)),
+  );
+  const PAGES = events.get("SELECTION_PAGES_EVENT");
+  const DETAIL = events.get("SELECTION_DETAIL_EVENT");
+  if (!PAGES || !DETAIL) {
+    throw new Error("selection smoke: public/engine/events.ts no longer declares both events");
+  }
 
   // Installing is the bundle's whole job: three listeners, and nothing on the
   // window that belongs to the engine.
