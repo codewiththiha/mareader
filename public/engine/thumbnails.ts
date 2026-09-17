@@ -12,6 +12,7 @@ import {
   thumbRaw,
   thumbSource,
 } from "./theme/thumbnails";
+import { THUMB_CACHE_MAX, session } from "./state";
 // A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
 // raster work, not clicks: queued jobs are invalidated on unmount and cached
 // paths still paint immediately.
@@ -34,9 +35,6 @@ function pumpThumbQueue(): void {
     next();
   }
 }
-
-import { THUMB_CACHE_MAX, session } from "./state";
-
 /** Insert a thumbnail entry into the cache, releasing any previous entry for
  *  the page and evicting the LRU entry if the cache is full. */
 function cachePut(page: number, entry: ThumbEntry): void {
