@@ -79,8 +79,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     crate::effects::reader::mode_change::mode_change(state);
 
     let actuator = crate::zoom::actuator::ZoomActuator::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
-    // The zoom controller is created and driven here and lives exactly as long
-    // as this page's reactive owner. Everything downstream only posts
+    // Driven once at setup. The controller itself is dropped when setup
+    // returns; what outlives it are the effects `drive` installs, which live as
+    // long as this page's reactive owner. Everything downstream only posts
     // commands; nothing else writes a zoom scale or rescales a strip.
     let zoom = crate::zoom::ZoomController::new(actuator);
     zoom.drive(vs);
