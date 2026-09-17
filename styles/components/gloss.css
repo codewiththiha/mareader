@@ -139,53 +139,53 @@
    static paint change (blend strokes must not animate — see header).
    `pressing` is the instant feedback while the long-press counts. --- */
 .gloss-layer .gloss-mark-pressing {
-    opacity: 0.8;
+  opacity: 0.8;
 }
 
 .gloss-layer-selecting .gloss-mark:not(.gloss-mark-selected) {
-    opacity: 0.6;
+  opacity: 0.6;
 }
 .gloss-layer-selecting .gloss-mark:not(.gloss-mark-selected):hover {
-    opacity: 0.92;
+  opacity: 0.92;
 }
 
 /* After the processing rules so it wins the tie (processing keeps its ring). */
 .gloss-layer .gloss-mark-selected,
 :root.dark .gloss-layer .gloss-mark-selected {
-    background: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 62%, transparent);
-    box-shadow:
-        0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 78%, transparent),
-        0 0 3px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 45%, transparent),
-        0 0 14px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 28%, transparent);
-    opacity: 1;
+  background: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 62%, transparent);
+  box-shadow:
+      0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 78%, transparent),
+      0 0 3px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 45%, transparent),
+      0 0 14px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 28%, transparent);
+  opacity: 1;
 }
 
 /* Context-menu, selection-bar and undo-toast entrances. */
 @keyframes gloss-menu-in {
-    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .gloss-context-menu {
-    animation: gloss-menu-in 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: gloss-menu-in 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes gloss-bar-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .gloss-select-bar {
-    animation: gloss-bar-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: gloss-bar-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* The wrapper centers via .toast-anchor flex, so the entrance only lifts the
    panel — no translateX(-50%) to double-count or re-center under the
    reduced-motion nets. */
 @keyframes gloss-toast-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .gloss-undo-toast {
-    animation: gloss-toast-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: gloss-toast-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
