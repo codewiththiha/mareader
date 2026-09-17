@@ -66,7 +66,13 @@ pub async fn run_search(state: ReaderState) {
         let built = engine::build_search_index(state.document.num_pages.get_untracked()).await;
         state.search.building.set(false);
         match built {
-            Ok(_) => state.search.index_built.set(true),
+            Ok(_) => {
+                state.search.index_built.set(true);
+                // The heap probe at the one step that scales with the book:
+                // an index build's extraction lands entirely on the wasm
+                // side, and this line is the step it takes.
+                crate::memory::log_heap("search index");
+            }
             Err(e) => {
                 web_sys::console::warn_1(&format!("[search] build index: {e}").into());
                 return;

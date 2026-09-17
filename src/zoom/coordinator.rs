@@ -237,6 +237,10 @@ pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     // until each host's next completion.
     pdf_engine::api::sweep();
     pdf_engine::api::sweep_snapshots();
+    // The heap probe at the commit: a zoom is JS-side surfaces, not wasm, so
+    // this line should read FLAT across a session's zooms — the control that
+    // makes a climb at open or at an index build legible as the ratchet it is.
+    crate::memory::log_heap("zoom commit");
     // The raised zombie grace is NOT lowered here: the bridge timer in `drive`
     // does that one grace window later, from the effect watching this very
     // signal — so this function only writes signals and returns, which lets

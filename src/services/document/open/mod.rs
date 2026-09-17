@@ -276,6 +276,10 @@ fn ready(
     );
     cover::ensure(state, path, stamp);
     warmup::prewarm_thumbs(seeded.num_pages);
+    // The heap probe's baseline: what the book cost to open, before any
+    // reading moves it. The close line is the number to compare this one
+    // against — the difference is the session's ratchet.
+    crate::memory::log_heap("open");
 }
 
 /// The document did not open: surface it on the status bar and as a toast.

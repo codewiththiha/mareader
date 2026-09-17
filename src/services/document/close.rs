@@ -68,6 +68,10 @@ pub fn close_document(state: AppState) {
         // re-registers hosts before this future wakes).
         engine::sweep();
         engine::sweep_snapshots();
+        // The heap probe's other half: what the session left behind on the
+        // wasm side once the shelf is as empty as it gets — the retained
+        // index (kept for a reopen's adoption), the covers, the library.
+        crate::memory::log_heap("close");
     });
 
     // One call sheds everything the open flow wrote — the identity, the outline

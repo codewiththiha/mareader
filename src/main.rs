@@ -5,6 +5,7 @@ mod effects;
 mod epoch;
 mod events;
 mod features;
+mod memory;
 mod services;
 mod state;
 mod storage;
