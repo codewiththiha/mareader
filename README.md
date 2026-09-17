@@ -68,8 +68,8 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- Roughly 460 Rust unit tests across the workspace, plus a stub-vm smoke suite for the
-  TypeScript layer, and five scripts that keep facts written down twice from drifting.
+- 1,015 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
+  layer, and six scripts that keep facts written down twice from drifting.
 
 ---
 
@@ -976,7 +976,8 @@ styles/
 tools/                    engine bundling, the engine smoke test, the
                           repo-reading prelude the checks share, and the
                           consistency checks CI runs (versions, formats, doc
-                          paths, event names, the DOM contract)
+                          paths, event names, the DOM contract, the chrome
+                          contracts)
 scripts/                  generated only: the compiled tools above. Gitignored,
                           and ignored wholesale by Trunk's watcher, so the hook
                           rewriting them on every build cannot retrigger one
@@ -1094,7 +1095,7 @@ only the app and silently skip every member crate. The `mareader-shell` crate is
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-Around 460 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+1,015 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
 migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
 the animation loops share, and the virtual-list windowing invariants. On top of that, the
@@ -1103,23 +1104,33 @@ covering open, render, theme baking, scrub mode, thumbnails, search, teardown, a
 bundle's selection tracker — the last in a sandbox with no engine and no pdf.js in scope,
 which is the point of it.
 
-Five small scripts guard facts that are written down more than once, where nothing else
-would notice a drift: `check-versions.ts` (the app version in four files, plus the two
-lockfile entries cargo derives from them),
+Six small scripts guard facts that are written down more than once, where nothing else
+would notice a drift: `check-versions.ts` (the app version in its four manifests, plus
+the two lockfile entries cargo derives from them),
 `check-formats.ts` (the openable formats in the reader-core registry, the shell's
 filesystem gate and the bundle's file associations), `check-doc-paths.ts` (every module and
 file path named in a Rust comment still resolves, every path named in a stylesheet comment,
 every component name the two documents put in backticks, and every method in the README's
 engine table), `check-events.ts` (the window-event names
-the engine dispatches match the app's table) and `check-dom-contract.ts` (the attribute,
+the engine dispatches match the app's table), `check-dom-contract.ts` (the attribute,
 class and element-id names the app writes match the ones the engine reads, and appear
-nowhere as a raw literal). Each is TypeScript in `tools/`, compiled by the same Trunk pre-build
-hook into `scripts/`, and each fails CI rather than warning. They share one prelude, `repo.ts` —
+nowhere as a raw literal) and `check-chrome-contracts.ts` (five numbers
+declared on both sides of the IPC boundary: the import progress channel, the title-bar
+height and traffic-light inset, the z-index scale, the sidebar's motion durations and
+gutter, and the import dock's progress ring). Each is TypeScript in `tools/`, compiled
+by the same Trunk pre-build hook into `scripts/`, and each fails CI rather than warning.
+They share one prelude, `repo.ts` —
 the repo root, `read`, `isFile`, and the tree walk with its list of directories that are not
-source — because five copies of a skip list is five chances for one tool to start scanning
-`node_modules`. `scripts/` holds nothing but their compiled output, which is why git ignores the
+source — because these began as five byte-identical copies, and five copies of a skip list
+is five chances for one tool to start scanning `node_modules`. `scripts/` holds nothing
+but their compiled output, which is why git ignores the
 directory and Trunk's watcher does too: the hook rewrites those files on every build, and a
 watcher that notices would rebuild forever.
+
+One more fact is guarded, and not by a script: the test count this document states. The step
+that checks it runs in the test lane beside the run it counts, because that is the only lane
+with both halves — `cargo test`'s output, and a place to read the document. The web lane has
+the toolchain to compile a checker and no Rust to count with.
 
 ---
 

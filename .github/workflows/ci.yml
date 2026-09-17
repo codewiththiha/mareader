@@ -215,7 +215,31 @@ jobs:
       # does not exist, and the frontend is only built by the release
       # pipeline. Its tests run on the macOS lane, which compiles it natively.
       - name: Tests
-        run: cargo test --workspace --exclude mareader-shell --locked
+        run: |
+          set -o pipefail
+          cargo test --workspace --exclude mareader-shell --locked 2>&1 | tee target/test-output.txt
+
+      # The README states how many tests the workspace has, in two places, and
+      # the count had drifted to less than half the real figure without anyone
+      # noticing: no compiler reads prose, and a test count is a number that
+      # only goes up. Nothing but this lane has both halves — the test output
+      # and a place to read the document — so the comparison lives here rather
+      # than in the web lane's check scripts, which have no Rust to count with.
+      - name: Verify the README's test count
+        run: |
+          set -euo pipefail
+          actual=$(grep -oE '^test result: ok\. [0-9]+ passed' target/test-output.txt \
+            | grep -oE '[0-9]+' | awk '{s+=$1} END{print s}')
+          echo "workspace ran $actual tests"
+          bad=0
+          while read -r claimed; do
+            if [ "$claimed" != "$actual" ]; then
+              echo "::error::README.md claims $claimed tests, but the workspace ran $actual"
+              bad=1
+            fi
+          done < <(grep -oE '^[[:space:]]*(- )?[0-9][0-9,]* (Rust )?tests?\b' README.md \
+                     | grep -oE '[0-9][0-9,]*' | tr -d ',')
+          [ "$bad" -eq 0 ]
 
   web:
     name: Web (TypeScript, CSS, engine, contracts)
