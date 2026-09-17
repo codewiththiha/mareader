@@ -125,6 +125,21 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                         <ShortcutRow label="Dismiss" keys=vec!["Esc"] />
                     </div>
                 </Show>
+                <Separator vertical=false spacing="my-1" />
+                // The footprint escape hatch: the memory a long session
+                // latches onto is the webview's, and no call the app can
+                // make gives it back while the page lives — so the honest
+                // reset is a reload, offered rather than imposed
+                // (Mareader.md, "The memory model").
+                <MenuItem
+                    icon=IconName::Reload
+                    label="Reload Window".to_string()
+                    sublabel="Restarts in place; frees the memory this session latched".to_string()
+                    on_click=move || {
+                        open.set(false);
+                        app_chrome::window::api::reload_window();
+                    }
+                />
                 <div class="mt-1 flex items-center justify-between border-t border-line px-1 py-1">
                     <span class="text-xs text-muted">"Mareader"</span>
                     <span class="text-xs text-muted">{

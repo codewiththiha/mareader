@@ -1,4 +1,6 @@
-//! The ⋯ menu: how the shelf looks.
+//! The ⋯ menu: how the shelf looks, and the one row that is not a look —
+//! Reload Window, the reset for a footprint that latched (the shelf is
+//! exactly where the latch is visible: after the close, the number stays).
 //!
 //! Four decisions — layout, column count, cover treatment and sort — every
 //! one a `LibraryView` field, so no row here reaches into the DOM to arrange
@@ -207,6 +209,21 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                         }
                     })
                     .collect_view()}
+                <Separator spacing="my-1.5" />
+                // Not a view decision — the memory reset, and the shelf is
+                // where it belongs most: the footprint a reading session
+                // latched onto survives the close, so the empty shelf is
+                // where the number is both highest and least explicable
+                // (Mareader.md, "The memory model").
+                <MenuItem
+                    icon=IconName::Reload
+                    label="Reload Window".to_string()
+                    sublabel="Restarts in place; frees the memory this session latched".to_string()
+                    on_click=move || {
+                        open.set(false);
+                        app_chrome::window::api::reload_window();
+                    }
+                />
             </MenuPopover>
         </div>
     }

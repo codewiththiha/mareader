@@ -43,6 +43,12 @@ pub enum IconName {
     Drop,
     /// Counter-clockwise arrow — the undo affordance on toasts.
     Undo,
+    /// A clockwise circle-arrow — the "Reload Window" row in the reader's and
+    /// the shelf's menus: the app's own restart, and the honest reset for a
+    /// footprint that latched. Its own glyph rather than [`IconName::Undo`]
+    /// borrowed and flipped, because the two actions are not cousins: an undo
+    /// takes one step back, a reload starts the session over.
+    Reload,
     /// Two chain links — a library row that points at a book rather than being
     /// one. Its own glyph rather than a borrowed arrow, because the row it sits
     /// on is the one thing on a shelf that is not a file.
@@ -129,6 +135,10 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Undo => (
             "0 0 24 24",
             "<path d='M9 14 4 9l5-5'/><path d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/>",
+        ),
+        IconName::Reload => (
+            "0 0 24 24",
+            "<path d='M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8'/><path d='M21 3v5h-5'/>",
         ),
         IconName::Settings => (
             "0 0 24 24",

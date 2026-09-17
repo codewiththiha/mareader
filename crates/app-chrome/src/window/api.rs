@@ -1,6 +1,6 @@
-//! The window commands: minimize, maximize/restore, close, the maximized probe
-//! that picks the caption's glyph, and the macOS traffic-light visibility
-//! switch.
+//! The window commands: minimize, maximize/restore, close, reload, the
+//! maximized probe that picks the caption's glyph, and the macOS
+//! traffic-light visibility switch.
 //!
 //! `tauri.windows.conf.json` / `tauri.linux.conf.json` remove the native title
 //! bar (`decorations: false`) and the caption cluster ([`super::caption`])
@@ -81,6 +81,22 @@ pub async fn toggle_maximize_window() {
 pub async fn close_window() {
     if let Some(win) = window() {
         invoke_method(&win, "close").await;
+    }
+}
+
+/// Reload the page — the app's own restart, and the honest reset for the
+/// memory a long session latched onto.
+///
+/// The footprint a reading session leaves behind lives in the webview: the
+/// wasm linear memory never shrinks, and WebKit returns freed arenas to the
+/// OS only under pressure, so nothing the app can call gives the number back
+/// while the page lives. A reload boots the whole app cold in place — what a
+/// force-quit does, minus the quit. Plain `location.reload()`, so it behaves
+/// the same under Tauri and in a bare browser (`trunk serve`); a window
+/// handle is not involved, and neither is the backend.
+pub fn reload_window() {
+    if let Some(win) = web_sys::window() {
+        let _ = win.location().reload();
     }
 }
 
