@@ -37,3 +37,15 @@ pub fn sweep() {
     }
     bridge::sweep();
 }
+
+/// Drop the `.page-snapshot` zoom masks the live page hosts still carry,
+/// zeroing their backing stores. Fired alongside [`sweep`] where reading work
+/// ends: a mask whose render was superseded, or never landed, would otherwise
+/// hold a full-page RGBA surface until the host unmounts (the app-side
+/// `remove_snapshots` only clears a host when ITS OWN render completes).
+pub fn sweep_snapshots() {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::sweep_snapshots();
+}

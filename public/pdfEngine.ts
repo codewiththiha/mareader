@@ -241,6 +241,9 @@ globalThis.PDFReader = {
   sweep: () => {
     session.sweepPdf();
   },
+  sweepSnapshots: () => {
+    session.sweepSnapshots();
+  },
   takePendingFile,
   prefetchThumb,
 } satisfies PDFReaderApi;

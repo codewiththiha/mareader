@@ -20,7 +20,7 @@ import { PAGE_SNAPSHOT_SELECTOR, TEXT_LAYER_SELECTOR } from "./dom-contract";
 // The engine's own API version, served as `PDFReader.version()`. It tracks the
 // JS surface rather than the app release, and unlike the six sources
 // `tools/check-versions.ts` compares, nothing here checks it against them.
-export const ENGINE_VERSION = "0.5.0";
+export const ENGINE_VERSION = "0.6.0";
 
 /** Cap kept tight: each thumb is a pair of rasters. 16 keeps several
  *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
@@ -62,6 +62,17 @@ const RAW_IDLE_MS = 2_000;
  *  inflation, and the footprint latches onto the peak. */
 const SCRUB_RAW_RETAIN_MS = 30_000;
 const SWEEP_IDLE_MS = 30_000;
+
+/** Drop every zoom mask (`.page-snapshot`) a host still carries, zeroing the
+ *  backing stores before the nodes go: WKWebView does not release a canvas
+ *  IOSurface on DOM removal alone, so a mask dropped without this keeps its
+ *  full-page RGBA buffer alive. */
+function releaseSnapshots(host: HTMLElement): void {
+  host.querySelectorAll(PAGE_SNAPSHOT_SELECTOR).forEach((n) => {
+    releaseCanvas(n as HTMLCanvasElement);
+    n.remove();
+  });
+}
 
 /** The engine's per-document session state: the pdf.js document proxy, live
  *  page surfaces, thumbnail cache, search context, and theme pipeline state.
@@ -199,7 +210,7 @@ class EngineSession {
         const links = st.host.querySelector(".linkLayer");
         if (links) links.remove();
         st.host.querySelectorAll(".highlight").forEach((n) => n.remove());
-        st.host.querySelectorAll(PAGE_SNAPSHOT_SELECTOR).forEach((n) => n.remove());
+        releaseSnapshots(st.host);
       } catch (_) {
         /* host already detached */
       }
@@ -223,6 +234,23 @@ class EngineSession {
       });
     } catch (_) {
       /* ignore */
+    }
+  }
+
+  /** Drop the zoom masks every live host still carries — a mask whose render
+   *  was superseded, or never landed, keeps a full-page RGBA surface alive
+   *  until the host unmounts. The app-side `remove_snapshots` clears a host
+   *  when ITS render completes; this is the engine-side net for the hosts
+   *  whose completion never came. Fired where reading work ends, alongside
+   *  `sweepPdf`. */
+  sweepSnapshots(): void {
+    for (const st of this.stateByCanvasId.values()) {
+      if (!st.host) continue;
+      try {
+        releaseSnapshots(st.host);
+      } catch (_) {
+        /* host already detached */
+      }
     }
   }
 

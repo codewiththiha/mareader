@@ -92,6 +92,13 @@ impl ZoomController {
                 grace_hv.reset_retention_grace();
                 grace_v.prune_retained_now();
                 grace_hv.prune_retained_now();
+                // The commit's renders have landed by now: drop the worker
+                // caches they no longer need and any zoom mask a superseded
+                // render left on a host, so a settled zoom stops holding its
+                // peak surfaces — the webview's footprint latches onto the
+                // highest water the session reached.
+                pdf_engine::api::sweep();
+                pdf_engine::api::sweep_snapshots();
             },
         );
         Effect::new(move |_| {
@@ -225,8 +232,11 @@ pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     // scale, never a half-landed one.
     state.viewer.zoom.transition.set(None);
     // Nothing renders inside a transaction; sweep the rasters now that the
-    // render scale has moved.
+    // render scale has moved, and drop the zoom masks whose renders the
+    // transition superseded — they would otherwise sit on full-page surfaces
+    // until each host's next completion.
     pdf_engine::api::sweep();
+    pdf_engine::api::sweep_snapshots();
     // The raised zombie grace is NOT lowered here: the bridge timer in `drive`
     // does that one grace window later, from the effect watching this very
     // signal — so this function only writes signals and returns, which lets

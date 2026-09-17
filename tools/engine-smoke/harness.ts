@@ -502,6 +502,8 @@ interface PDFReaderHandle {
   unregisterPage(canvasId: string): void;
   destroy(): Promise<void>;
   stats(): StatsPayload;
+  sweep(): void;
+  sweepSnapshots(): void;
   takePendingFile(): Promise<string | null>;
   extractPageText(page: number): Promise<
     EngineResult<{ page: number; items: { str: string; x: number; y: number; w: number; h: number }[] }>

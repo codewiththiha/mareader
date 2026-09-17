@@ -147,6 +147,15 @@ extern "C" {
     /// engine's own 30s idle sweep.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweep")]
     pub fn sweep();
+
+    /// Drop the `.page-snapshot` zoom masks the live page hosts still carry,
+    /// zeroing their backing stores first. Fired alongside `sweep` where
+    /// reading work ends: a mask whose render was superseded, or never
+    /// landed, would otherwise hold a full-page RGBA surface until the host
+    /// unmounts — and WKWebView does not release the surface on DOM removal
+    /// alone.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweepSnapshots")]
+    pub fn sweep_snapshots();
 }
 
 /// True when `window.PDFReader` exists. Must be checked before any engine
