@@ -148,3 +148,45 @@ html.appearance-scrubbing .pdf-page::before {
 html.appearance-scrubbing .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }
+
+/* GHOST PLACEHOLDER — the cover for an empty canvas (the host mounts and
+   removes the element, public/engine/ghost.ts renders the image): the
+   document's modal page, drawn once at ~140px, desaturated and stretched
+   to the box, with a shimmer over it. Shown only while the page is
+   unpainted, so a painted page never carries it. Opacity carries the
+   "ghosted" read on purpose: a blur would force a composited layer per
+   placeholder during exactly the flings we are trying to keep cheap, and
+   pointer-events: none so selection and gloss reach the layers beneath. */
+.page-ghost {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.page-ghost-img {
+  position: absolute;
+  inset: 0;
+  background-size: 100% 100%;
+  opacity: 0.35;
+}
+
+.page-ghost-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 32%,
+              rgb(127 127 127 / 0.10) 50%, transparent 68%);
+  background-size: 250% 100%;
+  animation: ghost-shimmer 1.15s linear infinite;
+}
+
+@keyframes ghost-shimmer {
+  from { background-position: 160% 0; }
+  to { background-position: -160% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-ghost-shimmer {
+    animation: none;
+  }
+}

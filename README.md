@@ -68,7 +68,7 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- 1,021 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
+- 1,036 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
   layer, and six scripts that keep facts written down twice from drifting.
 
 ---
@@ -1019,6 +1019,8 @@ so the Rust side reads `ok` first and then deserializes.
 | `refreshTheme` / `setScrubMode` / `setAppearanceMenuOpen` | The appearance theme: pre-render (re-bake) it into every canvas, hold the rasters raw under the live CSS filter chain for the length of a slider scrub, and retain those raws while the appearance menu is open so the session's first drag blits instead of re-rendering |
 | `setPaper` / `setPaperActive` / `takePaperFrame` / `samplePaperPage` | The paper session: the backdrop's own raster, handed to and sampled from the pages |
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
+| `setRenderGate` / `promotePages` / `enforcePageBudget` | The smart virtualizer's scheduler: park the render lane while a fling is in flight, jump the settled pages to the front of it, and hold the retained raw rasters inside a byte budget |
+| `renderGhost` | Render the ghost placeholder — the document's modal page, small, desaturated and theme-baked — and resolve the blob URL the unpainted pages show |
 | `stats` | Internal counters, used to assert memory is actually released |
 
 Load order in `index.html` is deliberate. The reader bundle goes first because it needs nothing;
@@ -1106,10 +1108,11 @@ only the app and silently skip every member crate. The `mareader-shell` crate is
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-1,021 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+1,036 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
 migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
-the animation loops share, and the virtual-list windowing invariants. On top of that, the
+the animation loops share, the scroll-phase machine and its paint window, and the
+virtual-list windowing invariants. On top of that, the
 TypeScript layer has its own stub-vm smoke suite (`node scripts/test-engine-smoke.js` in CI)
 covering open, render, theme baking, scrub mode, thumbnails, search, teardown, and the reader
 bundle's selection tracker — the last in a sandbox with no engine and no pdf.js in scope,

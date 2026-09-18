@@ -132,6 +132,55 @@ The app uses the adapter and keeps only app-specific policy locally:
 4. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
 5. Zoom runs through one controller: commands resolve to a target, the tween relays the layout out through the actuator frame by frame — `css_heights`, both strips and the page hosts all follow the live display scale — and the render scale catches up once, at the end.
 
+## The smart virtualizer: mounting vs painting
+
+A fling used to cost one full-resolution render per page it swept past —
+each a ~22 MB canvas at 2× DPR — because a render was issued the moment a
+page entered the MOUNT window. The fix splits mounting from painting: the
+mount window stays generous (a mounted-but-unpainted page is a cheap
+placeholder), and a small phase-driven PAINT window decides which of the
+mounted pages get real renders.
+
+- **The phase** (`features::reader::scroll_kinetics`): a median-of-pairwise-
+  slopes velocity over a six-sample window (one dropped frame cannot spike
+  it), with hysteresis (enter a fling at 1800 px/s, leave at 450) and brake
+  detection (a deliberate reversal with substance shortens the settle, so a
+  reader who catches a fling gets content fast). Four regimes — Idle,
+  Cruising, Settling, Fling — merged across both strip axes and the zoom
+  into one signal.
+- **The paint window** (`features::reader::render_gate`): Fling paints
+  nothing (ghosts only), Settling paints the landing page plus the forward
+  depth, Cruising paints back-1/forward-2, Idle back-2/forward-3 — so
+  sitting on page 2 has pages 3 and 4 rendering, and a moment of idle bakes
+  page 5. The same forward depth feeds the blend backdrop's colour look-ahead
+  (`pdf_engine::backdrop`), so the paper under the next page is resolved at
+  the horizon the page itself is painted.
+- **The ghost** (`features::reader::ghost` + `public/engine/ghost.ts`): one
+  real page — the document's modal page size — rendered once at ~140px,
+  desaturated and baked through the theme pipeline, stretched across every
+  mounted-but-unpainted page. A few KB for the whole session instead of 22
+  MB per page; it re-renders only when the appearance actually moves (the
+  engine keys its cache on the pipeline generation).
+- **The engine's parked lane** (`public/engine/renderer.ts`): Rust parks the
+  render lane while the merged phase is a fling (a zoom ranks as one);
+  requests keep queuing, a burst of requests for the same page collapses to
+  one job, and the settle flush — the moment the phase leaves the parked
+  states — promotes the pages the reader landed on, enforces the byte budget
+  on the retained raw rasters, and sweeps the churn.
+- **The byte budget**: the engine accounts every raw raster it retains
+  outside the visible canvases (the un-baked twin a tint scrub can still
+  restore) in bytes and evicts the farthest-from-the-reader first on
+  settle, so idle RAM is bounded by the budget instead of by the session's
+  dirty high-water mark.
+- **Fling-time zombie trim**: the strips' retention grace drops to zero
+  while a fling is in flight (the ghosts re-mask everything; the pages the
+  reader re-approaches are painted by the settle flush). A zoom keeps its
+  own raised grace for its duration.
+
+All of it is one `SmartCfg` on the reader's virtualizer setup
+(`features::reader::virtualizers`): the phase thresholds, the prefetch
+depths, the ghost height and the budget.
+
 ## Thumbnail panel flow
 
 The thumbnail sidebar is a separate grid virtualizer:
