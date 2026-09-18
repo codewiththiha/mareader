@@ -183,15 +183,32 @@
   inset: -100vh -100vw;
   background-position: 100vw 100vh;
 }
-/* Spread: bands above/below always; outer sides bleed (the first page's
-   inner bleed hides under its partner, which paints later). */
-.reader-bg.blend .pdf-page[id^="dp-"]::before {
+/* Spread: the bands above/below and the OUTER side, one half at a time. The
+   inner axes face the partner and must not bleed at all (gap-0 leaves no
+   gutter there to paint): a partner's opaque box hides an inner bleed only
+   across its own rect, while above and below that rect it carries a
+   translucent gutter overhang of its own — so an inner bleed shows through
+   under it and the two texture layers add up. That sum is the grey band
+   around the right page with a texture set, and it needs a texture to show:
+   with texture None the layer paints nothing, which is why only the
+   textured looks ever read as the culprit. */
+.reader-bg.blend .pdf-page[id^="dp-"]:first-child:not(:only-child)::before {
+  top: -100vh;
+  bottom: -100vh;
+  left: -100vw;
+  background-position: 100vw 100vh;
+}
+.reader-bg.blend .pdf-page[id^="dp-"]:last-child:not(:only-child)::before {
   top: -100vh;
   bottom: -100vh;
   right: -100vw;
   background-position: 0 100vh;
 }
-.reader-bg.blend .pdf-page[id^="dp-"]:first-child::before {
-  left: -100vw;
+/* An odd last page mounts alone, so every side faces the backdrop. The two
+   rules above stand down for it — a lone page is both first and last child,
+   and would take the later background-position, shifting its tile a whole
+   viewport sideways. */
+.reader-bg.blend .pdf-page[id^="dp-"]:only-child::before {
+  inset: -100vh -100vw;
   background-position: 100vw 100vh;
 }
