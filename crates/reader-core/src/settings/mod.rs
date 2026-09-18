@@ -65,6 +65,17 @@ pub struct Settings {
     pub active_preset: Option<String>,
     /// User-saved presets (built-ins are code, not storage).
     pub user_presets: Vec<Preset>,
+    /// One-shot gate for the doubled tint curve. Blobs written before
+    /// [`Appearance::tint_amount`] moved its full effect from 100 to 50
+    /// carry strengths calibrated against the old /100 slope, and would
+    /// load with every tint twice as strong as the look that was saved;
+    /// [`sanitize`] halves them once and raises this. Fresh settings
+    /// default RAISED — there is nothing to migrate — which is why the
+    /// field carries its own `serde(default)`: the flag on a persisted blob
+    /// that never heard of the field must be `false`, and the struct-level
+    /// default would hand it the fresh-install answer instead.
+    #[serde(default)]
+    pub tint_strength_halved: bool,
     pub default_zoom: f64,
     pub last_path: Option<String>,
     /// Pin the READER's titlebar open (no auto-hide). One field per bar
@@ -110,6 +121,8 @@ impl Default for Settings {
             // the Mode section's buttons, not presets.
             active_preset: None,
             user_presets: Vec::new(),
+            // A fresh install is born on the new curve: nothing to migrate.
+            tint_strength_halved: true,
             default_zoom: 1.0,
             last_path: None,
             titlebar_pinned: false,
@@ -170,8 +183,27 @@ impl Settings {
     }
 }
 
+/// The old tint curve's strength on the new one: half, rounded up. The
+/// rounding is the built-ins' own — Sepia's persisted 45 became 23 in
+/// `appearance/presets.rs` — so a migrated blob that sat exactly on a preset
+/// re-matches it instead of landing one point off.
+fn halved_strength(v: u8) -> u8 {
+    v.saturating_add(1) / 2
+}
+
 /// Ensures a persisted `Settings` is internally valid.
 pub fn sanitize(settings: &mut Settings) {
+    // The one-shot curve migration, before anything else reads a strength:
+    // values persisted under the old /100 tint slope halve onto the new one
+    // so a saved look loads as the look that was saved. User presets were
+    // saved against the same slope and migrate with it.
+    if !settings.tint_strength_halved {
+        settings.appearance.tint_strength = halved_strength(settings.appearance.tint_strength);
+        for p in settings.user_presets.iter_mut() {
+            p.appearance.tint_strength = halved_strength(p.appearance.tint_strength);
+        }
+        settings.tint_strength_halved = true;
+    }
     settings.appearance.sanitize();
     typography::sanitize(&mut settings.text);
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
@@ -301,6 +333,45 @@ mod tests {
         let s: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.appearance, Appearance::default());
         assert!(s.user_presets.is_empty());
+    }
+
+    #[test]
+    fn an_old_blob_halves_its_tint_strengths_once() {
+        // A blob written before the doubled tint curve: no gate field, and
+        // strengths calibrated against the old /100 slope — Sepia's 45, and
+        // a user preset saved at 40.
+        let mut s: Settings = serde_json::from_str(
+            r#"{"appearance": {"tint_hue": 34, "tint_strength": 45},
+                "user_presets": [
+                    {"id": "mine", "name": "Mine", "appearance": {"tint_strength": 40}}
+                ]}"#,
+        )
+        .unwrap();
+        assert!(!s.tint_strength_halved, "a blob without the gate loads un-migrated");
+        sanitize(&mut s);
+        assert_eq!(
+            s.appearance.tint_strength, 23,
+            "45 on the old slope is the Sepia preset's own 23 on the new one"
+        );
+        assert_eq!(s.user_presets[0].appearance.tint_strength, 20);
+        assert!(s.tint_strength_halved);
+        // Once means once: the app sanitizes on load AND on every write, so
+        // a second pass must not halve again.
+        sanitize(&mut s);
+        assert_eq!(s.appearance.tint_strength, 23);
+    }
+
+    #[test]
+    fn fresh_settings_are_born_on_the_new_curve() {
+        // The in-memory default must not look like an old blob: a fresh
+        // install's dialled strength is already a new-curve number, and a
+        // migration that ran on it would halve a look the reader chose on
+        // purpose.
+        let mut s = Settings::default();
+        s.appearance.tint_strength = 45;
+        sanitize(&mut s);
+        assert_eq!(s.appearance.tint_strength, 45, "nothing to migrate on a fresh blob");
+        assert!(s.tint_strength_halved);
     }
 
     #[test]
