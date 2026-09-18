@@ -16,6 +16,14 @@ const LU_TSCALE = 1 << 16;
 // seam between baked page pixels and the CSS backdrop.
 const LU_ROUND = 1 << 15;
 
+// The memo is capped. A tint drag mints a fresh filter string per animation
+// frame, and the per-tick backdrop republish (public/engine/theme/paper.ts)
+// runs each one through here: an uncapped map would trade nine small
+// allocations per tick for retaining every set the drag ever passed through,
+// none of which a later bake will ask for again. Clearing at the cap beats
+// an LRU here — a settled theme reuses one string, so whatever survives a
+// clear is refilled on the next call and stays.
+const LUT_CACHE_MAX = 8;
 const lutCache = new Map<string, Int32Array[]>();
 
 function filterTokenToMatrix(tok: string): FilterMatrix | null {
@@ -122,6 +130,7 @@ export function composeFilter(filterString: string): FilterMatrix {
 function lutsFor(m: number[], filterString: string): Int32Array[] {
   let luts = lutCache.get(filterString);
   if (!luts) {
+    if (lutCache.size >= LUT_CACHE_MAX) lutCache.clear();
     luts = new Array(9);
     for (let i = 0; i < 9; i += 1) {
       const coef = m[i] ?? 0;
