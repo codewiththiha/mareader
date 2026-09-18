@@ -3,7 +3,7 @@
 use alloc::vec::Vec;
 
 use crate::units::{from_sub, to_sub};
-use crate::window::{Budget, Window};
+use crate::window::{Budget, Slack, Window};
 
 // The windowing/geometry math lives ONCE, in the `StripBackend` impl below
 // and the generic free functions in `super`. The inherent methods on `Strip`
@@ -192,6 +192,23 @@ impl Strip {
         hint: &mut usize,
     ) -> Option<Window> {
         StripBackend::window_hinted(self, scroll_top, viewport, budget, hint)
+    }
+
+    /// [`Strip::window_hinted`] with the padding split per side of the viewport
+    /// instead of resolved from a [`Budget`]'s overscan — what a caller that
+    /// knows which way the reader is travelling uses to keep more mounted ahead
+    /// of them than behind. `max_items` is the budget's ceiling, and the trim is
+    /// the shared one, so the two entry points can never disagree about what
+    /// survives when the ceiling bites.
+    pub fn window_slack_hinted(
+        &self,
+        scroll_top: f64,
+        viewport: f64,
+        slack: Slack,
+        max_items: usize,
+        hint: &mut usize,
+    ) -> Option<Window> {
+        StripBackend::window_slack_hinted(self, scroll_top, viewport, slack, max_items, hint)
     }
 
     /// Index of the item occupying most of the viewport (area-of-viewport).

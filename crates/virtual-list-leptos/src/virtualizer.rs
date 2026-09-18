@@ -605,7 +605,7 @@ impl Virtualizer {
     /// A motion-blind virtualizer publishes the static plan — everything
     /// mounted full quality, no prediction — so a consumer can read this
     /// without knowing which kind it was built with.
-    pub fn render_plan(&self) -> Signal<RenderPlan, LocalStorage> {
+    pub fn render_plan(&self) -> Signal<RenderPlan> {
         self.inner.plan.read_only().into()
     }
 

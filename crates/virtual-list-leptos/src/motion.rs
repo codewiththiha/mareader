@@ -24,7 +24,11 @@
 //!    the destination instead of the pages being flown past.
 
 /// One scroll offset sample, and what it did to the velocity estimate.
-#[derive(Debug, Clone, Copy, PartialEq)]
+///
+/// The derived `Default` is an UNPRIMED model: no position, no clock, and so no
+/// speed until the first sample arrives. [`ScrollVelocity::at`] is the
+/// constructor a caller that already knows where the reader is uses.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ScrollVelocity {
     /// The last offset adopted, in content coordinates.
     offset: f64,
@@ -58,17 +62,6 @@ const STILL_PX_PER_SEC: f64 = 20.0;
 /// which is the right answer, but only if the estimate is reset rather than
 /// averaged into a stale one.
 const SAMPLE_GAP_MS: f64 = 220.0;
-
-impl Default for ScrollVelocity {
-    fn default() -> Self {
-        Self {
-            offset: 0.0,
-            time_ms: 0.0,
-            velocity: 0.0,
-            primed: false,
-        }
-    }
-}
 
 impl ScrollVelocity {
     /// A model sitting at `offset`, having seen no motion. The adapter seeds

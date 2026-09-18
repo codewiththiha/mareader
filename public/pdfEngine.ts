@@ -22,6 +22,7 @@ import {
   predictionStats,
   resetMotion,
   setMotion,
+  setTiers,
 } from "./engine/motion";
 import { reclaim, totalBytes } from "./engine/memory";
 import { resetPlaceholder, republishPlaceholder } from "./engine/placeholder";
@@ -236,32 +237,31 @@ function stats(): Stats {
   };
 }
 
-/** One scroll frame from the strip that owns the scroller. The three calls
- *  are one transaction: adopt the motion, re-order (and drop) what is waiting
- *  against it, then weigh the ledger — a movement that just made a page
- *  irrelevant is also the moment its surfaces become reclaimable. */
+/** The movement half of one scroll frame from the strip that owns the
+ *  scroller. Recorded and nothing more: the tier windows that complete the
+ *  frame arrive next, and re-ordering the queue against half a frame would
+ *  score it against windows that are one scroll old. */
 function setScrollMotion(
   phase: string,
   direction: number,
   predictedPage: number,
+  delayMs: number,
+  workers: number,
+): void {
+  setMotion(phase, direction, predictedPage, delayMs, workers);
+}
+
+/** The geometry half, and the commit point of the pair: adopt the windows,
+ *  re-order (and drop) what is waiting against the frame, then weigh the
+ *  ledger — a movement that just made a page irrelevant is also the moment its
+ *  surfaces become reclaimable. */
+function setRenderTiers(
   firstFull: number,
   lastFull: number,
   firstPreview: number,
   lastPreview: number,
-  delayMs: number,
-  workers: number,
 ): void {
-  setMotion(
-    phase,
-    direction,
-    predictedPage,
-    firstFull,
-    lastFull,
-    firstPreview,
-    lastPreview,
-    delayMs,
-    workers,
-  );
+  setTiers(firstFull, lastFull, firstPreview, lastPreview);
   onMotionPublished();
   reclaim(true);
 }
@@ -339,6 +339,7 @@ globalThis.PDFReader = {
   takePendingFile,
   prefetchThumb,
   setScrollMotion,
+  setRenderTiers,
   configureMotion: configureBudget,
 } satisfies PDFReaderApi;
 

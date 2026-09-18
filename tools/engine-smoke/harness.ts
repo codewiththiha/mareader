@@ -546,12 +546,14 @@ interface PDFReaderHandle {
     phase: string,
     direction: number,
     predictedPage: number,
+    delayMs: number,
+    workers: number
+  ): void;
+  setRenderTiers(
     firstFull: number,
     lastFull: number,
     firstPreview: number,
-    lastPreview: number,
-    delayMs: number,
-    workers: number
+    lastPreview: number
   ): void;
   configureMotion(
     maxBytes: number,

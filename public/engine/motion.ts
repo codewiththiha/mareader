@@ -110,29 +110,43 @@ function parseWindow(first: number, last: number): PageWindow | null {
   return { first, last };
 }
 
-/** Adopt one frame's motion. Called from the facade's `setScrollMotion`. */
+/** Adopt the movement half of one frame. Called from the facade's
+ *  `setScrollMotion`; the tier windows arrive right behind it over
+ *  `setRenderTiers`, which is what re-scores the queue. */
 export function setMotion(
   phase: string,
   direction: number,
   predictedPage: number,
-  firstFull: number,
-  lastFull: number,
-  firstPreview: number,
-  lastPreview: number,
   delayMs: number,
   workers: number,
 ): void {
   const next: MotionState = {
+    ...motion,
     phase: parsePhase(phase),
     direction: direction > 0 ? 1 : direction < 0 ? -1 : 0,
     predictedPage: predictedPage > 0 ? Math.floor(predictedPage) : 0,
-    full: parseWindow(firstFull, lastFull),
-    preview: parseWindow(firstPreview, lastPreview),
     delayMs: delayMs > 0 ? Math.floor(delayMs) : 0,
     workers: workers > 0 ? Math.floor(workers) : 0,
   };
   notePrediction(next);
   motion = next;
+  publishedAt = Date.now();
+  live = true;
+}
+
+/** Adopt the geometry half of one frame: the two tier windows, 1-based and
+ *  inclusive, where `0,0` means "unpublished" and leaves the tier open. */
+export function setTiers(
+  firstFull: number,
+  lastFull: number,
+  firstPreview: number,
+  lastPreview: number,
+): void {
+  motion = {
+    ...motion,
+    full: parseWindow(firstFull, lastFull),
+    preview: parseWindow(firstPreview, lastPreview),
+  };
   generation += 1;
   publishedAt = Date.now();
   live = true;

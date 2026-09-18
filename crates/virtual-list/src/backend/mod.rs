@@ -522,7 +522,7 @@ mod slack_tests {
         assert_eq!(clamped, plain);
         assert_eq!(Slack::split(-5.0, 7.0), Slack::split(0.0, 7.0));
         assert_eq!(Slack::symmetric(-5.0).total(), 0.0);
-        assert_eq!(Slack::split(3.0, 9.0).max(), 9.0);
+        assert_eq!(Slack::split(3.0, 9.0).total(), 12.0);
     }
 
     #[test]

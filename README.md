@@ -1040,7 +1040,7 @@ so the Rust side reads `ok` first and then deserializes.
 | `refreshTheme` / `setScrubMode` / `setAppearanceMenuOpen` | The appearance theme: pre-render (re-bake) it into every canvas, hold the rasters raw under the live CSS filter chain for the length of a slider scrub, and retain those raws while the appearance menu is open so the session's first drag blits instead of re-rendering |
 | `setPaper` / `setPaperActive` / `takePaperFrame` / `samplePaperPage` | The paper session: the backdrop's own raster, handed to and sampled from the pages |
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
-| `setScrollMotion` | One scroll frame from the strip's virtualizer — phase, direction, the page the reader is projected to reach, the two tier windows, the pacing delay and the lane count — which is what the render scheduler orders its queue by |
+| `setScrollMotion` / `setRenderTiers` | One scroll frame from the strip's virtualizer, in two halves: the movement (phase, direction, the page the reader is projected to reach, the pacing delay, the lane count) and the geometry (the full and preview page windows). The pair is what the render scheduler orders its queue by, and the second call is what re-scores it |
 | `configureMotion` | The raster budget the engine's memory ledger enforces, published once per document |
 | `stats` | Internal counters, used to assert memory is actually released: surfaces, the scheduler's queue and what it dropped, the prediction hit rate, and the bytes held against the budget |
 

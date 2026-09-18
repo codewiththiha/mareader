@@ -11,6 +11,22 @@ import { PDFReader, rootProperty } from "./harness.js";
 
 const fmt = (r: EngineResult<RenderPayload>): string => (r.ok ? "ok" : r.error.name);
 
+/** One scroll frame, as the strip publishes it: the movement and the tier
+ *  windows that complete it, in that order — the engine re-scores its queue on
+ *  the second call, so the pair is the smallest thing worth publishing. */
+function publish(
+  phase: string,
+  direction: number,
+  predicted: number,
+  delayMs: number,
+  workers: number,
+  full: [number, number],
+  preview: [number, number],
+): void {
+  PDFReader.setScrollMotion(phase, direction, predicted, delayMs, workers);
+  PDFReader.setRenderTiers(full[0], full[1], preview[0], preview[1]);
+}
+
 /** Wait for a condition the engine reaches on its own clock (the representative
  *  page is built a beat after open, on purpose). */
 async function waitFor(probe: () => boolean, ms = 1_500): Promise<boolean> {
@@ -33,7 +49,7 @@ export async function run(): Promise<void> {
   const before = PDFReader.stats().scheduler;
   // A fling down the document, projected to land on page 5: the full window is
   // 4-5, the preview ring 2-5, and ONE lane to spend.
-  PDFReader.setScrollMotion("fling", 1, 5, 4, 5, 2, 5, 0, 1);
+  publish("fling", 1, 5, 0, 1, [4, 5], [2, 5]);
   const [outrun, destination] = await Promise.all([
     PDFReader.renderPage("cont-30-cv", 1.0, false),
     PDFReader.renderPage("cont-41-cv", 1.0, false),
@@ -55,7 +71,7 @@ export async function run(): Promise<void> {
 
   // --- pacing: a request superseded inside the delay never runs -------------
   PDFReader.registerPage(4, "cont-42-cv", "cont-42-pg");
-  PDFReader.setScrollMotion("fast", 1, 4, 3, 5, 2, 5, 25, 1);
+  publish("fast", 1, 4, 25, 1, [3, 5], [2, 5]);
   const pacedBefore = PDFReader.stats().scheduler;
   const [superseded, paced] = await Promise.all([
     PDFReader.renderPage("cont-42-cv", 1.0, false),
@@ -71,7 +87,7 @@ export async function run(): Promise<void> {
   console.log("scheduler ok: one canvas, one raster — the superseded request never ran");
 
   // --- the preview tier is its own tier, and a full render leaves it --------
-  PDFReader.setScrollMotion("fast", 1, 4, 3, 5, 2, 5, 0, 1);
+  publish("fast", 1, 4, 0, 1, [3, 5], [2, 5]);
   const preview = await PDFReader.renderPage("cont-42-cv", 1.0, false, true);
   if (fmt(preview) !== "ok") throw new Error("preview render failed: " + fmt(preview));
   if (PDFReader.stats().memory.previews !== 1) {
@@ -86,8 +102,8 @@ export async function run(): Promise<void> {
 
   // --- a settled reader is graded on where they stopped ---------------------
   const predictionsBefore = PDFReader.stats().predictions;
-  PDFReader.setScrollMotion("fling", 1, 5, 4, 5, 2, 5, 0, 2);
-  PDFReader.setScrollMotion("idle", 0, 5, 4, 5, 4, 5, 0, 2);
+  publish("fling", 1, 5, 0, 2, [4, 5], [2, 5]);
+  publish("idle", 0, 5, 0, 2, [4, 5], [4, 5]);
   const graded = PDFReader.stats().predictions;
   if (graded.made <= predictionsBefore.made || graded.hits <= predictionsBefore.hits) {
     throw new Error(
@@ -108,7 +124,7 @@ export async function run(): Promise<void> {
   // Leave the engine settled: a published window that outlives this scenario
   // would pace the teardown's own calls, and nothing after this point is a
   // strip.
-  PDFReader.setScrollMotion("idle", 0, 0, 0, 0, 0, 0, 0, 0);
+  publish("idle", 0, 0, 0, 0, [0, 0], [0, 0]);
   PDFReader.unregisterPage("cont-30-cv");
   PDFReader.unregisterPage("cont-41-cv");
   PDFReader.unregisterPage("cont-42-cv");

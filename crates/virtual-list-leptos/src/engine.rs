@@ -1444,7 +1444,6 @@ mod motion_tests {
     //! these tests measure.
 
     use super::*;
-    use crate::policy::{AdaptivePolicy, RenderQuality};
     use crate::surface::TestSurface;
 
     const VH: f64 = 800.0;

@@ -24,7 +24,7 @@ report() {
   local title="$1" file="$2"
   [ -s "$file" ] || return 0
   local blob
-  blob=$(grep -nE "^(error|warning|failures:|test result: FAILED)" -A 6 "$file" | head -c 3500)
+  blob=$(grep -nE "^(error|warning|failures:|test result: FAILED)" -A 10 "$file" | head -c 6000)
   if [ -z "$blob" ]; then
     blob=$(tail -c 1200 "$file")
   fi
@@ -38,20 +38,21 @@ report() {
 status=0
 
 echo "--- clippy (workspace, deny warnings) ---"
-if ! cargo clippy --workspace --all-targets --exclude mareader-shell --locked -- -D warnings \
-    > /tmp/clippy.txt 2>&1; then
+if ! cargo clippy --workspace --all-targets --exclude mareader-shell --locked --keep-going \
+    -- -D warnings > /tmp/clippy.txt 2>&1; then
   status=1
   report "clippy" /tmp/clippy.txt
 fi
 
 echo "--- cargo check (wasm32) ---"
-if ! cargo check --target wasm32-unknown-unknown --locked > /tmp/wasm.txt 2>&1; then
+if ! cargo check --target wasm32-unknown-unknown --locked --keep-going > /tmp/wasm.txt 2>&1; then
   status=1
   report "wasm check" /tmp/wasm.txt
 fi
 
 echo "--- cargo test (workspace) ---"
-if ! cargo test --workspace --exclude mareader-shell --locked > /tmp/test.txt 2>&1; then
+if ! cargo test --workspace --exclude mareader-shell --locked --keep-going --no-fail-fast \
+    > /tmp/test.txt 2>&1; then
   status=1
   report "tests" /tmp/test.txt
 fi

@@ -67,8 +67,11 @@ pub type PageRange = Option<(u32, u32)>;
 /// One scroll frame, in the engine's terms.
 ///
 /// Every page number is 1-based, matching the engine's own page numbering;
-/// the caller converts from the virtualizer's 0-based item indices.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// the caller converts from the virtualizer's 0-based item indices. The
+/// derived `Default` is [`Self::idle`]: a reader who is not moving, with no
+/// window published, is the state a document starts in and the one a mode that
+/// never publishes motion stays in.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ScrollMotion {
     /// How fast the reader is moving, classified. The classification IS the
     /// speed on this side of the bridge: the raw pixels-per-second number has
@@ -97,26 +100,11 @@ pub struct ScrollMotion {
 
 impl ScrollMotion {
     /// A reader who is not moving and has published no windows: everything is
-    /// owed full quality and nothing is being paced. The engine's own
-    /// starting state, so a document opened into a paginated mode (which
-    /// never publishes motion) behaves exactly as it did before motion
-    /// existed.
-    pub const fn idle() -> Self {
-        Self {
-            phase: MotionPhase::Idle,
-            direction: 0,
-            predicted_page: 0,
-            full: None,
-            preview: None,
-            delay_ms: 0,
-            workers: 0,
-        }
-    }
-}
-
-impl Default for ScrollMotion {
-    fn default() -> Self {
-        Self::idle()
+    /// owed full quality and nothing is being paced. The engine's own starting
+    /// state, so a document opened into a paginated mode — which never
+    /// publishes motion — behaves exactly as it did before motion existed.
+    pub fn idle() -> Self {
+        Self::default()
     }
 }
 
@@ -129,19 +117,16 @@ pub fn set_scroll_motion(motion: &ScrollMotion) {
     if !guard_pdf_reader() {
         return;
     }
-    let (first_full, last_full) = motion.full.unwrap_or((0, 0));
-    let (first_preview, last_preview) = motion.preview.unwrap_or((0, 0));
     bridge::set_scroll_motion(
         motion.phase.wire(),
         motion.direction,
         motion.predicted_page,
-        first_full,
-        last_full,
-        first_preview,
-        last_preview,
         motion.delay_ms,
         motion.workers,
     );
+    let (first_full, last_full) = motion.full.unwrap_or((0, 0));
+    let (first_preview, last_preview) = motion.preview.unwrap_or((0, 0));
+    bridge::set_render_tiers(first_full, last_full, first_preview, last_preview);
 }
 
 /// What the reader is willing to spend on rasters, and how the tiers share

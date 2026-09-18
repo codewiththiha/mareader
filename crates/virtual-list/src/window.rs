@@ -183,13 +183,6 @@ impl Slack {
     pub fn total(&self) -> f64 {
         self.before + self.after
     }
-
-    /// The wider of the two sides, for callers that need one number (a
-    /// ceiling check, a symmetric fallback).
-    #[inline]
-    pub fn max(&self) -> f64 {
-        self.before.max(self.after)
-    }
 }
 
 /// How much to keep mounted around the viewport. Two knobs, orthogonal by

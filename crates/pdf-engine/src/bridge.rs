@@ -162,23 +162,31 @@ extern "C" {
 
     // The scheduler's motion input, published by the strip that owns the
     // scroller once per coalesced scroll frame. Primitives rather than a
-    // payload object for the reason `registerPage` gives: this is the hot
-    // path of a fling, and a frame should not cost an allocation on top of
-    // the rewindowing it is reporting. `0` pages mean "no window published"
-    // (`api::motion::set_scroll_motion` flattens the Option here), which the
-    // engine reads as "the tier is open" rather than "nothing is owed".
+    // payload object for the reason `registerPage` gives: this is the hot path
+    // of a fling, and a frame should not cost an allocation on top of the
+    // rewindowing it is reporting.
+    //
+    // Two calls rather than one because the frame is two kinds of fact — how
+    // the reader is moving, and what the geometry owes as a result — and one
+    // signature carrying both is ten positional numbers nobody can read. The
+    // pair is published together (`api::motion::set_scroll_motion`); the tiers
+    // land second, and the engine re-scores its queue on that one.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrollMotion")]
     pub fn set_scroll_motion(
         phase: &str,
         direction: i8,
         predicted_page: u32,
-        first_full: u32,
-        last_full: u32,
-        first_preview: u32,
-        last_preview: u32,
         delay_ms: u32,
         workers: u32,
     );
+
+    /// The frame's two tier windows, 1-based and inclusive. `0, 0` means "no
+    /// window published" (`api::motion::set_scroll_motion` flattens the Option
+    /// here), which the engine reads as "the tier is open" rather than as
+    /// "nothing is owed" — a mode that never publishes must never have its
+    /// renders cancelled by a window it did not ask for.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setRenderTiers")]
+    pub fn set_render_tiers(first_full: u32, last_full: u32, first_preview: u32, last_preview: u32);
 
     /// The raster budget the engine's memory ledger enforces, published once
     /// per document (see `api::motion::configure_motion`).

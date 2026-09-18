@@ -245,20 +245,25 @@ export type PDFReaderApi = {
   sweepSnapshots: () => void;
   takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;
-  /** One scroll frame, published by the strip that owns the scroller: the
-   *  classified movement and its sign, the page the reader is projected to
-   *  reach, the two tier windows (1-based inclusive, `0,0` for "unpublished"),
-   *  the pacing delay and the lane count. */
+  /** The movement half of one scroll frame, published by the strip that owns
+   *  the scroller: the classified phase and its sign, the page the reader is
+   *  projected to reach, the pacing delay and the lane count. */
   setScrollMotion: (
     phase: string,
     direction: number,
     predictedPage: number,
+    delayMs: number,
+    workers: number
+  ) => void;
+  /** The geometry half of the same frame: the two tier windows, 1-based and
+   *  inclusive, where `0,0` means "unpublished" and leaves the tier open. The
+   *  pair is published together, this one second, and it is what re-scores the
+   *  render queue. */
+  setRenderTiers: (
     firstFull: number,
     lastFull: number,
     firstPreview: number,
-    lastPreview: number,
-    delayMs: number,
-    workers: number
+    lastPreview: number
   ) => void;
   /** The raster budget the memory ledger enforces, published once per
    *  document. */
