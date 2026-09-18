@@ -65,16 +65,25 @@ fn wire_motion(plan: RenderPlan) -> ScrollMotion {
     }
 }
 
-/// Publish the raster budget the engine's memory ledger enforces. Once per
-/// document, from the open flow: the numbers are the policy's, and nothing
-/// about them depends on which book is open.
-pub(crate) fn publish_budget() {
-    engine::configure_motion(&MotionBudget {
+/// The raster budget the engine's memory ledger enforces, read off the same
+/// policy the strips' virtualizers run. One function so the two sides of the
+/// boundary cannot be handed different numbers: the tier windows the
+/// virtualizer publishes and the ceiling the engine reclaims against are the
+/// same policy, translated.
+fn wire_budget() -> MotionBudget {
+    MotionBudget {
         max_bytes: POLICY.memory.max_bytes as f64,
         preview_bytes: POLICY.memory.preview_bytes as f64,
         max_preview_pages: POLICY.memory.max_preview_pages as u32,
         preview_scale: POLICY.rendering.preview_scale,
-    });
+    }
+}
+
+/// Publish [`wire_budget`] to the engine. Once per document, from the open
+/// flow: the numbers are the policy's, and nothing about them depends on which
+/// book is open.
+pub(crate) fn publish_budget() {
+    engine::configure_motion(&wire_budget());
 }
 
 /// Wire one strip's virtualizer to the engine's scheduler.
@@ -158,18 +167,36 @@ mod tests {
         }
     }
 
+    /// The policy as a value rather than a constant, so these assertions are
+    /// about the translation and not a restatement of the literals above them.
+    fn live_policy() -> AdaptivePolicy {
+        POLICY
+    }
+
+    /// The mount ceiling the strips are built with.
+    fn mount_ceiling() -> usize {
+        reader_core::view::MOUNTED_PAGES
+    }
+
     #[test]
-    fn the_budget_is_the_policy_the_strips_run() {
+    fn the_budget_the_engine_gets_is_the_policy_the_strips_run() {
         // The engine's ceiling and the virtualizer's tiers are one policy read
         // twice; if they ever disagree, the side that is wrong is the one that
         // stops matching this test.
-        assert_eq!(POLICY.memory.max_bytes, 96 * 1024 * 1024);
-        assert!(POLICY.memory.preview_bytes < POLICY.memory.max_bytes);
-        assert!(POLICY.rendering.preview_scale > 0.0);
-        assert!(POLICY.rendering.preview_screens > POLICY.rendering.full_screens);
+        let budget = wire_budget();
+        let policy = live_policy();
+        assert_eq!(budget.max_bytes, policy.memory.max_bytes as f64);
+        assert_eq!(budget.preview_bytes, policy.memory.preview_bytes as f64);
+        assert_eq!(budget.max_preview_pages as usize, policy.memory.max_preview_pages);
+        assert_eq!(budget.preview_scale, policy.rendering.preview_scale);
+        // The preview tier gets a share of its own, and a raster materially
+        // cheaper than the one it stands in for.
+        assert!(budget.preview_bytes < budget.max_bytes);
+        assert!(budget.preview_scale > 0.0 && budget.preview_scale < 0.75);
         // The mount ceiling the strips are built with has to admit the preview
         // ring, or the ring is a policy for pages that are never mounted.
-        assert!(POLICY.memory.max_preview_pages <= reader_core::view::MOUNTED_PAGES);
+        assert!(budget.max_preview_pages as usize <= mount_ceiling());
+        assert!(policy.rendering.preview_screens > policy.rendering.full_screens);
     }
 
     #[test]

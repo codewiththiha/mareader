@@ -341,23 +341,21 @@ impl AdaptivePolicy {
     /// reaches on each side, in pixels.
     ///
     /// `direction` is the sign of the smoothed velocity (`1` towards higher
-    /// offsets, `-1` towards lower, `0` at rest) and decides which side is
-    /// the leading one. A sweep widens the leading side by
-    /// [`RenderPolicy::sweep_mount_screens`], because the geometry of a
-    /// fling's destination is cheap to hold and expensive to be missing.
+    /// offsets, `-1` towards lower, `0` at rest) and decides which side is the
+    /// leading one. A sweep widens the leading side by
+    /// [`RenderPolicy::sweep_mount_screens`], because the geometry of a fling's
+    /// destination is cheap to hold and expensive to be missing — and narrows
+    /// the trailing side by the same split the tiers use, because the pages
+    /// behind a throw are the ones retention is for, not the window. At rest
+    /// there is no leading side and the window is symmetric, exactly like the
+    /// tiers inside it.
     pub fn mount_slack(&self, phase: ScrollPhase, direction: i8, viewport: f64) -> Slack {
         let render = &self.rendering;
-        let mut lead = render.mount_screens.max(0.0);
+        let mut screens = render.mount_screens.max(0.0);
         if phase.is_sweeping() {
-            lead += render.sweep_mount_screens.max(0.0);
+            screens += render.sweep_mount_screens.max(0.0);
         }
-        let trail = lead * render.trail_ratio.clamp(0.0, 1.0);
-        let (before, after) = if direction < 0 {
-            (lead * viewport, trail * viewport)
-        } else {
-            (trail * viewport, lead * viewport)
-        };
-        Slack::split(before, after)
+        self.tier_slack(screens, phase, direction, viewport)
     }
 
     /// The full-quality tier for one frame: the items overlapping the
@@ -521,17 +519,18 @@ mod tests {
     }
 
     #[test]
-    fn a_sweep_widens_the_mount_window_ahead_only() {
+    fn a_sweep_leans_the_mount_window_forward() {
         let p = policy();
         let settled = p.mount_slack(ScrollPhase::Idle, 1, VH);
         let fling = p.mount_slack(ScrollPhase::Fling, 1, VH);
-        assert!(fling.after > settled.after);
-        assert!(fling.before > settled.before);
-        // The lead grows by more than the trail: the window leans into the
-        // movement rather than inflating.
-        let lead_gain = fling.after - settled.after;
-        let trail_gain = fling.before - settled.before;
-        assert!(lead_gain > trail_gain * 2.0);
+        // At rest the window is symmetric, like every tier inside it.
+        assert_eq!(settled.before, settled.after);
+        // A throw reaches further ahead and lets go behind: the pages it is
+        // leaving are retention's problem, not the window's, and the geometry
+        // it is arriving at is cheap to hold and expensive to be missing.
+        assert!(fling.after > settled.after, "the lead must grow");
+        assert!(fling.before < settled.before, "the trail must narrow");
+        assert!(fling.total() > settled.total(), "and the window still grows");
     }
 
     #[test]
@@ -568,14 +567,30 @@ mod tests {
 
     #[test]
     fn negative_and_huge_screen_counts_clamp_rather_than_invert() {
-        let p = policy()
-            .with_full_screens(-1.0)
-            .with_preview_screens(-0.5)
-            .with_mount_screens(-2.0);
-        let slack = p.mount_slack(ScrollPhase::Fling, 1, VH);
-        assert_eq!(slack.before, 0.0);
-        assert_eq!(slack.after, 0.0);
-        assert_eq!(slack.total(), 0.0);
+        // Every screen count negative at once, including the sweep's own: a
+        // policy that over-corrects narrows a side to nothing rather than
+        // inverting the window, which is the failure that would put the reader
+        // outside every tier.
+        let p = AdaptivePolicy {
+            rendering: RenderPolicy {
+                full_screens: -1.0,
+                preview_screens: -0.5,
+                mount_screens: -2.0,
+                sweep_mount_screens: -1.0,
+                ..RenderPolicy::default()
+            },
+            ..AdaptivePolicy::reader()
+        };
+        for phase in [ScrollPhase::Idle, ScrollPhase::Fling] {
+            for direction in [-1i8, 0, 1] {
+                let slack = p.mount_slack(phase, direction, VH);
+                assert_eq!(slack.total(), 0.0, "{phase:?} {direction}");
+                let preview = p.preview_slack(phase, direction, VH);
+                assert_eq!(preview.total(), 0.0, "{phase:?} {direction}");
+            }
+        }
+        // And an absurd one stays a finite, positive padding rather than an
+        // infinity that would mount the document.
         let wide = policy().with_preview_screens(1e9).preview_slack(ScrollPhase::Idle, 0, VH);
         assert!(wide.after.is_finite() && wide.after > 0.0);
     }
