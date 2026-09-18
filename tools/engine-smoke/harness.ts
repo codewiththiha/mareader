@@ -273,6 +273,14 @@ export function isScrubActive(): boolean {
   return docEl.classList.contains("appearance-scrubbing");
 }
 
+/** A custom property the engine published on the root element (`--pdf-paper`,
+ *  `--pdf-placeholder`). The stub records them instead of ignoring them, so a
+ *  scenario can assert on what the stylesheet would have been handed. */
+export function rootProperty(name: string): string {
+  const style = docEl.style as unknown as { getPropertyValue?: (n: string) => string };
+  return typeof style.getPropertyValue === "function" ? style.getPropertyValue(name) : "";
+}
+
 export const fakeDocument = {
   documentElement: docEl,
   createElement: (tag: string) => new FakeCanvas(tag) as unknown as ReturnType<typeof makeElement>,
@@ -479,13 +487,37 @@ interface OpenPayload {
 }
 interface RenderPayload { width: number; height: number; scale: number }
 interface ThumbPayload { width: number; height: number; scale: number }
-interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thumbTasks: number }
+interface StatsPayload {
+  pages: number;
+  thumbs: number;
+  thumbLimit: number;
+  thumbTasks: number;
+  scheduler: {
+    queued: number;
+    active: number;
+    lanes: number;
+    generation: number;
+    requested: number;
+    ran: number;
+    superseded: number;
+    dropped: number;
+    savedPixels: number;
+    epoch: number;
+  };
+  predictions: { made: number; hits: number };
+  memory: { bytes: number; budget: number; previews: number };
+}
 
 interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;
   resolveOutline(): Promise<EngineResult<{ outline: unknown[] }>>;
   registerPage(page: number, canvasId: string, hostId?: string): void;
-  renderPage(canvasId: string, scale: number, renderText: boolean): Promise<EngineResult<RenderPayload>>;
+  renderPage(
+    canvasId: string,
+    scale: number,
+    renderText: boolean,
+    preview?: boolean
+  ): Promise<EngineResult<RenderPayload>>;
   renderThumb(canvasId: string, page: number, scale: number): Promise<EngineResult<ThumbPayload>>;
   cancelThumb(canvasId: string): void;
   hasThumb(page: number, scale: number): boolean;
@@ -510,6 +542,23 @@ interface PDFReaderHandle {
   }>;
   unregisterPage(canvasId: string): void;
   destroy(): Promise<void>;
+  setScrollMotion(
+    phase: string,
+    direction: number,
+    predictedPage: number,
+    firstFull: number,
+    lastFull: number,
+    firstPreview: number,
+    lastPreview: number,
+    delayMs: number,
+    workers: number
+  ): void;
+  configureMotion(
+    maxBytes: number,
+    previewBytes: number,
+    maxPreviewPages: number,
+    previewScale: number
+  ): void;
   stats(): StatsPayload;
   sweep(): void;
   sweepSnapshots(): void;

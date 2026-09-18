@@ -26,7 +26,7 @@
 //! offset and its cross offset is `col * (cell_width + gap_cross)`.
 
 use crate::units::{from_sub, to_sub};
-use crate::{Budget, Strip, Viewport, Window};
+use crate::{Budget, Slack, Strip, Viewport, Window};
 
 use super::Layout;
 
@@ -196,6 +196,21 @@ impl GridLayout {
         self.rows.window_hinted(scroll, viewport.main, budget, hint)
     }
 
+    /// [`rows_window_hinted`](Self::rows_window_hinted) with the padding split
+    /// per side. Rows are still the unit: the split applies to the row strip,
+    /// and the row window expands to items exactly as the symmetric one does.
+    fn rows_window_slack_hinted(
+        &self,
+        scroll: f64,
+        viewport: Viewport,
+        slack: Slack,
+        max_rows: usize,
+        hint: &mut usize,
+    ) -> Option<Window> {
+        self.rows
+            .window_slack_hinted(scroll, viewport.main, slack, max_rows, hint)
+    }
+
     /// Expand a row window into an item window (clamping a partial last row).
     fn expand(&self, rows: Window) -> Window {
         debug_assert!(self.items > 0);
@@ -287,6 +302,24 @@ impl Layout for GridLayout {
         }
         let mut row_hint = *hint / self.columns;
         let rows = self.rows_window_hinted(scroll, viewport, budget, &mut row_hint)?;
+        *hint = (row_hint * self.columns).min(self.items - 1);
+        Some(self.expand(rows))
+    }
+
+    fn window_slack_hinted(
+        &self,
+        scroll: f64,
+        viewport: Viewport,
+        slack: Slack,
+        max_items: usize,
+        hint: &mut usize,
+    ) -> Option<Window> {
+        if self.items == 0 {
+            return None;
+        }
+        let mut row_hint = *hint / self.columns;
+        let rows =
+            self.rows_window_slack_hinted(scroll, viewport, slack, max_items, &mut row_hint)?;
         *hint = (row_hint * self.columns).min(self.items - 1);
         Some(self.expand(rows))
     }

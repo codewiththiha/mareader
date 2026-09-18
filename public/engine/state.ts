@@ -33,9 +33,12 @@ export const THUMB_CACHE_MAX = 16;
  *  transient surface a zoom commit stacks (scratch, bake output, snapshot
  *  mask) is a quarter smaller than the 16M this used to be. The footprint
  *  latches onto the session's dirty high-water mark and never hands it back,
- *  so the cheapest megabyte is the one a transient never allocates; total
- *  GPU memory is bounded by the 3-page mounted ceiling (RENDER_BUDGET), not
- *  by this. The ceiling used to DOUBLE on machines reporting >= 8 GB; that
+ *  so the cheapest megabyte is the one a transient never allocates; total GPU
+ *  memory is bounded by how many pages the reader's tiers actually rasterise —
+ *  a full tier of a page or two, a preview ring at a fraction of the
+ *  resolution, and placeholder boxes with no canvas at all — and by the byte
+ *  budget in memory.ts, not by this. The ceiling used to DOUBLE on machines
+ *  reporting >= 8 GB; that
  *  bought no visible sharpness and made every transient twice the cost,
  *  permanently. Low-memory devices still get half the base. */
 const PAGE_MAX_PIXELS_BASE = 12 * 1024 * 1024;

@@ -18,6 +18,7 @@ use virtual_list::{Align, Layout, Viewport, Window};
 use crate::engine::{Step, VirtualizerCore};
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
+use crate::policy::RenderPlan;
 use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 use crate::retention::{prune_retained, retain_evicted};
 use crate::surface::{DomSurface, ScrollSurface};
@@ -54,6 +55,7 @@ impl VirtualizerInner {
         initial_range: Option<Window>,
         initial_scroll: f64,
         initial_epoch: u64,
+        initial_plan: RenderPlan,
     ) -> Rc<Self> {
         // Read every option-derived value before the struct literal moves
         // `options` into the `options` field.
@@ -65,6 +67,7 @@ impl VirtualizerInner {
             settled: RwSignal::new(true),
             viewport: RwSignal::new(initial_viewport),
             range: RwSignal::new(initial_range),
+            plan: RwSignal::new(initial_plan),
             layout_version: RwSignal::new(0),
 
             last_epoch: Cell::new(initial_epoch),
@@ -106,6 +109,11 @@ pub(crate) struct VirtualizerInner {
     pub settled: RwSignal<bool>,
     pub viewport: RwSignal<Viewport>,
     pub range: RwSignal<Option<Window>>,
+    /// This frame's tier plan (see [`crate::policy::RenderPlan`]). Published
+    /// whenever a transition produces one, which is every scroll frame under
+    /// an adaptive policy and every window change without one — so a consumer
+    /// that reads it reactively sees the settle, not just the movement.
+    pub plan: RwSignal<RenderPlan>,
     pub layout_version: RwSignal<u64>,
     pub last_epoch: Cell<u64>,
 
@@ -152,7 +160,12 @@ impl VirtualizerInner {
         if old == new {
             return;
         }
-        let grace = self.retention_grace.get();
+        // The longer of the configured grace and the phase's own: a fast
+        // movement reaches further back when the reader reverses, so the
+        // bridge has to outlive the one a settled scroll needs — while a
+        // caller that raised the grace explicitly (a zoom commit) is never
+        // shortened by it.
+        let grace = self.retention_grace.get().max(self.plan.get_untracked().grace_ms);
         if grace > 0 && self.options.retention_max > 0 {
             let now = now_ms();
             let evicted =
@@ -218,6 +231,10 @@ impl VirtualizerInner {
         if step.layout_changed {
             self.layout_version.update(|version| *version += 1);
         }
+        // The plan goes first: `publish_range` reads the phase's retention
+        // grace off it, and a range published against the previous frame's
+        // grace would bridge an eviction for the wrong length of time.
+        write_if_changed(self.plan, step.plan);
         self.publish_range(step.range);
         if let Some(top) = step.scroll_write {
             if (top - self.scroll_top.get_untracked()).abs() > self.options.measure_epsilon {
@@ -235,6 +252,7 @@ impl VirtualizerInner {
         if step.layout_changed {
             self.layout_version.update(|version| *version += 1);
         }
+        write_if_changed(self.plan, step.plan);
         self.publish_range(step.range);
         write_if_changed(self.scroll_top, self.core.borrow().scroll_top());
     }
@@ -258,11 +276,12 @@ impl VirtualizerInner {
         {
             return;
         }
-        let step = self.core.borrow_mut().on_scroll(content);
+        let step = self.core.borrow_mut().on_scroll(content, now_ms());
         write_if_changed(self.scroll_top, content);
         // The strip is moving again: first paints wait for the scroll-end
         // window this re-arms (see the field docs).
         write_if_changed(self.settled, false);
+        write_if_changed(self.plan, step.plan);
         self.publish_range(step.range);
         if let Some(top) = step.scroll_write {
             self.surface.set_scroll(top, false);
@@ -306,6 +325,15 @@ impl VirtualizerInner {
             move || {
                 // The scroller has been quiet for the whole window: the strip
                 // is settled, and the first paints its gate held back run now.
+                //
+                // Settling is a TRANSITION, not just a flag: the motion model
+                // is told the movement ended, which recomputes the tiers
+                // symmetrically and lifts the mute a commanded scroll set, so
+                // the settle publishes the promotion (preview ring → full)
+                // and the next wheel event measures from a standing start.
+                let step = inner.core.borrow_mut().settle(now_ms());
+                write_if_changed(inner.plan, step.plan);
+                inner.publish_range(step.range);
                 write_if_changed(inner.settled, true);
                 let callbacks: Vec<_> = inner.idle_cbs.borrow().iter().cloned().collect();
                 for callback in callbacks {
@@ -569,6 +597,18 @@ impl Virtualizer {
         self.inner.viewport
     }
 
+    /// This frame's tier plan, reactively: where the reader is, where they are
+    /// projected to be, which windows are full quality / preview / geometry
+    /// only, and what the movement means for a renderer's pacing (the delay
+    /// before a newly mounted page may rasterise, the lanes it may use).
+    ///
+    /// A motion-blind virtualizer publishes the static plan — everything
+    /// mounted full quality, no prediction — so a consumer can read this
+    /// without knowing which kind it was built with.
+    pub fn render_plan(&self) -> Signal<RenderPlan, LocalStorage> {
+        self.inner.plan.read_only().into()
+    }
+
     /// Whether a scroll container is currently bound.
     pub fn is_bound(&self) -> bool {
         self.inner.surface.element().is_some()
@@ -614,8 +654,9 @@ impl Virtualizer {
         if (content - self.inner.core.borrow().scroll_top()).abs()
             > self.inner.options.measure_epsilon
         {
-            let step = self.inner.core.borrow_mut().on_scroll(content);
+            let step = self.inner.core.borrow_mut().on_scroll(content, now_ms());
             write_if_changed(self.inner.scroll_top, content);
+            write_if_changed(self.inner.plan, step.plan);
             self.inner.publish_range(step.range);
         }
     }

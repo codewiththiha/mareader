@@ -132,6 +132,64 @@ impl Overscan {
             Self::Px(px) => px.max(0.0),
         }
     }
+
+    /// Resolve to the padding on each side of the viewport. Symmetric for
+    /// every variant — [`Slack`] exists so a caller that knows the scroll
+    /// direction (the framework adapter's motion model) can widen one side
+    /// and narrow the other without this type having to learn about motion.
+    pub fn slack(self, viewport: f64, unit_hint: f64) -> Slack {
+        Slack::symmetric(self.padding(viewport, unit_hint))
+    }
+}
+
+/// Padding around the viewport, one number per side, in content coordinates.
+///
+/// `before` pads towards the start of the content (lower offsets) and `after`
+/// towards its end (higher offsets); equal values are the symmetric padding
+/// every [`Overscan`] variant resolves to on its own. The split exists
+/// because a caller that knows which way the reader is travelling can buy
+/// look-ahead in the direction of motion without growing the window: the
+/// geometry here stays directional-blind, and the policy layer decides which
+/// side the lead is on this frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Slack {
+    /// Padding towards lower offsets (the content's start), in pixels.
+    pub before: f64,
+    /// Padding towards higher offsets (the content's end), in pixels.
+    pub after: f64,
+}
+
+impl Slack {
+    /// The same padding both sides.
+    pub fn symmetric(px: f64) -> Self {
+        let px = px.max(0.0);
+        Self {
+            before: px,
+            after: px,
+        }
+    }
+
+    /// A padding split per side. Negative inputs clamp to zero, so a policy
+    /// that over-corrects narrows a side rather than inverting the window.
+    pub fn split(before: f64, after: f64) -> Self {
+        Self {
+            before: before.max(0.0),
+            after: after.max(0.0),
+        }
+    }
+
+    /// Total padding both sides — the extent an overlap query grows by.
+    #[inline]
+    pub fn total(&self) -> f64 {
+        self.before + self.after
+    }
+
+    /// The wider of the two sides, for callers that need one number (a
+    /// ceiling check, a symmetric fallback).
+    #[inline]
+    pub fn max(&self) -> f64 {
+        self.before.max(self.after)
+    }
 }
 
 /// How much to keep mounted around the viewport. Two knobs, orthogonal by
@@ -164,6 +222,14 @@ impl Budget {
             overscan: Overscan::Items(items),
             max_items,
         }
+    }
+
+    /// The budget's own slack, resolved against a live viewport and the
+    /// layout's average item extent. Symmetric; a motion-aware caller
+    /// reshapes it with [`Slack::split`] and hands the result to the
+    /// windowing entry points directly.
+    pub fn slack(&self, viewport: f64, unit_hint: f64) -> Slack {
+        self.overscan.slack(viewport, unit_hint)
     }
 }
 

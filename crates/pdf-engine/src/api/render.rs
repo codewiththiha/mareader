@@ -26,13 +26,20 @@ pub fn unregister_page(canvas_id: &str) {
     bridge::unregister_page(canvas_id);
 }
 
+/// Render one page's canvas at `scale`.
+///
+/// `preview` selects the cheap tier: the same CSS geometry at a fraction of
+/// the output resolution, no text layer, and a lower place in the engine's
+/// priority queue. A page the reader is looking at is never a preview — the
+/// caller decides which tier a page is owed, from the virtualizer's plan.
 pub async fn render_page(
     canvas_id: &str,
     scale: f64,
     render_text: bool,
+    preview: bool,
 ) -> Result<RenderResult, EngineError> {
     require_pdf_reader()?;
-    let value = bridge::render_page(canvas_id, scale, render_text).await;
+    let value = bridge::render_page(canvas_id, scale, render_text, preview).await;
     resolve::<RenderResult>(value, "render")
 }
 

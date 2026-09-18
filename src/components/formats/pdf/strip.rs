@@ -24,6 +24,20 @@
 //! hosts write are: a wrapper positioned half a device pixel off its page's
 //! painted edge is exactly the compositor seam that snapping exists to close.
 //!
+//! The strip is also where the virtualizer's TIERS become visible. A strip
+//! running an adaptive policy mounts more pages than it rasterises, and each
+//! mounted item says which of the three it is owed: [`VirtualItemState::Active`]
+//! gets a page host and a full raster, [`VirtualItemState::Preview`] the same
+//! host at a fraction of the resolution and with no text layer, and
+//! [`VirtualItemState::Blank`] a placeholder box with no canvas in it at all
+//! ([`PdfPagePlaceholder`]). A retained zombie keeps the host and the bitmap it
+//! already has, and starts no new work. That is what makes a wider mount window
+//! affordable: the pages a fling flies past are boxes, not rasters.
+//!
+//! The same frame is published to the engine's render scheduler
+//! ([`use_motion_bridge`]), so the queue in front of pdf.js is ordered by where
+//! the reader is going rather than by the order the pages were mounted in.
+//!
 //! Cross-axis centering is the same rule in every layout: the page host is
 //! centred with an AUTO margin (`mx-auto` here, `my-auto` in the horizontal
 //! strip, `m-auto` in [`PageShell`]) rather than flex `justify-content` /
@@ -39,7 +53,9 @@ use reader_core::view::Axis;
 use virtual_list_leptos::{VirtualItem, VirtualItemState, Virtualizer};
 
 use super::canvas::{GlossOverlayProps, PdfPageCanvas};
+use super::placeholder::PdfPagePlaceholder;
 use crate::components::viewer::page_host::{canvas_id_for_axis, host_id_for_axis};
+use crate::features::reader::motion::use_motion_bridge;
 use pdf_core::pixel_grid::{one_device_px, snap_px};
 use crate::state::{ReaderState, TextureSignal};
 
@@ -71,6 +87,11 @@ pub fn PdfPageStrip(
     let settled: Signal<bool> = v.settled().into();
     let items = v.items();
     let total_size = v.total_size();
+    // Publish this strip's motion to the engine's scheduler: the phase, the
+    // direction, the predicted destination and the two tier windows, once per
+    // frame that changes any of them. The strip owns the scroller, so it is the
+    // only place that knows which virtualizer is live.
+    use_motion_bridge(&v);
 
     // Horizontal-only: the strip is at least as tall as the tallest page at
     // the live scale, so a zoom past fit-height yields real vertical scroll
@@ -169,7 +190,8 @@ pub fn PdfPageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let top = handle.with_value(|v| v.item_top(index));
-                                    let dormant = dormant_signal(items, index);
+                                    let size = handle.with_value(|v| v.item_size(index));
+                                    let (dormant, preview, tier) = tiers(&handle, index);
                                     // Offsets are snapped for the same reason
                                     // sizes are: the wrapper's top is a running
                                     // sum of page extents at the live scale, so
@@ -201,22 +223,42 @@ pub fn PdfPageStrip(
                                     };
                                     view! {
                                         <div id=wrapper_id(Axis::Vertical, index, page) style=style>
-                                            <PdfPageCanvas
-                                                page=page
-                                                scale=page_scale
-                                                render_scale=state.viewer.zoom.committed
-                                                zoom_animating=state.viewer.zooming()
-                                                dormant=dormant
-                                                settled=settled
-                                                gesture_owns=gesture_owns
-                                                texture=texture
-                                                canvas_id=canvas_id_for_axis(axis, page)
-                                                host_id=host_id_for_axis(axis, page)
-                                                render_text=true
-                                                on_geometry=on_geometry
-                                                gloss_overlay=GlossOverlayProps::from_gloss(state)
-                                                class="mx-auto"
-                                            />
+                                            {move || {
+                                                if tier.get().paints() {
+                                                    view! {
+                                                        <PdfPageCanvas
+                                                            page=page
+                                                            scale=page_scale
+                                                            render_scale=state.viewer.zoom.committed
+                                                            zoom_animating=state.viewer.zooming()
+                                                            dormant=dormant
+                                                            preview=preview
+                                                            settled=settled
+                                                            gesture_owns=gesture_owns
+                                                            texture=texture
+                                                            canvas_id=canvas_id_for_axis(axis, page)
+                                                            host_id=host_id_for_axis(axis, page)
+                                                            render_text=true
+                                                            on_geometry=on_geometry
+                                                            gloss_overlay=GlossOverlayProps::from_gloss(state)
+                                                            class="mx-auto"
+                                                        />
+                                                    }
+                                                        .into_any()
+                                                } else {
+                                                    view! {
+                                                        <PdfPagePlaceholder
+                                                            state=state
+                                                            axis=Axis::Vertical
+                                                            index=index
+                                                            size=size
+                                                            texture=texture
+                                                            class="mx-auto"
+                                                        />
+                                                    }
+                                                        .into_any()
+                                                }
+                                            }}
                                         </div>
                                     }
                                 }
@@ -244,7 +286,8 @@ pub fn PdfPageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let left = handle.with_value(|v| v.item_top(index));
-                                    let dormant = dormant_signal(items, index);
+                                    let size = handle.with_value(|v| v.item_size(index));
+                                    let (dormant, preview, tier) = tiers(&handle, index);
                                     // top:0 — the strip owns the full window height and
                                     // the auto-hiding title bar overlays it, like Spread.
                                     // The main-axis offset is snapped to the device-pixel
@@ -257,22 +300,42 @@ pub fn PdfPageStrip(
                                     );
                                     view! {
                                         <div id=wrapper_id(Axis::Horizontal, index, page) style=style>
-                                            <PdfPageCanvas
-                                                page=page
-                                                scale=page_scale
-                                                render_scale=state.viewer.zoom.committed
-                                                zoom_animating=state.viewer.zooming()
-                                                dormant=dormant
-                                                settled=settled
-                                                gesture_owns=gesture_owns
-                                                texture=texture
-                                                canvas_id=canvas_id_for_axis(axis, page)
-                                                host_id=host_id_for_axis(axis, page)
-                                                render_text=true
-                                                on_geometry=on_geometry
-                                                gloss_overlay=GlossOverlayProps::from_gloss(state)
-                                                class="my-auto"
-                                            />
+                                            {move || {
+                                                if tier.get().paints() {
+                                                    view! {
+                                                        <PdfPageCanvas
+                                                            page=page
+                                                            scale=page_scale
+                                                            render_scale=state.viewer.zoom.committed
+                                                            zoom_animating=state.viewer.zooming()
+                                                            dormant=dormant
+                                                            preview=preview
+                                                            settled=settled
+                                                            gesture_owns=gesture_owns
+                                                            texture=texture
+                                                            canvas_id=canvas_id_for_axis(axis, page)
+                                                            host_id=host_id_for_axis(axis, page)
+                                                            render_text=true
+                                                            on_geometry=on_geometry
+                                                            gloss_overlay=GlossOverlayProps::from_gloss(state)
+                                                            class="my-auto"
+                                                        />
+                                                    }
+                                                        .into_any()
+                                                } else {
+                                                    view! {
+                                                        <PdfPagePlaceholder
+                                                            state=state
+                                                            axis=Axis::Horizontal
+                                                            index=index
+                                                            size=size
+                                                            texture=texture
+                                                            class="my-auto"
+                                                        />
+                                                    }
+                                                        .into_any()
+                                                }
+                                            }}
                                         </div>
                                     }
                                 }
@@ -294,15 +357,26 @@ fn wrapper_id(axis: Axis, index: usize, page: u32) -> String {
     }
 }
 
-/// Whether one mounted item is currently a RETAINED ZOMBIE — freshly evicted
-/// from the window and bridged by the virtualizer's retention grace. A
-/// zombie page keeps its DOM and its last bitmap; it must not start new
-/// expensive work (a crisp re-render) for the few frames it has left.
-fn dormant_signal(items: Signal<Vec<VirtualItem>, LocalStorage>, index: usize) -> Signal<bool, LocalStorage> {
-    Signal::derive_local(move || {
-        items
-            .get()
-            .iter()
-            .any(|item| item.index == index && item.state == VirtualItemState::Zombie)
-    })
+/// The three reactive reads one mounted child needs from its virtualizer: the
+/// item's tier, and the two booleans a page host is built from.
+///
+/// The tier is a signal rather than the [`VirtualItem`] snapshot the `<For>`
+/// child was handed, because a child does not re-run for a key it already holds
+/// — a scroll that promotes it from placeholder to preview to full has to reach
+/// the view through a reactive read. `dormant` and `preview` are projections of
+/// the same signal, so the three can never disagree about which tier a page is
+/// in: a zombie keeps its bitmap and starts no new work, a preview is owed a
+/// cheap raster and no text layer, and a page that is neither is full quality.
+fn tiers(
+    handle: &StoredValue<Virtualizer, LocalStorage>,
+    index: usize,
+) -> (
+    Signal<bool, LocalStorage>,
+    Signal<bool, LocalStorage>,
+    Signal<VirtualItemState, LocalStorage>,
+) {
+    let tier = handle.with_value(|v| v.item_state(index));
+    let dormant = Signal::derive_local(move || tier.get() == VirtualItemState::Zombie);
+    let preview = Signal::derive_local(move || tier.get() == VirtualItemState::Preview);
+    (dormant, preview, tier)
 }

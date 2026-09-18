@@ -13,6 +13,7 @@
   await (await import("./engine-smoke/blend.js")).run();
   await (await import("./engine-smoke/search.js")).run();
   await (await import("./engine-smoke/selection.js")).run();
+  await (await import("./engine-smoke/scheduler.js")).run();
   await (await import("./engine-smoke/teardown.js")).run();
   console.log("ALL ENGINE TESTS PASSED");
 })().catch((e: unknown) => {

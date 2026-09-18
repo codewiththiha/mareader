@@ -54,8 +54,7 @@ use leptos::html;
 use leptos::prelude::*;
 use virtual_list::{Budget, Viewport};
 use virtual_list_leptos::{
-    use_virtualizer, Align, ScrollMode, VirtualItem, VirtualItemState, Virtualizer,
-    VirtualizerOptions,
+    use_virtualizer, Align, ScrollMode, VirtualItem, Virtualizer, VirtualizerOptions,
 };
 use wasm_bindgen::JsCast;
 
@@ -534,7 +533,17 @@ pub fn ReflowStreamLayout(
                                                     // attribute rather than
                                                     // rebuilding the box.
                                                     {move || {
-                                                        if row_state.get() == VirtualItemState::Blank {
+                                                        // `paints()` rather than
+                                                        // `== Blank`, so a tier
+                                                        // the stream does not use
+                                                        // today (a preview ring)
+                                                        // would render its type
+                                                        // rather than an empty
+                                                        // box: for a row of text
+                                                        // there is no cheaper
+                                                        // representation than the
+                                                        // text.
+                                                        if !row_state.get().paints() {
                                                             view! {
                                                                 <div
                                                                     class="tx-blank"

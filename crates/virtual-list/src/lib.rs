@@ -76,4 +76,4 @@ mod window;
 pub use anchor::{AnchorPolicy, correct, pin_at, rescale_anchor};
 pub use backend::{Strip, StripBackend};
 pub use layout::{GridColumns, GridLayout, GridSpec, Layout, LayoutKind, ListLayout};
-pub use window::{Align, Budget, Overscan, Viewport, Window};
+pub use window::{Align, Budget, Overscan, Slack, Viewport, Window};

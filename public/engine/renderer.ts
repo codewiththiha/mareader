@@ -10,6 +10,9 @@ import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
 import { CLEANUP_EVERY, PAGE_MAX_PIXELS, session } from "./state";
+import { currentBudget } from "./motion";
+import { reclaim } from "./memory";
+import { schedule, unschedule } from "./scheduler";
 import {
   hostIdFromCanvasId,
   pageFromCanvasId,
@@ -21,10 +24,10 @@ import { applyHighlights } from "./highlights";
 import { buildLinkLayer } from "./links";
 
 /** A page with nothing in flight: no render task, no text layer, no
- *  viewport, no raw raster, both queue counters at zero. Two callers build
- *  one — a canvas found in the DOM, and a page registered before its canvas
- *  exists — and a field added to PageState should have exactly one place to
- *  be given its initial value. */
+ *  viewport, no raw raster, no tier painted, and no queued generation. Two
+ *  callers build one — a canvas found in the DOM, and a page registered before
+ *  its canvas exists — and a field added to PageState should have exactly one
+ *  place to be given its initial value. */
 function blankPage(
   page: number,
   canvas: HTMLCanvasElement | null,
@@ -42,8 +45,8 @@ function blankPage(
     scale: 1,
     dead: false,
     rawCanvas: null,
+    preview: false,
     queueGen: 0,
-    queueHandle: 0,
   };
 }
 
@@ -87,10 +90,9 @@ export function registerPage(page: number, canvasId: string, hostId?: string): v
     existing.dead = true;
     try { existing.renderTask && existing.renderTask.cancel(); } catch (_) { /* ignore */ }
     try { existing.textLayer && existing.textLayer.cancel(); } catch (_) { /* ignore */ }
-    if (existing.queueHandle) {
-      cancelAnimationFrame(existing.queueHandle);
-      existing.queueHandle = 0;
-    }
+    // A mount supersedes whatever the previous owner of this recycled id had
+    // waiting for a lane; the scheduler resolves that caller as cancelled.
+    unschedule(canvasId);
   }
   const st = ensurePage(canvasId, page, hostId);
   if (!st) {
@@ -105,14 +107,11 @@ export function registerPage(page: number, canvasId: string, hostId?: string): v
 
 export function unregisterPage(canvasId: string): void {
   const st = session.stateByCanvasId.get(canvasId);
+  unschedule(canvasId);
   if (st) {
     st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
     try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
-    if (st.queueHandle) {
-      cancelAnimationFrame(st.queueHandle);
-      st.queueHandle = 0;
-    }
     session.releasePageSurfaces(st);
   }
   session.stateByCanvasId.delete(canvasId);
@@ -120,6 +119,7 @@ export function unregisterPage(canvasId: string): void {
 }
 
 export function cancelPage(canvasId: string): void {
+  unschedule(canvasId);
   const st = session.stateByCanvasId.get(canvasId);
   if (st && st.renderTask) {
     try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
@@ -127,19 +127,61 @@ export function cancelPage(canvasId: string): void {
   }
 }
 
-function pageOutputScale(cssW: number, cssH: number): number {
-  // Full native DPR for crisp text; PAGE_MAX_PIXELS is the memory guardrail.
+/** The output-scale multiplier for one page: full native DPR for crisp text,
+ *  capped so a single canvas never exceeds PAGE_MAX_PIXELS, and scaled down
+ *  again for the preview tier.
+ *
+ * The cap used to also weigh the page against one windowful of pixels — the
+ * soft-text bug: a US Letter page at 100% zoom on a 2x display needs ~1.48M
+ * pixels, more than a 1440x900 window's 1.30M, so the render was throttled and
+ * the browser upscaled it. Dropping the window term lets a single page use its
+ * full native resolution; the per-page ceiling bounds memory.
+ *
+ * A preview is the same page at a fraction of that resolution: the reader is
+ * not looking at it, they are moving towards it, and the raster exists to be
+ * upgraded. Its floor is lower than a full render's because legibility is not
+ * what it is for — shape and colour are. */
+function pageOutputScale(cssW: number, cssH: number, preview: boolean): number {
   const dpr = globalThis.devicePixelRatio || 1;
-  if (!(cssW > 0) || !(cssH > 0)) return dpr;
+  if (!(cssW > 0) || !(cssH > 0)) return preview ? dpr * PREVIEW_FLOOR : dpr;
 
-  // Cap so a single canvas never exceeds PAGE_MAX_PIXELS pixels. The old
-  // code ALSO capped against one windowful of pixels — the soft-text bug: a
-  // US Letter page at 100% zoom on a 2x display needs ~1.48M pixels, more
-  // than a 1440x900 window's 1.30M, so the render was throttled and the
-  // browser upscaled it. Dropping the window term lets a single page use its
-  // full native resolution; the per-page ceiling bounds memory.
   const capped = Math.sqrt(PAGE_MAX_PIXELS / (cssW * cssH));
-  return Math.min(dpr, Math.max(0.5, capped));
+  const full = Math.min(dpr, Math.max(0.5, capped));
+  if (!preview) return full;
+  // The budget's multiplier, with a floor of its own so a huge page's preview
+  // does not end up too small to read as the page it stands in for.
+  return Math.max(PREVIEW_FLOOR, full * currentBudget().previewScale);
+}
+
+/** The lowest output scale a preview raster is rendered at. */
+const PREVIEW_FLOOR = 0.3;
+
+/** What a render of this page is expected to cost, in output pixels. Read off
+ *  the canvas's CSS box rather than the pdf.js viewport, which would need a
+ *  worker round trip the scheduler must not wait for; an unmeasured canvas
+ *  falls back to the surface it already holds, and then to zero — an unknown
+ *  cost is not treated as an expensive one. */
+function estimatedOutputPixels(st: PageState, preview: boolean): number {
+  const canvas = st.canvas;
+  if (!canvas) return 0;
+  let cssW = canvas.clientWidth || 0;
+  let cssH = canvas.clientHeight || 0;
+  if (!(cssW > 0 && cssH > 0)) {
+    // A freshly mounted canvas has no layout box of its own yet (it is sized by
+    // the stylesheet as a percentage of its host), so ask the host's rect —
+    // which is the box the render is about to fill.
+    const rect =
+      typeof canvas.getBoundingClientRect === "function" ? canvas.getBoundingClientRect() : null;
+    cssW = rect?.width ?? 0;
+    cssH = rect?.height ?? 0;
+  }
+  if (cssW > 0 && cssH > 0) {
+    const out = pageOutputScale(cssW, cssH, preview);
+    return Math.round(cssW * out * cssH * out);
+  }
+  // Nothing measured at all: the surface the canvas already holds, if any. An
+  // unknown cost is not treated as an expensive one.
+  return canvas.width > 0 && canvas.height > 0 ? canvas.width * canvas.height : 0;
 }
 
 /** Free a bake's intermediate. A filter-only bake returns the shared scratch
@@ -159,7 +201,8 @@ function releaseBaked(baked: HTMLCanvasElement, target: HTMLCanvasElement): void
 export async function renderPageInternal(
   canvasId: string,
   scale: number,
-  renderText: boolean
+  renderText: boolean,
+  preview: boolean
 ): Promise<RenderResult> {
   const st = ensurePage(canvasId);
   if (!st || !st.canvas) return fail("no_canvas", "Canvas element not found in DOM: " + canvasId);
@@ -180,7 +223,7 @@ export async function renderPageInternal(
 
   const cssW = Math.floor(viewport.width);
   const cssH = Math.floor(viewport.height);
-  const out = pageOutputScale(cssW, cssH);
+  const out = pageOutputScale(cssW, cssH, preview);
   const pxW = Math.max(1, Math.floor(viewport.width * out));
   const pxH = Math.max(1, Math.floor(viewport.height * out));
 
@@ -233,8 +276,11 @@ export async function renderPageInternal(
   // `target` still holds raw pixels here (bakeRaster runs below): the one
   // point in the pipeline where the document's own paper is intact. Park a
   // ≤96×96 frame for the Rust paper session to drain after the render —
-  // every colour decision downstream lives in the pdf-paper crate.
-  stashPaperFrame(canvasId, st.page, target);
+  // every colour decision downstream lives in the pdf-paper crate. A preview
+  // stashes nothing: its pixels are a fraction of the page's, and the paper
+  // session would be choosing the document's colour from a thumbnail of a
+  // page the reader has not reached.
+  if (!preview) stashPaperFrame(canvasId, st.page, target);
 
   // GENERATION GUARD: settle under the pipeline CURRENT at landing, not the
   // one in force when the render was issued. readPipeline() caches by the
@@ -254,7 +300,7 @@ export async function renderPageInternal(
       releaseBaked(baked, target);
       if (target !== st.canvas) releaseCanvas(target);
       try { page.cleanup(); } catch (_) { /* ignore */ }
-      return renderPageInternal(canvasId, scale, renderText);
+      return renderPageInternal(canvasId, scale, renderText, preview);
     }
     if (baked !== st.canvas) {
       showBaked(st.canvas, baked, "canvas-raw");
@@ -291,7 +337,7 @@ export async function renderPageInternal(
     st.canvas.classList.toggle("canvas-raw", session.themeScrubActive);
   }
 
-  if (renderText && st.host && st.textLayerEl) {
+  if (renderText && !preview && st.host && st.textLayerEl) {
     st.host.style.setProperty("--scale-factor", String(scale));
 
     const layer = document.createElement("div");
@@ -338,36 +384,30 @@ export async function renderPageInternal(
 
   st.viewport = viewport;
   st.scale = scale;
+  // Which tier this canvas now holds. The memory ledger weighs previews
+  // against their own ceiling, and the app-side host reads it back through the
+  // next render request — a page promoted from preview to full is a different
+  // raster at the same scale, so the tier is part of what a render produced.
+  st.preview = preview;
   page.cleanup();
 
   if (session.bumpRenderCount() % CLEANUP_EVERY === 0) session.sweepPdf();
   session.noteActivity();
+  // The total just changed; weigh it now rather than on the next motion frame.
+  reclaim();
 
   return { ok: true, width: cssW, height: cssH, scale };
 }
 
-// Full-size renders share ONE bounded lane, the thumbnail lane's pattern.
-// The per-canvas rAF below coalesces a single page's requests; it never
-// limited how many pages rasterise at once, so a zoom commit re-rendered
-// every mounted page in parallel and each in-flight render held several
-// full-page surfaces (scratch, bake output) at the same time. The footprint
-// latches onto that summed peak, which is what made one commit cost
-// hundreds of MB it never handed back. Queued jobs re-check their
-// generation at the front of the lane, so a page that unmounted or was
-// superseded while waiting drops without touching pdf.js.
-const PAGE_RENDER_LIMIT = 2;
-let pageActive = 0;
-const pageQueue: Array<() => void> = [];
-
-function pumpPageQueue(): void {
-  while (pageActive < PAGE_RENDER_LIMIT && pageQueue.length > 0) {
-    const next = pageQueue.shift();
-    if (!next) return;
-    pageActive += 1;
-    next();
-  }
-}
-
+// Full-size renders share ONE bounded lane, and the lane is a priority queue
+// rather than a FIFO. The depth bound is the old fix — before it, a zoom
+// commit re-rendered every mounted page in parallel and each in-flight render
+// held several full-page surfaces at once, and the footprint latched onto that
+// summed peak. What a FIFO could not do is notice that the reader had moved:
+// the first request in was for the page they were looking at when they
+// started scrolling, and by the time a lane freed up it was for the page they
+// had left. `scheduler.ts` owns the ordering and the dropping; this is the
+// adapter from a component's `renderPage` call to a job it can score.
 async function runLimited<T>(jobs: Array<() => Promise<T>>, limit = 2): Promise<T[]> {
   const out: T[] = [];
   let i = 0;
@@ -389,7 +429,8 @@ async function runLimited<T>(jobs: Array<() => Promise<T>>, limit = 2): Promise<
 export async function renderPage(
   canvasId: string,
   scale: number,
-  renderText: boolean
+  renderText: boolean,
+  preview = false
 ): Promise<RenderResult> {
   let st = ensurePage(canvasId);
   if (!st || !st.canvas) {
@@ -403,37 +444,33 @@ export async function renderPage(
 
   const gen = (st.queueGen || 0) + 1;
   st.queueGen = gen;
-  if (st.queueHandle) {
-    cancelAnimationFrame(st.queueHandle);
-    st.queueHandle = 0;
-  }
+  const page = st.page;
+  const pixels = estimatedOutputPixels(st, preview);
   return await new Promise<RenderResult>((resolve) => {
-    st.queueHandle = requestAnimationFrame(() => {
-      st.queueHandle = 0;
-      if (st.dead || st.queueGen !== gen) {
-        resolve(fail("cancelled", "Render cancelled"));
-        return;
-      }
-      pageQueue.push(() => {
-        const finish = () => {
-          pageActive -= 1;
-          pumpPageQueue();
-        };
-        // The page unmounted, or a newer scale superseded this job, while it
-        // waited for a lane slot. Drop it without touching pdf.js.
+    schedule({
+      key: canvasId,
+      page,
+      quality: preview ? "preview" : "full",
+      pixels,
+      run: async () => {
+        // The page unmounted, or a newer request superseded this one, while it
+        // waited for a lane. Drop it without touching pdf.js.
         if (st.dead || st.queueGen !== gen) {
-          resolve(fail("cancelled", "Render cancelled"));
-          finish();
-          return;
+          const cancelled = fail("cancelled", "Render cancelled");
+          resolve(cancelled);
+          return cancelled;
         }
-        renderPageInternal(canvasId, scale, !!renderText)
-          .then(resolve)
-          .catch((e: unknown) => {
-            resolve(failFrom(e));
-          })
-          .finally(finish);
-      });
-      pumpPageQueue();
+        try {
+          const result = await renderPageInternal(canvasId, scale, !!renderText, preview);
+          resolve(result);
+          return result;
+        } catch (e) {
+          const failed = failFrom(e);
+          resolve(failed);
+          return failed;
+        }
+      },
+      abandon: (error) => resolve(error),
     });
   });
 }
@@ -452,7 +489,7 @@ export async function preparePagesForScrub(
     if (st.rawCanvas && st.rawCanvas !== st.canvas) continue;
     if (!st.rawCanvas) {
       jobs.push(async () => {
-        const rendered = await renderPageInternal(id, st.scale || 1, false);
+        const rendered = await renderPageInternal(id, st.scale || 1, false, st.preview);
         // A failed render keeps its cover — settled pixels beat a wiped
         // canvas — and the caller's final sweep releases it.
         if (rendered.ok) onRendered?.(id);
@@ -468,7 +505,7 @@ export async function rerenderLivePages(): Promise<void> {
   const jobs: Array<() => Promise<unknown>> = [];
   for (const [id, st] of session.stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
-    jobs.push(() => renderPageInternal(id, st.scale || 1, !!st.textLayerEl));
+    jobs.push(() => renderPageInternal(id, st.scale || 1, !!st.textLayerEl && !st.preview, st.preview));
   }
   await runLimited(jobs, 2);
 }

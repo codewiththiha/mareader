@@ -252,6 +252,11 @@ fn ready(
     // search reset inside `enter_ready` is the app's half of the same cleanup.
     engine::clear_highlights();
 
+    // The raster budget this book's pages are held against: the same policy the
+    // strips' virtualizers run, published once here so the engine's memory
+    // ledger and the tier windows cannot drift apart.
+    crate::features::reader::motion::publish_budget();
+
     outline::resolve(state, path.clone(), stamp);
 
     // No eager search-index build here, deliberately: extraction costs one

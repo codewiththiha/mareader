@@ -41,8 +41,13 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "unregisterPage")]
     pub fn unregister_page(canvas_id: &str);
 
+    /// Render one page's canvas. `preview` asks for the cheap tier: the same
+    /// CSS geometry at a fraction of the output resolution, no text layer,
+    /// and a lower place in the scheduler's queue. A preview is a raster the
+    /// reader is likely to arrive at, not one they are looking at — the
+    /// distinction the priority queue spends its lanes on.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPage")]
-    pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> JsValue;
+    pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool, preview: bool) -> JsValue;
 
     // Thumbnail lane: a separate, cheap render path with a bitmap cache.
     // `renderThumb` resolves `{ok, width, height, scale}`. A cache hit still
@@ -154,6 +159,36 @@ extern "C" {
     /// engine's own 30s idle sweep.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweep")]
     pub fn sweep();
+
+    // The scheduler's motion input, published by the strip that owns the
+    // scroller once per coalesced scroll frame. Primitives rather than a
+    // payload object for the reason `registerPage` gives: this is the hot
+    // path of a fling, and a frame should not cost an allocation on top of
+    // the rewindowing it is reporting. `0` pages mean "no window published"
+    // (`api::motion::set_scroll_motion` flattens the Option here), which the
+    // engine reads as "the tier is open" rather than "nothing is owed".
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrollMotion")]
+    pub fn set_scroll_motion(
+        phase: &str,
+        direction: i8,
+        predicted_page: u32,
+        first_full: u32,
+        last_full: u32,
+        first_preview: u32,
+        last_preview: u32,
+        delay_ms: u32,
+        workers: u32,
+    );
+
+    /// The raster budget the engine's memory ledger enforces, published once
+    /// per document (see `api::motion::configure_motion`).
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "configureMotion")]
+    pub fn configure_motion(
+        max_bytes: f64,
+        preview_bytes: f64,
+        max_preview_pages: u32,
+        preview_scale: f64,
+    );
 
     /// Drop the `.page-snapshot` zoom masks the live page hosts still carry,
     /// zeroing their backing stores first. Fired alongside `sweep` where

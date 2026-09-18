@@ -17,10 +17,28 @@ pub use virtual_list::Budget;
 /// Gap between pages in the continuous reader, in CSS px.
 pub const PAGE_GAP: f64 = 24.0;
 
-/// Comfortable read-ahead: half a screenful each way, up to 3 mounted pages
-/// total (visible + ~1 above + ~1 below). Each mounted page at 2× DPR plus
-/// its raw is ~64MB worst case, so the ceiling is what keeps idle RAM sane.
-pub const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
+/// How many pages a scrolling strip may have mounted at once.
+///
+/// The CEILING, not the read-ahead. How far the strip reaches is the adaptive
+/// policy's answer (`virtual_list_leptos::AdaptivePolicy`, configured by the
+/// app's `src/features/reader/motion.rs`), which leans into the direction of
+/// travel and narrows behind it; what stays fixed is the count, because the
+/// count is what memory is spent on.
+///
+/// It can be higher than the three pages this used to be because most of what
+/// it admits is no longer a raster. The policy's full tier — the pages under
+/// the reader's eyes and the one they are about to reach — is a page or two of
+/// full-resolution canvas; the ring around it holds previews at a fraction of
+/// the resolution and no text layer; and the rest of the window is a
+/// placeholder box with no canvas at all. The ceiling bounds the boxes, and
+/// the raster budget the engine enforces bounds the pixels.
+pub const MOUNTED_PAGES: usize = 8;
+
+/// The two scrolling strips' budget: the mount ceiling, and no overscan of its
+/// own. An adaptive policy supplies the slack and would ignore this one, so a
+/// surface that does not run the policy must not use this budget — it would
+/// mount nothing beyond the viewport.
+pub const STRIP_MOUNT_BUDGET: Budget = Budget::screenfuls(0.0, MOUNTED_PAGES);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {

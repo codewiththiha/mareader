@@ -7,7 +7,7 @@
 //! identical across backends.
 
 use crate::units::{from_sub, to_sub};
-use crate::window::{Budget, Window};
+use crate::window::{Budget, Slack, Window};
 
 /// The primitive column geometry every backend provides, in sub-pixels.
 pub trait StripBackend {
@@ -110,6 +110,22 @@ pub trait StripBackend {
         hint: &mut usize,
     ) -> Option<Window> {
         window_hinted(self, scroll_top, viewport, budget, hint)
+    }
+
+    /// [`window_slack_hinted`](window_slack_hinted) for backends that want the
+    /// padding split per side. The default is the shared implementation, which
+    /// is written against this trait's primitives — so, like
+    /// [`window_hinted`](Self::window_hinted), a backend that overrides
+    /// neither gets correct answers and honest hint bookkeeping.
+    fn window_slack_hinted(
+        &self,
+        scroll_top: f64,
+        viewport: f64,
+        slack: Slack,
+        max_items: usize,
+        hint: &mut usize,
+    ) -> Option<Window> {
+        window_slack_hinted(self, scroll_top, viewport, slack, max_items, hint)
     }
 }
 
@@ -234,6 +250,26 @@ pub fn window<B: StripBackend + ?Sized>(
     viewport: f64,
     budget: Budget,
 ) -> Option<Window> {
+    window_slack(
+        b,
+        scroll_top,
+        viewport,
+        budget.overscan.slack(viewport.max(0.0), b.mean_size()),
+        budget.max_items,
+    )
+}
+
+/// [`window`] with the padding split per side of the viewport instead of
+/// resolved from a [`Budget`]. Every windowing path funnels through here (and
+/// its hinted twin), so a symmetric caller and a directional one share one
+/// boundary rule and one trim.
+pub fn window_slack<B: StripBackend + ?Sized>(
+    b: &B,
+    scroll_top: f64,
+    viewport: f64,
+    slack: Slack,
+    max_items: usize,
+) -> Option<Window> {
     if b.is_empty() {
         return None;
     }
@@ -246,11 +282,10 @@ pub fn window<B: StripBackend + ?Sized>(
         });
     }
 
-    let look = budget.overscan.padding(vh, b.mean_size());
-    let padded = overlapping(b, scroll_top - look, vh + 2.0 * look)?;
+    let padded = overlapping(b, scroll_top - slack.before, vh + slack.total())?;
     // What is strictly on screen must survive any trim.
     let vis = visible(b, scroll_top, vh);
-    Some(trim_to_budget(padded, vis, budget.max_items))
+    Some(trim_to_budget(padded, vis, max_items))
 }
 
 /// Shared `window_hinted` — [`window`] with a per-frame hint (amortized
@@ -264,6 +299,27 @@ pub fn window_hinted<B: StripBackend + ?Sized>(
     scroll_top: f64,
     viewport: f64,
     budget: Budget,
+    hint: &mut usize,
+) -> Option<Window> {
+    window_slack_hinted(
+        b,
+        scroll_top,
+        viewport,
+        budget.overscan.slack(viewport.max(0.0), b.mean_size()),
+        budget.max_items,
+        hint,
+    )
+}
+
+/// [`window_slack`] with a per-frame hint. The zero-viewport degenerate case
+/// seeds the hint through [`StripBackend::index_at_hinted`] so the bookkeeping
+/// stays honest on a container that has not been measured yet.
+pub fn window_slack_hinted<B: StripBackend + ?Sized>(
+    b: &B,
+    scroll_top: f64,
+    viewport: f64,
+    slack: Slack,
+    max_items: usize,
     hint: &mut usize,
 ) -> Option<Window> {
     if b.is_empty() {
@@ -281,11 +337,10 @@ pub fn window_hinted<B: StripBackend + ?Sized>(
         });
     }
 
-    let look = budget.overscan.padding(vh, b.mean_size());
-    let padded = overlapping_hinted(b, scroll_top - look, vh + 2.0 * look, hint)?;
+    let padded = overlapping_hinted(b, scroll_top - slack.before, vh + slack.total(), hint)?;
     // What is strictly on screen must survive any trim.
     let vis = visible(b, scroll_top, vh);
-    Some(trim_to_budget(padded, vis, budget.max_items))
+    Some(trim_to_budget(padded, vis, max_items))
 }
 
 /// The one budget trim — the invariant every windowing path answers
@@ -384,5 +439,145 @@ mod tests {
             );
             top += 47.0;
         }
+    }
+}
+
+#[cfg(test)]
+mod slack_tests {
+    //! The directional half of the windowing: what a per-side padding buys,
+    //! and the one invariant it must not break — the reader's own items are
+    //! mounted whatever the two sides disagree about.
+
+    use super::*;
+    use crate::{GridLayout, GridSpec, Layout, ListLayout, Viewport};
+
+    fn strip() -> Strip {
+        Strip::new(core::iter::repeat_n(100.0, 200), 0.0)
+    }
+
+    #[test]
+    fn a_symmetric_slack_is_the_budget_window() {
+        // The asymmetric path has to agree with the symmetric one exactly when
+        // the two sides are equal, or every existing caller's window would
+        // move the moment it is routed through it.
+        let b = strip();
+        let budget = Budget::screenfuls(0.5, 9);
+        let mut hint_a = 0usize;
+        let mut hint_b = 0usize;
+        let mut top = 0.0;
+        while top < 19_000.0 {
+            let want = window_hinted(&b, top, 400.0, budget, &mut hint_a);
+            let got = window_slack_hinted(
+                &b,
+                top,
+                400.0,
+                budget.overscan.slack(400.0, b.mean_size()),
+                budget.max_items,
+                &mut hint_b,
+            );
+            assert_eq!(got, want, "at top={top}");
+            assert_eq!(hint_a, hint_b, "hint bookkeeping at top={top}");
+            top += 137.0;
+        }
+    }
+
+    #[test]
+    fn an_asymmetric_slack_reaches_one_side_further() {
+        let b = strip();
+        let viewport = 400.0;
+        let top = 5_000.0;
+        let slack = Slack::split(100.0, 500.0);
+        let window = window_slack(&b, top, viewport, slack, 100).expect("a window");
+        // 4900..5900 of content — the viewport's 400px plus 100 above and 500
+        // below — which is items 49..=58. The same viewport padded by the
+        // smaller of the two on both sides stops four items short.
+        assert_eq!(window.first, 49);
+        assert_eq!(window.last, 58);
+        let symmetric = window_slack(&b, top, viewport, Slack::symmetric(100.0), 100).unwrap();
+        assert_eq!(symmetric, Window { first: 49, last: 54 });
+        // And mirrored, the same slack reaches the other way.
+        let mirrored = window_slack(&b, top, viewport, Slack::split(500.0, 100.0), 100).unwrap();
+        assert_eq!(mirrored.first, 45);
+        assert_eq!(mirrored.last, 54);
+    }
+
+    #[test]
+    fn the_ceiling_trims_the_far_side_and_never_the_viewport() {
+        let b = strip();
+        // Four screens of look-ahead, a ceiling of five items, and a viewport
+        // holding four: the trim has to give up the look-ahead, not the reader.
+        let window = window_slack(&b, 5_000.0, 400.0, Slack::split(0.0, 1_600.0), 5).unwrap();
+        assert_eq!(window.len(), 5);
+        let visible = visible(&b, 5_000.0, 400.0).unwrap();
+        assert!(window.first <= visible.first && window.last >= visible.last);
+        // Everything the ceiling gave up came off the far side.
+        assert_eq!(window.first, visible.first);
+    }
+
+    #[test]
+    fn a_negative_padding_clamps_to_zero() {
+        let b = strip();
+        let clamped = window_slack(&b, 5_000.0, 400.0, Slack::split(-900.0, -1.0), 100).unwrap();
+        let plain = window_slack(&b, 5_000.0, 400.0, Slack::symmetric(0.0), 100).unwrap();
+        assert_eq!(clamped, plain);
+        assert_eq!(Slack::split(-5.0, 7.0), Slack::split(0.0, 7.0));
+        assert_eq!(Slack::symmetric(-5.0).total(), 0.0);
+        assert_eq!(Slack::split(3.0, 9.0).max(), 9.0);
+    }
+
+    #[test]
+    fn a_zero_viewport_still_answers_one_item() {
+        let b = strip();
+        let window = window_slack(&b, 1_250.0, 0.0, Slack::split(1_000.0, 1_000.0), 100).unwrap();
+        assert_eq!(window, Window { first: 12, last: 12 });
+        let mut hint = 0usize;
+        let hinted =
+            window_slack_hinted(&b, 1_250.0, 0.0, Slack::split(1_000.0, 1_000.0), 100, &mut hint)
+                .unwrap();
+        assert_eq!(hinted, window);
+        assert_eq!(hint, 12);
+        // Nothing mounted at all past the end.
+        assert!(window_slack(&b, 40_000.0, 0.0, Slack::symmetric(100.0), 100).is_none());
+    }
+
+    #[test]
+    fn a_grid_windows_rows_in_the_direction_of_travel() {
+        // Two columns of 100px rows: the slack applies to the ROW strip, and
+        // the row window expands to items, so a directional window mounts whole
+        // rows on both axes of the grid.
+        let grid = GridLayout::resolve(GridSpec::fixed(2, 0.0), 40, 100.0, 200.0);
+        let viewport = Viewport::new(300.0, 200.0);
+        let mut hint = 0usize;
+        let window = grid
+            .window_slack_hinted(1_000.0, viewport, Slack::split(0.0, 300.0), 20, &mut hint)
+            .expect("a window");
+        // Rows 10..=15 (1000..1600 of content), expanded to items 20..=31.
+        assert_eq!(window.first, 20);
+        assert_eq!(window.last, 31);
+        assert_eq!(window.first % 2, 0, "a row's cells mount together");
+        let symmetric = grid
+            .window_slack_hinted(1_000.0, viewport, Slack::symmetric(0.0), 20, &mut 0usize)
+            .unwrap();
+        assert!(window.last > symmetric.last);
+        assert_eq!(window.first, symmetric.first);
+    }
+
+    #[test]
+    fn a_list_layout_routes_the_slack_to_its_backend() {
+        // The Layout contract, so a caller holding a LayoutKind gets the same
+        // answer as one holding the strip.
+        let layout = ListLayout::uniform(200, 100.0, 0.0);
+        let viewport = Viewport::main_only(400.0);
+        let mut hint = 0usize;
+        let window = layout
+            .window_slack_hinted(5_000.0, viewport, Slack::split(100.0, 500.0), 100, &mut hint)
+            .unwrap();
+        let b = strip();
+        let mut other = 0usize;
+        assert_eq!(
+            window,
+            window_slack_hinted(&b, 5_000.0, 400.0, Slack::split(100.0, 500.0), 100, &mut other)
+                .unwrap()
+        );
     }
 }

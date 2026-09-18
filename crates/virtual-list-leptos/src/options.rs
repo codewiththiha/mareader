@@ -5,6 +5,8 @@ use std::rc::Rc;
 use leptos::prelude::*;
 use virtual_list::{Budget, GridSpec, Viewport};
 
+use crate::policy::AdaptivePolicy;
+
 /// Which scroll axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Axis {
@@ -91,7 +93,19 @@ pub struct VirtualizerOptions {
     /// pairs a wide mount budget with a band narrower than it, so a fling
     /// slides cheap placeholders past the reader's eyes and only the band
     /// around the viewport ever lays out real content.
+    ///
+    /// Ignored when [`Self::adaptive`] is set: an adaptive policy resolves
+    /// every tier from the scroll motion, and a second, static answer to the
+    /// same question would only disagree with it.
     pub render_screens: f64,
+    /// The motion-aware policy. `None` (the default) keeps the virtualizer
+    /// motion-blind: a symmetric band, the budget's overscan, and every
+    /// mounted item full quality. `Some` makes the mount window lean into the
+    /// direction of travel, splits the window into a full tier and a preview
+    /// ring, and predicts the item the reader is about to reach — at which
+    /// point [`Self::budget`] supplies only the mount ceiling, because the
+    /// slack is the policy's answer.
+    pub adaptive: Option<AdaptivePolicy>,
 }
 
 impl VirtualizerOptions {
@@ -119,6 +133,7 @@ impl VirtualizerOptions {
             measure_epsilon: 0.5,
             max_scroll_retries: 3,
             render_screens: 0.0,
+            adaptive: None,
         }
     }
 
@@ -150,6 +165,23 @@ impl VirtualizerOptions {
     /// Sets [`Self::render_screens`]; `0` disables the band.
     pub fn render_band(mut self, screens: f64) -> Self {
         self.render_screens = screens.max(0.0);
+        self
+    }
+
+    /// Sets [`Self::adaptive`], replacing the static band with a policy that
+    /// reads the scroll motion.
+    pub fn adaptive(mut self, policy: AdaptivePolicy) -> Self {
+        self.adaptive = Some(policy);
+        self
+    }
+
+    /// The document-reader policy: [`AdaptivePolicy::reader`], for a surface
+    /// whose items are expensive to paint and whose reader travels in one
+    /// direction at a time. Pair it with a [`Self::budget`] whose ceiling is
+    /// wide enough to hold the preview ring — the ceiling is the only part of
+    /// the budget the policy still reads.
+    pub fn adaptive_reader(mut self) -> Self {
+        self.adaptive = Some(AdaptivePolicy::reader());
         self
     }
 

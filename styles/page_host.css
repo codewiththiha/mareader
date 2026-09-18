@@ -148,3 +148,43 @@ html.appearance-scrubbing .pdf-page::before {
 html.appearance-scrubbing .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }
+
+/* THE PLACEHOLDER TIER — a mounted page that is owed no raster.
+   src/components/formats/pdf/placeholder.rs builds the box and
+   public/engine/placeholder.ts publishes the image it paints: ONE miniature of
+   the document's representative page, per document, shared by every placeholder
+   on screen through a custom property.
+
+   Shared is the whole point. The obvious placeholder — a canvas per page, drawn
+   once and left — costs a backing store, a 2d context and a GPU texture for
+   every box, which is the bill a wider mount window was supposed to avoid. A
+   `background-image` on a pseudo-element costs one decoded image for the
+   document and a paint per box, so eight placeholders are cheaper than one
+   preview raster.
+
+   The box itself is `.pdf-page` and inherits everything that makes a page read
+   as a page: the paper colour (or the baked one in blend mode), the shadow, the
+   texture layer and the clip. What this adds is the miniature, faint and soft —
+   the impression of a page of THIS document rather than a hole in it, which is
+   what a blank white box at fling speed reads as.
+
+   `::after` and not `::before`: the texture layer owns `::before`, and a
+   placeholder carries the same texture its promoted page will. */
+.pdf-page-placeholder::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--pdf-placeholder, none);
+  background-repeat: no-repeat;
+  background-position: center;
+  /* Stretched to the box rather than contained: the miniature is the dominant
+     page shape, and a box that is not that shape is still better served by a
+     page that fills it than by letterboxing. The blur below is what makes the
+     stretch unreadable as a distortion. */
+  background-size: 100% 100%;
+  opacity: 0.16;
+  filter: blur(2px);
+  /* Past the clip edge, so the blur has no unpainted margin to fade into. */
+  transform: scale(1.02);
+  pointer-events: none;
+}

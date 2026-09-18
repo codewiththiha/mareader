@@ -14,6 +14,7 @@ import type {
 import { offscreenFor, releaseCanvas } from "./canvas";
 import { errorInfo, fail, failFrom } from "./errors";
 import { resetPaperForDocument } from "./paper";
+import { resetPlaceholder, schedulePlaceholder } from "./placeholder";
 import { session } from "./state";
 
 type PdfjsLib = {
@@ -279,6 +280,10 @@ export async function open(path: string): Promise<OpenResult> {
     // colours published right away. Runs after setCurrentPath so the cache
     // can key on the path.
     resetPaperForDocument();
+    // The last book's miniature goes with it, and this one's starts building
+    // once the reader's first page has had the worker to itself.
+    resetPlaceholder();
+    schedulePlaceholder();
 
     // Metadata and page 1 are independent worker round trips — asking for
     // them together is one hop off every document open. Metadata failures are

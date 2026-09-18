@@ -11,11 +11,13 @@
 //! before it.
 
 use virtual_list::{
-    Align, AnchorPolicy, Budget, GridLayout, Layout, LayoutKind, ListLayout, Viewport, Window,
-    correct, pin_at, rescale_anchor,
+    Align, AnchorPolicy, Budget, GridLayout, Layout, LayoutKind, ListLayout, Slack, Viewport,
+    Window, correct, pin_at, rescale_anchor,
 };
 
+use crate::motion::{ScrollPhase, ScrollVelocity};
 use crate::options::{LayoutShape, ScrollMode};
+use crate::policy::{AdaptivePolicy, RenderPlan, RenderQuality};
 use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 use crate::surface::ScrollSurface;
 
@@ -42,8 +44,16 @@ pub struct CoreConfig {
     pub max_retries: u32,
     /// The render band, in viewport screens around the viewport: mounted
     /// items outside it answer [`VirtualItemState::Blank`]. `0` disables the
-    /// band (pages mode: everything mounted renders fully).
+    /// band (pages mode: everything mounted renders fully). Ignored when
+    /// [`Self::adaptive`] is set — an adaptive policy owns every tier.
     pub render_screens: f64,
+    /// The motion-aware policy. `None` (the default) is the motion-blind
+    /// behaviour: a symmetric band from [`Self::render_screens`], overscan
+    /// from [`CoreConfig::budget`], and every mounted item full quality.
+    /// `Some` hands the mount slack, the two tiers and the predicted
+    /// destination to [`AdaptivePolicy`], which resolves all three from the
+    /// scroll velocity — the budget then supplies only the mount ceiling.
+    pub adaptive: Option<AdaptivePolicy>,
 }
 
 impl Default for CoreConfig {
@@ -59,6 +69,7 @@ impl Default for CoreConfig {
             eps: 0.5,
             max_retries: 3,
             render_screens: 0.0,
+            adaptive: None,
         }
     }
 }
@@ -72,6 +83,11 @@ pub struct Step {
     pub scroll_write: Option<f64>,
     /// The layout's geometry changed — bump the layout version.
     pub layout_changed: bool,
+    /// The frame's tier plan: where the reader is, where they are going, and
+    /// what each window around them is owed. Always present, including for a
+    /// transition that changed nothing, so an adapter never has to decide
+    /// whether the plan it holds is still current.
+    pub plan: RenderPlan,
 }
 
 /// The outcome of a measurement flush.
@@ -113,6 +129,28 @@ pub struct VirtualizerCore {
     pending: Option<PendingScroll>,
     queue: Vec<(usize, f64)>,
     suspended: bool,
+
+    /// The motion-aware policy, when the caller configured one.
+    adaptive: Option<AdaptivePolicy>,
+    /// The smoothed scroll velocity. Only fed by [`Self::on_scroll`]: a
+    /// programmatic write is not motion and must not be read as one.
+    velocity: ScrollVelocity,
+    /// The classified movement, carried across samples so classification can
+    /// apply hysteresis.
+    phase: ScrollPhase,
+    /// The clock reading of the last motion sample, kept so a reset has a
+    /// "now" to restart from without the core owning a clock.
+    clock_ms: f64,
+    /// Whether scroll samples are the reader's or ours. A commanded scroll
+    /// (a page turn, a search reveal, a zoom's geometry commit) is echoed
+    /// back by the browser as a burst of scroll events that look exactly
+    /// like a fling; while muted, samples still move the window but never
+    /// reach the estimator. [`Self::settle`] — the adapter's scroll-end
+    /// timer, which the echo burst re-arms like any other — lifts it.
+    motion_muted: bool,
+    /// The frame's plan. Recomputed by [`Self::rewindow`], read by every
+    /// tier question the core answers.
+    plan: RenderPlan,
 }
 
 impl VirtualizerCore {
@@ -136,29 +174,78 @@ impl VirtualizerCore {
             pending: None,
             queue: Vec::new(),
             suspended: false,
+            adaptive: config.adaptive,
+            velocity: ScrollVelocity::at(config.initial_offset, 0.0),
+            phase: ScrollPhase::Idle,
+            clock_ms: 0.0,
+            motion_muted: false,
+            plan: RenderPlan::default(),
         };
         this.scroll_top = this.scroll_top.clamp(this.min_scroll(), this.max_scroll());
+        this.velocity = ScrollVelocity::at(this.scroll_top, 0.0);
         this.range = this.rewindow().range;
         this
     }
 
-    /// The container scrolled. `content_top` is in content coordinates.
+    /// The container scrolled. `content_top` is in content coordinates and
+    /// `now_ms` is the caller's monotonic clock — the core owns no clock of
+    /// its own, which is what keeps the motion model testable on the host.
     ///
     /// Sub-epsilon deltas (a scroll event that moved less than `eps` — the
     /// browser fires scroll events for fractional-pixel wheel deltas) are
-    /// ignored wholesale: they cannot change the window, and adopting them
-    /// would wake every `scroll_top` consumer (dominant-page tracking,
-    /// navigation sync) for a movement the display cannot even show.
-    pub fn on_scroll(&mut self, content_top: f64) -> Step {
+    /// ignored wholesale: they cannot change the window, they are not motion
+    /// worth classifying, and adopting them would wake every `scroll_top`
+    /// consumer (dominant-page tracking, navigation sync) for a movement the
+    /// display cannot even show.
+    pub fn on_scroll(&mut self, content_top: f64, now_ms: f64) -> Step {
         if (content_top - self.scroll_top).abs() <= self.eps {
             return Step {
                 range: self.range,
                 scroll_write: None,
                 layout_changed: false,
+                plan: self.plan,
             };
         }
+        self.clock_ms = now_ms;
         self.scroll_top = content_top;
+        if self.adaptive.is_some() && !self.motion_muted {
+            let speed = self.velocity.update(content_top, now_ms);
+            self.phase = ScrollPhase::classify_from(self.phase, speed, self.viewport.main);
+        }
         self.rewindow()
+    }
+
+    /// The scroller has been quiet for the adapter's scroll-end window: the
+    /// movement is over.
+    ///
+    /// This is a transition, not a cleanup. The motion model has to be told,
+    /// because the last scroll event of a fling still reads as a fling — and
+    /// an idle reader is owed the opposite of what a fling is: symmetric
+    /// tiers, no render delay, both raster lanes, and the settle promotion
+    /// that upgrades the preview ring under their eyes to full quality.
+    pub fn settle(&mut self, now_ms: f64) -> Step {
+        self.clock_ms = now_ms;
+        self.motion_muted = false;
+        self.velocity.reset(self.scroll_top, now_ms);
+        self.phase = ScrollPhase::Idle;
+        self.rewindow()
+    }
+
+    /// Forget the motion estimate, and stop believing the samples that
+    /// follow until the scroller goes quiet.
+    ///
+    /// For a jump that is not motion: a programmatic scroll (a page turn, a
+    /// search reveal, the mount-time anchor), a geometry rebuild, or a zoom's
+    /// rescale all write `scroll_top` by an amount no reader travelled, and
+    /// the browser echoes that write back through [`Self::on_scroll`] over
+    /// the next few frames. Fed to the estimator, a smooth page turn reads as
+    /// a fling of several thousand pixels per second — which would narrow the
+    /// tiers and delay the render of exactly the page the reader asked for.
+    /// [`Self::settle`] lifts the mute.
+    pub fn reset_motion(&mut self) {
+        self.velocity.reset(self.scroll_top, self.clock_ms);
+        self.phase = ScrollPhase::Idle;
+        self.motion_muted = true;
     }
 
     /// The visible extent changed; re-window against it.
@@ -171,6 +258,7 @@ impl VirtualizerCore {
                 range: self.range,
                 scroll_write: None,
                 layout_changed: false,
+                plan: self.plan,
             };
         }
 
@@ -245,6 +333,7 @@ impl VirtualizerCore {
         self.hint = 0;
         self.pending = None;
         self.queue.clear();
+        self.reset_motion();
 
         let max_scroll = self.max_scroll();
         self.scroll_top = match anchor {
@@ -275,6 +364,7 @@ impl VirtualizerCore {
         self.layout = build_layout(&shape, count, sizes, cross, gap);
         self.hint = 0;
         self.queue.clear();
+        self.reset_motion();
         self.scroll_top = match anchor {
             Some((item, px)) if count > 0 => {
                 let item = item.min(count - 1);
@@ -350,6 +440,7 @@ impl VirtualizerCore {
                     range: self.range,
                     scroll_write: None,
                     layout_changed: false,
+                    plan: self.plan,
                 },
             });
         }
@@ -391,6 +482,7 @@ impl VirtualizerCore {
         self.layout = build_layout(&shape, count, sizes, cross, gap);
         self.hint = 0;
         self.pending = None;
+        self.reset_motion();
         if let Some(top) = new_top {
             self.scroll_top = top.clamp(self.min_scroll(), self.max_scroll());
         }
@@ -418,6 +510,10 @@ impl VirtualizerCore {
         // An explicit offset always supersedes an in-flight programmatic
         // scroll; otherwise a pending re-aim could fight the new position.
         self.pending = None;
+        // A commanded scroll is not motion: the browser echoes the write back
+        // through `on_scroll` a frame later, and an estimate fed that echo
+        // would read a page turn as a fling.
+        self.reset_motion();
         let target = content_top.clamp(self.min_scroll(), self.max_scroll());
         let smooth = self.resolve_smooth(target, mode);
         surface.set_scroll(target, smooth);
@@ -443,6 +539,7 @@ impl VirtualizerCore {
         if self.layout.is_empty() {
             return None;
         }
+        self.reset_motion();
         let index = index.min(self.layout.item_count() - 1);
         let Some(target) = self.target_offset(index, align) else {
             self.pending = None;
@@ -470,34 +567,44 @@ impl VirtualizerCore {
     }
 
     /// The render band: the tighter window inside the mount window that
-    /// carries real content. With no band configured it IS the mount window
-    /// (pages mode); with one, it is the items overlapping the viewport
-    /// padded by `render_screens` viewport screens each way, intersected
-    /// with the mount window — the band never mounts, it only decides which
-    /// of the mounted items render. Every partly-visible item is inside it
-    /// by construction, so nothing the reader is looking at is ever a
+    /// carries real content at full quality. With no band configured it IS the
+    /// mount window (pages mode); with one, it is the items overlapping the
+    /// viewport padded by `render_screens` viewport screens each way,
+    /// intersected with the mount window — the band never mounts, it only
+    /// decides which of the mounted items render. Under an adaptive policy it
+    /// is the policy's full tier, which leans in the direction of travel
+    /// instead of being symmetric. Every partly-visible item is inside it by
+    /// construction, so nothing the reader is looking at is ever a
     /// placeholder.
     pub fn render_range(&self) -> Option<Window> {
-        let mount = self.range?;
-        if self.render_screens <= 0.0 {
-            return Some(mount);
-        }
-        let pad = self.render_screens * self.viewport.main;
-        let band = self
-            .layout
-            .overlapping(self.scroll_top - pad, self.viewport.main + 2.0 * pad)?;
-        let first = band.first.max(mount.first);
-        let last = band.last.min(mount.last);
-        (first <= last).then_some(Window { first, last })
+        self.plan.full
+    }
+
+    /// The preview tier: the band plus the ring around it that is worth a
+    /// cheap raster but not a full one. Equal to [`Self::render_range`] when
+    /// no adaptive policy is configured, so a motion-blind surface has no
+    /// preview tier at all.
+    pub fn preview_range(&self) -> Option<Window> {
+        self.plan.preview
+    }
+
+    /// This frame's whole tier plan — the windows, the motion behind them and
+    /// the predicted destination. The plan is the API a renderer should read:
+    /// [`Self::render_range`] and [`Self::item_state`] are projections of it,
+    /// kept for callers that only ask one question.
+    pub fn render_plan(&self) -> RenderPlan {
+        self.plan
     }
 
     /// The render state of a mounted index: [`VirtualItemState::Active`]
-    /// inside the render band, [`VirtualItemState::Blank`] outside it. The
+    /// inside the full tier, [`VirtualItemState::Preview`] inside the preview
+    /// ring, [`VirtualItemState::Blank`] for the rest of the window. The
     /// adapter overrides it for retained zombies.
     pub fn item_state(&self, index: usize) -> VirtualItemState {
-        match self.render_range() {
-            Some(band) if band.contains(index) => VirtualItemState::Active,
-            _ => VirtualItemState::Blank,
+        match self.plan.quality(index) {
+            RenderQuality::Full => VirtualItemState::Active,
+            RenderQuality::Preview => VirtualItemState::Preview,
+            RenderQuality::Placeholder => VirtualItemState::Blank,
         }
     }
 
@@ -584,20 +691,18 @@ impl VirtualizerCore {
     /// The mounted items, DOM-ready (`start` includes `padding_start`).
     ///
     /// An item's state says what the renderer owes it: [`VirtualItemState::Active`]
-    /// inside the render band, [`VirtualItemState::Blank`] for the rest of the
-    /// window when a band is on. Zombie retention is the adapter's layer on
-    /// top (it knows the grace clock this pure core does not).
+    /// inside the full tier, [`VirtualItemState::Preview`] inside the preview
+    /// ring, [`VirtualItemState::Blank`] for the rest of the window. Zombie
+    /// retention is the adapter's layer on top (it knows the grace clock this
+    /// pure core does not).
     pub fn items(&self) -> Vec<VirtualItem> {
         let Some(window) = self.range else {
             return Vec::new();
         };
-        let band = self.render_range();
         (window.first..=window.last)
             .map(|index| {
                 let mut item = self.item_at(index);
-                if band.map(|band| !band.contains(index)).unwrap_or(true) {
-                    item.state = VirtualItemState::Blank;
-                }
+                item.state = self.item_state(index);
                 item
             })
             .collect()
@@ -655,9 +760,31 @@ impl VirtualizerCore {
             None
         } else {
             let mut hint = self.hint;
-            let base =
-                self.layout
-                    .window_hinted(self.scroll_top, self.viewport, self.budget, &mut hint);
+            // With a policy the mount slack is the motion's answer, not the
+            // budget's overscan: the budget keeps only its ceiling, which is
+            // the one number that must NOT depend on how fast the reader is
+            // going (a fling may look further ahead, but it may not mount the
+            // whole document to do it).
+            let base = match self.adaptive {
+                Some(policy) => {
+                    let slack = policy.mount_slack(
+                        self.phase,
+                        self.velocity.direction(),
+                        self.viewport.main,
+                    );
+                    self.layout.window_slack_hinted(
+                        self.scroll_top,
+                        self.viewport,
+                        slack,
+                        self.budget.max_items,
+                        &mut hint,
+                    )
+                }
+                None => {
+                    self.layout
+                        .window_hinted(self.scroll_top, self.viewport, self.budget, &mut hint)
+                }
+            };
             self.hint = hint;
             match (base, self.pinned) {
                 (Some(window), Some((first, last))) => {
@@ -678,11 +805,89 @@ impl VirtualizerCore {
             }
         };
         self.range = range;
+        let plan = self.build_plan(range);
+        self.plan = plan;
         Step {
             range,
             scroll_write: None,
             layout_changed: false,
+            plan,
         }
+    }
+
+    /// Resolve this frame's tiers from the motion and the mount window.
+    ///
+    /// Every window is intersected with the mount window: a tier can only
+    /// describe items that exist, and an item outside the window owes nothing
+    /// at all (the adapter decides whether its DOM is being bridged as a
+    /// zombie).
+    fn build_plan(&self, mount: Option<Window>) -> RenderPlan {
+        let viewport = self.viewport.main;
+        let visible = if self.layout.is_empty() {
+            None
+        } else {
+            self.layout.visible(self.scroll_top, viewport)
+        };
+        let Some(policy) = self.adaptive else {
+            // Motion-blind: one band from `render_screens`, or no band at all.
+            let full = if self.render_screens > 0.0 {
+                self.banded(Slack::symmetric(self.render_screens * viewport), mount)
+            } else {
+                mount
+            };
+            return RenderPlan {
+                phase: ScrollPhase::Idle,
+                velocity: 0.0,
+                direction: 0,
+                scroll_top: self.scroll_top,
+                predicted_offset: self.scroll_top,
+                predicted_index: self.dominant(),
+                visible,
+                full,
+                preview: full,
+                mount,
+                delay_ms: 0,
+                workers: 0,
+                grace_ms: 0,
+            };
+        };
+
+        let direction = self.velocity.direction();
+        let velocity = self.velocity.velocity();
+        let predicted_offset = policy
+            .prediction
+            .predictor()
+            .offset(self.scroll_top, velocity, viewport, self.max_scroll());
+        let full = self.banded(policy.full_slack(self.phase, direction, viewport), mount);
+        let preview = self.banded(policy.preview_slack(self.phase, direction, viewport), mount);
+        RenderPlan {
+            phase: self.phase,
+            velocity,
+            direction,
+            scroll_top: self.scroll_top,
+            predicted_offset,
+            predicted_index: self.index_at(predicted_offset),
+            visible,
+            full,
+            preview,
+            mount,
+            delay_ms: policy.rendering.delay_ms(self.phase),
+            workers: policy.rendering.workers(self.phase),
+            grace_ms: policy.retention.grace_ms(self.phase),
+        }
+    }
+
+    /// The items overlapping the viewport padded by `slack`, intersected with
+    /// the mount window. `None` when there is nothing to intersect with.
+    fn banded(&self, slack: Slack, mount: Option<Window>) -> Option<Window> {
+        let mount = mount?;
+        let band = self.layout.overlapping(
+            self.scroll_top - slack.before,
+            self.viewport.main + slack.total(),
+        )?;
+        let first = band.first.max(mount.first);
+        let last = band.last.min(mount.last);
+        (first <= last).then_some(Window { first, last })
     }
 
     /// Resolve [`ScrollMode::Auto`].
@@ -782,6 +987,11 @@ mod tests {
     use crate::surface::TestSurface;
     use virtual_list::GridSpec;
 
+    /// The clock the motion-blind tests hand to `on_scroll`. One constant
+    /// reading for every sample: the estimator sees no elapsed time and so
+    /// reports no motion, which is exactly what a test about windowing wants.
+    const NOW: f64 = 0.0;
+
     fn list_core(count: usize, size: f64, vh: f64) -> VirtualizerCore {
         VirtualizerCore::new(
             LayoutKind::List(ListLayout::uniform(count, size, 0.0)),
@@ -816,11 +1026,11 @@ mod tests {
     fn scroll_moves_the_window() {
         let mut core = list_core(100, 100.0, 200.0);
         assert_eq!(
-            core.on_scroll(0.0).range,
+            core.on_scroll(0.0, NOW).range,
             Some(Window { first: 0, last: 1 })
         );
         assert_eq!(
-            core.on_scroll(1_000.0).range,
+            core.on_scroll(1_000.0, NOW).range,
             Some(Window {
                 first: 10,
                 last: 11
@@ -831,7 +1041,7 @@ mod tests {
     #[test]
     fn measurement_above_the_viewport_shifts_scroll() {
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(5_000.0);
+        let _ = core.on_scroll(5_000.0, NOW);
         core.queue_size(10, 200.0);
         let flush = core.flush().expect("flush");
         assert_eq!(flush.applied, 1);
@@ -843,7 +1053,7 @@ mod tests {
     #[test]
     fn measurement_below_the_viewport_keeps_scroll() {
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(5_000.0);
+        let _ = core.on_scroll(5_000.0, NOW);
         core.queue_size(90, 200.0);
         let flush = core.flush().expect("flush");
         assert_eq!(flush.step.scroll_write, None);
@@ -852,7 +1062,7 @@ mod tests {
     #[test]
     fn subpixel_measurements_are_filtered() {
         let mut core = list_core(10, 100.0, 200.0);
-        let _ = core.on_scroll(0.0);
+        let _ = core.on_scroll(0.0, NOW);
         core.queue_size(5, 100.3);
         let flush = core.flush().expect("flush");
         assert_eq!(flush.applied, 0);
@@ -862,7 +1072,7 @@ mod tests {
     #[test]
     fn last_measurement_wins_per_index() {
         let mut core = list_core(10, 100.0, 200.0);
-        let _ = core.on_scroll(0.0);
+        let _ = core.on_scroll(0.0, NOW);
         core.queue_size(5, 300.0);
         core.queue_size(5, 400.0);
         let flush = core.flush().expect("flush");
@@ -873,7 +1083,7 @@ mod tests {
     #[test]
     fn count_shrink_clamps_and_reanchors() {
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(9_000.0);
+        let _ = core.on_scroll(9_000.0, NOW);
         let estimate = |_index: usize| 100.0;
         let step = core.set_count(20, &estimate);
         assert!(step.layout_changed);
@@ -884,7 +1094,7 @@ mod tests {
     #[test]
     fn pinned_indices_extend_the_window() {
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(0.0);
+        let _ = core.on_scroll(0.0, NOW);
         let step = core.set_pinned(Some((50, 51)));
         let window = step.range.expect("window");
         assert!(window.contains(0) && window.contains(1));
@@ -902,7 +1112,7 @@ mod tests {
         assert_eq!(core.scroll_top(), 5_000.0);
         assert_eq!(surface.writes(), vec![(5_000.0, false)]);
 
-        let _ = core.on_scroll(5_000.0);
+        let _ = core.on_scroll(5_000.0, NOW);
         // Auto within two viewports: smooth, so nothing adopts locally yet.
         assert!(core.scroll_to_index(52, Align::Start, ScrollMode::Auto, &surface).is_none());
         // Auto beyond two viewports: instant, adopted locally.
@@ -920,7 +1130,7 @@ mod tests {
         // position, not the stale pre-jump one.
         let surface = TestSurface::default();
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(5_000.0); // old document, deep scroll
+        let _ = core.on_scroll(5_000.0, NOW); // old document, deep scroll
 
         // Scroll to the top of the NEW document: instant, adopted now.
         assert!(core.scroll_to_offset(0.0, ScrollMode::Instant, &surface).is_some());
@@ -938,14 +1148,14 @@ mod tests {
     fn pending_scroll_retargets_when_offscreen_sizes_move() {
         let surface = TestSurface::default();
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(1_000.0);
+        let _ = core.on_scroll(1_000.0, NOW);
         let _ = core.scroll_to_index(50, Align::Start, ScrollMode::Instant, &surface);
         for index in 20..30 {
             core.queue_size(index, 150.0);
         }
         let flush = core.flush().expect("flush");
         assert_eq!(flush.step.scroll_write, Some(5_500.0));
-        let _ = core.on_scroll(5_500.0);
+        let _ = core.on_scroll(5_500.0, NOW);
         core.queue_size(60, 150.0);
         let flush = core.flush().expect("flush");
         assert_eq!(flush.step.scroll_write, None);
@@ -956,7 +1166,7 @@ mod tests {
     fn pending_scroll_exhausts_retries() {
         let surface = TestSurface::default();
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(1_000.0);
+        let _ = core.on_scroll(1_000.0, NOW);
         // Smooth scroll-to: NOT adopted locally — the browser echoes it, and
         // until it does the core still works from the old position. That is
         // the window the bounded re-aim protects: measurements keep moving
@@ -980,7 +1190,7 @@ mod tests {
     #[test]
     fn suspend_buffers_measurements_until_resume() {
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(0.0);
+        let _ = core.on_scroll(0.0, NOW);
         core.suspend();
         core.queue_size(5, 300.0);
         assert!(core.flush().is_none());
@@ -993,7 +1203,7 @@ mod tests {
     #[test]
     fn flush_clamps_scroll_when_content_shrinks() {
         let mut core = list_core(20, 100.0, 200.0);
-        let _ = core.on_scroll(1_800.0);
+        let _ = core.on_scroll(1_800.0, NOW);
         for index in 0..6 {
             core.queue_size(index, 10.0);
         }
@@ -1004,7 +1214,7 @@ mod tests {
     #[test]
     fn viewport_jitter_within_epsilon_is_ignored() {
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(0.0);
+        let _ = core.on_scroll(0.0, NOW);
         let step = core.on_viewport(Viewport::new(200.3, 0.0));
         assert!(!step.layout_changed);
         assert_eq!(step.range, core.range());
@@ -1013,15 +1223,15 @@ mod tests {
     #[test]
     fn scroll_jitter_within_epsilon_is_ignored() {
         let mut core = list_core(100, 100.0, 200.0);
-        let _ = core.on_scroll(1_000.0);
+        let _ = core.on_scroll(1_000.0, NOW);
         let before = core.scroll_top();
         // Half an epsilon: no window recompute, no position adoption.
-        let step = core.on_scroll(1_000.2);
+        let step = core.on_scroll(1_000.2, NOW);
         assert!(!step.layout_changed);
         assert_eq!(step.range, core.range());
         assert_eq!(core.scroll_top(), before);
         // Past epsilon: adopted normally.
-        let _ = core.on_scroll(1_001.0);
+        let _ = core.on_scroll(1_001.0, NOW);
         assert!((core.scroll_top() - 1_001.0).abs() < 1e-9);
     }
 
@@ -1049,8 +1259,8 @@ mod tests {
         let budget = Budget::items(1, 1_000);
         let mut small = grid_core(200, 120.0, spec, Viewport::new(720.0, 264.0), budget);
         let mut tall = grid_core(200, 120.0, spec, Viewport::new(1_440.0, 264.0), budget);
-        let small_window = small.on_scroll(0.0).range.expect("window");
-        let tall_window = tall.on_scroll(0.0).range.expect("window");
+        let small_window = small.on_scroll(0.0, NOW).range.expect("window");
+        let tall_window = tall.on_scroll(0.0, NOW).range.expect("window");
         assert_eq!(small_window.len(), 14);
         assert_eq!(tall_window.len(), 26);
     }
@@ -1064,7 +1274,7 @@ mod tests {
             Viewport::new(500.0, 264.0),
             Budget::items(0, 100),
         );
-        let _ = core.on_scroll(0.0);
+        let _ = core.on_scroll(0.0, NOW);
         let rows = core.rows();
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].items, 0..2);
@@ -1075,7 +1285,7 @@ mod tests {
     #[test]
     fn rescale_keeps_the_reader_on_their_item() {
         let mut core = list_core(50, 100.0, 200.0);
-        let _ = core.on_scroll(2_400.0);
+        let _ = core.on_scroll(2_400.0, NOW);
         let step = core.rescale(2.0, &|_index| 200.0);
         assert!(step.layout_changed);
         assert_eq!(step.scroll_write, Some(4_900.0));
@@ -1093,7 +1303,7 @@ mod tests {
         let vh = 500.0;
         let scroll = 10_000.0;
         let mut core = list_core(200, 100.0, vh);
-        let _ = core.on_scroll(scroll);
+        let _ = core.on_scroll(scroll, NOW);
 
         // The content point at the viewport center, by hand for this
         // uniform gapless list: item 102, 50px into it.
@@ -1128,7 +1338,7 @@ mod tests {
             Viewport::new(600.0, 252.0),
             Budget::items(1, 100),
         );
-        let _ = core.on_scroll(1_200.0);
+        let _ = core.on_scroll(1_200.0, NOW);
         let dominant = core.dominant();
         let step = core.rebuild(&|_index| 200.0);
         assert!(step.layout_changed);
@@ -1173,7 +1383,7 @@ mod tests {
     #[test]
     fn a_render_band_blanks_the_mount_fringes_but_never_the_viewport() {
         let mut core = stream_core(0.75);
-        let _ = core.on_scroll(2_000.0);
+        let _ = core.on_scroll(2_000.0, NOW);
         // Mount: visible rows 20-21 plus two screens of overscan -> 16..=25.
         // Band: viewport padded three quarters of a screen -> rows 18..=23.
         let items = core.items();
@@ -1200,7 +1410,7 @@ mod tests {
     #[test]
     fn without_a_band_everything_mounted_is_active() {
         let mut core = stream_core(0.0);
-        let _ = core.on_scroll(2_000.0);
+        let _ = core.on_scroll(2_000.0, NOW);
         let items = core.items();
         assert!(!items.is_empty());
         assert!(items.iter().all(|item| item.state == VirtualItemState::Active));
@@ -1213,11 +1423,411 @@ mod tests {
         let mut plain = stream_core(0.0);
         let mut top = 0.0;
         while top < 19_000.0 {
-            let _ = banded.on_scroll(top);
-            let _ = plain.on_scroll(top);
+            let _ = banded.on_scroll(top, NOW);
+            let _ = plain.on_scroll(top, NOW);
             assert_eq!(banded.range(), plain.range(), "mount window at {top}");
             assert_eq!(banded.total_size(), plain.total_size(), "extent at {top}");
             top += 317.0;
         }
+    }
+}
+
+#[cfg(test)]
+mod motion_tests {
+    //! The adaptive half of the engine: what a movement does to the windows.
+    //!
+    //! The geometry here is deliberately blunt — 200px items in an 800px
+    //! viewport, so one screen is four items and a policy written in screens
+    //! can be asserted in whole items. The motion is fed frame by frame at
+    //! 16ms, which is what the adapter's rAF coalescing actually delivers, and
+    //! the mount ceiling is wide enough that the tiers, not the trim, are what
+    //! these tests measure.
+
+    use super::*;
+    use crate::policy::{AdaptivePolicy, RenderQuality};
+    use crate::surface::TestSurface;
+
+    const VH: f64 = 800.0;
+    const ITEM: f64 = 200.0;
+    /// Ten screens of items: past what any tier reaches, so a window asserted
+    /// below is the policy's answer rather than the ceiling's.
+    const ROOM: usize = 40;
+
+    /// A clock that hands out one 16ms frame per call.
+    struct Clock(f64);
+
+    impl Clock {
+        fn frame(&mut self) -> f64 {
+            self.0 += 16.0;
+            self.0
+        }
+    }
+
+    /// A core already sitting at `offset`, with its motion model primed from
+    /// that position — exactly as the adapter primes it from the resume offset.
+    /// A test that jumped there with a scroll sample instead would be measuring
+    /// the jump: one frame from zero to eight thousand pixels reads as a fling
+    /// of half a million pixels per second.
+    fn adaptive_core_at(items: usize, offset: f64) -> VirtualizerCore {
+        VirtualizerCore::new(
+            LayoutKind::List(ListLayout::uniform(items, ITEM, 0.0)),
+            CoreConfig {
+                budget: Budget::screenfuls(0.0, ROOM),
+                viewport: Viewport::main_only(VH),
+                initial_offset: offset,
+                adaptive: Some(AdaptivePolicy::reader()),
+                ..CoreConfig::default()
+            },
+        )
+    }
+
+    /// Scroll at `speed` px/s for `frames` frames, starting where the core is.
+    /// Clamped to the document, because the browser clamps: a test that
+    /// scrolled past the end would be measuring a position no reader can hold.
+    fn scroll(core: &mut VirtualizerCore, clock: &mut Clock, speed: f64, frames: usize) {
+        let mut top = core.scroll_top();
+        for _ in 0..frames {
+            top = (top + speed * 0.016).clamp(0.0, core.max_scroll());
+            let _ = core.on_scroll(top, clock.frame());
+        }
+    }
+
+    #[test]
+    fn a_fast_scroll_predicts_the_item_the_reader_is_landing_on() {
+        let mut core = adaptive_core_at(200, 8_000.0);
+        let mut clock = Clock(0.0);
+        // Ten screens a second: a throw.
+        scroll(&mut core, &mut clock, 8_000.0, 20);
+
+        let plan = core.render_plan();
+        assert_eq!(plan.phase, ScrollPhase::Fling);
+        assert_eq!(plan.direction, 1);
+        // The projection is a distance ahead of the viewport, so the item it
+        // names is ahead of the one under the reader's eyes.
+        assert!(
+            plan.predicted_index > core.dominant(),
+            "predicted {} from dominant {}",
+            plan.predicted_index,
+            core.dominant()
+        );
+        assert!(plan.predicted_offset > plan.scroll_top);
+        // …and it is a real item, resolved through the layout rather than
+        // counted off the dominant one.
+        assert_eq!(plan.predicted_index, core.index_at(plan.predicted_offset));
+        assert!(plan.is_sweeping());
+        assert_eq!(plan.delay_ms, 90);
+        assert_eq!(plan.workers, 1);
+    }
+
+    #[test]
+    fn reversing_switches_the_prediction_and_the_lean() {
+        let mut core = adaptive_core_at(200, 20_000.0);
+        let mut clock = Clock(0.0);
+        scroll(&mut core, &mut clock, -6_000.0, 20);
+
+        let plan = core.render_plan();
+        assert_eq!(plan.direction, -1);
+        assert!(plan.predicted_index < core.dominant());
+        let full = plan.full.expect("a full tier");
+        let visible = plan.visible.expect("a visible range");
+        // Travelling up, the lead is above: more items between the top of the
+        // full tier and the top of the viewport than below its bottom.
+        assert!(
+            visible.first - full.first > full.last - visible.last,
+            "full {full:?} around visible {visible:?}"
+        );
+    }
+
+    #[test]
+    fn the_full_tier_leans_in_the_direction_of_travel() {
+        let mut core = adaptive_core_at(200, 8_000.0);
+        let mut clock = Clock(0.0);
+        scroll(&mut core, &mut clock, 4_000.0, 20);
+
+        let plan = core.render_plan();
+        assert_eq!(plan.direction, 1);
+        let full = plan.full.expect("a full tier");
+        let visible = plan.visible.expect("a visible range");
+        // 0.75 screens ahead is three items; the trailing side gets the
+        // policy's 0.4 of that, which is one item of the 240px.
+        assert_eq!(full.last - visible.last, 3);
+        assert_eq!(visible.first - full.first, 1);
+    }
+
+    #[test]
+    fn a_settled_reader_gets_a_symmetric_tier() {
+        // No sample at all: a reader who opened the book here and has not moved.
+        let core = adaptive_core_at(200, 8_000.0);
+        let plan = core.render_plan();
+        assert_eq!(plan.phase, ScrollPhase::Idle);
+        let full = plan.full.expect("a full tier");
+        let visible = plan.visible.expect("a visible range");
+        assert_eq!(visible.first - full.first, full.last - visible.last);
+        assert_eq!(full.last - visible.last, 3);
+    }
+
+    #[test]
+    fn the_tiers_nest_and_the_visible_items_are_always_full() {
+        let mut core = adaptive_core_at(200, 8_000.0);
+        let mut clock = Clock(0.0);
+        for speed in [1_500.0, 4_000.0, 9_000.0, 20_000.0] {
+            scroll(&mut core, &mut clock, speed, 8);
+            let plan = core.render_plan();
+            let (Some(mount), Some(preview), Some(full), Some(visible)) =
+                (plan.mount, plan.preview, plan.full, plan.visible)
+            else {
+                panic!("every window exists mid-document");
+            };
+            assert!(
+                mount.first <= full.first && mount.last >= full.last,
+                "{mount:?} over {full:?}"
+            );
+            assert!(
+                full.first >= preview.first && full.last <= preview.last,
+                "{full:?} inside {preview:?}"
+            );
+            assert!(preview.first <= visible.first && preview.last >= visible.last);
+            // Whatever the movement, the items on screen are full quality, and
+            // the item states are the plan's own answer — one truth, read two
+            // ways, because the view layer consumes both.
+            for index in visible.iter() {
+                assert_eq!(plan.quality(index), RenderQuality::Full, "item {index}");
+                assert_eq!(core.item_state(index), VirtualItemState::Active);
+            }
+            for item in core.items() {
+                assert_eq!(item.state, core.item_state(item.index));
+                match item.state {
+                    VirtualItemState::Active => {
+                        assert_eq!(plan.quality(item.index), RenderQuality::Full)
+                    }
+                    VirtualItemState::Preview => {
+                        assert_eq!(plan.quality(item.index), RenderQuality::Preview)
+                    }
+                    VirtualItemState::Blank => {
+                        assert_eq!(plan.quality(item.index), RenderQuality::Placeholder)
+                    }
+                    VirtualItemState::Zombie => panic!("the core retains nothing"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_fling_mounts_placeholders_between_the_reader_and_the_destination() {
+        let mut core = adaptive_core_at(200, 4_000.0);
+        let mut clock = Clock(0.0);
+        scroll(&mut core, &mut clock, 12_000.0, 20);
+
+        let plan = core.render_plan();
+        let mount = plan.mount.expect("a mount window");
+        let full = plan.full.expect("a full tier");
+        // The window reaches further ahead than the tier does, so there are
+        // mounted items owed nothing but their geometry — the boxes a fling
+        // slides past instead of rasters it throws away.
+        assert!(mount.last > full.last, "{mount:?} over {full:?}");
+        let placeholders = (full.last + 1..=mount.last)
+            .filter(|index| core.item_state(*index) == VirtualItemState::Blank)
+            .count();
+        assert!(placeholders > 0, "nothing past the tier was a placeholder");
+        // And the destination the plan named is inside the window: the point of
+        // predicting it is that it can be ready before the reader arrives.
+        assert!(mount.contains(plan.predicted_index));
+    }
+
+    #[test]
+    fn the_settle_promotes_the_ring_behind_the_reader() {
+        let mut core = adaptive_core_at(200, 8_000.0);
+        let mut clock = Clock(0.0);
+        scroll(&mut core, &mut clock, 6_000.0, 20);
+        let moving = core.render_plan();
+        assert!(moving.phase.at_least(ScrollPhase::Fast));
+        // A page above the viewport that a downward scroll left in the ring.
+        let above = moving.full.expect("a full tier").first - 1;
+        assert_eq!(moving.quality(above), RenderQuality::Preview);
+
+        let _ = core.settle(clock.frame());
+        let settled = core.render_plan();
+        assert_eq!(settled.phase, ScrollPhase::Idle);
+        assert_eq!(settled.direction, 0);
+        // Settling is the promotion: the trailing side gets the full 0.75
+        // screens instead of 0.4 of it, so the page just read is crisp rather
+        // than soft if the reader scrolls back up into it.
+        assert_eq!(settled.quality(above), RenderQuality::Full);
+        assert!(settled.full.expect("a tier").first < moving.full.expect("a tier").first);
+    }
+
+    #[test]
+    fn a_commanded_scroll_is_not_read_as_a_fling() {
+        let mut core = adaptive_core_at(200, 2_000.0);
+        let mut clock = Clock(0.0);
+        scroll(&mut core, &mut clock, 6_000.0, 16);
+        assert!(core.render_plan().phase.at_least(ScrollPhase::Fast));
+
+        // A page turn: the surface is written and the browser animates to it,
+        // echoing a burst of scroll events that cover the whole distance.
+        let surface = TestSurface::default();
+        assert!(core
+            .scroll_to_index(120, Align::Start, ScrollMode::Smooth, &surface)
+            .is_none());
+        let target = surface.writes().last().expect("a write").0;
+        let _ = core.on_scroll(target, clock.frame());
+
+        let plan = core.render_plan();
+        assert_eq!(plan.phase, ScrollPhase::Idle, "a page turn looked like a fling");
+        assert_eq!(plan.velocity, 0.0);
+        assert_eq!(plan.delay_ms, 0);
+        assert_eq!(plan.workers, 2);
+        // The prediction is the reader's own position, not a projection of a
+        // jump they did not make.
+        assert_eq!(plan.predicted_index, core.dominant());
+        assert_eq!(plan.predicted_offset, core.scroll_top());
+
+        // The scroll-end window lifts the mute, and real motion measures again.
+        let _ = core.settle(clock.frame());
+        scroll(&mut core, &mut clock, 6_000.0, 16);
+        assert!(core.render_plan().phase.at_least(ScrollPhase::Fast));
+    }
+
+    #[test]
+    fn prediction_is_clamped_to_the_document() {
+        // Near the end, throwing downwards: the projection cannot run off the
+        // last page, or the scheduler would be handed an item that does not
+        // exist and a window around it that cannot mount.
+        let mut core = adaptive_core_at(60, 8_000.0);
+        let mut clock = Clock(0.0);
+        scroll(&mut core, &mut clock, 20_000.0, 20);
+        assert!((core.scroll_top() - core.max_scroll()).abs() < 1e-9, "the end");
+        let plan = core.render_plan();
+        assert!(plan.predicted_offset <= core.max_scroll() + 1e-9);
+        assert!(plan.predicted_index < core.item_count());
+        assert_eq!(plan.predicted_index, core.index_at(plan.predicted_offset));
+
+        // And the same at the top, throwing upwards.
+        let mut core = adaptive_core_at(60, 4_000.0);
+        let mut clock = Clock(0.0);
+        scroll(&mut core, &mut clock, -20_000.0, 20);
+        assert!(core.scroll_top() <= 1e-9, "the start");
+        let plan = core.render_plan();
+        assert!(plan.predicted_offset >= 0.0);
+        assert_eq!(plan.predicted_index, core.index_at(plan.predicted_offset));
+    }
+
+    #[test]
+    fn prediction_is_a_distance_so_a_fold_out_is_not_skipped() {
+        // Ten 800px pages, an 8000px fold-out, ten more. A reader crossing the
+        // boundary at reading speed is predicted INTO the plate; counting two
+        // pages ahead would have named the page after it — 8000px further on
+        // than anything the reader is about to reach.
+        let mut sizes = vec![800.0; 10];
+        sizes.push(8_000.0);
+        sizes.extend(core::iter::repeat_n(800.0, 10));
+        let mut core = VirtualizerCore::new(
+            LayoutKind::List(ListLayout::new(sizes, 0.0)),
+            CoreConfig {
+                budget: Budget::screenfuls(0.0, ROOM),
+                viewport: Viewport::main_only(VH),
+                initial_offset: 7_700.0,
+                adaptive: Some(AdaptivePolicy::reader()),
+                ..CoreConfig::default()
+            },
+        );
+        let mut clock = Clock(0.0);
+        let mut top = 7_700.0;
+        // One screen a second: a reading speed, not a scroll.
+        for _ in 0..20 {
+            top += 12.8;
+            let _ = core.on_scroll(top, clock.frame());
+        }
+        let plan = core.render_plan();
+        assert!((plan.velocity - 800.0).abs() < 150.0, "velocity {}", plan.velocity);
+        let here = core.index_at(plan.scroll_top);
+        assert_eq!(here, 9, "the reader is still on the last small page");
+        assert_eq!(plan.predicted_index, 10, "the projection lands inside the plate");
+        assert_ne!(plan.predicted_index, here + 2);
+        assert_eq!(plan.predicted_index, core.index_at(plan.predicted_offset));
+    }
+
+    #[test]
+    fn a_motion_blind_core_never_reports_motion() {
+        // The regression guard for the whole feature: a surface that did not
+        // ask for a policy (the thumbnail grid, the text stream) behaves
+        // exactly as it did before the motion model existed, however fast it is
+        // scrolled, and however often.
+        // Two items to a screen, so the budget's three-item ceiling is a
+        // ceiling the visible range fits under and the trim actually bites.
+        let mut core = VirtualizerCore::new(
+            LayoutKind::List(ListLayout::uniform(200, ITEM * 2.0, 0.0)),
+            CoreConfig {
+                budget: Budget::screenfuls(0.5, 3),
+                viewport: Viewport::main_only(VH),
+                initial_offset: 4_000.0,
+                ..CoreConfig::default()
+            },
+        );
+        let mut clock = Clock(0.0);
+        scroll(&mut core, &mut clock, 20_000.0, 30);
+        let plan = core.render_plan();
+        assert_eq!(plan.phase, ScrollPhase::Idle);
+        assert_eq!(plan.velocity, 0.0);
+        assert_eq!(plan.delay_ms, 0);
+        assert_eq!(plan.grace_ms, 0);
+        assert_eq!(plan.full, plan.mount);
+        assert_eq!(plan.preview, plan.mount);
+        assert!(core
+            .items()
+            .iter()
+            .all(|item| item.state == VirtualItemState::Active));
+        // The window is still the budget's, symmetric and capped at three.
+        assert!(plan.mount.expect("a window").len() <= 3);
+        assert_eq!(core.render_range(), core.range());
+        assert_eq!(core.preview_range(), core.range());
+    }
+
+    #[test]
+    fn the_tiers_never_move_the_geometry() {
+        // What a tier says about an item is what it is OWED, never where it
+        // sits or how big it is: the scrollbar, the anchors and the offsets all
+        // read the layout, and a placeholder that reported a different size
+        // would move every page below it.
+        let mut core = adaptive_core_at(200, 0.0);
+        let mut clock = Clock(0.0);
+        let mut top = 0.0;
+        while top < 30_000.0 {
+            top += 317.0;
+            let _ = core.on_scroll(top, clock.frame());
+            for item in core.items() {
+                assert_eq!(item.size, ITEM, "item {}", item.index);
+                assert_eq!(item.start, core.offset_of(item.index), "item {}", item.index);
+            }
+            assert_eq!(core.render_plan().scroll_top, core.scroll_top());
+        }
+    }
+
+    #[test]
+    fn the_mount_ceiling_still_binds_under_a_policy() {
+        // The policy decides how far the window reaches; the budget decides how
+        // much of that is allowed to exist. A fling may look four screens
+        // ahead, but it may not mount the document to do it.
+        // Six items, against four screens' worth of look-ahead the fling below
+        // would otherwise mount: the ceiling is the binding constraint, and by
+        // more than the visible range so the assertion is about the ceiling.
+        let mut core = VirtualizerCore::new(
+            LayoutKind::List(ListLayout::uniform(200, ITEM, 0.0)),
+            CoreConfig {
+                budget: Budget::screenfuls(0.0, 6),
+                viewport: Viewport::main_only(VH),
+                initial_offset: 8_000.0,
+                adaptive: Some(AdaptivePolicy::reader()),
+                ..CoreConfig::default()
+            },
+        );
+        let mut clock = Clock(0.0);
+        scroll(&mut core, &mut clock, 12_000.0, 20);
+        let plan = core.render_plan();
+        let mount = plan.mount.expect("a window");
+        assert!(mount.len() <= 6, "{mount:?}");
+        // …and the reader's own items are never what the ceiling trimmed.
+        let visible = plan.visible.expect("a visible range");
+        assert!(mount.first <= visible.first && mount.last >= visible.last);
     }
 }

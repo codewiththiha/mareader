@@ -51,8 +51,10 @@
 
 pub mod engine;
 mod hook;
+pub mod motion;
 mod observe;
 mod options;
+pub mod policy;
 mod render;
 pub mod retention;
 mod surface;
@@ -60,7 +62,12 @@ mod virtualizer;
 
 pub use crate::engine::{CoreConfig, Flush, Step, VirtualizerCore};
 pub use crate::hook::use_virtualizer;
+pub use crate::motion::{Predictor, ScrollPhase, ScrollVelocity};
 pub use crate::options::{Axis, LayoutShape, ScrollMode, VirtualizerOptions};
+pub use crate::policy::{
+    AdaptivePolicy, MemoryPolicy, PredictionPolicy, RenderPlan, RenderPolicy, RenderQuality,
+    RetentionPolicy,
+};
 pub use crate::render::{VirtualItem, VirtualItemState, VirtualRow};
 pub use crate::surface::{DomSurface, ScrollSurface};
 pub use crate::virtualizer::Virtualizer;

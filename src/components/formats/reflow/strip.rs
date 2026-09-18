@@ -17,14 +17,22 @@
 //! scroll mode and any future paged-with-gaps mode walk. Like its PDF twin, the
 //! strip is pure presentation: scroll policy and container binding live in
 //! [`ScrollShell`](crate::components::viewer::shells::scroll_shell::ScrollShell).
+//!
+//! The tiers this strip reads are the same ones its PDF twin does, with one
+//! difference that matters: a page of type has no cheap representation. A raster
+//! can be previewed at a fraction of its resolution and cost a fraction of the
+//! memory, so the PDF strip renders its preview ring; type is either laid out or
+//! it is not, and laying it out is the whole cost. So the preview tier renders
+//! as a placeholder here, and only the full tier — plus a retained zombie, whose
+//! blocks are already built — carries type.
 
 use leptos::html;
 use leptos::prelude::*;
 use reader_core::view::Axis;
-use virtual_list_leptos::{VirtualItem, Virtualizer};
+use virtual_list_leptos::{VirtualItem, VirtualItemState, Virtualizer};
 
 use pdf_core::pixel_grid::snap_px;
-use reflow_core::geometry::PAGE_HEIGHT;
+use reflow_core::geometry::{PAGE_HEIGHT, PAGE_WIDTH};
 
 use super::page::ReflowPage;
 use crate::components::viewer::page_host::host_id_for_axis;
@@ -101,6 +109,12 @@ pub fn ReflowPageStrip(
                         let index = item.index;
                         let page = (index + 1) as u32;
                         let offset = handle.with_value(|v| v.item_top(index));
+                        // The item's tier, as a signal: a `For` child does not
+                        // re-run for a key it already holds, so the crossing into
+                        // or out of the full tier reaches the view through a
+                        // reactive read rather than through the `VirtualItem`
+                        // snapshot it was handed at mount.
+                        let tier = handle.with_value(|v| v.item_state(index));
                         let margin = state.viewer.page_margin;
                         let style = move || {
                             let snapped = snap_px(offset.get());
@@ -118,19 +132,51 @@ pub fn ReflowPageStrip(
                                 )
                             }
                         };
+                        // The empty frame a mounted-but-unrendered page occupies:
+                        // the same A4 box at the live scale, with none of the
+                        // blocks in it. Sized from the same two constants
+                        // `ReflowPage` sizes its host from (the cut's geometry
+                        // carries them unchanged — a margin dial moves the
+                        // paddings and the column, never the page), so promoting
+                        // the page changes what is inside the box and not the box.
+                        let blank_style = move || {
+                            let scale = page_scale.get();
+                            format!(
+                                "width:{}px;height:{}px",
+                                snap_px(PAGE_WIDTH * scale),
+                                snap_px(PAGE_HEIGHT * scale)
+                            )
+                        };
+                        // Centring follows the axis, exactly as it does for a
+                        // page of type: `mx-auto` on a page that scrolls
+                        // vertically, `my-auto` on one that scrolls past it.
+                        let blank_class = if vertical { "tx-page mx-auto" } else { "tx-page my-auto" };
                         // The host id is the slot's, shared with the PDF strip, so
                         // the chrome that finds a page by id never asks who painted
-                        // it. Centring follows the axis: `mx-auto` on a page that
-                        // scrolls vertically, `my-auto` on one that scrolls past it.
+                        // it. The placeholder carries no id at all: it paints no
+                        // page, and nothing that addresses a page by id should
+                        // find a box with no type in it.
                         view! {
                             <div id=wrapper_id(axis, index, page) style=style>
-                                <ReflowPage
-                                    page=page
-                                    state=state
-                                    scale=page_scale
-                                    host_id=host_id_for_axis(axis, page)
-                                    class=if vertical { "mx-auto" } else { "my-auto" }
-                                />
+                                {move || {
+                                    if owes_type(tier.get()) {
+                                        view! {
+                                            <ReflowPage
+                                                page=page
+                                                state=state
+                                                scale=page_scale
+                                                host_id=host_id_for_axis(axis, page)
+                                                class=if vertical { "mx-auto" } else { "my-auto" }
+                                            />
+                                        }
+                                            .into_any()
+                                    } else {
+                                        view! {
+                                            <div class=blank_class aria-hidden="true" style=blank_style></div>
+                                        }
+                                            .into_any()
+                                    }
+                                }}
                             </div>
                         }
                     }
@@ -138,6 +184,16 @@ pub fn ReflowPageStrip(
             </div>
         </div>
     }
+}
+
+/// Whether a mounted item is owed real type.
+///
+/// [`VirtualItemState::Preview`] is deliberately NOT: it is the tier a raster
+/// strip upgrades through, and for type it would cost exactly what the full tier
+/// costs. A zombie IS — its blocks are already built, and rebuilding them for
+/// the few frames it has left is the pop retention exists to prevent.
+fn owes_type(state: VirtualItemState) -> bool {
+    matches!(state, VirtualItemState::Active | VirtualItemState::Zombie)
 }
 
 /// Per-axis wrapper id, kept as a free function so both ends of the strip's

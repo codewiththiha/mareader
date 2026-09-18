@@ -8,10 +8,11 @@
 //!
 //! One focused module per surface: [`document`] (open / outline / destroy /
 //! covers / pending OS files), [`render`] (page registration, live renders,
-//! thumbnails), [`search`] (the Rust-owned full-text index + engine-side
-//! painting), [`paper`] (the paper session's pixel plumbing), [`dialog`] (the
-//! native open-file dialog), [`theme`] (re-bake / scrub mode / advisory
-//! sweeps). Window chrome and the AI kickoff are not engine surfaces — they
+//! thumbnails), [`motion`] (the scroll frame the engine's render scheduler
+//! prioritises by, and the raster budget it reclaims against), [`search`]
+//! (the Rust-owned full-text index + engine-side painting), [`paper`] (the
+//! paper session's pixel plumbing), [`dialog`] (the native open-file dialog),
+//! [`theme`] (re-bake / scrub mode / advisory sweeps). Window chrome and the AI kickoff are not engine surfaces — they
 //! live in the `app-chrome` and `ai-core` crates.
 //!
 //! [`resolve`] and the hoisted property keys live here: the one parser for the
@@ -24,6 +25,7 @@ use wasm_bindgen::JsValue;
 
 pub mod dialog;
 pub mod document;
+pub mod motion;
 pub mod paper;
 pub mod render;
 pub mod search;
@@ -31,6 +33,9 @@ pub mod theme;
 
 pub use dialog::pick_document;
 pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
+pub use motion::{
+    MotionBudget, MotionPhase, ScrollMotion, configure_motion, set_scroll_motion,
+};
 pub use paper::{sample_paper_page, set_paper, set_paper_active, take_paper_frame, PaperFrame};
 pub use render::{
     blit_thumb, cancel_thumb, has_thumb, prefetch_thumb, register_page, render_page, render_thumb,

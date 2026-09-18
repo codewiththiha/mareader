@@ -87,6 +87,57 @@ fn facade_has_key(facade: &str, name: &str) -> bool {
     false
 }
 
+/// The phase names the engine parses, read out of its own table.
+///
+/// `public/engine/motion.ts` declares them as a const tuple; this reads the
+/// literals out of that declaration rather than trusting a copy, the same way
+/// the facade check above reads the bridge.
+fn engine_phase_names() -> Vec<String> {
+    let motion = std::fs::read_to_string(repo_root().join("public/engine/motion.ts"))
+        .expect("motion.ts must exist next to the test");
+    let table = motion
+        .split("export const PHASES = [")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .expect("motion.ts must declare a PHASES table");
+    table
+        .split('"')
+        .filter(|part| !part.trim().is_empty() && !part.contains(','))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The phase names the Rust side publishes, read out of `MotionPhase::wire`.
+fn bridge_phase_names() -> Vec<String> {
+    let motion = std::fs::read_to_string(repo_root().join("crates/pdf-engine/src/api/motion.rs"))
+        .expect("api/motion.rs must exist next to the test");
+    let body = motion
+        .split("pub const fn wire(self) -> &'static str {")
+        .nth(1)
+        .and_then(|rest| rest.split("\n    }").next())
+        .expect("MotionPhase must declare a wire spelling");
+    let mut names = Vec::new();
+    for arm in body.split("=>") {
+        if let Some(quote) = arm.split('"').nth(1) {
+            names.push(quote.to_string());
+        }
+    }
+    names
+}
+
+#[test]
+fn the_motion_phases_agree_across_the_bridge() {
+    // A phase the engine cannot parse is read as `idle`, so a rename on either
+    // side is not an error anywhere: it is a fling that stops pacing renders,
+    // with a green build and a clean console. Both tables are read out of the
+    // sources rather than restated, so the drift fails here instead.
+    let engine = engine_phase_names();
+    let bridge = bridge_phase_names();
+    assert!(!engine.is_empty(), "no PHASES parsed from motion.ts");
+    assert_eq!(bridge.len(), 5, "MotionPhase::wire arms: {bridge:?}");
+    assert_eq!(bridge, engine, "the two phase tables disagree");
+}
+
 #[test]
 fn engine_facade_exposes_every_pdfreader_binding() {
     let facade = std::fs::read_to_string(repo_root().join("public/pdfEngine.js"));

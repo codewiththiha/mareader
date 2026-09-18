@@ -40,6 +40,68 @@ a fling slides cheap placeholders past the reader's eyes; every partly-visible
 item is inside the band by construction, so nothing on screen is ever a
 placeholder, and the band never changes what mounts or what the extent says.
 
+### Motion: the band stops being a constant
+
+A band of a fixed width is a compromise between two readers. Wide enough that a
+fling has something ready when it lands, and a slow scroll rasterises three
+pages the reader will never reach; narrow enough that a scroll costs nothing,
+and a throw arrives at an empty window. The answer is to stop choosing: the band
+follows the movement.
+
+`motion` is the model. It smooths the scroll deltas into one signed
+pixels-per-second estimate — an exponential average, because a wheel and a
+trackpad both emit bursts that would flip any policy read literally — classifies
+that speed against the VIEWPORT rather than against absolute pixels (1500px/s is
+a stroll on a 2400px window and a throw on a 600px one), and projects the offset
+forward over a short horizon to name the item the reader is about to reach. The
+classification carries hysteresis, so a speed parked on a boundary keeps the
+phase it arrived with instead of resizing the window twice a frame. All of it is
+arithmetic over an offset and a clock the caller supplies, which is why the whole
+predictor is unit-tested on the host.
+
+`policy` is where the model becomes geometry. An `AdaptivePolicy` resolves the
+phase, the direction and the viewport into every number a frame needs — the
+mount slack, the full tier, the preview tier, the delay before a newly mounted
+page may rasterise, the lanes the engine may run, the retention grace — and
+`VirtualizerCore` publishes the lot as one `RenderPlan`, which is what
+`Virtualizer::render_plan` hands the view. The plan is the API a renderer reads;
+`render_range` and `item_state` are projections of it, kept for callers that ask
+one question.
+
+The rule the plan exists to enforce:
+
+> Mounting a page is not a request to rasterise it.
+
+An item in the mount window is an item whose GEOMETRY the layout is honest
+about. What it is owed visually is a separate answer, and there are three:
+
+- **Full** (`Active`) — rasterised at the committed scale with its text and link
+  layers. The pages under the reader's eyes, plus a lead in the direction of
+  travel that widens with speed.
+- **Preview** (`Preview`) — the same CSS geometry at a fraction of the output
+  resolution and with no text layer. The ring around the full tier: worth
+  holding, not worth rasterising properly until the reader settles on it.
+- **Placeholder** (`Blank`) — the laid-out box and nothing else. No canvas, so no
+  backing store, no 2d context, no GPU texture and no engine registration; the
+  PDF strip paints it with one shared miniature of the document's representative
+  page (`src/components/formats/pdf/placeholder.rs` over a CSS custom property
+  that `public/engine/placeholder.ts` publishes once per book), so eight of them
+  cost one decoded image between them.
+
+Zombie retention stays orthogonal to all three: it is a lifecycle bridge, not a
+quality level, and a retained page keeps whatever bitmap it already had.
+
+Because the placeholder tier is nearly free, the mount window can afford to be
+wider than the raster budget would allow on its own — and it is asymmetric,
+leaning into the direction of travel, because a page ahead of the reader is
+about to be looked at and a page behind them is only coming back if they change
+their mind. The ceiling in `reader_core::view` still binds: a policy may look
+further ahead, but it may not mount the document to do it.
+
+A surface that does not configure a policy gets none of this. The thumbnail grid
+and the text stream stay motion-blind exactly as they were: symmetric band, no
+prediction, every mounted item full quality, and a plan that says so.
+
 ## 3. Reader app: policy + rendering
 
 The app uses the adapter and keeps only app-specific policy locally:
@@ -118,6 +180,25 @@ The app uses the adapter and keeps only app-specific policy locally:
     gradients on one box; that is painted, so it froze during the parse it was
     on screen to cover.) Any animation that has to outlive the work it reports
     on is written the same way.
+14. A scroll is predicted, not reacted to. The strip's virtualizer knows the
+    speed and the direction, so it renders the page the reader is ARRIVING at
+    rather than the one they were on when the request was made — and the pages
+    in between get the cheap tier or a box. This is the difference between a
+    fling that lands sharp and one that lands blank: a first-in-first-out queue
+    spends its lanes on the pages the movement has already made irrelevant.
+15. Stopping is a transition, not an absence of events. The settle recomputes
+    the tiers symmetrically, promotes the preview ring under the reader's eyes,
+    hands the lanes back, and lifts the mute a commanded scroll set — so a page
+    turn is never mistaken for a fling, and the first wheel event after a pause
+    measures from a standing start.
+16. A tier is what a page is OWED, never where it sits. The placeholder box is
+    laid out at the virtualizer's own size for the item, so promoting it changes
+    what is inside the box and nothing moves: not the page, not the scrollbar,
+    not the anchor the next measurement corrects against.
+17. What is cheap is a property of the format. A raster has a preview tier and a
+    text page does not — laying type out IS the cost — so the reflowable strip
+    reads the same plan and renders type for the full tier only. One policy, two
+    honest readings of it.
 
 ## Continuous reader flow
 
@@ -128,9 +209,19 @@ The app uses the adapter and keeps only app-specific policy locally:
    page heights back into both `css_heights` and the virtualizer; a page of type
    is A4 by definition, so there the cut publishes its sizes instead
    (`effects::reader::reflow_layout`).
-3. Navigation sync uses the virtualizer for dominant-page tracking and page-to-scroll jumps.
-4. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
-5. Zoom runs through one controller: commands resolve to a target, the tween relays the layout out through the actuator frame by frame — `css_heights`, both strips and the page hosts all follow the live display scale — and the render scale catches up once, at the end.
+3. The strip is also where a tier becomes a component: it reads each item's
+   state and mounts a page host for the two painted tiers — its `preview` prop
+   is the whole difference between them — or a placeholder box for the third.
+   And it publishes the frame's plan to the engine (phase, direction, the
+   predicted page, the two tier windows, the pacing delay, the lane count)
+   through `src/features/reader/motion.rs`, the one place the virtualizer's
+   `ScrollPhase` and the engine's `MotionPhase` meet. Both halves of the
+   scheduler therefore read the same frame: the geometry decides what a page is
+   owed, and the queue in front of pdf.js decides which of those pages gets a
+   lane first.
+4. Navigation sync uses the virtualizer for dominant-page tracking and page-to-scroll jumps.
+5. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
+6. Zoom runs through one controller: commands resolve to a target, the tween relays the layout out through the actuator frame by frame — `css_heights`, both strips and the page hosts all follow the live display scale — and the render scale catches up once, at the end.
 
 ## Thumbnail panel flow
 
@@ -163,8 +254,29 @@ canvas, the snapshot mask, the unbaked raw and the bake output — with no bound
 on how many pages rasterised at once, under a pixel ceiling that doubled to
 32M (~128 MB per layer) on big-memory machines. What holds the peak down now:
 
-- Full-size renders share one two-deep lane in `public/engine/renderer.ts`
-  (the thumbnail lane's pattern), so a commit queues instead of stampeding.
+- Full-size renders share one lane in `public/engine/scheduler.ts`, so a commit
+  queues instead of stampeding — and the lane is a PRIORITY queue rather than a
+  FIFO, which is what makes the depth safe to keep at two. Ordering is by tier
+  window, then by distance to the predicted page (weighted against the direction
+  of travel, because a page already read is worth less than one about to be
+  reached), then by what the render costs, so a 12-megapixel fold-out waits
+  behind three ordinary pages unless it is the one on screen. A request the
+  reader has outrun is dropped before it touches pdf.js, and a second request
+  for the same canvas supersedes the first instead of queueing behind it: during
+  a fling, most of the win is work never started. The lane count itself follows
+  the phase — one during a throw, where the goal is the shortest time to the
+  first useful page, two once the reader settles.
+- Most of what a scroll mounts costs nothing. The placeholder tier holds no
+  canvas at all and paints one shared miniature per document; the preview tier
+  holds a raster at a fraction of the output scale with no text layer, and is
+  bounded by ADMISSION rather than by reclamation (the ledger refuses to start
+  another preview once the tier's own ceiling is reached, because the surfaces it
+  would take back belong to canvases the app has mounted). Raster memory is
+  budgeted in bytes, not pages, because a fold-out can cost ten times its
+  neighbour: `public/engine/memory.ts` weighs every surface the engine holds and
+  gives up a retained raw nobody is near, then a sidebar thumbnail chosen by how
+  useful it is rather than by how old it is, before it asks pdf.js for its worker
+  caches back.
 - The pixel ceiling is 12M px everywhere (`public/engine/state.ts`): that
   still covers ~245% zoom at dpr 2 — past where anyone is inspecting rather
   than reading — and every transient a commit stacks is a quarter smaller
@@ -189,7 +301,13 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   long book costs the handful of pages it ends on, not an
   allocate/render/discard cycle per page flown past: the churn, not the
   mounted ceiling, is what drives the engine's resource cache to the mark
-  the footprint latches onto.
+  the footprint latches onto. The gate is the FULL tier's: a preview-tier page
+  is the other half of the same idea — it is what a strip shows instead of a
+  full raster while the reader is moving — and gating it too would leave the
+  ring empty exactly when it is the only thing on screen. Its cost is bounded
+  three ways over: the output scale is a fraction of a full render's, the
+  scheduler's pacing delay drops a page that leaves the ring before the delay
+  elapses, and the ledger's admission stops the tier growing past its ceiling.
 - The full-text index builds on the first search, never at open
   (`src/effects/reader/search.rs`): extraction is the one wasm-side cost
   that scales with the BOOK — a worker round trip per page, landing in a

@@ -68,7 +68,7 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- 1,021 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
+- 1,088 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
   layer, and six scripts that keep facts written down twice from drifting.
 
 ---
@@ -85,6 +85,13 @@ The list is virtualized: only pages near the viewport are mounted, so a large do
 allocate a canvas per page. Page height bookkeeping is computed from the intrinsic page sizes
 returned when the document opens, which keeps the scrollbar honest even for pages that have never
 been rendered.
+
+The window is also tiered, and the tiers follow the movement. Pages under the reader and the one
+they are about to reach carry a full raster and a text layer; the ring around them carries a
+preview at a fraction of the resolution and no text layer; the rest of the window is a placeholder
+box with no canvas in it at all, painted with one shared miniature of the document's representative
+page. Scrolling leans the window into the direction of travel, so pages are mounted ahead of the
+reader rather than behind them, and stopping promotes the ring to full quality.
 
 **Mixed page sizes.** Fit calculations read the size of the page currently on screen rather than
 assuming every page matches page one, so a landscape plate inside an otherwise portrait book is
@@ -722,6 +729,20 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 
 - Release builds optimise for size with link-time optimisation and a single codegen unit, and the
   WebAssembly output is passed through `wasm-opt`.
+- Scrolling is predicted rather than reacted to. The virtualizer smooths the scroll deltas into a
+  pixels-per-second estimate, classifies the movement against the viewport (with hysteresis, so a
+  speed parked on a boundary does not oscillate the policy), and projects where the reader will be
+  in about an eighth of a second — which is the page that gets rendered first, not the page that
+  was asked for first.
+- Page renders go through one priority queue rather than a first-in-first-out one. A request the
+  reader has already outrun is dropped before it reaches pdf.js, a second request for the same
+  canvas supersedes the first instead of queueing behind it, and the lane count itself follows the
+  movement: one lane during a throw, where the goal is the shortest time to the first useful page,
+  and two once the reader settles.
+- Raster memory is budgeted in bytes rather than in pages, because one fold-out can cost ten times
+  what its neighbour does. The preview tier has its own ceiling and is bounded by admission, and
+  what gets reclaimed first is a retained raw nobody is near, then a sidebar thumbnail — chosen by
+  how useful it is, not by how old it is.
 - Thumbnails are cached as bitmaps in an LRU of 16 entries — each thumbnail is a pair of rasters,
   so the tight cap is what keeps the whole grid near eight megabytes. A cache hit blits
   synchronously with no skeleton, no pulse and no transition, so a remounted row has nothing left
@@ -804,7 +825,7 @@ stays visible.
 |  selection tracking for every format; needs no pdf.js        |
 +-------------------------------------------------------------+
 |  window.PDFReader engine (JavaScript, public/pdfEngine.js)   |
-|  render queue, thumbnail cache, text layer, search index     |
+|  render scheduler, thumbnail cache, text layer, search index |
 +-------------------------------------------------------------+
 |  pdf.js 6.2.108, vendored into public/vendor/pdfjs           |
 +-------------------------------------------------------------+
@@ -1011,7 +1032,7 @@ so the Rust side reads `ok` first and then deserializes.
 | `destroy` | Tear down the current document |
 | `registerPage` / `unregisterPage` | Bind and release a canvas for a page |
 | `cancelPage` | Cancel an in-flight page render |
-| `renderPage` | Render one page |
+| `renderPage` | Render one page, at full quality or as a preview (the same geometry at a fraction of the resolution, no text layer) |
 | `renderThumb` / `cancelThumb` | Thumbnail rendering on a separate, cheaper path |
 | `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |
 | `extractPageText` | One page's text items with their rects — the input to the search index, which is Rust (`crates/pdf-core`'s `SearchIndex`), not the engine's |
@@ -1019,7 +1040,9 @@ so the Rust side reads `ok` first and then deserializes.
 | `refreshTheme` / `setScrubMode` / `setAppearanceMenuOpen` | The appearance theme: pre-render (re-bake) it into every canvas, hold the rasters raw under the live CSS filter chain for the length of a slider scrub, and retain those raws while the appearance menu is open so the session's first drag blits instead of re-rendering |
 | `setPaper` / `setPaperActive` / `takePaperFrame` / `samplePaperPage` | The paper session: the backdrop's own raster, handed to and sampled from the pages |
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
-| `stats` | Internal counters, used to assert memory is actually released |
+| `setScrollMotion` | One scroll frame from the strip's virtualizer — phase, direction, the page the reader is projected to reach, the two tier windows, the pacing delay and the lane count — which is what the render scheduler orders its queue by |
+| `configureMotion` | The raster budget the engine's memory ledger enforces, published once per document |
+| `stats` | Internal counters, used to assert memory is actually released: surfaces, the scheduler's queue and what it dropped, the prediction hit rate, and the bytes held against the budget |
 
 Load order in `index.html` is deliberate. The reader bundle goes first because it needs nothing;
 then pdf.js, which is ESM-only in version 6 and must execute before the engine so
@@ -1106,14 +1129,16 @@ only the app and silently skip every member crate. The `mareader-shell` crate is
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-1,021 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+1,088 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
 migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
-the animation loops share, and the virtual-list windowing invariants. On top of that, the
-TypeScript layer has its own stub-vm smoke suite (`node scripts/test-engine-smoke.js` in CI)
-covering open, render, theme baking, scrub mode, thumbnails, search, teardown, and the reader
-bundle's selection tracker — the last in a sandbox with no engine and no pdf.js in scope,
-which is the point of it.
+the animation loops share, the virtual-list windowing invariants, and the scroll motion model —
+velocity smoothing, phase hysteresis, the projected destination and the tier windows it
+produces. On top of that, the TypeScript layer has its own stub-vm smoke suite
+(`node scripts/test-engine-smoke.js` in CI) covering open, render, theme baking, scrub mode,
+thumbnails, search, the render scheduler's priorities, teardown, and the reader bundle's
+selection tracker — the last in a sandbox with no engine and no pdf.js in scope, which is the
+point of it.
 
 Six small scripts guard facts that are written down more than once, where nothing else
 would notice a drift: `check-versions.ts` (the app version in its four manifests, plus

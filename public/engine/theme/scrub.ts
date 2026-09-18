@@ -169,7 +169,9 @@ async function settleCanvasTheme(): Promise<void> {
         await bakeInto(st.canvas, st.rawCanvas, readPipeline(), "canvas-raw");
         session.dropRawIfIdle(st);
       } else {
-        rerender.push(() => renderPageInternal(id, st.scale || 1, !!st.textLayerEl));
+        rerender.push(() =>
+          renderPageInternal(id, st.scale || 1, !!st.textLayerEl && !st.preview, st.preview),
+        );
       }
     }
   }

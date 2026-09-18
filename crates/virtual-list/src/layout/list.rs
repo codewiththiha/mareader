@@ -1,7 +1,7 @@
 //! A single column of variably-sized items: the [`Strip`] backend behind the
 //! [`Layout`] contract, plus per-item estimates.
 
-use crate::{Budget, Strip, StripBackend, Viewport, Window};
+use crate::{Budget, Slack, Strip, StripBackend, Viewport, Window};
 
 use super::Layout;
 
@@ -121,6 +121,18 @@ impl<B: StripBackend> Layout for ListLayout<B> {
         hint: &mut usize,
     ) -> Option<Window> {
         self.backend.window_hinted(scroll, viewport.main, budget, hint)
+    }
+
+    fn window_slack_hinted(
+        &self,
+        scroll: f64,
+        viewport: Viewport,
+        slack: Slack,
+        max_items: usize,
+        hint: &mut usize,
+    ) -> Option<Window> {
+        self.backend
+            .window_slack_hinted(scroll, viewport.main, slack, max_items, hint)
     }
 
     #[inline]

@@ -23,7 +23,7 @@ mod list;
 pub use grid::{GridColumns, GridLayout, GridSpec};
 pub use list::ListLayout;
 
-use crate::{Budget, Viewport, Window};
+use crate::{Budget, Slack, Viewport, Window};
 
 /// One geometry engine behind a virtualized surface.
 ///
@@ -87,6 +87,23 @@ pub trait Layout {
         scroll: f64,
         viewport: Viewport,
         budget: Budget,
+        hint: &mut usize,
+    ) -> Option<Window>;
+
+    /// [`window_hinted`](Self::window_hinted) with the padding split per side
+    /// of the viewport instead of resolved from a [`Budget`]'s overscan — the
+    /// entry point a motion-aware caller uses to keep more mounted ahead of
+    /// the reader than behind them. The ceiling still comes from the budget
+    /// (`max_items`), and the trim is the shared one, so a directional window
+    /// and a symmetric one answer identically about what survives when the
+    /// ceiling bites. Grids window ROWS here exactly as they do in
+    /// [`window_hinted`](Self::window_hinted): a row's cells mount together.
+    fn window_slack_hinted(
+        &self,
+        scroll: f64,
+        viewport: Viewport,
+        slack: Slack,
+        max_items: usize,
         hint: &mut usize,
     ) -> Option<Window>;
 
@@ -195,6 +212,20 @@ impl Layout for LayoutKind {
         match self {
             Self::List(l) => l.window_hinted(scroll, viewport, budget, hint),
             Self::Grid(g) => g.window_hinted(scroll, viewport, budget, hint),
+        }
+    }
+
+    fn window_slack_hinted(
+        &self,
+        scroll: f64,
+        viewport: Viewport,
+        slack: Slack,
+        max_items: usize,
+        hint: &mut usize,
+    ) -> Option<Window> {
+        match self {
+            Self::List(l) => l.window_slack_hinted(scroll, viewport, slack, max_items, hint),
+            Self::Grid(g) => g.window_slack_hinted(scroll, viewport, slack, max_items, hint),
         }
     }
 

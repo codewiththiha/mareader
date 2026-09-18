@@ -1,3 +1,4 @@
+pub(crate) mod motion;
 pub mod page;
 pub(crate) mod rail;
 pub(crate) mod virtualizers;

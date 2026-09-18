@@ -15,6 +15,16 @@ import {
   rerenderLivePages,
   unregisterPage,
 } from "./engine/renderer";
+import { onMotionPublished, resetScheduler, schedulerStats, unschedule } from "./engine/scheduler";
+import {
+  configureBudget,
+  currentBudget,
+  predictionStats,
+  resetMotion,
+  setMotion,
+} from "./engine/motion";
+import { reclaim, totalBytes } from "./engine/memory";
+import { resetPlaceholder, republishPlaceholder } from "./engine/placeholder";
 import {
   blitThumb,
   cancelThumb,
@@ -69,14 +79,13 @@ declare global {
  *  `pagehide` handler: both must stop in-flight renders and free the surfaces,
  *  and only one of them goes on to null the document out. */
 function cancelAndReleasePages(): void {
-  for (const st of session.stateByCanvasId.values()) {
+  for (const [canvasId, st] of session.stateByCanvasId) {
     st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
     try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
-    if (st.queueHandle) {
-      cancelAnimationFrame(st.queueHandle);
-      st.queueHandle = 0;
-    }
+    // Drop what is still waiting for a lane; the in-flight render is the
+    // cancel above, and pdf.js is the only thing that can stop it.
+    unschedule(canvasId);
     session.releasePageSurfaces(st);
   }
 }
@@ -90,6 +99,14 @@ async function destroy(): Promise<void> {
     // after destroy resolves finds no document to clean.
     session.sweepPdf();
     cancelAndReleasePages();
+    // The queue, the motion and the miniature all belong to the document that
+    // is going away: a request left waiting would render into a canvas the
+    // teardown just released, a fling's published windows would pace the next
+    // book's first renders, and a placeholder of the last cover would stand in
+    // for the next document's pages.
+    resetScheduler();
+    resetMotion();
+    resetPlaceholder();
     session.stateByCanvasId.clear();
     for (const task of session.thumbTasks.values()) {
       try { task.cancel(); } catch (_) { /* ignore */ }
@@ -172,6 +189,10 @@ async function refreshThemeInternal(): Promise<void> {
   // Rebake already updated thumbCache; blit onto every visible sidebar
   // canvas. If a cache entry lost its unbaked raw, re-render that thumb
   // from pdf.js the same way live pages do.
+  // The placeholder miniature is themed like every other raster: baked under
+  // Light, it is a white rectangle in Dark, and the boxes painting it are on
+  // screen exactly while the reader scrolls.
+  await republishPlaceholder();
   const thumbJobs: Promise<unknown>[] = [];
   for (const [canvasId, { page }] of session.thumbLive) {
     const entry = session.thumbCache.get(page);
@@ -199,12 +220,50 @@ function setAppearanceMenuOpen(on: boolean): void {
 }
 
 function stats(): Stats {
+  const predictions = predictionStats();
   return {
     pages: session.stateByCanvasId.size,
     thumbs: session.thumbCache.size,
     thumbLimit: THUMB_CACHE_MAX,
     thumbTasks: session.thumbTasks.size,
+    scheduler: schedulerStats(),
+    predictions: { made: predictions.predictions, hits: predictions.hits },
+    memory: {
+      bytes: totalBytes(),
+      budget: currentBudget().maxBytes,
+      previews: [...session.stateByCanvasId.values()].filter((st) => !st.dead && st.preview).length,
+    },
   };
+}
+
+/** One scroll frame from the strip that owns the scroller. The three calls
+ *  are one transaction: adopt the motion, re-order (and drop) what is waiting
+ *  against it, then weigh the ledger — a movement that just made a page
+ *  irrelevant is also the moment its surfaces become reclaimable. */
+function setScrollMotion(
+  phase: string,
+  direction: number,
+  predictedPage: number,
+  firstFull: number,
+  lastFull: number,
+  firstPreview: number,
+  lastPreview: number,
+  delayMs: number,
+  workers: number,
+): void {
+  setMotion(
+    phase,
+    direction,
+    predictedPage,
+    firstFull,
+    lastFull,
+    firstPreview,
+    lastPreview,
+    delayMs,
+    workers,
+  );
+  onMotionPublished();
+  reclaim(true);
 }
 
 function releaseAllSurfaces(): void {
@@ -279,6 +338,8 @@ globalThis.PDFReader = {
   },
   takePendingFile,
   prefetchThumb,
+  setScrollMotion,
+  configureMotion: configureBudget,
 } satisfies PDFReaderApi;
 
 // The engine contract is fixed by the Rust bridge: surface integrity beats

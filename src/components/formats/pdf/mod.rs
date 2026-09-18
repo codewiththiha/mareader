@@ -8,11 +8,19 @@
 //! components here take the same `page`/`class`/`texture` surface as their
 //! reflowable siblings precisely so that the host can stay a `match` on the
 //! format and nothing else.
+//!
+//! Three tiers of page, one per component: [`PdfPageCanvas`] rasterises (at
+//! full resolution or, for a strip's preview ring, at a fraction of it), and
+//! [`PdfPagePlaceholder`] is the box a mounted page that is owed no raster at
+//! all occupies — no canvas, no engine registration, and one shared miniature
+//! between every placeholder in the document.
 
 pub mod canvas;
 pub mod canvas_host;
+pub mod placeholder;
 pub mod strip;
 
 pub use canvas::PdfPageCanvas;
 pub use canvas::GlossOverlayProps;
+pub use placeholder::PdfPagePlaceholder;
 pub use strip::PdfPageStrip;

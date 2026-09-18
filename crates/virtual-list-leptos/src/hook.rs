@@ -27,6 +27,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         eps: options.measure_epsilon,
         max_retries: options.max_scroll_retries,
         render_screens: options.render_screens,
+        adaptive: options.adaptive,
     };
     let layout = build_layout(
         &options.shape,
@@ -38,11 +39,19 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     let core = VirtualizerCore::new(layout, config);
     let initial_range = core.range();
     let initial_scroll = core.scroll_top();
+    let initial_plan = core.render_plan();
     let initial_epoch = options
         .epoch
         .map(|signal| signal.get_untracked())
         .unwrap_or(0);
-    let inner = VirtualizerInner::new(options, core, initial_range, initial_scroll, initial_epoch);
+    let inner = VirtualizerInner::new(
+        options,
+        core,
+        initial_range,
+        initial_scroll,
+        initial_epoch,
+        initial_plan,
+    );
 
     {
         let inner = inner.clone();

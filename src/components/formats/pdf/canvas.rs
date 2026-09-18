@@ -116,6 +116,16 @@ pub fn PdfPageCanvas(
     /// True while a zoom/layout animation is in flight (renders suspended).
     #[prop(into)]
     zoom_animating: Signal<bool>,
+    /// Whether this host is owed a PREVIEW raster rather than a full one — the
+    /// preview ring of the virtualizer's plan, for a strip that runs an
+    /// adaptive policy. A preview renders the same CSS geometry at a fraction
+    /// of the output resolution and builds no text layer, which is what makes
+    /// the ring around the reader cheap enough to hold; the tier is a signal,
+    /// so the settle that promotes the ring re-runs this effect and the page is
+    /// rasterised for real. `None` (the default) is a host that is always
+    /// full quality — the paginated modes, which mount a page or two.
+    #[prop(optional)]
+    preview: Option<Signal<bool, LocalStorage>>,
     /// True while this page is a RETAINED ZOMBIE — freshly evicted from the
     /// virtualization window and briefly kept mounted as a visual bridge.
     /// A zombie keeps its DOM and its last bitmap; it must not start a new
@@ -177,6 +187,12 @@ pub fn PdfPageCanvas(
     // sidebar slide (remount race) would sit blank until a scroll
     // re-triggered the effect.
     let painted = Rc::new(Cell::new(false));
+    // Which TIER the bitmap in the canvas is. A preview and a full raster of
+    // the same page at the same scale are different pictures, so the no-op
+    // fast path below has to compare the tier as well as the scale — otherwise
+    // a page promoted from the preview ring would be skipped as "already
+    // rendered at this scale" and stay soft until something else moved it.
+    let painted_preview = Rc::new(Cell::new(false));
 
     // Owned clones for the side-effect closures so the originals stay for view!.
     let cid = canvas_id.clone();
@@ -267,6 +283,9 @@ pub fn PdfPageCanvas(
         // silently drop the subscription the first time the branch was skipped.
         let anim = zoom_animating.get();
         let s_render = render_scale.get();
+        // The tier this host is owed. Read unconditionally, like every other
+        // dependency here, so the subscription survives a run that bails early.
+        let pv = preview.as_ref().is_some_and(|tier| tier.get());
         // A zombie never starts a new render: its bitmap stays (the stretch
         // effect resized the host at the commit) and the page unmounts when
         // its retention grace expires. Rendering here would rasterise a page
@@ -348,7 +367,7 @@ pub fn PdfPageCanvas(
         // user sees the canvas disappear until a scroll re-renders it. Bail
         // out — but ONLY if `painted == true`. A wiped canvas (cancelled
         // render) must re-render.
-        if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
+        if has_geo && painted.get() && (gs - s).abs() <= 1e-9 && painted_preview.get() == pv {
             return;
         }
         // SCROLL-FLING GATE. An unpainted page the scroller is still sweeping
@@ -362,7 +381,16 @@ pub fn PdfPageCanvas(
         // engine's render lane. A render already in flight is never touched —
         // the gate only governs STARTING one, and the underlay blit below is
         // the same one the cold first paint uses.
-        if !painted.get() && settled.as_ref().is_some_and(|s| !s.get()) {
+        //
+        // The gate is for the FULL tier. A preview-tier page is the other half
+        // of the same idea — it is what a strip under an adaptive policy shows
+        // instead of a full raster while the reader is moving — so gating it
+        // too would leave the ring empty exactly when it is the only thing on
+        // screen. Its cost is bounded three ways over: the output scale is a
+        // fraction of a full render's, the scheduler paces it (a page that
+        // leaves the ring inside the phase's delay never renders at all), and
+        // the memory ledger admits previews only until the tier's own ceiling.
+        if !pv && !painted.get() && settled.as_ref().is_some_and(|s| !s.get()) {
             if !(gw > 0.0 && gh > 0.0) {
                 engine::blit_thumb(&cid_effect, page);
             }
@@ -371,12 +399,13 @@ pub fn PdfPageCanvas(
         let page_no = page;
         let cid = cid_effect.clone();
         let hid = hid_effect.clone();
-        let rt = render_text;
+        let rt = render_text && !pv;
         let cb = on_geometry;
         let do_register = registered.clone();
         let geo_async = geo;
         let seq_async = render_seq;
         let painted_async = painted.clone();
+        let preview_async = painted_preview.clone();
 
         // This effect run owns the next generation; older completions are stale.
         let my_seq = seq_async.get_value() + 1;
@@ -416,7 +445,7 @@ pub fn PdfPageCanvas(
                 engine::register_page(page_no, &cid, Some(&hid));
                 do_register.set(true);
             }
-            match engine::render_page(&cid, s, rt).await {
+            match engine::render_page(&cid, s, rt, pv).await {
                 Ok(r) => {
                     // Unmounted mid-render, or a newer scale change superseded
                     // this one: leave the geometry + mask to the newer task
@@ -424,8 +453,10 @@ pub fn PdfPageCanvas(
                     if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
-                    // Successful render: the canvas now has a bitmap.
+                    // Successful render: the canvas now has a bitmap, at the
+                    // tier that was asked for.
                     painted_async.set(true);
+                    preview_async.set(pv);
                     // Snap the rendered size to the device-pixel grid before
                     // it becomes CSS. `r.width`/`r.height` are whole CSS px,
                     // which is only whole DEVICE px when the ratio is an
@@ -436,8 +467,13 @@ pub fn PdfPageCanvas(
                     // The engine stashed this render's raw frame (the one
                     // pipeline moment the page's own paper is unbaked); hand
                     // it to the paper session — every colour decision it
-                    // feeds lives in the pdf-paper crate.
-                    pdf_engine::backdrop::live_frame(&cid);
+                    // feeds lives in the pdf-paper crate. A preview stashes
+                    // nothing (renderer.ts skips the stash for the tier), so
+                    // there is no frame to hand over and the document's colour
+                    // is never decided from a fraction of a page.
+                    if !pv {
+                        pdf_engine::backdrop::live_frame(&cid);
+                    }
                     if let Some(host) = app_chrome::hooks::dom::by_id(&hid) {
                         // Note: cannot use host.style() (tachys ElementExt::style shadows
                         // web_sys' inherent method); set the inline style attribute directly.

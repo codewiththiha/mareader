@@ -8,9 +8,10 @@ use leptos::prelude::*;
 use virtual_list::Viewport;
 use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 
-use reader_core::view::RENDER_BUDGET;
+use reader_core::view::STRIP_MOUNT_BUDGET;
 
 use crate::epoch::epoch_signal;
+use crate::features::reader::motion::POLICY;
 use crate::state::ReaderState;
 use crate::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
 
@@ -157,11 +158,21 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     }
     // Zombie retention: an item that leaves the window mid-fling (or in a
     // zoom's geometry commit — the controller raises the grace for that)
-    // keeps its DOM briefly instead of popping out.
+    // keeps its DOM briefly instead of popping out. The policy raises the grace
+    // itself while the movement is fast, because that is when a reversal
+    // reaches furthest back (see `virtual_list_leptos::RetentionPolicy`).
+    //
+    // The adaptive policy is what makes the wider mount ceiling affordable: the
+    // budget admits `MOUNTED_PAGES` items, and the policy decides how many of
+    // them are rasters (a page or two), how many are previews (the ring around
+    // them), and how many are placeholder boxes with nothing in them. It also
+    // leans the window into the direction of travel, so a reader scrolling down
+    // has pages mounted ahead of them rather than behind.
     let virtualizer = use_virtualizer(
         VirtualizerOptions::list(count, estimate)
             .gap(0.0)
-            .budget(RENDER_BUDGET)
+            .budget(STRIP_MOUNT_BUDGET)
+            .adaptive(POLICY)
             .initial(Viewport::main_only(initial_vh), v_off)
             .pinned(pinned_sig.into())
             .epoch(epoch)
@@ -172,7 +183,8 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
         VirtualizerOptions::list(count, h_estimate)
             .axis(virtual_list_leptos::Axis::Horizontal)
             .gap(0.0)
-            .budget(RENDER_BUDGET)
+            .budget(STRIP_MOUNT_BUDGET)
+            .adaptive(POLICY)
             .padding(0.0, 0.0)
             .initial(Viewport::new(1200.0, initial_vh), h_off)
             .epoch(epoch)

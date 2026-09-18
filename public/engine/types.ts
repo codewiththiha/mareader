@@ -84,8 +84,14 @@ export type PageState = {
   scale: number;
   dead: boolean;
   rawCanvas: HTMLCanvasElement | null;
+  /** Whether the canvas currently holds a PREVIEW raster: the same page at a
+   *  fraction of the output resolution and with no text layer. The memory
+   *  ledger weighs previews against their own ceiling, a theme re-render
+   *  keeps the tier it is given rather than silently upgrading it, and the
+   *  app's host reads it back to know that a settled reader owes this page a
+   *  real raster. */
+  preview: boolean;
   queueGen: number;
-  queueHandle: number;
 };
 
 export type ThumbEntry = {
@@ -154,6 +160,28 @@ export type Stats = {
   thumbs: number;
   thumbLimit: number;
   thumbTasks: number;
+  /** The render scheduler: what is waiting, what is running, how many lanes
+   *  the motion in hand asked for, and the counters a tuning session reads.
+   *  `savedPixels` is the estimated output of requests dropped or superseded
+   *  before they ran — the work the pacing never started. */
+  scheduler: {
+    queued: number;
+    active: number;
+    lanes: number;
+    generation: number;
+    requested: number;
+    ran: number;
+    superseded: number;
+    dropped: number;
+    savedPixels: number;
+    epoch: number;
+  };
+  /** Prediction telemetry: how many times a moving frame named a destination,
+   *  and how many of those the reader actually arrived at. The ratio is what
+   *  the projection horizon should be tuned against. */
+  predictions: { made: number; hits: number };
+  /** What the engine is holding, in bytes, against the budget it was given. */
+  memory: { bytes: number; budget: number; previews: number };
 };
 export type PDFReaderApi = {
   version: () => string;
@@ -163,10 +191,14 @@ export type PDFReaderApi = {
   registerPage: (page: number, canvasId: string, hostId?: string) => void;
   unregisterPage: (canvasId: string) => void;
   cancelPage: (canvasId: string) => void;
+  /** Render one page's canvas. `preview` asks for the cheap tier: the same
+   *  CSS geometry at a fraction of the output resolution, no text layer, and a
+   *  lower place in the scheduler's queue. */
   renderPage: (
     canvasId: string,
     scale: number,
-    renderText: boolean
+    renderText: boolean,
+    preview?: boolean
   ) => Promise<RenderResult>;
   renderThumb: (
     canvasId: string,
@@ -213,4 +245,27 @@ export type PDFReaderApi = {
   sweepSnapshots: () => void;
   takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;
+  /** One scroll frame, published by the strip that owns the scroller: the
+   *  classified movement and its sign, the page the reader is projected to
+   *  reach, the two tier windows (1-based inclusive, `0,0` for "unpublished"),
+   *  the pacing delay and the lane count. */
+  setScrollMotion: (
+    phase: string,
+    direction: number,
+    predictedPage: number,
+    firstFull: number,
+    lastFull: number,
+    firstPreview: number,
+    lastPreview: number,
+    delayMs: number,
+    workers: number
+  ) => void;
+  /** The raster budget the memory ledger enforces, published once per
+   *  document. */
+  configureMotion: (
+    maxBytes: number,
+    previewBytes: number,
+    maxPreviewPages: number,
+    previewScale: number
+  ) => void;
 };
