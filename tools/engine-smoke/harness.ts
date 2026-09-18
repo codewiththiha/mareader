@@ -487,6 +487,7 @@ interface PDFReaderHandle {
   hasThumb(page: number, scale: number): boolean;
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
+  setAppearanceMenuOpen(on: boolean): void;
   setPaper(hex: string): void;
   setPaperActive(on: boolean): void;
   takePaperFrame(canvasId: string): {

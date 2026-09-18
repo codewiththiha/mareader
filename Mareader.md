@@ -171,7 +171,8 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   than the 16M this used to be. The doubled ceiling before that bought only
   larger transients, not sharper pages.
 - A bake retains its unbaked raw only while a tint scrub is plausible —
-  inside 30s of the last scrub transition — and drops it at the bake
+  inside 30s of the last scrub transition, or while the appearance menu is
+  open, which is where the next drag is born — and drops it at the bake
   otherwise; the scrub path re-renders on demand.
 - A zoom stretch skips the snapshot mask when a render is queued for the same
   page (`src/components/formats/pdf/canvas_host.rs`): the mask exists to cover

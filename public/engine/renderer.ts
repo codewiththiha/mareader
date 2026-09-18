@@ -264,12 +264,14 @@ export async function renderPageInternal(
       releaseCanvas(st.rawCanvas);
     }
     st.canvas.classList.remove("canvas-raw");
-    // Retain the unbaked raster only while a scrub is plausible — a tint
-    // drag inside the window restores it instead of re-rendering (dropping
-    // it outright made Dark invert twice and Dim apply twice). Outside the
-    // window the raw is a full-page surface per mounted page that nothing
-    // will ever ask for, held while the footprint latches onto the peak;
-    // the scrub path re-renders on demand (preparePagesForScrub).
+    // Retain the unbaked raster only while a scrub is plausible — its
+    // window (a recent scrub transition, or an open appearance menu, where
+    // the next drag is being born). A tint drag inside the window restores
+    // it instead of re-rendering (dropping it outright made Dark invert
+    // twice and Dim apply twice). Outside the window the raw is a
+    // full-page surface per mounted page that nothing will ever ask for,
+    // held while the footprint latches onto the peak; the scrub path
+    // re-renders on demand (preparePagesForScrub).
     if (session.scrubIsPlausible()) {
       st.rawCanvas = target;
       session.dropRawIfIdle(st);

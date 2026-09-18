@@ -185,6 +185,13 @@ function setScrubMode(on: boolean): Promise<void> {
   return enqueueTheme(() => setScrubModeInternal(on));
 }
 
+// Not enqueued: a retention flag, not a canvas mutation. The theme queue
+// serializes raster swaps; a menu toggle must neither wait behind a bake
+// nor delay one, and setting session state is synchronous anyway.
+function setAppearanceMenuOpen(on: boolean): void {
+  session.setAppearanceMenuOpen(on);
+}
+
 function stats(): Stats {
   return {
     pages: session.stateByCanvasId.size,
@@ -245,6 +252,7 @@ globalThis.PDFReader = {
   clearHighlights,
   refreshTheme,
   setScrubMode,
+  setAppearanceMenuOpen,
   setPaper,
   setPaperActive,
   takePaperFrame,

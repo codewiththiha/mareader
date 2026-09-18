@@ -1016,7 +1016,7 @@ so the Rust side reads `ok` first and then deserializes.
 | `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |
 | `extractPageText` | One page's text items with their rects — the input to the search index, which is Rust (`crates/pdf-core`'s `SearchIndex`), not the engine's |
 | `setSearchContext` / `setActiveMatch` / `clearHighlights` | Paint, move and clear the engine's highlight rects in the text layer |
-| `refreshTheme` / `setScrubMode` | The appearance theme: pre-render (re-bake) it into every canvas, or hold the rasters raw under the live CSS filter chain for the length of a slider scrub |
+| `refreshTheme` / `setScrubMode` / `setAppearanceMenuOpen` | The appearance theme: pre-render (re-bake) it into every canvas, hold the rasters raw under the live CSS filter chain for the length of a slider scrub, and retain those raws while the appearance menu is open so the session's first drag blits instead of re-rendering |
 | `setPaper` / `setPaperActive` / `takePaperFrame` / `samplePaperPage` | The paper session: the backdrop's own raster, handed to and sampled from the pages |
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
 | `stats` | Internal counters, used to assert memory is actually released |

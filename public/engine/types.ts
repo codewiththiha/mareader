@@ -191,6 +191,10 @@ export type PDFReaderApi = {
   /** Enter/leave the scrub window's real-time compositing: raw rasters under
    * the live CSS filter + blend, re-baked on exit. */
   setScrubMode: (on: boolean) => Promise<void>;
+  /** Whether the appearance popover is open. Rendered pages retain their
+   * unbaked raws while it is, so the session's first tint drag blits
+   * instead of re-rendering; closing arms the idle tail that frees them. */
+  setAppearanceMenuOpen: (on: boolean) => void;
   /** Publish (or, with "", clear) `--pdf-paper`. */
   setPaper: (hex: string) => void;
   /** The Rust paper session's blend switch — gates stashPaperFrame so idle

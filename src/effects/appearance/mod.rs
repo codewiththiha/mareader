@@ -88,6 +88,17 @@ pub fn is_scrubbing() -> bool {
     SCRUBBING.with(|s| s.get())
 }
 
+/// Whether the appearance popover is open. The engine's retention gate
+/// treats an open menu as a scrub about to happen: pages that finish
+/// rendering while the reader is looking at the dials keep their unbaked
+/// rasters, so the FIRST drag of a session blits them under the live CSS
+/// instead of re-rendering every page. The bridge guard drops the call when
+/// no engine is mounted; a reflowable document simply has no pages to
+/// retain.
+pub fn set_appearance_menu_open(on: bool) {
+    raster::set_appearance_menu_open(on);
+}
+
 thread_local! {
     static PAINT_PENDING: Cell<Option<(Appearance, f64)>> = const { Cell::new(None) };
     static PAINT_SCHEDULED: Cell<bool> = const { Cell::new(false) };

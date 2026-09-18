@@ -116,6 +116,13 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
 
+    // Whether the appearance popover is open. The engine retains each
+    // rendered page's unbaked raw while it is true — the menu is where a
+    // scrub is born, and a first drag with no retained raws would otherwise
+    // re-render every page (public/engine/state.ts, scrubIsPlausible).
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setAppearanceMenuOpen")]
+    pub fn set_appearance_menu_open(on: bool);
+
     // The paper pipeline's eyes: the engine owns the CANVASES; the
     // `pdf-paper` crate (via this crate's `paper` session) owns every colour
     // decision. Four calls carry the whole contract:

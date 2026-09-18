@@ -20,7 +20,7 @@ import { PAGE_SNAPSHOT_SELECTOR, TEXT_LAYER_SELECTOR } from "./dom-contract";
 // The engine's own API version, served as `PDFReader.version()`. It tracks the
 // JS surface rather than the app release, and unlike the six sources
 // `tools/check-versions.ts` compares, nothing here checks it against them.
-export const ENGINE_VERSION = "0.6.0";
+export const ENGINE_VERSION = "0.7.0";
 
 /** Cap kept tight: each thumb is a pair of rasters. 16 keeps several
  *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
@@ -119,6 +119,14 @@ class EngineSession {
    *  a scrub inside SCRUB_RAW_RETAIN_MS of this is plausible. */
   lastScrubAt = 0;
 
+  /** Whether the appearance popover is open, told by the app over the
+   *  bridge (`setAppearanceMenuOpen`). The menu is where a scrub is born:
+   *  while it is open, a bake retains its unbaked raw even with no recent
+   *  scrub, so the FIRST drag of a session blits retained pixels under the
+   *  live CSS instead of re-rendering every page; closing arms the idle
+   *  tail that frees them. */
+  appearanceMenuOpen = false;
+
   private idleTimer: ReturnType<typeof setTimeout> | 0 = 0;
   private rawTimers = new WeakMap<PageState, ReturnType<typeof setTimeout>>();
 
@@ -164,10 +172,26 @@ class EngineSession {
     this.lastScrubAt = Date.now();
   }
 
+  /** Open/close the appearance menu's half of the retention gate. Closing
+   *  re-arms the idle timer on every raw the open menu was holding, so the
+   *  surfaces leave on the same short tail a scrub's raws do — the flag
+   *  alone would strand them until the next bake or teardown. */
+  setAppearanceMenuOpen(on: boolean): void {
+    if (this.appearanceMenuOpen === on) return;
+    this.appearanceMenuOpen = on;
+    if (on) return;
+    for (const st of this.stateByCanvasId.values()) {
+      if (!st.dead && st.rawCanvas && st.rawCanvas !== st.canvas) this.dropRawIfIdle(st);
+    }
+  }
+
   /** Whether a tint scrub is plausible right now — the retention gate for
-   *  the unbaked raw a bake just produced. Zero means "never scrubbed this
-   *  session", which is not plausible. */
+   *  the unbaked raw a bake just produced. An open appearance menu counts
+   *  on its own: the dials are on screen, so a drag can start with no
+   *  scrub ever having happened this session. Zero means "never scrubbed
+   *  this session", which alone is not plausible. */
   scrubIsPlausible(): boolean {
+    if (this.appearanceMenuOpen) return true;
     return this.lastScrubAt > 0 && Date.now() - this.lastScrubAt < SCRUB_RAW_RETAIN_MS;
   }
 
@@ -258,15 +282,16 @@ class EngineSession {
 
   /** Keep the unbaked raw briefly so a tint slider can restore it, then free
    *  it. The next theme change / scrub without a raw re-renders from pdf.js.
-   *  The timer is a no-op while scrubbing is active, and teardown
-   *  (releasePageSurfaces) clears it outright. */
+   *  The timer is a no-op while scrubbing is active or the appearance menu
+   *  is open (both are the raw's reason to exist; the menu's close re-arms
+   *  this), and teardown (releasePageSurfaces) clears it outright. */
   dropRawIfIdle(st: PageState): void {
     const prev = this.rawTimers.get(st);
     if (prev) clearTimeout(prev);
     this.rawTimers.set(
       st,
       setTimeout(() => {
-        if (st.dead || this.themeScrubActive) return;
+        if (st.dead || this.themeScrubActive || this.appearanceMenuOpen) return;
         if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
         st.rawCanvas = null;
       }, RAW_IDLE_MS),
