@@ -159,34 +159,21 @@ body {
    pre-rendered into every raster, with real-time compositing confined to
    the scrub window below. No texture on the backdrop: each
    page's ::before overhangs and paints the gutter (textures.css, BLEND
-   BLEED), so page and gutter stay phase-locked by construction. No
+   BLEED), so page and gutter stay phase-locked by construction — and the
+   vertical strip's row gap is painted the same way, half from each
+   neighbour, so no stretch of base is left standing beside a page. No
    transitions anywhere in this block — a tint scrub repaints it in
    lockstep with the canvases, per tick, through the standing token watch
    in public/engine/theme/paper.ts. */
 .reader-bg.blend {
   background-color: var(--pdf-paper-baked, var(--color-paper));
 }
-/* PAGE MODES take the page's own paper instead, because their gutter is not
-   bare: single and spread are gapless, and every side of the backdrop is
-   covered by the pages' own texture overhang (textures.css, BLEND BLEED).
-   That overhang already applies the overlay's shift to the gutter, so a base
-   carrying the fold as well applies it twice and pulls the gutter away from
-   the page — a band around the spread on a textured look. --pdf-paper-page
-   is the unfolded twin, published only while a texture is on; with none the
-   fallback collapses to the same colour as the rule above. The strips keep
-   the folded value: their page gaps leave the base uncovered, which is the
-   case the fold exists for. */
-.reader-bg.blend:has(.pdf-page[id^="sp-"]),
-.reader-bg.blend:has(.pdf-page[id^="dp-"]) {
-  background-color: var(--pdf-paper-page, var(--pdf-paper-baked, var(--color-paper)));
-}
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
 /* SCRUB WINDOW — a tint drag repaints the root tokens per frame and the
    rasters composite live under the CSS filter + blend. The backdrop base
-   stays on the published paper through the window — --pdf-paper-page where
-   the mode above selects it, --pdf-paper-baked otherwise: the standing token
-   watch (public/engine/theme/paper.ts) republishes both per tick (one 1px
+   stays on --pdf-paper-baked through the window: the standing token watch
+   (public/engine/theme/paper.ts) republishes it per tick (one 1px
    composite, no raster work), so the flat-paper contract with the page
    hosts holds mid-drag and a fractional page edge keeps mixing F with F —
    no seam for the length of the drag. The page hosts' half of the window

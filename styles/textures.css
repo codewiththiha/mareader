@@ -163,14 +163,26 @@
    so page and gutter are one layer: same pitch and phase at every zoom and
    scroll position. The overhang is one viewport per side; #viewer-slot's
    overflow-hidden clips the rest. Only axes facing the BACKDROP bleed — an
-   axis facing a neighbour page would double-expose that neighbour's edge.
-   The background-position shift re-anchors the tile origin to the page
-   edge, so the on-page pattern matches inset:0. */
-/* Continuous vertical: gutters left/right, neighbours above/below. */
+   axis facing a neighbour page would double-expose that neighbour's edge —
+   with one exception: a neighbour axis that carries a GAP bleeds half of it,
+   so the two facing edges meet in the middle of the gap instead of leaving a
+   bare band of untextured backdrop between the pages. The background-
+   position shift re-anchors the tile origin to the page edge, so the
+   on-page pattern matches inset:0. */
+/* Continuous vertical: gutters left/right, neighbours above/below. Those
+   neighbours are separated by the strip's row gap — the one stretch of
+   backdrop a page here does not otherwise reach — so the overhang runs half
+   a gap up and half a gap down, meeting the page above and the page below in
+   the middle. The gap is published as --page-gap by the effect that resolves
+   it (src/effects/reader/layout_prefs.rs) and is zero in No Gap mode, where
+   the pages are pulled together to overlap by a device pixel and the two
+   halves collapse to the plain rule this was before. */
 .reader-bg.blend .pdf-page[id^="cont-"]::before {
   left: -100vw;
   right: -100vw;
-  background-position: 100vw 0;
+  top: calc(var(--page-gap, 0px) * -0.5);
+  bottom: calc(var(--page-gap, 0px) * -0.5);
+  background-position: 100vw calc(var(--page-gap, 0px) * 0.5);
 }
 /* Horizontal strip: bands above/below, neighbours left/right. */
 .reader-bg.blend .pdf-page[id^="hp-"]::before {

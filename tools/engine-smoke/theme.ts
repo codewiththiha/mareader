@@ -168,71 +168,24 @@ export async function run(): Promise<void> {
   );
   console.log("baked backdrop paper ok (paper publish):", rootProp("--pdf-paper-baked"), "expected", dimBackdropWhite);
 
-  // THE TWO COLOURS. With a texture dial on, the backdrop's paper carries
-  // the overlay's mean shift while the PAGE's own paper does not — the
-  // overlay is a layer over it, and the paged modes' gutter gets that layer
-  // from the page's own bleed, so a base carrying the shift too would apply
-  // it twice. Pin both: the page colour must stay the unfolded one the bake
-  // path produces, and the folded colour must move in the overlay's
-  // direction (darkening in the light family).
-  const root = getEl("documentElement") as unknown as { classList: { remove: (n: string) => void } };
-  root.classList.remove("dark");
-  setFakeComputed({
-    "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)",
-    "--canvas-blend": "soft-light",
-    "--tex-opacity": "0.85",
-    paper: "#1a1c1f",
-  });
-  PDFReader.setPaper("#ffffff");
-  const folded = hexToRgb(rootProp("--pdf-paper-baked"));
-  const pageColour = hexToRgb(rootProp("--pdf-paper-page"));
-  assertClose(new Uint8ClampedArray(pageColour), dimBackdropWhite, "page paper is the unfolded bake");
-  const darkened =
-    folded[0] <= pageColour[0] &&
-    folded[1] <= pageColour[1] &&
-    folded[2] <= pageColour[2] &&
-    (folded[0] < pageColour[0] || folded[1] < pageColour[1] || folded[2] < pageColour[2]);
-  if (!darkened) {
-    throw new Error(
-      "a textured light-family backdrop must darken against the page paper, got " +
-        rootProp("--pdf-paper-baked") +
-        " against " +
-        rootProp("--pdf-paper-page"),
-    );
-  }
-  console.log(
-    "backdrop paper ok: page",
-    rootProp("--pdf-paper-page"),
-    "under texture, backdrop folded to",
-    rootProp("--pdf-paper-baked"),
-  );
-
-  // No texture on: the fold is identity, so the page colour comes off the
-  // root and every surface falls back to the single published colour.
-  setFakeComputed({
-    "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)",
-    "--canvas-blend": "soft-light",
-    "--tex-opacity": "0",
-    paper: "#1a1c1f",
-  });
-  PDFReader.setPaper("#ffffff");
+  // ONE COLOUR, EVERY MODE. The texture overlay is a compositor layer, and
+  // the backdrop already gets it from the pages' own bleed (textures.css,
+  // BLEND BLEED) — a plain overhang on every side a page has to spare, half
+  // of a gap from each of the two neighbours on the vertical strip's row
+  // gap, which is the one stretch no page reaches on its own. So the
+  // published paper is the bake path's colour and nothing else, in the paged
+  // modes and the scrolling ones alike. It was once folded toward the
+  // overlay's mean colour here, which is what darkened every stretch of
+  // backdrop covered by a page in all four view modes.
   if (rootProp("--pdf-paper-page")) {
-    throw new Error("with no texture there is no fold, so --pdf-paper-page must be cleared");
+    throw new Error("the paper is published as one colour for every mode, not per mode");
   }
-  assertClose(
-    new Uint8ClampedArray(hexToRgb(rootProp("--pdf-paper-baked"))),
-    dimBackdropWhite,
-    "baked backdrop paper without a texture",
-  );
-  console.log("backdrop paper ok: one colour again with no texture");
+  console.log("backdrop paper ok: one colour for every mode:", rootProp("--pdf-paper-baked"));
 
   // A blank session paints no backdrop paper.
   PDFReader.setPaper("");
   if (rootProp("--pdf-paper-baked")) {
     throw new Error("a cleared --pdf-paper must clear --pdf-paper-baked, got " + rootProp("--pdf-paper-baked"));
-  }
-  if (rootProp("--pdf-paper-page")) {
-    throw new Error("a cleared --pdf-paper must clear --pdf-paper-page, got " + rootProp("--pdf-paper-page"));
   }
   console.log("baked backdrop paper ok: cleared on a blank session");
 }

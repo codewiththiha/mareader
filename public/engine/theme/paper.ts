@@ -49,21 +49,18 @@ export function paperInfo(pipeline: PipelineCache): PaperInfo {
 // --pdf-paper-baked for the backdrop rule in styles/components/shell.css.
 // Both stages reuse the baker's own implementations (filterKernel + a canvas
 // globalCompositeOperation blend), so backdrop and baked rasters agree by
-// construction, not by a second copy of the maths. A third stage folds in
-// the page's texture overlay — grain the compositor lays OVER the baked
-// raster but not over the flat backdrop — so a page edge meeting the gutter
-// on a fractional device pixel mixes the same colour on both sides.
+// construction, not by a second copy of the maths.
 //
-// TWO COLOURS, because that fold is only right where the base shows BARE.
-// The page texture reaches the gutter on its own, as an overhang of each
-// page's ::before (styles/textures.css, BLEND BLEED): wherever a page is
-// adjacent, the gutter carries the same grain the page does, so a base that
-// ALSO carries the shift applies it twice and pulls the gutter away from the
-// page. The paged modes are gapless and covered on every side by that
-// overhang, so they take the unfolded colour instead — --pdf-paper-page, the
-// paper a page's own raster carries (styles/components/shell.css). The
-// strips keep the folded --pdf-paper-baked, because a page gap leaves real
-// bands where the base has no texture over it at all.
+// THE TEXTURE NEVER ENTERS THIS COLOUR. The overlay is a CSS layer, and the
+// compositor already carries it over every stretch of backdrop a page can
+// reach: each page's ::before overhangs the page box and paints the gutter
+// (styles/textures.css, BLEND BLEED), and the two gaps a layout leaves — a
+// spread's spine, which is zero, and the vertical strip's row gap — are
+// painted by the same layer, half from each neighbour. The base under that
+// layer is this colour, so gutter and page composite identically; folding
+// the overlay's mean in here as well darkened every covered stretch against
+// the page it sat beside, which is the band the paged modes and the two
+// scrolling ones all showed on a textured look.
 
 /** Parse the `#rrggbb` the paper session publishes; null on anything else. */
 function parsePaperHex(hex: string): [number, number, number] | null {
@@ -82,27 +79,6 @@ function toPaperHex(rgb: [number, number, number]): string {
     "#" +
     rgb.map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, "0")).join("")
   );
-}
-
-/** The page texture overlay's average effect on the paper under it, as a
- *  multiplier on the flat colour: 1 when no texture is on, else a small
- *  darkening (multiply, light family) or lightening (screen, dark family)
- *  scaled by the dial. `--tex-opacity` is the dial as the compositor sees it
- *  — the Rust paint (src/effects/app/theme.rs) publishes zero when no
- *  texture mode is on, so a persisted opacity cannot leak through. */
-function textureShiftFactor(): number {
-  let opacity = 0;
-  try {
-    const raw = getComputedStyle(document.documentElement).getPropertyValue("--tex-opacity");
-    opacity = parseFloat(raw || "0") || 0;
-  } catch (_) {
-    return 1;
-  }
-  if (!(opacity > 0)) return 1;
-  const dark = document.documentElement.classList.contains("dark");
-  // The strokes are sparse — the overlay's mean effect on a flat colour is
-  // a small fraction of the dial, not the dial itself.
-  return dark ? 1 + opacity * 0.06 : 1 - opacity * 0.08;
 }
 
 /** The detected paper run through one pass of the current filter + blend —
@@ -149,32 +125,14 @@ function themedPaperHex(pipeline: PipelineCache): string | null {
   return toPaperHex(out);
 }
 
-/** The themed paper with the texture overlay's mean shift folded in — the
- *  colour a BARE stretch of backdrop has to carry to sit beside a textured
- *  page. See the module note: only the strips, whose page gaps leave the
- *  base uncovered, have such stretches. */
-function foldedPaperHex(themed: string): string {
-  const factor = textureShiftFactor();
-  if (factor === 1) return themed;
-  const rgb = parsePaperHex(themed);
-  if (!rgb) return themed; // not a shape we can shift: leave it alone
-  return toPaperHex([rgb[0] * factor, rgb[1] * factor, rgb[2] * factor]);
-}
-
-/** Keep the published paper honest: the detected paper pre-rendered through
- *  the current filter + blend, with the texture overlay's mean shift folded
- *  in — the colour a baked raster's paper carries. Called whenever an input
- *  moves: the detected paper (`setPaper`), the theme (`rebakeTheme`, and
- *  through it the scrub exit's forced rebake), and the standing token watch
- *  below, which hears the moves no engine call carries — a drag's per-tick
- *  repaint and a texture click the Rust rebake signature never sees.
- *
- *  Publishes BOTH colours: `--pdf-paper-baked` (the fold applied) for the
- *  surfaces where the base can show bare, and `--pdf-paper-page` (the page's
- *  own paper) for the paged modes, whose gutter is covered by the pages' own
- *  texture overhang. The page colour is published only while the fold is
- *  actually in play, so with no texture on the stylesheet's fallback chain
- *  collapses to the one colour and the custom property stays off the root. */
+/** Keep `--pdf-paper-baked` honest: the detected paper pre-rendered through
+ *  the current filter + blend, with nothing else folded in — the colour a
+ *  baked raster's paper carries, and therefore the colour the backdrop base
+ *  and the page hosts both stand on. Called whenever an input moves: the
+ *  detected paper (`setPaper`), the theme (`rebakeTheme`, and through it the
+ *  scrub exit's forced rebake), and the standing token watch below, which
+ *  hears the moves no engine call carries — a drag's per-tick repaint of the
+ *  filter, blend and UI paper. */
 export function publishBakedPaper(): void {
   let el: HTMLElement;
   try {
@@ -182,30 +140,17 @@ export function publishBakedPaper(): void {
   } catch (_) {
     return;
   }
-  const themed = themedPaperHex(readPipeline());
-  if (!themed) {
-    el.style.removeProperty("--pdf-paper-baked");
-    el.style.removeProperty("--pdf-paper-page");
-    return;
-  }
-  const folded = foldedPaperHex(themed);
-  el.style.setProperty("--pdf-paper-baked", folded);
-  if (folded === themed) el.style.removeProperty("--pdf-paper-page");
-  else el.style.setProperty("--pdf-paper-page", themed);
+  const hex = themedPaperHex(readPipeline());
+  if (hex) el.style.setProperty("--pdf-paper-baked", hex);
+  else el.style.removeProperty("--pdf-paper-baked");
 }
 
-// THE STANDING WATCH. The published paper is computed from four root tokens
-// (--canvas-filter, --canvas-blend, --color-paper, --tex-opacity) plus the
-// detected paper, and those tokens move on no schedule the engine hears:
-// a tint or texture drag repaints the root once per animation frame
-// (src/effects/app/theme.rs), and a texture-mode click never crosses the
-// Rust side's rebake signature at all — texture is a CSS overlay, not a
-// pixel input, so Parchment→None moves no filter, blend or base and the
-// theme effect stays silent. Without this watch the backdrop would settle
-// on whatever value the scheduler last published: a flat colour missing the
-// texture's mean shift against a page edge that already carries it — the
-// seam stage three exists to kill, back again on every texture move.
-//
+// THE STANDING WATCH. The published paper is computed from three root tokens
+// (--canvas-filter, --canvas-blend, --color-paper) plus the detected paper,
+// and the first three move on no schedule the engine hears: a tint drag
+// repaints the root once per animation frame (src/effects/app/theme.rs).
+// Without this watch the backdrop would settle on whatever value the
+// scheduler last published, against a page that already carries the new one.
 // So the watch republishes on every fingerprint move, wherever it came
 // from: per tick through a drag — one 1×1 composite, no raster work, which
 // is what keeps the backdrop in lockstep with the live-blending canvases
@@ -226,7 +171,6 @@ function paperWatchFingerprint(): string {
       cs.getPropertyValue("--canvas-filter"),
       cs.getPropertyValue("--canvas-blend"),
       cs.getPropertyValue("--color-paper"),
-      cs.getPropertyValue("--tex-opacity"),
     ].join("|");
   } catch (_) {
     return "";
@@ -247,10 +191,9 @@ export function watchPaperTokens(): void {
       paperWatchLast = fingerprint;
       publishBakedPaper();
     });
-    // "class" rides along because the texture's mean shift branches on the
-    // dark-family class; every base flip writes the root style too, so the
-    // style filter alone would catch it — the class filter just does not
-    // have to trust that.
+    // "class" rides along for the base flip: every flip writes the root style
+    // too, so the style filter alone would catch it — the class filter just
+    // does not have to trust that.
     paperWatcher.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["style", "class"],
