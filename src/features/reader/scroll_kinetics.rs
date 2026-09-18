@@ -20,6 +20,7 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
 
 /// The four scroll regimes the reader can be in, ordered by the pressure
 /// they put on the render pipeline (that rank is what merges the two axes
@@ -171,6 +172,10 @@ pub(crate) fn next_phase(
     (next, low_since)
 }
 
+/// The container's scroll listener while it is attached: the element it is
+/// on (so it can be removed) and the closure the element holds.
+type ScrollBinding = (web_sys::Element, Closure<dyn Fn()>);
+
 struct Inner {
     cfg: KineticsConfig,
     phase: RwSignal<ScrollPhase>,
@@ -178,7 +183,49 @@ struct Inner {
     last_dir: Cell<f64>,
     brake_at: Cell<f64>,
     low_since: Cell<f64>,
-    binding: RefCell<Option<(web_sys::Element, Closure<dyn Fn()>)>>,
+    binding: RefCell<Option<ScrollBinding>>,
+}
+
+impl Inner {
+    /// One (t_ms, offset) sample: the listener's whole job.
+    fn sample(&self, t: f64, offset: f64) {
+        {
+            let mut s = self.samples.borrow_mut();
+            if let Some(&(_, prev_o)) = s.last() {
+                let d = offset - prev_o;
+                if d.abs() > 0.5 {
+                    let dir = d.signum();
+                    // A reversal with substance is a brake: the reader is
+                    // catching the fling, and the settle gets shorter.
+                    if self.last_dir.get() != 0.0 && dir != self.last_dir.get() && d.abs() > 24.0 {
+                        self.brake_at.set(t);
+                    }
+                    self.last_dir.set(dir);
+                }
+            }
+            s.push((t, offset));
+            while s.len() > self.cfg.sample_win {
+                s.remove(0);
+            }
+            while s.len() > 2 && t - s[0].0 > self.cfg.fresh_ms {
+                s.remove(0);
+            }
+        }
+        let v = robust_velocity(&self.samples.borrow());
+        let braked = t - self.brake_at.get() < 80.0;
+        let (next, low_since) = next_phase(
+            self.phase.get_untracked(),
+            v,
+            braked,
+            self.low_since.get(),
+            t,
+            &self.cfg,
+        );
+        self.low_since.set(low_since);
+        if next != self.phase.get_untracked() {
+            self.phase.set(next);
+        }
+    }
 }
 
 /// One scroll container's phase tracker. Cheap to clone (Rc inside); attach
@@ -204,14 +251,17 @@ impl ScrollKinetics {
     pub fn attach(&self, el: &web_sys::Element) {
         self.detach();
         let inner = self.0.clone();
+        // The closure takes its own clone: the binding bookkeeping below
+        // still needs `inner` to remember the listener.
+        let inner_cb = inner.clone();
         let el2 = el.clone();
         let cb = Closure::<dyn Fn()>::new(move || {
             let offset = (el2.scroll_top() + el2.scroll_left()) as f64;
-            inner.on_sample(js_sys::Date::now(), offset);
+            inner_cb.sample(js_sys::Date::now(), offset);
         });
         let opts = web_sys::AddEventListenerOptions::new();
         opts.set_passive(true);
-        let _ = el.add_event_listener_with_callback_and_options(
+        let _ = el.add_event_listener_with_callback_and_add_event_listener_options(
             "scroll",
             cb.as_ref().unchecked_ref(),
             &opts,
@@ -223,49 +273,6 @@ impl ScrollKinetics {
     pub fn detach(&self) {
         if let Some((el, cb)) = self.0.binding.borrow_mut().take() {
             let _ = el.remove_event_listener_with_callback("scroll", cb.as_ref().unchecked_ref());
-        }
-    }
-
-    /// One (t_ms, offset) sample, normally from the container's scroll
-    /// events. Exposed so the tests can drive the FSM without a DOM.
-    pub(crate) fn on_sample(&self, t: f64, offset: f64) {
-        let inner = &self.0;
-        {
-            let mut s = inner.samples.borrow_mut();
-            if let Some(&(_, prev_o)) = s.last() {
-                let d = offset - prev_o;
-                if d.abs() > 0.5 {
-                    let dir = d.signum();
-                    // A reversal with substance is a brake: the reader is
-                    // catching the fling, and the settle gets shorter.
-                    if inner.last_dir.get() != 0.0 && dir != inner.last_dir.get() && d.abs() > 24.0
-                    {
-                        inner.brake_at.set(t);
-                    }
-                    inner.last_dir.set(dir);
-                }
-            }
-            s.push((t, offset));
-            while s.len() > inner.cfg.sample_win {
-                s.remove(0);
-            }
-            while s.len() > 2 && t - s[0].0 > inner.cfg.fresh_ms {
-                s.remove(0);
-            }
-        }
-        let v = robust_velocity(&inner.samples.borrow());
-        let braked = t - inner.brake_at.get() < 80.0;
-        let (next, low_since) = next_phase(
-            inner.phase.get_untracked(),
-            v,
-            braked,
-            inner.low_since.get(),
-            t,
-            &inner.cfg,
-        );
-        inner.low_since.set(low_since);
-        if next != inner.phase.get_untracked() {
-            inner.phase.set(next);
         }
     }
 

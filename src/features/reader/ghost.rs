@@ -29,8 +29,8 @@ pub fn modal_page(intrinsic: &[PageSize]) -> Option<(usize, f64, f64)> {
     }
     let first = hist
         .iter()
-        .max_by_key(|(_, &(_, count))| count)
-        .map(|((_, _), &(_, first))| first)?;
+        .max_by_key(|entry| entry.1 .0)
+        .map(|entry| entry.1.1)?;
     let size = intrinsic.get(first)?;
     Some((first, size.width, size.height))
 }

@@ -304,12 +304,27 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState, cfg: SmartCfg) -> Read
 
     // The dominant page of the ACTIVE axis: the paint window and the settle
     // flush both grow from it, and the inactive axis's dominant is a stale
-    // number from whenever its mode was last live.
+    // number from whenever its mode was last live. The virtualizers' own
+    // dominant signals are local (their closures hold the Rc core), so the
+    // mirror below carries them into two global signals — effects make no
+    // thread-safety promise, the derive above must.
+    let v_dom = RwSignal::new(0);
+    let h_dom = RwSignal::new(0);
+    {
+        let v = virtualizer.clone();
+        let sig = v_dom;
+        Effect::new(move |_| sig.set(v.dominant().get()));
+    }
+    {
+        let hv = h_virtualizer.clone();
+        let sig = h_dom;
+        Effect::new(move |_| sig.set(hv.dominant().get()));
+    }
     let dominant = Signal::derive(move || {
         if state.viewer.mode.get() == ViewMode::ScrollHorizontal {
-            h_virtualizer.dominant().get()
+            h_dom.get()
         } else {
-            virtualizer.dominant().get()
+            v_dom.get()
         }
     });
 
@@ -396,21 +411,25 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState, cfg: SmartCfg) -> Read
         Effect::new(move |_| {
             // Track the appearance: a theme change re-bakes the ghost.
             let _ = appearance.get();
-            if state.reader.reflowable() {
+            if state.reflowable() {
                 ghost_sig.set(None);
                 return;
             }
             let Some((page0, _, _)) = intrinsic.with(|sizes| modal_page(sizes)) else {
                 return;
             };
-            let gen = ghost_gen.get() + 1;
-            ghost_gen.set(gen);
+            let revision = ghost_gen.get() + 1;
+            ghost_gen.set(revision);
             let page = (page0 + 1) as u32;
+            // Each run owes its task its OWN guard clone: the effect re-runs
+            // on every appearance change, and moving the shared guard into
+            // the first task would leave the rest blind to document swaps.
+            let guard = ghost_gen.clone();
             spawn_local(async move {
-                if let Some(url) = pdf_engine::api::render_ghost(page, height).await {
-                    if ghost_gen.get() == gen {
-                        ghost_sig.set(Some(url));
-                    }
+                if let Some(url) = pdf_engine::api::render_ghost(page, height).await
+                    && guard.get() == revision
+                {
+                    ghost_sig.set(Some(url));
                 }
             });
         });

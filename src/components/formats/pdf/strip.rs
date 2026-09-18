@@ -361,9 +361,8 @@ fn pre_paint_box(
     item_size: f64,
 ) -> (f64, f64) {
     // Untracked reads: the caller's derive tracks the layout through
-    // `item_size` (a zoom relayouts the strip, which re-runs it), and this
-    // function only looks the rest up.
-    let scale = state.viewer.zoom.visual_scale();
+    // `item_size` — already at the live scale, a zoom relayouts the strip
+    // and re-runs it — and this function only looks the rest up.
     let aspect = state
         .document
         .content
