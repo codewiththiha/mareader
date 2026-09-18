@@ -1,0 +1,41 @@
+name: Dev report (temporary)
+
+# TEMPORARY — delete before merging. Runs the lint lane's gates and re-emits
+# their errors as annotations, because the token this branch is pushed with can
+# read Actions metadata but not download job logs. See .github/report-rust.sh.
+on:
+  push:
+    branches: ["rebrand/mareader-t2"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devreport-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  report:
+    name: Report rust failures as annotations
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_NET_RETRY: "10"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: lint-cache
+
+      - name: Report
+        run: bash .github/report-rust.sh
