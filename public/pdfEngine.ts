@@ -31,7 +31,7 @@ import {
 } from "./engine/search";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline } from "./engine/theme/pipeline";
-import { publishBakedPaper } from "./engine/theme/paper";
+import { publishBakedPaper, watchPaperTokens } from "./engine/theme/paper";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   resetPaperForDocument,
@@ -150,8 +150,14 @@ async function refreshThemeInternal(): Promise<void> {
   invalidatePipeline();
   // A slider commit arrives while scrub owns raw, individually tagged
   // canvases. Exit performs the single final bake, so do not enqueue a second
-  // rebake (or page rerender) against that same pipeline here.
-  if (session.themeScrubActive) return;
+  // rebake (or page rerender) against that same pipeline here. The backdrop's
+  // published paper still settles: the rasters belong to the scrub, but the
+  // token move this was called for — a texture's fold, paper.ts stage three —
+  // is already on the root style.
+  if (session.themeScrubActive) {
+    publishBakedPaper();
+    return;
+  }
   await rebakeTheme();
   // Pages without a distinct raw must re-render from pdf.js (never
   // double-filter). Thumbs were already refreshed in rebakeTheme.
@@ -230,6 +236,14 @@ try {
 // The selection tracker is NOT installed here: it is format-agnostic and
 // lives in the reader bundle (public/readerEngine.ts), which index.html loads
 // first. Nothing in this facade depends on it.
+
+// The standing watch over the tokens the published backdrop paper is
+// computed from (public/engine/theme/paper.ts): a drag repaints the root
+// per frame and a texture click never reaches the scheduler at all, so the
+// publish rides the mutations instead of waiting to be called. Installed
+// with the other module-lifetime listeners; self-guarded where there is no
+// MutationObserver (the node smoke harness).
+watchPaperTokens();
 
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,

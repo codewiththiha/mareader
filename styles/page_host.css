@@ -59,13 +59,14 @@
 }
 /* A tint scrub exposes raw rasters that live-blend against their base, and
    that blend is only correct over the UN-themed base. The host itself keeps
-   carrying the baked paper through the window — scrub.ts republishes it per
-   tick, and edge parity with the backdrop is exactly what kills the
-   fractional-pixel seam — so the texture layer lends the raw canvas its
-   un-themed base instead: one pixel in, so the page's own fractional edge
-   still mixes baked with baked against the gutter. The gutter bleed rests
-   for the length of the drag, and the opacity rises to 1 because the layer
-   is a base here, not a visible texture. */
+   carrying the baked paper through the window — the standing token watch
+   (public/engine/theme/paper.ts) republishes it per tick, and edge parity
+   with the backdrop is exactly what kills the fractional-pixel seam — so
+   the texture layer lends the raw canvas its un-themed base instead: one
+   pixel in, so the page's own fractional edge still mixes baked with baked
+   against the gutter. The gutter bleed rests for the length of the drag,
+   and the opacity rises to 1 because the layer is a base here, not a
+   visible texture. */
 html.appearance-scrubbing .reader-bg.blend .pdf-page::before {
   inset: 1px;
   background-color: var(--color-paper);

@@ -148,14 +148,12 @@ function bakedPaperHex(pipeline: PipelineCache): string | null {
 }
 
 /** Keep `--pdf-paper-baked` honest: the detected paper pre-rendered through
- *  the current filter + blend — the colour a baked raster's paper carries.
- *  Called whenever an input moves: the detected paper (`setPaper`) or the
- *  theme (`rebakeTheme`), so the settled backdrop never lags the pages. A
- *  tint scrub is the one window whose ticks never reach here: per-tick engine
- *  work is exactly what the scrub scheduler refuses, so the backdrop tracks
- *  the drag from CSS alone (the SCRUB WINDOW cover in
- *  styles/components/shell.css) and the scrub exit republishes this before
- *  the class drops — a same-value handover. */
+ *  the current filter + blend, with the texture overlay's mean shift folded
+ *  in — the colour a baked raster's paper carries. Called whenever an input
+ *  moves: the detected paper (`setPaper`), the theme (`rebakeTheme`, and
+ *  through it the scrub exit's forced rebake), and the standing token watch
+ *  below, which hears the moves no engine call carries — a drag's per-tick
+ *  repaint and a texture click the Rust rebake signature never sees. */
 export function publishBakedPaper(): void {
   let el: HTMLElement;
   try {
@@ -166,4 +164,70 @@ export function publishBakedPaper(): void {
   const hex = bakedPaperHex(readPipeline());
   if (hex) el.style.setProperty("--pdf-paper-baked", hex);
   else el.style.removeProperty("--pdf-paper-baked");
+}
+
+// THE STANDING WATCH. The published paper is computed from four root tokens
+// (--canvas-filter, --canvas-blend, --color-paper, --tex-opacity) plus the
+// detected paper, and those tokens move on no schedule the engine hears:
+// a tint or texture drag repaints the root once per animation frame
+// (src/effects/app/theme.rs), and a texture-mode click never crosses the
+// Rust side's rebake signature at all — texture is a CSS overlay, not a
+// pixel input, so Parchment→None moves no filter, blend or base and the
+// theme effect stays silent. Without this watch the backdrop would settle
+// on whatever value the scheduler last published: a flat colour missing the
+// texture's mean shift against a page edge that already carries it — the
+// seam stage three exists to kill, back again on every texture move.
+//
+// So the watch republishes on every fingerprint move, wherever it came
+// from: per tick through a drag — one 1×1 composite, no raster work, which
+// is what keeps the backdrop in lockstep with the live-blending canvases
+// the SCRUB WINDOW cover in styles/components/shell.css describes — and in
+// the same frame as a structural click's paint, because a MutationObserver
+// callback is a microtask and the value lands before the browser paints.
+// The fingerprint holds only the composite's INPUTS: the observer
+// re-triggers on publishBakedPaper's own root-style write, and the
+// published value not being part of the fingerprint is what dedupes that
+// to one publish per real move.
+let paperWatcher: MutationObserver | null = null;
+let paperWatchLast = "";
+
+function paperWatchFingerprint(): string {
+  try {
+    const cs = getComputedStyle(document.documentElement);
+    return [
+      cs.getPropertyValue("--canvas-filter"),
+      cs.getPropertyValue("--canvas-blend"),
+      cs.getPropertyValue("--color-paper"),
+      cs.getPropertyValue("--tex-opacity"),
+    ].join("|");
+  } catch (_) {
+    return "";
+  }
+}
+
+/** Install the standing watch. Idempotent, and a no-op in environments
+ *  without a compositor: the node smoke harness has no MutationObserver —
+ *  and no backdrop to keep honest. */
+export function watchPaperTokens(): void {
+  if (typeof MutationObserver === "undefined") return;
+  if (paperWatcher) return;
+  try {
+    paperWatchLast = paperWatchFingerprint();
+    paperWatcher = new MutationObserver(() => {
+      const fingerprint = paperWatchFingerprint();
+      if (fingerprint === paperWatchLast) return;
+      paperWatchLast = fingerprint;
+      publishBakedPaper();
+    });
+    // "class" rides along because the texture's mean shift branches on the
+    // dark-family class; every base flip writes the root style too, so the
+    // style filter alone would catch it — the class filter just does not
+    // have to trust that.
+    paperWatcher.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["style", "class"],
+    });
+  } catch (_) {
+    paperWatcher = null;
+  }
 }

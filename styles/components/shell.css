@@ -161,7 +161,8 @@ body {
    page's ::before overhangs and paints the gutter (textures.css, BLEND
    BLEED), so page and gutter stay phase-locked by construction. No
    transitions anywhere in this block — a tint scrub repaints it in
-   lockstep with the canvases, per tick, through scrub.ts's republish. */
+   lockstep with the canvases, per tick, through the standing token watch
+   in public/engine/theme/paper.ts. */
 .reader-bg.blend {
   background-color: var(--pdf-paper-baked, var(--color-paper));
 }
@@ -169,12 +170,12 @@ body {
 
 /* SCRUB WINDOW — a tint drag repaints the root tokens per frame and the
    rasters composite live under the CSS filter + blend. The backdrop base
-   stays on --pdf-paper-baked through the window: scrub.ts republishes it
-   per tick (one 1px composite, no raster work), so the flat-paper contract
-   with the page hosts holds mid-drag and a fractional page edge keeps
-   mixing F with F — no seam for the length of the drag. The page hosts'
-   half of the window (the raw canvas' un-themed blend base) lives in
-   styles/page_host.css. */
+   stays on --pdf-paper-baked through the window: the standing token watch
+   (public/engine/theme/paper.ts) republishes it per tick (one 1px
+   composite, no raster work), so the flat-paper contract with the page
+   hosts holds mid-drag and a fractional page edge keeps mixing F with F —
+   no seam for the length of the drag. The page hosts' half of the window
+   (the raw canvas' un-themed blend base) lives in styles/page_host.css. */
 
 /* Reflowable single/two-page modes: drop the scroller's opaque bg-surface
    utility (correct for PDF gutters) so the --tx-paper backdrop shows
