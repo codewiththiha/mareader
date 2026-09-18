@@ -254,7 +254,7 @@ pub fn window<B: StripBackend + ?Sized>(
         b,
         scroll_top,
         viewport,
-        budget.overscan.slack(viewport.max(0.0), b.mean_size()),
+        budget.slack(viewport.max(0.0), b.mean_size()),
         budget.max_items,
     )
 }
@@ -305,7 +305,7 @@ pub fn window_hinted<B: StripBackend + ?Sized>(
         b,
         scroll_top,
         viewport,
-        budget.overscan.slack(viewport.max(0.0), b.mean_size()),
+        budget.slack(viewport.max(0.0), b.mean_size()),
         budget.max_items,
         hint,
     )
@@ -471,7 +471,7 @@ mod slack_tests {
                 &b,
                 top,
                 400.0,
-                budget.overscan.slack(400.0, b.mean_size()),
+                budget.slack(400.0, b.mean_size()),
                 budget.max_items,
                 &mut hint_b,
             );
@@ -566,7 +566,7 @@ mod slack_tests {
     fn a_list_layout_routes_the_slack_to_its_backend() {
         // The Layout contract, so a caller holding a LayoutKind gets the same
         // answer as one holding the strip.
-        let layout = ListLayout::uniform(200, 100.0, 0.0);
+        let layout: ListLayout<Strip> = ListLayout::uniform(200, 100.0, 0.0);
         let viewport = Viewport::main_only(400.0);
         let mut hint = 0usize;
         let window = layout

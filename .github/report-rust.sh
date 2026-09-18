@@ -51,7 +51,7 @@ if ! cargo check --target wasm32-unknown-unknown --locked --keep-going > /tmp/wa
 fi
 
 echo "--- cargo test (workspace) ---"
-if ! cargo test --workspace --exclude mareader-shell --locked --keep-going --no-fail-fast \
+if ! cargo test --workspace --exclude mareader-shell --locked --no-fail-fast \
     > /tmp/test.txt 2>&1; then
   status=1
   report "tests" /tmp/test.txt

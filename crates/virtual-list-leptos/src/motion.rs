@@ -169,6 +169,15 @@ pub enum ScrollPhase {
     Fling,
 }
 
+/// Whether a viewport extent can be measured against: finite and above zero.
+///
+/// NaN is named explicitly because it slips past every comparison — a NaN
+/// viewport that reached the projection would poison every window derived from
+/// it, and `clamp` panics on a NaN bound rather than answering.
+fn usable(viewport: f64) -> bool {
+    viewport.is_finite() && viewport > 0.0
+}
+
 /// Below this, in screens per second, the scroller is not moving.
 const IDLE_SCREEN_PER_SEC: f64 = 0.12;
 /// At this the movement is scrolling rather than reading in place.
@@ -270,7 +279,7 @@ impl ScrollPhase {
     /// The speed in screens per second, or `None` when there is no viewport
     /// to measure it against.
     fn screens_per_sec(speed_px_per_sec: f64, viewport: f64) -> Option<f64> {
-        if !(viewport > 0.0) || !speed_px_per_sec.is_finite() {
+        if !usable(viewport) || !speed_px_per_sec.is_finite() {
             return None;
         }
         Some(speed_px_per_sec.abs() / viewport)
@@ -312,19 +321,28 @@ impl Predictor {
     /// not arrive at all — the pages that matter are the ones just past where
     /// they are now.
     pub fn offset(&self, scroll_top: f64, velocity: f64, viewport: f64, max_scroll: f64) -> f64 {
-        if !velocity.is_finite() || viewport <= 0.0 {
+        if !velocity.is_finite() || !usable(viewport) {
             return scroll_top;
         }
         let cap = self.max_screens.max(0.0) * viewport;
         let projected = velocity * self.horizon_ms.max(0.0) / 1000.0;
-        (scroll_top + projected.clamp(-cap, cap)).clamp(0.0, max_scroll.max(0.0))
+        // Written out rather than `clamp`ed: the cap is a policy number, and a
+        // NaN bound makes `clamp` panic instead of answering.
+        let limited = if projected > cap {
+            cap
+        } else if projected < -cap {
+            -cap
+        } else {
+            projected
+        };
+        (scroll_top + limited).clamp(0.0, max_scroll.max(0.0))
     }
 
     /// How many screens ahead of the viewport a scheduler should treat as
     /// "about to be looked at". Grows with speed and stops at the cap: a
     /// stationary reader needs no look-ahead beyond what the budget mounts.
     pub fn screens(&self, speed_px_per_sec: f64, viewport: f64) -> f64 {
-        if !(viewport > 0.0) || !speed_px_per_sec.is_finite() {
+        if !usable(viewport) || !speed_px_per_sec.is_finite() {
             return 0.0;
         }
         let screens = speed_px_per_sec.abs() * self.horizon_ms.max(0.0) / 1000.0 / viewport;
@@ -393,7 +411,7 @@ mod tests {
         let mut offset = 0.0;
         let mut now = 0.0;
         let mut signs = 0;
-        let mut last_sign = 0;
+        let mut last_sign = 0.0;
         for step in 0..24 {
             now += 16.0;
             let delta = if step % 2 == 0 { 120.0 } else { 20.0 };

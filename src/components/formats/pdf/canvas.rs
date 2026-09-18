@@ -367,8 +367,19 @@ pub fn PdfPageCanvas(
         // user sees the canvas disappear until a scroll re-renders it. Bail
         // out — but ONLY if `painted == true`. A wiped canvas (cancelled
         // render) must re-render.
-        if has_geo && painted.get() && (gs - s).abs() <= 1e-9 && painted_preview.get() == pv {
-            return;
+        //
+        // The tier is part of "a different bitmap" in ONE direction only: a
+        // page holding a preview that is now owed the full thing re-renders —
+        // that is the settle's promotion, and the reason the tier is a signal
+        // rather than a prop. A page holding the crisp raster that a movement
+        // has just demoted to the preview ring KEEPS it: rendering it softer
+        // would spend a raster to make the page worse, and the surface goes
+        // when the page unmounts either way.
+        if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
+            let promotes = painted_preview.get() && !pv;
+            if !promotes {
+                return;
+            }
         }
         // SCROLL-FLING GATE. An unpainted page the scroller is still sweeping
         // past stays on its thumbnail underlay until the strip settles: a

@@ -80,6 +80,11 @@ pub fn PdfPageStrip(
     // lands.
     let page_scale = state.viewer.zoom.display.read_only();
     let gesture_owns = state.viewer.gesture_owns();
+    // Both derived ONCE for the strip, not per page and not per tier crossing:
+    // each call mints a new memo node, and a page that crosses tiers a hundred
+    // times in a long scroll would leave a hundred of them behind on the owner
+    // that outlives it.
+    let zoom_animating = state.viewer.zooming();
     // The fling gate's input: while the scroller is still moving, unpainted
     // pages stay on their thumbnail underlay and rasterise once the strip
     // settles (see the page host's SCROLL-FLING GATE). The prop wraps it in
@@ -191,7 +196,7 @@ pub fn PdfPageStrip(
                                     let page = (index + 1) as u32;
                                     let top = handle.with_value(|v| v.item_top(index));
                                     let size = handle.with_value(|v| v.item_size(index));
-                                    let (dormant, preview, tier) = tiers(&handle, index);
+                                    let (dormant, preview, content) = tiers(&handle, index);
                                     // Offsets are snapped for the same reason
                                     // sizes are: the wrapper's top is a running
                                     // sum of page extents at the live scale, so
@@ -224,13 +229,13 @@ pub fn PdfPageStrip(
                                     view! {
                                         <div id=wrapper_id(Axis::Vertical, index, page) style=style>
                                             {move || {
-                                                if tier.get().paints() {
+                                                if content.get() {
                                                     view! {
                                                         <PdfPageCanvas
                                                             page=page
                                                             scale=page_scale
                                                             render_scale=state.viewer.zoom.committed
-                                                            zoom_animating=state.viewer.zooming()
+                                                            zoom_animating=zoom_animating
                                                             dormant=dormant
                                                             preview=preview
                                                             settled=settled
@@ -287,7 +292,7 @@ pub fn PdfPageStrip(
                                     let page = (index + 1) as u32;
                                     let left = handle.with_value(|v| v.item_top(index));
                                     let size = handle.with_value(|v| v.item_size(index));
-                                    let (dormant, preview, tier) = tiers(&handle, index);
+                                    let (dormant, preview, content) = tiers(&handle, index);
                                     // top:0 — the strip owns the full window height and
                                     // the auto-hiding title bar overlays it, like Spread.
                                     // The main-axis offset is snapped to the device-pixel
@@ -301,13 +306,13 @@ pub fn PdfPageStrip(
                                     view! {
                                         <div id=wrapper_id(Axis::Horizontal, index, page) style=style>
                                             {move || {
-                                                if tier.get().paints() {
+                                                if content.get() {
                                                     view! {
                                                         <PdfPageCanvas
                                                             page=page
                                                             scale=page_scale
                                                             render_scale=state.viewer.zoom.committed
-                                                            zoom_animating=state.viewer.zooming()
+                                                            zoom_animating=zoom_animating
                                                             dormant=dormant
                                                             preview=preview
                                                             settled=settled
@@ -357,26 +362,35 @@ fn wrapper_id(axis: Axis, index: usize, page: u32) -> String {
     }
 }
 
-/// The three reactive reads one mounted child needs from its virtualizer: the
-/// item's tier, and the two booleans a page host is built from.
+/// The three booleans one mounted child reads off its item's tier.
 ///
 /// The tier is a signal rather than the [`VirtualItem`] snapshot the `<For>`
 /// child was handed, because a child does not re-run for a key it already holds
-/// — a scroll that promotes it from placeholder to preview to full has to reach
-/// the view through a reactive read. `dormant` and `preview` are projections of
-/// the same signal, so the three can never disagree about which tier a page is
-/// in: a zombie keeps its bitmap and starts no new work, a preview is owed a
-/// cheap raster and no text layer, and a page that is neither is full quality.
+/// — a scroll that promotes a page has to reach the view through a reactive
+/// read. All three are projections of it, so they cannot disagree about which
+/// tier a page is in: a zombie keeps its bitmap and starts no new work, a
+/// preview is owed a cheap raster and no text layer, and a page that is neither
+/// is owed the full thing.
+///
+/// `content` is the coarse one, and it is the only one the view SWITCHES on —
+/// deliberately. It stays true across every tier that paints, so a page moving
+/// between the full tier, the preview ring and retention keeps its host and
+/// re-renders through the props; only the crossing into or out of the
+/// placeholder tier rebuilds. Switching on the tier itself would tear the host
+/// down on every promotion: unregister the canvas, drop the bitmap it just
+/// made, and start the crisp render from nothing — a flash where a scroll
+/// should have been a sharpening.
 fn tiers(
     handle: &StoredValue<Virtualizer, LocalStorage>,
     index: usize,
 ) -> (
     Signal<bool, LocalStorage>,
     Signal<bool, LocalStorage>,
-    Signal<VirtualItemState, LocalStorage>,
+    Signal<bool, LocalStorage>,
 ) {
     let tier = handle.with_value(|v| v.item_state(index));
     let dormant = Signal::derive_local(move || tier.get() == VirtualItemState::Zombie);
     let preview = Signal::derive_local(move || tier.get() == VirtualItemState::Preview);
-    (dormant, preview, tier)
+    let content = Signal::derive_local(move || tier.get().paints());
+    (dormant, preview, content)
 }

@@ -115,6 +115,12 @@ pub fn ReflowPageStrip(
                         // reactive read rather than through the `VirtualItem`
                         // snapshot it was handed at mount.
                         let tier = handle.with_value(|v| v.item_state(index));
+                        // The coarse projection, and the only thing the switch
+                        // below reads: a bool only changes value when the page
+                        // crosses between type and an empty frame, so a tier
+                        // move that keeps it painted does not tear the page's
+                        // blocks down and lay them out again.
+                        let owes = Signal::derive_local(move || owes_type(tier.get()));
                         let margin = state.viewer.page_margin;
                         let style = move || {
                             let snapped = snap_px(offset.get());
@@ -159,7 +165,7 @@ pub fn ReflowPageStrip(
                         view! {
                             <div id=wrapper_id(axis, index, page) style=style>
                                 {move || {
-                                    if owes_type(tier.get()) {
+                                    if owes.get() {
                                         view! {
                                             <ReflowPage
                                                 page=page
