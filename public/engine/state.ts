@@ -65,6 +65,13 @@ const RAW_IDLE_MS = 2_000;
 const SCRUB_RAW_RETAIN_MS = 30_000;
 const SWEEP_IDLE_MS = 30_000;
 
+/** Byte budget for the raw rasters a bake RETAINS outside the visible
+ *  canvas (the un-baked twin a tint scrub can still restore). The VISIBLE
+ *  canvas is never accounted — it is the page, not overhead — so the budget
+ *  bounds the overhead a session can latch onto, measured in the session's
+ *  dirty high-water mark rather than handed back. */
+export const PAGE_BYTES_BUDGET = 96 * 1024 * 1024;
+
 /** Drop every zoom mask (`.page-snapshot`) a host still carries, zeroing the
  *  backing stores before the nodes go: WKWebView does not release a canvas
  *  IOSurface on DOM removal alone, so a mask dropped without this keeps its
@@ -111,6 +118,21 @@ class EngineSession {
   /** Heuristic sweep counter: every CLEANUP_EVERY renders, release worker
    *  caches so memory drops during long reading sessions. */
   renderCount = 0;
+
+  /** Bytes of raw rasters retained OUTSIDE the visible canvases (see
+   *  PAGE_BYTES_BUDGET). Accounted at every retain/release point below; the
+   *  settle flush enforces the budget from the landing page outward. */
+  pageBytesUsed = 0;
+
+  /** Account a retained raw surface. */
+  noteRawBytes(bytes: number): void {
+    this.pageBytesUsed += bytes;
+  }
+
+  /** Release a retained raw surface from the account. */
+  releaseRawBytes(bytes: number): void {
+    this.pageBytesUsed = Math.max(0, this.pageBytesUsed - bytes);
+  }
 
   themeScrubActive = false;
 
@@ -243,7 +265,10 @@ class EngineSession {
     }
     const rawTimer = this.rawTimers.get(st);
     if (rawTimer) clearTimeout(rawTimer);
-    if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
+    if (st.rawCanvas && st.rawCanvas !== st.canvas) {
+      this.releaseRawBytes(st.rawCanvas.width * st.rawCanvas.height * 4);
+      releaseCanvas(st.rawCanvas);
+    }
     st.rawCanvas = null;
     releaseCanvas(st.canvas);
     st.canvas = null;
@@ -292,7 +317,10 @@ class EngineSession {
       st,
       setTimeout(() => {
         if (st.dead || this.themeScrubActive || this.appearanceMenuOpen) return;
-        if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
+        if (st.rawCanvas && st.rawCanvas !== st.canvas) {
+          this.releaseRawBytes(st.rawCanvas.width * st.rawCanvas.height * 4);
+          releaseCanvas(st.rawCanvas);
+        }
         st.rawCanvas = null;
       }, RAW_IDLE_MS),
     );

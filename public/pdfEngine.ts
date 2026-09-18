@@ -10,11 +10,16 @@ import { disposeScratch, releaseCanvas } from "./engine/canvas";
 import { coverDataUrl, destroyTask, open, resolveOutline, takePendingFile } from "./engine/loader";
 import {
   cancelPage,
+  enforcePageBudget,
+  promotePages,
   registerPage,
   renderPage,
   rerenderLivePages,
+  setRenderGate,
   unregisterPage,
 } from "./engine/renderer";
+import { resetGhost } from "./engine/ghost";
+import { renderGhost } from "./engine/ghost";
 import {
   blitThumb,
   cancelThumb,
@@ -105,6 +110,9 @@ async function destroy(): Promise<void> {
     session.thumbCache.clear();
     session.setSearchQuery("");
     session.setActiveMatchValue(null);
+    // The ghost's blob belongs to this document too.
+    resetGhost();
+    session.pageBytesUsed = 0;
     if (session.loadingTask) {
       // Guarded behind a WeakSet in loader.ts: open's own timeout may be
       // destroying the same task right now, and a second destroy() on a
@@ -277,6 +285,10 @@ globalThis.PDFReader = {
   sweepSnapshots: () => {
     session.sweepSnapshots();
   },
+  setRenderGate,
+  promotePages,
+  enforcePageBudget,
+  renderGhost,
   takePendingFile,
   prefetchThumb,
 } satisfies PDFReaderApi;

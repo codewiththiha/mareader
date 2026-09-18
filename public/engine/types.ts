@@ -211,6 +211,19 @@ export type PDFReaderApi = {
    *  never landed would otherwise keep a full-page raster alive until the
    *  host unmounts. */
   sweepSnapshots: () => void;
+  /** Park (or reopen) the full-page render lane: parked while a fling (or a
+   *  zoom) is in flight, so a raster is never issued for a page the reader
+   *  is sweeping past. */
+  setRenderGate: (parked: boolean) => void;
+  /** Jump the queued renders of `pages` to the front of the lane — the
+   *  settle flush. */
+  promotePages: (pages: number[]) => void;
+  /** Drop the farthest-held raw rasters until the retained raw bytes are
+   *  inside `budgetBytes`, measured out from `centerPage`. */
+  enforcePageBudget: (centerPage: number, budgetBytes: number) => void;
+  /** Render the document's ghost placeholder (the modal page, tiny and
+   *  desaturated) and resolve its blob URL; `null` when it cannot. */
+  renderGhost: (page: number, heightPx: number) => Promise<string | null>;
   takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;
 };

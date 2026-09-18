@@ -261,6 +261,7 @@ export async function renderPageInternal(
       releaseBaked(baked, target);
     }
     if (st.rawCanvas && st.rawCanvas !== st.canvas && st.rawCanvas !== target) {
+      session.releaseRawBytes(st.rawCanvas.width * st.rawCanvas.height * 4);
       releaseCanvas(st.rawCanvas);
     }
     st.canvas.classList.remove("canvas-raw");
@@ -271,9 +272,14 @@ export async function renderPageInternal(
     // twice and Dim apply twice). Outside the window the raw is a
     // full-page surface per mounted page that nothing will ever ask for,
     // held while the footprint latches onto the peak; the scrub path
-    // re-renders on demand (preparePagesForScrub).
+    // re-renders on demand (preparePagesForScrub). Only the OFFSCREEN raw
+    // is accounted against the byte budget — the visible canvas is the
+    // page, not overhead.
     if (session.scrubIsPlausible()) {
       st.rawCanvas = target;
+      if (target !== st.canvas) {
+        session.noteRawBytes(target.width * target.height * 4);
+      }
       session.dropRawIfIdle(st);
     } else if (target !== st.canvas) {
       st.rawCanvas = null;
@@ -287,6 +293,12 @@ export async function renderPageInternal(
     }
   } else {
     // Identity / already scrubbing: the live canvas IS the raw.
+    if (st.rawCanvas && st.rawCanvas !== st.canvas) {
+      // An earlier bake's retained raw: the identity pipeline never asks
+      // for it, so it is pure peak inflation — and unaccounted if left.
+      session.releaseRawBytes(st.rawCanvas.width * st.rawCanvas.height * 4);
+      releaseCanvas(st.rawCanvas);
+    }
     st.rawCanvas = st.canvas;
     st.canvas.classList.toggle("canvas-raw", session.themeScrubActive);
   }
@@ -357,14 +369,89 @@ export async function renderPageInternal(
 // superseded while waiting drops without touching pdf.js.
 const PAGE_RENDER_LIMIT = 2;
 let pageActive = 0;
-const pageQueue: Array<() => void> = [];
+
+// The render GATE: "open" lets queued jobs into the lane, "parked" holds
+// them. Rust parks the lane while a fling (or a zoom — the phase merge
+// ranks it as one) is in flight, so a full-page raster is never issued for
+// a page the reader is sweeping past. Jobs keep accumulating while parked
+// (cheap: a generation and a closure) and drain by priority when it
+// reopens — the settle flush's promoted pages first.
+type RenderGate = "open" | "parked";
+let renderGate: RenderGate = "open";
+
+interface PageJob {
+  canvasId: string;
+  /** The per-canvas generation the job was queued under; a newer request
+   *  for the same page supersedes it at the front of the lane. */
+  gen: number;
+  /** Set by `promotePages` for the pages the reader landed on, so they hold
+   *  their priority through the drain. */
+  urgent: boolean;
+  run: () => void;
+}
+const pageQueue: Array<PageJob> = [];
 
 function pumpPageQueue(): void {
-  while (pageActive < PAGE_RENDER_LIMIT && pageQueue.length > 0) {
+  while (
+    renderGate === "open" &&
+    pageActive < PAGE_RENDER_LIMIT &&
+    pageQueue.length > 0
+  ) {
     const next = pageQueue.shift();
     if (!next) return;
     pageActive += 1;
-    next();
+    next.run();
+  }
+}
+
+/** Park (or reopen) the render lane. Fired on every scroll-phase transition;
+ *  a no-op when the gate already reads the same. */
+export function setRenderGate(parked: boolean): void {
+  const next: RenderGate = parked ? "parked" : "open";
+  if (renderGate === next) return;
+  renderGate = next;
+  if (next === "parked") return;
+  // Reopen: drop every job whose page died while parked (a queued job for a
+  // SUPERSEDED scale was already replaced at push time — one job per canvas
+  // is a queue invariant), keep the rest in urgent order, and drain.
+  const kept: PageJob[] = [];
+  for (const job of pageQueue) {
+    const st = session.stateByCanvasId.get(job.canvasId);
+    if (st && !st.dead) kept.push(job);
+  }
+  kept.sort((a, b) => Number(b.urgent) - Number(a.urgent));
+  pageQueue.length = 0;
+  pageQueue.push(...kept);
+  pumpPageQueue();
+}
+
+/** The settle flush: jump the queued renders of `pages` to the front of the
+ *  lane (and mark them urgent so the priority survives the drain). */
+export function promotePages(pages: number[]): void {
+  const want = new Set(pages);
+  for (const job of pageQueue) {
+    if (want.has(pageFromCanvasId(job.canvasId) ?? -1)) job.urgent = true;
+  }
+  pageQueue.sort((a, b) => Number(b.urgent) - Number(a.urgent));
+  pumpPageQueue();
+}
+
+/** Drop the farthest-held raw rasters until the session is back inside its
+ *  byte budget, measured out from `centerPage`. The visible canvas is never
+ *  touched, and a raw the scrub window still owns is left alone (restoring
+ *  it is cheaper than re-rendering — the same gate `scrubIsPlausible` keeps). */
+export function enforcePageBudget(centerPage: number, budgetBytes: number): void {
+  if (session.themeScrubActive || session.appearanceMenuOpen) return;
+  if (session.pageBytesUsed <= budgetBytes) return;
+  const entries = [...session.stateByCanvasId.values()]
+    .map((st) => ({ st, dist: Math.abs(st.page - centerPage) }))
+    .filter((x) => !x.st.dead && x.st.rawCanvas && x.st.rawCanvas !== x.st.canvas)
+    .sort((a, b) => b.dist - a.dist);
+  for (const { st } of entries) {
+    if (session.pageBytesUsed <= budgetBytes) break;
+    session.releaseRawBytes(st.rawCanvas!.width * st.rawCanvas!.height * 4);
+    releaseCanvas(st.rawCanvas!);
+    st.rawCanvas = null;
   }
 }
 
@@ -414,25 +501,36 @@ export async function renderPage(
         resolve(fail("cancelled", "Render cancelled"));
         return;
       }
-      pageQueue.push(() => {
-        const finish = () => {
-          pageActive -= 1;
-          pumpPageQueue();
-        };
-        // The page unmounted, or a newer scale superseded this job, while it
-        // waited for a lane slot. Drop it without touching pdf.js.
-        if (st.dead || st.queueGen !== gen) {
-          resolve(fail("cancelled", "Render cancelled"));
-          finish();
-          return;
-        }
-        renderPageInternal(canvasId, scale, !!renderText)
-          .then(resolve)
-          .catch((e: unknown) => {
-            resolve(failFrom(e));
-          })
-          .finally(finish);
-      });
+      const job: PageJob = {
+        canvasId,
+        gen,
+        urgent: false,
+        run: () => {
+          const finish = () => {
+            pageActive -= 1;
+            pumpPageQueue();
+          };
+          // The page unmounted, or a newer scale superseded this job, while
+          // it waited for a lane slot. Drop it without touching pdf.js.
+          if (st.dead || st.queueGen !== gen) {
+            resolve(fail("cancelled", "Render cancelled"));
+            finish();
+            return;
+          }
+          renderPageInternal(canvasId, scale, !!renderText)
+            .then(resolve)
+            .catch((e: unknown) => {
+              resolve(failFrom(e));
+            })
+            .finally(finish);
+        },
+      };
+      // A spam burst of requests for the same page collapses to ONE queued
+      // job: the newest replaces the older at push time.
+      for (let i = pageQueue.length - 1; i >= 0; i--) {
+        if (pageQueue[i].canvasId === canvasId) pageQueue.splice(i, 1);
+      }
+      pageQueue.push(job);
       pumpPageQueue();
     });
   });
