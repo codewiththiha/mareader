@@ -51,12 +51,6 @@ impl MotionPhase {
             Self::Fling => "fling",
         }
     }
-
-    /// Whether pages the reader is flying past are owed nothing more
-    /// expensive than a preview raster.
-    pub const fn is_sweeping(self) -> bool {
-        matches!(self, Self::Fast | Self::Fling)
-    }
 }
 
 /// One page range, 1-based and inclusive. `None` is the whole document — a
@@ -197,17 +191,8 @@ mod tests {
         assert_eq!(motion.phase, MotionPhase::default());
         assert!(motion.full.is_none() && motion.preview.is_none());
         assert_eq!(motion.delay_ms, 0);
-        assert!(!motion.phase.is_sweeping());
+        assert_eq!(motion.workers, 0);
         assert_eq!(motion, ScrollMotion::default());
-    }
-
-    #[test]
-    fn only_the_two_fast_phases_sweep() {
-        assert!(!MotionPhase::Idle.is_sweeping());
-        assert!(!MotionPhase::Slow.is_sweeping());
-        assert!(!MotionPhase::Normal.is_sweeping());
-        assert!(MotionPhase::Fast.is_sweeping());
-        assert!(MotionPhase::Fling.is_sweeping());
     }
 
     #[test]

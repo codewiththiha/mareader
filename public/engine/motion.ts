@@ -183,13 +183,6 @@ export function motionIsCurrent(): boolean {
   return live && Date.now() - publishedAt <= MOTION_TTL_MS;
 }
 
-/** Whether a strip has published any motion for this document. Distinct from
- *  [`motionIsCurrent`]: the paginated modes never publish at all, and their
- *  renders must never be paced or cancelled by a window they never asked for. */
-export function motionIsLive(): boolean {
-  return live;
-}
-
 export function currentBudget(): MotionBudget {
   return budget;
 }

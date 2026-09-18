@@ -58,15 +58,9 @@ const SAMPLE_DELAY_MS = 220;
  *  of its opacity; artifacts in it are not visible, and the bytes are. */
 const ENCODE_QUALITY = 0.6;
 
-let publishedUrl: string | null = null;
 let revokeOnReset: string | null = null;
 let rawPlaceholder: HTMLCanvasElement | null = null;
 let scheduled = false;
-
-/** The published URL, or null when there is no miniature yet. */
-export function placeholderUrl(): string | null {
-  return publishedUrl;
-}
 
 /** Encode a canvas to a URL the stylesheet can paint. `toBlob` + an object URL
  *  keeps the bytes off the style attribute and hands the encode to the
@@ -120,7 +114,6 @@ function publish(url: string | null): void {
     }
   }
   revokeOnReset = isObjectUrl ? url : null;
-  publishedUrl = url;
   try {
     const root = document.documentElement;
     if (url) root.style.setProperty(PLACEHOLDER_PROPERTY, `url("${url}")`);

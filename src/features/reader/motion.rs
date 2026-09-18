@@ -117,6 +117,7 @@ mod tests {
             ..RenderPlan::default()
         };
         assert_eq!(wire_motion(plan), ScrollMotion::idle());
+        assert_eq!(wire_motion(plan).phase, MotionPhase::Idle);
     }
 
     #[test]
@@ -142,7 +143,6 @@ mod tests {
         assert_eq!(motion.delay_ms, 8);
         assert_eq!(motion.workers, 2);
         assert_eq!(motion.direction, 1);
-        assert!(!motion.phase.is_sweeping());
     }
 
     #[test]
@@ -156,9 +156,6 @@ mod tests {
         ] {
             assert_eq!(wire_phase(phase), want);
         }
-        // The two enums agree about which end sweeps.
-        assert!(wire_phase(ScrollPhase::Fling).is_sweeping());
-        assert!(!wire_phase(ScrollPhase::Normal).is_sweeping());
     }
 
     #[test]

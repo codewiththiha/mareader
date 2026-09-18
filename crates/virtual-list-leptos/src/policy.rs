@@ -412,13 +412,6 @@ pub enum RenderQuality {
     Placeholder,
 }
 
-impl RenderQuality {
-    /// Whether this tier owes a raster at all.
-    pub fn paints(&self) -> bool {
-        matches!(self, Self::Full | Self::Preview)
-    }
-}
-
 /// The frame's whole answer: where the reader is, where they are going, and
 /// what each window around them is owed.
 ///
@@ -476,18 +469,6 @@ impl RenderPlan {
             return RenderQuality::Preview;
         }
         RenderQuality::Placeholder
-    }
-
-    /// The pages that outrank their neighbours this frame, in priority order:
-    /// the predicted destination first, then the visible range from its
-    /// leading edge. A scheduler that can only afford one render knows which
-    /// one to spend it on.
-    pub fn priorities(&self) -> impl Iterator<Item = usize> {
-        let predicted = self.predicted_index;
-        let visible = self.visible.into_iter().flat_map(|w| w.iter());
-        core::iter::once(predicted)
-            .chain(visible)
-            .chain(self.full.into_iter().flat_map(|w| w.iter()))
     }
 
     /// Whether this frame's movement is fast enough that expensive work for
@@ -707,27 +688,11 @@ mod tests {
     }
 
     #[test]
-    fn priorities_put_the_destination_first() {
-        let plan = RenderPlan {
-            visible: Some(window(10, 11)),
-            full: Some(window(10, 13)),
-            predicted_index: 13,
-            ..RenderPlan::default()
-        };
-        let order: Vec<usize> = plan.priorities().collect();
-        assert_eq!(order[0], 13);
-        // The visible pages follow immediately, in reading order.
-        assert_eq!(order[1], 10);
-        assert_eq!(order[2], 11);
-        // …and the rest of the full tier after them.
-        assert!(order.contains(&12));
-    }
-
-    #[test]
-    fn placeholder_tier_paints_nothing() {
-        assert!(!RenderQuality::Placeholder.paints());
-        assert!(RenderQuality::Preview.paints());
-        assert!(RenderQuality::Full.paints());
+    fn the_tier_a_question_not_asked_defaults_to_the_cheapest_answer() {
+        // A plan nobody filled in owes nothing: the default tier is the one
+        // that allocates no canvas, so a bug that leaves a plan empty shows up
+        // as a page without a raster rather than as a memory spike.
         assert_eq!(RenderQuality::default(), RenderQuality::Placeholder);
+        assert_eq!(RenderPlan::default().quality(0), RenderQuality::Placeholder);
     }
 }

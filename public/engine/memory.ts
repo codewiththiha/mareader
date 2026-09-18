@@ -68,7 +68,7 @@ function surfaceBytes(surface: { width: number; height: number } | null | undefi
 
 /** What one live page state costs: its visible raster plus the unbaked raw it
  *  is holding for a scrub, when that raw is a separate surface. */
-export function pageBytes(st: PageState): number {
+function pageBytes(st: PageState): number {
   const canvas = surfaceBytes(st.canvas);
   const raw = st.rawCanvas && st.rawCanvas !== st.canvas ? surfaceBytes(st.rawCanvas) : 0;
   return canvas + raw;
@@ -122,7 +122,7 @@ export function previewAdmissionOk(): boolean {
 /** How much a page is worth right now: the reader's own answer (which window
  *  it is in, which way they are going, how near the destination it is) minus
  *  what holding it costs. Higher survives. */
-export function importance(page: number, bytes: number): number {
+function importance(page: number, bytes: number): number {
   const motion = currentMotion();
   let score = 0;
   if (inWindow(page, motion.full)) score += 10_000;

@@ -12,6 +12,7 @@ import {
   thumbRaw,
   thumbSource,
 } from "./theme/thumbnails";
+import { thumbEvictionCandidate } from "./memory";
 import { THUMB_CACHE_MAX, session } from "./state";
 // A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
 // raster work, not clicks: queued jobs are invalidated on unmount and cached
@@ -59,7 +60,17 @@ function pumpThumbQueue(): void {
   }
 }
 /** Insert a thumbnail entry into the cache, releasing any previous entry for
- *  the page and evicting the LRU entry if the cache is full. */
+ *  the page and, when the cache is full, evicting the entry the reader has the
+ *  least use for.
+ *
+ *  That is not the oldest one. Insertion order is a fine proxy while the only
+ *  thing moving is the sidebar's own scroll, and stops being one the moment the
+ *  reader is elsewhere in the document: the thumbnails behind them, and the ones
+ *  near where they are heading, are not equally worth keeping, and an age-only
+ *  rule evicts whichever the grid happened to paint first. The ledger scores
+ *  them (memory.ts) against the same motion the render scheduler uses; the page
+ *  being inserted is exempt, so a cache of one entry over the cap cannot evict
+ *  the entry that just arrived. */
 function cachePut(page: number, entry: ThumbEntry): void {
   if (session.thumbCache.has(page)) {
     const prev = session.thumbCache.get(page);
@@ -68,10 +79,10 @@ function cachePut(page: number, entry: ThumbEntry): void {
   }
   session.thumbCache.set(page, entry);
   while (session.thumbCache.size > THUMB_CACHE_MAX) {
-    const oldest = session.thumbCache.keys().next();
-    if (oldest.done || oldest.value === undefined) break;
-    const oldEntry = session.thumbCache.get(oldest.value);
-    session.thumbCache.delete(oldest.value);
+    const victim = thumbEvictionCandidate(page);
+    if (victim === null) break;
+    const oldEntry = session.thumbCache.get(victim);
+    session.thumbCache.delete(victim);
     if (oldEntry && oldEntry !== entry) session.releaseThumbEntry(oldEntry);
   }
 }
