@@ -36,13 +36,12 @@ pub fn HuePicker(
     let on_change_strip = on_change.clone();
     view! {
         <div class="flex w-full flex-col gap-2">
-            // The row is titled for what the whole tint block dials — its
-            // strength — with the hue read out in degrees beside the label.
-            // The 0–100 dial below dials the same quantity on its own scale;
-            // the aria-labels ("Tint strength" here, the slider's own label
-            // there) are what keep the two distinct to a screen reader.
+            // Titled for the quantity this control dials — the hue — with the
+            // value read out in degrees beside it. The 0–100 Strength slider
+            // below the swatches dials the tint's AMOUNT, so a row that also
+            // said Strength named the wrong one of the two.
             <span class="flex items-baseline justify-between text-xs text-muted">
-                <span>"Strength"</span>
+                <span>"Hue"</span>
                 <span class="tabular-nums text-ink">
                     {move || format!("{}°", hue.get().round())}
                 </span>
@@ -58,7 +57,7 @@ pub fn HuePicker(
                 max=Signal::derive(|| 359.0)
                 step=Signal::derive(|| 1.0)
                 on_input=on_change_strip
-                aria_label="Tint strength"
+                aria_label="Hue"
                 class="hue-strip h-4 w-full cursor-pointer appearance-none rounded-full border border-line"
             />
 
