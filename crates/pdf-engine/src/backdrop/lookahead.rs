@@ -4,16 +4,18 @@
 use super::{Session, feed_state, publish, slot, spawn_engine, with};
 use crate::api;
 
-/// The pages whose colour the session wants known: the pair the reader
-/// is straddling plus the one after it, so the colour is resolved before
-/// the reader arrives. Pure — the test exercises exactly this choice.
+/// The pages whose colour the session wants known: the pair the reader is
+/// straddling plus `lookahead` pages after it — the same depth the reader's
+/// paint window prefetches (fed through `configure`), so the colour is
+/// resolved before the pages themselves arrive. Pure — the test exercises
+/// exactly this choice.
 pub(super) fn lookahead_wants(s: &Session) -> Vec<u32> {
     if !s.blend_on || s.num_pages == 0 {
         return Vec::new();
     }
     let base = s.position.floor().max(1.0) as u32;
     let mut wants = Vec::new();
-    for page in [base, base + 1, base + 2] {
+    for page in base..=base + s.lookahead {
         if (1..=s.num_pages).contains(&page)
             && !s.palettes[slot(s.config.area)].contains(page)
             && !s.sampling.contains(&page)

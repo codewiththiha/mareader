@@ -83,3 +83,42 @@ pub async fn prefetch_thumb(page: u32, scale: f64) {
     }
     _ = bridge::prefetch_thumb(page, scale).await;
 }
+
+/// Park (or reopen) the engine's full-page render lane. Fired by the reader
+/// on every scroll-phase transition: parked while a fling is in flight so a
+/// full-page raster is never issued for a page the reader is sweeping past.
+pub fn set_render_gate(parked: bool) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::set_render_gate(parked);
+}
+
+/// Jump the queued renders of `pages` to the front of the engine lane — the
+/// settle flush: the pages the reader landed on rasterise first.
+pub fn promote_pages(pages: &[u32]) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::promote_pages(pages);
+}
+
+/// Drop the farthest-held raw rasters, measured out from `center_page`,
+/// until the engine's retained raw bytes are inside `budget_bytes`.
+pub fn enforce_page_budget(center_page: u32, budget_bytes: u32) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::enforce_page_budget(center_page, budget_bytes);
+}
+
+/// Render the document's ghost placeholder (the modal page, tiny and
+/// desaturated) and resolve its blob URL, or `None` when it cannot. The
+/// engine dedupes against its theme pipeline, so a repeat call with an
+/// unchanged appearance resolves the cached URL.
+pub async fn render_ghost(page: u32, height_px: f64) -> Option<String> {
+    if !guard_pdf_reader() {
+        return None;
+    }
+    bridge::render_ghost(page, height_px).await.as_string()
+}

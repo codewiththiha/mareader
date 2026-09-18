@@ -28,7 +28,7 @@ use crate::components::viewer::controls::bottom_bar::ReaderBottomBar;
 use crate::components::viewer::controls::page_indicator::PageIndicator;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
-use crate::features::reader::use_reader_virtualizers;
+use crate::features::reader::{use_reader_virtualizers, SmartCfg};
 use crate::services::document::close_document;
 use crate::state::AppState;
 use reader_core::settings::PageIndicatorStyle;
@@ -47,7 +47,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let shell = ShellController::reader(state);
     provide_context(shell);
 
-    let rv = use_reader_virtualizers(vs);
+    // The smart virtualizer's one-call setup: windowing plus the phase
+    // machine, the paint window, the ghost provider and the engine gate.
+    // Deeper prefetch is one field on `SmartCfg`, not a constant hunt.
+    let rv = use_reader_virtualizers(vs, SmartCfg::default());
+    // The page slots (the strips) read the paint window and the ghost from
+    // context, so the wiring above is the only place that knows they exist.
+    provide_context(rv.smart);
 
     // The layout prefs (page gap, page margin) resolve their settings into the
     // strips' size models. Installed BEFORE the reflow layout effect below,

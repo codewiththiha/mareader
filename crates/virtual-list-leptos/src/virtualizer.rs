@@ -349,6 +349,12 @@ impl VirtualizerInner {
             // a dangling JS callback.
             drop(callback);
         }
+        // The consumer's own listeners on this container come back out with
+        // ours: a listener that survived its element would leak the element
+        // (and every page canvas mounted inside it) for the life of the app.
+        if let Some(cb) = &self.options.on_unbind {
+            cb();
+        }
     }
 }
 
@@ -471,6 +477,13 @@ impl Virtualizer {
                 observer.observe(&el);
                 *inner.container_ro.borrow_mut() = Some(ObserverBinding { observer, callback });
             }
+        }
+
+        // AFTER the listeners and the observer: a consumer attaching its own
+        // listeners here must not find them torn down by the teardown that
+        // opened this call.
+        if let Some(cb) = &inner.options.on_bind {
+            cb(el.clone());
         }
     }
 

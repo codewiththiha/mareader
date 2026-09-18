@@ -33,8 +33,8 @@ pub use dialog::pick_document;
 pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
 pub use paper::{sample_paper_page, set_paper, set_paper_active, take_paper_frame, PaperFrame};
 pub use render::{
-    blit_thumb, cancel_thumb, has_thumb, prefetch_thumb, register_page, render_page, render_thumb,
-    unregister_page,
+    blit_thumb, cancel_thumb, enforce_page_budget, has_thumb, prefetch_thumb, promote_pages,
+    register_page, render_ghost, render_page, render_thumb, set_render_gate, unregister_page,
 };
 pub use search::{build_search_index, clear_highlights, scope_to_document, search, set_active_match};
 pub use theme::{refresh_theme, set_appearance_menu_open, set_scrub_mode, sweep, sweep_snapshots};

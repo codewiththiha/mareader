@@ -67,6 +67,10 @@ pub(super) struct Session {
     position: f64,
     /// Pages whose offscreen look-ahead sample is in flight.
     sampling: std::collections::HashSet<u32>,
+    /// How many pages PAST the reader's pair the look-ahead resolves — the
+    /// same depth the reader's paint window prefetches, so the colour is
+    /// known before the pages themselves arrive.
+    lookahead: u32,
     /// Generation token: bumped on document open/close.
     epoch: u64,
 }
@@ -91,6 +95,7 @@ impl Default for Session {
             published: None,
             position: 1.0,
             sampling: std::collections::HashSet::new(),
+            lookahead: 2,
             epoch: 0,
         }
     }
@@ -128,7 +133,7 @@ pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: imp
 /// direction, at any scroll position, with no gap between. The one cold
 /// case is a session that holds nothing for this book (blend was off, so
 /// nothing was stashed or fed): it samples the page under the cursor once.
-pub fn configure(blend_on: bool, mut config: PaperConfig) {
+pub fn configure(blend_on: bool, mut config: PaperConfig, lookahead: u32) {
     config.sanitize();
     with(|s| {
         if s.config.edge_width != config.edge_width {
@@ -138,6 +143,7 @@ pub fn configure(blend_on: bool, mut config: PaperConfig) {
         }
         s.blend_on = blend_on;
         s.config = config;
+        s.lookahead = lookahead.max(1);
     });
     api::set_paper_active(blend_on);
     publish();
@@ -421,6 +427,7 @@ mod tests {
                 area: PaperArea::Edges,
                 ..PaperConfig::default()
             },
+            2,
         );
         // One frame fed both ladders: the flip resolves from the other one
         // on the spot — same colour for a uniform page, no gap, and no
@@ -476,7 +483,7 @@ mod tests {
         feed_frame(&split(2)); // the scroll: other pages feed, position moves
         position(2.0);
 
-        configure(true, PaperConfig::default()); // → WholePage
+        configure(true, PaperConfig::default(), 2); // → WholePage
         assert_eq!(published().as_deref(), Some("#faf4e8"));
 
         configure(
@@ -485,6 +492,7 @@ mod tests {
                 area: PaperArea::Edges,
                 ..PaperConfig::default()
             },
+            2,
         );
         assert_eq!(published().as_deref(), Some("#800000"));
     }
@@ -503,7 +511,7 @@ mod tests {
 
         let mut config = with(|s| s.config);
         config.edge_width += 1;
-        configure(true, config);
+        configure(true, config, 2);
 
         with(|s| {
             assert!(s.palettes[slot(PaperArea::WholePage)].contains(1));
@@ -533,7 +541,7 @@ mod tests {
         document_open("/fake/book.pdf", 10);
         feed_frame(&uniform(1, 32, 32, CREAM));
         assert_eq!(published().as_deref(), Some("#faf4e8"));
-        configure(false, PaperConfig::default());
+        configure(false, PaperConfig::default(), 2);
         assert_eq!(published(), None);
     }
 

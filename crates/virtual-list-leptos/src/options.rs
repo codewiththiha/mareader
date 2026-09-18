@@ -92,6 +92,15 @@ pub struct VirtualizerOptions {
     /// slides cheap placeholders past the reader's eyes and only the band
     /// around the viewport ever lays out real content.
     pub render_screens: f64,
+    /// Called with the scroll container when it is (re)bound. Lets a consumer
+    /// attach its own listeners (the reader's scroll-phase tracker) to the
+    /// element the virtualizer already owns, without a second container
+    /// reference.
+    pub on_bind: Option<Rc<dyn Fn(web_sys::Element)>>,
+    /// Called when the container is unbound (a re-bind or an unmount), so a
+    /// consumer's listeners come back out with the virtualizer's own — a
+    /// listener that survived its element would leak the element with it.
+    pub on_unbind: Option<Rc<dyn Fn()>>,
 }
 
 impl VirtualizerOptions {
@@ -119,6 +128,8 @@ impl VirtualizerOptions {
             measure_epsilon: 0.5,
             max_scroll_retries: 3,
             render_screens: 0.0,
+            on_bind: None,
+            on_unbind: None,
         }
     }
 
@@ -203,6 +214,18 @@ impl VirtualizerOptions {
     pub fn retention(mut self, grace_ms: u32, max_retained: usize) -> Self {
         self.retention_grace_ms = grace_ms;
         self.retention_max = max_retained;
+        self
+    }
+
+    /// Sets [`Self::on_bind`].
+    pub fn on_bind(mut self, cb: impl Fn(web_sys::Element) + 'static) -> Self {
+        self.on_bind = Some(Rc::new(cb));
+        self
+    }
+
+    /// Sets [`Self::on_unbind`].
+    pub fn on_unbind(mut self, cb: impl Fn() + 'static) -> Self {
+        self.on_unbind = Some(Rc::new(cb));
         self
     }
 }

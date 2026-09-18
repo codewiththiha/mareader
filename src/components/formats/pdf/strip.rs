@@ -40,6 +40,7 @@ use virtual_list_leptos::{VirtualItem, VirtualItemState, Virtualizer};
 
 use super::canvas::{GlossOverlayProps, PdfPageCanvas};
 use crate::components::viewer::page_host::{canvas_id_for_axis, host_id_for_axis};
+use crate::features::reader::SmartVirtualizer;
 use pdf_core::pixel_grid::{one_device_px, snap_px};
 use crate::state::{ReaderState, TextureSignal};
 
@@ -54,6 +55,14 @@ pub fn PdfPageStrip(
 ) -> impl IntoView {
     let texture =
         use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
+
+    // The smart-virtualizer surface `ReaderPage` provides: the paint window
+    // an unpainted page's first render gates on, and the ghost placeholder
+    // that covers the empty canvas until the render lands.
+    let smart = use_context::<SmartVirtualizer>()
+        .expect("SmartVirtualizer must be provided by ReaderPage");
+    let paint_window = smart.paint_window;
+    let ghost = smart.ghost;
 
     let v = virtualizer;
     let handle = StoredValue::new_local(v.clone());
@@ -170,6 +179,21 @@ pub fn PdfPageStrip(
                                     let page = (index + 1) as u32;
                                     let top = handle.with_value(|v| v.item_top(index));
                                     let dormant = dormant_signal(items, index);
+                                    // The paint window's membership for THIS page: one
+                                    // shared read (the window memo), derived per slot,
+                                    // so an unpainted page outside it stays on the
+                                    // ghost instead of starting a raster.
+                                    let paintable = Signal::derive(move || {
+                                        paint_window
+                                            .get()
+                                            .is_some_and(|(lo, hi)| (lo..=hi).contains(&index))
+                                    });
+                                    // The box the first render will paint into — the
+                                    // virtualizer's own layout at the live scale.
+                                    let item_size = handle.with_value(|v| v.item_size(index));
+                                    let pre_paint = Signal::derive(move || {
+                                        pre_paint_box(state, index, axis, item_size.get())
+                                    });
                                     // Offsets are snapped for the same reason
                                     // sizes are: the wrapper's top is a running
                                     // sum of page extents at the live scale, so
@@ -208,6 +232,9 @@ pub fn PdfPageStrip(
                                                 zoom_animating=state.viewer.zooming()
                                                 dormant=dormant
                                                 settled=settled
+                                                paintable=paintable
+                                                ghost=ghost
+                                                pre_paint=pre_paint
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)
@@ -245,6 +272,18 @@ pub fn PdfPageStrip(
                                     let page = (index + 1) as u32;
                                     let left = handle.with_value(|v| v.item_top(index));
                                     let dormant = dormant_signal(items, index);
+                                    // Paint window and pre-paint box, same rule as the
+                                    // vertical arm: membership from the shared window
+                                    // memo, the box from the virtualizer's layout.
+                                    let paintable = Signal::derive(move || {
+                                        paint_window
+                                            .get()
+                                            .is_some_and(|(lo, hi)| (lo..=hi).contains(&index))
+                                    });
+                                    let item_size = handle.with_value(|v| v.item_size(index));
+                                    let pre_paint = Signal::derive(move || {
+                                        pre_paint_box(state, index, axis, item_size.get())
+                                    });
                                     // top:0 — the strip owns the full window height and
                                     // the auto-hiding title bar overlays it, like Spread.
                                     // The main-axis offset is snapped to the device-pixel
@@ -264,6 +303,9 @@ pub fn PdfPageStrip(
                                                 zoom_animating=state.viewer.zooming()
                                                 dormant=dormant
                                                 settled=settled
+                                                paintable=paintable
+                                                ghost=ghost
+                                                pre_paint=pre_paint
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)
@@ -305,4 +347,51 @@ fn dormant_signal(items: Signal<Vec<VirtualItem>, LocalStorage>, index: usize) -
             .iter()
             .any(|item| item.index == index && item.state == VirtualItemState::Zombie)
     })
+}
+
+/// The pre-paint CSS box of `index` at the live display scale: the
+/// main-axis extent the virtualizer has laid out for it (trailing gap and
+/// margins removed), and the cross axis from the page's own aspect — so an
+/// unpainted page's ghost placeholder occupies exactly the box the first
+/// render will fill.
+fn pre_paint_box(
+    state: ReaderState,
+    index: usize,
+    axis: Axis,
+    item_size: f64,
+) -> (f64, f64) {
+    // Untracked reads: the caller's derive tracks the layout through
+    // `item_size` (a zoom relayouts the strip, which re-runs it), and this
+    // function only looks the rest up.
+    let scale = state.viewer.zoom.visual_scale();
+    let aspect = state
+        .document
+        .content
+        .metrics
+        .intrinsic
+        .with_untracked(|sizes| {
+            sizes
+                .get(index)
+                .and_then(|s| (s.width > 0.0 && s.height > 0.0).then(|| s.width / s.height))
+        })
+        .or_else(|| {
+            state
+                .document
+                .content
+                .metrics
+                .page1_size
+                .get_untracked()
+                .and_then(|p| (p.width > 0.0 && p.height > 0.0).then(|| p.width / p.height))
+        });
+    match axis {
+        Axis::Vertical => {
+            let h = (item_size - state.viewer.page_gap.get_untracked()).max(0.0);
+            (aspect.map_or(0.0, |a| h * a), h)
+        }
+        Axis::Horizontal => {
+            let m = state.viewer.page_margin.get_untracked();
+            let w = (item_size - 2.0 * m).max(0.0);
+            (w, aspect.map_or(0.0, |a| w / a))
+        }
+    }
 }

@@ -163,6 +163,31 @@ extern "C" {
     /// alone.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweepSnapshots")]
     pub fn sweep_snapshots();
+
+    // The smart virtualizer's render lane. Parked while a fling (or a zoom)
+    // is in flight, so a full-page raster is never issued for a page the
+    // reader is sweeping past; the queue keeps filling while parked and
+    // drains by priority when it reopens.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setRenderGate")]
+    pub fn set_render_gate(parked: bool);
+
+    /// Jump the queued renders of `pages` to the front of the lane — the
+    /// settle flush, the pages the reader landed on.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "promotePages")]
+    pub fn promote_pages(pages: &[u32]);
+
+    /// Drop the farthest-held raw rasters, measured out from `center_page`,
+    /// until the retained raw bytes are back inside `budget_bytes`. The
+    /// visible canvas is never touched.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "enforcePageBudget")]
+    pub fn enforce_page_budget(center_page: u32, budget_bytes: u32);
+
+    /// Render the placeholder ghost — the modal page at ~140px, desaturated
+    /// and baked through the theme pipeline — and resolve its blob URL.
+    /// Resolves `null` when it cannot (no document, no context); the caller
+    /// keeps what it has.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderGhost")]
+    pub async fn render_ghost(page: u32, height_px: f64) -> JsValue;
 }
 
 /// True when `window.PDFReader` exists. Must be checked before any engine

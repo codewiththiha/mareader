@@ -58,7 +58,10 @@ pub fn paper_settings(state: AppState) {
     Effect::new(move |_| publish(settings.with(|st| st.layout)));
 }
 
-/// Hand one snapshot of the layout settings to the paper session.
+/// Hand one snapshot of the layout settings to the paper session. The
+/// look-ahead depth is the reader's own prefetch depth, so the colour the
+/// next page needs is resolved at the same horizon the page itself is
+/// painted.
 fn publish(layout: LayoutSettings) {
     pdf_engine::backdrop::configure(
         layout.blend_mode,
@@ -66,6 +69,7 @@ fn publish(layout: LayoutSettings) {
             area: layout.blend_area,
             edge_width: DEFAULT_EDGE_WIDTH,
         },
+        crate::features::reader::render_gate::PrefetchCfg::default().forward as u32,
     );
 }
 

@@ -131,6 +131,26 @@ pub fn PdfPageCanvas(
     /// page or two and sweep nothing past.
     #[prop(optional)]
     settled: Option<Signal<bool>>,
+    /// The paint-window gate: false while the virtualizer's paint window for
+    /// the current scroll phase does not cover this page. An UNPAINTED page
+    /// that is not paintable stays on its ghost (or thumbnail underlay)
+    /// instead of starting a full-resolution render — a fling paints ghosts
+    /// only. `None` (no virtualizer: single, spread) means always paintable.
+    #[prop(optional)]
+    paintable: Option<Signal<bool>>,
+    /// The ghost placeholder's image (the document's modal page, tiny and
+    /// desaturated), when the reader has one: shown over the empty canvas
+    /// until this page's first render lands, removed in the same flush the
+    /// paint does. `None` (no virtualizer) shows no ghost at all.
+    #[prop(optional)]
+    ghost: Option<Signal<Option<String>>>,
+    /// This page's CSS box (width, height) at the live display scale, from
+    /// the virtualizer's layout: the size the host wears BEFORE its first
+    /// render (the engine's geometry write takes over once it lands), so the
+    /// ghost placeholder fills the box the first render paints into and the
+    /// swap is without a layout shift.
+    #[prop(optional)]
+    pre_paint: Option<Signal<(f64, f64)>>,
     /// True while a real zoom *gesture* owns the layout. Distinct from
     /// `zoom_animating`, which every resize-driven animation also holds — a
     /// fit slide, a window drag carrying a hand-picked zoom — for the whole
@@ -177,6 +197,9 @@ pub fn PdfPageCanvas(
     // sidebar slide (remount race) would sit blank until a scroll
     // re-triggered the effect.
     let painted = Rc::new(Cell::new(false));
+    // The reactive twin of `painted`: the ghost overlay reads this (a Cell
+    // would not re-render the view when the first paint lands).
+    let painted_sig = RwSignal::new(false);
 
     // Owned clones for the side-effect closures so the originals stay for view!.
     let cid = canvas_id.clone();
@@ -260,6 +283,31 @@ pub fn PdfPageCanvas(
             false,
         );
     });
+
+    // PRE-PAINT SIZE. Until the first render reports the real geometry the
+    // host has no inline size (its canvas and layers are absolute, so its
+    // content is out of flow) and an unpainted page would be a zero-height
+    // box with nothing to show. The virtualizer's layout already knows the
+    // box this page will take — wear it now; the render's geometry write
+    // takes over once it lands, and the ghost placeholder (below) fills the
+    // same box, so the swap is local DOM with no layout shift.
+    if let Some(pre_paint) = pre_paint {
+        let hid_pp = host_id.clone();
+        let painted_pp = painted_sig;
+        Effect::new(move |_| {
+            // The render owns the size from here on.
+            if painted_pp.get() {
+                return;
+            }
+            let (w, h) = pre_paint.get();
+            if w <= 0.0 || h <= 0.0 {
+                return;
+            }
+            if let Some(host) = app_chrome::hooks::dom::by_id(&hid_pp) {
+                let _ = host.set_attribute("style", &format!("width:{w}px;height:{h}px"));
+            }
+        });
+    }
 
     Effect::new(move || {
         // Read every dependency unconditionally: a Leptos effect only
@@ -368,6 +416,18 @@ pub fn PdfPageCanvas(
             }
             return;
         }
+        // PAINT-WINDOW GATE. An unpainted page the paint window does not
+        // cover stays on its ghost/thumbnail until the window reaches it —
+        // the phase machine's half of the fling gate (`settled` above is the
+        // strip's half: both must agree before a raster starts, so a render
+        // lands only when the phase AND the strip are quiet). Read tracked,
+        // so the window opening re-runs this effect and the render starts.
+        if !painted.get() && paintable.as_ref().is_some_and(|p| !p.get()) {
+            if !(gw > 0.0 && gh > 0.0) {
+                engine::blit_thumb(&cid_effect, page);
+            }
+            return;
+        }
         let page_no = page;
         let cid = cid_effect.clone();
         let hid = hid_effect.clone();
@@ -377,6 +437,8 @@ pub fn PdfPageCanvas(
         let geo_async = geo;
         let seq_async = render_seq;
         let painted_async = painted.clone();
+        let painted_sig_async = painted_sig;
+        let disposed_async = disposed;
 
         // This effect run owns the next generation; older completions are stale.
         let my_seq = seq_async.get_value() + 1;
@@ -424,8 +486,14 @@ pub fn PdfPageCanvas(
                     if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
+                    // The owner died: the signals go with it, and nothing
+                    // downstream needs to know.
+                    if disposed_async.try_get_value().unwrap_or(true) {
+                        return;
+                    }
                     // Successful render: the canvas now has a bitmap.
                     painted_async.set(true);
+                    painted_sig_async.set(true);
                     // Snap the rendered size to the device-pixel grid before
                     // it becomes CSS. `r.width`/`r.height` are whole CSS px,
                     // which is only whole DEVICE px when the ratio is an
@@ -469,12 +537,16 @@ pub fn PdfPageCanvas(
                     if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
+                    if disposed_async.try_get_value().unwrap_or(true) {
+                        return;
+                    }
                     // Cancelled / transient errors are logged, not fatal;
                     // never leave a stale mask behind (a cancelled render also
                     // leaves the canvas wiped, so the next scale change
                     // re-marks). Mark the canvas NOT painted so the no-op fast
                     // path does not skip the re-render.
                     painted_async.set(false);
+                    painted_sig_async.set(false);
                     if let Some(host) = app_chrome::hooks::dom::by_id(&hid) {
                         remove_snapshots(&host);
                     }
@@ -494,6 +566,32 @@ pub fn PdfPageCanvas(
             data-host-page=page
         >
             <canvas id=canvas_id />
+            // GHOST PLACEHOLDER — the cover for the empty canvas (the look
+            // lives in styles/page_host.css): the document's modal page,
+            // tiny and desaturated, with a shimmer. Shown only while this
+            // page is UNPAINTED — the first render removes it in the same
+            // flush the bitmap lands, so the swap is local DOM and the box
+            // is already the size the render will fill (the pre-paint size
+            // above). Placed before the text layer so glyph spans, once the
+            // render has built them, always paint above it.
+            {ghost.map(|ghost_sig| {
+                let painted_g = painted_sig;
+                view! {
+                    <Show when=move || !painted_g.get()>
+                        {move || {
+                            let url = ghost_sig.get();
+                            view! {
+                                <div class="page-ghost">
+                                    <div class="page-ghost-shimmer"></div>
+                                    {url.map(|u| view! {
+                                        <div class="page-ghost-img" style=format!("background-image:url({u});") />
+                                    })}
+                                </div>
+                            }
+                        }}
+                    </Show>
+                }
+            })}
             // Placeholder text layer. The engine REPLACES this node on each
             // text render: it builds the spans in a detached `.textLayer` and
             // swaps it in atomically, so a superseded render's late spans can
