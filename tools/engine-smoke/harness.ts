@@ -313,7 +313,12 @@ interface FakeWindow {
   };
 }
 
-export let fakeComputed: { "--canvas-filter": string; "--canvas-blend": string; paper?: string } = {
+export let fakeComputed: {
+  "--canvas-filter": string;
+  "--canvas-blend": string;
+  "--tex-opacity"?: string;
+  paper?: string;
+} = {
   "--canvas-filter": "none",
   "--canvas-blend": "normal",
 };
@@ -338,6 +343,7 @@ export const fakeWindow: FakeWindow = {
     getPropertyValue: (name: string) => {
       if (name === "--canvas-filter") return fakeComputed["--canvas-filter"] || "none";
       if (name === "--canvas-blend") return fakeComputed["--canvas-blend"] || "normal";
+      if (name === "--tex-opacity") return fakeComputed["--tex-opacity"] || "";
       return "";
     },
     backgroundColor: fakeComputed.paper || "#ffffff",
@@ -618,6 +624,7 @@ export function trackCreatedCanvases(): void {
 export function setFakeComputed(v: {
   "--canvas-filter": string;
   "--canvas-blend": string;
+  "--tex-opacity"?: string;
   paper?: string;
 }): void {
   fakeComputed = v;

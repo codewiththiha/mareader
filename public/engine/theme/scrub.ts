@@ -85,9 +85,9 @@ function pipelineFingerprint(): string {
 }
 
 // The scrub window repaints the root tokens per tick and the rasters
-// composite live, but --pdf-paper-baked is a PUBLISHED value, and the
-// flat-paper contract (styles/components/shell.css, styles/page_host.css)
-// carries it on the backdrop base AND the page hosts: frozen for the length
+// composite live, but the paper is a PUBLISHED value, and the flat-paper
+// contract (styles/components/shell.css, styles/page_host.css) carries it on
+// the backdrop base AND the page hosts: frozen for the length
 // of a drag, the fractional page edge shows the stale base against the live
 // gutter as a seam. The per-tick republish is the standing token watch's job
 // (paper.ts, watchPaperTokens): it fires on the paint's own root-style

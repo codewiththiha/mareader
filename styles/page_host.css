@@ -57,6 +57,17 @@
 .reader-bg.blend .pdf-page {
   background-color: var(--pdf-paper-baked, var(--color-paper));
 }
+/* The paged modes' half of the same contract, and it must agree with the
+   backdrop rule they select (components/shell.css): there the base is the
+   page's own paper, not the texture-folded one, because the gutter beside
+   these hosts is painted by their own texture overhang rather than by a bare
+   backdrop. The host's colour is what shows at the page's edge — a
+   fractional device pixel at rest, the 1px rim through a scrub window, where
+   the ::before below is inset and stopped being the gutter's texture. */
+.reader-bg.blend .pdf-page[id^="sp-"],
+.reader-bg.blend .pdf-page[id^="dp-"] {
+  background-color: var(--pdf-paper-page, var(--pdf-paper-baked, var(--color-paper)));
+}
 /* A tint scrub exposes raw rasters that live-blend against their base, and
    that blend is only correct over the UN-themed base. The host itself keeps
    carrying the baked paper through the window — the standing token watch

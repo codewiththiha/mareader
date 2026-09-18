@@ -53,6 +53,17 @@ export function paperInfo(pipeline: PipelineCache): PaperInfo {
 // the page's texture overlay — grain the compositor lays OVER the baked
 // raster but not over the flat backdrop — so a page edge meeting the gutter
 // on a fractional device pixel mixes the same colour on both sides.
+//
+// TWO COLOURS, because that fold is only right where the base shows BARE.
+// The page texture reaches the gutter on its own, as an overhang of each
+// page's ::before (styles/textures.css, BLEND BLEED): wherever a page is
+// adjacent, the gutter carries the same grain the page does, so a base that
+// ALSO carries the shift applies it twice and pulls the gutter away from the
+// page. The paged modes are gapless and covered on every side by that
+// overhang, so they take the unfolded colour instead — --pdf-paper-page, the
+// paper a page's own raster carries (styles/components/shell.css). The
+// strips keep the folded --pdf-paper-baked, because a page gap leaves real
+// bands where the base has no texture over it at all.
 
 /** Parse the `#rrggbb` the paper session publishes; null on anything else. */
 function parsePaperHex(hex: string): [number, number, number] | null {
@@ -95,8 +106,10 @@ function textureShiftFactor(): number {
 }
 
 /** The detected paper run through one pass of the current filter + blend —
- *  the colour a baked raster's paper region carries. */
-function bakedPaperHex(pipeline: PipelineCache): string | null {
+ *  the colour a baked raster's paper region carries, with no texture folded
+ *  in: the overlay rides over this colour, on the page and (through the
+ *  page's own bleed) on the gutter alike. */
+function themedPaperHex(pipeline: PipelineCache): string | null {
   const raw = session.detectedPaper;
   if (!raw) return null;
   const rgb = parsePaperHex(raw);
@@ -133,27 +146,35 @@ function bakedPaperHex(pipeline: PipelineCache): string | null {
   } catch (_) {
     /* the filtered colour alone is closer than none */
   }
-
-  // Stage three — the texture overlay. The page's ::before grain rides OVER
-  // the baked raster (styles/textures.css); the backdrop carries only the
-  // flat colour published here. Approximate the overlay's mean effect so
-  // the two meet at the page edge — worst case is Parchment, paper grain
-  // at 85% over a warm tint, where the untextured gutter used to show as a
-  // seam along fractional device pixels.
-  const factor = textureShiftFactor();
-  if (factor !== 1) {
-    out = [out[0] * factor, out[1] * factor, out[2] * factor];
-  }
   return toPaperHex(out);
 }
 
-/** Keep `--pdf-paper-baked` honest: the detected paper pre-rendered through
+/** The themed paper with the texture overlay's mean shift folded in — the
+ *  colour a BARE stretch of backdrop has to carry to sit beside a textured
+ *  page. See the module note: only the strips, whose page gaps leave the
+ *  base uncovered, have such stretches. */
+function foldedPaperHex(themed: string): string {
+  const factor = textureShiftFactor();
+  if (factor === 1) return themed;
+  const rgb = parsePaperHex(themed);
+  if (!rgb) return themed; // not a shape we can shift: leave it alone
+  return toPaperHex([rgb[0] * factor, rgb[1] * factor, rgb[2] * factor]);
+}
+
+/** Keep the published paper honest: the detected paper pre-rendered through
  *  the current filter + blend, with the texture overlay's mean shift folded
  *  in — the colour a baked raster's paper carries. Called whenever an input
  *  moves: the detected paper (`setPaper`), the theme (`rebakeTheme`, and
  *  through it the scrub exit's forced rebake), and the standing token watch
  *  below, which hears the moves no engine call carries — a drag's per-tick
- *  repaint and a texture click the Rust rebake signature never sees. */
+ *  repaint and a texture click the Rust rebake signature never sees.
+ *
+ *  Publishes BOTH colours: `--pdf-paper-baked` (the fold applied) for the
+ *  surfaces where the base can show bare, and `--pdf-paper-page` (the page's
+ *  own paper) for the paged modes, whose gutter is covered by the pages' own
+ *  texture overhang. The page colour is published only while the fold is
+ *  actually in play, so with no texture on the stylesheet's fallback chain
+ *  collapses to the one colour and the custom property stays off the root. */
 export function publishBakedPaper(): void {
   let el: HTMLElement;
   try {
@@ -161,9 +182,16 @@ export function publishBakedPaper(): void {
   } catch (_) {
     return;
   }
-  const hex = bakedPaperHex(readPipeline());
-  if (hex) el.style.setProperty("--pdf-paper-baked", hex);
-  else el.style.removeProperty("--pdf-paper-baked");
+  const themed = themedPaperHex(readPipeline());
+  if (!themed) {
+    el.style.removeProperty("--pdf-paper-baked");
+    el.style.removeProperty("--pdf-paper-page");
+    return;
+  }
+  const folded = foldedPaperHex(themed);
+  el.style.setProperty("--pdf-paper-baked", folded);
+  if (folded === themed) el.style.removeProperty("--pdf-paper-page");
+  else el.style.setProperty("--pdf-paper-page", themed);
 }
 
 // THE STANDING WATCH. The published paper is computed from four root tokens
