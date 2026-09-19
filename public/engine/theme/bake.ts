@@ -155,9 +155,9 @@ async function applyFilterPixels(
   // thumbs could not be rebaked without a pdf.js re-render.
   const out = acquireScratch(w, h);
   const octx = out.getContext("2d", { alpha: false });
-  if (!octx) return src;
-  octx.putImageData(img, 0, 0);
-  return out;
+  if (!octx) { releaseScratch(out); return src; }
+  try { octx.putImageData(img, 0, 0); return out; }
+  catch (error) { releaseScratch(out); throw error; }
 }
 
 export function rasterToCanvas(src: HTMLCanvasElement | ImageBitmap): {
@@ -191,18 +191,25 @@ export async function bakeRaster(
   const out = acquirePooledCanvas(src.width, src.height);
   const octx = out.getContext("2d", { alpha: false });
   if (!octx) {
+    releasePooledCanvas(out);
     return filtered;
   }
-  octx.globalCompositeOperation = "source-over";
-  octx.fillStyle = paperInfo(pipeline).color;
-  octx.fillRect(0, 0, out.width, out.height);
-  octx.globalCompositeOperation = pipeline.blend as GlobalCompositeOperation;
-  octx.drawImage(filtered, 0, 0);
-  octx.globalCompositeOperation = "source-over";
-  if (filtered !== src && isSharedScratch(filtered)) {
-    releaseScratch(filtered);
-  } else if (filtered !== src) {
-    releasePooledCanvas(filtered);
+  try {
+    octx.globalCompositeOperation = "source-over";
+    octx.fillStyle = paperInfo(pipeline).color;
+    octx.fillRect(0, 0, out.width, out.height);
+    octx.globalCompositeOperation = pipeline.blend as GlobalCompositeOperation;
+    octx.drawImage(filtered, 0, 0);
+    octx.globalCompositeOperation = "source-over";
+  } catch (error) {
+    releasePooledCanvas(out);
+    throw error;
+  } finally {
+    if (filtered !== src && isSharedScratch(filtered)) {
+      releaseScratch(filtered);
+    } else if (filtered !== src) {
+      releasePooledCanvas(filtered);
+    }
   }
   return out;
 }

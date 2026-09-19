@@ -99,6 +99,11 @@ pub fn PdfPageCanvas(
     canvas_id: String,
     /// Unique id for the .pdf-page host element.
     host_id: String,
+    /// Intrinsic PDF dimensions for cold geometry, before the first raster.
+    /// Virtualized hosts must expose their actual extent to the admission
+    /// planner even when they have never owned a bitmap.
+    #[prop(optional)]
+    initial_size: Option<(f64, f64)>,
     /// Whether to build a text layer for selection + search highlights.
     render_text: bool,
     /// Extra classes (e.g. absolute positioning in the continuous layout, or
@@ -239,7 +244,6 @@ pub fn PdfPageCanvas(
     // scales with the layout, and mask the moment a render is going to wipe it.
     // Never renders — that is the whole point of the split.
     let hid_stretch = host_id.clone();
-    let cid_stretch = canvas_id.clone();
     Effect::new(move || {
         let s = scale.get();
         if s <= 0.0 {
@@ -253,11 +257,8 @@ pub fn PdfPageCanvas(
         }
         stretch_host(
             &hid_stretch,
-            &cid_stretch,
             LastGeo { w: lw, h: lh, scale: ls },
             s,
-            false,
-            false,
         );
     });
 
@@ -267,6 +268,7 @@ pub fn PdfPageCanvas(
         // silently drop the subscription the first time the branch was skipped.
         let anim = zoom_animating.get();
         let s_render = render_scale.get();
+        let scroll_settled = settled.as_ref().is_none_or(|s| s.get());
         // A zombie never starts a new render: its bitmap stays (the stretch
         // effect resized the host at the commit) and the page unmounts when
         // its retention grace expires. Rendering here would rasterise a page
@@ -339,16 +341,10 @@ pub fn PdfPageCanvas(
         if s <= 0.0 {
             return;
         }
-        // NO-OP FAST PATH. If the page has already been rendered at
-        // THIS scale AND the canvas still has its bitmap (`painted == true`),
-        // re-rendering would only WIPE the live canvas (pdf.js reassigns
-        // `canvas.width/height` on render start) without producing a different
-        // bitmap. Because `(gs - s).abs() <= 1e-9`, the `stretch_host` guard
-        // below is skipped too — nothing resizes or covers the host — and the
-        // user sees the canvas disappear until a scroll re-renders it. Bail
-        // out — but ONLY if `painted == true`. A wiped canvas (cancelled
-        // render) must re-render.
-        if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
+        // Zoom hysteresis is relative to the last actual raster scale, not
+        // the last tick, so repeated small steps eventually cross the 12%
+        // threshold. CSS geometry/text scaling still follows every step.
+        if has_geo && painted.get() && (s / gs - 1.0).abs() < 0.12 {
             return;
         }
         // SCROLL-FLING GATE. An unpainted page the scroller is still sweeping
@@ -362,7 +358,7 @@ pub fn PdfPageCanvas(
         // engine's render lane. A render already in flight is never touched —
         // the gate only governs STARTING one, and the underlay blit below is
         // the same one the cold first paint uses.
-        if !painted.get() && settled.as_ref().is_some_and(|s| !s.get()) {
+        if !scroll_settled {
             if !(gw > 0.0 && gh > 0.0) {
                 engine::blit_thumb(&cid_effect, page);
             }
@@ -394,7 +390,7 @@ pub fn PdfPageCanvas(
         // frames from now (canvas_host::stretch_host).
         let (lw, lh, ls) = geo.get_value();
         if lw > 0.0 && lh > 0.0 && ls > 0.0 && (ls - s).abs() > 1e-9 {
-            stretch_host(&hid, &cid, LastGeo { w: lw, h: lh, scale: ls }, s, true, true);
+            stretch_host(&hid, LastGeo { w: lw, h: lh, scale: ls }, s);
         }
 
         // First paint for this host: drop in the sidebar's cached thumbnail,
@@ -490,6 +486,10 @@ pub fn PdfPageCanvas(
         <div
             id=host_id
             class=host_class
+            style=move || initial_size.map(|(width, height)| {
+                let s = scale.get();
+                format!("width:{}px;height:{}px;--scale-factor:{}", snap_px(width * s), snap_px(height * s), s)
+            })
             data-reader-host=HOST_PDF
             data-host-page=page
         >

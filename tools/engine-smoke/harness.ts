@@ -392,7 +392,7 @@ function fakePage(n: number) {
   };
 }
 
-const fakePdf = {
+export const fakePdf = {
   numPages: 5,
   // Range-strict like the real pdf.js: an out-of-range page rejects, which
   // the paper sampler must swallow into a frameless {ok:true} skip.
@@ -479,7 +479,7 @@ interface OpenPayload {
 }
 interface RenderPayload { width: number; height: number; scale: number }
 interface ThumbPayload { width: number; height: number; scale: number }
-interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thumbTasks: number }
+interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thumbTasks: number; raster: { residentBytes: number; reservedBytes: number; running: number; queued: number; hardBytes: number } }
 
 interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;

@@ -5,10 +5,9 @@
 use std::hash::Hash;
 
 use leptos::prelude::*;
-use virtual_list::Viewport;
+use virtual_list::{Budget, Viewport};
 use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 
-use reader_core::view::RENDER_BUDGET;
 
 use crate::epoch::epoch_signal;
 use crate::state::ReaderState;
@@ -161,7 +160,8 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     let virtualizer = use_virtualizer(
         VirtualizerOptions::list(count, estimate)
             .gap(0.0)
-            .budget(RENDER_BUDGET)
+            .budget(Budget::screenfuls(1.25, 12))
+            .render_band(0.65)
             .initial(Viewport::main_only(initial_vh), v_off)
             .pinned(pinned_sig.into())
             .epoch(epoch)
@@ -172,7 +172,8 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
         VirtualizerOptions::list(count, h_estimate)
             .axis(virtual_list_leptos::Axis::Horizontal)
             .gap(0.0)
-            .budget(RENDER_BUDGET)
+            .budget(Budget::screenfuls(1.25, 12))
+            .render_band(0.65)
             .padding(0.0, 0.0)
             .initial(Viewport::new(1200.0, initial_vh), h_off)
             .epoch(epoch)

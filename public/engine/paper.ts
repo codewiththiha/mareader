@@ -14,7 +14,9 @@
 // stash from the Rust side, setPaperActive).
 
 import { session } from "./state";
-import type { PaperFrame } from "./types";
+import { motion, rasterScheduler } from "./raster-resources";
+import type { RasterTicket } from "./raster-scheduler";
+import type { PaperFrame, PDFPageProxy, RenderTask } from "./types";
 import { releaseCanvas } from "./canvas";
 import { publishBakedPaper } from "./theme/paper";
 
@@ -116,49 +118,39 @@ export function setPaper(hex: string): void {
  * promise resolves only after a macrotask yield, so a burst of samples
  * leaves live renders their turn. `{ok:true}` with no frame = the page had
  * no answer (the caller skips it). */
-export async function samplePaperPage(page: number): Promise<
-  | { ok: true; page: number; width: number; height: number; data: Uint8ClampedArray }
-  | { ok: true }
-> {
+type SampleResult = { ok: true; page: number; width: number; height: number; data: Uint8ClampedArray } | { ok: true };
+export async function samplePaperPage(page: number): Promise<SampleResult> {
   const doc = session.pdf;
-  if (!doc || page < 1) return { ok: true };
-  try {
-    const p = await doc.getPage(page);
-    const vp1 = p.getViewport({ scale: 1 });
-    const k = Math.min(SAMPLE_EDGE / vp1.width, SAMPLE_EDGE / vp1.height, 1);
-    const c = document.createElement("canvas");
-    c.width = Math.max(8, Math.floor(vp1.width * k));
-    c.height = Math.max(8, Math.floor(vp1.height * k));
-    const ctx = c.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return { ok: true };
-    const task = p.render({ canvasContext: ctx, viewport: p.getViewport({ scale: k }) });
-    let frame: PaperFrame | null = null;
-    try {
-      await task.promise;
-      // The render canvas is already ≤ SAMPLE_EDGE on its long side — read
-      // it directly instead of paying a second drawImage through the
-      // scratch downscaler.
-      frame = {
-        page,
-        width: c.width,
-        height: c.height,
-        data: ctx.getImageData(0, 0, c.width, c.height).data,
-      };
-    } catch {
-      /* cancelled: nothing to sample */
-    } finally {
-      releaseCanvas(c);
-      try { p.cleanup(); } catch { /* already cleaned */ }
-    }
-    // Yield before answering so consecutive samples can never queue ahead
-    // of a live render that slipped in between them.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    if (!frame) return { ok: true };
-    return { ok: true, page, width: frame.width, height: frame.height, data: frame.data };
-  } catch {
-    /* page unavailable: the caller skips it */
-    return { ok: true };
-  }
+  if (!doc || page < 1 || motion.phase !== "Idle") return { ok: true };
+  let task: RenderTask | undefined;
+  return rasterScheduler.request<SampleResult>({
+    key: `paper:${page}`, bytes: SAMPLE_EDGE * SAMPLE_EDGE * 24,
+    priority: () => doc !== session.pdf || motion.phase !== "Idle" ? null : 40,
+    cancel: () => { try { task?.cancel(); } catch (_) { /* already done */ } },
+    cancelled: () => ({ ok: true }), failed: () => ({ ok: true }),
+    run: async (ticket: RasterTicket) => {
+      let p: PDFPageProxy | undefined;
+      let c: HTMLCanvasElement | undefined;
+      try {
+        p = await doc.getPage(page);
+        if (!ticket.current() || doc !== session.pdf) return { ok: true };
+        const vp = p.getViewport({ scale: 1 });
+        const k = Math.min(SAMPLE_EDGE / vp.width, SAMPLE_EDGE / vp.height, 1);
+        c = document.createElement("canvas");
+        c.width = Math.max(1, Math.floor(vp.width * k));
+        c.height = Math.max(1, Math.floor(vp.height * k));
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        if (!ctx) return { ok: true };
+        task = p.render({ canvasContext: ctx, viewport: p.getViewport({ scale: k }) });
+        await task.promise;
+        if (!ticket.current() || doc !== session.pdf) return { ok: true };
+        return { ok: true, page, width: c.width, height: c.height, data: ctx.getImageData(0, 0, c.width, c.height).data };
+      } finally {
+        releaseCanvas(c ?? null);
+        try { await p?.cleanup(); } catch (_) { /* advisory */ }
+      }
+    },
+  });
 }
 
 /** A new document: drop the previous book's undrained frames. Also the

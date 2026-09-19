@@ -5,6 +5,7 @@
 
 export {};
 
+import { motion, rasterTelemetry, rasterScheduler, resetRasterResources } from "./engine/raster-resources";
 import type { PDFReaderApi, Stats } from "./engine/types";
 import { disposeScratch, releaseCanvas } from "./engine/canvas";
 import { coverDataUrl, destroyTask, open, resolveOutline, takePendingFile } from "./engine/loader";
@@ -69,6 +70,7 @@ declare global {
  *  `pagehide` handler: both must stop in-flight renders and free the surfaces,
  *  and only one of them goes on to null the document out. */
 function cancelAndReleasePages(): void {
+  resetRasterResources();
   for (const st of session.stateByCanvasId.values()) {
     st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
@@ -204,6 +206,7 @@ function stats(): Stats {
     thumbs: session.thumbCache.size,
     thumbLimit: THUMB_CACHE_MAX,
     thumbTasks: session.thumbTasks.size,
+    raster: { ...rasterScheduler.stats(), ...rasterTelemetry, phase: motion.phase, velocity: motion.velocity, direction: motion.direction, predictedOffset: motion.predicted, navigationGeneration: motion.generation },
   };
 }
 

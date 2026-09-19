@@ -154,6 +154,14 @@ export type Stats = {
   thumbs: number;
   thumbLimit: number;
   thumbTasks: number;
+  raster: {
+    residentBytes: number; reservedBytes: number; softBytes: number; hardBytes: number;
+    queued: number; running: number; queuedJobsDropped: number; activeJobsCanceled: number;
+    downgraded: number; peakAccountedBytes: number; phase: string; velocity: number;
+    fullRendersStarted: number; fullRendersStartedDuringFling: number;
+    fullRendersCompletedOffscreen: number; rasterPixelsProduced: number;
+    direction: number; predictedOffset: number; navigationGeneration: number;
+  };
 };
 export type PDFReaderApi = {
   version: () => string;

@@ -44,6 +44,7 @@ export async function run(): Promise<void> {
   const p3 = PDFReader.renderPage("cont-0-cv", 1.4, true);
   const [a, b, c] = await Promise.all([p1, p2, p3]);
   const fmt = (r: EngineResult<RenderPayload>): string => r.ok ? "ok" : r.error.name;
+  if (a.ok || b.ok || !c.ok) throw new Error("latest request must win and superseded callers must settle");
   console.log("burst coalesce:", fmt(a), fmt(b), fmt(c));
 
 }

@@ -4,14 +4,14 @@
 // the mounted rasters back to raw pixels under the live CSS filter + blend —
 // real-time compositing — for the duration of the drag.
 
-import { bakeInto } from "./bake";
+import { mayCopyRaster } from "../raster-resources";
 import { releaseCanvas, showRaw } from "../canvas";
 import { PAGE_SNAPSHOT_CLASS, PAGE_SNAPSHOT_SELECTOR } from "../dom-contract";
 import { session } from "../state";
 import { readPipeline } from "./pipeline";
 import { paperInfo, publishBakedPaper } from "./paper";
 import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
-import { preparePagesForScrub, renderPageInternal, rerenderLivePages } from "../renderer";
+import { preparePagesForScrub, renderPage, rebakePage, rerenderLivePages } from "../renderer";
 
 // A Settings commit after a scrub has the same final pipeline the scrub exit
 // just baked. Remember it by value rather than generation: invalidation bumps
@@ -59,6 +59,7 @@ function snapshotStragglerPages(): void {
     // A zoom mask in flight already covers this host — a second copy stacked
     // over the first would show the same pixels at twice the memory.
     if (st.host.querySelector(PAGE_SNAPSHOT_SELECTOR)) continue;
+    if (!mayCopyRaster(st.canvas.width * st.canvas.height * 4)) continue;
     const snap = document.createElement("canvas");
     snap.className = PAGE_SNAPSHOT_CLASS;
     snap.width = st.canvas.width;
@@ -115,11 +116,11 @@ export async function rebakeTheme(force = false): Promise<void> {
     return;
   }
 
-  for (const st of session.stateByCanvasId.values()) {
+  for (const [id, st] of session.stateByCanvasId) {
     // Only re-bake from a DISTINCT raw raster. If raw === live canvas the
     // pixels may already be themed; baking again double-filters.
     if (st.dead || !st.canvas || !st.rawCanvas || st.rawCanvas === st.canvas) continue;
-    await bakeInto(st.canvas, st.rawCanvas, pipeline, "canvas-raw");
+    await rebakePage(id);
     session.dropRawIfIdle(st);
   }
 
@@ -166,10 +167,10 @@ async function settleCanvasTheme(): Promise<void> {
       }
     } else if (hasTag) {
       if (st.rawCanvas && st.rawCanvas !== st.canvas) {
-        await bakeInto(st.canvas, st.rawCanvas, readPipeline(), "canvas-raw");
+        await rebakePage(id);
         session.dropRawIfIdle(st);
       } else {
-        rerender.push(() => renderPageInternal(id, st.scale || 1, !!st.textLayerEl));
+        rerender.push(() => renderPage(id, st.scale || 1, !!st.textLayerEl));
       }
     }
   }

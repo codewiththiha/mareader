@@ -23,7 +23,7 @@ pub const ZOOM_GRACE_MS: u32 = 300;
 
 /// Ceiling on simultaneously retained (zombie) items per virtualizer. The
 /// bridge is bounded or it would stop being virtualization.
-pub const MAX_ZOMBIES: usize = 12;
+pub const MAX_ZOMBIES: usize = 3;
 
 /// How long the space around the page must be quiet before a container follow
 /// commits its crisp render, milliseconds. The layout follows a sidebar slide

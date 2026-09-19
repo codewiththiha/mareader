@@ -47,7 +47,8 @@ function safeExternalUrl(raw: string): string | null {
 export async function buildLinkLayer(
   st: PageState,
   viewport: Viewport,
-  page: PDFPageProxy | null
+  page: PDFPageProxy | null,
+  current: () => boolean = () => true
 ): Promise<void> {
   const { host } = st;
   if (!host) return;
@@ -117,7 +118,7 @@ export async function buildLinkLayer(
   // listener per link, on an element the engine has stopped tracking: nothing
   // would ever remove it. The render path re-checks `st.dead` after each of
   // its own awaits for the same reason.
-  if (st.dead || st.host !== host) return;
+  if (!current() || st.dead || st.host !== host) return;
 
   const live = host.querySelector(".linkLayer");
   if (live && live.parentNode) {

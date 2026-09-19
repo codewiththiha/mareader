@@ -13,6 +13,7 @@ import {
   showBaked,
   showRaw,
 } from "../canvas";
+import { mayCopyRaster, motion, RASTER_BYTES_PER_PIXEL, rasterScheduler } from "../raster-resources";
 import { session } from "../state";
 import { bakeRaster, rasterToCanvas } from "./bake";
 import { pipelineCache, readPipeline } from "./pipeline";
@@ -23,7 +24,7 @@ import { pipelineCache, readPipeline } from "./pipeline";
 function releaseDisplayOnly(entry: ThumbEntry | null): void {
   if (!entry) return;
   try {
-    if (entry.display && typeof (entry.display as ImageBitmap).close === "function") {
+    if (entry.display && entry.display !== entry.raw && typeof (entry.display as ImageBitmap).close === "function") {
       (entry.display as ImageBitmap).close();
     }
   } catch (_) {
@@ -36,16 +37,26 @@ function releaseDisplayOnly(entry: ThumbEntry | null): void {
 }
 export async function cacheDisplay(entry: Pick<ThumbEntry, "display">): Promise<MaybeCanvas> {
   const off = entry.display;
-  if (!off || typeof createImageBitmap !== "function") return off;
-  try {
-    const bitmap = await createImageBitmap(off as ImageBitmap);
-    if (isSharedScratch(off as HTMLCanvasElement)) releaseScratch(off as HTMLCanvasElement);
-    else releasePooledCanvas(off as HTMLCanvasElement);
-    return bitmap;
-  } catch (_) {
-    return off;
+  if (!off) return off;
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(off as ImageBitmap);
+      if (isSharedScratch(off as HTMLCanvasElement)) releaseScratch(off as HTMLCanvasElement);
+      else releasePooledCanvas(off as HTMLCanvasElement);
+      return bitmap;
+    } catch (_) { /* canvas fallback */ }
   }
+  // A cache entry must never own the shared scratch. The next bake would
+  // overwrite it (and its reservation has already ended).
+  if (isSharedScratch(off as HTMLCanvasElement)) {
+    const copy = acquirePooledCanvas(off.width, off.height);
+    blitInto(copy, off);
+    releaseScratch(off as HTMLCanvasElement);
+    return copy;
+  }
+  return off;
 }
+
 export function thumbSource(entry: ThumbEntry | null | undefined): MaybeCanvas {
   if (!entry) return null;
   if (entry.display && (entry.display as ImageBitmap).width > 0) return entry.display;
@@ -74,7 +85,24 @@ async function snapshotRaster(src: HTMLCanvasElement): Promise<MaybeCanvas> {
   blitInto(clone, src);
   return clone;
 }
-export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas> {
+let entrySequence = 0;
+const entryKeys = new WeakMap<ThumbEntry, string>();
+export async function ensureEntryCurrent(entry: ThumbEntry, admitted = false): Promise<MaybeCanvas> {
+  if (admitted) return updateEntry(entry);
+  if (entry.gen === pipelineCache.gen && rasterWidth(entry.display) > 0) return entry.display;
+  let key = entryKeys.get(entry);
+  if (!key) { key = `thumb-bake:${++entrySequence}`; entryKeys.set(entry, key); }
+  const raw = thumbRaw(entry);
+  if (!raw) return null;
+  const doc = session.pdf;
+  return rasterScheduler.request<MaybeCanvas>({
+    key, bytes: raw.width * raw.height * RASTER_BYTES_PER_PIXEL,
+    priority: () => session.pdf !== doc || entry.raw !== raw ? null : motion.phase === "Idle" ? 150 : -Infinity,
+    cancel: () => {}, cancelled: () => null, failed: () => null,
+    run: async (ticket) => ticket.current() && entry.raw === raw ? updateEntry(entry) : null,
+  });
+}
+async function updateEntry(entry: ThumbEntry): Promise<MaybeCanvas> {
   if (session.themeScrubActive) {
     return rasterWidth(entry.display) > 0 ? entry.display : null;
   }
@@ -96,25 +124,31 @@ export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas
       blitInto(work, src);
       owned = true;
     }
-    const baked = await bakeRaster(work, pipeline);
-    let newDisplay: MaybeCanvas;
-    if (baked === work) {
-      newDisplay = await snapshotRaster(work);
+    let baked: HTMLCanvasElement | undefined;
+    let newDisplay: MaybeCanvas = null;
+    let retained = false;
+    try {
+      baked = await bakeRaster(work, pipeline);
+      newDisplay = baked === work ? await snapshotRaster(work) : await cacheDisplay({ display: baked });
+      // cacheDisplay transferred/released the intermediate (or handed its
+      // ownership to newDisplay). Never release that shared scratch twice.
+      baked = undefined;
+      if (entry.raw !== raw) return null;
+      if (entry.display && entry.display !== entry.raw && entry.display !== newDisplay) releaseDisplayOnly(entry);
+      entry.display = newDisplay;
+      entry.gen = pipeline.gen;
+      retained = true;
+      return entry.display;
+    } finally {
       if (owned) releasePooledCanvas(work);
-    } else {
-      if (owned) releasePooledCanvas(work);
-      newDisplay = await cacheDisplay({ display: baked });
+      if (baked && baked !== work) {
+        if (isSharedScratch(baked)) releaseScratch(baked);
+        else releasePooledCanvas(baked);
+      }
+      if (!retained && newDisplay) session.releaseThumbEntry({ ...entry, raw: null, display: newDisplay });
     }
-    if (entry.display && entry.display !== entry.raw && entry.display !== newDisplay) {
-      releaseDisplayOnly(entry);
-    }
-    entry.display = newDisplay;
-    entry.gen = pipelineCache.gen;
-    return entry.display;
   })();
-  const result = await entry.pending;
-  entry.pending = null;
-  return result;
+  try { return await entry.pending; } finally { entry.pending = null; }
 }
 export function paintAllVisibleThumbs(): void {
   const seen = new Set<string>();
@@ -143,11 +177,12 @@ export function paintAllVisibleThumbs(): void {
 }
 export function paintCached(
   dst: HTMLCanvasElement | null,
-  entry: ThumbEntry | null
+  entry: ThumbEntry | null,
+  admitted = false
 ): { width: number; height: number } | null {
   const raw = session.themeScrubActive ? thumbRaw(entry) : null;
   const src = raw ?? thumbSource(entry);
-  if (!dst || !src) return null;
+  if (!dst || !src || (!admitted && !mayCopyRaster(Math.max(0, src.width * src.height - dst.width * dst.height) * 4))) return null;
   // Raster + tag are swapped by one synchronous primitive. Missing cache
   // data deliberately leaves the previous canvas and its matching tag alone.
   const shown = raw

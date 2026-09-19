@@ -81,7 +81,7 @@ let scratchInUse = false;
 // scratch only when the caller owns it — a second caller releasing its pooled
 // canvas can never free it out from under the first. Concurrent bakes do
 // happen: live pages re-bake on theme change (rerenderLivePages,
-// runLimited(2)) alongside thumbnail bakes.
+// the shared resource lane) alongside thumbnail bakes.
 
 /** Borrow the shared bake scratchpad. Concurrent callers get a pooled canvas. */
 export function acquireScratch(w: number, h: number): HTMLCanvasElement {
@@ -101,6 +101,9 @@ export function releaseScratch(owned?: HTMLCanvasElement | null): void {
     return;
   }
   scratchInUse = false;
+  // Reservations end when a bake returns; no unaccounted full-size scratch
+  // may survive that boundary. Keep the canvas object, not its pixels.
+  if (scratch) releaseCanvas(scratch);
 }
 
 export function isSharedScratch(c: HTMLCanvasElement | null | undefined): boolean {

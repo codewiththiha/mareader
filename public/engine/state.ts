@@ -26,18 +26,9 @@ export const ENGINE_VERSION = "0.7.0";
  *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
 export const THUMB_CACHE_MAX = 16;
 
-/** Max pixels per canvas layer. The 12M base (~48 MB RGBA) is the ceiling,
- *  not the target: US-Letter at 100% zoom on a 2x display is ~1.5M px, at
- *  200% ~7.8M, so 12M keeps the FULL native devicePixelRatio through ~245%
- *  zoom — past where anyone is inspecting rather than reading — while every
- *  transient surface a zoom commit stacks (scratch, bake output, snapshot
- *  mask) is a quarter smaller than the 16M this used to be. The footprint
- *  latches onto the session's dirty high-water mark and never hands it back,
- *  so the cheapest megabyte is the one a transient never allocates; total
- *  GPU memory is bounded by the 3-page mounted ceiling (RENDER_BUDGET), not
- *  by this. The ceiling used to DOUBLE on machines reporting >= 8 GB; that
- *  bought no visible sharpness and made every transient twice the cost,
- *  permanently. Low-memory devices still get half the base. */
+/** Per-surface device ceiling, independent of the geometry mount window.
+ * The scheduler applies a phase-dependent ceiling below this and reserves
+ * transient bake/worker surfaces against its separate total byte budget. */
 const PAGE_MAX_PIXELS_BASE = 12 * 1024 * 1024;
 
 function memoryScaledPixelCeiling(): number {

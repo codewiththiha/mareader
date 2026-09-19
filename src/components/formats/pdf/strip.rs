@@ -201,12 +201,19 @@ pub fn PdfPageStrip(
                                     };
                                     view! {
                                         <div id=wrapper_id(Axis::Vertical, index, page) style=style>
+                                            <Show
+                                                when=move || !dormant.get()
+                                                fallback=move || view! {
+                                                    <div class="pdf-page m-auto" aria-hidden="true"
+                                                        style=move || placeholder_style(state, index)></div>
+                                                }
+                                            >
                                             <PdfPageCanvas
                                                 page=page
+                                                initial_size=intrinsic_size(state, index)
                                                 scale=page_scale
                                                 render_scale=state.viewer.zoom.committed
                                                 zoom_animating=state.viewer.zooming()
-                                                dormant=dormant
                                                 settled=settled
                                                 gesture_owns=gesture_owns
                                                 texture=texture
@@ -217,6 +224,7 @@ pub fn PdfPageStrip(
                                                 gloss_overlay=GlossOverlayProps::from_gloss(state)
                                                 class="mx-auto"
                                             />
+                                            </Show>
                                         </div>
                                     }
                                 }
@@ -257,12 +265,19 @@ pub fn PdfPageStrip(
                                     );
                                     view! {
                                         <div id=wrapper_id(Axis::Horizontal, index, page) style=style>
+                                            <Show
+                                                when=move || !dormant.get()
+                                                fallback=move || view! {
+                                                    <div class="pdf-page m-auto" aria-hidden="true"
+                                                        style=move || placeholder_style(state, index)></div>
+                                                }
+                                            >
                                             <PdfPageCanvas
                                                 page=page
+                                                initial_size=intrinsic_size(state, index)
                                                 scale=page_scale
                                                 render_scale=state.viewer.zoom.committed
                                                 zoom_animating=state.viewer.zooming()
-                                                dormant=dormant
                                                 settled=settled
                                                 gesture_owns=gesture_owns
                                                 texture=texture
@@ -273,6 +288,7 @@ pub fn PdfPageStrip(
                                                 gloss_overlay=GlossOverlayProps::from_gloss(state)
                                                 class="my-auto"
                                             />
+                                            </Show>
                                         </div>
                                     }
                                 }
@@ -294,15 +310,21 @@ fn wrapper_id(axis: Axis, index: usize, page: u32) -> String {
     }
 }
 
-/// Whether one mounted item is currently a RETAINED ZOMBIE — freshly evicted
-/// from the window and bridged by the virtualizer's retention grace. A
-/// zombie page keeps its DOM and its last bitmap; it must not start new
-/// expensive work (a crisp re-render) for the few frames it has left.
+/// Blank and Zombie retain geometry, never a PDF renderer or its surfaces.
 fn dormant_signal(items: Signal<Vec<VirtualItem>, LocalStorage>, index: usize) -> Signal<bool, LocalStorage> {
     Signal::derive_local(move || {
-        items
-            .get()
-            .iter()
-            .any(|item| item.index == index && item.state == VirtualItemState::Zombie)
+        !items.get().iter().any(|item| item.index == index && item.state == VirtualItemState::Active)
     })
+}
+
+fn intrinsic_size(state: ReaderState, index: usize) -> (f64, f64) {
+    let size = state.document.content.metrics.intrinsic.with(|sizes| sizes.get(index).cloned())
+        .or_else(|| state.document.content.metrics.page1_size.get());
+    size.map_or((0.0, 0.0), |size| (size.width, size.height))
+}
+
+fn placeholder_style(state: ReaderState, index: usize) -> String {
+    let scale = state.viewer.zoom.display.get();
+    let (width, height) = intrinsic_size(state, index);
+    format!("width:{}px;height:{}px", snap_px(width * scale), snap_px(height * scale))
 }
