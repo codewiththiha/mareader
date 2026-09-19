@@ -10,6 +10,7 @@
   await (await import("./engine-smoke/open.js")).run();
   await (await import("./engine-smoke/render.js")).run();
   await (await import("./engine-smoke/raster-lifecycle.js")).run();
+  await (await import("./engine-smoke/read-ahead.js")).run();
   await (await import("./engine-smoke/theme.js")).run();
   await (await import("./engine-smoke/thumbnail.js")).run();
   await (await import("./engine-smoke/blend.js")).run();

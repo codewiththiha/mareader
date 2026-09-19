@@ -1,11 +1,36 @@
 // Pure admission tests: no PDF, DOM or timers. CI bundles the production
 // module in memory; nothing here is a second implementation of the policy.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { build } from "esbuild";
 
 export async function run(): Promise<void> {
   const output = await build({ entryPoints: ["public/engine/raster-scheduler.ts"], bundle: true, write: false, format: "esm", platform: "node" });
   const { RasterScheduler, ScrollMotion, rasterSize } = await import(`data:text/javascript;base64,${Buffer.from(output.outputFiles![0]!.text).toString("base64")}`);
+  const policyOutput = await build({ entryPoints: ["public/engine/raster-policy.ts"], bundle: true, write: false, format: "esm", platform: "node" });
+  const { pageRasterPriority, rasterConcurrency, READ_AHEAD_PAGES } = await import(`data:text/javascript;base64,${Buffer.from(policyOutput.outputFiles![0]!.text).toString("base64")}`);
+  const strip = readFileSync("src/components/formats/pdf/strip.rs", "utf8");
+  const radius = Number(/const READ_AHEAD_PAGES: usize = (\d+);/.exec(strip)?.[1]);
+  assert.equal(radius, READ_AHEAD_PAGES, "the mount window and admission policy must agree");
+  assert.equal(radius, 2);
+  const near = { visible: false, distance: 0.5, predicted: 1, ahead: true };
+  const giant = { ...near, distance: 20, predicted: 20 };
+  assert.equal(rasterConcurrency("Tracking"), 1, "normal scroll must not wait for idle");
+  assert.equal(rasterConcurrency("Fling"), 0);
+  assert.equal(rasterConcurrency("Settling"), 2);
+  assert.equal(rasterConcurrency("Idle"), 2);
+  for (const phase of ["Idle", "Tracking", "Settling"]) {
+    // Pages 1/2/3 at page 2, and page 5 BEFORE leaving page 3. Screen
+    // distance cannot defeat the ring, even on unusually tall PDFs.
+    for (const page of [1, 2, 3, 4]) assert.ok(Number.isFinite(pageRasterPriority(phase, page, 2, giant, 1)));
+    assert.ok(Number.isFinite(pageRasterPriority(phase, 5, 3, giant, 1)));
+    assert.equal(pageRasterPriority(phase, 6, 3, giant, 1), null);
+    assert.ok(pageRasterPriority(phase, 4, 3, near, 1) > pageRasterPriority(phase, 2, 3, near, 1));
+    assert.ok(pageRasterPriority(phase, 2, 3, near, -1) > pageRasterPriority(phase, 4, 3, near, -1));
+    assert.ok(pageRasterPriority(phase, 3, 3, { ...near, visible: true }, 1) > pageRasterPriority(phase, 4, 3, near, 1));
+  }
+  assert.equal(pageRasterPriority("Fling", 5, 3, giant, 1), -Infinity);
+  assert.equal(pageRasterPriority("Fling", 30, 3, giant, 1), null);
   const frames: Array<() => void> = [];
   let concurrency = 2;
   let resident = 0;
@@ -93,7 +118,7 @@ export async function run(): Promise<void> {
   assert.equal(await throws, "failed");
   assert.equal(lane.stats().reservedBytes, 0);
 
-  // Fling/tracking admit no work. Settling resumes current work; document
+  // Fling admits no work. Settling resumes current work; document
   // teardown settles paused requests as canceled without a RAF leak.
   concurrency = 0;
   const paused = lane.request(job("paused"));
@@ -140,5 +165,6 @@ export async function run(): Promise<void> {
   assert.equal(motion.phase, "Settling");
   motion.idle();
   assert.equal(motion.phase, "Idle");
+  console.log("reading window: five-page warm ring, giant pages, normal tracking and directional priorities passed");
   console.log("raster scheduler: priority, dedupe, jumps, cancellation, reservations, downgrade, teardown, giant pages and motion passed");
 }

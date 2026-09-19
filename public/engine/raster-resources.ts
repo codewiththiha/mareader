@@ -1,6 +1,7 @@
 // Browser policy above the admission lane. Geometry stays in the virtualizer;
 // these distances only decide which of its mounted pages deserve pixels.
-import { ID_PREFIX_HSCROLL } from "./dom-contract";
+import { ID_PREFIX_HSCROLL, RASTER_AXIS_ATTR, RASTER_ANCHOR_ATTR, RASTER_SCROLLER_SELECTOR } from "./dom-contract";
+import { pageRasterPriority, rasterConcurrency, type PageIntent } from "./raster-policy";
 import { session, PAGE_MAX_PIXELS } from "./state";
 import type { PageState } from "./types";
 import { releaseCanvas } from "./canvas";
@@ -40,18 +41,26 @@ export function rasterResidentBytes(): number {
   return bytes;
 }
 
-export function pageIntent(st: PageState): { visible: boolean; distance: number; predicted: number; ahead: boolean } {
+function pageScroller(st: PageState): HTMLElement | null {
+  return st.host?.closest?.<HTMLElement>(RASTER_SCROLLER_SELECTOR) ?? null;
+}
+
+export function pageIntent(st: PageState): PageIntent {
   const rect = st.host?.getBoundingClientRect?.();
   // The page-mode boot and smoke harness may not have laid out a host yet.
   if (!rect || !Number.isFinite(rect.bottom) || (!rect.width && !rect.height)) {
     return { visible: true, distance: 0, predicted: 0, ahead: true };
   }
-  const bounds = scroller && st.host && scroller.contains(st.host) ? scroller.getBoundingClientRect() : undefined;
-  const start = horizontal ? rect.left : rect.top;
-  const end = horizontal ? rect.right : rect.bottom;
-  const near = bounds ? (horizontal ? bounds.left : bounds.top) : 0;
-  const far = bounds ? (horizontal ? bounds.right : bounds.bottom)
-    : (horizontal ? globalThis.innerWidth : globalThis.innerHeight) || 800;
+  // Resolve the actual scroller even BEFORE its first scroll event. Using
+  // window bounds until the first input mis-prioritized resumed/horizontal pages.
+  const container = pageScroller(st) ?? (scroller && st.host && scroller.contains(st.host) ? scroller : null);
+  const bounds = container?.getBoundingClientRect();
+  const alongX = container?.getAttribute(RASTER_AXIS_ATTR) === "horizontal" || (container === scroller && horizontal);
+  const start = alongX ? rect.left : rect.top;
+  const end = alongX ? rect.right : rect.bottom;
+  const near = bounds ? (alongX ? bounds.left : bounds.top) : 0;
+  const far = bounds ? (alongX ? bounds.right : bounds.bottom)
+    : (alongX ? globalThis.innerWidth : globalThis.innerHeight) || 800;
   const size = Math.max(1, far - near);
   const distance = Math.max(near - end, start - far, 0) / size;
   const center = (start + end - near - far) / 2;
@@ -65,11 +74,9 @@ export function pageIntent(st: PageState): { visible: boolean; distance: number;
 
 export function pagePriority(st: PageState): number | null {
   if (st.dead || !st.canvas) return null;
-  const intent = pageIntent(st);
-  if (intent.distance > 0.75) return null;
-  if (motion.phase === "Fling" || motion.phase === "Tracking") return -Infinity;
-  return (intent.visible ? 1000 : intent.predicted < 0.5 ? 900 : intent.ahead ? 800 : 500)
-    - intent.distance * 100 - intent.predicted * 10;
+  const anchor = Number(pageScroller(st)?.getAttribute(RASTER_ANCHOR_ATTR));
+  return pageRasterPriority(motion.phase, st.page, Number.isInteger(anchor) && anchor > 0 ? anchor : null,
+    pageIntent(st), motion.direction);
 }
 
 export function pagePixelLimit(): number {
@@ -101,7 +108,7 @@ function evictOptionalRasters(bytes: number): void {
 export const rasterScheduler = new RasterScheduler({
   resident: rasterResidentBytes,
   evict: evictOptionalRasters,
-  concurrency: () => motion.phase === "Fling" || motion.phase === "Tracking" ? 0 : motion.phase === "Settling" ? 1 : 2,
+  concurrency: () => rasterConcurrency(motion.phase),
   defer: (callback) => { requestAnimationFrame(callback); },
 });
 

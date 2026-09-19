@@ -143,9 +143,10 @@ async function renderPageInternal(
     st.viewport = viewport;
     st.scale = scale;
 
-    // Text/links are optional and visible-only. Extraction failures must not
-    // turn a successfully painted page into an error (or skip page.cleanup).
-    if (renderText && pageIntent(st).visible && motion.phase !== "Fling" && st.host && st.textLayerEl) {
+    // Warm neighbors must arrive with selection and links too. Otherwise a
+    // successful offscreen paint takes the Rust no-op path on entry and its
+    // text layer never gets built. This is still bounded by page admission.
+    if (renderText && st.host && st.textLayerEl) {
       try {
         const textContent = await page.getTextContent();
         if (!current()) return cancelled();

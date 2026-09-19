@@ -64,12 +64,11 @@ pub fn PdfPageStrip(
     // lands.
     let page_scale = state.viewer.zoom.display.read_only();
     let gesture_owns = state.viewer.gesture_owns();
-    // The fling gate's input: while the scroller is still moving, unpainted
-    // pages stay on their thumbnail underlay and rasterise once the strip
-    // settles (see the page host's SCROLL-FLING GATE). The prop wraps it in
-    // the Option the page-mode hosts default to.
+    // A settled transition retries canceled cold paints, but no longer blocks
+    // ordinary scrolling. The JS scheduler alone distinguishes tracking/fling.
     let settled: Signal<bool> = v.settled().into();
-    let items = v.items();
+    let dominant = v.dominant();
+    let items = reading_window(v.clone(), state);
     let total_size = v.total_size();
 
     // Horizontal-only: the strip is at least as tall as the tallest page at
@@ -85,6 +84,7 @@ pub fn PdfPageStrip(
         tallest * scale
     });
 
+    let scroller_axis = match axis { Axis::Vertical => "vertical", Axis::Horizontal => "horizontal" };
     let scroller_class = match axis {
         Axis::Vertical => "scrollbar-none h-full w-full overflow-y-auto outline-none",
         Axis::Horizontal => {
@@ -155,7 +155,10 @@ pub fn PdfPageStrip(
     };
 
     view! {
-        <div id=scroller_id node_ref=list_ref class=scroller_class tabindex="0">
+        <div id=scroller_id node_ref=list_ref class=scroller_class tabindex="0"
+            data-raster-axis=scroller_axis
+            data-raster-anchor=move || dominant.get() + 1
+        >
             {match axis {
                 Axis::Vertical => {
                     let each_items = items;
@@ -310,7 +313,45 @@ fn wrapper_id(axis: Axis, index: usize, page: u32) -> String {
     }
 }
 
-/// Blank and Zombie retain geometry, never a PDF renderer or its surfaces.
+/// Keep a small PAGE-based warm window as well as the virtualizer's pixel
+/// band. A screen-only overscan cannot contain the next page when a zoomed
+/// current page is several screens tall. Extra hosts still use the SAME
+/// geometry model; no second layout or scroll anchoring path is introduced.
+const READ_AHEAD_PAGES: usize = 2;
+
+fn reading_window(v: Virtualizer, state: ReaderState) -> Signal<Vec<VirtualItem>, LocalStorage> {
+    let source = v.items();
+    let dominant = v.dominant();
+    let total = v.total_size();
+    Signal::derive_local(move || {
+        let mut items = source.get();
+        let count = state.document.num_pages.get() as usize;
+        if count == 0 {
+            return items;
+        }
+        let center = dominant.get().min(count - 1);
+        let last = center.saturating_add(READ_AHEAD_PAGES).min(count - 1);
+        for index in center.saturating_sub(READ_AHEAD_PAGES)..=last {
+            if let Some(item) = items.iter_mut().find(|item| item.index == index) {
+                // A previous fringe/zombie still belongs to the warm window:
+                // preserve its keyed canvas instead of discarding good pixels.
+                item.state = VirtualItemState::Active;
+            } else {
+                let start = v.offset_of(index);
+                let end = if index + 1 < count { v.offset_of(index + 1) } else { total.get() };
+                items.push(VirtualItem {
+                    index, start, size: (end - start).max(0.0),
+                    cross_start: 0.0, cross_size: 0.0, row: index,
+                    state: VirtualItemState::Active,
+                });
+            }
+        }
+        items.sort_by_key(|item| item.index);
+        items
+    })
+}
+
+/// Outside the pixel band AND warm page window, keep geometry only.
 fn dormant_signal(items: Signal<Vec<VirtualItem>, LocalStorage>, index: usize) -> Signal<bool, LocalStorage> {
     Signal::derive_local(move || {
         !items.get().iter().any(|item| item.index == index && item.state == VirtualItemState::Active)

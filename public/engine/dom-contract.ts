@@ -105,3 +105,8 @@ export function hostIdFromCanvasId(canvasId: string): string {
   if (!canvasId.endsWith(CANVAS_ID_SUFFIX)) return canvasId;
   return canvasId.slice(0, -CANVAS_ID_SUFFIX.length) + HOST_ID_SUFFIX;
 }
+
+/** The PDF strip publishes geometry intent before a page owns any pixels. */
+export const RASTER_AXIS_ATTR = "data-raster-axis";
+export const RASTER_ANCHOR_ATTR = "data-raster-anchor";
+export const RASTER_SCROLLER_SELECTOR = `[${RASTER_AXIS_ATTR}]`;

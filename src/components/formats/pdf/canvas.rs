@@ -128,12 +128,9 @@ pub fn PdfPageCanvas(
     /// stands down entirely. Absent for hosts outside a virtualized strip.
     #[prop(optional)]
     dormant: Option<Signal<bool, LocalStorage>>,
-    /// Whether the strip's scroll has SETTLED — the virtualizer's scroll-end
-    /// window, published as a signal. While it reads false, an UNPAINTED page
-    /// stays on its thumbnail underlay instead of starting a full-resolution
-    /// rasterisation: the fling gate. `None` (the default) means nothing to
-    /// wait for — hosts outside a virtualized strip (single, spread) mount a
-    /// page or two and sweep nothing past.
+    /// Scroll-end retry signal. Rendering is NOT blocked while it is false:
+    /// the shared scheduler lets normal tracking warm neighboring pages and
+    /// pauses only fast flings. A settle retries an earlier canceled request.
     #[prop(optional)]
     settled: Option<Signal<bool>>,
     /// True while a real zoom *gesture* owns the layout. Distinct from
@@ -182,6 +179,7 @@ pub fn PdfPageCanvas(
     // sidebar slide (remount race) would sit blank until a scroll
     // re-triggered the effect.
     let painted = Rc::new(Cell::new(false));
+    let pending_scale = Rc::new(Cell::new(None::<f64>));
 
     // Owned clones for the side-effect closures so the originals stay for view!.
     let cid = canvas_id.clone();
@@ -268,7 +266,7 @@ pub fn PdfPageCanvas(
         // silently drop the subscription the first time the branch was skipped.
         let anim = zoom_animating.get();
         let s_render = render_scale.get();
-        let scroll_settled = settled.as_ref().is_none_or(|s| s.get());
+        let _ = settled.as_ref().map(|s| s.get());
         // A zombie never starts a new render: its bitmap stays (the stretch
         // effect resized the host at the commit) and the page unmounts when
         // its retention grace expires. Rendering here would rasterise a page
@@ -347,23 +345,13 @@ pub fn PdfPageCanvas(
         if has_geo && painted.get() && (s / gs - 1.0).abs() < 0.12 {
             return;
         }
-        // SCROLL-FLING GATE. An unpainted page the scroller is still sweeping
-        // past stays on its thumbnail underlay until the strip settles: a
-        // full-resolution rasterisation for every page a fling flies past
-        // creates, paints and discards a full-page surface every few frames,
-        // and that churn — not the mounted ceiling — is what pushes the
-        // webview's resource cache, and the footprint latched onto it, to its
-        // high-water mark. `settled` is read TRACKED, so the settle itself
-        // re-runs this effect and the crisp render lands then, paced by the
-        // engine's render lane. A render already in flight is never touched —
-        // the gate only governs STARTING one, and the underlay blit below is
-        // the same one the cold first paint uses.
-        if !scroll_settled {
-            if !(gw > 0.0 && gh > 0.0) {
-                engine::blit_thumb(&cid_effect, page);
-            }
+        // Scroll-start/end can re-run the effect while its first paint is
+        // still queued. Do not cancel/restart the exact same pending scale.
+        if pending_scale.get().is_some_and(|pending| (pending - s).abs() <= 1e-9) {
             return;
         }
+        pending_scale.set(Some(s));
+        let pending_async = pending_scale.clone();
         let page_no = page;
         let cid = cid_effect.clone();
         let hid = hid_effect.clone();
@@ -412,7 +400,11 @@ pub fn PdfPageCanvas(
                 engine::register_page(page_no, &cid, Some(&hid));
                 do_register.set(true);
             }
-            match engine::render_page(&cid, s, rt).await {
+            let result = engine::render_page(&cid, s, rt).await;
+            if seq_async.try_get_value() == Some(my_seq) {
+                pending_async.set(None);
+            }
+            match result {
                 Ok(r) => {
                     // Unmounted mid-render, or a newer scale change superseded
                     // this one: leave the geometry + mask to the newer task

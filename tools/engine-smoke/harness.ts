@@ -273,11 +273,22 @@ export function isScrubActive(): boolean {
   return docEl.classList.contains("appearance-scrubbing");
 }
 
+const documentListeners = new Map<string, Array<(event: { target: unknown }) => void>>();
+let engineNow = 0;
+export function emitDocumentScroll(target: unknown, now: number): void {
+  engineNow = now;
+  for (const callback of documentListeners.get("scroll") ?? []) callback({ target });
+}
+
 export const fakeDocument = {
   documentElement: docEl,
   createElement: (tag: string) => new FakeCanvas(tag) as unknown as ReturnType<typeof makeElement>,
   getElementById: (id: string) => getEl(id),
-  addEventListener() {},
+  addEventListener(name: string, callback: (event: { target: unknown }) => void) {
+    const listeners = documentListeners.get(name) ?? [];
+    listeners.push(callback);
+    documentListeners.set(name, listeners);
+  },
   getSelection: () => null,
   createRange: () => ({ setStart() {}, setEnd() {}, getClientRects: () => [], detach() {} }),
   querySelectorAll: (sel?: string) => {
@@ -415,6 +426,7 @@ const fakeLoadingTask = { promise: Promise.resolve(fakePdf), destroy: async () =
 
 const sandbox: Record<string, unknown> = {
   console,
+  performance: { now: () => engineNow },
   addEventListener() {},
   dispatchEvent() { return true; },
   getComputedStyle: fakeWindow.getComputedStyle,
@@ -479,7 +491,7 @@ interface OpenPayload {
 }
 interface RenderPayload { width: number; height: number; scale: number }
 interface ThumbPayload { width: number; height: number; scale: number }
-interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thumbTasks: number; raster: { residentBytes: number; reservedBytes: number; running: number; queued: number; hardBytes: number } }
+interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thumbTasks: number; raster: { phase: string; fullRendersStartedDuringFling: number; residentBytes: number; reservedBytes: number; running: number; queued: number; hardBytes: number } }
 
 interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;
