@@ -31,10 +31,7 @@ pub fn publish_motion(state: AppState) {
         let prefs = state.settings.with(|st| st.animations);
         let motion = Motion::from_prefs(&prefs);
         vs.motion.set(motion);
-        let Some(el) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.document_element())
-        else {
+        let Some(el) = crate::effects::app::theme::document_element() else {
             return;
         };
         let class = el.class_list();

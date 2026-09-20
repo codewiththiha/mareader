@@ -108,21 +108,37 @@ impl ReflowContent {
     /// Back to the no-document state. Every field the open flow writes is
     /// reset here, so a field added to the struct cannot be silently
     /// forgotten by close.
+    ///
+    /// The handles are `Copy`, so this binds the signals the struct already
+    /// holds; `Self::default()` would allocate a fresh arena node per field on
+    /// every close and leak them.
     pub fn reset(&self) {
-        self.blocks.set(Arc::new(Vec::new()));
-        self.headings.set(Arc::new(Vec::new()));
-        self.heights.set(Arc::new(Vec::new()));
-        self.cuts.set(Arc::new(Vec::new()));
-        self.cut_generation.set(0);
-        self.block_page.set(Arc::new(Vec::new()));
-        // The geometry too: it is the split's other half (what the heights were
-        // cut against), and leaving the previous document's book-layout gutter
-        // behind would let a stale `geometry` claim a re-cut is needed — or not
-        // needed — for a document that has no blocks at all.
-        self.geometry.set(PageGeometry::default());
-        self.stream.set_value(None);
-        self.resume_fraction.set(None);
-        self.stream_total.set(0.0);
+        // The geometry goes with the split: it is what the heights were cut
+        // against, and leaving the previous document's book-layout gutter
+        // behind would let a stale `geometry` claim a re-cut is needed — or
+        // not needed — for a document that has no blocks at all.
+        let Self {
+            blocks,
+            headings,
+            heights,
+            cuts,
+            cut_generation,
+            block_page,
+            geometry,
+            stream,
+            resume_fraction,
+            stream_total,
+        } = *self;
+        blocks.set(Arc::new(Vec::new()));
+        headings.set(Arc::new(Vec::new()));
+        heights.set(Arc::new(Vec::new()));
+        cuts.set(Arc::new(Vec::new()));
+        cut_generation.set(0);
+        block_page.set(Arc::new(Vec::new()));
+        geometry.set(PageGeometry::default());
+        stream.set_value(None);
+        resume_fraction.set(None);
+        stream_total.set(0.0);
     }
 
     /// The live stream virtualizer, when the continuous text stream is
@@ -249,8 +265,7 @@ impl ReflowContent {
         let total = v.total_size().get_untracked();
         let viewport = v.viewport().get_untracked().main;
         let offset = v.scroll_offset().get_untracked();
-        let extent = (total - viewport).max(0.0);
-        Some(if extent > 0.0 { (offset / extent).clamp(0.0, 1.0) } else { 0.0 })
+        Some(reader_core::view::scroll_fraction(offset, total, viewport))
     }
 }
 

@@ -47,8 +47,7 @@
 //! for the stream (see `effects::reader::navigation_sync`), because both
 //! would speak page-cut geometry to a scroller that holds blocks.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::sync::Arc;
 
 use leptos::html;
@@ -70,6 +69,7 @@ use super::block_render;
 use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::page_host::block_row_id;
+use crate::epoch::epoch_signal;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use super::page::content_style;
 use crate::state::reader::TypographySignal;
@@ -108,7 +108,11 @@ pub fn ReflowStreamLayout(
         use_context::<TypographySignal>().expect("TypographySignal must be provided by app bootstrap");
     let texture_class = texture_class(state);
     let tx_zoom = zoom_style(state);
-    observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
+    // The container observation dies with this layout, explicitly: an
+    // observer outliving its scroller retains the element and everything
+    // mounted inside it.
+    let stop_observing = observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
+    on_cleanup(stop_observing);
     // The stream takes the mount anchor's flag exactly like a page strip:
     // raised here for a remount, and by the open flow for a document that
     // arrives over a mounted reader. The anchor below consumes it.
@@ -133,18 +137,16 @@ pub fn ReflowStreamLayout(
             .with_untracked(|h| h.get(index).copied().unwrap_or(FALLBACK_BLOCK_H))
             * state.viewer.zoom.visual_scale()
     };
-    let epoch = Signal::derive(move || {
-        let mut hasher = DefaultHasher::new();
+    let epoch = epoch_signal(move |hasher| {
         state
             .document
             .content
             .reflow
             .blocks
-            .with(|blocks| (Arc::as_ptr(blocks) as usize).hash(&mut hasher));
+            .with(|blocks| (Arc::as_ptr(blocks) as usize).hash(hasher));
         let heights = state.document.content.reflow.heights.get();
-        (Arc::as_ptr(&heights) as usize).hash(&mut hasher);
-        heights.len().hash(&mut hasher);
-        hasher.finish()
+        (Arc::as_ptr(&heights) as usize).hash(hasher);
+        heights.len().hash(hasher);
     });
     let initial_vh = {
         let (_, height) = state.viewer.container_size.get_untracked();
@@ -436,11 +438,7 @@ pub fn ReflowStreamLayout(
         let st = state.viewer.scroll_top.get();
         let (_, ch) = state.viewer.container_size.get();
         let total = state.document.content.reflow.stream_total.get();
-        if total > ch && total > 0.0 {
-            (st / (total - ch)).clamp(0.0, 1.0)
-        } else {
-            0.0
-        }
+        reader_core::view::scroll_fraction(st, total, ch)
     };
 
     view! {
@@ -618,8 +616,10 @@ fn anchor_stream(state: ReaderState, v: &Virtualizer) {
                 state.document.content.reflow.resume_fraction.set(None);
                 let total = aim.total_size().get_untracked();
                 let viewport = aim.viewport().get_untracked().main;
-                let extent = (total - viewport).max(0.0);
-                aim.scroll_to_offset(fraction * extent, ScrollMode::Instant);
+                aim.scroll_to_offset(
+                    reader_core::view::fraction_offset(fraction, total, viewport),
+                    ScrollMode::Instant,
+                );
             } else {
                 let page = state.viewer.page.get_untracked();
                 let block = state

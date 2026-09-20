@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PDF Reader",
-  "version": "0.8.0",
-  "identifier": "com.codewiththiha.pdfreader",
+  "productName": "Mareader",
+  "version": "0.1.1",
+  "identifier": "com.codewiththiha.mareader",
   "build": {
     "beforeDevCommand": "npm run build:ts && trunk serve",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "PDF Reader",
+        "title": "Mareader",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "decorations": true,

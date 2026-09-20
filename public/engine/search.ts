@@ -8,8 +8,8 @@
 // highlights.ts.
 
 import type { TextItem } from "./types";
-import { fail, failFrom } from "./canvas";
-import { refreshHighlights } from "./highlights";
+import { fail, failFrom } from "./errors";
+import { clearHighlightBoxes, markActiveHighlight, refreshHighlights } from "./highlights";
 import { session } from "./state";
 
 function itemRect(item: TextItem, pageH: number): { x: number; y: number; w: number; h: number } {
@@ -76,21 +76,11 @@ export function setActiveMatch(page: number, index: number): void {
       ? { page, index: index | 0 }
       : null;
   session.setActiveMatchValue(next);
-  for (const st of session.stateByCanvasId.values()) {
-    if (!st.textLayerEl) continue;
-    const wanted = next && next.page === st.page ? String(next.index) : null;
-    for (const d of st.textLayerEl.querySelectorAll(".highlight") as NodeListOf<HTMLElement>) {
-      d.classList.toggle("is-active", wanted !== null && d.dataset.match === wanted);
-    }
-  }
+  for (const st of session.stateByCanvasId.values()) markActiveHighlight(st);
 }
 
 export function clearHighlights(): void {
   session.setSearchQuery("");
   session.setActiveMatchValue(null);
-  for (const st of session.stateByCanvasId.values()) {
-    if (st.host) {
-      st.host.querySelectorAll(".highlight").forEach((n) => n.remove());
-    }
-  }
+  for (const st of session.stateByCanvasId.values()) clearHighlightBoxes(st);
 }

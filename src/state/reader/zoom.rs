@@ -130,11 +130,28 @@ impl ZoomState {
     /// Seed every scale for a freshly opened document: no transition, no
     /// layout to animate from, the live scale and the rasters already in
     /// agreement.
+    ///
+    /// Every field is named so a scale added later has to be assigned to one of
+    /// the two groups rather than falling through unseeded. The handles are
+    /// `Copy`, so this binds the signals the struct already holds;
+    /// `Self::default()` would allocate a fresh arena node per field on every
+    /// open and leak them.
     pub fn initialize(&self, scale: f64) {
-        self.desired.set(scale);
-        self.display.set(scale);
-        self.committed.set(scale);
-        self.transition.set(None);
+        let Self {
+            desired,
+            display,
+            committed,
+            transition,
+            // The queue is the controller's, not the document's: a mode flip
+            // lands here mid-burst, and dropping a posted command would strand
+            // the reader's zoom one step behind what they asked for.
+            commands: _,
+            seq: _,
+        } = *self;
+        desired.set(scale);
+        display.set(scale);
+        committed.set(scale);
+        transition.set(None);
     }
 }
 

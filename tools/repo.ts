@@ -17,14 +17,36 @@ export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 /** Every directory in the repo, minus the ones that are not source. */
 const SKIP_DIRS = new Set([".git", "node_modules", "target", "dist", ".arena", "out", "build"]);
 
-/** Read a repo-relative file as UTF-8. */
-export function read(rel: string): string {
-  return fs.readFileSync(path.join(root, rel), "utf8");
+/** Resolve a repo-relative path against the root. An absolute path is
+ *  returned unchanged, for a caller compiled into `scripts/` whose depth
+ *  differs from its source's and which therefore anchors on `import.meta.url`
+ *  instead. */
+function resolvePath(rel: string): string {
+  return path.isAbsolute(rel) ? rel : path.join(root, rel);
 }
 
-/** True when a repo-relative path exists and is a regular file. */
+/** Read a repo-relative (or absolute) file as UTF-8. */
+export function read(rel: string): string {
+  return fs.readFileSync(resolvePath(rel), "utf8");
+}
+
+/** True when a repo-relative (or absolute) path is an existing regular file. */
 export function isFile(rel: string): boolean {
-  return fs.existsSync(path.join(root, rel)) && fs.statSync(path.join(root, rel)).isFile();
+  const abs = resolvePath(rel);
+  return fs.existsSync(abs) && fs.statSync(abs).isFile();
+}
+
+/** The exported string constants a module declares, by name. `check-events`
+ *  reads both event tables with it and the engine smoke reads the engine's, so
+ *  a name the smoke asserts on comes from the table rather than from a third
+ *  copy of it. `rel` is repo-relative, or absolute for a caller compiled into
+ *  `scripts/` whose own depth differs from its source's. */
+export function exportedStrings(rel: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const m of read(rel).matchAll(/export const (\w+)\s*=\s*"([^"]+)"/g)) {
+    out.set(m[1]!, m[2]!);
+  }
+  return out;
 }
 
 /** Every file under `dir` — repo-relative, posix separators, `SKIP_DIRS`

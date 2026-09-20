@@ -79,16 +79,8 @@ pub fn open_dialog(state: AppState) {
     spawn_local(async move {
         match engine::pick_document().await {
             Ok(path) => open_path(state, path),
-            Err(msg) => {
-                if msg != pdf_engine::api::dialog::CANCELLED {
-                    state.reader.document.error.set(Some(msg.clone()));
-                    state.reader.document.status.set(DocStatus::Error);
-                    state.ui.toast.set(Some(Toast::new(format!(
-                        "Could not open document: {}",
-                        msg
-                    ))));
-                }
-            }
+            Err(msg) if msg != pdf_engine::api::dialog::CANCELLED => fail(state, msg),
+            Err(_) => {}
         }
     });
 }
@@ -262,14 +254,12 @@ fn ready(
 
     outline::resolve(state, path.clone(), stamp);
 
-    // Fire the index build in the background; the result is ignored (search
-    // effects call it too when needed). The page count is read up front:
-    // search's own index uses it to know how many pages to ask the engine
-    // for.
-    let search_pages = seeded.num_pages;
-    spawn_local(async move {
-        _ = engine::build_search_index(search_pages).await;
-    });
+    // No eager search-index build here, deliberately: extraction costs one
+    // worker round trip per page and the index it fills lives on the wasm
+    // heap, which never shrinks — an open-time build charged every book that
+    // ratchet whether or not anyone ever searched it. The first search
+    // builds the index instead (`crate::effects::reader::search`), and a
+    // reopen of the same bytes adopts the retained one.
 
     shelf::record(
         state,
@@ -286,6 +276,10 @@ fn ready(
     );
     cover::ensure(state, path, stamp);
     warmup::prewarm_thumbs(seeded.num_pages);
+    // The heap probe's baseline: what the book cost to open, before any
+    // reading moves it. The close line is the number to compare this one
+    // against — the difference is the session's ratchet.
+    crate::memory::log_heap("open");
 }
 
 /// The document did not open: surface it on the status bar and as a toast.

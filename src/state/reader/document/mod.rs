@@ -141,18 +141,35 @@ impl DocumentState {
     /// Back to the no-document state. Every field the open flow writes is
     /// reset here, so a field added to the struct cannot be silently
     /// forgotten by close_document.
+    ///
+    /// The handles are `Copy`, so this binds the signals the struct already
+    /// holds; `Self::default()` would allocate a fresh arena node per field on
+    /// every close and leak them.
     pub fn reset(&self) {
-        self.status.set(DocStatus::Idle);
-        self.format.set(Format::default());
-        self.error.set(None);
-        self.path.set(None);
-        self.book_id.set(None);
-        self.num_pages.set(0);
-        self.title.set(None);
-        self.author.set(None);
-        self.outline.set(Arc::new(Vec::new()));
-        self.outline_pending.set(false);
-        self.content.reset();
+        let Self {
+            status,
+            format,
+            error,
+            path,
+            book_id,
+            title,
+            author,
+            num_pages,
+            outline,
+            outline_pending,
+            content,
+        } = *self;
+        status.set(DocStatus::Idle);
+        format.set(Format::default());
+        error.set(None);
+        path.set(None);
+        book_id.set(None);
+        title.set(None);
+        author.set(None);
+        num_pages.set(0);
+        outline.set(Arc::new(Vec::new()));
+        outline_pending.set(false);
+        content.reset();
     }
 
     /// Height-over-width aspect of page 1 (tracked read). Every
@@ -164,7 +181,7 @@ impl DocumentState {
 
     /// Same, read untracked — for rAF/scroll callbacks that must not
     /// subscribe to geometry.
-    pub fn page1_aspect_untracked(&self) -> f64 {
+    pub fn page1_aspect_now(&self) -> f64 {
         page_aspect(self.content.metrics.page1_size.get_untracked())
     }
 

@@ -58,13 +58,22 @@ pub(crate) fn land(state: &ReaderState, actuator: &ZoomActuator, t: &ZoomTransit
     if (t.to - cur).abs() < config::SETTLED_EPSILON {
         return false;
     }
-    // Only the scrolling modes have a strip to rescale; for the paginated ones
-    // the single mounted host stretches to the display scale on its own.
-    if !state.viewer.mode.get_untracked().is_paginated() {
-        actuator.relayout_to(state, t.to / cur);
-    }
-    state.viewer.zoom.display.set(t.to);
+    show(state, actuator, t.to);
     true
+}
+
+/// The pair every change of the scale on screen is: relay the layout out to
+/// `to`, then show it. The actuator reads `display` to work out the horizontal
+/// strip's exact widths, so the relayout must come first.
+///
+/// Only the scrolling modes have a strip to rescale; for the paginated ones
+/// the single mounted host stretches to the display scale on its own.
+fn show(state: &ReaderState, actuator: &ZoomActuator, to: f64) {
+    let cur = state.viewer.zoom.visual_scale();
+    if !state.viewer.mode.get_untracked().is_paginated() {
+        actuator.relayout_to(state, to / cur);
+    }
+    state.viewer.zoom.display.set(to);
 }
 
 /// The tween's progress curve: covers ground early, decelerates onto the
@@ -97,10 +106,7 @@ impl Tween {
             let Some(t) = state.viewer.zoom.transition.get_untracked() else {
                 return false;
             };
-            let mode = state.viewer.mode.get_untracked();
-            // Only the scrolling modes have a strip to rescale.
-            let scrolls = !mode.is_paginated();
-            let duration = config::profile_for(mode).duration_ms();
+            let duration = config::zoom_profile().duration_ms();
             // Five reasons not to interpolate: the poster asked for the first
             // frame, this is a container follow (it must sit in the window,
             // not chase it), the profile has no duration, the OS asked for
@@ -125,22 +131,14 @@ impl Tween {
                     // container stops moving. Going idle here instead of
                     // re-arming lets the next frame own the next rAF: `arm`
                     // adopts whatever transition is on the signal.
-                                        return false;
+                    return false;
                 }
                 finish_transition(&state, &t);
-                                return false;
+                return false;
             }
             let progress = ((js_sys::Date::now() - t.start_ms) / duration).clamp(0.0, 1.0);
             let visual = t.from + (t.to - t.from) * ease_out_cubic(progress);
-            // The per-frame pair: relay the layout out by the ratio the
-            // display scale is about to move through, then show it. The
-            // actuator reads `display` to work out the horizontal strip's
-            // exact widths, so the relayout must come first.
-            if scrolls {
-                let cur = state.viewer.zoom.visual_scale();
-                actuator.relayout_to(&state, visual / cur);
-            }
-            state.viewer.zoom.display.set(visual);
+            show(&state, &actuator, visual);
             if progress >= 1.0 {
                 finish_transition(&state, &t);
                 return false;

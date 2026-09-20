@@ -1,7 +1,8 @@
 // LRU thumbnail cache + blit / render.
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
-import { el, fail, failFrom, offscreenFor, releaseCanvas, showBaked, showRaw } from "./canvas";
+import { el, offscreenFor, releaseCanvas, showBaked, showRaw } from "./canvas";
+import { fail, failFrom } from "./errors";
 import { bakeRaster } from "./theme/bake";
 import { readPipeline, pipelineCache } from "./theme/pipeline";
 import {
@@ -11,13 +12,37 @@ import {
   thumbRaw,
   thumbSource,
 } from "./theme/thumbnails";
+import { THUMB_CACHE_MAX, session } from "./state";
 // A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
 // raster work, not clicks: queued jobs are invalidated on unmount and cached
 // paths still paint immediately.
 const THUMB_RENDER_LIMIT = 3;
 let thumbActive = 0;
 const thumbQueue: Array<() => void> = [];
+/** Per-canvas-id generation counters, invalidating queued jobs a newer mount
+ *  of the same id superseded. Ids are per page (`thumb-{page}`), so the map
+ *  grows with the pages a document's sidebar showed — deliberately NOT pruned
+ *  per id at cancel time: the counters exist to outlive unmounts, and
+ *  deleting an id's entry at cancel would let a still-queued job collide with
+ *  a fresh mount's generation 1 and paint the wrong page into the recycled
+ *  canvas. The map resets whole at document teardown instead
+ *  (`resetThumbLane`), which is safe because the lane's epoch invalidates
+ *  every queued job in the same breath. */
 const thumbGeneration = new Map<string, number>();
+/** Bumped at document teardown. Queued lane jobs capture it and resolve as
+ *  cancelled when they reach the front of the queue under a newer epoch,
+ *  instead of racing the next document's mounts for recycled canvas ids. */
+let thumbLaneEpoch = 0;
+
+/** Forget the lane's per-document bookkeeping: every queued job is
+ *  invalidated wholesale (the epoch) and the generation counters go with the
+ *  canvas ids they were issued for — the next document reissues those ids
+ *  from 1, and counters surviving across documents would collide with it.
+ *  Called from the engine's destroy. */
+export function resetThumbLane(): void {
+  thumbLaneEpoch += 1;
+  thumbGeneration.clear();
+}
 
 function nextThumbGeneration(canvasId: string): number {
   const next = (thumbGeneration.get(canvasId) ?? 0) + 1;
@@ -33,9 +58,6 @@ function pumpThumbQueue(): void {
     next();
   }
 }
-
-import { THUMB_CACHE_MAX, session } from "./state";
-
 /** Insert a thumbnail entry into the cache, releasing any previous entry for
  *  the page and evicting the LRU entry if the cache is full. */
 function cachePut(page: number, entry: ThumbEntry): void {
@@ -95,15 +117,18 @@ export async function renderThumb(
   }
 
   return await new Promise<ThumbResult>((resolve) => {
+    const epoch = thumbLaneEpoch;
     thumbQueue.push(() => {
       const finish = () => {
         thumbActive -= 1;
         pumpThumbQueue();
       };
-      // The cell disappeared, or a newer mount re-used this id, before the
-      // job reached the front of the queue. Drop it without touching pdf.js.
+      // The cell disappeared, a newer mount re-used this id, or the document
+      // was torn down while the job waited, before the job reached the front
+      // of the queue. Drop it without touching pdf.js.
       if (
-        session.thumbCancelled.has(canvasId)
+        epoch !== thumbLaneEpoch
+        || session.thumbCancelled.has(canvasId)
         || thumbGeneration.get(canvasId) !== generation
       ) {
         resolve(fail("cancelled", "Thumbnail render cancelled"));

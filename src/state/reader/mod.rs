@@ -68,7 +68,7 @@ impl ReaderState {
     }
 
     /// The same question for an effect or a callback that must not subscribe.
-    pub fn reflowable_untracked(&self) -> bool {
+    pub fn reflowable_now(&self) -> bool {
         self.document.format.get_untracked().is_reflowable()
     }
 
@@ -97,8 +97,7 @@ impl ReaderState {
         let top = self.viewer.scroll_top.get();
         let (_, viewport_h) = self.viewer.container_size.get();
         let total = self.document.content.reflow.stream_total.get();
-        let extent = (total - viewport_h).max(1.0);
-        ((top / extent) * 100.0).round().clamp(0.0, 100.0) as u32
+        (reader_core::view::scroll_fraction(top, total, viewport_h) * 100.0).round() as u32
     }
 
     /// The stream's reading position as 0..=1, or `None` while no stream is

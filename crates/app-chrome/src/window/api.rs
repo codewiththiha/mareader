@@ -1,6 +1,6 @@
-//! The window commands: minimize, maximize/restore, close, the maximized probe
-//! that picks the caption's glyph, and the macOS traffic-light visibility
-//! switch.
+//! The window commands: minimize, maximize/restore, close, reload, the
+//! maximized probe that picks the caption's glyph, and the macOS
+//! traffic-light visibility switch.
 //!
 //! `tauri.windows.conf.json` / `tauri.linux.conf.json` remove the native title
 //! bar (`decorations: false`) and the caption cluster ([`super::caption`])
@@ -82,6 +82,39 @@ pub async fn close_window() {
     if let Some(win) = window() {
         invoke_method(&win, "close").await;
     }
+}
+
+/// Reload the page — the app's own restart, and the honest reset for the
+/// memory a long session latched onto.
+///
+/// The footprint a reading session leaves behind lives in the webview: the
+/// wasm linear memory never shrinks, and WebKit returns freed arenas to the
+/// OS only under pressure, so nothing the app can call gives the number back
+/// while the page lives. A reload boots the whole app cold in place — what a
+/// force-quit does, minus the quit. Plain `location.reload()`, so it behaves
+/// the same under Tauri and in a bare browser (`trunk serve`); a window
+/// handle is not involved, and neither is the backend.
+///
+/// The address is parked on the root first, and that is load-bearing rather
+/// than cosmetic. The reader's route sync (`src/app/routes.rs`) keeps
+/// `/reader` in the URL bar for as long as a book is open, so a reload from
+/// there boots a router that matches the reader, mounts the whole reader —
+/// its effects, its virtualizers, its engine registrations — against a
+/// document state that is empty, and then bounces to the shelf and tears it
+/// all back down. Replacing the address before the reload makes the boot land
+/// where the app is actually going: the shelf, with the book's resume point
+/// waiting on it.
+pub fn reload_window() {
+    let Some(win) = web_sys::window() else {
+        return;
+    };
+    // Best-effort: a history object that refuses the write leaves the address
+    // where it was, and the reload below still restarts the app — onto the
+    // reader mount the router then walks back, which is what it did before.
+    if let Ok(history) = win.history() {
+        let _ = history.replace_state_with_url(&JsValue::NULL, "", Some("/"));
+    }
+    let _ = win.location().reload();
 }
 
 /// Whether the window is maximized — drives the maximize/restore glyph.

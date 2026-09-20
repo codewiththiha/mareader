@@ -153,7 +153,7 @@ fn snap_to_page(virtualizer: Virtualizer, state: ReaderState, page: u32) {
         if vh <= 1.0 {
             return;
         }
-        let aspect = state.document.page1_aspect_untracked();
+        let aspect = state.document.page1_aspect_now();
         if let Some(target) = center_target(&virtualizer, page, aspect, vh) {
             virtualizer.scroll_to_offset(target, ScrollMode::Instant);
         }
@@ -252,7 +252,7 @@ fn arm_glide(g: Glide) {
     timer.set_value(handle);
 }
 
-/// The "take me to where I am" gesture: a `pdfreader:reveal-active`
+/// The "take me to where I am" gesture: a `mareader:reveal-active`
 /// event (re-clicking the active sidebar tab) smooth-scrolls onto the
 /// current page and hands the panel back to the reader.
 fn install_reveal_listener(

@@ -88,33 +88,20 @@ impl Strip {
     /// bounds check.
     #[inline]
     pub fn offset(&self, index: usize) -> f64 {
-        match self.starts.get(index) {
-            Some(&v) => from_sub(v),
-            None => self.total(),
-        }
+        StripBackend::offset(self, index)
     }
 
     /// Size of item `index`, or `0.0` if out of range.
     #[inline]
     pub fn size(&self, index: usize) -> f64 {
-        let len = self.len();
-        if index >= len {
-            return 0.0;
-        }
-        let end = if index + 1 == len {
-            self.total()
-        } else {
-            from_sub(self.starts[index + 1].saturating_sub(self.gap))
-        };
-        let s = end - from_sub(self.starts[index]);
-        if s < 0.0 { 0.0 } else { s }
+        StripBackend::size(self, index)
     }
 
     /// Total extent of the column: every item plus the gaps between them, with
     /// no trailing gap. `0.0` when empty.
     #[inline]
     pub fn total(&self) -> f64 {
-        from_sub(self.starts.last().copied().unwrap_or(0))
+        StripBackend::total(self)
     }
 
     /// Average item extent — resolves [`crate::Overscan::Items`] budgets.

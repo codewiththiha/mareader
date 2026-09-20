@@ -16,9 +16,12 @@ use library_core::scan::FoundFile;
 use reader_core::format::Format;
 use serde::{Deserialize, Serialize};
 
-use super::{StorageError, get, parse, set};
+use super::{StorageError, encode, load_keyed, set};
 
-const KEPT_KEY: &str = "pdfreader.kept.v1";
+const KEPT_KEY: &str = "mareader.kept.v1";
+
+/// [`KEPT_KEY`] before the app was renamed: read as a fallback, never written.
+const RETIRED_KEPT_KEY: &str = "pdfreader.kept.v1";
 
 /// How many removals' worth of reading data the app holds. A ceiling,
 /// because every removal adds and only an import of the same file takes away:
@@ -123,17 +126,11 @@ impl KeptBook {
 
 /// Every record the app holds, oldest first.
 fn load() -> Vec<KeptBook> {
-    get(KEPT_KEY)
-        .map(|raw| parse("kept", &raw))
-        .unwrap_or_default()
+    load_keyed("kept", KEPT_KEY, RETIRED_KEPT_KEY)
 }
 
 fn save(all: &[KeptBook]) -> Result<(), StorageError> {
-    let json = serde_json::to_string(all).map_err(|e| StorageError {
-        op: "save_kept",
-        detail: format!("serialize failed: {e}"),
-    })?;
-    set(KEPT_KEY, &json)
+    set(KEPT_KEY, &encode("save_kept", all)?)
 }
 
 /// Keep what the library held about `book`, under the file it came from.

@@ -188,10 +188,14 @@ fn ready(
     );
 
     // A text document opening over a PDF: release the engine's book and its
-    // paper session — neither has any part in what follows.
+    // paper session — neither has any part in what follows. The retained
+    // search index goes with them: this format searches its own blocks, and
+    // a closed PDF's extracted text must not sit in the wasm heap while a
+    // text book is open.
     spawn_local(async move {
         _ = pdf_engine::api::destroy().await;
     });
+    pdf_engine::api::scope_to_document(None, "", 0);
     pdf_engine::backdrop::document_close();
 
     // The other pipeline's model is released at the same moment, and this

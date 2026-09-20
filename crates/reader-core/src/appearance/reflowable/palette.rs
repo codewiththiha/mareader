@@ -60,7 +60,7 @@ pub struct TextPalette {
 impl TextPalette {
     /// Derive the palette for an appearance. Pure — no DOM, no engine.
     pub fn compute(a: &Appearance) -> TextPalette {
-        let t = a.tint_strength as f64 / 100.0;
+        let t = a.tint_amount();
         let target_h = ui_hue_oklch(a.tint_hue as f64);
 
         // The per-mode anchors: paper and ink lightness plus the chroma
@@ -174,7 +174,7 @@ mod tests {
         // strength — the tint colours it, never dims it — and the ink stays
         // mostly black with a whisper of the paper's hue.
         for (hue, strength) in [(34u16, 35u8), (104, 100), (200, 60), (350, 100)] {
-            let t = strength as f64 / 100.0;
+            let t = (strength as f64 / 50.0).min(1.0);
             let p = TextPalette::compute(&tinted(BaseMode::Light, hue, strength));
             let (pl, pc, ph) = lch(&p.paper);
             assert!((pl - 0.98).abs() < 1e-9, "paper L {pl} at {hue}/{strength}");

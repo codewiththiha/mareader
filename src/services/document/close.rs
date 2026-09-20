@@ -7,7 +7,6 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use pdf_engine::api as engine;
-use pdf_engine::types::DocStatus;
 use crate::state::{AppState, SidebarMode};
 
 /// Close the current document and return to the library shelf.
@@ -23,36 +22,13 @@ pub fn close_document(state: AppState) {
     // that window would be undone by the book it just closed.
     let _ = super::session::claim();
 
-    // Flush the current reading position NOW, before the signals are reset.
-    // The reading-progress effect writes the library signal synchronously but
-    // debounces the localStorage save; closing (and then possibly quitting)
-    // must not lose the last position to that debounce.
-    if state.reader.document.status.get_untracked() == DocStatus::Ready
-        && let Some(path) = state.reader.document.path.get_untracked()
-    {
-        let page = state.reader.viewer.page.get_untracked();
-        // The rows this read belongs to, by the same rule the progress debounce
-        // writes and the open records: the book the reader named when it is a
-        // book of its own, every shared row at the address otherwise
-        // (`library_core::book::rows_for_read`). Read before the reset below,
-        // which is what forgets the name.
-        let book_id = state.reader.document.book_id.get_untracked();
-        let mut changed = false;
-        state.library.books.update(|books| {
-            let at = library_core::book::rows_for_read(books, book_id.as_deref(), &path);
-            for i in at {
-                if let Some(b) = books.get_mut(i).and_then(library_core::book::Row::as_book_mut)
-                    && b.page != page
-                {
-                    b.page = page;
-                    changed = true;
-                }
-            }
-        });
-        if changed {
-            crate::storage::persist_library(state.library);
-        }
-    }
+    // Flush the current reading position NOW, before the signals are reset:
+    // the reading-progress effect writes the library signal synchronously but
+    // debounces the localStorage save, and closing (then possibly quitting)
+    // must not lose the last position to that debounce. One function, shared
+    // with the reload that ends a session just as finally
+    // (`crate::services::reload`).
+    super::flush::flush_read_point(state);
 
     // Tear the engine document down while the reader is idle on the shelf.
     // destroy() is non-blocking — it drops the loading-task reference
@@ -61,6 +37,17 @@ pub fn close_document(state: AppState) {
     // destroy() is idempotent.
     spawn_local(async move {
         _ = engine::destroy().await;
+        // Finish the job: destroy() runs the advisory worker cleanup itself
+        // now (only it can — later the document is gone), and this tail sweep
+        // is the idempotent one the shelf deserves, catching anything that
+        // re-landed while the teardown was resolving (a fast close → reopen
+        // re-registers hosts before this future wakes).
+        engine::sweep();
+        engine::sweep_snapshots();
+        // The heap probe's other half: what the session left behind on the
+        // wasm side once the shelf is as empty as it gets — the retained
+        // index (kept for a reopen's adoption), the covers, the library.
+        crate::memory::log_heap("close");
     });
 
     // One call sheds everything the open flow wrote — the identity, the outline

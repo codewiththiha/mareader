@@ -42,23 +42,16 @@
   opacity: var(--texture-opacity, 0.9);
 
   /* The user's pitch multiplier composes with the page scale: the texture
-     is part of the page and zooms with the document. */
+     is part of the page and zooms with the document. The five patterns and
+     the pitch they resolve against are declared once, in styles/tokens.css. */
   --tex-scale: calc(var(--scale-factor, 1) * var(--texture-scale-user, 1));
-  /* --tex-unit/--tex-line are restated in all THREE texture contexts (page
-     layer, reflowable scroller, appearance swatch) on purpose: a custom
-     property resolves the var()s in its own value at computed-value time
-     before inheriting, so hoisting them to :root would freeze the formula
-     against the root's --tex-scale and the pitch would stop following zoom.
-     Wherever --tex-scale is redefined, these two must be redefined beside
-     it. */
-  --tex-unit: calc(26px * var(--tex-scale));
-  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  --tex-stroke: var(--texture-line);
   background-origin: border-box;
   background-position: 0 0;
 }
 
 .pdf-page.texture-paper::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  background-image: var(--tex-paper-image);
   /* Tint the gray fractal noise toward the theme grain without losing the
      pattern: multiply in the light family, screen on dark (multiply alone
      could never lighten). */
@@ -70,32 +63,20 @@
 }
 
 .pdf-page.texture-lined::before {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    var(--texture-line) 0 var(--tex-line),
-    transparent var(--tex-line) var(--tex-unit)
-  );
+  background-image: var(--tex-lined-image);
 }
 
 .pdf-page.texture-grid::before {
-  background-image:
-    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+  background-image: var(--tex-grid-image);
 }
 
 .pdf-page.texture-dotted::before {
-  background-image: radial-gradient(
-    var(--texture-line) calc(1px * var(--tex-scale)),
-    transparent calc(1.5px * var(--tex-scale))
-  );
+  background-image: var(--tex-dotted-image);
   background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
 }
 
 .pdf-page.texture-cross::before {
-  background-image:
-    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    radial-gradient(var(--texture-line) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
+  background-image: var(--tex-cross-image);
   background-size:
     var(--tex-unit) var(--tex-unit),
     var(--tex-unit) var(--tex-unit),
@@ -124,9 +105,7 @@
   );
   --scale-factor: var(--tx-zoom, 1);
   --tex-scale: calc(var(--scale-factor, 1) * var(--texture-scale-user, 1));
-  /* Restated beside --tex-scale on purpose: see the cascade note above. */
-  --tex-unit: calc(26px * var(--tex-scale));
-  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  --tex-stroke: var(--texture-line);
   background-attachment: local;
   background-repeat: repeat;
   background-origin: padding-box;
@@ -134,7 +113,9 @@
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper {
-  background-image: var(--tx-matte), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  /* The matte is the FIRST layer, so it paints above the pattern it stands
+     in for the element opacity a background layer has no way to fade. */
+  background-image: var(--tx-matte), var(--tex-paper-image);
   background-color: var(--texture-paper);
   /* normal: matte over grain; the grain keeps its own tint blend. */
   background-blend-mode: normal, var(--texture-blend, multiply);
@@ -143,12 +124,7 @@
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined {
-  background-image: var(--tx-matte),
-    repeating-linear-gradient(
-      to bottom,
-      var(--texture-line) 0 var(--tex-line),
-      transparent var(--tex-line) var(--tex-unit)
-    );
+  background-image: var(--tx-matte), var(--tex-lined-image);
   /* Explicit one-period tile: under `background-attachment: local` the
      positioning area is the whole scrollable extent, and an auto-sized
      repeating `to bottom` gradient fails to paint along that axis in WebKit
@@ -158,9 +134,7 @@
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid {
-  background-image: var(--tx-matte),
-    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+  background-image: var(--tx-matte), var(--tex-grid-image);
   /* One-period tiles: same WebKit `local` collapse as lined. */
   background-size:
     100% 100%,
@@ -170,20 +144,13 @@
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted {
-  background-image: var(--tx-matte),
-    radial-gradient(
-      var(--texture-line) calc(1px * var(--tex-scale)),
-      transparent calc(1.5px * var(--tex-scale))
-    );
+  background-image: var(--tx-matte), var(--tex-dotted-image);
   background-size: 100% 100%, calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
 }
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross {
-  background-image: var(--tx-matte),
-    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
-    radial-gradient(var(--texture-line) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
+  background-image: var(--tx-matte), var(--tex-cross-image);
   background-size:
     100% 100%,
     var(--tex-unit) var(--tex-unit),
@@ -196,14 +163,26 @@
    so page and gutter are one layer: same pitch and phase at every zoom and
    scroll position. The overhang is one viewport per side; #viewer-slot's
    overflow-hidden clips the rest. Only axes facing the BACKDROP bleed — an
-   axis facing a neighbour page would double-expose that neighbour's edge.
-   The background-position shift re-anchors the tile origin to the page
-   edge, so the on-page pattern matches inset:0. */
-/* Continuous vertical: gutters left/right, neighbours above/below. */
+   axis facing a neighbour page would double-expose that neighbour's edge —
+   with one exception: a neighbour axis that carries a GAP bleeds half of it,
+   so the two facing edges meet in the middle of the gap instead of leaving a
+   bare band of untextured backdrop between the pages. The background-
+   position shift re-anchors the tile origin to the page edge, so the
+   on-page pattern matches inset:0. */
+/* Continuous vertical: gutters left/right, neighbours above/below. Those
+   neighbours are separated by the strip's row gap — the one stretch of
+   backdrop a page here does not otherwise reach — so the overhang runs half
+   a gap up and half a gap down, meeting the page above and the page below in
+   the middle. The gap is published as --page-gap by the effect that resolves
+   it (src/effects/reader/layout_prefs.rs) and is zero in No Gap mode, where
+   the pages are pulled together to overlap by a device pixel and the two
+   halves collapse to the plain rule this was before. */
 .reader-bg.blend .pdf-page[id^="cont-"]::before {
   left: -100vw;
   right: -100vw;
-  background-position: 100vw 0;
+  top: calc(var(--page-gap, 0px) * -0.5);
+  bottom: calc(var(--page-gap, 0px) * -0.5);
+  background-position: 100vw calc(var(--page-gap, 0px) * 0.5);
 }
 /* Horizontal strip: bands above/below, neighbours left/right. */
 .reader-bg.blend .pdf-page[id^="hp-"]::before {
@@ -216,15 +195,32 @@
   inset: -100vh -100vw;
   background-position: 100vw 100vh;
 }
-/* Spread: bands above/below always; outer sides bleed (the first page's
-   inner bleed hides under its partner, which paints later). */
-.reader-bg.blend .pdf-page[id^="dp-"]::before {
+/* Spread: the bands above/below and the OUTER side, one half at a time. The
+   inner axes face the partner and must not bleed at all (gap-0 leaves no
+   gutter there to paint): a partner's opaque box hides an inner bleed only
+   across its own rect, while above and below that rect it carries a
+   translucent gutter overhang of its own — so an inner bleed shows through
+   under it and the two texture layers add up. That sum is the grey band
+   around the right page with a texture set, and it needs a texture to show:
+   with texture None the layer paints nothing, which is why only the
+   textured looks ever read as the culprit. */
+.reader-bg.blend .pdf-page[id^="dp-"]:first-child:not(:only-child)::before {
+  top: -100vh;
+  bottom: -100vh;
+  left: -100vw;
+  background-position: 100vw 100vh;
+}
+.reader-bg.blend .pdf-page[id^="dp-"]:last-child:not(:only-child)::before {
   top: -100vh;
   bottom: -100vh;
   right: -100vw;
   background-position: 0 100vh;
 }
-.reader-bg.blend .pdf-page[id^="dp-"]:first-child::before {
-  left: -100vw;
+/* An odd last page mounts alone, so every side faces the backdrop. The two
+   rules above stand down for it — a lone page is both first and last child,
+   and would take the later background-position, shifting its tile a whole
+   viewport sideways. */
+.reader-bg.blend .pdf-page[id^="dp-"]:only-child::before {
+  inset: -100vh -100vw;
   background-position: 100vw 100vh;
 }

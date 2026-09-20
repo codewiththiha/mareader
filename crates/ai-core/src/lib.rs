@@ -1,9 +1,9 @@
 //! The format-agnostic core of the AI reading features: the wire types of the
 //! word-explanation backend ([`types`]), the gloss card's geometry and spring
-//! ([`gloss`], stepping `ui_geom::spring`), and the Tauri `explain_word`
-//! kickoff ([`bridge`]).
+//! ([`gloss`], stepping `ui_geom::spring`), and the `explain_word` kickoff
+//! ([`bridge`], whose `has_tauri` probe is what makes it inert off-wasm).
 //!
-//! Its one dependency is `reader-core`, and only for what the reader owns:
+//! It depends on `reader-core` for what the reader owns:
 //! the word card's *settings* are flat `gloss_*` fields of the persisted
 //! `Settings` blob, so `GlossColor` and `GlossDensity` live there. The card's
 //! spring comes from `ui-geom` — the same leaf the floating panels step,
@@ -20,8 +20,8 @@
 //! whenever the typography moves, so its spot is a block index and a
 //! character range travelling in `GlossMark::context` as a tagged envelope
 //! the app owns (`components::ai::reflow_anchor`) — pixels re-derived at
-//! watch time, never stored. Implementing [`gloss::mark::MarkAnchor`] is only
-//! the right move when the identity is as durable as a rect.
+//! watch time, never stored. Both still carry a [`gloss::mark::PageAnchor`],
+//! so the persisted schema has exactly one shape.
 //!
 //! Pure modules; `cargo test -p ai-core` on the host.
 

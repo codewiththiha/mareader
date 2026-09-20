@@ -40,9 +40,7 @@ pub fn reveal_shelf(state: AppState, shelf_id: &str) {
         .shelves
         .with_untracked(|shelves| find(shelves, shelf_id).and_then(|s| s.parent.clone()))
         .unwrap_or_else(|| ALL_SHELF.to_string());
-    if state.library.shelf.get_untracked() != level {
-        state.library.shelf.set(level);
-    }
+    goto_level(state, level);
     light(state, shelf_id);
 }
 
@@ -58,8 +56,15 @@ fn navigate_to_shelf_of(state: AppState, book_id: &str) {
                 .map(|s| s.id.clone())
         })
         .unwrap_or_else(|| ALL_SHELF.to_string());
-    if state.library.shelf.get_untracked() != target {
-        state.library.shelf.set(target);
+    goto_level(state, target);
+}
+
+/// Move the breadcrumb, and only when it has to move: every effect on the
+/// level re-runs on a write, so re-setting the level the reader is already on
+/// would re-walk the shelf for nothing.
+fn goto_level(state: AppState, level: String) {
+    if state.library.shelf.get_untracked() != level {
+        state.library.shelf.set(level);
     }
 }
 

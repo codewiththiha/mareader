@@ -32,7 +32,8 @@ pub struct Toast {
 }
 
 impl Toast {
-    /// A fresh error surface (the only toast producers today).
+    /// A fresh toast. Producers reach it through
+    /// `crate::services::library::toast` and the document-open failure paths.
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             id: TOAST_ID.fetch_add(1, Ordering::Relaxed),

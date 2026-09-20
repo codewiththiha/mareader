@@ -70,12 +70,11 @@ fn trap_tab(dialog: &web_sys::HtmlElement, event: &web_sys::KeyboardEvent) {
         return;
     }
     let focusable = focusable_elements(dialog);
-    let Some(first) = focusable.first() else {
+    let Some((first, last)) = focusable.first().zip(focusable.last()) else {
         event.prevent_default();
         let _ = dialog.focus();
         return;
     };
-    let last = focusable.last().expect("a first focusable element has a last one");
     let active = active_element();
     let outside = active.as_ref().is_none_or(|active| !contains(dialog, active));
     let wraps_backward = event.shift_key()

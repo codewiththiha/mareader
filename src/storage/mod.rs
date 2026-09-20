@@ -23,12 +23,19 @@ use crate::state::library::{CoverImage, CoverMap, LibraryState};
 // The library's key names, its persisted shape and the migration from the shape
 // it replaced all live in `library_core::blob`, so the schema and the rules that
 // keep it valid are one crate's business rather than two.
-use library_core::blob::{LIBRARY_KEY, LibraryBlob};
+use library_core::blob::{LIBRARY_KEY, RETIRED_LIBRARY_KEY, LibraryBlob};
 use library_core::blob::migrate::{BlobV2, LEGACY_KEY, RecentBook, V2_KEY, migrate_v1, migrate_v2};
 use library_core::blob::sanitize as sanitize_library;
-use reader_core::settings::{SETTINGS_KEY, Settings, sanitize};
+use reader_core::settings::{RETIRED_SETTINGS_KEY, SETTINGS_KEY, Settings, sanitize};
 
-const COVERS_KEY: &str = "pdfreader.covers.v1";
+const COVERS_KEY: &str = "mareader.covers.v1";
+
+/// The key the app read and wrote before it was renamed. Every store below
+/// reads its retired key as a fallback and writes only the current one: the
+/// contents are the same schema, so the first save after a load is what moves
+/// a reader onto the new name, and a downgrade still finds the data it wrote.
+const RETIRED_COVERS_KEY: &str = "pdfreader.covers.v1";
+
 /// Gloss highlights, keyed by the ROW ID the library holds for a book.
 ///
 /// A PDF's mark is a page-space rect in CSS px — stable across zoom and
@@ -42,7 +49,10 @@ const COVERS_KEY: &str = "pdfreader.covers.v1";
 /// keyed by address, and the two shapes cannot be told apart entry by entry,
 /// so [`migrate_gloss_keys`] reads the old key and writes the new one rather
 /// than overwriting a map this build cannot parse.
-const GLOSS_KEY: &str = "pdfreader.gloss.v2";
+const GLOSS_KEY: &str = "mareader.gloss.v2";
+
+/// [`GLOSS_KEY`] before the rename.
+const RETIRED_GLOSS_KEY: &str = "pdfreader.gloss.v2";
 
 /// The address-keyed map this build migrated from. Read once, left alone: a
 /// reader who downgrades should still find the highlights the build they
@@ -51,7 +61,12 @@ const GLOSS_V1_KEY: &str = "pdfreader.gloss.v1";
 
 /// One-shot gate for the address-to-row migration. The v1 data itself stays
 /// in place so an older build can still read it after a downgrade.
-const GLOSS_V2_MIGRATED_KEY: &str = "pdfreader.gloss.v2.migrated";
+const GLOSS_V2_MIGRATED_KEY: &str = "mareader.gloss.v2.migrated";
+
+/// The gate as the pre-rebrand build set it. Read alongside the current one so
+/// a reader who already carried their `v1` marks across is not made to do it
+/// twice.
+const RETIRED_GLOSS_V2_MIGRATED_KEY: &str = "pdfreader.gloss.v2.migrated";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization
 /// error). The UI must never crash on these — but they must not vanish.
@@ -124,6 +139,32 @@ pub fn set(key: &str, value: &str) -> Result<(), StorageError> {
     })
 }
 
+/// Serialize for storage, naming the operation a failure is reported against.
+/// The four savers were four copies of this one `map_err`.
+fn encode<T: serde::Serialize + ?Sized>(op: &'static str, value: &T) -> Result<String, StorageError> {
+    serde_json::to_string(value).map_err(|e| StorageError {
+        op,
+        detail: format!("serialize failed: {e}"),
+    })
+}
+
+/// Read a store under its current key, falling back to the name it wore before
+/// the rename, then to the type's default when neither is present or parses.
+///
+/// The retired key is read and never written: the first save after a load is
+/// what moves a reader onto the new name, and a downgrade still finds the data
+/// it wrote.
+fn load_keyed<T: serde::de::DeserializeOwned + Default>(
+    op: &'static str,
+    key: &str,
+    retired: &str,
+) -> T {
+    get(key)
+        .or_else(|| get(retired))
+        .map(|raw| parse(op, &raw))
+        .unwrap_or_default()
+}
+
 fn parse<T: serde::de::DeserializeOwned + Default>(op: &'static str, raw: &str) -> T {
     match serde_json::from_str(raw) {
         Ok(v) => v,
@@ -138,19 +179,13 @@ fn parse<T: serde::de::DeserializeOwned + Default>(op: &'static str, raw: &str) 
 
 /// Load persisted settings; invalid values fall back to defaults + sanitize.
 pub fn load_settings() -> Settings {
-    let mut settings = get(SETTINGS_KEY)
-        .map(|raw| parse("settings", &raw))
-        .unwrap_or_default();
+    let mut settings: Settings = load_keyed("settings", SETTINGS_KEY, RETIRED_SETTINGS_KEY);
     sanitize(&mut settings);
     settings
 }
 
 pub fn save_settings(settings: &Settings) -> Result<(), StorageError> {
-    let json = serde_json::to_string(settings).map_err(|e| StorageError {
-        op: "save_settings",
-        detail: format!("serialize failed: {e}"),
-    })?;
-    set(SETTINGS_KEY, &json)
+    set(SETTINGS_KEY, &encode("save_settings", settings)?)
 }
 
 /// Load the library: the current blob when there is one, else the previous
@@ -163,6 +198,11 @@ pub fn save_settings(settings: &Settings) -> Result<(), StorageError> {
 /// after this load is what puts the new blob under its own key.
 pub fn load_library() -> LibraryBlob {
     if let Some(raw) = get(LIBRARY_KEY) {
+        let mut blob: LibraryBlob = parse("library", &raw);
+        sanitize_library(&mut blob);
+        return blob;
+    }
+    if let Some(raw) = get(RETIRED_LIBRARY_KEY) {
         let mut blob: LibraryBlob = parse("library", &raw);
         sanitize_library(&mut blob);
         return blob;
@@ -185,18 +225,13 @@ pub fn load_library() -> LibraryBlob {
 }
 
 pub fn save_library(blob: &LibraryBlob) -> Result<(), StorageError> {
-    let json = serde_json::to_string(blob).map_err(|e| StorageError {
-        op: "save_library",
-        detail: format!("serialize failed: {e}"),
-    })?;
-    set(LIBRARY_KEY, &json)
+    set(LIBRARY_KEY, &encode("save_library", blob)?)
 }
 
 /// Load the cover-art map (path -> page-1 JPEG data URL).
 pub fn load_covers() -> CoverMap {
-    let stored: HashMap<String, CoverImage> = get(COVERS_KEY)
-        .map(|raw| parse("covers", &raw))
-        .unwrap_or_default();
+    let stored: HashMap<String, CoverImage> =
+        load_keyed("covers", COVERS_KEY, RETIRED_COVERS_KEY);
     stored
         .into_iter()
         .map(|(path, cover)| (path, Arc::new(cover)))
@@ -211,11 +246,7 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
         .iter()
         .map(|(path, cover)| (path.as_str(), cover.as_ref()))
         .collect();
-    let json = serde_json::to_string(&borrowed).map_err(|e| StorageError {
-        op: "save_covers",
-        detail: format!("serialize failed: {e}"),
-    })?;
-    set(COVERS_KEY, &json)
+    set(COVERS_KEY, &encode("save_covers", &borrowed)?)
 }
 
 /// Write the library's current blob, reporting a failure instead of returning
@@ -259,7 +290,7 @@ pub fn persist_covers(library: LibraryState) {
 /// later load that finds the row again picks it up, and a removal that never
 /// comes costs one localStorage entry rather than a reader's highlights.
 pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
-    if get(GLOSS_V2_MIGRATED_KEY).is_some() {
+    if get(GLOSS_V2_MIGRATED_KEY).or_else(|| get(RETIRED_GLOSS_V2_MIGRATED_KEY)).is_some() {
         return;
     }
     let Some(raw) = get(GLOSS_V1_KEY) else {
@@ -310,17 +341,11 @@ pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
 
 /// Load every book's gloss highlights, keyed by row id.
 pub fn load_gloss() -> HashMap<String, Vec<GlossMark>> {
-    get(GLOSS_KEY)
-        .map(|raw| parse("gloss", &raw))
-        .unwrap_or_default()
+    load_keyed("gloss", GLOSS_KEY, RETIRED_GLOSS_KEY)
 }
 
 fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError> {
-    let json = serde_json::to_string(all).map_err(|e| StorageError {
-        op: "save_gloss",
-        detail: format!("serialize failed: {e}"),
-    })?;
-    set(GLOSS_KEY, &json)
+    set(GLOSS_KEY, &encode("save_gloss", all)?)
 }
 
 /// Drop one row's marks: the reader's data goes with the book, not into

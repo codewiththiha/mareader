@@ -13,7 +13,7 @@ use crate::components::menus::appearance_menu::hue_picker::HuePicker;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::form::slider::Slider;
 use reader_core::appearance::BaseMode;
-use crate::components::primitives::controls::option_button::OptionButton;
+use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::components::settings::fonts::update_text;
 use crate::state::AppState;
 use crate::effects::appearance::{AppearanceScrub, preview_appearance};
@@ -50,8 +50,8 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                 .map(|b| {
                     let selected = Signal::derive(move || current_base() == b);
                     view! {
-                        <OptionButton
-                            selected=selected
+                        <ToggleButton
+                            active=selected
                             on_click=move || {
                                 // Keep the hue the reader was just dialling,
                                 // then switch family.
@@ -64,7 +64,7 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                         >
                             <Icon name=base_icon(b) size=16 />
                             <span>{b.label()}</span>
-                        </OptionButton>
+                        </ToggleButton>
                     }
                 })
                 .collect_view()}
@@ -80,10 +80,13 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                     // reads as a broken control. Give it a visible-but-gentle
                     // default so the choice lands — locally AND in the scrub,
                     // because Settings is not written until the drag pauses.
+                    // 18 rather than the old 35: the doubled tint curve
+                    // (Appearance::tint_amount) reaches the same look at half
+                    // the number.
                     let mut st = strength.get_untracked().round().clamp(0.0, 100.0) as u8;
                     if st == 0 {
-                        st = 35;
-                        set_strength.set(35.0);
+                        st = 18;
+                        set_strength.set(18.0);
                     }
                     preview_appearance(
                         state.settings,
@@ -111,7 +114,7 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                         AppearanceScrub::Tint { hue, strength: v as u8 },
                     );
                 }
-                label="Tint strength"
+                label="Strength"
             />
         </div>
 

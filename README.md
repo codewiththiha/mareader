@@ -1,4 +1,4 @@
-# PDF Reader
+# Mareader
 
 A desktop document reader built for long-form reading. Native Tauri v2 shell, Rust/WebAssembly
 interface written in Leptos, and Mozilla's pdf.js vendored locally as the PDF rendering engine.
@@ -68,8 +68,8 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- Roughly 460 Rust unit tests across the workspace, plus a stub-vm smoke suite for the
-  TypeScript layer, and five scripts that keep facts written down twice from drifting.
+- 1,021 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
+  layer, and six scripts that keep facts written down twice from drifting.
 
 ---
 
@@ -161,7 +161,7 @@ as real text in the DOM.
 - Zooming in at 500 percent, or out at 25 percent, does nothing at all rather than wrapping to the
   other end of the preset ladder — and it leaves the active fit mode alone, so leaning on a button
   that has nothing left to do cannot quietly take you out of fit width.
-- The reader keeps written motion principles (see ARCHITECTURE.md): no entrance animations on
+- The reader keeps written motion principles (see Mareader.md): no entrance animations on
   document content, no per-frame virtualizer work, one bounded zombie bridge across commits.
 
 ### Motion
@@ -669,7 +669,7 @@ touches a file you own.
 
 ### Persistence
 
-Settings are stored in local storage under `pdfreader.settings.v1` and cover appearance, the
+Settings are stored in local storage under `mareader.settings.v1` and cover appearance, the
 active preset, user presets, default zoom, the layout and motion switches, the two title-bar pins
 (the reader's and the library's — separate memories, and the library's starts pinned), and the
 last opened path. A group added later simply defaults: a document opened by an older build keeps the behaviour
@@ -681,7 +681,7 @@ silently reset every reader's last-opened file and zoom as well. Instead the ret
 retained as optional values, migrated on load to the preset that reproduces the theme previously
 in use, and dropped when writing, so the migration runs at most once.
 
-The library is a separate blob under `pdfreader.library.v2`, holding the books, their shelves, the
+The library is a separate blob under `mareader.library.v3`, holding the books, their shelves, the
 watched folders and their ledgers, and the view — one key because they are one invariant: a shelf
 member that names no book is a hole in the grid. It is deliberately *not* part of the settings blob,
 because a resume point moves on every page turn while settings repaint the theme on every write. The
@@ -735,6 +735,17 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
   could invoke a dropped closure and abort the WebAssembly runtime.
 - Device pixel ratio is respected when sizing canvases, so pages stay crisp on high-density
   displays.
+- The memory number the OS reports is a high-water mark, not a reservation: the webview returns
+  freed heap to its own free lists rather than the kernel, and the WebAssembly linear memory only
+  grows, so the footprint of a long reading session does not come back down on its own. It stays
+  reclaimable under pressure, and Reload Window — a row in the reader's and the shelf's menus —
+  resets it in place, a restart without the quit. It flushes the reading position the progress
+  debounce is still holding before it goes, so the book reopens where the reload found you, and it
+  lands on the shelf rather than in a reader with nothing in it.
+- The full-text search index builds on the first search rather than at open, so a book nobody
+  searches never pays the per-page extraction, and the WebAssembly heap logs its size at open,
+  close, zoom commit, index build and reload (`[mem]` lines in the webview console): the plateau of
+  a latch reads differently there from the climb of a leak.
 
 ---
 
@@ -976,7 +987,8 @@ styles/
 tools/                    engine bundling, the engine smoke test, the
                           repo-reading prelude the checks share, and the
                           consistency checks CI runs (versions, formats, doc
-                          paths, event names, the DOM contract)
+                          paths, event names, the DOM contract, the chrome
+                          contracts)
 scripts/                  generated only: the compiled tools above. Gitignored,
                           and ignored wholesale by Trunk's watcher, so the hook
                           rewriting them on every build cannot retrigger one
@@ -1004,7 +1016,7 @@ so the Rust side reads `ok` first and then deserializes.
 | `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |
 | `extractPageText` | One page's text items with their rects — the input to the search index, which is Rust (`crates/pdf-core`'s `SearchIndex`), not the engine's |
 | `setSearchContext` / `setActiveMatch` / `clearHighlights` | Paint, move and clear the engine's highlight rects in the text layer |
-| `refreshTheme` / `setScrubMode` | The appearance theme: pre-render (re-bake) it into every canvas, or hold the rasters raw under the live CSS filter chain for the length of a slider scrub |
+| `refreshTheme` / `setScrubMode` / `setAppearanceMenuOpen` | The appearance theme: pre-render (re-bake) it into every canvas, hold the rasters raw under the live CSS filter chain for the length of a slider scrub, and retain those raws while the appearance menu is open so the session's first drag blits instead of re-rendering |
 | `setPaper` / `setPaperActive` / `takePaperFrame` / `samplePaperPage` | The paper session: the backdrop's own raster, handed to and sampled from the pages |
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
 | `stats` | Internal counters, used to assert memory is actually released |
@@ -1049,8 +1061,8 @@ cargo install tauri-cli --version "^2" --locked
 ### Installation
 
 ```bash
-git clone https://github.com/codewiththiha/pdf-reader.git
-cd pdf-reader
+git clone https://github.com/codewiththiha/mareader.git
+cd mareader
 npm install
 ```
 
@@ -1086,15 +1098,15 @@ configuration targets all available formats and ships icons for macOS, Windows a
 ### Tests
 
 ```bash
-cargo test --workspace --exclude pdf
+cargo test --workspace --exclude mareader-shell
 ```
 
-The manifest root is also the `pdf-reader` app package, so a bare `cargo test` would test
-only the app and silently skip every member crate. The `pdf` shell crate is excluded because
+The manifest root is also the `mareader` app package, so a bare `cargo test` would test
+only the app and silently skip every member crate. The `mareader-shell` crate is excluded because
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-Around 460 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+1,021 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
 migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
 the animation loops share, and the virtual-list windowing invariants. On top of that, the
@@ -1103,23 +1115,33 @@ covering open, render, theme baking, scrub mode, thumbnails, search, teardown, a
 bundle's selection tracker — the last in a sandbox with no engine and no pdf.js in scope,
 which is the point of it.
 
-Five small scripts guard facts that are written down more than once, where nothing else
-would notice a drift: `check-versions.ts` (the app version in four files, plus the two
-lockfile entries cargo derives from them),
+Six small scripts guard facts that are written down more than once, where nothing else
+would notice a drift: `check-versions.ts` (the app version in its four manifests, plus
+the two lockfile entries cargo derives from them),
 `check-formats.ts` (the openable formats in the reader-core registry, the shell's
 filesystem gate and the bundle's file associations), `check-doc-paths.ts` (every module and
 file path named in a Rust comment still resolves, every path named in a stylesheet comment,
 every component name the two documents put in backticks, and every method in the README's
 engine table), `check-events.ts` (the window-event names
-the engine dispatches match the app's table) and `check-dom-contract.ts` (the attribute,
+the engine dispatches match the app's table), `check-dom-contract.ts` (the attribute,
 class and element-id names the app writes match the ones the engine reads, and appear
-nowhere as a raw literal). Each is TypeScript in `tools/`, compiled by the same Trunk pre-build
-hook into `scripts/`, and each fails CI rather than warning. They share one prelude, `repo.ts` —
+nowhere as a raw literal) and `check-chrome-contracts.ts` (five numbers
+declared on both sides of the IPC boundary: the import progress channel, the title-bar
+height and traffic-light inset, the z-index scale, the sidebar's motion durations and
+gutter, and the import dock's progress ring). Each is TypeScript in `tools/`, compiled
+by the same Trunk pre-build hook into `scripts/`, and each fails CI rather than warning.
+They share one prelude, `repo.ts` —
 the repo root, `read`, `isFile`, and the tree walk with its list of directories that are not
-source — because five copies of a skip list is five chances for one tool to start scanning
-`node_modules`. `scripts/` holds nothing but their compiled output, which is why git ignores the
+source — because these began as five byte-identical copies, and five copies of a skip list
+is five chances for one tool to start scanning `node_modules`. `scripts/` holds nothing
+but their compiled output, which is why git ignores the
 directory and Trunk's watcher does too: the hook rewrites those files on every build, and a
 watcher that notices would rebuild forever.
+
+One more fact is guarded, and not by a script: the test count this document states. The step
+that checks it runs in the test lane beside the run it counts, because that is the only lane
+with both halves — `cargo test`'s output, and a place to read the document. The web lane has
+the toolchain to compile a checker and no Rust to count with.
 
 ---
 

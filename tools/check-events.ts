@@ -13,7 +13,7 @@
 // TypeScript source; Trunk's pre-build hook compiles it to
 // `scripts/check-events.js`.
 
-import { isFile, read, walk } from "./repo.js";
+import { exportedStrings, isFile, read, walk } from "./repo.js";
 
 const ALL_FILES = walk(".");
 
@@ -38,10 +38,7 @@ function parseAppTable(): Table {
 }
 
 function parseEngineTable(): Table {
-  const text = read(ENGINE_TABLE);
-  const out: Table = new Map();
-  const row = /export const (\w+)\s*=\s*"([^"]+)"/g;
-  for (let m = row.exec(text); m; m = row.exec(text)) out.set(m[1]!, m[2]!);
+  const out = exportedStrings(ENGINE_TABLE);
   if (out.size === 0) throw new Error(`${ENGINE_TABLE}: no event constants found`);
   return out;
 }
@@ -61,8 +58,18 @@ const ENGINE_SOURCES = ALL_FILES.filter(
   (file) => file.endsWith(".ts") && (file.startsWith("public/")),
 );
 
-/** Files scanned for a name's references, and for stray literals. */
-const SCANNABLE = [...new Set([...RUST_SOURCES, ...ENGINE_SOURCES, "index.html"])].filter(isFile);
+/** Files scanned for a name's references, and for stray literals. `tools/`
+ *  is here for the literals only — the engine smoke asserts on events it
+ *  hears, and it cannot import the engine's module (that reaches the browser
+ *  only inside the bundles), so its names are written down and checked. */
+const SCANNABLE = [
+  ...new Set([
+    ...RUST_SOURCES,
+    ...ENGINE_SOURCES,
+    ...ALL_FILES.filter((file) => file.endsWith(".ts") && file.startsWith("tools/")),
+    "index.html",
+  ]),
+].filter(isFile);
 
 const TEXTS = new Map<string, string>();
 for (const file of SCANNABLE) TEXTS.set(file, read(file));
@@ -118,7 +125,7 @@ for (const name of engine.keys()) {
 // a literal works the day it is written and stops matching the day the table
 // moves, and looking at the table will not find it.
 
-const LITERAL = /["']pdfreader:[A-Za-z0-9._-]+["']/g;
+const LITERAL = /["'](?:pdfreader|mareader):[A-Za-z0-9._-]+["']/g;
 
 for (const [file, text] of TEXTS) {
   if (file === APP_TABLE || file === ENGINE_TABLE) continue;

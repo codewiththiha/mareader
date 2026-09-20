@@ -1,7 +1,8 @@
 //! The reader's view model, for any format: which view mode is on, which axis
 //! a strip scrolls, the gap between pages, how far ahead to mount, and the
-//! two maths every strip shares with the zoom coordinator (spread arithmetic,
-//! and holding the point under the reader's eyes still across a rescale). A
+//! maths every strip shares with the zoom coordinator (spread arithmetic,
+//! holding the point under the reader's eyes still across a rescale, and the
+//! reading-progress fraction). A
 //! reflowable document is laid out through exactly the same model as a PDF,
 //! so none of this may name a format.
 //!
@@ -45,6 +46,33 @@ impl ViewMode {
     pub fn is_paginated(self) -> bool {
         matches!(self, ViewMode::Single | ViewMode::Spread)
     }
+}
+
+/// Reading progress along one scroll axis: how far the offset has travelled
+/// through the strip's AVAILABLE travel — its total extent minus the viewport
+/// on that axis.
+///
+/// One definition because four surfaces show or persist the same number, and
+/// each used to guard the degenerate case its own way: `.max(0.0)`,
+/// `.max(1.0)`, or an `if`. Those disagree about a document that fits its
+/// viewport, which is exactly when two of them are on screen at once.
+///
+/// A strip that does not overflow has no travel to be a fraction of, so it
+/// reads as 0 rather than as a division by a non-positive number.
+pub fn scroll_fraction(offset: f64, total: f64, viewport: f64) -> f64 {
+    let travel = total - viewport;
+    if travel > 0.0 { (offset / travel).clamp(0.0, 1.0) } else { 0.0 }
+}
+
+/// The inverse of [`scroll_fraction`]: the offset a reading fraction names on a
+/// strip of this total and viewport.
+///
+/// Beside its inverse on purpose. A resume point is persisted as a fraction and
+/// restored as an offset, so the two must stay exact inverses — a drift between
+/// them does not show up as a wrong number, it quietly moves the reader's place
+/// in the book on the next open.
+pub fn fraction_offset(fraction: f64, total: f64, viewport: f64) -> f64 {
+    fraction.clamp(0.0, 1.0) * (total - viewport).max(0.0)
 }
 
 /// Where the document point that was under the viewport centre lands once
@@ -202,5 +230,29 @@ mod tests {
         assert_eq!(spread_step_next(5, 1), 3);
         assert_eq!(spread_step_next(5, 3), 5);
         assert_eq!(spread_step_next(0, 1), 1);
+    }
+
+    /// The pair is exact inverses, which is what lets a resume point be stored
+    /// as a fraction and restored as an offset.
+    #[test]
+    fn reading_progress_is_travel_relative_and_round_trips() {
+        assert_eq!(scroll_fraction(250.0, 1000.0, 500.0), 0.5);
+        assert_eq!(fraction_offset(0.5, 1000.0, 500.0), 250.0);
+        // Both ends land back on themselves, so a fraction taken at the top or
+        // the bottom of a book restores to that same place.
+        let (total, viewport) = (1000.0, 500.0);
+        for offset in [0.0, 250.0, 500.0] {
+            let there = scroll_fraction(offset, total, viewport);
+            assert_eq!(fraction_offset(there, total, viewport), offset);
+        }
+    }
+
+    /// A strip that fits its viewport has no travel to be a fraction of. This
+    /// is the case the four call sites used to guard three different ways.
+    #[test]
+    fn a_strip_with_no_travel_reads_zero_rather_than_dividing() {
+        assert_eq!(scroll_fraction(0.0, 500.0, 500.0), 0.0);
+        assert_eq!(scroll_fraction(0.0, 100.0, 500.0), 0.0);
+        assert_eq!(fraction_offset(0.5, 100.0, 500.0), 0.0);
     }
 }

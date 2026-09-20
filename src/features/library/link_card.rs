@@ -113,7 +113,7 @@ pub(crate) fn LinkRow(
 
     view! {
         <EntryShell state=state entry=entry style=indent>
-            <span class="lib-row-ext" title=link_title(to_shelf)>
+            <span class="lib-format lib-row-ext" title=link_title(to_shelf)>
                 <Icon name=IconName::Link size=12 />
             </span>
             <span class="min-w-0 flex-1">

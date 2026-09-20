@@ -141,18 +141,10 @@ pub fn Popover(
     // captured handle has to be Copy; a signal would compile too but would
     // pretend the class is reactive when only `style` actually is
     // (re-written by `place`).
-    let panel_class: StoredValue<String, LocalStorage> =
-        StoredValue::new_local(if class.is_empty() {
-            format!(
-                "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg",
-                app_chrome::layers::POPOVER
-            )
-        } else {
-            format!(
-                "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg {class}",
-                app_chrome::layers::POPOVER
-            )
-        });
+    let panel_class: StoredValue<String, LocalStorage> = StoredValue::new_local(format!(
+        "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg {class}",
+        app_chrome::layers::POPOVER
+    ));
 
     view! {
         <Show when=move || open.get()>

@@ -189,22 +189,7 @@ async fn duplicate_book(
     };
     let title = name_for(state, &shown);
     let marks_of = book.id.clone();
-    let mut dup = Book::new(
-        book_id,
-        Fingerprint::placeholder(&new_store),
-        book.format,
-        Origin::Stored {
-            src: book.origin.source().map(str::to_string),
-            store: new_store,
-        },
-        now_ms(),
-    );
-    dup.title = Some(title.clone());
-    // A base the file itself carried underscores in ("harry_potter_1") reads
-    // as snake-case debris to the title rule, and a name the reader just
-    // asked for is not debris.
-    dup.title_locked = true;
-    dup.adopt_measurement(measured);
+    let dup = stored_copy(&book, book_id, new_store, measured, &title, now_ms());
     let dup_id = dup.id.clone();
     state.library.books.update(|rows| rows.push(Row::Book(dup)));
     // The highlights are half of what the reader put into the book: the copy
@@ -425,19 +410,7 @@ fn land_the_tree(
                 let Some((store, measured)) = landed.get(new_id) else {
                     continue;
                 };
-                let mut dup = Book::new(
-                    new_id.clone(),
-                    Fingerprint::placeholder(store),
-                    book.format,
-                    Origin::Stored {
-                        src: book.origin.source().map(str::to_string),
-                        store: store.clone(),
-                    },
-                    now,
-                );
-                dup.title = Some(shown.clone());
-                dup.title_locked = true;
-                dup.adopt_measurement(*measured);
+                let dup = stored_copy(book, new_id.clone(), store.clone(), *measured, shown, now);
                 crate::storage::copy_gloss(&book.id, new_id);
                 mapped.insert(old.clone(), new_id.clone());
                 rows.push(Row::Book(dup));
@@ -470,6 +443,37 @@ fn land_the_tree(
         live.splice(at..at, fresh);
     });
     name
+}
+
+/// The copy of a book, which is the same object whichever door duplicated it:
+/// a stored book at a fresh id, the original's address kept as where the bytes
+/// came from, and the name the reader asked for rather than the file's own.
+///
+/// `shown` is worn as a locked title — a base the file itself carried
+/// underscores in ("harry_potter_1") reads as snake-case debris to the title
+/// rule, and a name the reader just asked for is not debris.
+fn stored_copy(
+    book: &Book,
+    new_id: String,
+    store: String,
+    measured: Option<Fingerprint>,
+    shown: &str,
+    now: u64,
+) -> Book {
+    let mut dup = Book::new(
+        new_id,
+        Fingerprint::placeholder(&store),
+        book.format,
+        Origin::Stored {
+            src: book.origin.source().map(str::to_string),
+            store,
+        },
+        now,
+    );
+    dup.title = Some(shown.to_string());
+    dup.title_locked = true;
+    dup.adopt_measurement(measured);
+    dup
 }
 
 // The file manager's counter, counted against the level the reader clicked

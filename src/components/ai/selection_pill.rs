@@ -25,8 +25,8 @@ use crate::state::AppState;
 ///
 /// The Explain click does **not** flip `popover_open` and hope `detail` survives:
 /// it builds a self-contained [`GlossMark`] at click time and dispatches the
-/// same `pdfreader:gloss-open` event the persisted stroke uses. The popover's
-/// listener bumps `open_req` and sets `pending_mark`, so the open effect is
+/// same `mareader:gloss-open` event the persisted stroke uses. The popover's
+/// listener bumps `open.request` and sets `open.pending`, so the open effect is
 /// guaranteed to run with a mark in hand — no race against the exit-watch
 /// clearing `detail`, and no stale-`true` suppression across documents.
 ///
@@ -54,7 +54,7 @@ pub fn SelectionPill(state: AppState) -> impl IntoView {
     let resolve = anchor_resolver(state.reader, spot);
     // A reflowable document re-cuts its pages when the typography or the column
     // width moves, which relocates a selection without anything scrolling.
-    let invalidate = if state.reader.reflowable_untracked() {
+    let invalidate = if state.reader.reflowable_now() {
         reflow_invalidation(state.reader)
     } else {
         no_invalidation()
@@ -198,8 +198,8 @@ pub fn SelectionPill(state: AppState) -> impl IntoView {
                                 }
                             });
                         if let Some(m) = mark {
-                            // Self-contained open: bumps open_req with the
-                            // mark in hand. Never races detail being cleared.
+                            // Self-contained open: bumps the open request with
+                            // the mark in hand. Never races detail being cleared.
                             request_gloss_open(&m);
                         } else {
                             // Don't leave a stale open flag if capture failed.

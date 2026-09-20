@@ -2,9 +2,14 @@
 //! "a row", "a link" and "a shelf" for every test module that used to build its
 //! own.
 
+use std::collections::{BTreeMap, HashSet};
+
 use crate::book::{Book, Fingerprint, Origin, Row};
+use crate::folder::{FolderOpts, WatchedFolder};
 use crate::scan::FoundFile;
 use crate::shelf::{Shelf, ShelfKind};
+use crate::shape::ShapeTree;
+use crate::tracking::TrackingTree;
 use reader_core::format::Format;
 
 /// The neutral fingerprint: every field `1`.
@@ -119,6 +124,25 @@ pub fn folder_shelf(
             rel: rel.map(str::to_string),
         },
         ..shelf(id, name, members, parent)
+    }
+}
+
+/// A watched folder reading `root`, having placed nothing and logged nothing:
+/// the ledger row a test starts from and then narrows with a struct-update, the
+/// way [`book`] is. Ten fields is ten places a new one has to be remembered,
+/// which is the whole reason this exists.
+pub fn watched_folder(id: &str, root: &str) -> WatchedFolder {
+    WatchedFolder {
+        id: id.to_string(),
+        root: root.to_string(),
+        opts: FolderOpts::default(),
+        placed: HashSet::new(),
+        ignored: Vec::new(),
+        last_seen: Vec::new(),
+        shelf_map: BTreeMap::new(),
+        scanned_ms: 0,
+        tracking: TrackingTree::default(),
+        shapes: ShapeTree::default(),
     }
 }
 

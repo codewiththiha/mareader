@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::controls::toggle_button::ToggleButton;
+use crate::components::primitives::controls::toggle_button::{ToggleButton, ToggleVariant};
 use crate::state::SidebarMode;
 
 /// One rail toggle: the shared pressed/quiet shell + the rail's own size.
@@ -22,6 +22,7 @@ fn RailToggle(
             on_click=on_click
             title=title.to_string()
             variant_class="h-9 w-14"
+            variant=ToggleVariant::Filled
         >
             <Icon name=icon size=16 />
         </ToggleButton>

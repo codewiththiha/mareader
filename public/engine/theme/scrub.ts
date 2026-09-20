@@ -5,7 +5,8 @@
 // real-time compositing — for the duration of the drag.
 
 import { bakeInto } from "./bake";
-import { showRaw } from "../canvas";
+import { releaseCanvas, showRaw } from "../canvas";
+import { PAGE_SNAPSHOT_CLASS, PAGE_SNAPSHOT_SELECTOR } from "../dom-contract";
 import { session } from "../state";
 import { readPipeline } from "./pipeline";
 import { paperInfo, publishBakedPaper } from "./paper";
@@ -17,39 +18,83 @@ import { preparePagesForScrub, renderPageInternal, rerenderLivePages } from "../
 // generations even when the actual filter/paper output is unchanged.
 let lastBakedFingerprint: string | null = null;
 
+// The scrub entry's re-render cover. A page that retained no unbaked raw is
+// re-rendered in the background when a drag starts, and pdf.js wipes the
+// backing store before it draws — the transparent frames in between read as
+// a white flash under Dark's screen blend and a brightness jump under Dim's
+// soft-light (Light's multiply hides them against white). Each such page
+// carries a snapshot of its settled pixels for exactly the window of its own
+// re-render, released the moment the fresh raw lands. Tracked so the exit
+// path can release stragglers; zoom masks share the class but are never
+// touched here.
+let entryPrepare: Promise<void> | null = null;
+const entrySnapshots = new Map<string, HTMLCanvasElement>();
+
+function releaseEntrySnapshot(canvasId: string): void {
+  const snap = entrySnapshots.get(canvasId);
+  if (!snap) return;
+  entrySnapshots.delete(canvasId);
+  // Zero the backing store before the node goes: WKWebView does not release
+  // a canvas IOSurface on DOM removal alone (state.ts, releaseSnapshots).
+  releaseCanvas(snap);
+  snap.remove();
+}
+
+function releaseAllEntrySnapshots(): void {
+  for (const canvasId of [...entrySnapshots.keys()]) releaseEntrySnapshot(canvasId);
+}
+
+/** Copy the current pixels of every visible page that has no raw to swap in
+ *  — exactly the set preparePagesForScrub will re-render — into a
+ *  `.page-snapshot` mask. The mask hides the live canvas through CSS
+ *  (styles/page_host.css) for as long as it is in the DOM. */
+function snapshotStragglerPages(): void {
+  const vh = typeof window === "undefined" ? 0 : window.innerHeight;
+  for (const [canvasId, st] of session.stateByCanvasId) {
+    if (st.dead || !st.canvas || !st.host || st.rawCanvas) continue;
+    if (entrySnapshots.has(canvasId)) continue;
+    if (st.canvas.width === 0) continue;
+    const rect = st.canvas.getBoundingClientRect();
+    if (vh > 0 && (rect.bottom < 0 || rect.top > vh)) continue;
+    // A zoom mask in flight already covers this host — a second copy stacked
+    // over the first would show the same pixels at twice the memory.
+    if (st.host.querySelector(PAGE_SNAPSHOT_SELECTOR)) continue;
+    const snap = document.createElement("canvas");
+    snap.className = PAGE_SNAPSHOT_CLASS;
+    snap.width = st.canvas.width;
+    snap.height = st.canvas.height;
+    const ctx = snap.getContext("2d");
+    if (!ctx) {
+      releaseCanvas(snap);
+      continue;
+    }
+    ctx.drawImage(st.canvas, 0, 0);
+    // Between the canvas and the text layer — the same slot the zoom masks
+    // use (src/components/formats/pdf/canvas_host.rs), so the shared CSS
+    // stacking applies to both.
+    const next = st.canvas.nextElementSibling;
+    if (next) st.host.insertBefore(snap, next);
+    else st.host.appendChild(snap);
+    entrySnapshots.set(canvasId, snap);
+  }
+}
+
 function pipelineFingerprint(): string {
   const pipeline = readPipeline();
   return `${pipeline.filter}|${pipeline.blend}|${paperInfo(pipeline).color}`;
 }
 
 // The scrub window repaints the root tokens per tick and the rasters
-// composite live, but --pdf-paper-baked is a PUBLISHED value, and the
-// flat-paper contract (styles/components/shell.css, styles/page_host.css)
-// carries it on the backdrop base AND the page hosts: frozen for the length
+// composite live, but the paper is a PUBLISHED value, and the flat-paper
+// contract (styles/components/shell.css, styles/page_host.css) carries it on
+// the backdrop base AND the page hosts: frozen for the length
 // of a drag, the fractional page edge shows the stale base against the live
-// gutter as a seam. Republish it per tick while the drag owns the tokens —
-// one 1px filter + blend composite, no raster work. The observer re-triggers
-// on its own write; the fingerprint (the composite's inputs only) dedupes
-// that.
-let rootStyleWatcher: MutationObserver | null = null;
-
-function watchRootStyleForPaper(): void {
-  // Environments without a compositor (the node smoke harness) have no
-  // MutationObserver and no seam to prevent: nothing to watch.
-  if (typeof MutationObserver === "undefined") return;
-  let last = pipelineFingerprint();
-  rootStyleWatcher = new MutationObserver(() => {
-    if (!session.themeScrubActive) return;
-    const fingerprint = pipelineFingerprint();
-    if (fingerprint === last) return;
-    last = fingerprint;
-    publishBakedPaper();
-  });
-  rootStyleWatcher.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["style"],
-  });
-}
+// gutter as a seam. The per-tick republish is the standing token watch's job
+// (paper.ts, watchPaperTokens): it fires on the paint's own root-style
+// writes — one 1×1 composite per tick, no raster work — and it also covers
+// the texture moves and structural clicks no scrub window is open for. The
+// exit's forced rebakeTheme republishes once more before the class drops,
+// so nothing here manages an observer of its own.
 
 export async function rebakeTheme(force = false): Promise<void> {
   if (session.themeScrubActive) return;
@@ -138,6 +183,10 @@ async function settleCanvasTheme(): Promise<void> {
  */
 export async function setScrubModeInternal(on: boolean): Promise<void> {
   if (session.themeScrubActive === on) return;
+  // Both edges of the window are worth remembering: a render baking just
+  // after either one is a render a follow-up drag may want raw, so it keeps
+  // its unbaked raster (renderer.ts). Outside the window bakes drop theirs.
+  session.noteScrub();
 
   if (on) {
     // The global class delimits the scrub window for the CSS that keys off
@@ -148,19 +197,57 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
     // changes asynchronously.
     document.documentElement.classList.add("appearance-scrubbing");
     session.setThemeScrubActive(true);
-    watchRootStyleForPaper();
+
+    // The synchronous half of the swap, and everything the gesture starts
+    // with: pages that retained a raw raster blit it under the live CSS
+    // filter, and a page whose live canvas IS the raw only needs the tag.
+    // No await runs before this loop completes — the pixels and their tags
+    // land in the same frame the drag first paints.
     for (const st of session.stateByCanvasId.values()) {
-      if (st.dead || !st.canvas || !st.rawCanvas || st.rawCanvas === st.canvas) continue;
-      showRaw(st.canvas, st.rawCanvas, "canvas-raw");
+      if (st.dead || !st.canvas) continue;
+      if (st.rawCanvas && st.rawCanvas !== st.canvas) {
+        showRaw(st.canvas, st.rawCanvas, "canvas-raw");
+      } else if (st.rawCanvas) {
+        st.canvas.classList.add("canvas-raw");
+      }
     }
     paintAllVisibleThumbs();
-    // Pages without a retained raw are rendered into their live canvas by
-    // preparePagesForScrub; renderer tags that raw result before yielding.
-    // The sweep then repairs any page whose render landed past the loop —
+
+    // The asynchronous half: pages with no raw at all re-render in the
+    // background, under a snapshot of their settled pixels. Awaiting that
+    // here blocked the very frame the drag was trying to paint — a full
+    // pdf.js re-render of every straggler between the pointer moving and
+    // the page re-colouring. The exit path joins this promise, so a quick
+    // drag-out still serializes behind the work started here, and the
+    // settle sweep repairs any page whose render landed past the loop —
     // one half of a spread cannot be left un-themet.
-    await preparePagesForScrub();
-    await settleCanvasTheme();
+    snapshotStragglerPages();
+    entryPrepare = (async () => {
+      try {
+        await preparePagesForScrub((canvasId) => releaseEntrySnapshot(canvasId));
+      } catch (err) {
+        console.warn("[pdfEngine] scrub prepare failed:", err);
+      } finally {
+        // A page whose render failed keeps its cover until here — settled
+        // pixels beat a wiped canvas.
+        releaseAllEntrySnapshots();
+      }
+      await settleCanvasTheme().catch((err: unknown) => {
+        console.warn("[pdfEngine] scrub settle failed:", err);
+      });
+    })();
     return;
+  }
+
+  // Join the entry's background prepare before unwinding: the exit's rebake
+  // has to see every straggler render the entry started, or it bakes a page
+  // whose raw pixels are about to land on the live canvas — and the
+  // needsRerender census below has to count the pages whose live canvas
+  // became the only raw backing while that prepare ran.
+  if (entryPrepare) {
+    const preparing = entryPrepare;
+    entryPrepare = null;
+    await preparing;
   }
 
   // Keep the class up while async bakes replace raw rasters. A page whose
@@ -170,13 +257,15 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
     (st) => !st.dead && !!st.canvas && (!st.rawCanvas || st.rawCanvas === st.canvas),
   );
   session.setThemeScrubActive(false);
-  rootStyleWatcher?.disconnect();
-  rootStyleWatcher = null;
   await rebakeTheme(true);
   if (needsRerender) await rerenderLivePages();
   // `needsRerender` was snapshotted before the flag cleared; a render landing
   // since then is covered here — as is any canvases the bake loop skipped
   // because their raw had become the live canvas mid-flight.
   await settleCanvasTheme();
+  // Any straggler cover whose render never landed (a failed job, a host
+  // unmounted mid-drag) must not outlive the gesture: the CSS hides the
+  // live canvas under it.
+  releaseAllEntrySnapshots();
   document.documentElement.classList.remove("appearance-scrubbing");
 }

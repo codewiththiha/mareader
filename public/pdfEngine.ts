@@ -21,6 +21,7 @@ import {
   hasThumb,
   prefetchThumb,
   renderThumb,
+  resetThumbLane,
 } from "./engine/thumbnails";
 import {
   clearHighlights,
@@ -30,7 +31,7 @@ import {
 } from "./engine/search";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline } from "./engine/theme/pipeline";
-import { publishBakedPaper } from "./engine/theme/paper";
+import { publishBakedPaper, watchPaperTokens } from "./engine/theme/paper";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   resetPaperForDocument,
@@ -64,18 +65,31 @@ declare global {
   var PDFReader: PDFReaderApi;
 }
 
+/** Cancel and release every live page surface. Shared by `destroy` and the
+ *  `pagehide` handler: both must stop in-flight renders and free the surfaces,
+ *  and only one of them goes on to null the document out. */
+function cancelAndReleasePages(): void {
+  for (const st of session.stateByCanvasId.values()) {
+    st.dead = true;
+    try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
+    try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
+    if (st.queueHandle) {
+      cancelAnimationFrame(st.queueHandle);
+      st.queueHandle = 0;
+    }
+    session.releasePageSurfaces(st);
+  }
+}
+
 async function destroy(): Promise<void> {
   try {
-    for (const st of session.stateByCanvasId.values()) {
-      st.dead = true;
-      try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
-      try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
-      if (st.queueHandle) {
-        cancelAnimationFrame(st.queueHandle);
-        st.queueHandle = 0;
-      }
-      session.releasePageSurfaces(st);
-    }
+    // The advisory worker cleanup, run while the document is still alive:
+    // pdf.cleanup() drops the resolved-page and font caches pdf.js holds for
+    // it. Nothing after this point can — the teardown below nulls the
+    // document and fires the worker's death, so a shelf-side sweep() arriving
+    // after destroy resolves finds no document to clean.
+    session.sweepPdf();
+    cancelAndReleasePages();
     session.stateByCanvasId.clear();
     for (const task of session.thumbTasks.values()) {
       try { task.cancel(); } catch (_) { /* ignore */ }
@@ -83,6 +97,10 @@ async function destroy(): Promise<void> {
     session.thumbTasks.clear();
     session.thumbCancelled.clear();
     session.thumbLive.clear();
+    // The lane's queued jobs and per-id generation counters belong to this
+    // document: the epoch invalidates the queue, and the counters go with it
+    // so the next document's recycled `thumb-{page}` ids start clean.
+    resetThumbLane();
     for (const entry of session.thumbCache.values()) session.releaseThumbEntry(entry);
     session.thumbCache.clear();
     session.setSearchQuery("");
@@ -132,8 +150,14 @@ async function refreshThemeInternal(): Promise<void> {
   invalidatePipeline();
   // A slider commit arrives while scrub owns raw, individually tagged
   // canvases. Exit performs the single final bake, so do not enqueue a second
-  // rebake (or page rerender) against that same pipeline here.
-  if (session.themeScrubActive) return;
+  // rebake (or page rerender) against that same pipeline here. The backdrop's
+  // published paper still settles: the rasters belong to the scrub, but the
+  // token move this was called for — a texture's fold, paper.ts stage three —
+  // is already on the root style.
+  if (session.themeScrubActive) {
+    publishBakedPaper();
+    return;
+  }
   await rebakeTheme();
   // Pages without a distinct raw must re-render from pdf.js (never
   // double-filter). Thumbs were already refreshed in rebakeTheme.
@@ -167,6 +191,13 @@ function setScrubMode(on: boolean): Promise<void> {
   return enqueueTheme(() => setScrubModeInternal(on));
 }
 
+// Not enqueued: a retention flag, not a canvas mutation. The theme queue
+// serializes raster swaps; a menu toggle must neither wait behind a bake
+// nor delay one, and setting session state is synchronous anyway.
+function setAppearanceMenuOpen(on: boolean): void {
+  session.setAppearanceMenuOpen(on);
+}
+
 function stats(): Stats {
   return {
     pages: session.stateByCanvasId.size,
@@ -177,16 +208,7 @@ function stats(): Stats {
 }
 
 function releaseAllSurfaces(): void {
-  for (const st of session.stateByCanvasId.values()) {
-    st.dead = true;
-    try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
-    try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
-    if (st.queueHandle) {
-      cancelAnimationFrame(st.queueHandle);
-      st.queueHandle = 0;
-    }
-    session.releasePageSurfaces(st);
-  }
+  cancelAndReleasePages();
   for (const entry of session.thumbCache.values()) session.releaseThumbEntry(entry);
   try {
     document.querySelectorAll("canvas").forEach((c) => releaseCanvas(c as HTMLCanvasElement));
@@ -215,6 +237,14 @@ try {
 // lives in the reader bundle (public/readerEngine.ts), which index.html loads
 // first. Nothing in this facade depends on it.
 
+// The standing watch over the tokens the published backdrop paper is
+// computed from (public/engine/theme/paper.ts): a drag repaints the root
+// per frame and a texture click never reaches the scheduler at all, so the
+// publish rides the mutations instead of waiting to be called. Installed
+// with the other module-lifetime listeners; self-guarded where there is no
+// MutationObserver (the node smoke harness).
+watchPaperTokens();
+
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
   open,
@@ -236,12 +266,16 @@ globalThis.PDFReader = {
   clearHighlights,
   refreshTheme,
   setScrubMode,
+  setAppearanceMenuOpen,
   setPaper,
   setPaperActive,
   takePaperFrame,
   samplePaperPage,
   sweep: () => {
     session.sweepPdf();
+  },
+  sweepSnapshots: () => {
+    session.sweepSnapshots();
   },
   takePendingFile,
   prefetchThumb,

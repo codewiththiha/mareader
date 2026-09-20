@@ -54,13 +54,25 @@ fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
 /// The cycle check is `library_core::shelf::reparent`'s, not the caller's: a
 /// folder filed inside itself renders on no level and can never be opened
 /// again, so the rule has to hold for every caller.
+/// Screen a shelf move against the departure rule and ask about the ones that
+/// owe a copy. Answers the shelves that can move now; the departing ones are on
+/// the sheet and come back through [`super::asking`]'s own answer.
+fn screened(
+    state: AppState,
+    ids: &[String],
+    parent: Option<&str>,
+    seam: Option<ShelfSeam>,
+) -> Vec<String> {
+    let (clean, departing) = screen_shelf_moves(state, ids, parent);
+    if !departing.is_empty() {
+        ask_move_shelf(state, departing, parent.map(str::to_string), seam);
+    }
+    clean
+}
+
 pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> bool {
     let one = [folder_id.to_string()];
-    let (clean, departing) = screen_shelf_moves(state, &one, parent);
-    if !departing.is_empty() {
-        ask_move_shelf(state, departing, parent.map(str::to_string), None);
-        return false;
-    }
+    let clean = screened(state, &one, parent, None);
     if clean.is_empty() {
         return false;
     }
@@ -81,10 +93,7 @@ pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     if folder_ids.is_empty() {
         return;
     }
-    let (clean, departing) = screen_shelf_moves(state, folder_ids, Some(parent));
-    if !departing.is_empty() {
-        ask_move_shelf(state, departing, Some(parent.to_string()), None);
-    }
+    let clean = screened(state, folder_ids, Some(parent), None);
     if clean.is_empty() {
         return;
     }
@@ -111,18 +120,15 @@ pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, 
     let parent = state.library.shelves.with_untracked(|shelves| {
         shelf::find(shelves, anchor).and_then(|s| s.parent.clone())
     });
-    let (clean, departing) = screen_shelf_moves(state, ids, parent.as_deref());
-    if !departing.is_empty() {
-        ask_move_shelf(
-            state,
-            departing,
-            parent,
-            Some(ShelfSeam {
-                anchor_id: anchor.to_string(),
-                side,
-            }),
-        );
-    }
+    let clean = screened(
+        state,
+        ids,
+        parent.as_deref(),
+        Some(ShelfSeam {
+            anchor_id: anchor.to_string(),
+            side,
+        }),
+    );
     if clean.is_empty() {
         return;
     }

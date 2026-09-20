@@ -46,8 +46,6 @@ export function setPaperActive(on: boolean): void {
  * allocation per page flip. */
 let scratch: HTMLCanvasElement | null = null;
 
-// Pixels
-
 /** Downscale `src` to ≤ SAMPLE_EDGE and read its pixels back. */
 function downscale(src: HTMLCanvasElement): PaperFrame | null {
   const k = Math.min(SAMPLE_EDGE / src.width, SAMPLE_EDGE / src.height, 1);

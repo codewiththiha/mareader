@@ -4,7 +4,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "PDF Reader",
+        "title": "Mareader",
         "decorations": false,
         "shadow": true,
         "dragDropEnabled": true,

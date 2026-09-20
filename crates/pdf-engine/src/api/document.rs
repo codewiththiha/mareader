@@ -8,7 +8,13 @@ use super::{EngineError, guard_pdf_reader, require_pdf_reader, resolve};
 pub async fn open(path: &str) -> Result<OpenResult, EngineError> {
     require_pdf_reader()?;
     let value = bridge::open(path).await;
-    resolve::<OpenResult>(value, "open")
+    let open: OpenResult = resolve(value, "open")?;
+    // The search index is scoped to the document's CONTENT identity before
+    // anything can query it: a retained index built for these exact bytes is
+    // adopted by the build below instead of re-extracted, and any other
+    // book's index is dropped now rather than at the first search.
+    super::search::scope_to_document(open.fingerprint.as_deref(), path, open.num_pages);
+    Ok(open)
 }
 
 /// `{ok:true, outline}` — engine.resolveOutline.
@@ -40,9 +46,13 @@ pub async fn outline() -> Result<Vec<OutlineEntry>, EngineError> {
 }
 
 /// Tear the engine document down (used when returning to the library shelf).
-/// Also drops the Rust-owned search index for the document.
+///
+/// The Rust-owned search index deliberately SURVIVES: it is keyed by the
+/// document's content fingerprint, so reopening the same book adopts it
+/// instead of re-extracting every page (a rebuild per open/close cycle
+/// ratchets the wasm heap, which never shrinks back). The next different
+/// document's open drops it ([`super::search::scope_to_document`]).
 pub async fn destroy() {
-    super::search::clear_index();
     let _ = bridge::destroy().await;
 }
 

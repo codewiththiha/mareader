@@ -40,6 +40,13 @@ pub fn offers(ask: &ShelfConflictAsk) -> &'static [Placement] {
     }
 }
 
+/// The shelf question on screen. Every answer reads it before writing
+/// anything, because the three that import take the interrupted run's root and
+/// options off it and the sheet comes down only after the write.
+fn pending(state: AppState) -> Option<ShelfConflictAsk> {
+    state.library.shelf_conflict.ask.with_untracked(|a| a.clone())
+}
+
 pub fn raise_shelf(state: AppState, ask: ShelfConflictAsk) {
     state.library.shelf_conflict.raise(ask);
 }
@@ -47,7 +54,7 @@ pub fn raise_shelf(state: AppState, ask: ShelfConflictAsk) {
 /// The sheet renders [`offers`] and hands back a [`Placement`]; the write is
 /// `super::apply_placement` on a shelf scope, the same dispatch a book collision reaches.
 pub fn answer_shelf(state: AppState, answer: Placement) {
-    let Some(ask) = state.library.shelf_conflict.ask.with_untracked(|a| a.clone()) else {
+    let Some(ask) = pending(state) else {
         return;
     };
     if !offers(&ask).contains(&answer) {
@@ -71,7 +78,7 @@ pub fn answer_shelf(state: AppState, answer: Placement) {
 }
 
 pub(super) fn as_new_shelf(state: AppState, _ask: &PlacementAsk) {
-    let Some(pending) = state.library.shelf_conflict.ask.with_untracked(|a| a.clone()) else {
+    let Some(pending) = pending(state) else {
         return;
     };
     let name = state.library.shelves.with_untracked(|shelves| {
@@ -118,7 +125,7 @@ pub(super) fn link_to_shelf(state: AppState, ask: &PlacementAsk, shelf_id: &str)
 }
 
 pub(super) fn merge_into_shelf(state: AppState, _ask: &PlacementAsk, shelf_id: &str) {
-    let Some(pending) = state.library.shelf_conflict.ask.with_untracked(|a| a.clone()) else {
+    let Some(pending) = pending(state) else {
         return;
     };
     crate::services::library::import::proceed_folder(
@@ -133,7 +140,7 @@ pub(super) fn merge_into_shelf(state: AppState, _ask: &PlacementAsk, shelf_id: &
 }
 
 pub(super) fn replace_shelf(state: AppState, _ask: &PlacementAsk, shelf_id: &str) {
-    let Some(pending) = state.library.shelf_conflict.ask.with_untracked(|a| a.clone()) else {
+    let Some(pending) = pending(state) else {
         return;
     };
     // The folder's OWN read-at-place tree is the import module's own sweep: the root's claim

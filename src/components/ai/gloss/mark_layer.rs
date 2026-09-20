@@ -38,10 +38,10 @@
 //!   so it survives drifting off the stroke, and the click (plus the
 //!   synthetic `contextmenu` mobile fires after it) are swallowed by one-shot
 //!   suppression flags.
-//! * **Right-click** asks for the remove menu (`pdfreader:gloss-context`) —
+//! * **Right-click** asks for the remove menu (`mareader:gloss-context`) —
 //!   or toggles selection when selection mode is already active.
 //!
-//! Clicking travels as a `pdfreader:gloss-open` CustomEvent rather than a
+//! Clicking travels as a `mareader:gloss-open` CustomEvent rather than a
 //! callback prop: the popover lives at the reader-page level, far above the
 //! page hosts, and threading a callback through `PdfPageStrip`/`SingleLayout`/
 //! `PdfPageCanvas` would couple three view layers to the AI feature for one
@@ -253,7 +253,7 @@ pub fn GlossMarkLayer(
 
 /// Tell the popover to open on `mark`. Used by both the persisted stroke
 /// click and the selection Explain pill so every open is a self-contained
-/// CustomEvent (mark in the detail) that bumps `open_req` — never a bare
+/// CustomEvent (mark in the detail) that bumps the open request — never a bare
 /// `popover_open = true` that races against `detail` being cleared.
 pub fn request_gloss_open(mark: &GlossMark) {
     dispatch_typed_event(GLOSS_OPEN_EVENT, mark);

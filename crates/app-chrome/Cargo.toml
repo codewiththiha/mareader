@@ -17,6 +17,14 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = [
   "Window",
+  # `Window::location` for the reload command — the app's own restart. Same
+  # rule as the rects below: declared here, not inherited from a sibling's
+  # feature unification.
+  "Location",
+  # `Window::history` for the same command: the reload parks the address on
+  # the root before it goes, so the boot does not mount a reader for a
+  # document that is not there (see `reload_window`).
+  "History",
   "Navigator",
   "Document",
   "Element",

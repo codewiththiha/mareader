@@ -1,8 +1,6 @@
 import {
-  EngineResult,
   FakeCtx,
   PDFReader,
-  ThumbPayload,
   assertClose,
   expectedBakePixel,
   fakeComputed,
@@ -11,7 +9,7 @@ import {
 } from "./harness.js";
 
 export async function run(): Promise<void> {
-  // 6. thumbnails
+  // Thumbnails.
   const t = await PDFReader.renderThumb("thumb-1", 1, 0.25);
   if (!t.ok) throw new Error("thumb failed: " + JSON.stringify(t));
   console.log("thumb ok:", t.width, t.height);
@@ -25,7 +23,7 @@ export async function run(): Promise<void> {
   if (!PDFReader.hasThumb(1, 0.25)) throw new Error("thumb cache lost after hit");
   console.log("thumb cache hit ok");
 
-  // 6b. Theme change must blit the NEW bake onto the LIVE thumb canvas
+  // A theme change must blit the NEW bake onto the LIVE thumb canvas
   // without a remount / scroll (the user-visible sidebar bug).
   setFakeComputed({
     "--canvas-filter": "invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02)",
@@ -47,7 +45,7 @@ export async function run(): Promise<void> {
   assertClose(liveThumbPx, liveThumbExpect, "live thumb after refreshTheme");
   console.log("live thumb refreshTheme ok:", Array.from(liveThumbPx).slice(0, 3));
 
-  // 7. theme change marks cached thumbs STALE.
+  // A theme change marks cached thumbs STALE.
   PDFReader.cancelThumb("thumb-1");
   setFakeComputed({ "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)", "--canvas-blend": "soft-light" });
   await PDFReader.refreshTheme();

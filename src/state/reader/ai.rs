@@ -16,7 +16,7 @@ pub struct SelectionRect {
 }
 
 /// Everything the AI feature needs about the current text selection, as
-/// dispatched by the engine's `pdfreader:selection-detail` event. The two
+/// dispatched by the engine's `mareader:selection-detail` event. The two
 /// optional fields are the format half of the protocol, and both default so a
 /// PDF's event — which carries neither — deserializes unchanged.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -76,9 +76,16 @@ impl AiSelectionState {
     /// document close so a card left open on PDF A cannot poison PDF B
     /// (a stale `popover_open = true` would hide the Explain button and make
     /// the next open a no-op).
+    ///
+    /// Every field is bound with no `..` rest, so a field added to the struct is
+    /// a compile error here rather than a value carried over from the document
+    /// just closed. The handles are `Copy`, so this binds the signals the
+    /// struct already holds; `Self::default()` would allocate a fresh arena node
+    /// per field on every close and leak them.
     pub fn reset(&self) {
-        self.detail.set(None);
-        self.anchor.set(None);
-        self.popover_open.set(false);
+        let Self { detail, anchor, popover_open } = *self;
+        detail.set(None);
+        anchor.set(None);
+        popover_open.set(false);
     }
 }

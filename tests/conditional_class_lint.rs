@@ -38,7 +38,9 @@ mod tests {
     #[test]
     fn no_multi_token_conditional_classes() {
         let mut hits = Vec::new();
-        walk_rs(Path::new("src"), &mut hits);
+        for dir in ["src", "crates"] {
+            walk_rs(Path::new(dir), &mut hits);
+        }
         assert!(
             hits.is_empty(),
             "conditional class tokens must be a single name:\n{}",

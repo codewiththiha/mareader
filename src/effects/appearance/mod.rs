@@ -88,6 +88,17 @@ pub fn is_scrubbing() -> bool {
     SCRUBBING.with(|s| s.get())
 }
 
+/// Whether the appearance popover is open. The engine's retention gate
+/// treats an open menu as a scrub about to happen: pages that finish
+/// rendering while the reader is looking at the dials keep their unbaked
+/// rasters, so the FIRST drag of a session blits them under the live CSS
+/// instead of re-rendering every page. The bridge guard drops the call when
+/// no engine is mounted; a reflowable document simply has no pages to
+/// retain.
+pub fn set_appearance_menu_open(on: bool) {
+    raster::set_appearance_menu_open(on);
+}
+
 thread_local! {
     static PAINT_PENDING: Cell<Option<(Appearance, f64)>> = const { Cell::new(None) };
     static PAINT_SCHEDULED: Cell<bool> = const { Cell::new(false) };
@@ -216,19 +227,23 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
                 return;
             }
             COMMIT_PAYLOAD.with(|p| p.set(None));
-            // Commit final variables first so the theme applier paints them
-            // (and records the signature) while the scrub still owns the
-            // canvases — its engine refresh stands down for exactly that
-            // window. Leaving scrub afterwards hands the engine one final
-            // bake, at the settled values, on its serialized theme queue: one
-            // bake per drag, not one per tick.
+            // End the gesture before committing it. Leaving scrub clears the
+            // flag and queues the one final bake at the settled values; the
+            // settings write that follows wakes the theme effect OUTSIDE that
+            // window instead of inside it. The commit used to land first, so
+            // the effect the write woke raced the scrub flag on its way down
+            // and its engine refresh crossed the bridge while the gesture's
+            // own exit bake was still in flight. Now whatever the effect
+            // queues serializes behind the exit on the engine's theme queue
+            // and converges there as a same-fingerprint no-op: one bake per
+            // drag, not one per tick and not two at the end.
+            if patch_needs_canvas_scrub(patch) {
+                leave_scrub();
+            }
             settings.update(|s| {
                 apply_scrub(&mut s.appearance, patch);
                 s.touch_appearance();
             });
-            if patch_needs_canvas_scrub(patch) {
-                leave_scrub();
-            }
         },
         Duration::from_millis(COMMIT_MS),
     )

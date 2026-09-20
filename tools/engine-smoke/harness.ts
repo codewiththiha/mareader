@@ -313,7 +313,11 @@ interface FakeWindow {
   };
 }
 
-export let fakeComputed: { "--canvas-filter": string; "--canvas-blend": string; paper?: string } = {
+export let fakeComputed: {
+  "--canvas-filter": string;
+  "--canvas-blend": string;
+  paper?: string;
+} = {
   "--canvas-filter": "none",
   "--canvas-blend": "normal",
 };
@@ -402,6 +406,9 @@ const fakePdf = {
   getOutline: async () => [],
   getPageIndex: async () => 0,
   getDestination: async () => null,
+  // [permanent, temporary] like the real pdf.js: the open payload must carry
+  // the PERMANENT one — the search index's cache identity.
+  fingerprints: ["smoke-permanent", "smoke-temporary"],
   cleanup: async () => {},
 };
 const fakeLoadingTask = { promise: Promise.resolve(fakePdf), destroy: async () => {} };
@@ -464,6 +471,7 @@ interface OpenPayload {
   numPages: number;
   title: string | null;
   author: string | null;
+  fingerprint: string | null;
   outline: unknown[];
   page1Size: { width: number; height: number };
   pageHeights: number[];
@@ -483,6 +491,7 @@ interface PDFReaderHandle {
   hasThumb(page: number, scale: number): boolean;
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
+  setAppearanceMenuOpen(on: boolean): void;
   setPaper(hex: string): void;
   setPaperActive(on: boolean): void;
   takePaperFrame(canvasId: string): {
@@ -502,6 +511,8 @@ interface PDFReaderHandle {
   unregisterPage(canvasId: string): void;
   destroy(): Promise<void>;
   stats(): StatsPayload;
+  sweep(): void;
+  sweepSnapshots(): void;
   takePendingFile(): Promise<string | null>;
   extractPageText(page: number): Promise<
     EngineResult<{ page: number; items: { str: string; x: number; y: number; w: number; h: number }[] }>
@@ -594,7 +605,7 @@ export function assertClose(actual: Uint8ClampedArray, expected: number[], label
   }
 }
 
-// Canvas allocation tracking: render.test.ts turns this on; theme.test.ts
+// Canvas allocation tracking: render.ts turns this on; theme.ts
 // asserts against it (the identity-pipeline fast path must allocate zero
 // page-sized bake canvases).
 export const created: FakeCanvas[] = [];

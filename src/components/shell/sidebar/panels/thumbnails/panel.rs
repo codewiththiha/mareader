@@ -56,7 +56,7 @@ pub fn ThumbnailsPanel(
     let layout_epoch = RwSignal::new(0u64);
     let estimate = {
         let document = state.document;
-        move |_index: usize| row_height(document.page1_aspect_untracked())
+        move |_index: usize| row_height(document.page1_aspect_now())
     };
     let v = use_virtualizer(
         VirtualizerOptions::grid(count, estimate, GridSpec::fixed(2, GAP_CROSS))

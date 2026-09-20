@@ -13,25 +13,25 @@
 use serde::Serialize;
 
 /// AI chunk stream, bridged from the Tauri backend by `services::ai`.
-pub const AI_CHUNK_EVENT: &str = "pdfreader:ai-chunk";
+pub const AI_CHUNK_EVENT: &str = "mareader:ai-chunk";
 /// Open the gloss card for a mark (carries the `GlossMark` as detail).
-pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
+pub const GLOSS_OPEN_EVENT: &str = "mareader:gloss-open";
 /// Ask for a mark's remove menu (carries the `ContextTarget` as detail).
-pub const GLOSS_CONTEXT_EVENT: &str = "pdfreader:gloss-context";
+pub const GLOSS_CONTEXT_EVENT: &str = "mareader:gloss-context";
 /// Internal link jump, dispatched by the engine's link layer.
-pub const NAVIGATE_EVENT: &str = "pdfreader:navigate";
+pub const NAVIGATE_EVENT: &str = "mareader:navigate";
 /// Page-range selection from the engine's thumbnail/id scanner.
-pub const SELECTION_PAGES_EVENT: &str = "pdfreader:selection-pages";
+pub const SELECTION_PAGES_EVENT: &str = "mareader:selection-pages";
 /// Text-selection detail, dispatched by the engine's text layer.
-pub const SELECTION_DETAIL_EVENT: &str = "pdfreader:selection-detail";
+pub const SELECTION_DETAIL_EVENT: &str = "mareader:selection-detail";
 /// One-shot "scroll the sidebar to where the reader is" gesture.
-pub const REVEAL_ACTIVE_EVENT: &str = "pdfreader:reveal-active";
+pub const REVEAL_ACTIVE_EVENT: &str = "mareader:reveal-active";
 /// Ask the library's title-bar search to take focus. Dispatched by the global
 /// Cmd/Ctrl+F when no document is open — the shortcut means "search what you are
 /// looking at", and on the library page that is the shelf, not a document. A
 /// window event rather than a signal because the bar owns its own input node and
 /// the shortcut layer must not know the library page exists.
-pub const FOCUS_LIBRARY_SEARCH_EVENT: &str = "pdfreader:focus-library-search";
+pub const FOCUS_LIBRARY_SEARCH_EVENT: &str = "mareader:focus-library-search";
 
 /// Dispatch a typed CustomEvent on `window` with `payload` as its detail.
 pub fn dispatch_typed_event<T: Serialize>(name: &str, payload: &T) {

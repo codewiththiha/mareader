@@ -16,9 +16,7 @@ use leptos::prelude::*;
 use reflow_core::typography::{FontChoice, SystemFont, TextColumnAlign, TextSettings};
 
 use crate::components::primitives::form::row::Row;
-use crate::components::settings::common::StyleSelect;
-use app_chrome::icon::IconName;
-use app_chrome::icon_button::IconButton;
+use crate::components::settings::common::{StepperRow, StyleSelect};
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::controls::switch::Switch;
 use crate::state::AppState;
@@ -75,55 +73,6 @@ fn FontPickerRow(
                 label_of=font_label
                 disabled=Signal::derive(|| false)
             />
-        </Row>
-    }
-}
-
-/// A −/+ adjuster row: the current value formatted on the left, the two
-/// steppers on the right, each disabled at its end of the range.
-#[component]
-fn StepperRow(
-    label: &'static str,
-    /// The formatted current value ("17 px", "1.7×", …).
-    display: Signal<String>,
-    #[prop(into)]
-    minus_disabled: Signal<bool>,
-    #[prop(into)]
-    plus_disabled: Signal<bool>,
-    on_minus: Callback<()>,
-    on_plus: Callback<()>,
-    /// What the steppers adjust; each button's tooltip derives from it
-    /// ("Decrease font size" / "Increase font size").
-    #[prop(into)]
-    title: String,
-) -> impl IntoView {
-    let minus_title = format!("Decrease {title}");
-    let plus_title = format!("Increase {title}");
-    view! {
-        <Row label=label>
-            <span class="flex items-center gap-3">
-                <span class="w-14 text-right text-sm tabular-nums text-ink">
-                    {move || display.get()}
-                </span>
-                <span class="flex gap-1.5">
-                    <IconButton
-                        icon=IconName::Minus
-                        size=14
-                        title=minus_title
-                        class="rounded-full bg-line/60 hover:bg-line".to_string()
-                        disabled=minus_disabled
-                        on_click=move || on_minus.run(())
-                    />
-                    <IconButton
-                        icon=IconName::Plus
-                        size=14
-                        title=plus_title
-                        class="rounded-full bg-line/60 hover:bg-line".to_string()
-                        disabled=plus_disabled
-                        on_click=move || on_plus.run(())
-                    />
-                </span>
-            </span>
         </Row>
     }
 }

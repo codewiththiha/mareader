@@ -8,7 +8,6 @@ use app_chrome::icon::{Icon, IconName};
 use crate::state::library::CoverMap;
 use crate::state::{NO_DOCUMENT, ReaderState};
 
-
 #[component]
 pub(crate) fn BookInfo(
     reader: ReaderState,

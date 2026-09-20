@@ -1,8 +1,9 @@
 # Architecture
 
-> Scope note: this document covers the virtualization, motion and format-pipeline design — the
-> parts of the reader with the most subtle invariants. For the feature tour, build setup and the
-> crate map, see the README.
+> Scope note: this document covers the design with the most subtle invariants —
+> virtualization, motion, the format pipeline, the host protocol the AI layer finds a word
+> through, and the library's addresses, shelves and rescan ledger. The library is most of it.
+> For the feature tour, build setup and the crate map, see the README.
 
 This repo now splits virtual scrolling into three layers.
 
@@ -140,6 +141,112 @@ The thumbnail sidebar is a separate grid virtualizer:
 - panel-specific constants stay in `src/components/shell/sidebar/panels/thumbnails`
 
 That keeps list and grid virtualization on the same geometry stack while letting each surface keep its own rendering policy.
+
+## The memory model: peaks, latches and the floor
+
+The footprint the reader shows in Activity Monitor is three stacked facts, and
+only two of them are the app's.
+
+**The floor is the platform's.** WKWebView's memory number is a physical
+footprint: private dirty pages, plus pages already freed but not yet reclaimed
+(`MADV_FREE`, which a machine under no pressure never reclaims), plus
+GPU-backed canvas surfaces. JSC's heap, bmalloc and the wasm linear memory
+only grow — freed blocks go back to their own free lists, not to the OS. The
+library after a read therefore never reads like the library cold, and no app
+code can make it: only kernel pressure or the death of the process gives a
+footprint back. Everything the app can do is keep the high-water mark low,
+because the footprint latches onto the highest peak the session reached.
+
+**The peaks are the app's.** Every transient full-page surface is a permanent
+cost, and a zoom commit used to stack four of them per mounted page — the live
+canvas, the snapshot mask, the unbaked raw and the bake output — with no bound
+on how many pages rasterised at once, under a pixel ceiling that doubled to
+32M (~128 MB per layer) on big-memory machines. What holds the peak down now:
+
+- Full-size renders share one two-deep lane in `public/engine/renderer.ts`
+  (the thumbnail lane's pattern), so a commit queues instead of stampeding.
+- The pixel ceiling is 12M px everywhere (`public/engine/state.ts`): that
+  still covers ~245% zoom at dpr 2 — past where anyone is inspecting rather
+  than reading — and every transient a commit stacks is a quarter smaller
+  than the 16M this used to be. The doubled ceiling before that bought only
+  larger transients, not sharper pages.
+- A bake retains its unbaked raw only while a tint scrub is plausible —
+  inside 30s of the last scrub transition, or while the appearance menu is
+  open, which is where the next drag is born — and drops it at the bake
+  otherwise; the scrub path re-renders on demand.
+- A zoom stretch skips the snapshot mask when a render is queued for the same
+  page (`src/components/formats/pdf/canvas_host.rs`): the mask exists to cover
+  the frames until that render lands, which is not worth a third full-page
+  layer.
+- Where reading work ends — the zoom commit, the mode flip, the retention
+  grace, the return to the shelf — the app sweeps the worker's caches and
+  drops the masks any superseded render left behind (`sweep` /
+  `sweepSnapshots` on the engine facade).
+- A page a scroll fling sweeps into the mount window stays on its thumbnail
+  underlay until the scroller settles — the virtualizer's scroll-end window,
+  published as a signal (`crates/virtual-list-leptos/src/virtualizer.rs`) —
+  and rasterises once, when the strip is quiet. A two-second fling through a
+  long book costs the handful of pages it ends on, not an
+  allocate/render/discard cycle per page flown past: the churn, not the
+  mounted ceiling, is what drives the engine's resource cache to the mark
+  the footprint latches onto.
+- The full-text index builds on the first search, never at open
+  (`src/effects/reader/search.rs`): extraction is the one wasm-side cost
+  that scales with the BOOK — a worker round trip per page, landing in a
+  heap that only grows — so an open-time build charged every book that
+  ratchet whether or not anyone ever searched it. One build runs at a time;
+  keystroke runs fired mid-build skip, and the builder queries the latest
+  text when it lands.
+- The two layers a render rebuilds REPLACE what is there instead of adding to
+  it — the link layer swaps the old one out (`public/engine/links.ts`), the
+  search boxes are cleared before they are repainted
+  (`public/engine/highlights.ts`) — so a page rendered a hundred times carries
+  one of each and not a hundred. Both run on the render path rather than the
+  mount path, which is what makes them the one place a per-render leak could
+  hide; a link build that outlives its host (every annotation await is a
+  chance for the page to unmount or re-register elsewhere) drops its layer
+  rather than parking it, with its listeners, on an element the engine has
+  stopped tracking.
+
+**The retentions were bugs.** Three teardown paths used to leave live
+references behind, which is what read as hundreds of MB of private memory on
+the empty shelf: the container's ResizeObserver now dies with its shell by
+explicit contract instead of riding the disposal order of the install
+effect's owner; a boot registration whose owner died before the microtask ran
+no longer revives a dead canvas in the engine; and the full-text index is
+keyed by the document's pdf.js fingerprint, so a reopen of the same book
+adopts the retained index instead of re-extracting every page — each rebuild
+ratcheted the wasm heap another step up — and the thumbnail lane's per-page
+generation counters reset with the document they were issued for.
+
+The heap is charted from inside, because from outside it is invisible: the
+OS's number folds the wasm linear memory into the webview's total, where
+canvas surfaces dominate. `src/memory.rs` logs the heap's byte length at
+open, close, zoom commit, index build and the reload that resets it (`[mem]`
+lines in the webview console), and the trace IS the leak-versus-latch test —
+steps up once per book, flat across a session's zooms, never back down: that
+is the ratchet working as the platform dictates. A climb per open/close cycle
+would be a leak, and the log is where one shows up first.
+
+What the trace is read against is a SHAPE and not a number: a fresh boot is
+some floor X; reading is X plus the mounted canvases; idling on the page
+stays at reading, which is the latch rather than a leak; the shelf after a
+close stays there too, holding the retained index, the covers and whatever
+the wasm arena grew into; and a reload is back to X. Five open/close cycles
+that plateau are a latch. Five that climb are a leak, and these lines say
+which before a profiler does.
+
+The platform levers stay weighed and unpulled: a CPU-backed-canvas hint
+(`willReadFrequently`) trades compositor speed for a smaller GPU cache and
+wants an A/B measurement before it ships anywhere; cache-budget engine flags
+are WebView2-only; and an AUTOMATIC pressure valve that recreates the webview
+after very long sessions still trades reading continuity for a number the
+next book latches right back. What shipped instead is the manual one: Reload
+Window — a row in the reader's ⋯ menu and the shelf's — is the force-quit
+minus the quit, offered rather than imposed. It pays what a quit pays first
+(the resume point the progress effect is still debouncing, flushed through
+`src/services/document/flush.rs`) and parks the address on the shelf before
+it goes, so the boot does not mount a reader for a book that is not there.
 
 ## Formats: one host, one pipeline per family
 
@@ -284,7 +391,7 @@ generalised instead of the feature being forked per format.
   document's block row, whichever the selection is inside — and a row is the
   better sentence anyway: a page of type is thousands of characters, and a word
   is disambiguated by its clause.
-- **The event grew two optional fields.** `pdfreader:selection-detail` now
+- **The event grew two optional fields.** `mareader:selection-detail` now
   carries `{ text, context, rect, host, spot }`. `host` says which family painted
   the selection, so the app decides the pipeline from the event rather than from
   the open document and a selection that outlives a document switch cannot be
@@ -773,7 +880,7 @@ its copies being the library's own second instance, unrelated to any tree:
   for the directory rather than onto a twin minted beside it, and the fold hangs that shelf on
   the rung the directory names; a tree that keeps the whole of its ground on ONE shelf seeds
   nothing, and the fold brings the member's books onto that shelf and takes the member's own
-  shelves out (`import::folder::flatten_rungs`), because the shape the reader imported with cuts
+  shelves out (`import::reshape::flatten_rungs`), because the shape the reader imported with cuts
   no rungs. Either fold puts the member back, folds the folder that was reading it into the tree's
   ledger and retires it — the watch that row answered for its own root becoming the watch of the
   rung it becomes, since the row the answer was written on is the one the fold retires; for a
@@ -786,14 +893,14 @@ its copies being the library's own second instance, unrelated to any tree:
   carries the row's own options beside the rung's tracking, so the sheet shows the shape and the
   filters the folder is in rather than the last import's, and the shelf-structure question is a
   question the reader can answer the same way by not touching it. Answering it the other way
-  re-shapes the tree the row already reads (`import::folder::reshape_the_tree`): the one-shelf
+  re-shapes the tree the row already reads (`import::reshape::reshape_the_tree`): the one-shelf
   answer brings the answered ground's books onto the rung that ground answers for and takes out the
   rungs it has no place for, and the shelf-per-folder answer re-files each of them onto the rung its
   own address names — both reusing the rungs that stand and minting none beside them, so the other
   shape can never grow a second tree next to the first. The answer stands for the ground the pick
   named, so the tree above it keeps the shape it stands on. A pick of a SUBFOLDER answers the
   shape for the tree it is about to become a rung of, so the re-shape runs on the row the fold took
-  the pick into (`import::folder::reshape_row`), once the fold has the pick's ground inside it: the
+  the pick into (`import::reshape::reshape_row`), once the fold has the pick's ground inside it: the
   books the one-shelf tree held spread come home to the rungs their own addresses name, and the run
   that found nothing new lights the shelf its books went back to rather than reporting nothing new.
   A rescan re-reads the row's answers, which is why only a re-import can move a tree this way.
@@ -1041,7 +1148,7 @@ list and host-tested, including the cycle a blob caught between two writes can s
 One row of that receipt is a question rather than a cost, and it is the only one. The app's own
 copy goes with the book: a file nothing will read again is not worth a switch, and removing a book
 has always meant the store losing it. What the READER wrote is theirs — the marks, the place they
-stopped at and any name they gave the book — so it is stowed instead, in `pdfreader.kept.v1`
+stopped at and any name they gave the book — so it is stowed instead, in `mareader.kept.v1`
 (`storage::kept`), keyed by the FILE rather than by the row that went. The switch drops it instead,
 and the sheet says what keeping it means: the next import to land that file as a row of its own
 puts it back (`import::kept`), matched by the file's name and by how much else agrees with the
@@ -1362,3 +1469,38 @@ see — a duplicate, and the removal, with the watched-folder note when one appl
 door to those acts beside the right-click's folder menu, and both renames — the crumb's field and
 the sheet — commit through the one service, so two doors to one act cannot differ about what it
 means.
+
+## Known gaps: two gates deliberately not run
+
+Both were built and tried. Both stay off for the same reason — a gate that is
+red on the day it lands teaches people to read past red — and both belong to a
+dedicated commit rather than to a check nobody can act on.
+
+### cargo fmt --check
+
+The codebase is hand-formatted in a style rustfmt >=1.9x would rewrite across
+roughly forty files, so the gate would fail on pre-existing code. The one-time
+formatting pass is the prerequisite, and it is a large mechanical diff that
+should not share a commit with anything else.
+
+### rustdoc's broken intra-doc links
+
+The gate that was tried:
+
+```
+RUSTDOCFLAGS='-D rustdoc::broken_intra_doc_links' \
+  cargo doc --no-deps --document-private-items --workspace --exclude mareader-shell
+```
+
+It works, and it is not a small find: 33 unresolved intra-doc links across the
+three crates rustdoc reached before cargo stopped the build — app-chrome,
+pdf-engine and the app itself — with the other eleven never getting far enough
+to be counted. They are the same failure `check-doc-paths` exists for, in the
+one form it cannot read: a `//!` that names a sibling module without `super::`,
+a `search` that is both a function and a module, a `ScrollShell` left behind
+when its shell moved module.
+
+Not all of them can be fixed with a path. `GlossMark::context` points at a
+struct field, and rustdoc has no link form for one at any prefix, so those are
+prose rewrites — and the eleven undocumented crates cannot be enumerated short
+of running rustdoc until they can.

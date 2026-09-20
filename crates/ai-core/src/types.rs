@@ -3,8 +3,9 @@
 //! These mirror the shapes in `src-tauri/src/ai/traits.rs` (the backend's
 //! `WordInfo` / `AiError` / `AiChunk` / `AiStreamEvent`) — keep the serde
 //! shapes in sync. They are format-agnostic: the backend answers "what does
-//! this word mean", never "where is it in the document" (that is a
-//! [`crate::gloss::mark::MarkAnchor`], owned by the format layer).
+//! this word mean", never "where is it in the document" (that is the
+//! [`crate::gloss::mark::PageAnchor`] on the mark, owned by the format
+//! layer).
 
 use std::borrow::Cow;
 
