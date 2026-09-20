@@ -8,7 +8,7 @@
 //! whose page is at or before it.
 
 /// One chapter of the open document.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OutlineNode {
     pub title: String,
     pub page: u32,

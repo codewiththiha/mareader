@@ -284,6 +284,8 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
 
     Effect::new(move || {
         let settings = state.settings.with(|s| s.clone());
-        schedule_save(settings);
+        if !crate::runtime::is_reader() && !crate::runtime::is_workspace() {
+            schedule_save(settings);
+        }
     });
 }

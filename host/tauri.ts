@@ -19,16 +19,16 @@ export class TauriScope {
   private nextSubscription = 0;
   private readonly subscriptions = new Map<number, () => void>();
   constructor(private readonly path: string, private readonly send: (event: Payload) => void,
-    private readonly closeWindow: () => Promise<void>) {}
+    private readonly closeWindow: () => Promise<void>, private readonly kind: "reader" | "library" = "reader") {}
   async call(method: unknown, args: unknown): Promise<unknown> {
     if (this.disposed) throw new Error("Reader is disposed");
     const api = tauri();
     if (!api) throw new Error("This operation requires the desktop app");
     if (method === "invoke" && record(args) && typeof args.command === "string") {
-      if (!["read_file_text", "read_file_bytes", "explain_word", "set_traffic_lights"].includes(args.command)) {
+      if (this.kind !== "library" && !["read_file_text", "read_file_bytes", "explain_word", "set_traffic_lights"].includes(args.command)) {
         throw new Error("Reader command is not allowed");
       }
-      if (args.command.startsWith("read_file_") && (!record(args.args) || args.args.path !== this.path)) {
+      if (this.kind !== "library" && args.command.startsWith("read_file_") && (!record(args.args) || args.args.path !== this.path)) {
         throw new Error("Reader may only read its configured document");
       }
       return api.core.invoke(args.command, args.args);
@@ -44,7 +44,7 @@ export class TauriScope {
       return handle[name].call(handle);
     }
     if (method === "listen" && typeof args === "string") {
-      if (!["ai-stream-chunk", "tauri://resize"].includes(args)) throw new Error("Reader event is not allowed");
+      if (this.kind !== "library" && !["ai-stream-chunk", "tauri://resize"].includes(args)) throw new Error("Reader event is not allowed");
       const subscription = ++this.nextSubscription;
       const unlisten = await api.event.listen(args, (event) => {
         if (!this.disposed) this.send({ type: "tauri-event", subscription, event });

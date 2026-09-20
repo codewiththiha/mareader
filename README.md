@@ -1,10 +1,10 @@
 # Mareader
 
-> **Runtime architecture:** the library is persistent and each document runs
-> in a disposable, format-selected WASM iframe. See
+> **Runtime architecture:** the persistent workspace reuses the original chrome;
+> the library and each of up to four documents have disposable WASM frames. See
 > [runtime ownership and build commands](docs/runtime-architecture.md).
 > Use `npm run build` / `npm run dev:frontend`; direct `trunk build` now builds
-> only the host/library target.
+> only the workspace target.
 
 
 A desktop document reader built for long-form reading. Native Tauri v2 shell, Rust/WebAssembly

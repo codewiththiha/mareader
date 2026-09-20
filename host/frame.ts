@@ -17,25 +17,26 @@ export class FrameRuntime implements ReaderRuntime {
   private disposal: Promise<void> | null = null;
   private resolveDisposed: (() => void) | null = null;
   private loaded = false;
+  private queued: Payload[] = [];
   private removed = false;
   private requestId = 0;
   private disposeId = 0;
   private event: ((event: Payload) => void) | null;
 
   constructor(target: HTMLElement, config: ReaderConfig, event: (event: Payload) => void,
-    closeWindow: () => Promise<void>) {
+    closeWindow: () => Promise<void>, kind: "reader" | "library" = "reader") {
     this.event = event;
-    this.scope = new TauriScope(config.path, (message) => this.command(message), closeWindow);
+    this.scope = new TauriScope(config.path, (message) => this.command(message), closeWindow, kind);
     this.readyPromise = new Promise((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
     // Disposal can reject startup before the manager has attached its await.
     void this.readyPromise.catch(() => undefined);
     this.readyTimer = setTimeout(() => this.rejectReady(new Error("Reader startup timed out")), READY_TIMEOUT_MS);
     const frame = document.createElement("iframe");
-    frame.className = "reader-frame";
-    frame.title = `${config.format.toUpperCase()} reader`;
+    frame.className = `${kind}-frame`;
+    frame.title = kind === "library" ? "Library" : `${config.format.toUpperCase()} reader`;
     // Same-origin is required for WASM/storage and Tauri's packaged protocol.
     // This is a lifecycle boundary, NOT a sandbox for untrusted code.
-    frame.src = `/reader-${config.format}/index.html`;
+    frame.src = kind === "library" ? "/library/index.html" : `/reader-${config.format}/index.html`;
     this.frame = frame;
     frame.addEventListener("load", this.connect, { once: true });
     frame.addEventListener("error", this.loadError, { once: true });
@@ -62,6 +63,7 @@ export class FrameRuntime implements ReaderRuntime {
       this.loaded = true;
       clearTimeout(this.readyTimer);
       this.resolveReady();
+      for (const command of this.queued.splice(0)) this.command(command);
     } else if (message.type === "disposed" && value.requestId === this.disposeId) {
       this.finish();
     } else if (message.type === "rpc" && value.requestId !== undefined) {
@@ -71,13 +73,15 @@ export class FrameRuntime implements ReaderRuntime {
       } catch (error) {
         this.port?.postMessage(packet({ type: "rpc-result", error: String(error) }, value.requestId));
       }
-    } else if (["progress", "metadata", "cover", "settings", "close-request", "reload-request", "open-path", "error", "title"].includes(message.type)) {
+    } else if (["progress", "metadata", "cover", "settings", "close-request", "reload-request", "open-path", "error", "title", "focus", "snapshot", "open-request", "library-ready", "paper-color", "thumbnail"].includes(message.type)) {
       this.event?.(message);
     }
   }
   ready(): Promise<void> { return this.readyPromise; }
   command(command: Payload): void {
-    if (!this.removed && !this.disposal) this.port?.postMessage(packet(command, ++this.requestId));
+    if (this.removed || this.disposal) return;
+    if (!this.loaded) { this.queued.push(command); return; }
+    this.port?.postMessage(packet(command, ++this.requestId));
   }
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
@@ -99,6 +103,7 @@ export class FrameRuntime implements ReaderRuntime {
     clearTimeout(this.readyTimer);
     clearTimeout(this.disposeTimer);
     this.scope.dispose();
+    this.queued = [];
     if (this.port) { this.port.onmessage = null; this.port.onmessageerror = null; this.port.close(); this.port = null; }
     this.frame?.removeEventListener("load", this.connect);
     this.frame?.removeEventListener("error", this.loadError);

@@ -48,6 +48,7 @@ use crate::state::SidebarMode;
 /// gesture with no state to hold, and a counter signal would need to be read
 /// by both panels and could not distinguish "asked twice" from "asked once"
 /// without extra bookkeeping. Same mechanism the PDF link layer uses.
+#[cfg(feature = "library")]
 pub(crate) fn request_reveal_active() {
     crate::events::dispatch_event(crate::events::REVEAL_ACTIVE_EVENT);
 }

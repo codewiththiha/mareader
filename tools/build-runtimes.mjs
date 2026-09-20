@@ -14,12 +14,12 @@ function run(command, args) {
 run("trunk", ["build", ...(release ? ["--release"] : []), "--locked"]);
 mkdirSync(stage, { recursive: true });
 try {
-  for (const format of ["pdf", "txt", "md"]) {
-    const destination = resolve(stage, `reader-${format}`);
+  for (const app of ["library", "reader-pdf", "reader-txt", "reader-md"]) {
+    const destination = resolve(stage, app);
     run("trunk", ["--config", "Trunk.reader.toml", "build",
-      `apps/reader-${format}-wasm/index.html`, "--dist", destination,
-      "--public-url", `/reader-${format}/`, "--locked", ...(release ? ["--release"] : [])]);
-    cpSync(destination, resolve("dist", `reader-${format}`), { recursive: true });
+      `apps/${app}-wasm/index.html`, "--dist", destination,
+      "--public-url", `/${app}/`, "--locked", ...(release ? ["--release"] : [])]);
+    cpSync(destination, resolve("dist", app), { recursive: true });
   }
 } finally {
   rmSync(stage, { recursive: true, force: true });

@@ -48,6 +48,8 @@ pub fn rescan_watched(state: AppState) {
 /// this guard only holds the walk back for a book whose address the shell
 /// could not read at all.
 fn run_watched(state: AppState) {
+    // A native verification may finish after the disposable library is gone.
+    if state.library.books.try_with_untracked(|_| ()).is_none() { return; }
     if state
         .library
         .books
@@ -112,6 +114,7 @@ pub fn verify_one(state: AppState, path: String) {
 /// Split out of [`rescan_watched`]: a relink asks the same thing about one
 /// address.
 pub(super) fn apply_checks(state: AppState, checks: &[PathCheck]) {
+    if state.library.books.try_with_untracked(|_| ()).is_none() { return; }
     let mut changed = false;
     state.library.books.update(|rows| {
         for check in checks {

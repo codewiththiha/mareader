@@ -6,6 +6,7 @@ use super::{ReaderConfig, ReadPoint, emit};
 
 pub fn install(state: AppState, format: &'static str) {
     let opened = RwSignal::new(false);
+    let chrome = expect_context::<super::ChromeVisibility>();
     let closing = RwSignal::new(false);
     super::listen(move |message| {
         match message["type"].as_str() {
@@ -27,7 +28,19 @@ pub fn install(state: AppState, format: &'static str) {
             Some("set-settings") if !closing.get_untracked() => {
                 if let Ok(mut settings) = serde_json::from_value(message["settings"].clone()) {
                     reader_core::settings::sanitize(&mut settings);
+                    pdf_engine::api::set_scrub_mode(false);
                     state.settings.set(settings);
+                }
+            }
+            Some("chrome-state") => {
+                chrome.bar.set(message["bar"].as_bool().unwrap_or(false));
+                chrome.rail.set(message["rail"].as_bool().unwrap_or(false));
+            }
+            Some("controls") if !closing.get_untracked() => super::controls::apply(state, &message),
+            Some("appearance-preview") if !closing.get_untracked() => {
+                if let Ok(a) = serde_json::from_value(message["appearance"].clone()) {
+                    pdf_engine::api::set_scrub_mode(true);
+                    crate::effects::app::theme::paint_appearance_now(a, message["ink"].as_f64().unwrap_or(100.0));
                 }
             }
             Some("dispose") if !closing.get_untracked() => {
@@ -45,6 +58,10 @@ pub fn install(state: AppState, format: &'static str) {
         if opened.get() && !closing.get() {
             emit(json!({"type":"settings", "settings":settings}));
         }
+    });
+    Effect::new(move |_| {
+        let snapshot = super::controls::snapshot(state);
+        if opened.get() && !closing.get() { emit(json!({"type":"snapshot","snapshot":snapshot})); }
     });
     emit(json!({"type":"ready", "format":format}));
 }

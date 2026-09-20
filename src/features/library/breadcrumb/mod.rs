@@ -153,7 +153,9 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
     Effect::new(move |_| {
         let _ = chain.get();
         request_animation_frame(move || {
-            let Some(probe) = probe_ref.get() else {
+            // An immediate file open can dispose this library before its
+            // first measurement frame runs.
+            let Some(probe) = probe_ref.try_get().flatten() else {
                 return;
             };
             let ws = measure_children_widths(&probe);

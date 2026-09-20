@@ -13,7 +13,7 @@ use leptos::prelude::*;
 /// command is resolved against the current window, mode and page, and lands
 /// through the one transition pipeline. Nobody executes a zoom by writing
 /// the scale signals directly.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ZoomCommand {
     /// One step along the preset ladder: `+1` zooms in, `-1` zooms out.
     Step(i32),

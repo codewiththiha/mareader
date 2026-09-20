@@ -8,7 +8,7 @@ use crate::state::ReaderState;
 use crate::state::app::SidebarMode;
 
 #[component]
-pub(crate) fn SidebarThumbs(
+pub fn SidebarThumbs(
     state: ReaderState,
     sidebar: RwSignal<SidebarMode>,
     live: Signal<bool>,
@@ -26,8 +26,12 @@ pub(crate) fn SidebarThumbs(
             // The engine owns thumbnails; a text document never reaches it,
             // so the panel mounts nothing for one (the rail's redirect keeps
             // it un-shown besides).
-            <Show when=move || !state.reflowable()>
-                <ThumbnailsPanel state=state live=live sidebar=sidebar />
+            <Show when=crate::runtime::is_workspace fallback=move || view! {
+                <Show when=move || !state.reflowable()>
+                    <ThumbnailsPanel state=state live=live sidebar=sidebar />
+                </Show>
+            }>
+                <div class="workspace-sidebar h-full overflow-auto" />
             </Show>
         </div>
     }

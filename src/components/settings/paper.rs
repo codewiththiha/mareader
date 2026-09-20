@@ -30,7 +30,7 @@ pub(crate) fn PaperSection(state: AppState) -> impl IntoView {
     let blend_off = Signal::derive(move || !s.with(|st| st.layout.blend_mode));
 
     view! {
-        <Show when=move || !reflowable.get()>
+        <Show when=move || crate::runtime::is_workspace() || !reflowable.get()>
         <Separator vertical=false spacing="mt-5" />
         <SectionLabel text="Paper" />
         <div class="divide-y divide-line rounded-xl border border-line">
@@ -46,6 +46,7 @@ pub(crate) fn PaperSection(state: AppState) -> impl IntoView {
                         .to_string()
                 />
             </Row>
+            <Show when=move || !reflowable.get()>
             <Row label="Detection">
                 <StyleSelect
                     value=Signal::derive(move || s.with(|st| st.layout.blend_area))
@@ -60,6 +61,7 @@ pub(crate) fn PaperSection(state: AppState) -> impl IntoView {
                     disabled=blend_off
                 />
             </Row>
+            </Show>
         </div>
         </Show>
     }

@@ -140,7 +140,7 @@ impl Default for DocumentState {
 impl DocumentState {
     /// Back to the no-document state. Every field the open flow writes is
     /// reset here, so a field added to the struct cannot be silently
-    /// forgotten by close_document.
+    /// forgotten by dispose_document.
     ///
     /// The handles are `Copy`, so this binds the signals the struct already
     /// holds; `Self::default()` would allocate a fresh arena node per field on

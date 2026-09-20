@@ -125,6 +125,7 @@ library-core = { path = "crates/library-core", features = ["test-util"] }
 members = [
   "crates/document-core",
   "apps/library-wasm",
+  "apps/workspace-wasm",
   "apps/reader-pdf-wasm",
   "apps/reader-txt-wasm",
   "apps/reader-md-wasm",

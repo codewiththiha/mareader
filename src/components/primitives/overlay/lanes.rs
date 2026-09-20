@@ -127,6 +127,12 @@ impl Default for OverlayBoard {
 }
 
 impl OverlayBoard {
+    /// Window shortcuts yield Escape to the visible menu/modal, so one key
+    /// never closes both that surface and the workspace sidebar beneath it.
+    pub fn any_open(self) -> bool {
+        self.members.with_untracked(|members| members.iter().any(|member| member.open.get_untracked()))
+    }
+
     /// Put `open` under `policy`, for as long as the caller's reactive owner
     /// lives: the registration is dropped in `on_cleanup`, so an overlay that
     /// unmounts never leaves a member whose signal nobody reads.

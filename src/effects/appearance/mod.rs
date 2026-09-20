@@ -209,6 +209,9 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
     let ink_contrast = settings.get_untracked().text.ink_contrast;
     apply_scrub(&mut a, patch);
     paint_appearance(a, ink_contrast);
+    if crate::runtime::is_workspace() {
+        crate::runtime::emit(serde_json::json!({"type":"appearance-preview", "appearance":a, "ink":ink_contrast}));
+    }
     // The page re-colours under the drag through the live CSS pipeline
     // alone — that is what scrub mode exists for. The engine is deliberately
     // NOT told per tick: the bridge crossing (and the serialized no-op it

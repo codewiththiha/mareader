@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const read = (path) => readFileSync(path, "utf8");
 
-test("host loads only library WASM and lifecycle JS", () => {
+test("host loads only workspace WASM and lifecycle JS", () => {
   const html = read("index.html");
-  assert.match(html, /apps\/library-wasm\/Cargo.toml/);
+  assert.match(html, /apps\/workspace-wasm\/Cargo.toml/);
   const scripts = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(scripts, ["/host.js"]);
   assert.doesNotMatch(read("host/host.ts"), /querySelector\([^)]*(canvas|pdf-page)/);

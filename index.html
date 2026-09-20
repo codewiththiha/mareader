@@ -16,11 +16,11 @@
     <!-- Copied assets are not executed here. Only the selected reader loads
          its engine, and PDF JS/worker never run in the persistent realm. -->
     <script type="module" src="/host.js"></script>
-    <link data-trunk rel="rust" href="apps/library-wasm/Cargo.toml" data-wasm-opt="z" />
+    <link data-trunk rel="rust" href="apps/workspace-wasm/Cargo.toml" data-wasm-opt="z" />
   </head>
   <body>
+    <div id="workspace-root" hidden></div>
     <div id="library-root"></div>
-    <div id="reader-root" hidden></div>
     <div id="host-status" role="status" aria-live="polite" hidden></div>
   </body>
 </html>

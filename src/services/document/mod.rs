@@ -19,7 +19,6 @@ pub(crate) mod flush;
 pub mod open;
 pub(crate) mod session;
 
-pub use close::close_document;
 pub(crate) use flush::flush_read_point;
 pub use open::open_dialog;
 #[cfg(feature = "library")]

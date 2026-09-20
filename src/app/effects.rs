@@ -32,3 +32,10 @@ fn shortcuts(state: AppState) {
     crate::effects::app::shortcuts::shortcuts(state.reader,
         move || crate::services::document::open_dialog(state), state.ui.sidebar);
 }
+
+#[cfg(feature = "library")]
+pub fn install_workspace_effects(state: AppState, a: AppearanceSignal, t: TypographySignal) {
+    appearance(state, a, t);
+    shortcuts(state);
+    crate::services::window::install_window_state_bridge(state);
+}

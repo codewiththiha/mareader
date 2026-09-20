@@ -23,16 +23,19 @@ function close(): void {
   window.removeEventListener(OUTPUT_EVENT, output);
   window.removeEventListener("message", connect);
   document.removeEventListener("pointerdown", drag);
+  document.removeEventListener("focusin", focused);
   document.removeEventListener("dblclick", doubleClick);
   for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error("Reader disposed")); }
   pending.clear(); subscriptions.clear();
   if (port) { port.onmessage = null; port.close(); port = null; }
   ready = null;
+  paperObserver.disconnect();
+  blendStyle.remove();
 }
 function output(event: Event): void {
   const value: unknown = (event as CustomEvent).detail;
   if (!payload(value) || disposed) return;
-  if (value.type === "ready") ready = value;
+  if (value.type === "ready" || value.type === "library-ready") { ready = { type: "ready" }; send(ready); }
   send(value, value.type === "disposed" ? disposeId : undefined);
   if (value.type === "disposed") close();
 }
@@ -68,9 +71,15 @@ function connect(event: MessageEvent<unknown>): void {
       else call.resolve(message.result);
     } else if (message.type === "tauri-event") {
       subscriptions.get(Number(message.subscription))?.(message.event);
+    } else if (message.type === "set-blend") {
+      blendStyle.textContent = typeof message.paper === "string" && /^#[0-9a-f]{6}$/i.test(message.paper)
+        ? `html:root { --workspace-paper: ${message.paper}; --tx-paper: ${message.paper} !important; } .reader-bg { background: ${message.paper} !important; }`
+        : "";
+    } else if (message.type === "request-thumbnails") {
+      void thumbnail(Number(message.page));
     } else if (message.type === "focus") window.focus();
     else if (message.type === "blur") (document.activeElement as HTMLElement | null)?.blur();
-    else if (["open", "set-settings", "resize", "dispose"].includes(message.type)) {
+    else if (["chrome-state", "open", "open-path", "open-book", "set-settings", "controls", "appearance-preview", "resize", "dispose"].includes(message.type)) {
       if (message.type === "dispose") disposeId = requestId;
       localCommand(message);
     }
@@ -84,6 +93,7 @@ function connect(event: MessageEvent<unknown>): void {
   window.dispatchEvent(new Event(CONNECTED_EVENT));
 }
 function drag(event: PointerEvent): void {
+  send({ type: "focus" });
   if (event.button !== 0 || !(event.target instanceof Element)
     || event.target.getAttribute("data-tauri-drag-region") !== "true") return;
   void rpc("window", { name: "startDragging" }).catch(() => undefined);
@@ -99,5 +109,47 @@ window.addEventListener("pagehide", () => {
   if (!disposed) window.dispatchEvent(new CustomEvent(COMMAND_EVENT, { detail: { type: "dispose" } }));
   close();
 }, { once: true });
+function focused(): void { send({ type: "focus" }); }
+document.addEventListener("focusin", focused);
 document.addEventListener("pointerdown", drag);
 document.addEventListener("dblclick", doubleClick);
+window.addEventListener("dragover", (event) => { if (event.dataTransfer?.types.includes("Files")) event.preventDefault(); });
+window.addEventListener("drop", (event) => event.preventDefault());
+
+// Small, lazy thumbnail transfers: no document buffers or WASM references cross.
+let thumbBusy = false;
+async function thumbnail(page: number): Promise<void> {
+  const engine = (window as unknown as { PDFReader?: { renderThumb(id: string, page: number, scale: number): Promise<unknown> } }).PDFReader;
+  if (thumbBusy || !engine || !Number.isInteger(page) || page < 1 || disposed) return;
+  thumbBusy = true;
+  const canvas = document.createElement("canvas");
+  canvas.id = "workspace-thumb-transfer";
+  canvas.style.display = "none";
+  document.body.append(canvas);
+  try {
+    await engine.renderThumb(canvas.id, page, .2);
+    if (!disposed) send({ type: "thumbnail", page, dataUrl: canvas.toDataURL("image/png") });
+  } catch { /* The host keeps its page-number fallback on render failure. */ }
+  finally { canvas.width = 0; canvas.height = 0; canvas.remove(); thumbBusy = false; }
+}
+const blendStyle = document.createElement("style");
+document.head.append(blendStyle);
+let paper = "";
+const paperObserver = new MutationObserver(() => {
+  const root = document.documentElement;
+  const next = root.style.getPropertyValue("--pdf-paper-baked").trim()
+    || root.style.getPropertyValue("--tx-paper").trim();
+  if (next && next !== paper) {
+    paper = next;
+    // Canvas normalizes CSS color syntax without sending browser objects.
+    const pixel = document.createElement("canvas"); pixel.width = 1; pixel.height = 1;
+    const ctx = pixel.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = next; ctx.fillRect(0, 0, 1, 1);
+      const rgb = ctx.getImageData(0, 0, 1, 1).data;
+      send({ type: "paper-color", paper: `#${[rgb[0],rgb[1],rgb[2]].map(v=>v.toString(16).padStart(2,"0")).join("")}` });
+    }
+    pixel.width = 0; pixel.height = 0;
+  }
+});
+paperObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });

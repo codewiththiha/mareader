@@ -72,8 +72,8 @@ const MIN_LABEL_W: f64 = 40.0;
 #[component]
 pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
-    let shell = use_context::<ShellController>()
-        .expect("the page provides the shell controller");
+    let remote = use_context::<crate::runtime::ChromeVisibility>();
+    let shell = use_context::<ShellController>();
     // The blending node is the positioned <div> (see the view's CRITICAL
     // note); scroll_width() there is the natural text width, as before.
     let label_ref: NodeRef<html::Div> = NodeRef::new();
@@ -195,7 +195,8 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         // The rail owns the top-left corner in either mode: docked, its
         // identity row already shows the name; floating, it is painted right
         // under this label.
-        let rail_off = !shell.rail_present().get();
+        let rail_off = shell.map(|shell| !shell.rail_present().get())
+            .unwrap_or_else(|| remote.is_none_or(|chrome| !chrome.rail.get()));
         // Persist means auto-hide does not: the title bar and the width budget
         // stop being reasons to disappear. The rail is not a budget.
         if state.settings.with(|st| st.layout.floating_label_persist) {
@@ -203,7 +204,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         }
         let max_pct = state.settings.with(|st| st.layout.floating_label_max_pct);
         rail_off
-            && ctx.map(|c| !c.visible.get()).unwrap_or(true)
+            && ctx.map(|c| !c.visible.get()).unwrap_or_else(|| remote.is_none_or(|chrome| !chrome.bar.get()))
             // None = unknown = show
             && budget.get().is_none_or(|b| label_w.get() <= b * max_pct / 100.0)
     };

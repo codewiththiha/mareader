@@ -7,6 +7,8 @@
 //!     paint/outro toggles.
 
 pub mod panel;
+#[cfg(feature = "library")]
 pub mod view;
 
+#[cfg(feature = "library")]
 pub(crate) use panel::OutlinePanel;

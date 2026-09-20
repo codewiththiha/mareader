@@ -9,16 +9,6 @@ use wasm_bindgen_futures::spawn_local;
 use pdf_engine::api as engine;
 use crate::state::{AppState, SidebarMode};
 
-/// Close the current document and return to the library shelf.
-///
-/// Tears the engine's document state down and resets the document / viewer /
-/// search signals, so the reader lands back on the empty-state bookshelf
-/// (which renders whenever `doc.status != Ready`). The library is untouched:
-/// the just-closed book keeps its saved page, so reopening resumes there.
-pub fn close_document(_state: AppState) {
-    crate::runtime::emit(serde_json::json!({"type":"close-request"}));
-}
-
 pub fn dispose_document(state: AppState) {
     // Take the document state over from whatever open may still be resolving:
     // an open's tail (its `Ready` flip, its cover, its outline) lands frames

@@ -4,7 +4,9 @@
 //! the bottom panel switcher, and the panel hosts (`panels`).
 
 pub mod container;
+#[cfg(feature = "library")]
 pub mod document_info;
+#[cfg(feature = "library")]
 pub mod header;
 pub mod overlay;
 pub mod panels;

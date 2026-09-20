@@ -10,7 +10,7 @@
     "build:ts": "tsc --noEmit --project tsconfig.json && tsc --project tsconfig.tools.json && node ./tools/bundle-engine.mjs",
     "build": "npm run build:ts && node tools/build-runtimes.mjs",
     "dev:frontend": "npm run build:ts && node tools/build-runtimes.mjs --dev && node tools/serve-runtimes.mjs",
-    "test:runtime": "node --test tests/runtime/*.test.mjs"
+    "test:runtime": "node tools/verify-legacy-runtime.mjs && node --test tests/runtime/*.test.mjs"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",

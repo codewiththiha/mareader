@@ -391,6 +391,11 @@ jobs:
       - run: npm ci
       # Separate invocations prevent Cargo workspace feature unification from
       # disguising a missing dependency in one of the four real applications.
+      - name: Check each isolated frontend feature set
+        run: |
+          for app in workspace-wasm library-wasm reader-pdf-wasm reader-txt-wasm reader-md-wasm; do
+            cargo check -p "$app" --target wasm32-unknown-unknown --locked
+          done
       - name: Build all runtime artifacts
         run: npm run build
       - name: Install browser test runner

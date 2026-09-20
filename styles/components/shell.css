@@ -192,3 +192,6 @@ body {
   width: 100%;
   height: 100%;
 }
+
+/* The disposable reader no longer gets its height from a window titlebar. */
+#reader-app, #library-root { height: 100%; width: 100%; }

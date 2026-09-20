@@ -121,7 +121,7 @@ The app uses the adapter and keeps only app-specific policy locally:
 
 ## Continuous reader flow
 
-1. `ReaderPage` builds one `Virtualizer` for the continuous surface.
+1. `ReaderSurface` builds one `Virtualizer` for the continuous surface.
 2. `ScrollShell` binds the scroll container and hands the mounted window to
    `UniversalStripHost`, which picks the format's strip — `PdfPageStrip` or the
    reflowable one. The strip renders `v.items()`, and the PDF's reports measured
@@ -134,13 +134,17 @@ The app uses the adapter and keeps only app-specific policy locally:
 
 ## Thumbnail panel flow
 
-The thumbnail sidebar is a separate grid virtualizer:
+The original thumbnail panel uses a separate grid virtualizer:
 
 - width-aware row windowing lives in `virtual-list`
 - DOM/reactive wiring lives in `virtual-list-leptos`
 - panel-specific constants stay in `src/components/shell/sidebar/panels/thumbnails`
 
 That keeps list and grid virtualization on the same geometry stack while letting each surface keep its own rendering policy.
+
+The isolated workspace now requests a bounded page window from the focused PDF
+frame and receives raster images over its port; it never mounts a PDF engine
+in the workspace. See [workspace ownership](docs/workspace-runtime.md).
 
 ## The memory model: peaks, latches and the floor
 

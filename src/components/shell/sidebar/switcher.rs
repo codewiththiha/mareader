@@ -30,8 +30,11 @@ fn RailToggle(
 }
 
 #[component]
-pub(crate) fn PanelSwitcher(
+pub fn PanelSwitcher(
     mode: RwSignal<SidebarMode>,
+    #[prop(optional)] library_active: Option<Signal<bool>>,
+    #[prop(optional)] on_library: Option<Callback<()>>,
+    #[prop(optional)] on_panel: Option<Callback<SidebarMode>>,
     thumbs_active: Signal<bool>,
     outline_active: Signal<bool>,
     on_reveal: fn(),
@@ -42,12 +45,17 @@ pub(crate) fn PanelSwitcher(
 ) -> impl IntoView {
     view! {
         <div class="flex shrink-0 items-center justify-around gap-1 border-t border-line p-1.5">
+            {library_active.map(|active| view! {
+                <RailToggle icon=IconName::Library title="Library" active=active
+                    on_click=move || { if let Some(action) = on_library { action.run(()); } } />
+            })}
             <Show when=move || thumbs_visible.get()>
                 <RailToggle
                     icon=IconName::Thumbs
                     title="Thumbnails"
                     active=thumbs_active
                     on_click=move || {
+                        if let Some(action) = on_panel { action.run(SidebarMode::Thumbs); }
                         // Re-clicking the ACTIVE tab means "take me to where
                         // I am", not "close".
                         if mode.get() == SidebarMode::Thumbs {
@@ -63,6 +71,7 @@ pub(crate) fn PanelSwitcher(
                 title="Outline"
                 active=outline_active
                 on_click=move || {
+                    if let Some(action) = on_panel { action.run(SidebarMode::Outline); }
                     if mode.get() == SidebarMode::Outline {
                         on_reveal();
                     } else {

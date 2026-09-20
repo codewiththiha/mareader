@@ -2,6 +2,9 @@
 #[cfg(feature = "library")]
 pub mod library;
 pub mod reader;
+pub mod controls;
+#[cfg(feature = "library")]
+pub mod workspace;
 
 use std::cell::{Cell, RefCell};
 use leptos::prelude::*;
@@ -12,8 +15,18 @@ pub use crate::events::{COMMAND_EVENT, OUTPUT_EVENT};
 
 thread_local! {
     static LABEL: Cell<&'static str> = const { Cell::new("library") };
+    static WORKSPACE: Cell<bool> = const { Cell::new(false) };
     static READER: Cell<bool> = const { Cell::new(false) };
     static UNMOUNT: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
+}
+
+pub fn mark_workspace() { WORKSPACE.with(|v| v.set(true)); }
+pub fn is_workspace() -> bool { WORKSPACE.with(Cell::get) }
+/// Window-owned visibility mirrored into a reader without mounting chrome.
+#[derive(Clone, Copy)]
+pub struct ChromeVisibility {
+    pub bar: RwSignal<bool>,
+    pub rail: RwSignal<bool>,
 }
 
 pub fn is_reader() -> bool { READER.with(Cell::get) }

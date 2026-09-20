@@ -39,6 +39,23 @@ pub fn request_open(state: AppState, book_id: Option<String>, path: String) {
 pub fn install(state: AppState) {
     super::listen(move |message| {
         match message["type"].as_str() {
+            Some("dispose") => {
+                crate::storage::persist_library(state.library);
+                crate::runtime::unmount();
+                emit(json!({"type":"disposed"}));
+            }
+            Some("reload-library") => {
+                let blob = crate::storage::load_library();
+                state.library.books.set(blob.books);
+                state.library.shelves.set(blob.shelves);
+                state.library.folders.set(blob.folders);
+                state.library.view.set(blob.view);
+            }
+            Some("open-book") => {
+                if let Some(id) = message["bookId"].as_str() {
+                    crate::services::document::open::open_book(state, id.to_string());
+                }
+            }
             Some("open-path") => {
                 if let Some(path) = message["path"].as_str() { request_open(state, None, path.to_string()); }
             }
@@ -48,9 +65,11 @@ pub fn install(state: AppState) {
                     message["path"].as_str(), message["dataUrl"].as_str(),
                     message["width"].as_f64(), message["height"].as_f64(),
                 ) {
+                    if super::is_workspace() { state.library.covers.set(crate::storage::load_covers()); }
                     crate::services::library::covers::file_cover(state, path.to_string(), url.to_string(), width, height);
                     crate::services::library::covers::prune_now(state);
                     crate::storage::persist_covers(state.library);
+                    if super::is_workspace() { state.library.covers.set(Default::default()); }
                 }
             }
             Some("settings") => {

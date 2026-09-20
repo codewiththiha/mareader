@@ -65,6 +65,7 @@ pub fn shortcuts(
     // the listener — an owner that went away would leave a keydown handler
     // behind, still holding its signals and driving the scroll-hold
     // engine.
+    let overlays = use_context::<crate::components::primitives::overlay::lanes::OverlayBoard>();
     let keydown = window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
         let key = ev.key();
 
@@ -73,6 +74,7 @@ pub fn shortcuts(
         // guard. Closes the floating search overlay first, then the
         // sidebar.
         if key == "Escape" {
+            if overlays.is_some_and(|board| board.any_open()) { return; }
             if state.search.visible.get() {
                 // Closes the bar but leaves the muted highlights behind; the
                 // next interaction with the document clears them.

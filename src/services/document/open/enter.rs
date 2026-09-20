@@ -50,7 +50,7 @@ pub(super) struct DocumentIdentity {
 /// when that happens.
 ///
 /// The previous book's chapters are cleared with the identity — a mid-read
-/// open never passes through `close_document`'s reset, so the old tree would
+/// open never passes through `dispose_document`'s reset, so the old tree would
 /// otherwise show while the new one resolves.
 pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
     let document = &state.reader.document;

@@ -55,6 +55,7 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
     view! {
         <button
             type="button"
+            aria-label=label
             on:click=move |_| tab.set(t)
             aria-pressed=move || (active.get() == t).to_string()
             class=class
