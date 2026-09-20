@@ -96,7 +96,7 @@ pub async fn close_window() {
 /// handle is not involved, and neither is the backend.
 ///
 /// The address is parked on the root first, and that is load-bearing rather
-/// than cosmetic. The reader's route sync (`src/app/routes.rs`) keeps
+/// than cosmetic. The reader's route sync (`src/runtime/mod.rs`) keeps
 /// `/reader` in the URL bar for as long as a book is open, so a reload from
 /// there boots a router that matches the reader, mounts the whole reader —
 /// its effects, its virtualizers, its engine registrations — against a

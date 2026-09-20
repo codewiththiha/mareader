@@ -34,3 +34,7 @@
 
 # Local e2e entry page (served via webroot; intentionally not versioned)
 /e2e-index.html
+
+/public/host.js
+/public/reader-runtime.js
+/.runtime-staging/

@@ -52,7 +52,7 @@ pub(crate) fn ReaderRail(
             overlay=shell.is_overlay()
             no_slide=shell.no_slide()
             header=move || view! { <SidebarHeader reader=vs sidebar=sidebar /> }
-            info_row=move || view! { <BookInfo reader=vs covers=state.library.covers /> }
+            info_row=move || view! { <BookInfo reader=vs cover=vs.cover /> }
             panels=move || view! {
                 <SidebarOutline
                     state=vs

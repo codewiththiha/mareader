@@ -44,6 +44,8 @@ ignore = [
     # directory leaves the compiled sheet stable for the life of a session;
     # `npm run watch:css` is the tool for iterating on CSS alone.
     "./styles",
+    "./public/host.js",
+    "./public/reader-runtime.js",
     "./public/pdfEngine.js",
     "./public/readerEngine.js",
     "./public/bake.worker.js",

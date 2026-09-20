@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use reader_core::format::Format;
+use document_core::format::Format;
 
 use crate::book::{Book, Fingerprint};
 use crate::scan::{FoundFile, admits, selectable_formats, subfolder_of};

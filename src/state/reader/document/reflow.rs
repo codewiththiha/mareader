@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
-use md_core::MarkdownHeading;
+use reflow_core::outline::BlockHeading as MarkdownHeading;
 use reflow_core::block::TextBlock;
 use reflow_core::geometry::{PageGeometry, PAGE_HEIGHT};
 use reflow_core::pager::{block_page_index, first_block_of_page, paginate, BlockMetrics, PageCut};

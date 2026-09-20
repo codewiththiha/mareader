@@ -34,3 +34,5 @@ pub use pager::{
 };
 pub use search::{find_matches, TextHit};
 pub use source::normalize;
+
+pub mod outline;

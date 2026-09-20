@@ -4,25 +4,19 @@
 //! path with nothing open — which is what makes a cover at IMPORT time possible at
 //! all.
 
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use leptos::prelude::*;
-use wasm_bindgen_futures::spawn_local;
 
-use pdf_engine::api as engine;
+#[cfg(test)]
 use reader_core::format::Format;
 
 use crate::state::library::{CoverImage, CoverMap};
 use crate::state::AppState;
 use library_core::book::{Book, Row, book_rows};
 
-/// One width for both renders of the same art — the import queue's and the
-/// open pipeline's: two widths would be two renders and a cache that misses
-/// on the other one.
-pub(crate) const COVER_WIDTH: f64 = 240.0;
-
+/// Maximum number of persisted cover images.
 pub const COVER_CAP: usize = 60;
 
 pub fn prune_covers(rows: &[Row], covers: &mut CoverMap) {
@@ -45,14 +39,7 @@ pub fn prune_covers(rows: &[Row], covers: &mut CoverMap) {
     covers.retain(|path, _| keep.contains(path.as_str()));
 }
 
-thread_local! {
-    static QUEUE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    static DRAINING: RefCell<bool> = const { RefCell::new(false) };
-    static DIRTY: RefCell<bool> = const { RefCell::new(false) };
-    /// One retry each: a cover can fail for a reason that is true for a second — a file still being copied, a worker still warming up — but a queue that re-attempts a genuinely unrenderable file forever never drains.
-    static RETRIES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-}
-
+#[cfg(test)]
 fn wanted(rows: &[Row], covers: &CoverMap) -> Vec<String> {
     book_rows(rows)
         .filter(|b| b.format == Format::Pdf)
@@ -61,35 +48,9 @@ fn wanted(rows: &[Row], covers: &CoverMap) -> Vec<String> {
         .collect()
 }
 
-pub fn backfill_missing(state: AppState) {
-    RETRIES.with(|retries| retries.borrow_mut().clear());
-    let wanted = state.library.books.with_untracked(|rows| {
-        state.library.covers.with_untracked(|covers| wanted(rows, covers))
-    });
-    if wanted.is_empty() {
-        return;
-    }
-    QUEUE.with(|queue| {
-        let mut queue = queue.borrow_mut();
-        for path in wanted {
-            if !queue.contains(&path) {
-                queue.push(path);
-            }
-        }
-    });
-    let start = DRAINING.with(|draining| {
-        let mut draining = draining.borrow_mut();
-        if *draining {
-            false
-        } else {
-            *draining = true;
-            true
-        }
-    });
-    if start {
-        drain(state);
-    }
-}
+/// Missing covers use the format glyph until first open. Rendering a cover
+/// must not instantiate a PDF document in the persistent library realm.
+pub fn backfill_missing(state: AppState) { prune_now(state); }
 
 pub(crate) fn prune_now(state: AppState) {
     state.library.books.with_untracked(|rows| {
@@ -110,48 +71,6 @@ pub fn file_cover(state: AppState, path: String, data_url: String, width: f64, h
                 height,
             }),
         );
-    });
-    DIRTY.with(|dirty| *dirty.borrow_mut() = true);
-}
-
-/// Whether a cover was filed since the last save, clearing the flag.
-fn take_dirty() -> bool {
-    DIRTY.with(|dirty| std::mem::take(&mut *dirty.borrow_mut()))
-}
-
-fn drain(state: AppState) {
-    let next = QUEUE.with(|queue| queue.borrow_mut().pop());
-    let Some(path) = next else {
-        DRAINING.with(|draining| *draining.borrow_mut() = false);
-        // Pruned HERE rather than after every insert: a sixty-cover backfill was sixty full
-        // recency sorts, and the queue running dry is exactly the moment the cap is worth
-        // enforcing — the covers that will compete for it have all landed.
-        prune_now(state);
-        if take_dirty() {
-            crate::storage::persist_covers(state.library);
-        }
-        return;
-    };
-    spawn_local(async move {
-        let have = state
-            .library
-            .covers
-            .with_untracked(|covers| covers.contains_key(&path));
-        if !have {
-            match engine::cover_data_url(&path, COVER_WIDTH).await {
-                Ok(cover) => {
-                    RETRIES.with(|retries| retries.borrow_mut().remove(&path));
-                    file_cover(state, path, cover.data_url, cover.width, cover.height);
-                }
-                Err(_) => {
-                    let first_failure = RETRIES.with(|retries| retries.borrow_mut().insert(path.clone()));
-                    if first_failure {
-                        QUEUE.with(|queue| queue.borrow_mut().push(path.clone()));
-                    }
-                }
-            }
-        }
-        drain(state);
     });
 }
 

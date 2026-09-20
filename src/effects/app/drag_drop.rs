@@ -27,7 +27,6 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use pdf_engine::types::DocStatus;
 use reader_core::format;
 use web_sys::Event;
 
@@ -126,27 +125,22 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
         // one. The difference is the page's, not the drag's: dropping three
         // PDFs on a shelf means "these are mine now", and opening the first of
         // them and losing the other two is not what anybody meant.
-        if on_library_page(state) {
+        if on_library_page() {
             let target = state.library.shelf.get_untracked();
             let shelf = (target != library_core::shelf::ALL_SHELF).then_some(target);
             crate::services::library::import_files(state, documents, shelf);
             return;
         }
         if let Some(path) = format::first_supported(paths.iter().map(String::as_str)) {
-            crate::services::document::open_path(state, path.to_string());
+            crate::runtime::emit(serde_json::json!({"type":"open-path", "path":path}));
         }
     });
 }
 
-/// Whether the app is looking at the library rather than at a document.
-///
-/// Read from the document status and not from the location, because the status IS
-/// the route: the app navigates to `/reader` when a document is ready and back
-/// to `/` when it is not, so anything short of ready is the library page. Asking
-/// the router instead would mean a hook with no reactive owner to belong to, from
-/// inside a Tauri listener whose closure outlives every owner the app has.
-fn on_library_page(state: AppState) -> bool {
-    state.reader.document.status.get_untracked() != DocStatus::Ready
+/// The host's mount visibility is the navigation truth; no document state
+/// needs to be mirrored into the library merely to dispatch a native drop.
+fn on_library_page() -> bool {
+    document().get_element_by_id("library-root").is_none_or(|root| !root.has_attribute("hidden"))
 }
 
 /// Whether a DOM drag carries at least one FILE whose advertised type may be

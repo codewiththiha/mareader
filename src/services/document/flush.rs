@@ -10,7 +10,6 @@
 
 use leptos::prelude::*;
 
-use library_core::book::{Row, rows_for_read};
 use pdf_engine::types::DocStatus;
 use reader_core::view::ViewMode;
 
@@ -31,9 +30,9 @@ pub(crate) fn flush_read_point(state: AppState) {
     if state.reader.document.status.get_untracked() != DocStatus::Ready {
         return;
     }
-    let Some(path) = state.reader.document.path.get_untracked() else {
+    if state.reader.document.path.get_untracked().is_none() {
         return;
-    };
+    }
     // Clamped to the book that is open, by the rule an open's resume point
     // goes through: a page of 0 or one past the end is a transient that
     // escaped the syncs, and writing it would be the next open's starting
@@ -52,14 +51,5 @@ pub(crate) fn flush_read_point(state: AppState) {
     // writes and the open records: the book the reader named when it is a
     // book of its own, every shared row at the address otherwise. Read before
     // the caller's reset, which is what forgets the name.
-    let book_id = state.reader.document.book_id.get_untracked();
-    state.library.books.update(|books| {
-        for i in rows_for_read(books, book_id.as_deref(), &path) {
-            if let Some(b) = books.get_mut(i).and_then(Row::as_book_mut) {
-                b.page = page;
-                b.fraction = fraction;
-            }
-        }
-    });
-    crate::storage::persist_library(state.library);
+    crate::runtime::reader::progress(state, crate::runtime::ReadPoint { page, num_pages, fraction });
 }

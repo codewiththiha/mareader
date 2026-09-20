@@ -4,9 +4,9 @@
   "version": "0.1.1",
   "identifier": "com.codewiththiha.mareader",
   "build": {
-    "beforeDevCommand": "npm run build:ts && trunk serve",
+    "beforeDevCommand": "npm run dev:frontend",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "trunk build --release",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -18,7 +18,10 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "decorations": true,
-        "trafficLightPosition": { "x": 20, "y": 25 },
+        "trafficLightPosition": {
+          "x": 20,
+          "y": 25
+        },
         "shadow": true,
         "dragDropEnabled": true,
         "width": 1200,
@@ -29,10 +32,15 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost asset: https://asset.localhost; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'",
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost asset: https://asset.localhost; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-src 'self'",
       "assetProtocol": {
         "enable": true,
-        "scope": ["$HOME/**/*.pdf", "$DESKTOP/**/*.pdf", "$DOCUMENT/**/*.pdf", "$DOWNLOAD/**/*.pdf"]
+        "scope": [
+          "$HOME/**/*.pdf",
+          "$DESKTOP/**/*.pdf",
+          "$DOCUMENT/**/*.pdf",
+          "$DOWNLOAD/**/*.pdf"
+        ]
       }
     }
   },
@@ -52,21 +60,30 @@
     },
     "fileAssociations": [
       {
-        "ext": ["pdf"],
+        "ext": [
+          "pdf"
+        ],
         "name": "PDF Document",
         "description": "PDF document",
         "mimeType": "application/pdf",
         "role": "Viewer"
       },
       {
-        "ext": ["txt", "text"],
+        "ext": [
+          "txt",
+          "text"
+        ],
         "name": "Text Document",
         "description": "Plain text document",
         "mimeType": "text/plain",
         "role": "Viewer"
       },
       {
-        "ext": ["md", "markdown", "mdown"],
+        "ext": [
+          "md",
+          "markdown",
+          "mdown"
+        ],
         "name": "Markdown Document",
         "description": "Markdown document",
         "mimeType": "text/markdown",

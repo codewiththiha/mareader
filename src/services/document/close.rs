@@ -15,7 +15,11 @@ use crate::state::{AppState, SidebarMode};
 /// search signals, so the reader lands back on the empty-state bookshelf
 /// (which renders whenever `doc.status != Ready`). The library is untouched:
 /// the just-closed book keeps its saved page, so reopening resumes there.
-pub fn close_document(state: AppState) {
+pub fn close_document(_state: AppState) {
+    crate::runtime::emit(serde_json::json!({"type":"close-request"}));
+}
+
+pub fn dispose_document(state: AppState) {
     // Take the document state over from whatever open may still be resolving:
     // an open's tail (its `Ready` flip, its cover, its outline) lands frames
     // after the engine answers, and without this claim a close arriving in
@@ -29,6 +33,7 @@ pub fn close_document(state: AppState) {
     // with the reload that ends a session just as finally
     // (`crate::services::reload`).
     super::flush::flush_read_point(state);
+    crate::runtime::emit(serde_json::json!({"type":"settings", "settings":state.settings.get_untracked()}));
 
     // Tear the engine document down while the reader is idle on the shelf.
     // destroy() is non-blocking — it drops the loading-task reference
@@ -48,12 +53,16 @@ pub fn close_document(state: AppState) {
         // wasm side once the shelf is as empty as it gets — the retained
         // index (kept for a reopen's adoption), the covers, the library.
         crate::memory::log_heap("close");
+        crate::runtime::unmount();
+        crate::runtime::emit(serde_json::json!({"type":"disposed"}));
     });
 
     // One call sheds everything the open flow wrote — the identity, the outline
     // and BOTH formats' pages — because `DocumentState::reset` owns that list
     // (including the reflowable half it delegates to). Resetting anything here
     // as well would be a second place to remember.
+    state.reader.cover.set(None);
+    state.reader.library_title.set(None);
     state.reader.document.reset();
     state.reader.viewer.reset_position();
     state.reader.search.reset();

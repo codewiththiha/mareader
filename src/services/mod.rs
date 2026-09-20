@@ -3,6 +3,7 @@
 
 pub mod ai;
 pub mod document;
+#[cfg(feature = "library")]
 pub mod library;
 pub mod reload;
 pub mod tauri_listen;

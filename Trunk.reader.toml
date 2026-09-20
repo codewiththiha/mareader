@@ -1,0 +1,4 @@
+# No pre-build hooks: the host build already produced the shared assets.
+# tools/build-runtimes.mjs supplies target, dist and public-url per reader.
+[build]
+filehash = true

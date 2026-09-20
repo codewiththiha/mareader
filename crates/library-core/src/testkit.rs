@@ -10,7 +10,7 @@ use crate::scan::FoundFile;
 use crate::shelf::{Shelf, ShelfKind};
 use crate::shape::ShapeTree;
 use crate::tracking::TrackingTree;
-use reader_core::format::Format;
+use document_core::format::Format;
 
 /// The neutral fingerprint: every field `1`.
 pub fn fingerprint() -> Fingerprint {

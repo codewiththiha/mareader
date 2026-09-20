@@ -2,7 +2,7 @@
 // for the other thing written down more than once. What the reader opens is
 // declared in THREE places, in two languages, none of which can see the
 // others:
-//   - crates/reader-core/src/format.rs   `SUPPORTED`             — the
+//   - crates/document-core/src/format.rs   `SUPPORTED`             — the
 //     registry the frontend consults (dialog filters, drop feedback, copy)
 //   - src-tauri/src/lib.rs               `DOCUMENT_EXTENSIONS`   — the
 //     shell's filesystem gate for OS handoffs and `read_file_*`
@@ -20,7 +20,7 @@ import { read } from "./repo.js";
 /** One openable kind, as `reader_core::format::SUPPORTED` declares it. */
 type Kind = { name: string; extensions: string[]; mimes: string[] };
 
-const REGISTRY = "crates/reader-core/src/format.rs";
+const REGISTRY = "crates/document-core/src/format.rs";
 const SHELL_GATE = "src-tauri/src/lib.rs";
 const BUNDLE_CONF = "src-tauri/tauri.conf.json";
 

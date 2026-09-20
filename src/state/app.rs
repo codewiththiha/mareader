@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use leptos::prelude::{Memo, RwSignal};
 
+#[cfg(feature = "library")]
 use crate::state::library::LibraryState;
 use crate::state::reader::ReaderState;
 use reader_core::appearance::Appearance;
@@ -70,6 +71,7 @@ pub struct UiState {
 pub struct AppState {
     pub settings: RwSignal<Settings>,
     pub reader: ReaderState,
+    #[cfg(feature = "library")]
     pub library: LibraryState,
     pub ui: UiState,
 }
@@ -79,6 +81,7 @@ impl Default for AppState {
         Self {
             settings: RwSignal::new(Settings::default()),
             reader: ReaderState::default(),
+            #[cfg(feature = "library")]
             library: LibraryState::default(),
             ui: UiState {
                 sidebar: RwSignal::new(SidebarMode::None),

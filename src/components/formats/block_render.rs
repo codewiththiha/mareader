@@ -20,6 +20,7 @@ use leptos::prelude::*;
 use reader_core::format::Format;
 use reflow_core::block::TextBlock;
 
+#[cfg(feature = "md")]
 use super::md::MdBlockView;
 use super::reflow::BlockSearchHits;
 use super::txt::TxtBlockView;
@@ -74,7 +75,10 @@ pub fn BlockView(
 ) -> impl IntoView {
     let content = match render {
         BlockRender::Plain => view! { <TxtBlockView block=block.clone() /> }.into_any(),
+        #[cfg(feature = "md")]
         BlockRender::Markdown => view! { <MdBlockView block=block.clone() /> }.into_any(),
+        #[cfg(not(feature = "md"))]
+        BlockRender::Markdown => ().into_any(),
     };
     // A row that can be looked up is a row a search hit can be painted over:
     // the layer positions itself against the row's own box, so it belongs

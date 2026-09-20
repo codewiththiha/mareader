@@ -6,6 +6,7 @@ description = "The reader's format-agnostic domain: the format registry, the per
 license = "MIT"
 
 [dependencies]
+document-core = { path = "../document-core" }
 serde = { version = "1", features = ["derive"] }
 # The only two workspace crates reader-core names, both leaves of the graph:
 # the persisted blend config references the paper model `pdf-paper` defines, and

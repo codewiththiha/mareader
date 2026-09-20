@@ -65,14 +65,7 @@ pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
     // sentence this write exists to prevent.
     let title = match doc.title.as_deref().map(str::trim) {
         Some(own) if reader_core::filename::is_usable_title(own) => doc.title.clone(),
-        _ => state
-            .reader
-            .document
-            .book_id
-            .get_untracked()
-            .and_then(|id| state.library.row(&id))
-            .map(|row| row.display_name())
-            .or(doc.title.clone()),
+        _ => state.reader.library_title.get_untracked().or(doc.title.clone()),
     };
     document.title.set(title);
     document.author.set(doc.author);

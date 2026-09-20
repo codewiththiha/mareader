@@ -12,6 +12,7 @@
 //! means one directory here, one parser crate, and one arm in the host's match.
 
 pub mod block_render;
+#[cfg(feature = "md")]
 pub mod md;
 pub mod pdf;
 pub mod reflow;

@@ -25,5 +25,9 @@ pub fn reload_app(state: AppState) {
     // new and every earlier reading is gone.
     crate::memory::log_heap("reload");
     crate::services::document::flush_read_point(state);
-    app_chrome::window::api::reload_window();
+    if crate::runtime::is_reader() {
+        crate::runtime::emit(serde_json::json!({"type":"reload-request"}));
+    } else {
+        app_chrome::window::api::reload_window();
+    }
 }

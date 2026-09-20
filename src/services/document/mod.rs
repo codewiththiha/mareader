@@ -21,7 +21,9 @@ pub(crate) mod session;
 
 pub use close::close_document;
 pub(crate) use flush::flush_read_point;
-pub use open::{init_open_file_handling, open_dialog, open_path, open_row};
+pub use open::open_dialog;
+#[cfg(feature = "library")]
+pub use open::open_row;
 
 use leptos::prelude::*;
 

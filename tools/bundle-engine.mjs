@@ -36,3 +36,7 @@ await bundle(["public/readerEngine.ts"], "public/readerEngine.js");
 // to pdfEngine.js so index.html can copy-file it to the dist root — copying
 // public/engine/ wholesale would ship the TypeScript sources.
 await bundle(["public/engine/theme/bake.worker.ts"], "public/bake.worker.js");
+
+// Host lifecycle code and reader-local bridge; neither imports the PDF engine.
+await bundle(["host/host.ts"], "public/host.js");
+await bundle(["host/reader-runtime.ts"], "public/reader-runtime.js");

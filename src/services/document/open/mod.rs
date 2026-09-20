@@ -30,46 +30,10 @@ use reader_core::format::{Format, format_of};
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 
-use library_core::book::{ReadPoint, resume_point};
+use crate::runtime::ReadPoint;
 use crate::state::{AppState, Toast};
 
 use super::session;
-
-/// Wire OS-level file opening (double-click / "Open with" / default-app
-/// launch) into the shared open flow. Called once from the app root.
-///
-/// Two paths, one handoff point:
-///   * PULL — `take_pending_file` collects whatever the OS handed the
-///     backend before the webview finished mounting (initial-launch argv on
-///     Windows/Linux, the macos open-file event at launch). An event emitted
-///     before mount would be lost, so the command is the source of truth.
-///   * PUSH — the backend emits `document-open-file` while the app runs
-///     (single-instance forward, LaunchServices). The listener just re-runs
-///     the pull: the command clears itself, so an event plus a stray second
-///     pull can never open the same file twice.
-pub fn init_open_file_handling(state: AppState) {
-    let st = state;
-    spawn_local(async move {
-        if let Some(path) = engine::take_pending_file().await {
-            open_path(st, path);
-        }
-    });
-
-    if !tauri_bridge::has_tauri() {
-        return;
-    }
-
-    // PUSH: the listener just re-runs the pull (the doc above says why).
-    let cb_state = state;
-    crate::services::tauri_listen("document-open-file", move |_ev: web_sys::Event| {
-        let st = cb_state;
-        spawn_local(async move {
-            if let Some(path) = engine::take_pending_file().await {
-                open_path(st, path);
-            }
-        });
-    });
-}
 
 /// Native open-dialog flow: pick a file, then run the shared open-flow.
 ///
@@ -92,6 +56,7 @@ pub fn open_dialog(state: AppState) {
 /// not a file and there is nothing to open. The target's kind is its id's
 /// first letter (`library_core::id::is_shelf`). A row that went between the
 /// click and the open opens nothing.
+#[cfg(feature = "library")]
 pub fn open_row(state: AppState, row_id: String) {
     let target = state
         .library
@@ -120,6 +85,7 @@ pub fn open_row(state: AppState, row_id: String) {
 /// A row that went between the click and the open is no open at all: there is
 /// no address to read, and an error toast for a book the library no longer has
 /// would be a sentence about nothing.
+#[cfg(feature = "library")]
 pub fn open_book(state: AppState, book_id: String) {
     let Some(book) = state.library.books.with_untracked(|books| {
         library_core::book::find_by_id(books, &book_id).cloned()
@@ -150,66 +116,35 @@ pub fn open_book(state: AppState, book_id: String) {
 /// tails converge on the same state contract, so everything downstream —
 /// viewer, navigation, shelf — is format-agnostic.
 pub fn open_path(state: AppState, path: String) {
+    if crate::runtime::is_reader() {
+        crate::runtime::emit(serde_json::json!({"type":"open-path", "path":path}));
+        return;
+    }
+    #[cfg(feature = "library")]
     open_at(state, None, path);
+    #[cfg(not(feature = "library"))]
+    let _ = state;
 }
 
 /// The open itself, with the row the reader named when they named one. See
 /// [`open_book`] for what the id buys and [`open_path`] for the opens that
 /// have nothing but an address.
+#[cfg(feature = "library")]
 fn open_at(state: AppState, book_id: Option<String>, path: String) {
-    // Claim the document state for THIS attempt. Pick a second book while the
-    // first is still resolving and the loser's tail would otherwise still run:
-    // writing the old book's page count, geometry and scale over the new one's
-    // and flipping `status` to Ready a second time, resuming the winner at the
-    // loser's page. Every hop below re-checks the stamp.
+    crate::runtime::library::request_open(state, book_id, path);
+}
+
+/// Called only by this runtime's validated OPEN command.
+pub fn open_selected(state: AppState, path: String, saved_page: u32, saved_fraction: Option<f64>) {
     let stamp = session::claim();
     state.reader.document.status.set(DocStatus::Opening);
     state.reader.document.error.set(None);
-    // Named BEFORE the resume point is read and before any tail seeds the
-    // gloss: which row this open belongs to is a fact about the attempt, not
-    // something the tails discover later, and a write that ran first would be
-    // a write against the book that was open before this one.
-    //
-    // An open that arrived as nothing but an address settles onto the row the
-    // library already holds for it here, rather than waiting for the tail's
-    // shelf record: the highlights are keyed by the row's id and are loaded
-    // before any tail runs, so a key derived later would be a key the marks
-    // were not stored under — and a drop of a file already on the shelf
-    // should resume where the reader left it rather than reading as a book
-    // the library has never seen.
-    //
-    // Only a SHARED row is settled onto. A book of its own is the reader's
-    // private instance of the file, and an open that could not name a row has
-    // not said it meant that one — the rule `add_book` and `rows_for_read`
-    // already keep, so a drop never hijacks a private book's resume point or
-    // its marks. A file with no row keeps `None` and joins the library when
-    // the tail records the read, exactly as before.
-    let book_id = book_id.or_else(|| {
-        state.library.books.with_untracked(|books| {
-            library_core::book::book_rows(books)
-                .find(|b| b.path() == path && !b.independent)
-                .map(|b| b.id.clone())
-        })
-    });
-    state.reader.document.book_id.set(book_id.clone());
-    // Re-arm the first-paint cover for THIS document: an open over a mounted
-    // reader (drag-drop, "Open with") never passes through `close_document`'s
-    // reset, and the gate belongs to the open, not the close.
     state.reader.viewer.first_paint.set(false);
-
-    // The resume point is read BEFORE the open resolves so it can't be
-    // clobbered by a concurrent page-tracking write from the closing document.
-    // The reflowable tail also takes the fractional stream position, when the
-    // last session left one. Which ROW answers is the id's business: a book of
-    // its own resumes where its own reader left off, not where the twin at
-    // the address did.
-    let (saved_page, saved_fraction) = state.library.books.with_untracked(|books| {
-        resume_point(books, book_id.as_deref(), &path)
-    });
-
     match format_of(&path) {
-        Format::Pdf => open_pdf(state, path, saved_page, stamp),
-        fmt => reflow::open_reflowable(state, path, fmt, saved_page, saved_fraction, stamp),
+        Format::Pdf if cfg!(feature = "pdf") => open_pdf(state, path, saved_page, stamp),
+        Format::Text if cfg!(feature = "txt") => reflow::open_reflowable(state, path, Format::Text, saved_page, saved_fraction, stamp),
+        Format::Markdown if cfg!(feature = "md") => reflow::open_reflowable(state, path, Format::Markdown, saved_page, saved_fraction, stamp),
+        _ => fail(state, "This reader does not support the requested format".to_string()),
     }
 }
 
@@ -284,6 +219,7 @@ fn ready(
 
 /// The document did not open: surface it on the status bar and as a toast.
 fn fail(state: AppState, message: String) {
+    crate::runtime::emit(serde_json::json!({"type":"error", "message":message}));
     state.reader.document.error.set(Some(message.clone()));
     state.reader.document.status.set(DocStatus::Error);
     state

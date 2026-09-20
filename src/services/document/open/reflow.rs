@@ -27,7 +27,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
-use md_core::MarkdownHeading;
+use reflow_core::outline::BlockHeading as MarkdownHeading;
 use pdf_engine::types::PageSize;
 use reader_core::filename::document_title;
 use reader_core::format::Format;
@@ -121,6 +121,7 @@ pub(super) fn open_reflowable(
 /// inside a list, fence, table or quote re-opens that construct mid-page.
 fn parse(format: Format, raw: &str) -> Parsed {
     match format {
+        #[cfg(feature = "md")]
         Format::Markdown => {
             let blocks = md_core::subdivide_prose(md_core::parse_markdown(raw));
             // Keyed on the SUBDIVIDED blocks: a split shifts every index after
@@ -136,11 +137,17 @@ fn parse(format: Format, raw: &str) -> Parsed {
         }
         // Anything else reflowable is read as text, the same answer
         // `format_of` gave at the door.
+        #[cfg(feature = "txt")]
         _ => Parsed {
             blocks: txt_core::subdivide_paragraphs(txt_core::parse_plain_text(raw)),
             title: None,
             author: None,
             headings: Vec::new(),
+        },
+        #[cfg(not(feature = "txt"))]
+        _ => {
+            let _ = raw;
+            Parsed { blocks: Vec::new(), title: None, author: None, headings: Vec::new() }
         },
     }
 }
@@ -253,7 +260,7 @@ fn ready(
         // The saved fraction is carried across the open rather than dropped:
         // this session's first scroll overwrites it, but a document closed
         // before that first scroll must not lose the last read's position.
-        library_core::book::ReadPoint {
+        crate::runtime::ReadPoint {
             page: resume,
             num_pages: cut.num_pages,
             fraction: saved_fraction,

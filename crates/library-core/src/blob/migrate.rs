@@ -77,7 +77,7 @@ pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
             let id = crate::id::new_id(now_ms, i as u32);
             Book {
                 fp: Fingerprint::placeholder(&b.path),
-                format: reader_core::format::format_of(&b.path),
+                format: document_core::format::format_of(&b.path),
                 origin: Origin::Linked { src: b.path },
                 title: crate::text::non_blank(b.title.as_deref()).map(str::to_string),
                 author: None,

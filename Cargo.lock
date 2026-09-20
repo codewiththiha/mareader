@@ -976,6 +976,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "document-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dom_query"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2318,42 +2326,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "leptos_router"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1b6df1b107c301bd39c114768a1196a8dfcbdae869364b3f0247e3f554b503a"
-dependencies = [
- "any_spawner",
- "either_of",
- "futures",
- "gloo-net",
- "js-sys",
- "leptos",
- "leptos_router_macro",
- "or_poisoned",
- "reactive_graph",
- "rustc_version",
- "send_wrapper",
- "tachys",
- "thiserror 2.0.20",
- "url",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "leptos_router_macro"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d35d4bb7922e74546fac3e852b0f3252e9996e04fca12c359aba1e5958cfda8"
-dependencies = [
- "proc-macro-error2",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "leptos_server"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2426,9 +2398,16 @@ dependencies = [
 name = "library-core"
 version = "0.1.0"
 dependencies = [
- "reader-core",
+ "document-core",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "library-wasm"
+version = "0.1.0"
+dependencies = [
+ "mareader",
 ]
 
 [[package]]
@@ -2506,7 +2485,6 @@ dependencies = [
  "js-sys",
  "leptos",
  "leptos-md",
- "leptos_router",
  "library-core",
  "md-core",
  "pdf-core",
@@ -3468,10 +3446,32 @@ dependencies = [
 name = "reader-core"
 version = "0.1.0"
 dependencies = [
+ "document-core",
  "pdf-paper",
  "serde",
  "serde_json",
  "virtual-list",
+]
+
+[[package]]
+name = "reader-md-wasm"
+version = "0.1.0"
+dependencies = [
+ "mareader",
+]
+
+[[package]]
+name = "reader-pdf-wasm"
+version = "0.1.0"
+dependencies = [
+ "mareader",
+]
+
+[[package]]
+name = "reader-txt-wasm"
+version = "0.1.0"
+dependencies = [
+ "mareader",
 ]
 
 [[package]]

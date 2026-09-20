@@ -8,32 +8,41 @@
 //! Failures are NOT silent: loads warn about what was dropped, saves return a
 //! [`StorageError`] the caller decides how to handle.
 
+#[cfg(feature = "library")]
 pub mod kept;
 
 use std::collections::HashMap;
 use std::fmt;
+#[cfg(feature = "library")]
 use std::sync::Arc;
 
 use ai_core::gloss::GlossMark;
+#[cfg(feature = "library")]
 use leptos::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
 
+#[cfg(feature = "library")]
 use crate::state::library::{CoverImage, CoverMap, LibraryState};
 // The library's key names, its persisted shape and the migration from the shape
 // it replaced all live in `library_core::blob`, so the schema and the rules that
 // keep it valid are one crate's business rather than two.
+#[cfg(feature = "library")]
 use library_core::blob::{LIBRARY_KEY, RETIRED_LIBRARY_KEY, LibraryBlob};
+#[cfg(feature = "library")]
 use library_core::blob::migrate::{BlobV2, LEGACY_KEY, RecentBook, V2_KEY, migrate_v1, migrate_v2};
+#[cfg(feature = "library")]
 use library_core::blob::sanitize as sanitize_library;
 use reader_core::settings::{RETIRED_SETTINGS_KEY, SETTINGS_KEY, Settings, sanitize};
 
+#[cfg(feature = "library")]
 const COVERS_KEY: &str = "mareader.covers.v1";
 
 /// The key the app read and wrote before it was renamed. Every store below
 /// reads its retired key as a fallback and writes only the current one: the
 /// contents are the same schema, so the first save after a load is what moves
 /// a reader onto the new name, and a downgrade still finds the data it wrote.
+#[cfg(feature = "library")]
 const RETIRED_COVERS_KEY: &str = "pdfreader.covers.v1";
 
 /// Gloss highlights, keyed by the ROW ID the library holds for a book.
@@ -57,15 +66,18 @@ const RETIRED_GLOSS_KEY: &str = "pdfreader.gloss.v2";
 /// The address-keyed map this build migrated from. Read once, left alone: a
 /// reader who downgrades should still find the highlights the build they
 /// downgraded to wrote.
+#[cfg(feature = "library")]
 const GLOSS_V1_KEY: &str = "pdfreader.gloss.v1";
 
 /// One-shot gate for the address-to-row migration. The v1 data itself stays
 /// in place so an older build can still read it after a downgrade.
+#[cfg(feature = "library")]
 const GLOSS_V2_MIGRATED_KEY: &str = "mareader.gloss.v2.migrated";
 
 /// The gate as the pre-rebrand build set it. Read alongside the current one so
 /// a reader who already carried their `v1` marks across is not made to do it
 /// twice.
+#[cfg(feature = "library")]
 const RETIRED_GLOSS_V2_MIGRATED_KEY: &str = "pdfreader.gloss.v2.migrated";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization
@@ -185,6 +197,10 @@ pub fn load_settings() -> Settings {
 }
 
 pub fn save_settings(settings: &Settings) -> Result<(), StorageError> {
+    if crate::runtime::is_reader() {
+        crate::runtime::emit(serde_json::json!({"type":"settings", "settings":settings}));
+        return Ok(());
+    }
     set(SETTINGS_KEY, &encode("save_settings", settings)?)
 }
 
@@ -196,6 +212,7 @@ pub fn save_settings(settings: &Settings) -> Result<(), StorageError> {
 /// Each migration leaves the key it read alone: a reader who downgrades
 /// should still find the library the older build wrote, and the first save
 /// after this load is what puts the new blob under its own key.
+#[cfg(feature = "library")]
 pub fn load_library() -> LibraryBlob {
     if let Some(raw) = get(LIBRARY_KEY) {
         let mut blob: LibraryBlob = parse("library", &raw);
@@ -224,11 +241,13 @@ pub fn load_library() -> LibraryBlob {
     blob
 }
 
+#[cfg(feature = "library")]
 pub fn save_library(blob: &LibraryBlob) -> Result<(), StorageError> {
     set(LIBRARY_KEY, &encode("save_library", blob)?)
 }
 
 /// Load the cover-art map (path -> page-1 JPEG data URL).
+#[cfg(feature = "library")]
 pub fn load_covers() -> CoverMap {
     let stored: HashMap<String, CoverImage> =
         load_keyed("covers", COVERS_KEY, RETIRED_COVERS_KEY);
@@ -241,6 +260,7 @@ pub fn load_covers() -> CoverMap {
 /// Save the cover-art map. Serialized through a map of BORROWED covers: the
 /// images are the largest thing the app persists, and an owned `HashMap`
 /// would copy every data URL for no reason.
+#[cfg(feature = "library")]
 pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     let borrowed: HashMap<&str, &CoverImage> = covers
         .iter()
@@ -263,6 +283,7 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
 /// snapshots the value and hands it to a timer, because a timer firing during
 /// teardown that reached into a disposed signal would panic where a dropped
 /// save would not.
+#[cfg(feature = "library")]
 pub fn persist_library(library: LibraryState) {
     if let Err(e) = save_library(&library.snapshot()) {
         e.report();
@@ -272,6 +293,7 @@ pub fn persist_library(library: LibraryState) {
 /// [`persist_library`] for the cover cache, which is budgeted on its own key:
 /// the cap in `crate::services::library::covers::COVER_CAP` is only a real quota if the
 /// images are written back after a prune, not just dropped from memory.
+#[cfg(feature = "library")]
 pub fn persist_covers(library: LibraryState) {
     if let Err(e) = library.covers.with_untracked(save_covers) {
         e.report();
@@ -289,6 +311,7 @@ pub fn persist_covers(library: LibraryState) {
 /// An entry no row answers for is left where it is rather than dropped: a
 /// later load that finds the row again picks it up, and a removal that never
 /// comes costs one localStorage entry rather than a reader's highlights.
+#[cfg(feature = "library")]
 pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
     if get(GLOSS_V2_MIGRATED_KEY).or_else(|| get(RETIRED_GLOSS_V2_MIGRATED_KEY)).is_some() {
         return;

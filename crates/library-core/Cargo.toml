@@ -9,7 +9,7 @@ license = "MIT"
 # The format registry (which kinds a folder scan may admit) and the filename
 # policy (the title a book shows when its document carries none). Both are
 # leaves of the graph; nothing here may depend back on this crate.
-reader-core = { path = "../reader-core" }
+document-core = { path = "../document-core" }
 serde = { version = "1", features = ["derive"] }
 
 [features]

@@ -152,7 +152,7 @@ mod tests {
         assert_eq!(at(&blob, 0).path(), "/books/dune.pdf");
         assert_eq!(at(&blob, 0).page, 42);
         assert_eq!(at(&blob, 0).num_pages, 400);
-        assert_eq!(at(&blob, 1).format, reader_core::format::Format::Markdown);
+        assert_eq!(at(&blob, 1).format, document_core::format::Format::Markdown);
         assert!(book_rows(&blob.books).all(|b| !b.origin.is_stored()));
         assert!(blob.shelves.is_empty(), "All is the row list, not a shelf");
         assert_ne!(blob.books[0].id(), blob.books[1].id());

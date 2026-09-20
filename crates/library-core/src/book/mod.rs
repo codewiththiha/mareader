@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use reader_core::format::Format;
+use document_core::format::Format;
 
 pub mod check;
 pub mod merge;
@@ -1147,9 +1147,9 @@ mod tests {
             ["Dune", "Dune_2"].iter().map(|s| s.to_string()).collect();
         assert_eq!(duplicate_title("Dune", &gaps), "Dune_1");
         assert_eq!(duplicate_title("  ", &std::collections::HashSet::new()), "Book_1");
-        // The minted name survives the sanitizer via the exemption in `reader_core::filename`.
-        assert!(reader_core::filename::is_usable_title("Dune_1"));
-        assert!(reader_core::filename::is_usable_title(&duplicate_title("dune", &in_use)));
+        // The minted name survives the sanitizer via the exemption in `document_core::filename`.
+        assert!(document_core::filename::is_usable_title("Dune_1"));
+        assert!(document_core::filename::is_usable_title(&duplicate_title("dune", &in_use)));
     }
 
     #[test]

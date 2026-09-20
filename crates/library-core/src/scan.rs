@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use reader_core::format::{Format, SUPPORTED, format_from_ext};
+use document_core::format::{Format, SUPPORTED, format_from_ext};
 
 use crate::book::Fingerprint;
 use crate::folder::FolderOpts;

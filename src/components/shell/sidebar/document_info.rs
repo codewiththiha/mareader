@@ -5,13 +5,12 @@ use leptos::prelude::*;
 
 use pdf_engine::types::DocStatus;
 use app_chrome::icon::{Icon, IconName};
-use crate::state::library::CoverMap;
 use crate::state::{NO_DOCUMENT, ReaderState};
 
 #[component]
 pub(crate) fn BookInfo(
     reader: ReaderState,
-    covers: RwSignal<CoverMap>,
+    cover: RwSignal<Option<String>>,
 ) -> impl IntoView {
     view! {
         <Show when=move || reader.document.status.get() == DocStatus::Ready>
@@ -20,13 +19,11 @@ pub(crate) fn BookInfo(
                 data-tauri-drag-region="true"
             >
                 {move || {
-                    let path = reader.document.path.get().as_deref().unwrap_or(NO_DOCUMENT).to_string();
-                    let cover = covers.with(|covers| covers.get(&path).cloned());
-                    match cover {
+                    match cover.get() {
                         Some(c) => view! {
                             <img
                                 class="h-12 w-10 rounded-sm border border-line/60 object-cover"
-                                src=c.data_url.clone()
+                                src=c
                                 alt="Cover"
                                 loading="lazy"
                             />

@@ -181,7 +181,7 @@ mod tests {
             fp: Fingerprint { size: 1, mtime_ms: 1, head_hash: 1 },
             title: None,
             author: None,
-            format: reader_core::format::Format::Pdf,
+            format: document_core::format::Format::Pdf,
             origin: Origin::Linked { src: path.to_string() },
             added_ms: 1,
             last_read_ms: 1,
@@ -201,7 +201,7 @@ mod tests {
             fp: Fingerprint { size: 1, mtime_ms: 1, head_hash: 1 },
             title: None,
             author: None,
-            format: reader_core::format::Format::Pdf,
+            format: document_core::format::Format::Pdf,
             origin: Origin::Stored {
                 src: Some(src.to_string()),
                 store: format!("/store/{id}.pdf"),

@@ -6,6 +6,7 @@ use leptos::prelude::*;
 
 use crate::state::reader::TypographySignal;
 use crate::state::{AppState, AppearanceSignal, TextureSignal};
+#[cfg(feature = "library")]
 use crate::storage::{load_covers, load_library, load_settings};
 
 /// App state seeded from the persisted settings/library/covers. The three
@@ -14,6 +15,7 @@ use crate::storage::{load_covers, load_library, load_settings};
 /// frame late is a visible flash of the wrong palette, a shelf a frame late a
 /// visible empty state. The blob is bounded by `library_core::book::BOOKS_CAP`
 /// rather than by the document count, so the parse cannot grow without limit.
+#[cfg(feature = "library")]
 pub(crate) fn create_app_state() -> AppState {
     // One blob becomes four signals rather than one, so a page turn (which
     // writes a resume point) does not notify the shelves, and a column nudge

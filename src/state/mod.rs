@@ -4,6 +4,7 @@
 //! `services`.
 
 pub mod app;
+#[cfg(feature = "library")]
 pub mod library;
 pub mod reader;
 

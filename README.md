@@ -1,5 +1,12 @@
 # Mareader
 
+> **Runtime architecture:** the library is persistent and each document runs
+> in a disposable, format-selected WASM iframe. See
+> [runtime ownership and build commands](docs/runtime-architecture.md).
+> Use `npm run build` / `npm run dev:frontend`; direct `trunk build` now builds
+> only the host/library target.
+
+
 A desktop document reader built for long-form reading. Native Tauri v2 shell, Rust/WebAssembly
 interface written in Leptos, and Mozilla's pdf.js vendored locally as the PDF rendering engine.
 Alongside PDFs, the reader opens plain text and Markdown files, which it reflows into pages with
@@ -68,7 +75,7 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- 1,021 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
+- 1,020 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
   layer, and six scripts that keep facts written down twice from drifting.
 
 ---
@@ -1106,7 +1113,7 @@ only the app and silently skip every member crate. The `mareader-shell` crate is
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-1,021 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+1,020 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
 migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
 the animation loops share, and the virtual-list windowing invariants. On top of that, the

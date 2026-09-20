@@ -58,3 +58,10 @@ pub fn dispatch_event(name: &str) {
         let _ = win.dispatch_event(&ev);
     }
 }
+
+/// Host-to-runtime commands, within each realm.
+pub const COMMAND_EVENT: &str = "mareader:runtime-command";
+/// Runtime-to-host snapshots, within each realm.
+pub const OUTPUT_EVENT: &str = "mareader:runtime-event";
+/// The transferred MessagePort and native proxy are ready before mounting.
+pub const CONNECTED_EVENT: &str = "mareader:connected";

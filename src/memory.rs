@@ -52,6 +52,6 @@ pub(crate) fn wasm_heap_bytes() -> Option<u64> {
 pub(crate) fn log_heap(tag: &str) {
     if let Some(bytes) = wasm_heap_bytes() {
         let mb = bytes as f64 / (1024.0 * 1024.0);
-        web_sys::console::log_1(&format!("[mem] {tag}: wasm heap {mb:.1} MB").into());
+        web_sys::console::log_1(&format!("[mem][{}] {tag}: wasm heap {mb:.1} MB", crate::runtime::label()).into());
     }
 }

@@ -621,8 +621,8 @@ is a fact about the file, so `book::apply_check` still writes every row at it, a
 the file's art. Which rows a read belongs to is one function (`book::rows_for_read`, indices so a
 caller can hold the answer across the write it is about to make), and the three writers of a resume
 point all read it: the open's record, the progress debounce and the close's flush. That is also why
-an open carries the row it came from — `document::open_row` for a card, a list row or the menu's
-Open, which opens a book and reveals the target of a link, and `document::open_path` for a drop, an
+an open carries the row it came from — `services::document::open::open_row` for a card, a list row or the menu's
+Open, which opens a book and reveals the target of a link, and `services::document::open::open_path` for a drop, an
 *open with* and a dialog — because an address cannot say which of two rows the reader clicked, and a
 reader who asked for a book of its own is a reader who means that book. The rest of the library prefers a shared row wherever it resolves a content: the
 ledger's registry indexes shared rows first and a private one only for a content nothing else

@@ -320,6 +320,9 @@ jobs:
       - name: Engine smoke test
         run: node scripts/test-engine-smoke.js
 
+      - name: Runtime lifecycle and ownership contracts
+        run: npm run test:runtime
+
   # The Linux lanes cannot see `set_traffic_lights`: it is
   # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
   # feature set that feeds it) would otherwise first surface when a release
@@ -364,3 +367,46 @@ jobs:
       # they compile nowhere and run nowhere.
       - name: Tests (shell crate)
         run: cargo test -p mareader-shell --locked
+
+  frontend:
+    name: Build and exercise isolated WASM runtimes
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: runtime-build-cache
+          cache-on-failure: true
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+      - run: npm ci
+      # Separate invocations prevent Cargo workspace feature unification from
+      # disguising a missing dependency in one of the four real applications.
+      - name: Build all runtime artifacts
+        run: npm run build
+      - name: Install browser test runner
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Exercise PDF, TXT and Markdown lifecycles
+        run: node tests/runtime/browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: runtime-test-failure
+          path: test-artifacts/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isolated-frontend
+          path: dist/
+          retention-days: 7

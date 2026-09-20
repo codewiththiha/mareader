@@ -42,7 +42,7 @@ pub fn reflow_outline(state: AppState) {
         let reflow = state.reader.document.content.reflow;
         let headings = reflow.headings.get();
         let block_page = reflow.block_page.get();
-        let nodes = md_core::headings_to_nodes(headings.as_slice(), block_page.as_slice());
+        let nodes = reflow_core::outline::headings_to_nodes(headings.as_slice(), block_page.as_slice());
 
         // Guarded, because a `.set()` always notifies and a re-cut usually leaves
         // the chapters where they were.

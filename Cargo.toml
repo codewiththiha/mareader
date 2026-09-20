@@ -4,9 +4,19 @@ version = "0.1.1"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "reader_ui"
+path = "src/lib.rs"
+
+[features]
+default = ["library", "pdf", "txt", "md"]
+library = ["dep:library-core"]
+pdf = []
+txt = ["dep:txt-core"]
+md = ["dep:leptos-md", "dep:md-core"]
+
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
-leptos_router = "0.8"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
@@ -75,7 +85,7 @@ console_error_panic_hook = "0.1.7"
 # Markdown rendering for the reflowable formats: parses each block and
 # emits Leptos views directly (GFM on, raw HTML off, no theme classes —
 # the reader's own stylesheet owns the look).
-leptos-md = "0.1"
+leptos-md = { version = "0.1", optional = true }
 ai-core = { path = "crates/ai-core" }
 virtual-list = { path = "crates/virtual-list" }
 virtual-list-leptos = { path = "crates/virtual-list-leptos" }
@@ -97,13 +107,13 @@ ui-geom = { path = "crates/ui-geom" }
 reader-core = { path = "crates/reader-core" }
 pdf-core = { path = "crates/pdf-core" }
 reflow-core = { path = "crates/reflow-core" }
-txt-core = { path = "crates/txt-core" }
-md-core = { path = "crates/md-core" }
+txt-core = { path = "crates/txt-core", optional = true }
+md-core = { path = "crates/md-core", optional = true }
 # The library's domain: the book and its fingerprint, shelves and watched
 # folders, the scan predicate, the rescan ledger, the sort and the persisted
 # blob. Shared with the Tauri shell, which does the IO and measures with the
 # same fingerprint this crate defines.
-library-core = { path = "crates/library-core" }
+library-core = { path = "crates/library-core", optional = true }
 
 [dev-dependencies]
 # The app's host tests build their books, rows and shelves with the domain
@@ -113,6 +123,11 @@ library-core = { path = "crates/library-core", features = ["test-util"] }
 
 [workspace]
 members = [
+  "crates/document-core",
+  "apps/library-wasm",
+  "apps/reader-pdf-wasm",
+  "apps/reader-txt-wasm",
+  "apps/reader-md-wasm",
   "src-tauri",
   "crates/ai-core",
   "crates/virtual-list",

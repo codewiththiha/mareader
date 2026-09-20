@@ -49,6 +49,8 @@ pub type TypographySignal = leptos::prelude::Memo<TextSettings>;
 #[derive(Clone, Copy, Default)]
 pub struct ReaderState {
     pub document: DocumentState,
+    pub cover: leptos::prelude::RwSignal<Option<String>>,
+    pub library_title: leptos::prelude::RwSignal<Option<String>>,
     pub viewer: ViewerSignals,
     pub search: SearchState,
     pub ai_selection: AiSelectionState,

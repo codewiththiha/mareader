@@ -5,7 +5,7 @@
 //! services, the shell and the import, and a Windows path answered
 //! differently depending on which door it came in. Everything here is pure,
 //! host-tested, and shared by the frontend and the shell. (The stem — the
-//! name without its extension — is `reader_core::filename`'s job, where the
+//! name without its extension — is `document_core::filename`'s job, where the
 //! title fallback lives.)
 
 /// The last segment of a path, either separator, no trailing empties: what a

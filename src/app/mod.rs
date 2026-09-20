@@ -1,36 +1,64 @@
-//! Application root: installs the storage backend, boots the persisted
-//! state, provides the app contexts, installs the app-wide effects, and
-//! mounts the routed shell.
-
+//! Independent Leptos roots. Host JavaScript, not a router, owns lifetimes.
 mod bootstrap;
 mod effects;
-mod routes;
-mod shell;
 
 use leptos::prelude::*;
-use leptos_router::components::Router;
-
+use wasm_bindgen::JsCast;
+use crate::state::AppState;
 use crate::components::app_overlays::toast::ToastHost;
-use bootstrap::{create_app_state, provide_app_contexts};
-use effects::install_app_effects;
-use shell::AppShell;
 
-#[component]
-pub fn App() -> impl IntoView {
-    let state = create_app_state();
-    provide_context(state);
-    let (appearance, typography) = provide_app_contexts(state);
+#[cfg(feature = "library")]
+pub fn mount_library() {
+    console_error_panic_hook::set_once();
+    let root = document().get_element_by_id("library-root").expect("library mount target")
+        .unchecked_into::<web_sys::HtmlElement>();
+    leptos::mount::mount_to(root, || {
+        let state = bootstrap::create_app_state();
+        provide_context(state);
+        let (appearance, typography) = bootstrap::provide_app_contexts(state);
+        effects::install_library_effects(state, appearance, typography);
+        crate::runtime::library::install(state);
+        crate::memory::log_heap("boot");
+        let drag_active = RwSignal::new(false);
+        crate::effects::app::drag_drop::drag_drop(state, drag_active);
+        view! {
+            <crate::features::library::LibraryPage state=state />
+            <ToastHost state=state />
+            <div class="noise-overlay"></div>
+            <Show when=move || drag_active.get()>
+                <crate::components::app_overlays::drag_overlay::DragOverlay />
+            </Show>
+        }
+    }).forget();
+}
 
-    // Every app-lifetime effect, in one ordered place: see `app::effects` for
-    // the order and what depends on it.
-    install_app_effects(state, appearance, typography);
+pub fn mount_reader(format: &'static str) {
+    // Trunk initializes WASM before iframe load. Mount only once the host's
+    // MessagePort and Tauri proxy exist, without delaying the load event.
+    let callback = wasm_bindgen::closure::Closure::once_into_js(move || mount_connected_reader(format));
+    let options = web_sys::AddEventListenerOptions::new();
+    options.set_once(true);
+    let _ = window().add_event_listener_with_callback_and_add_event_listener_options(
+        crate::events::CONNECTED_EVENT, callback.unchecked_ref(), &options,
+    );
+}
 
-    view! {
-        <Router>
-            <AppShell state=state />
-        </Router>
-        // App-root toast host: fixed overlay, safe outside the toolbar's
-        // backdrop-blur stacking context.
-        <ToastHost state=state />
-    }
+fn mount_connected_reader(format: &'static str) {
+    console_error_panic_hook::set_once();
+    crate::runtime::mark_reader(format);
+    let root = document().get_element_by_id("reader-app").expect("reader mount target")
+        .unchecked_into::<web_sys::HtmlElement>();
+    let handle = leptos::mount::mount_to(root, move || {
+        let state = AppState::default();
+        provide_context(state);
+        let (appearance, typography) = bootstrap::provide_app_contexts(state);
+        effects::install_reader_effects(state, appearance, typography);
+        crate::runtime::reader::install(state, format);
+        view! {
+            <crate::features::reader::ReaderPage state=state />
+            <ToastHost state=state />
+            <div class="noise-overlay"></div>
+        }
+    });
+    crate::runtime::retain_mount(move || drop(handle));
 }

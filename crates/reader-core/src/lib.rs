@@ -14,8 +14,8 @@
 //! * A type every format needs, or a policy that applies to all of them.
 //! * No `Format` branch: a module that matches on the format belongs to that
 //!   format's crate (`pdf-core`, `txt-core`, `md-core`).
-//! * Only two workspace dependencies, both leaves whose types the persisted
-//!   schema names: `pdf-paper` and `virtual-list`.
+//! * Shared document identity comes from `document-core`; persisted rendering
+//!   types come from `pdf-paper` and `virtual-list`.
 //!
 //! Appearance is one tree (`appearance/`): the kernel (model, base palettes,
 //! colour maths, noise/texture helpers, presets) at its root and the two

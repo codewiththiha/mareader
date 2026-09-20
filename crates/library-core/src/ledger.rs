@@ -402,7 +402,7 @@ mod tests {
     use crate::book::{Book, Origin};
     use crate::folder::{FolderOpts, Tombstone};
     use crate::tracking::TrackingTree;
-    use reader_core::format::Format;
+    use document_core::format::Format;
     use std::collections::{BTreeMap, HashSet};
 
     /// A test-local helper rather than a method: nothing in the app asks
@@ -510,7 +510,7 @@ mod tests {
         Tombstone {
             fp: fp(n),
             title: Some(format!("Book {n}")),
-            format: reader_core::format::Format::Pdf,
+            format: document_core::format::Format::Pdf,
             last_path: format!("/books/{n}.pdf"),
             shelf_id: None,
             removed_ms: 5,
@@ -1364,7 +1364,7 @@ mod tests {
         let entry = Tombstone::of(&b, Some("s2".into()), 999);
         assert_eq!(entry.fp, b.fp);
         assert_eq!(entry.title.as_deref(), Some("Dune"));
-        assert_eq!(entry.format, reader_core::format::Format::Pdf);
+        assert_eq!(entry.format, document_core::format::Format::Pdf);
         assert_eq!(entry.last_path, "/books/dune.pdf");
         assert_eq!(entry.shelf_id.as_deref(), Some("s2"));
         assert_eq!(entry.removed_ms, 999);

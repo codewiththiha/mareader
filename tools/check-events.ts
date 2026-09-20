@@ -19,6 +19,7 @@ const ALL_FILES = walk(".");
 
 const APP_TABLE = "src/events.rs";
 const ENGINE_TABLE = "public/engine/events.ts";
+const HOST_TABLE = "host/protocol.ts";
 
 // The two tables — parsed rather than imported, for the same reason as
 // check-formats.ts: the app's table is a const in a wasm-targeted crate, and
@@ -45,6 +46,7 @@ function parseEngineTable(): Table {
 
 const app = parseAppTable();
 const engine = parseEngineTable();
+const host = exportedStrings(HOST_TABLE);
 
 // Where a name may be referenced from, per table.
 
@@ -62,10 +64,13 @@ const ENGINE_SOURCES = ALL_FILES.filter(
  *  is here for the literals only — the engine smoke asserts on events it
  *  hears, and it cannot import the engine's module (that reaches the browser
  *  only inside the bundles), so its names are written down and checked. */
+const HOST_SOURCES = ALL_FILES.filter((file) => file.endsWith(".ts") && file.startsWith("host/"));
+
 const SCANNABLE = [
   ...new Set([
     ...RUST_SOURCES,
     ...ENGINE_SOURCES,
+    ...HOST_SOURCES,
     ...ALL_FILES.filter((file) => file.endsWith(".ts") && file.startsWith("tools/")),
     "index.html",
   ]),
@@ -78,7 +83,7 @@ const problems: string[] = [];
 
 // 1. The two tables must agree on every name the engine declares.
 
-for (const [name, value] of engine) {
+for (const [name, value] of [...engine, ...host]) {
   const declared = app.get(name);
   if (declared === undefined) {
     problems.push(
@@ -128,7 +133,7 @@ for (const name of engine.keys()) {
 const LITERAL = /["'](?:pdfreader|mareader):[A-Za-z0-9._-]+["']/g;
 
 for (const [file, text] of TEXTS) {
-  if (file === APP_TABLE || file === ENGINE_TABLE) continue;
+  if (file === APP_TABLE || file === ENGINE_TABLE || file === HOST_TABLE) continue;
   for (let m = LITERAL.exec(text); m; m = LITERAL.exec(text)) {
     const line = text.slice(0, m.index).split("\n").length;
     problems.push(`${file}:${line}: ${m[0]} is a raw event name — import it from ${

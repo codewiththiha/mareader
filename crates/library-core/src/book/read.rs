@@ -69,7 +69,7 @@ pub fn record_read(
         ..Book::new(
             crate::id::next_id(now_ms),
             Fingerprint::placeholder(path),
-            reader_core::format::format_of(path),
+            document_core::format::format_of(path),
             Origin::Linked {
                 src: path.to_string(),
             },
