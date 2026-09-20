@@ -79,6 +79,8 @@ function connect(event: MessageEvent<unknown>): void {
   if (ready) send(ready);
   // Rust must mount AFTER this point: its initial effects probe Tauri and
   // register listeners. The runtime entry script waits for this event.
+  // Set a flag so a late WASM init can mount immediately if it missed the event.
+  (window as any).__MAREADER_CONNECTED__ = true;
   window.dispatchEvent(new Event(CONNECTED_EVENT));
 }
 function drag(event: PointerEvent): void {

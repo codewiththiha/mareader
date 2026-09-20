@@ -12,7 +12,8 @@ let pendingPath: string | null = null;
 const manager = new HostRuntimeManager(
   (config, event) => new FrameRuntime(reader, config, event, async () => {
     await manager.close();
-    await tauri()?.window.getCurrentWindow().close();
+    const win = tauri()?.window.getCurrentWindow();
+    if (win) await win.close();
   }),
   (event) => {
     if (event.type === "close-request") void manager.close();
@@ -59,7 +60,9 @@ function output(event: Event): void {
 }
 async function takePendingFile(): Promise<void> {
   try {
-    const path = await tauri()?.core.invoke("take_pending_file");
+    const api = tauri();
+    if (!api) return;
+    const path = await api.core.invoke("take_pending_file");
     if (typeof path !== "string" || !path) return;
     if (!libraryReady) { pendingPath = path; return; }
     await manager.close();
@@ -76,9 +79,12 @@ let unlisten: (() => void) | undefined;
 let unlistenClose: (() => void) | undefined;
 let allowNativeClose = false;
 let leaving = false;
-void tauri()?.event.listen("document-open-file", () => { void takePendingFile(); }).then((handle) => {
-  if (leaving) handle(); else unlisten = handle;
-});
+const docOpenListen = tauri()?.event.listen("document-open-file", () => { void takePendingFile(); });
+if (docOpenListen) {
+  void docOpenListen.then((handle) => {
+    if (leaving) (handle as () => void)(); else unlisten = handle as () => void;
+  });
+}
 
 const nativeWindow = tauri()?.window.getCurrentWindow();
 if (nativeWindow?.onCloseRequested) {
@@ -87,7 +93,8 @@ if (nativeWindow?.onCloseRequested) {
     event.preventDefault();
     void manager.close().then(async () => {
       allowNativeClose = true;
-      await nativeWindow.close();
+      const w = tauri()?.window.getCurrentWindow();
+      if (w) await w.close();
     });
   }).then((handle) => {
     if (typeof handle !== "function") return;

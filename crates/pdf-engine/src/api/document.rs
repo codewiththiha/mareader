@@ -53,6 +53,7 @@ pub async fn outline() -> Result<Vec<OutlineEntry>, EngineError> {
 /// ratchets the wasm heap, which never shrinks back). The next different
 /// document's open drops it ([`super::search::scope_to_document`]).
 pub async fn destroy() {
+    if !super::guard_pdf_reader() { return; }
     let _ = bridge::destroy().await;
 }
 

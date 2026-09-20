@@ -157,6 +157,9 @@ pub async fn relocate_stored(
 }
 
 pub(crate) async fn reveal_path(path: String) -> Result<(), String> {
+    if !tauri_bridge::has_tauri() {
+        return Err("Reveal is only available in the desktop app.".to_string());
+    }
     let args = serde_wasm_bindgen::to_value(&PathArgs { path: &path })
         .map_err(|e| format!("reveal: could not encode the request ({e})"))?;
     tauri_bridge::invoke(CMD_REVEAL, args)

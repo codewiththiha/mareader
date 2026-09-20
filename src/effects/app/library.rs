@@ -52,6 +52,9 @@ pub(crate) fn library_effects(state: AppState) {
 /// into the task list: one parse between the shell and the state, where the
 /// window-event re-broadcast it replaced was two.
 fn install_progress_sink(state: AppState) {
+    if !tauri_bridge::has_tauri() {
+        return;
+    }
     crate::services::tauri_listen(PROGRESS_CHANNEL, move |ev: web_sys::Event| {
         let value: &JsValue = ev.as_ref();
         let Ok(payload) = js_sys::Reflect::get(value, &"payload".into()) else {

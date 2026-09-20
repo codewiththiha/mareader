@@ -7,6 +7,9 @@ use wasm_bindgen::{JsCast, JsValue};
 use web_sys::Event;
 
 pub fn tauri_listen(event: &str, handler: impl FnMut(Event) + 'static) {
+    if !tauri_bridge::has_tauri() {
+        return;
+    }
     let callback = Rc::new(Closure::wrap(Box::new(handler) as Box<dyn FnMut(Event)>));
     let function: js_sys::Function = callback.as_ref().as_ref().unchecked_ref::<js_sys::Function>().clone();
     let disposed = Rc::new(Cell::new(false));

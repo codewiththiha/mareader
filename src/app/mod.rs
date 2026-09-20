@@ -33,6 +33,15 @@ pub fn mount_library() {
 }
 
 pub fn mount_reader(format: &'static str) {
+    // If the host already connected (race where iframe load + postMessage beats WASM init),
+    // mount immediately; otherwise wait for the connected event.
+    let already_connected = js_sys::Reflect::get(&web_sys::window().unwrap(), &"__MAREADER_CONNECTED__".into())
+        .map(|v| v.as_bool().unwrap_or(false))
+        .unwrap_or(false);
+    if already_connected {
+        mount_connected_reader(format);
+        return;
+    }
     // Trunk initializes WASM before iframe load. Mount only once the host's
     // MessagePort and Tauri proxy exist, without delaying the load event.
     let callback = wasm_bindgen::closure::Closure::once_into_js(move || mount_connected_reader(format));
