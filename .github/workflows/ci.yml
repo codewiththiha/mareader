@@ -196,6 +196,12 @@ jobs:
       - name: Tests
         run: |
           set -o pipefail
+          # tee opens its file the moment the pipeline starts, which on a cold
+          # cache is before cargo has created target/. It cannot open the log,
+          # forwards the output anyway, and exits 1 once cargo is done — and
+          # pipefail hands that 1 to the step: 1,021 passing tests reported red.
+          # A warm cache hides it by restoring target/ ahead of the step.
+          mkdir -p target
           cargo test --workspace --exclude mareader-shell --locked 2>&1 | tee target/test-output.txt
 
       # The README states how many tests the workspace has, in two places, and
