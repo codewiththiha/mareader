@@ -161,16 +161,14 @@ pub(super) fn bind_returned(state: AppState, row_id: &str, shelf_id: &str) {
         return;
     }
     let Some((name, src, measured)) = state.library.books.with_untracked(|rows| {
-        find_row(rows, row_id)
-            .filter(|row| row.book().is_some_and(|b| b.origin.is_stored()))
-            .map(|row| {
-                let book = row.book().expect("the filter above held");
-                (
-                    row.display_name(),
-                    book.origin.source().map(str::to_string),
-                    !book.fp_pending,
-                )
-            })
+        find_row(rows, row_id).and_then(|row| {
+            let book = row.book().filter(|b| b.origin.is_stored())?;
+            Some((
+                row.display_name(),
+                book.origin.source().map(str::to_string),
+                !book.fp_pending,
+            ))
+        })
     }) else {
         return;
     };

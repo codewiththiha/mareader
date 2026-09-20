@@ -53,9 +53,10 @@
 }
 .import-ring-fill {
   stroke: var(--color-accent);
-  /* 2 * pi * r(15). The Rust side writes --ring-offset from the same number
-     (`CIRCUMFERENCE` in src/features/library/progress_dock.rs); the two have to
-     agree or the ring stops short of full at 100%. */
+  /* 2 * pi * r(15), the product of `RING_RADIUS` in
+     src/features/library/progress_dock.rs — CSS cannot read the const, so
+     `tools/check-chrome-contracts.ts` computes it and fails when the two
+     disagree. A drift leaves the ring stopping short of full at 100%. */
   stroke-dasharray: 94.248;
   stroke-dashoffset: var(--ring-offset, 94.248);
   transition: stroke-dashoffset 120ms linear;

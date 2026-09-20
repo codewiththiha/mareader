@@ -1,8 +1,6 @@
 //! The persisted gloss mark and the format-specific anchor behind it.
 
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
 
 use super::geometry::GlossBox;
 
@@ -18,30 +16,30 @@ use super::geometry::GlossBox;
 /// the page mounts. That is what makes the highlight survive scroll, zoom,
 /// remounts and sessions.
 ///
-/// The field names are the serde schema persisted to localStorage
-/// (`pdfreader.gloss.v1`) — do not rename.
+/// The field names are the serde schema persisted under
+/// `mareader.gloss.v2` — do not rename.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GlossMark<A = PageAnchor> {
+pub struct GlossMark {
     pub id: String,
     pub word: String,
     pub context: String,
-    /// Format-specific persisted identity. Flattening keeps the PDF schema's
-    /// existing top-level `page` and `rect` fields compatible.
+    /// Persisted identity. Flattened so the schema keeps its top-level
+    /// `page` and `rect` fields rather than nesting them under an `anchor`.
     #[serde(flatten)]
-    pub anchor: A,
+    pub anchor: PageAnchor,
 }
 
-impl<A: MarkAnchor> GlossMark<A> {
-    /// Whether two marks denote the same glossed spot: the same word, and
-    /// rects at the same anchor spot. The single identity definition shared
-    /// by capture-time dedup and re-click toggle-to-close.
+impl GlossMark {
+    /// Whether two marks denote the same glossed spot: the same word, at the
+    /// same anchor spot. The single identity definition shared by
+    /// capture-time dedup and re-click toggle-to-close.
     pub fn same_spot(&self, other: &Self) -> bool {
         self.word == other.word && self.anchor.same_spot(&other.anchor)
     }
 }
 
-impl<A> std::ops::Deref for GlossMark<A> {
-    type Target = A;
+impl std::ops::Deref for GlossMark {
+    type Target = PageAnchor;
 
     fn deref(&self) -> &Self::Target {
         &self.anchor
@@ -52,7 +50,7 @@ impl<A> std::ops::Deref for GlossMark<A> {
 ///
 /// The scheme lives here rather than at the capture sites because an id is
 /// load-bearing twice over: the key a mark is persisted under
-/// (`pdfreader.gloss.v1`) and the key a re-click on its stroke toggles by.
+/// (`mareader.gloss.v2`) and the key a re-click on its stroke toggles by.
 /// Three call sites used to format it identically — three chances for one to
 /// drift and a mark to become unreachable by the code that saved it.
 ///
@@ -64,43 +62,31 @@ pub fn mark_id(page: u32, stamp_ms: u64) -> String {
     format!("g{page}-{stamp_ms}")
 }
 
-/// Where a gloss mark sits in the document — format-specific.
-///
-/// The trait owns the *identity* of a spot: given two anchors, is this the
-/// same place in the document? Projection onto the screen is deliberately NOT
-/// part of it — that needs live layout (the host's position and scale, the
-/// display mode) which only the format's renderer layer has, and each format
-/// projects its own anchors (for PDF, the app's `components::ai::anchor`).
-///
-/// [`PageAnchor`] is the PDF implementation: an identity as durable as pixels.
-/// The reflowable formats did NOT add a second implementation — a spot there
-/// is a block index and a character range riding in [`GlossMark::context`] as
-/// a tagged envelope, because the pages under it are re-cut whenever the
-/// typography moves (the app's `components::ai::reflow_anchor` owns that
-/// envelope). [`ReflowSpot`] still implements the trait so a future format
-/// whose identity IS durable can flatten into the schema the same way.
-pub trait MarkAnchor: Clone + Debug + PartialEq + Serialize + DeserializeOwned {
-    /// Whether two anchors denote the same logical spot in the document.
-    ///
-    /// Tolerant of sub-pixel drift: a re-capture of the same spot is the same
-    /// spot even when the layout shifted a fraction of a pixel.
-    fn same_spot(&self, other: &Self) -> bool;
-}
-
-/// The PDF implementation of [`MarkAnchor`]: a page number plus a rect in
+/// Where a gloss mark sits in the document: a page number plus a rect in
 /// *page* space (unscaled page coordinates). Unlike a screen rect it survives
-/// scroll, zoom and view-mode flips: the live screen box is re-derived from
-/// the page host element whenever anything moves. Shared by the selection
-/// Explain pill and the gloss card so both glue to the page without inventing
-/// their own coordinate systems.
+/// scroll, zoom and view-mode flips — the live screen box is re-derived from
+/// the page host element whenever anything moves (the app's
+/// `components::ai::anchor`). Shared by the selection Explain pill and the
+/// gloss card so both glue to the page without inventing their own coordinate
+/// systems.
+///
+/// The reflowable formats have no anchor of their own on the wire: a spot
+/// there is a block index and a character range riding in
+/// [`GlossMark::context`] as a tagged envelope ([`ReflowSpot`]), because the
+/// pages under it are re-cut whenever the typography moves. They still carry
+/// a `PageAnchor` — the page the block happened to land on — so the schema
+/// has exactly one shape.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct PageAnchor {
     pub page: u32,
     pub rect: GlossBox,
 }
 
-impl MarkAnchor for PageAnchor {
-    fn same_spot(&self, other: &Self) -> bool {
+impl PageAnchor {
+    /// Whether two anchors denote the same logical spot, tolerant of
+    /// sub-pixel drift: a re-capture of the same spot is the same spot even
+    /// when the layout shifted a fraction of a pixel.
+    pub fn same_spot(&self, other: &Self) -> bool {
         self.page == other.page
             && (self.rect.x - other.rect.x).abs() < 1.0
             && (self.rect.y - other.rect.y).abs() < 1.0
@@ -131,8 +117,8 @@ impl PageAnchor {
 /// time (the app's `components::ai::reflow_anchor`), which is also what lets
 /// one mark follow its words onto another page.
 ///
-/// Payload only: it travels inside the generic [`GlossMark::context`] as a
-/// tagged envelope rather than as a second anchor type on the wire, so the
+/// Payload only: it travels inside [`GlossMark::context`] as a tagged
+/// envelope rather than as a second anchor type on the wire, so the
 /// persisted schema stays the one [`PageAnchor`] shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ReflowSpot {
@@ -156,20 +142,6 @@ impl ReflowSpot {
     /// range), which makes it unprojectable and worth dropping.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-}
-
-// NOTE: nothing instantiates `GlossMark<ReflowSpot>`. A reflowable mark keeps
-// `PageAnchor` as its flattened anchor and carries the spot in `context`; the
-// comparison that runs is `commands::same_glossed_spot` in the app, which
-// parses both envelopes and falls back to `same_spot` on the anchors. This
-// impl is kept as the trait's definition for a future durable-character
-// format, not because the current one calls it.
-impl MarkAnchor for ReflowSpot {
-    /// Character identity is exact: there is no sub-pixel drift to tolerate
-    /// when nothing was ever measured in pixels.
-    fn same_spot(&self, other: &Self) -> bool {
-        self == other
     }
 }
 
@@ -260,18 +232,6 @@ mod tests {
         assert_eq!(mark, back);
     }
 
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-    struct TextAnchor {
-        block: String,
-        offset: usize,
-    }
-
-    impl MarkAnchor for TextAnchor {
-        fn same_spot(&self, other: &Self) -> bool {
-            self.block == other.block && self.offset == other.offset
-        }
-    }
-
     #[test]
     fn a_reflow_spot_is_its_characters_and_clamps_into_a_shorter_block() {
         let spot = ReflowSpot::new(7, 12, 24);
@@ -282,15 +242,6 @@ mod tests {
         // that is actually on the page rather than a char count guessed here.
         // An end before the start is a collapsed range, not a backwards one.
         assert!(ReflowSpot::new(1, 9, 3).is_empty());
-    }
-
-    #[test]
-    fn a_reflow_spot_is_the_same_spot_only_at_the_same_characters() {
-        let spot = ReflowSpot::new(3, 4, 9);
-        assert!(spot.same_spot(&ReflowSpot::new(3, 4, 9)));
-        // No pixel tolerance to inherit: one character over is another word.
-        assert!(!spot.same_spot(&ReflowSpot::new(3, 5, 9)));
-        assert!(!spot.same_spot(&ReflowSpot::new(4, 4, 9)));
     }
 
     #[test]
@@ -309,27 +260,5 @@ mod tests {
         }
         let empty: Holder = serde_json::from_str("{}").expect("absent field");
         assert!(empty.spot.is_none());
-    }
-
-    #[test]
-    fn a_non_pdf_anchor_defines_mark_identity_and_persists() {
-        let mark = GlossMark {
-            id: "text-1".to_string(),
-            word: "palimpsest".to_string(),
-            context: String::new(),
-            anchor: TextAnchor {
-                block: "chapter-2".to_string(),
-                offset: 14,
-            },
-        };
-        let mut same = mark.clone();
-        same.id = "text-2".to_string();
-        assert!(mark.same_spot(&same));
-        same.anchor.offset += 1;
-        assert!(!mark.same_spot(&same));
-
-        let json = serde_json::to_string(&mark).expect("serialize");
-        let back: GlossMark<TextAnchor> = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(mark, back);
     }
 }

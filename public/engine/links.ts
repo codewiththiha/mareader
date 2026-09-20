@@ -1,4 +1,12 @@
 // Link-layer construction (annotation -> DOM <a>), split out of renderer.ts.
+//
+// The layer is REPLACE-before-add, and that is the invariant worth stating:
+// every render of a mounted page builds one and swaps it in, so a page that
+// renders a hundred times carries one link layer and not a hundred. The
+// highlight boxes keep the same rule from the other direction
+// (public/engine/highlights.ts clears before it paints). Both are the one
+// place a per-render leak could hide, because both are called on the render
+// path rather than on the mount path.
 
 import type {
   Annotation,
@@ -99,6 +107,17 @@ export async function buildLinkLayer(
     }
     layer.appendChild(aEl);
   }
+
+  // The host captured above is not necessarily the one this state holds now.
+  // Every await between there and here — the annotation fetch, and a
+  // destination resolution per link — is a window for the page to unmount
+  // (releasePageSurfaces nulls `st.host` and strips the layer it already
+  // took off) or to re-register on a fresh host element for the same canvas
+  // id. Appending to the stale node would leave a link layer, and a click
+  // listener per link, on an element the engine has stopped tracking: nothing
+  // would ever remove it. The render path re-checks `st.dead` after each of
+  // its own awaits for the same reason.
+  if (st.dead || st.host !== host) return;
 
   const live = host.querySelector(".linkLayer");
   if (live && live.parentNode) {

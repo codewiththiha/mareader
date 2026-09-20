@@ -54,6 +54,16 @@ pub(super) fn PresetEditor(
         set_saving.set(false);
     };
 
+    // Enter saves from either field, Escape leaves the form: one callback
+    // rather than two spellings of the same two keys.
+    let on_keys = Callback::new(move |ev: leptos::ev::KeyboardEvent| {
+        if ev.key() == "Enter" {
+            commit();
+        } else if ev.key() == "Escape" {
+            set_saving.set(false);
+        }
+    });
+
     view! {
         <Show
             when=move || saving.get()
@@ -77,13 +87,7 @@ pub(super) fn PresetEditor(
                     placeholder="Preset name"
                     aria_label="Preset name"
                     autofocus=true
-                    on_keydown=Callback::new(move |ev: leptos::ev::KeyboardEvent| {
-                        if ev.key() == "Enter" {
-                            commit();
-                        } else if ev.key() == "Escape" {
-                            set_saving.set(false);
-                        }
-                    })
+                    on_keydown=on_keys
                     class="w-full rounded border border-line bg-paper px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
                 />
                 // Free text WITH a datalist: users can type a brand new
@@ -95,13 +99,7 @@ pub(super) fn PresetEditor(
                     list="preset-groups"
                     placeholder="Section (optional)"
                     aria_label="Preset section"
-                    on_keydown=Callback::new(move |ev: leptos::ev::KeyboardEvent| {
-                        if ev.key() == "Enter" {
-                            commit();
-                        } else if ev.key() == "Escape" {
-                            set_saving.set(false);
-                        }
-                    })
+                    on_keydown=on_keys
                     class="w-full rounded border border-line bg-paper px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
                 />
                 <datalist id="preset-groups">

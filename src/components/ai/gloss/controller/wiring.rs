@@ -1,7 +1,7 @@
 //! The open path, wired up.
 //!
 //! Every open (a stroke click or the selection Explain pill) arrives as a
-//! `pdfreader:gloss-open` CustomEvent carrying the mark, which
+//! `mareader:gloss-open` CustomEvent carrying the mark, which
 //! [`use_open_listener`] turns into a pending mark plus a bumped request
 //! nonce. [`use_open_effect`] tracks that nonce, asks [`open_verdict`] what
 //! the request means given the card's current state, and dispatches to one of

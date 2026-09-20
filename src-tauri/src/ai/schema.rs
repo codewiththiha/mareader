@@ -11,10 +11,10 @@ use fm_bridge::{Schema, SchemaProperty};
 /// The exact data structure we want the AI to return.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WordInfo {
-    pub pos: String,       // Part of Speech (e.g., "noun", "verb")
-    pub meaning: String,   // Simplified explanation
+    pub pos: String,
+    pub meaning: String,
     pub synonyms: Vec<String>,
-    pub usages: Vec<String>, // Example sentences
+    pub usages: Vec<String>,
 }
 
 /// Forces the Apple Intelligence model into constrained decoding: it will

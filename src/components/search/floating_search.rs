@@ -1,8 +1,8 @@
-//! Floating search overlay (Chrome/VS-Code style). Phase 2 of the redesign:
-//! search is a transient task, so it lives in a floating bar over the viewer
-//! rather than in the docked sidebar. Mounted by the coordinator inside
-//! `main#viewer-slot` (which is `relative`); the bar positions itself at the
-//! slot's top-right, just below the toolbar.
+//! Floating search overlay (Chrome/VS-Code style). Search is a transient task,
+//! so it lives in a floating bar over the viewer rather than in the docked
+//! sidebar. Mounted by the coordinator inside `main#viewer-slot` (which is
+//! `relative`); the bar positions itself at the slot's top-right, just below
+//! the toolbar.
 
 use std::time::Duration;
 

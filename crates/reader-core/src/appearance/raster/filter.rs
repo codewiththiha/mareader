@@ -29,7 +29,7 @@ impl Appearance {
         }
 
         if self.has_tint() {
-            let t = self.tint_strength as f64 / 100.0;
+            let t = self.tint_amount();
             // Cap sepia at 0.55: past that the collapse starts eating real
             // colour in figures and photographs, and the page reads as a
             // duotone print rather than tinted paper.
@@ -127,6 +127,17 @@ mod tests {
             s[i..].split(')').next().unwrap().parse().unwrap()
         };
         assert!(grab(&weak) < grab(&strong));
+    }
+
+    #[test]
+    fn the_dial_saturates_at_half_way() {
+        // Full effect lands at 50 now, and everything past it must sit at
+        // the same firm ceiling: an unclamped t > 1.0 would overshoot the
+        // sepia cap and over-saturate the chain.
+        let half = tinted(BaseMode::Light, 34, 50).canvas_filter();
+        let full = tinted(BaseMode::Light, 34, 100).canvas_filter();
+        assert_eq!(half, full);
+        assert!(full.contains("sepia(0.550)"), "{full}");
     }
 
     #[test]

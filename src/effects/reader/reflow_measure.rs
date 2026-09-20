@@ -158,17 +158,11 @@ pub fn install_reflow_measure(state: AppState) {
         if !heights_moved(&reflow.heights.get_untracked(), &merged) {
             // Same heights; a dial may still have moved the sheet the cut
             // answers for, so the re-cut gets its say even on a no-op merge.
-            if let Some(cut) = reflow.recut(state, geo) {
-                state.reader.document.publish_cut(&cut);
-                state.reader.viewer.page.set(cut.page);
-            }
+            recut_and_publish(state, reflow, geo);
             return;
         }
         reflow.heights.set(Arc::new(merged));
-        if let Some(cut) = reflow.recut(state, geo) {
-            state.reader.document.publish_cut(&cut);
-            state.reader.viewer.page.set(cut.page);
-        }
+        recut_and_publish(state, reflow, geo);
     });
 }
 
@@ -195,6 +189,21 @@ fn flush(state: AppState) {
     };
     reflow.heights.set(Arc::new(next));
     let geo = reflow.geometry.get_untracked();
+    recut_and_publish(state, reflow, geo);
+}
+
+/// Re-cut from the store as it now stands and tell the reader about it: the
+/// document's shared page machinery takes the count and the sheet, and the
+/// reader is held on the block they were reading, which the cut answers as a
+/// page. The three moments a re-cut can happen — a landed measurement batch,
+/// a re-estimate that moved the heights, and one that moved only the sheet —
+/// all owe exactly this, and a fourth that forgot the page would strand the
+/// reader on a page the new cut no longer has.
+fn recut_and_publish(
+    state: AppState,
+    reflow: crate::state::reader::document::ReflowContent,
+    geo: PageGeometry,
+) {
     if let Some(cut) = reflow.recut(state, geo) {
         state.reader.document.publish_cut(&cut);
         state.reader.viewer.page.set(cut.page);

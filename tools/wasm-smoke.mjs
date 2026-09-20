@@ -24,9 +24,9 @@
 //                                        folder, so the startup passes —
 //                                        verify, then rescan — run for real.
 // Prereqs, which nothing installs for you any more:
-//   cargo build --target wasm32-unknown-unknown --bin pdf-reader
+//   cargo build --target wasm32-unknown-unknown --bin mareader
 //   wasm-bindgen --target nodejs --out-dir smoke \
-//     target/wasm32-unknown-unknown/debug/pdf-reader.wasm
+//     target/wasm32-unknown-unknown/debug/mareader.wasm
 //   printf '{"type":"commonjs"}\n' > smoke/package.json
 //   npm install --no-save --no-package-lock jsdom
 // The `wasm-bindgen` CLI has to be the version Cargo.lock pins or the glue it
@@ -322,8 +322,8 @@ Object.defineProperty(globalThis.Window, Symbol.hasInstance, {
     Function.prototype[Symbol.hasInstance].call(RealWindow, instance),
 });
 
-window.localStorage.setItem('pdfreader.library.v3', JSON.stringify(library));
-window.localStorage.setItem('pdfreader.covers.v1', JSON.stringify(covers));
+window.localStorage.setItem('mareader.library.v3', JSON.stringify(library));
+window.localStorage.setItem('mareader.covers.v1', JSON.stringify(covers));
 
 // An async panic after a successful mount is still a bug the reader meets;
 // keep the process alive to collect it instead of dying on the spot.

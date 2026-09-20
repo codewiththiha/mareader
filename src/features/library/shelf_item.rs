@@ -171,8 +171,8 @@ pub(crate) fn ShelfItemShell(
     policy: ShelfItemPolicy,
     #[prop(optional)]
     extra_classes: Vec<(String, Signal<bool>)>,
-    #[prop(into, optional)]
-    style: Option<String>,
+    #[prop(optional)]
+    style: String,
     /// `Option` in the field type and `into` rather than `optional` on
     /// purpose: [`crate::features::library::entry::EntryShell`] already holds
     /// the disclosure's facts as an `Option`, and an `optional` prop's setter
@@ -227,7 +227,7 @@ pub(crate) fn ShelfItemShell(
         <div
             id=dom_id
             class=classes
-            style=style.unwrap_or_default()
+            style=style
             role="button"
             tabindex="0"
             aria-label=move || aria_label.get()

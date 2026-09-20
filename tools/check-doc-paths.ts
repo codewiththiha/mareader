@@ -4,7 +4,7 @@
 // and a rename leaves that prose pointing at nothing. So every module path
 // (`crate::a::b`, `super::x`) and every file path with a slash
 // (`effects/reader/zoom.rs`) in a Rust comment must resolve, and so must
-// every backticked path in README.md and ARCHITECTURE.md. Resolution is
+// every backticked path in README.md and Mareader.md. Resolution is
 // deliberately shallow — the module exists and the last name is declared or
 // re-exported there — and conservative: an unknown first segment is assumed
 // external and skipped, and a glob re-export passes anything.
@@ -254,7 +254,7 @@ for (const file of CSS_FILES) {
 
 // The two prose documents: the NAMES they put in backticks. Component names
 // are what a rename leaves behind most often, in prose no compiler reads.
-// Only README.md and ARCHITECTURE.md are checked: a Rust doc comment names
+// Only README.md and Mareader.md are checked: a Rust doc comment names
 // external types constantly (`Closure`, `NSWindow`) and an allowlist for
 // those is unmaintainable, while these two documents describe this app — a
 // capitalised name in them is ours until proven otherwise.
@@ -284,7 +284,7 @@ for (const file of ALL_FILES) {
 const BACKTICK_NAME = /`([A-Z][A-Za-z0-9]{3,})`/g;
 let namesChecked = 0;
 
-for (const file of ["README.md", "ARCHITECTURE.md"].filter(isFile)) {
+for (const file of ["README.md", "Mareader.md"].filter(isFile)) {
   read(file).split("\n").forEach((line, index) => {
     for (const m of line.matchAll(BACKTICK_NAME)) {
       const name = m[1]!;
@@ -411,7 +411,7 @@ const DOC_PATH = /\b(?:src|crates|styles|public|scripts|tests|release-notes|src-
 let docModules = 0;
 let docPaths = 0;
 
-for (const file of ["README.md", "ARCHITECTURE.md"].filter(isFile)) {
+for (const file of ["README.md", "Mareader.md"].filter(isFile)) {
   read(file).split("\n").forEach((line, index) => {
     const lineNo = index + 1;
 

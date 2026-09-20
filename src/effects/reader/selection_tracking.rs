@@ -2,7 +2,7 @@
 //!
 //! The engine's selectionchange listener debounces the native selection,
 //! measures its bounding rect, grabs the surrounding sentence, and dispatches
-//! a `pdfreader:selection-detail` CustomEvent with
+//! a `mareader:selection-detail` CustomEvent with
 //! `{ text, context, rect, host, spot }` (rect in viewport CSS px, host the
 //! format family that painted it, spot a reflowable selection's durable
 //! identity) — or `null` to clear. Collapses caused by pressing inside the AI
@@ -27,6 +27,7 @@ use wasm_bindgen::JsValue;
 use ai_core::gloss::PageAnchor;
 
 use crate::components::ai::anchor::{FormatAnchorBridge, PdfAnchorBridge, ReflowAnchorBridge};
+use crate::components::primitives::hooks::use_custom_event::use_raw_event;
 use crate::components::ai::reflow_anchor;
 use crate::state::AppState;
 use crate::state::reader::SelectionDetail;
@@ -73,25 +74,20 @@ fn anchor_for(detail: &SelectionDetail, state: AppState) -> Option<PageAnchor> {
 }
 
 pub fn selection_tracking(state: AppState) {
-    let _handle = window_event_listener(
-        leptos::ev::Custom::new(crate::events::SELECTION_DETAIL_EVENT),
-        move |ev: web_sys::CustomEvent| {
-            let detail = ev.detail();
-            match parse_selection_detail(&detail) {
-                Some(selection) => {
-                    let anchor = anchor_for(&selection, state);
-                    state.reader.ai_selection.anchor.set(anchor);
-                    state.reader.ai_selection.detail.set(Some(selection));
-                    // A new selection supersedes any open explanation.
-                    state.reader.ai_selection.popover_open.set(false);
-                }
-                None => {
-                    state.reader.ai_selection.anchor.set(None);
-                    state.reader.ai_selection.detail.set(None);
-                    state.reader.ai_selection.popover_open.set(false);
-                }
+    use_raw_event(crate::events::SELECTION_DETAIL_EVENT, move |detail| {
+        match parse_selection_detail(detail) {
+            Some(selection) => {
+                let anchor = anchor_for(&selection, state);
+                state.reader.ai_selection.anchor.set(anchor);
+                state.reader.ai_selection.detail.set(Some(selection));
+                // A new selection supersedes any open explanation.
+                state.reader.ai_selection.popover_open.set(false);
             }
-        },
-    );
-    on_cleanup(move || _handle.remove());
+            None => {
+                state.reader.ai_selection.anchor.set(None);
+                state.reader.ai_selection.detail.set(None);
+                state.reader.ai_selection.popover_open.set(false);
+            }
+        }
+    });
 }

@@ -26,13 +26,7 @@
 /node_modules/
 
 # Local-only tooling
-/.script/
 /.env
-CONTRACTS.md
-contracts.md
-bun.lock
-.st.txt
-.claude-shell-test.txt
 
 # Local web build output (wasm-bindgen webgen + assembled static root)
 /webgen/

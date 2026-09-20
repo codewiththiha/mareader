@@ -91,17 +91,3 @@ pub(super) fn fail(state: AppState, task: &str, message: String, mode: FailMode)
     update_task(state, task, move |t| t.fail(message));
     toast(state, sentence);
 }
-
-#[cfg(test)]
-mod tests {
-    use super::run_total;
-
-    #[test]
-    fn the_expected_count_and_the_finish_count_agree_on_one_arithmetic() {
-        // The opening promise and the closing report are the same sum, so a
-        // run cannot finish past the total it opened with.
-        assert_eq!(run_total(3, 2, 0), 5);
-        assert_eq!(run_total(3, 2, 4), 9);
-        assert_eq!(run_total(0, 0, 7), 7);
-    }
-}

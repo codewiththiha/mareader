@@ -17,6 +17,10 @@ export type LoadingTask = {
 
 export type PDFDocumentProxy = {
   numPages: number;
+  /** Content hashes of the file: `[permanent, temporary]`. The permanent
+   *  fingerprint is the document's identity across opens — the search index
+   *  caches under it so a reopen adopts the retained index. */
+  fingerprints: string[];
   getPage: (n: number) => Promise<PDFPageProxy>;
   getMetadata: () => Promise<{ info?: { Title?: string | null; Author?: string | null } }>;
   getOutline: () => Promise<OutlineItem[] | null>;
@@ -126,6 +130,10 @@ export type OpenResult = Result<{
   numPages: number;
   title: string | null;
   author: string | null;
+  /** The document's permanent pdf.js fingerprint — the content identity the
+   *  Rust search index caches under. Null only for engines that predate the
+   *  field, where the index falls back to the path. */
+  fingerprint: string | null;
   /** Deliberately empty: the chapter tree resolves via `resolveOutline`
    * after the reader is up — flattening it would hold `open` hostage to a
    * worker round trip per destination. */
@@ -183,6 +191,10 @@ export type PDFReaderApi = {
   /** Enter/leave the scrub window's real-time compositing: raw rasters under
    * the live CSS filter + blend, re-baked on exit. */
   setScrubMode: (on: boolean) => Promise<void>;
+  /** Whether the appearance popover is open. Rendered pages retain their
+   * unbaked raws while it is, so the session's first tint drag blits
+   * instead of re-rendering; closing arms the idle tail that frees them. */
+  setAppearanceMenuOpen: (on: boolean) => void;
   /** Publish (or, with "", clear) `--pdf-paper`. */
   setPaper: (hex: string) => void;
   /** The Rust paper session's blend switch — gates stashPaperFrame so idle
@@ -194,6 +206,11 @@ export type PDFReaderApi = {
     | { ok: true }
   >;
   sweep: () => void;
+  /** Drop the `.page-snapshot` zoom masks the live page hosts still carry,
+   *  zeroing their backing stores: a mask whose render was superseded or
+   *  never landed would otherwise keep a full-page raster alive until the
+   *  host unmounts. */
+  sweepSnapshots: () => void;
   takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;
 };

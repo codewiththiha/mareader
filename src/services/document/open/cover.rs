@@ -46,12 +46,6 @@ pub(super) fn ensure(state: AppState, path: String, stamp: u64) {
             c.width,
             c.height,
         );
-        if let Err(e) = state
-            .library
-            .covers
-            .with_untracked(crate::storage::save_covers)
-        {
-            e.report();
-        }
+        crate::storage::persist_covers(state.library);
     });
 }

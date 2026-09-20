@@ -25,7 +25,11 @@ pub fn PageShell(
     progress_visible: Signal<bool>,
     children: ChildrenFn,
 ) -> impl IntoView {
-    observe_content_size(scroller_id, state.viewer.container_size);
+    // The container observation dies with this shell, explicitly: an
+    // observer outliving its scroller retains the element and every canvas
+    // mounted inside it.
+    let stop_observing = observe_content_size(scroller_id, state.viewer.container_size);
+    on_cleanup(stop_observing);
     let texture_class = texture_class(state);
     let tx_zoom = zoom_style(state);
     let chrome = layout_chrome(state, progress_visible);

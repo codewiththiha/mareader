@@ -3,6 +3,10 @@
 //! library shelf, and the OS "Open with" handoff — all through the same entry
 //! points, none of which depend on UI.
 //!
+//! [`flush_read_point`] is what a session ending owes the library: the resume
+//! point the progress effect is still debouncing, written now. Both exits call
+//! it — the close, and the reload in [`crate::services::reload`].
+//!
 //! [`gloss_key`] is the one fact the lifecycle owns that is not about the
 //! engine: which book the open document is. The address alone cannot say —
 //! the library may hold two rows of one file — and every reader of the
@@ -11,10 +15,12 @@
 //! anywhere.
 
 pub mod close;
+pub(crate) mod flush;
 pub mod open;
 pub(crate) mod session;
 
 pub use close::close_document;
+pub(crate) use flush::flush_read_point;
 pub use open::{init_open_file_handling, open_dialog, open_path, open_row};
 
 use leptos::prelude::*;

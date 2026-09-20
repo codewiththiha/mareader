@@ -31,27 +31,23 @@ pub fn answer_folder_merge(state: AppState, answer: Placement, apply_all: bool) 
 /// edges. What a folder merge adds is the ledger write.
 fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: Placement) {
     let answer = withhold_keep_both_from_a_twin(state, ask, answer);
+    // Every answer here is about one arriving file; the two that do nothing are
+    // the two this sheet never offers.
+    let Some(file) = ask.arrival.file.clone() else {
+        return;
+    };
     match answer {
         Placement::KeepBoth => {
-            let Some(file) = ask.arrival.file.clone() else {
-                return;
-            };
             let name = minted_name(state, ask);
             land_answer_file(state, ask, file, Some(name), None);
         }
         Placement::Replace => {
-            let Some(file) = ask.arrival.file.clone() else {
-                return;
-            };
             let slot = member_slot(state, &ask.arrival.shelf_id, &ask.existing_id);
             purge_existing(state, &ask.existing_id);
             land_answer_file(state, ask, file, None, slot);
         }
         // The measurement only travels with the answer when the arriving file IS the row's file, which a re-import of one folder always is. A different folder's namesake is another content wearing one name.
         Placement::Merge => {
-            let Some(file) = ask.arrival.file.clone() else {
-                return;
-            };
             if is_the_same_file(state, &ask.existing_id, &file.path) {
                 let existing = ask.existing_id.clone();
                 let fp = file.fp;

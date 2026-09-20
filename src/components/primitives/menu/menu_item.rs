@@ -64,8 +64,8 @@ pub fn MenuItem(
     // A computed class string: the repo rule only restricts single-token
     // conditional tuples, and a computed string avoids two text-colour
     // utilities fighting each other. Selected uses the same accent-soft
-    // treatment as OptionButton, so every selected/pressed row in the app
-    // speaks one visual language.
+    // treatment as the toggle's outlined variant, so every selected/pressed
+    // row in the app speaks one visual language.
     let class = move || {
         let hover = if disabled { "" } else { "hover:bg-line" };
         let base = format!(

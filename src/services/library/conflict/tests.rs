@@ -2,7 +2,6 @@ use super::*;
 use library_core::book::{Book, Fingerprint, Origin, Row};
 use library_core::conflict::Placement;
 use library_core::folder::FolderOpts;
-use library_core::tracking::TrackingTree;
 use library_core::shelf::Shelf;
 use reader_core::format::Format;
 
@@ -54,16 +53,8 @@ fn folder_in_place(
     placed: &[u32],
 ) -> library_core::folder::WatchedFolder {
     library_core::folder::WatchedFolder {
-        id: id.to_string(),
-        root: root.to_string(),
-        opts: library_core::folder::FolderOpts::default(),
         placed: placed.iter().copied().map(fp).collect(),
-        ignored: Vec::new(),
-        shelf_map: Default::default(),
-        last_seen: Vec::new(),
-        scanned_ms: 0,
-        tracking: TrackingTree::default(),
-        shapes: library_core::shape::ShapeTree::default(),
+        ..library_core::testkit::watched_folder(id, root)
     }
 }
 

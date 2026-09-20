@@ -13,12 +13,11 @@ use leptos::prelude::*;
 
 use crate::state::reader::TypographySignal;
 use crate::effects::app::theme::html_style;
-use crate::state::AppState;
 
 /// Install the typography painter. Runs once at boot (the persisted
 /// typography must be live before the first text document renders) and on
 /// every change afterwards.
-pub fn apply_typography(_state: AppState, typography: TypographySignal) {
+pub fn apply_typography(typography: TypographySignal) {
     Effect::new(move |_| {
         let t = typography.get();
         let Some(style) = html_style() else {

@@ -338,7 +338,7 @@ fn ListRow(
             extra_classes=vec![("row-missing".to_string(), missing_class)]
         >
             {if dense {
-                view! { <span class="lib-row-ext">{ext}</span> }.into_any()
+                view! { <span class="lib-format lib-row-ext">{ext}</span> }.into_any()
             } else {
                 view! {
                     <span
@@ -397,7 +397,7 @@ fn ListRow(
             {if dense {
                 None
             } else {
-                chip.map(|label| view! { <span class="lib-row-format">{label}</span> })
+                chip.map(|label| view! { <span class="lib-format lib-row-format">{label}</span> })
             }}
             {if dense {
                 None

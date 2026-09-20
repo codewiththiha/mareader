@@ -16,6 +16,14 @@ const LU_TSCALE = 1 << 16;
 // seam between baked page pixels and the CSS backdrop.
 const LU_ROUND = 1 << 15;
 
+// The memo is capped. A tint drag mints a fresh filter string per animation
+// frame, and the per-tick backdrop republish (public/engine/theme/paper.ts)
+// runs each one through here: an uncapped map would trade nine small
+// allocations per tick for retaining every set the drag ever passed through,
+// none of which a later bake will ask for again. Clearing at the cap beats
+// an LRU here — a settled theme reuses one string, so whatever survives a
+// clear is refilled on the next call and stays.
+const LUT_CACHE_MAX = 8;
 const lutCache = new Map<string, Int32Array[]>();
 
 function filterTokenToMatrix(tok: string): FilterMatrix | null {
@@ -78,16 +86,19 @@ function filterTokenToMatrix(tok: string): FilterMatrix | null {
   }
 }
 
-/** Whether a filter string composes to the identity matrix — the single
- *  test every caller shares (the bake's early-out and the kernel's own). */
-export function isIdentityFilter(filterString: string): boolean {
-  const { m, o } = composeFilter(filterString);
+function matrixIsIdentity({ m, o }: FilterMatrix): boolean {
   return (
     m[0] === 1 && m[1] === 0 && m[2] === 0 &&
     m[3] === 0 && m[4] === 1 && m[5] === 0 &&
     m[6] === 0 && m[7] === 0 && m[8] === 1 &&
     o[0] === 0 && o[1] === 0 && o[2] === 0
   );
+}
+
+/** Whether a filter string composes to the identity matrix — the single
+ *  test every caller shares (the bake's early-out and the kernel's own). */
+export function isIdentityFilter(filterString: string): boolean {
+  return matrixIsIdentity(composeFilter(filterString));
 }
 
 /** Compose a filter string into one 3×3 matrix + offset (row-major). */
@@ -119,6 +130,7 @@ export function composeFilter(filterString: string): FilterMatrix {
 function lutsFor(m: number[], filterString: string): Int32Array[] {
   let luts = lutCache.get(filterString);
   if (!luts) {
+    if (lutCache.size >= LUT_CACHE_MAX) lutCache.clear();
     luts = new Array(9);
     for (let i = 0; i < 9; i += 1) {
       const coef = m[i] ?? 0;
@@ -140,9 +152,9 @@ export function applyFilterToData(
   filterString: string,
 ): boolean {
   if (w <= 0 || h <= 0) return false;
-  if (isIdentityFilter(filterString)) return false;
 
   const { m, o } = composeFilter(filterString);
+  if (matrixIsIdentity({ m, o })) return false;
   const luts = lutsFor(m, filterString);
   const o0 = Math.round((o[0] ?? 0) * 255 * LU_TSCALE);
   const o1 = Math.round((o[1] ?? 0) * 255 * LU_TSCALE);

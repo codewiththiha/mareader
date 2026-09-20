@@ -27,7 +27,7 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use super::canvas_host::{remove_snapshots, stretch_host};
+use super::canvas_host::{remove_snapshots, stretch_host, LastGeo};
 use crate::dom_contract::{HOST_PDF, TEXT_LAYER_CLASS};
 use pdf_core::pixel_grid::snap_px;
 use leptos::task::spawn_local;
@@ -123,6 +123,14 @@ pub fn PdfPageCanvas(
     /// stands down entirely. Absent for hosts outside a virtualized strip.
     #[prop(optional)]
     dormant: Option<Signal<bool, LocalStorage>>,
+    /// Whether the strip's scroll has SETTLED — the virtualizer's scroll-end
+    /// window, published as a signal. While it reads false, an UNPAINTED page
+    /// stays on its thumbnail underlay instead of starting a full-resolution
+    /// rasterisation: the fling gate. `None` (the default) means nothing to
+    /// wait for — hosts outside a virtualized strip (single, spread) mount a
+    /// page or two and sweep nothing past.
+    #[prop(optional)]
+    settled: Option<Signal<bool>>,
     /// True while a real zoom *gesture* owns the layout. Distinct from
     /// `zoom_animating`, which every resize-driven animation also holds — a
     /// fit slide, a window drag carrying a hand-picked zoom — for the whole
@@ -174,7 +182,19 @@ pub fn PdfPageCanvas(
     let cid = canvas_id.clone();
     let cid_effect = canvas_id.clone();
     let hid_effect = host_id.clone();
-    on_cleanup(move || engine::unregister_page(&cid));
+    // Raised the moment this owner dies. The boot microtask below is NOT
+    // owner-bound — `queue_microtask` runs whatever was queued even after the
+    // component unmounted — so without this flag a fast fling remount could
+    // land the microtask AFTER the cleanup's unregister and re-register a
+    // dead canvas, leaving the engine a PageState nothing ever drops again.
+    // A StoredValue, not an Rc<Cell<_>>: the cleanup closure must be
+    // Send + Sync, and the slot doubles as the truth — a handle whose arena
+    // item is already gone reads None, which is a dead owner by definition.
+    let disposed = StoredValue::new_local(false);
+    on_cleanup(move || {
+        let _ = disposed.try_set_value(true);
+        engine::unregister_page(&cid);
+    });
 
     // Register after this view is flushed to the DOM. The render effect can
     // otherwise call register_page before getElementById sees the canvas.
@@ -182,7 +202,15 @@ pub fn PdfPageCanvas(
     let cid_boot = canvas_id.clone();
     let hid_boot = host_id.clone();
     let registered_boot = registered.clone();
+    let disposed_boot = disposed;
     queue_microtask(move || {
+        // The owner died between the mount and this microtask: its cleanup
+        // has already told the engine to forget this canvas, and registering
+        // now would revive an entry no future unregister targets. A None
+        // reads as disposed too — the arena item went with the owner.
+        if disposed_boot.try_get_value().unwrap_or(true) {
+            return;
+        }
         debug_assert!(
             app_chrome::hooks::dom::by_id(&cid_boot).is_some(),
             "PdfPageCanvas canvas must be in the DOM before register_page"
@@ -223,7 +251,14 @@ pub fn PdfPageCanvas(
         if lw <= 0.0 || lh <= 0.0 || ls <= 0.0 || (ls - s).abs() <= 1e-9 {
             return;
         }
-        stretch_host(&hid_stretch, &cid_stretch, lw, lh, ls, s, false);
+        stretch_host(
+            &hid_stretch,
+            &cid_stretch,
+            LastGeo { w: lw, h: lh, scale: ls },
+            s,
+            false,
+            false,
+        );
     });
 
     Effect::new(move || {
@@ -308,12 +343,29 @@ pub fn PdfPageCanvas(
         // THIS scale AND the canvas still has its bitmap (`painted == true`),
         // re-rendering would only WIPE the live canvas (pdf.js reassigns
         // `canvas.width/height` on render start) without producing a different
-        // bitmap. Because `(gs - s).abs() <= 1e-9`, the `stretch_host(...,
-        // mask=true)` guard below is skipped too — so no `.page-snapshot`
-        // overlay is created to mask the wipe — and the user sees the canvas
-        // disappear until a scroll re-renders it. Bail out — but ONLY if
-        // `painted == true`. A wiped canvas (cancelled render) must re-render.
+        // bitmap. Because `(gs - s).abs() <= 1e-9`, the `stretch_host` guard
+        // below is skipped too — nothing resizes or covers the host — and the
+        // user sees the canvas disappear until a scroll re-renders it. Bail
+        // out — but ONLY if `painted == true`. A wiped canvas (cancelled
+        // render) must re-render.
         if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
+            return;
+        }
+        // SCROLL-FLING GATE. An unpainted page the scroller is still sweeping
+        // past stays on its thumbnail underlay until the strip settles: a
+        // full-resolution rasterisation for every page a fling flies past
+        // creates, paints and discards a full-page surface every few frames,
+        // and that churn — not the mounted ceiling — is what pushes the
+        // webview's resource cache, and the footprint latched onto it, to its
+        // high-water mark. `settled` is read TRACKED, so the settle itself
+        // re-runs this effect and the crisp render lands then, paced by the
+        // engine's render lane. A render already in flight is never touched —
+        // the gate only governs STARTING one, and the underlay blit below is
+        // the same one the cold first paint uses.
+        if !painted.get() && settled.as_ref().is_some_and(|s| !s.get()) {
+            if !(gw > 0.0 && gh > 0.0) {
+                engine::blit_thumb(&cid_effect, page);
+            }
             return;
         }
         let page_no = page;
@@ -332,12 +384,17 @@ pub fn PdfPageCanvas(
 
         // Flicker guards, for renders the stretch effect did NOT precede —
         // e.g. the search nudge, or a fit refit that lands straight on
-        // render_scale. Sizes the host to the incoming scale and masks the
-        // canvas before pdf.js wipes it. When a zoom gesture just ended the
-        // stretch effect has already done this and the mask is reused.
+        // render_scale. Sizes the host to the incoming scale before pdf.js
+        // wipes the canvas. The snapshot mask is asked for but SKIPPED: this
+        // run queues the render itself, and a mask would stack a full-size
+        // RGBA copy on top of the raw + bake surfaces that render allocates
+        // — three full-page layers per page at a zoom commit, which is
+        // exactly the peak the webview's footprint latches onto. The
+        // stretched bitmap stays visible until the queued render starts,
+        // frames from now (canvas_host::stretch_host).
         let (lw, lh, ls) = geo.get_value();
         if lw > 0.0 && lh > 0.0 && ls > 0.0 && (ls - s).abs() > 1e-9 {
-            stretch_host(&hid, &cid, lw, lh, ls, s, true);
+            stretch_host(&hid, &cid, LastGeo { w: lw, h: lh, scale: ls }, s, true, true);
         }
 
         // First paint for this host: drop in the sidebar's cached thumbnail,

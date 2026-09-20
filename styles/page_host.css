@@ -59,13 +59,14 @@
 }
 /* A tint scrub exposes raw rasters that live-blend against their base, and
    that blend is only correct over the UN-themed base. The host itself keeps
-   carrying the baked paper through the window — scrub.ts republishes it per
-   tick, and edge parity with the backdrop is exactly what kills the
-   fractional-pixel seam — so the texture layer lends the raw canvas its
-   un-themed base instead: one pixel in, so the page's own fractional edge
-   still mixes baked with baked against the gutter. The gutter bleed rests
-   for the length of the drag, and the opacity rises to 1 because the layer
-   is a base here, not a visible texture. */
+   carrying the baked paper through the window — the standing token watch
+   (public/engine/theme/paper.ts) republishes it per tick, and edge parity
+   with the backdrop is exactly what kills the fractional-pixel seam — so
+   the texture layer lends the raw canvas its un-themed base instead: one
+   pixel in, so the page's own fractional edge still mixes baked with baked
+   against the gutter. The gutter bleed rests for the length of the drag,
+   and the opacity rises to 1 because the layer is a base here, not a
+   visible texture. */
 html.appearance-scrubbing .reader-bg.blend .pdf-page::before {
   inset: 1px;
   background-color: var(--color-paper);
@@ -136,5 +137,14 @@ html.appearance-scrubbing .pdf-page::before {
    so a missed cleanup can never strand the page invisible, and engines
    without :has() degrade to the old one-frame flicker, never a blank page. */
 .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
+  visibility: hidden;
+}
+
+/* The same cover, restated for the scrub window: entering a tint drag
+   snapshots every page that must re-render to recover its raw
+   (public/engine/theme/scrub.ts), and the wipe those re-renders begin with
+   is exactly the flash this hides. Spelled at the higher specificity so no
+   appearance-scrubbing rule can accidentally outvote it. */
+html.appearance-scrubbing .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }

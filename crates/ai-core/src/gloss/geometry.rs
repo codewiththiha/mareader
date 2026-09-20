@@ -6,6 +6,7 @@
 //! pill radius morphs into the card radius in the same motion that grows the
 //! box. Named `GlossBox` to avoid colliding with `std::boxed::Box`.
 
+use ui_geom::floating::clamp_axis;
 use ui_geom::spring::spring_axis;
 
 /// The floating motion layer's box is field-identical to this one, and the card
@@ -94,7 +95,6 @@ pub fn place_card(
     y_bias: f64,
 ) -> GlossBox {
     let w = size_w.min((view_w - margin * 2.0).max(MIN_CARD_W));
-    // Guard against min > max panics on degenerate viewports.
     let h = size_h.clamp(MIN_CARD_H, (view_h * MAX_CARD_H_FRAC).max(MIN_CARD_H));
     let space_right = view_w - (anchor.x + anchor.w);
     let x = if space_right >= anchor.x {
@@ -102,10 +102,13 @@ pub fn place_card(
     } else {
         anchor.x - gap - w
     };
-    let x = x.clamp(margin, (view_w - w - margin).max(margin));
-    let y = (anchor.y + anchor.h * 0.5 - h * 0.5 + y_bias)
-        .clamp(margin, (view_h - h - margin).max(margin));
-    GlossBox { x, y, w, h, r: radius }
+    GlossBox {
+        x: clamp_axis(x, view_w, w, margin),
+        y: clamp_axis(anchor.y + anchor.h * 0.5 - h * 0.5 + y_bias, view_h, h, margin),
+        w,
+        h,
+        r: radius,
+    }
 }
 
 /// One spring step over all five box fields. Returns `(next_box, next_velocity)`.

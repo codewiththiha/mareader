@@ -38,9 +38,12 @@ mod imp {
     };
 
     // The wasm side's canonical source is `app_chrome::TITLE_BAR_H` (h-12);
-    // the shell cannot depend on wasm crates, so it keeps this mirror.
+    // the shell cannot depend on wasm crates, so it keeps this mirror. Both
+    // mirrors — this height and the inset below, which is tauri.conf.json's
+    // `trafficLightPosition.x` — are policed by
+    // `tools/check-chrome-contracts.ts`.
     const DEFAULT_HEADER_HEIGHT: f64 = 48.0;
-    const TRAFFIC_LIGHT_X_INSET: f64 = 20.0; // matches tauri.conf.json x:20
+    const TRAFFIC_LIGHT_X_INSET: f64 = 20.0;
     /// AppKit's rest origin for a standard button when nothing better has
     /// been measured yet (Sonoma's value; Tahoe measures ~7).
     const FALLBACK_BUTTON_ORIGIN_Y: f64 = 5.0;

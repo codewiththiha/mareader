@@ -62,6 +62,7 @@ impl VirtualizerInner {
         Rc::new(Self {
             surface: DomSurface::new(options.axis, options.padding_start),
             scroll_top: RwSignal::new(initial_scroll),
+            settled: RwSignal::new(true),
             viewport: RwSignal::new(initial_viewport),
             range: RwSignal::new(initial_range),
             layout_version: RwSignal::new(0),
@@ -96,6 +97,13 @@ pub(crate) struct VirtualizerInner {
     pub surface: DomSurface,
 
     pub scroll_top: RwSignal<f64>,
+    /// Whether the scroller has been quiet for `scroll_end_delay_ms` — the
+    /// scroll-end timer's own notion of "the scroll ended", published. True
+    /// until the first real scroll moves it; the timer `arm_scroll_end`
+    /// re-arms on every scroll event restores it. Page strips gate a swept-in
+    /// page's FIRST paint on it, so a fling pays a handful of rasterisations
+    /// at its end instead of one per page it flew past.
+    pub settled: RwSignal<bool>,
     pub viewport: RwSignal<Viewport>,
     pub range: RwSignal<Option<Window>>,
     pub layout_version: RwSignal<u64>,
@@ -252,6 +260,9 @@ impl VirtualizerInner {
         }
         let step = self.core.borrow_mut().on_scroll(content);
         write_if_changed(self.scroll_top, content);
+        // The strip is moving again: first paints wait for the scroll-end
+        // window this re-arms (see the field docs).
+        write_if_changed(self.settled, false);
         self.publish_range(step.range);
         if let Some(top) = step.scroll_write {
             self.surface.set_scroll(top, false);
@@ -293,6 +304,9 @@ impl VirtualizerInner {
         let delay = Duration::from_millis(self.options.scroll_end_delay_ms as u64);
         if let Ok(handle) = set_timeout_with_handle(
             move || {
+                // The scroller has been quiet for the whole window: the strip
+                // is settled, and the first paints its gate held back run now.
+                write_if_changed(inner.settled, true);
                 let callbacks: Vec<_> = inner.idle_cbs.borrow().iter().cloned().collect();
                 for callback in callbacks {
                     callback();
@@ -537,6 +551,17 @@ impl Virtualizer {
     /// The scroll position signal (content coordinates).
     pub fn scroll_offset(&self) -> RwSignal<f64> {
         self.inner.scroll_top
+    }
+
+    /// Whether the scroller has settled: false while scroll events are still
+    /// arriving, true once `scroll_end_delay_ms` of quiet has passed. A
+    /// virtualized page strip's hosts gate an unpainted page's first render
+    /// on it — the fling shows the cached thumbnail while it sweeps past and
+    /// the crisp rasterisation lands, paced by the engine's render lane, once
+    /// the strip is quiet. Read-only on purpose: the timer that restores it
+    /// is the adapter's, not the app's.
+    pub fn settled(&self) -> ReadSignal<bool> {
+        self.inner.settled.read_only()
     }
 
     /// The viewport signal.

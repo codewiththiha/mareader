@@ -157,10 +157,13 @@ pub struct PlacedPanel {
 
 /// Clamp one axis of a position so a box of `size` stays inside `extent`
 /// with `margin`. The allowed range collapses to the margin when the box
-/// cannot fit (a plain `clamp` would panic on min > max), which is the
-/// policy both viewport clamps below share — written once so the point and
-/// rect variants cannot drift apart.
-fn clamp_axis(pos: f64, extent: f64, size: f64, margin: f64) -> f64 {
+/// cannot fit, so a degenerate extent never reaches `clamp` with min > max.
+///
+/// Every viewport clamp in the app goes through this: the point and rect
+/// variants below, and the gloss card's own placement in
+/// `ai_core::gloss::geometry::place_card`. Written once so the policy cannot
+/// drift between the surfaces that share it.
+pub fn clamp_axis(pos: f64, extent: f64, size: f64, margin: f64) -> f64 {
     pos.clamp(margin, (extent - size - margin).max(margin))
 }
 

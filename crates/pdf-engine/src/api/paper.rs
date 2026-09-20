@@ -97,10 +97,10 @@ fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFrame>, Engin
     if ok {
         return Ok(None);
     }
-    // `{ok:false, error}` — surface it through the shared error path (which
-    // always errs here; the Ok arm is unreachable and defensive).
-    match resolve::<Empty>(value, what) {
-        Err(e) => Err(e),
-        Ok(_) => Ok(None),
-    }
+    // `{ok:false, error}` — surface it through the shared error path.
+    // `resolve` errs whenever the envelope's `ok` is false, which the check
+    // above has just established, so the success arm never runs and its
+    // payload is discarded.
+    resolve::<Empty>(value, what)?;
+    Ok(None)
 }

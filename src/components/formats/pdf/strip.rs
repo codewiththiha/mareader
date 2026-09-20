@@ -64,6 +64,11 @@ pub fn PdfPageStrip(
     // lands.
     let page_scale = state.viewer.zoom.display.read_only();
     let gesture_owns = state.viewer.gesture_owns();
+    // The fling gate's input: while the scroller is still moving, unpainted
+    // pages stay on their thumbnail underlay and rasterise once the strip
+    // settles (see the page host's SCROLL-FLING GATE). The prop wraps it in
+    // the Option the page-mode hosts default to.
+    let settled: Signal<bool> = v.settled().into();
     let items = v.items();
     let total_size = v.total_size();
 
@@ -202,6 +207,7 @@ pub fn PdfPageStrip(
                                                 render_scale=state.viewer.zoom.committed
                                                 zoom_animating=state.viewer.zooming()
                                                 dormant=dormant
+                                                settled=settled
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)
@@ -257,6 +263,7 @@ pub fn PdfPageStrip(
                                                 render_scale=state.viewer.zoom.committed
                                                 zoom_animating=state.viewer.zooming()
                                                 dormant=dormant
+                                                settled=settled
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)

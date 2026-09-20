@@ -15,7 +15,7 @@ use library_core::scan::selectable_formats;
 use reader_core::format::Format;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::primitives::controls::option_button::OptionButton;
+use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
@@ -205,20 +205,20 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
 
                         <SectionLabel text="Formats" />
                         <div class="mb-2 flex gap-1.5">
-                            <OptionButton
-                                selected=Signal::derive(move || include.get())
+                            <ToggleButton
+                                active=Signal::derive(move || include.get())
                                 on_click=move || opts.update(|o| o.include_selected = true)
                                 variant_class="flex-1 px-2 py-1.5 text-xs"
                             >
                                 <span>"Include selected"</span>
-                            </OptionButton>
-                            <OptionButton
-                                selected=Signal::derive(move || !include.get())
+                            </ToggleButton>
+                            <ToggleButton
+                                active=Signal::derive(move || !include.get())
                                 on_click=move || opts.update(|o| o.include_selected = false)
                                 variant_class="flex-1 px-2 py-1.5 text-xs"
                             >
                                 <span>"Exclude selected"</span>
-                            </OptionButton>
+                            </ToggleButton>
                         </div>
                         <div class="mb-4 grid grid-cols-2 gap-1.5">
                             {selectable_formats()
@@ -267,24 +267,24 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                     "How the books are held"
                                 </span>
                                 <div class="flex flex-col gap-1.5">
-                                    <OptionButton
-                                        selected=copies
+                                    <ToggleButton
+                                        active=copies
                                         on_click=move || set_mode(opts, FolderMode::Copy)
                                         variant_class="flex items-center gap-2 px-2.5 py-1.5 text-xs"
                                     >
                                         <Dot on=copies />
                                         <span>{FolderMode::Copy.label()}</span>
-                                    </OptionButton>
-                                    <OptionButton
-                                        selected=reads_in_place
+                                    </ToggleButton>
+                                    <ToggleButton
+                                        active=reads_in_place
                                         on_click=move || set_mode(opts, FolderMode::LinkInPlace)
                                         variant_class="flex items-center gap-2 px-2.5 py-1.5 text-xs"
                                     >
                                         <Dot on=reads_in_place />
                                         <span>{FolderMode::LinkInPlace.label()}</span>
-                                    </OptionButton>
-                                    <OptionButton
-                                        selected=watched
+                                    </ToggleButton>
+                                    <ToggleButton
+                                        active=watched
                                         on_click=move || {
                                             set_mode(opts, FolderMode::LinkInPlaceWatched)
                                         }
@@ -292,7 +292,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                     >
                                         <Dot on=watched />
                                         <span>{FolderMode::LinkInPlaceWatched.label()}</span>
-                                    </OptionButton>
+                                    </ToggleButton>
                                 </div>
                                 <p class="mt-2 text-xs text-muted">
                                     {move || match mode.get() {
@@ -326,22 +326,22 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                             <div class="px-4 py-3.5">
                                 <span class="mb-2 block text-sm text-ink">"Folder structure"</span>
                                 <div class="flex flex-col gap-1.5">
-                                    <OptionButton
-                                        selected=Signal::derive(move || grouped.get())
+                                    <ToggleButton
+                                        active=Signal::derive(move || grouped.get())
                                         on_click=move || opts.update(|o| o.groups = true)
                                         variant_class="flex items-center gap-2 px-2.5 py-1.5 text-xs"
                                     >
                                         <Dot on=Signal::derive(move || grouped.get()) />
                                         <span>"A shelf for each folder"</span>
-                                    </OptionButton>
-                                    <OptionButton
-                                        selected=Signal::derive(move || !grouped.get())
+                                    </ToggleButton>
+                                    <ToggleButton
+                                        active=Signal::derive(move || !grouped.get())
                                         on_click=move || opts.update(|o| o.groups = false)
                                         variant_class="flex items-center gap-2 px-2.5 py-1.5 text-xs"
                                     >
                                         <Dot on=Signal::derive(move || !grouped.get()) />
                                         <span>"One shelf for everything"</span>
-                                    </OptionButton>
+                                    </ToggleButton>
                                 </div>
                                 <p class="mt-2 text-xs text-muted">
                                     {move || {
@@ -408,8 +408,8 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
 fn FormatRow(opts: RwSignal<FolderOpts>, format: Format) -> impl IntoView {
     let on = Signal::derive(move || opts.with(|o| o.formats.contains(&format)));
     view! {
-        <OptionButton
-            selected=on
+        <ToggleButton
+            active=on
             on_click=move || {
                 opts.update(|o| {
                     if o.formats.contains(&format) {
@@ -424,7 +424,7 @@ fn FormatRow(opts: RwSignal<FolderOpts>, format: Format) -> impl IntoView {
         >
             <Dot on=on />
             <span>{format.label()}</span>
-        </OptionButton>
+        </ToggleButton>
     }
 }
 

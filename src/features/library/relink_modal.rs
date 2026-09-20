@@ -29,11 +29,14 @@ pub(crate) fn RelinkModal(state: AppState) -> impl IntoView {
                 let pick_id = ask.book_id.clone();
                 let search_id = ask.book_id;
                 let question = format!(
-                    "“{name}” is not at the address the library reads it                      from any more. Nothing is lost while it is missing: the row keeps its                      shelves, its place in the book and its highlights. Point it at the file                      it is now — or name a folder and let the app look inside for a file                      of this name."
+                    "“{name}” is not at the address the library reads it from any \
+                     more. Nothing is lost while it is missing: the row keeps its \
+                     shelves, its place in the book and its highlights. Point it at \
+                     the file it is now — or name a folder and let the app look \
+                     inside for a file of this name."
                 );
-                let search_note = format!(
-                    "Walk a folder you pick and open the first “{name}” inside it"
-                );
+                let search_note =
+                    format!("Walk a folder you pick and open the first “{name}” inside it");
                 Some(
                     view! {
                         <QuestionSheet

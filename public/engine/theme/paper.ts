@@ -50,6 +50,17 @@ export function paperInfo(pipeline: PipelineCache): PaperInfo {
 // Both stages reuse the baker's own implementations (filterKernel + a canvas
 // globalCompositeOperation blend), so backdrop and baked rasters agree by
 // construction, not by a second copy of the maths.
+//
+// THE TEXTURE NEVER ENTERS THIS COLOUR. The overlay is a CSS layer, and the
+// compositor already carries it over every stretch of backdrop a page can
+// reach: each page's ::before overhangs the page box and paints the gutter
+// (styles/textures.css, BLEND BLEED), and the two gaps a layout leaves — a
+// spread's spine, which is zero, and the vertical strip's row gap — are
+// painted by the same layer, half from each neighbour. The base under that
+// layer is this colour, so gutter and page composite identically; folding
+// the overlay's mean in here as well darkened every covered stretch against
+// the page it sat beside, which is the band the paged modes and the two
+// scrolling ones all showed on a textured look.
 
 /** Parse the `#rrggbb` the paper session publishes; null on anything else. */
 function parsePaperHex(hex: string): [number, number, number] | null {
@@ -71,8 +82,10 @@ function toPaperHex(rgb: [number, number, number]): string {
 }
 
 /** The detected paper run through one pass of the current filter + blend —
- *  the colour a baked raster's paper region carries. */
-function bakedPaperHex(pipeline: PipelineCache): string | null {
+ *  the colour a baked raster's paper region carries, with no texture folded
+ *  in: the overlay rides over this colour, on the page and (through the
+ *  page's own bleed) on the gutter alike. */
+function themedPaperHex(pipeline: PipelineCache): string | null {
   const raw = session.detectedPaper;
   if (!raw) return null;
   const rgb = parsePaperHex(raw);
@@ -113,14 +126,13 @@ function bakedPaperHex(pipeline: PipelineCache): string | null {
 }
 
 /** Keep `--pdf-paper-baked` honest: the detected paper pre-rendered through
- *  the current filter + blend — the colour a baked raster's paper carries.
- *  Called whenever an input moves: the detected paper (`setPaper`) or the
- *  theme (`rebakeTheme`), so the settled backdrop never lags the pages. A
- *  tint scrub is the one window whose ticks never reach here: per-tick engine
- *  work is exactly what the scrub scheduler refuses, so the backdrop tracks
- *  the drag from CSS alone (the SCRUB WINDOW cover in
- *  styles/components/shell.css) and the scrub exit republishes this before
- *  the class drops — a same-value handover. */
+ *  the current filter + blend, with nothing else folded in — the colour a
+ *  baked raster's paper carries, and therefore the colour the backdrop base
+ *  and the page hosts both stand on. Called whenever an input moves: the
+ *  detected paper (`setPaper`), the theme (`rebakeTheme`, and through it the
+ *  scrub exit's forced rebake), and the standing token watch below, which
+ *  hears the moves no engine call carries — a drag's per-tick repaint of the
+ *  filter, blend and UI paper. */
 export function publishBakedPaper(): void {
   let el: HTMLElement;
   try {
@@ -128,7 +140,65 @@ export function publishBakedPaper(): void {
   } catch (_) {
     return;
   }
-  const hex = bakedPaperHex(readPipeline());
+  const hex = themedPaperHex(readPipeline());
   if (hex) el.style.setProperty("--pdf-paper-baked", hex);
   else el.style.removeProperty("--pdf-paper-baked");
+}
+
+// THE STANDING WATCH. The published paper is computed from three root tokens
+// (--canvas-filter, --canvas-blend, --color-paper) plus the detected paper,
+// and the first three move on no schedule the engine hears: a tint drag
+// repaints the root once per animation frame (src/effects/app/theme.rs).
+// Without this watch the backdrop would settle on whatever value the
+// scheduler last published, against a page that already carries the new one.
+// So the watch republishes on every fingerprint move, wherever it came
+// from: per tick through a drag — one 1×1 composite, no raster work, which
+// is what keeps the backdrop in lockstep with the live-blending canvases
+// the SCRUB WINDOW cover in styles/components/shell.css describes — and in
+// the same frame as a structural click's paint, because a MutationObserver
+// callback is a microtask and the value lands before the browser paints.
+// The fingerprint holds only the composite's INPUTS: the observer
+// re-triggers on publishBakedPaper's own root-style write, and the
+// published value not being part of the fingerprint is what dedupes that
+// to one publish per real move.
+let paperWatcher: MutationObserver | null = null;
+let paperWatchLast = "";
+
+function paperWatchFingerprint(): string {
+  try {
+    const cs = getComputedStyle(document.documentElement);
+    return [
+      cs.getPropertyValue("--canvas-filter"),
+      cs.getPropertyValue("--canvas-blend"),
+      cs.getPropertyValue("--color-paper"),
+    ].join("|");
+  } catch (_) {
+    return "";
+  }
+}
+
+/** Install the standing watch. Idempotent, and a no-op in environments
+ *  without a compositor: the node smoke harness has no MutationObserver —
+ *  and no backdrop to keep honest. */
+export function watchPaperTokens(): void {
+  if (typeof MutationObserver === "undefined") return;
+  if (paperWatcher) return;
+  try {
+    paperWatchLast = paperWatchFingerprint();
+    paperWatcher = new MutationObserver(() => {
+      const fingerprint = paperWatchFingerprint();
+      if (fingerprint === paperWatchLast) return;
+      paperWatchLast = fingerprint;
+      publishBakedPaper();
+    });
+    // "class" rides along for the base flip: every flip writes the root style
+    // too, so the style filter alone would catch it — the class filter just
+    // does not have to trust that.
+    paperWatcher.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["style", "class"],
+    });
+  } catch (_) {
+    paperWatcher = null;
+  }
 }

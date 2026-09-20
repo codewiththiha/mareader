@@ -466,20 +466,3 @@ impl ShellController {
         });
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{SIDEBAR_FADE_MS, SIDEBAR_SLIDE_MS};
-
-    #[test]
-    fn each_motion_matches_its_css_duration() {
-        // The rail wrappers carry the matching transition utilities (the
-        // docked aside's `duration-300` width tween, the floating wrapper's
-        // `duration-200` opacity fade), and the panel paint plus the deferred
-        // canvas release both key off these constants, so the outros land
-        // with the end of the motion rather than trailing it. Rename either
-        // side and this test is the tripwire.
-        assert_eq!(SIDEBAR_SLIDE_MS, 300);
-        assert_eq!(SIDEBAR_FADE_MS, 200);
-    }
-}

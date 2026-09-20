@@ -1,6 +1,6 @@
 //! The `--tx-*` CSS custom properties for the text page palette — what
 //! styles/text.css resolves a text/Markdown page's paper, ink, accents and
-//! chrome through.
+//! rules through.
 //!
 //! Written on `<html>` alongside the PDF pipeline's `--canvas-*` / `--color-*`
 //! variables; the namespaces are disjoint, so painting both every appearance
@@ -41,10 +41,7 @@ pub fn css_variables(a: &Appearance, ink_contrast: f64) -> Vec<(&'static str, St
         ("--tx-paper", p.paper.clone()),
         ("--tx-ink", ink),
         ("--tx-muted", p.muted.clone()),
-        ("--tx-surface", p.surface.clone()),
-        ("--tx-line", p.line.clone()),
         ("--tx-accent", p.accent.clone()),
-        ("--tx-accent-soft", p.accent_soft.clone()),
         ("--tx-ink-soft", ink_soft),
         ("--tx-ink-border", ink_border),
         ("--tx-ink-code-bg", ink_code_bg),
@@ -66,14 +63,11 @@ mod tests {
         let a = Appearance::default();
         let p = TextPalette::compute(&a);
         let vars = css_variables(&a, 100.0);
-        assert_eq!(vars.len(), 15);
+        assert_eq!(vars.len(), 12);
         assert_eq!(vars[0], ("--tx-paper", p.paper.clone()));
         assert_eq!(vars[1], ("--tx-ink", p.ink.clone()), "full contrast = the palette ink");
         assert_eq!(vars[2], ("--tx-muted", p.muted.clone()));
-        assert_eq!(vars[3], ("--tx-surface", p.surface.clone()));
-        assert_eq!(vars[4], ("--tx-line", p.line.clone()));
-        assert_eq!(vars[5], ("--tx-accent", p.accent.clone()));
-        assert_eq!(vars[6], ("--tx-accent-soft", p.accent_soft.clone()));
+        assert_eq!(vars[3], ("--tx-accent", p.accent.clone()));
         for name in [
             "--tx-ink-soft",
             "--tx-ink-border",

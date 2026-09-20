@@ -105,8 +105,8 @@ pub fn body_char_width(settings: &TextSettings) -> f64 {
 ///
 /// The page-side contract: `--tx-font-size`, `--tx-line-height`,
 /// `--tx-para-margin`, `--tx-word-spacing`, `--tx-letter-spacing`,
-/// `--tx-text-indent`, `--tx-text-align`, `--tx-hyphens`, `--tx-font-body`,
-/// `--tx-font-sans`, `--tx-font-mono`.
+/// `--tx-text-indent`, `--tx-font-weight`, `--tx-text-align`,
+/// `--tx-hyphens`, `--tx-font-body`, `--tx-font-sans`, `--tx-font-mono`.
 ///
 /// The ink dial is deliberately NOT here: it is resolved in Rust by the
 /// appearance pipeline (reader-core's `appearance::reflowable`), which mixes the

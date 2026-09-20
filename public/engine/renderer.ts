@@ -4,7 +4,8 @@ import type {
   PageState,
   RenderResult,
 } from "./types";
-import { el, fail, failFrom, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
+import { el, isSharedScratch, releaseCanvas, releasePooledCanvas, releaseScratch, showBaked } from "./canvas";
+import { fail, failFrom } from "./errors";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
@@ -141,6 +142,20 @@ function pageOutputScale(cssW: number, cssH: number): number {
   return Math.min(dpr, Math.max(0.5, capped));
 }
 
+/** Free a bake's intermediate. A filter-only bake returns the shared scratch
+ *  (bakeRaster's blend step is the only pooled destination), and returning
+ *  that to the pool would give one canvas two owners — the scratch goes back
+ *  to the scratch and everything else to the pool, the same rule bakeInto
+ *  follows. The render's own `target` is the caller's to keep or release. */
+function releaseBaked(baked: HTMLCanvasElement, target: HTMLCanvasElement): void {
+  if (baked === target) return;
+  if (isSharedScratch(baked)) {
+    releaseScratch(baked);
+  } else {
+    releasePooledCanvas(baked);
+  }
+}
+
 export async function renderPageInternal(
   canvasId: string,
   scale: number,
@@ -233,27 +248,43 @@ export async function renderPageInternal(
   const needsBake = pipeline ? !pipelineIsIdentity(pipeline) : false;
 
   if (needsBake && pipeline) {
-    // Keep the unbaked `target` on the page. Slider scrub restores it and
-    // lets live CSS filter/blend the raw pixels; dropping it made Dark
-    // invert twice (flash to light) and Dim apply twice (go darker).
     const bakeGen = pipeline.gen;
     const baked = await bakeRaster(target, pipeline);
     if (readPipeline().gen !== bakeGen) {
-      if (baked !== target) releasePooledCanvas(baked);
+      releaseBaked(baked, target);
       if (target !== st.canvas) releaseCanvas(target);
       try { page.cleanup(); } catch (_) { /* ignore */ }
       return renderPageInternal(canvasId, scale, renderText);
     }
     if (baked !== st.canvas) {
       showBaked(st.canvas, baked, "canvas-raw");
-      if (baked !== target) releasePooledCanvas(baked);
+      releaseBaked(baked, target);
     }
     if (st.rawCanvas && st.rawCanvas !== st.canvas && st.rawCanvas !== target) {
       releaseCanvas(st.rawCanvas);
     }
-    st.rawCanvas = target;
     st.canvas.classList.remove("canvas-raw");
-    session.dropRawIfIdle(st);
+    // Retain the unbaked raster only while a scrub is plausible — its
+    // window (a recent scrub transition, or an open appearance menu, where
+    // the next drag is being born). A tint drag inside the window restores
+    // it instead of re-rendering (dropping it outright made Dark invert
+    // twice and Dim apply twice). Outside the window the raw is a
+    // full-page surface per mounted page that nothing will ever ask for,
+    // held while the footprint latches onto the peak; the scrub path
+    // re-renders on demand (preparePagesForScrub).
+    if (session.scrubIsPlausible()) {
+      st.rawCanvas = target;
+      session.dropRawIfIdle(st);
+    } else if (target !== st.canvas) {
+      st.rawCanvas = null;
+      releaseCanvas(target);
+    } else {
+      // The render started under the identity pipeline or a scrub and drew
+      // straight into the live canvas: that canvas IS the raw, and releasing
+      // "the raw" would blank the page. Same bookkeeping the identity path
+      // below keeps.
+      st.rawCanvas = st.canvas;
+    }
   } else {
     // Identity / already scrubbing: the live canvas IS the raw.
     st.rawCanvas = st.canvas;
@@ -315,6 +346,28 @@ export async function renderPageInternal(
   return { ok: true, width: cssW, height: cssH, scale };
 }
 
+// Full-size renders share ONE bounded lane, the thumbnail lane's pattern.
+// The per-canvas rAF below coalesces a single page's requests; it never
+// limited how many pages rasterise at once, so a zoom commit re-rendered
+// every mounted page in parallel and each in-flight render held several
+// full-page surfaces (scratch, bake output) at the same time. The footprint
+// latches onto that summed peak, which is what made one commit cost
+// hundreds of MB it never handed back. Queued jobs re-check their
+// generation at the front of the lane, so a page that unmounted or was
+// superseded while waiting drops without touching pdf.js.
+const PAGE_RENDER_LIMIT = 2;
+let pageActive = 0;
+const pageQueue: Array<() => void> = [];
+
+function pumpPageQueue(): void {
+  while (pageActive < PAGE_RENDER_LIMIT && pageQueue.length > 0) {
+    const next = pageQueue.shift();
+    if (!next) return;
+    pageActive += 1;
+    next();
+  }
+}
+
 async function runLimited<T>(jobs: Array<() => Promise<T>>, limit = 2): Promise<T[]> {
   const out: T[] = [];
   let i = 0;
@@ -361,24 +414,49 @@ export async function renderPage(
         resolve(fail("cancelled", "Render cancelled"));
         return;
       }
-      try {
-        renderPageInternal(canvasId, scale, !!renderText).then(resolve);
-      } catch (e) {
-        resolve(failFrom(e));
-      }
+      pageQueue.push(() => {
+        const finish = () => {
+          pageActive -= 1;
+          pumpPageQueue();
+        };
+        // The page unmounted, or a newer scale superseded this job, while it
+        // waited for a lane slot. Drop it without touching pdf.js.
+        if (st.dead || st.queueGen !== gen) {
+          resolve(fail("cancelled", "Render cancelled"));
+          finish();
+          return;
+        }
+        renderPageInternal(canvasId, scale, !!renderText)
+          .then(resolve)
+          .catch((e: unknown) => {
+            resolve(failFrom(e));
+          })
+          .finally(finish);
+      });
+      pumpPageQueue();
     });
   });
 }
 
 /** Re-render pages that have no unbaked raw so slider scrub can start
- *  without applying CSS filters on already-baked pixels. */
-export async function preparePagesForScrub(): Promise<void> {
+ *  without applying CSS filters on already-baked pixels — the scrub entry's
+ *  background half. `onRendered` fires per page the moment its raw pixels
+ *  have landed and been tagged, in the same turn, so the caller can drop
+ *  that page's snapshot cover with no paint in between. */
+export async function preparePagesForScrub(
+  onRendered?: (canvasId: string) => void,
+): Promise<void> {
   const jobs: Array<() => Promise<unknown>> = [];
   for (const [id, st] of session.stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
     if (st.rawCanvas && st.rawCanvas !== st.canvas) continue;
     if (!st.rawCanvas) {
-      jobs.push(() => renderPageInternal(id, st.scale || 1, false));
+      jobs.push(async () => {
+        const rendered = await renderPageInternal(id, st.scale || 1, false);
+        // A failed render keeps its cover — settled pixels beat a wiped
+        // canvas — and the caller's final sweep releases it.
+        if (rendered.ok) onRendered?.(id);
+      });
     }
   }
   if (jobs.length) await runLimited(jobs, 2);

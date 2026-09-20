@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # No system packages are installed here on purpose: nothing in this lane
-      # compiles the `pdf` Tauri shell (clippy and rustdoc exclude it, the wasm
+      # compiles the `mareader-shell` Tauri shell (clippy and rustdoc exclude it, the wasm
       # check targets the pure-Rust frontend), so webkit2gtk & co. would be dead
       # weight. The shell is linted natively by the macOS lane below and fully
       # built by the release pipeline.
@@ -108,7 +108,7 @@ jobs:
       # once without the flag, print what cargo actually wanted to change, then
       # put the committed file back so every gate below still sees the lock
       # exactly as it is in git.
-      - name: Show what --locked would reject
+      - name: Show what --locked would reject (advisory)
         run: |
           cp Cargo.lock /tmp/Cargo.lock.committed
           cargo metadata --format-version 1 > /dev/null || true
@@ -125,16 +125,14 @@ jobs:
       # code and the reason — rather than a blanket exemption that silences the
       # whole workspace forever.
       #
-      # There is no `cargo fmt --check` anywhere in this workflow, and that is a
-      # decision rather than an oversight: the codebase is hand-formatted in a
-      # style rustfmt >=1.9x would rewrite across ~40 files, so the gate would
-      # fail on pre-existing code. A one-time formatting pass belongs in a
-      # dedicated commit, not in a check that is red from the day it lands.
+      # No `cargo fmt --check` here, deliberately: the tree is hand-formatted in
+      # a style rustfmt would rewrite across ~40 files, so the gate would be red
+      # on the day it landed. Mareader.md, "Known gaps".
       #
       # `--workspace`, like the test lane: a bare `cargo clippy` selects only the
       # root package, which would silently leave pdf-core (the zoom ladder and
       # fit maths), pdf-engine, pdf-paper, and both virtual-list crates out of
-      # the lint. `pdf` is excluded here and linted natively on the macOS lane,
+      # the lint. `mareader-shell` is excluded here and linted natively on the macOS lane,
       # which is also where its tests run.
       #
       # `--locked` is what caught Cargo.lock still calling the shell crate 0.7.0
@@ -143,7 +141,7 @@ jobs:
       # to resolve quietly. check-versions now reads the lock as well and names
       # the file, which is a better error than this one.
       - name: Clippy (deny warnings)
-        run: cargo clippy --workspace --all-targets --exclude pdf --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --exclude mareader-shell --locked -- -D warnings
 
       # The frontend is Rust compiled to wasm; verify it compiles for the wasm
       # target without a full `trunk build` (that lives in the release pipeline).
@@ -165,28 +163,9 @@ jobs:
       - name: Check app-chrome standalone
         run: cargo check -p app-chrome --target wasm32-unknown-unknown --locked
 
-      # NOT RUN, and the reason is worth writing down because the gate was
-      # built and tried:
-      #
-      #   RUSTDOCFLAGS='-D rustdoc::broken_intra_doc_links' \
-      #     cargo doc --no-deps --document-private-items --workspace --exclude pdf
-      #
-      # It works, and it is not a small find: 33 unresolved intra-doc links
-      # across the three crates rustdoc reached before cargo stopped the build
-      # (app-chrome, pdf-engine and the app itself), the other eleven never
-      # getting far enough to be counted. They are the same failure
-      # check-doc-paths exists for, in the one form it cannot read: a `//!`
-      # that names a sibling module without `super::`, a `[`search`]` that is
-      # both a function and a module, a `[`ScrollShell`]` left behind when its
-      # shell moved module.
-      #
-      # It is not turned on because not all of them can be fixed with a path.
-      # `[`GlossMark::context`]` points at a struct FIELD, and rustdoc has no
-      # link form for one at any prefix, so those are prose rewrites — and the
-      # eleven undocumented crates cannot be enumerated short of running
-      # rustdoc until they can. Repairing the lot is a dedicated commit,
-      # the same call the missing `cargo fmt --check` above makes: a gate that
-      # is red on the day it lands teaches people to read past red.
+      # No rustdoc link gate, deliberately: it finds 33 unresolved intra-doc
+      # links across three crates today, and repairing them is a dedicated
+      # commit. Mareader.md, "Known gaps".
 
   test:
     name: Test (workspace)
@@ -205,17 +184,47 @@ jobs:
           shared-key: test-cache
 
       # --workspace, not a bare `cargo test`: the manifest root is also the
-      # `pdf-reader` package, so a bare run tests only the app and silently
+      # `mareader` package, so a bare run tests only the app and silently
       # skips every member crate — pdf-core (the zoom ladder and fit maths),
       # virtual-list and virtual-list-leptos (the geometry kernel and its
       # anchor arithmetic). Those hold the invariants the reader depends on.
       #
-      # `pdf` (the Tauri shell) is excluded: `tauri::generate_context!`
+      # `mareader-shell` (the Tauri shell) is excluded: `tauri::generate_context!`
       # resolves `frontendDist` at compile time and panics when `../dist`
       # does not exist, and the frontend is only built by the release
       # pipeline. Its tests run on the macOS lane, which compiles it natively.
       - name: Tests
-        run: cargo test --workspace --exclude pdf --locked
+        run: |
+          set -o pipefail
+          # tee opens its file the moment the pipeline starts, which on a cold
+          # cache is before cargo has created target/. It cannot open the log,
+          # forwards the output anyway, and exits 1 once cargo is done — and
+          # pipefail hands that 1 to the step: 1,021 passing tests reported red.
+          # A warm cache hides it by restoring target/ ahead of the step.
+          mkdir -p target
+          cargo test --workspace --exclude mareader-shell --locked 2>&1 | tee target/test-output.txt
+
+      # The README states how many tests the workspace has, in two places, and
+      # the count had drifted to less than half the real figure without anyone
+      # noticing: no compiler reads prose, and a test count is a number that
+      # only goes up. Nothing but this lane has both halves — the test output
+      # and a place to read the document — so the comparison lives here rather
+      # than in the web lane's check scripts, which have no Rust to count with.
+      - name: Verify the README's test count
+        run: |
+          set -euo pipefail
+          actual=$(grep -oE '^test result: ok\. [0-9]+ passed' target/test-output.txt \
+            | grep -oE '[0-9]+' | awk '{s+=$1} END{print s}')
+          echo "workspace ran $actual tests"
+          bad=0
+          while read -r claimed; do
+            if [ "$claimed" != "$actual" ]; then
+              echo "::error::README.md claims $claimed tests, but the workspace ran $actual"
+              bad=1
+            fi
+          done < <(grep -oE '^[[:space:]]*(- )?[0-9][0-9,]* (Rust )?tests?\b' README.md \
+                     | grep -oE '[0-9][0-9,]*' | tr -d ',')
+          [ "$bad" -eq 0 ]
 
   web:
     name: Web (TypeScript, CSS, engine, contracts)
@@ -236,10 +245,10 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      # Type-checks tsconfig.json with --noEmit and then emits the tools, so the
-      # separate `check:ts` pass this lane used to run first put the same
-      # compiler over the same files twice for the same answer. What the steps
-      # below consume is the emission: scripts/*.js and the three engine bundles.
+      # Type-checks tsconfig.json with --noEmit and then emits the tools, so a
+      # separate type-check step would put the same compiler over the same files
+      # twice for the same answer. What the steps below consume is the emission:
+      # scripts/*.js and the three engine bundles.
       - name: Build TypeScript
         run: npm run build:ts
 
@@ -294,6 +303,16 @@ jobs:
       - name: Verify the DOM contract agrees
         run: node scripts/check-dom-contract.js
 
+      # Numbers declared on both sides of a boundary no compiler spans: the
+      # import progress channel, the title-bar height and traffic-light inset,
+      # the z-index scale, the sidebar's motion and gutter, and the import
+      # dock's progress ring. Each used to carry only a comment asking the
+      # reader to keep it in sync. A drift in any of them is silent: a progress
+      # ring that never moves, traffic lights sitting off-centre, a popover
+      # painting under the page, a rail that releases its canvases a frame late.
+      - name: Verify the chrome contracts agree
+        run: node scripts/check-chrome-contracts.js
+
       # The imperative engine (public/pdfEngine.ts) is browser code; run its
       # stub-based smoke test (compiled to scripts/test-engine-smoke.js by the
       # TypeScript build step above) to catch regressions in open /
@@ -336,12 +355,12 @@ jobs:
       - name: Stub the frontend dist
         run: |
           mkdir -p dist
-          printf '<!doctype html><title>PDF Reader</title>' > dist/index.html
+          printf '<!doctype html><title>Mareader</title>' > dist/index.html
 
       - name: Clippy (deny warnings)
-        run: cargo clippy -p pdf --all-targets --locked -- -D warnings
+        run: cargo clippy -p mareader-shell --all-targets --locked -- -D warnings
 
       # The AiChunk wire-contract tests live in this crate; without this step
       # they compile nowhere and run nowhere.
       - name: Tests (shell crate)
-        run: cargo test -p pdf --locked
+        run: cargo test -p mareader-shell --locked

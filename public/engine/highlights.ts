@@ -47,10 +47,33 @@ function occurrences(
   return { spans, offsetsUsable };
 }
 
+/** The ordinal this page emphasises, or -1 for none. One home for the rule,
+ *  which both halves of the highlight lifecycle apply: `applyHighlights` sets
+ *  it while painting, `setActiveMatch` re-marks boxes already on the page. */
+function activeOrdinal(page: number): number {
+  const active = session.activeMatch;
+  return active && active.page === page ? active.index : -1;
+}
+
+/** Drop every highlight box on a page, leaving the text layer itself alone. */
+export function clearHighlightBoxes(st: PageState): void {
+  st.host?.querySelectorAll(".highlight").forEach((n) => n.remove());
+}
+
+/** Re-mark which painted box is the active match, without repainting any. */
+export function markActiveHighlight(st: PageState): void {
+  if (!st.textLayerEl) return;
+  const ord = activeOrdinal(st.page);
+  const wanted = ord >= 0 ? String(ord) : null;
+  for (const d of st.textLayerEl.querySelectorAll(".highlight") as NodeListOf<HTMLElement>) {
+    d.classList.toggle("is-active", wanted !== null && d.dataset.match === wanted);
+  }
+}
+
 export function applyHighlights(st: PageState): void {
   const { host, textLayerEl } = st;
   if (!host) return;
-  host.querySelectorAll(".highlight").forEach((n) => n.remove());
+  clearHighlightBoxes(st);
   const query = session.searchQuery;
   if (!query || !textLayerEl) return;
   const origin = host.getBoundingClientRect();
@@ -91,8 +114,7 @@ export function applyHighlights(st: PageState): void {
     }
     if (boxes.length >= MAX_HIGHLIGHTS_PER_PAGE) break;
   }
-  const activeOrd =
-    session.activeMatch && session.activeMatch.page === st.page ? session.activeMatch.index : -1;
+  const activeOrd = activeOrdinal(st.page);
   for (const { r, ord: n } of boxes) {
     const d = document.createElement("div");
     d.className = n === activeOrd ? "highlight is-active" : "highlight";

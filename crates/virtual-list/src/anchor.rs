@@ -99,6 +99,13 @@ pub fn rescale_anchor<L: Layout + ?Sized>(
     if layout.is_empty() || factor <= 0.0 || factor.is_nan() {
         return None;
     }
+    // A factor of one is a rebuild rather than a rescale: nothing above the
+    // anchor changes, so the walk below would sum the whole prefix only to
+    // rediscover the scroll position it was handed.
+    if factor == 1.0 {
+        return Some(scroll_top.max(0.0));
+    }
+
     let item = anchor_item.min(layout.item_count() - 1);
     let size = layout.size(item).max(0.0);
     let clamped_anchor_px = anchor_px.clamp(0.0, size);
@@ -180,6 +187,13 @@ mod tests {
         let (item, px) = pin_at(&l, 0.0, 200.0, 0.5);
         assert_eq!(item, 1);
         assert!((px - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_factor_of_one_leaves_the_scroll_alone() {
+        let l: ListLayout = ListLayout::uniform(10, 100.0, 24.0);
+        let (item, px) = pin_at(&l, 340.0, 200.0, 0.5);
+        assert_eq!(rescale_anchor(&l, 340.0, item, px, 1.0), Some(340.0));
     }
 
     #[test]

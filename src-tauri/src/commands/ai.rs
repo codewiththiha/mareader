@@ -3,6 +3,8 @@ use std::sync::OnceLock;
 use futures::StreamExt;
 use tauri::{AppHandle, Emitter};
 
+use ai_core::gloss::is_glossable;
+
 use crate::ai::{AiChunk, AiError, AiErrorKind, AiProvider, AiStreamEvent, create_provider};
 
 /// One provider for the process's lifetime. `create_provider` reads the env
@@ -12,19 +14,6 @@ static PROVIDER: OnceLock<Box<dyn AiProvider>> = OnceLock::new();
 
 fn provider() -> &'static dyn AiProvider {
     PROVIDER.get_or_init(create_provider).as_ref()
-}
-
-/// Mirror of the limit behind `ai_core::gloss::is_glossable` (its
-/// `MAX_GLOSS_CHARS`, in `ai_core::gloss::geometry`) — the frontend gate (the
-/// Explain pill) is the real one; this only protects the invoke boundary.
-/// Keep the two in sync.
-const MAX_GLOSS_CHARS: usize = 60;
-
-fn is_glossable(word: &str) -> bool {
-    // A word, not a phrase: trimmed, within the cap, and free of interior
-    // whitespace — same rule as `ai_core::gloss::is_glossable`.
-    let t = word.trim();
-    !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS && !t.chars().any(char::is_whitespace)
 }
 
 /// Emit one chunk stamped with the run it belongs to.
@@ -99,21 +88,3 @@ pub async fn explain_word(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::is_glossable;
-
-    /// Same rule as `ai_core::gloss::is_glossable`, asserted here so a
-    /// drift between the two gates fails a test instead of failing silently
-    /// at the invoke boundary.
-    #[test]
-    fn gate_mirrors_the_frontend_rule() {
-        assert!(is_glossable("palimpsest"));
-        assert!(is_glossable(&"a".repeat(60)));
-        assert!(!is_glossable(&"a".repeat(61)));
-        assert!(!is_glossable("   "));
-        // A phrase is not a word: interior whitespace is rejected.
-        assert!(!is_glossable("quick brown"));
-        assert!(!is_glossable("  quick brown  "));
-    }
-}

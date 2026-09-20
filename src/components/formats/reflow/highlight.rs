@@ -41,10 +41,12 @@ use leptos::prelude::*;
 
 use app_chrome::hooks::dom::{by_id, range_rects};
 
+use std::hash::Hash;
 use std::sync::Arc;
 
 use super::spot::{match_spans, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
+use crate::epoch::epoch_signal;
 use crate::state::ReaderState;
 
 /// Boxes one row will paint, mirroring the engine's cap on the boxes it paints
@@ -97,18 +99,15 @@ pub fn BlockSearchHits(
         let reflow = state.document.content.reflow;
         let container = state.viewer.container_size;
         let margin = state.viewer.page_margin;
-        Signal::derive(move || {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            reflow.cut_generation.get().hash(&mut hasher);
+        epoch_signal(move |hasher| {
+            reflow.cut_generation.get().hash(hasher);
             reflow
                 .heights
-                .with(|heights| (Arc::as_ptr(heights) as usize).hash(&mut hasher));
+                .with(|heights| (Arc::as_ptr(heights) as usize).hash(hasher));
             let geo = reflow.geometry.get();
-            geo.content_width.to_bits().hash(&mut hasher);
-            container.get().0.to_bits().hash(&mut hasher);
-            margin.get().to_bits().hash(&mut hasher);
-            hasher.finish()
+            geo.content_width.to_bits().hash(hasher);
+            container.get().0.to_bits().hash(hasher);
+            margin.get().to_bits().hash(hasher);
         })
     };
     let row_id = block_row_id(block);

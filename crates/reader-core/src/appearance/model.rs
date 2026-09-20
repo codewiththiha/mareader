@@ -7,7 +7,7 @@
 //! Night survive as presets.
 //!
 //! CONTRACT: the field names below are the serde schema persisted inside
-//! `pdfreader.settings.v1`. Do not rename them.
+//! `mareader.settings.v1`. Do not rename them.
 
 use serde::{Deserialize, Serialize};
 
@@ -203,6 +203,17 @@ impl Appearance {
     /// True when the tint should actually be applied.
     pub fn has_tint(&self) -> bool {
         self.tint_strength > 0
+    }
+
+    /// The tint's effect amount, 0..=1 — the single number both pipelines
+    /// feed their curves. The dial runs 0..=100 but full effect lands at
+    /// 50: the old /100 mapping spent the whole first half of the drag on
+    /// movement nobody could see, so a point of slider now buys twice the
+    /// visible change. The clamp is load-bearing — past half, `t` would
+    /// exceed 1.0, overshooting the sepia cap and rotating token hues
+    /// around the circle instead of onto the requested one.
+    pub fn tint_amount(&self) -> f64 {
+        (self.tint_strength as f64 / 50.0).min(1.0)
     }
 
     /// The exact hex (or oklch literal) the UI accent currently has. Computed

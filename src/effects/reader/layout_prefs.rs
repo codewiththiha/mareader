@@ -24,6 +24,7 @@ use virtual_list_leptos::Virtualizer;
 use reader_core::view::{PAGE_GAP, ViewMode};
 use reader_core::zoom_math::FitMode;
 
+use crate::effects::app::theme::html_style;
 use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
 
@@ -53,6 +54,18 @@ pub fn layout_prefs(state: AppState, vertical: Virtualizer, horizontal: Virtuali
         Effect::new(move |_| {
             let no_gap = state.settings.with(|st| st.layout.no_gap);
             let gap = if no_gap { 0.0 } else { PAGE_GAP };
+            // The CSS half of the same number, published with the value it
+            // mirrors. The vertical strip's pages paint half of the gap each
+            // as a texture overhang, so the band between two pages is
+            // textured paper rather than a stretch of bare backdrop — the
+            // backdrop base is the paper a page's own raster carries
+            // (public/engine/theme/paper.ts), and only the overlay makes it
+            // read as the page beside it. Written before the dedupe below:
+            // the first run IS the gap's current value, and it is the only
+            // chance to get the token onto the root before the first frame.
+            if let Some(style) = html_style() {
+                let _ = style.set_property("--page-gap", &format!("{gap}px"));
+            }
             if (vs.viewer.page_gap.get_untracked() - gap).abs() < 1e-9 {
                 return;
             }

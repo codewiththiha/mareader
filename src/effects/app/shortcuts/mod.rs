@@ -6,6 +6,7 @@
 //! reactive owner, so everything it touches is a Copy signal handle /
 //! ReaderState captured by value.
 
+mod auto_scroll;
 mod keymap;
 mod navigation;
 mod window;
@@ -15,6 +16,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::state::{ReaderState, SidebarMode};
+use auto_scroll::handle_auto_scroll_shortcut;
 use navigation::{end_hold_for, handle_navigation_shortcut, stop_hold};
 use window::handle_modifier_shortcut;
 use zoom::handle_zoom_shortcut;
@@ -90,7 +92,7 @@ pub fn shortcuts(
             return;
         }
 
-        crate::effects::reader::auto_scroll::handle_auto_scroll_shortcut(state, &ev);
+        handle_auto_scroll_shortcut(state, &ev);
         handle_zoom_shortcut(state, &ev);
         handle_navigation_shortcut(state, &ev);
     });

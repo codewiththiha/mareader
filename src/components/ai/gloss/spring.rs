@@ -4,8 +4,7 @@
 //! [`SpringValue`] and knows nothing about what the fields mean. This is the
 //! seam that tells it what a gloss box is: `ai_core::gloss` owns the maths (and
 //! `FloatBox`, the primitive's other rider, delegates to the same
-//! `ui_geom::spring` integrator), so the adapter is three forwards and a
-//! magnitude test.
+//! `ui_geom::spring` integrator), so the adapter is four forwards.
 //!
 //! It lives here rather than beside the primitive because the dependency has to
 //! point one way. A generic primitive that imported a feature crate's type
@@ -29,11 +28,10 @@ impl SpringValue for GlossBox {
         ai_core::gloss::step_spring(*self, *vel, *target, dt)
     }
     fn all_small(&self, epsilon: f64) -> bool {
-        self.w.abs() < epsilon
-            && self.x.abs() < epsilon
-            && self.y.abs() < epsilon
-            && self.h.abs() < epsilon
-            && self.r.abs() < epsilon
+        // A velocity is small exactly when it is close to zero, so this is
+        // `boxes_close` against the default rather than a second enumeration of
+        // the five fields that could drift from the one `close` uses.
+        ai_core::gloss::boxes_close(*self, GlossBox::default(), epsilon)
     }
 }
 
@@ -47,9 +45,10 @@ mod tests {
 
     #[test]
     fn gloss_all_small_covers_every_field() {
-        // Each field above epsilon on its own must break "all small": the
-        // check is hand-rolled for GlossBox, and a dropped field would let
-        // a still-moving spring tear its rAF loop down early.
+        // Each field above epsilon on its own must break "all small", or a
+        // still-moving spring would tear its rAF loop down early. This is the
+        // only per-field coverage either crate has: `boxes_close`'s own test
+        // perturbs all five fields together, which a dropped field survives.
         for above in [
             gloss(1.0, 0.0, 0.0, 0.0, 0.0),
             gloss(0.0, 1.0, 0.0, 0.0, 0.0),

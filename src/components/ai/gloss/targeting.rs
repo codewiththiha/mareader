@@ -68,7 +68,7 @@ pub fn use_card_targeting(state: AppState, ctrl: GlossController) -> CardTargeti
     // width moves: the mark keeps its words, but the words are somewhere else,
     // and nothing scrolled. A PDF's pages are fixed pixels and have nothing to
     // add beyond the scroll, zoom, mode and page the watcher already tracks.
-    let invalidate = if state.reader.reflowable_untracked() {
+    let invalidate = if state.reader.reflowable_now() {
         reflow_invalidation(state.reader)
     } else {
         no_invalidation()

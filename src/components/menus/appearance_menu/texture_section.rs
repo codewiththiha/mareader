@@ -11,7 +11,7 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::form::slider::Slider;
 use reader_core::appearance::TextureMode;
-use crate::components::primitives::controls::option_button::OptionButton;
+use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::state::AppState;
 use crate::effects::appearance::{AppearanceScrub, preview_appearance};
 
@@ -38,8 +38,8 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                 .map(|mode| {
                     let selected = Signal::derive(move || current() == mode);
                     view! {
-                        <OptionButton
-                            selected=selected
+                        <ToggleButton
+                            active=selected
                             on_click=move || {
                                 super::update_appearance(state, move |s| {
                                     s.appearance.texture = mode;
@@ -52,7 +52,7 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                                     .then(|| view! { <Icon name=IconName::Check size=11 /> })
                             }}
                             <span class="truncate">{mode.label()}</span>
-                        </OptionButton>
+                        </ToggleButton>
                     }
                 })
                 .collect_view()}

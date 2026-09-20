@@ -60,8 +60,12 @@ pub fn mode_change(state: AppState) {
         }
         // A mode flip leaves the outgoing view's rasters behind and nothing
         // necessarily renders right after, so the engine's own sweep (which
-        // only runs inside a render) would never fire. Release now.
+        // only runs inside a render) would never fire. Release now — caches
+        // and zoom masks together, the pair every other settle point drops:
+        // a mask the flip superseded would otherwise hold a full-page
+        // surface until its host unmounts.
         pdf_engine::api::sweep();
+        pdf_engine::api::sweep_snapshots();
         let auto = state.settings.with(|s| s.layout.auto_scale);
         if mode == ViewMode::ScrollHorizontal {
             // Horizontal is one page per virtual item. Do not reinterpret

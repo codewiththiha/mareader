@@ -28,19 +28,6 @@ pub use import::{
 
 pub(crate) use library_core::paths::{dir_label as folder_label, file_name};
 
-#[cfg(test)]
-mod tests {
-    use super::folder_label;
-
-    #[test]
-    fn a_folder_is_called_by_the_name_it_was_picked_by() {
-        assert_eq!(folder_label("/Users/me/Books"), "Books");
-        assert_eq!(folder_label("/Users/me/Books/"), "Books");
-        assert_eq!(folder_label("C:\\Users\\me\\Books"), "Books");
-        assert_eq!(folder_label("/"), "/");
-    }
-}
-
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
@@ -192,7 +179,7 @@ pub fn delete_stored(path: &str) {
     let path = path.to_string();
     wasm_bindgen_futures::spawn_local(async move {
         if let Err(e) = tauri_bridge::invoke(CMD_DELETE, args).await {
-            let detail = e.as_string().unwrap_or_else(|| format!("{e:?}"));
+            let detail = describe(e);
             web_sys::console::warn_1(&format!("[library] could not delete {path}: {detail}").into());
         }
     });

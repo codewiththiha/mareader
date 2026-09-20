@@ -63,7 +63,7 @@ pub(crate) fn install_app_effects(
     }
 
     apply_theme(state, appearance);
-    apply_typography(state, typography);
+    apply_typography(typography);
     paper_settings(state);
     publish_motion(state);
     shortcuts(state);

@@ -9,7 +9,7 @@ import {
 } from "./harness.js";
 
 export async function run(): Promise<void> {
-  // 2. register + render a page (identity pipeline first)
+  // Register and render a page, identity pipeline first.
   PDFReader.registerPage(1, "cont-0-cv", "cont-0-pg");
   const page0 = getEl("cont-0-pg");
   (page0 as unknown as { querySelector: () => { classList: { toggle(): void } } }).querySelector = () => ({ classList: { toggle() {} } });
@@ -26,7 +26,7 @@ export async function run(): Promise<void> {
   }
   console.log("paper frame ok: raw white frame stashed for the session");
 
-  // 2b. light theme with multiply over PURE WHITE = identity pipeline: a
+  // A light theme with multiply over PURE WHITE is the identity pipeline: a
   // render must allocate ZERO page-sized bake canvases (the default-theme
   // fast path). The paper frame's downscale scratch is created once (above)
   // and reused, so it allocates nothing here either.
@@ -38,7 +38,7 @@ export async function run(): Promise<void> {
   if (bakeCanvases !== 0) throw new Error("identity pipeline allocated bake canvases: " + bakeCanvases);
   console.log("identity fast path ok (0 bake canvases)");
 
-  // 8. burst coalescing
+  // Burst coalescing.
   const p1 = PDFReader.renderPage("cont-0-cv", 1.0, true);
   const p2 = PDFReader.renderPage("cont-0-cv", 1.2, true);
   const p3 = PDFReader.renderPage("cont-0-cv", 1.4, true);

@@ -44,3 +44,10 @@ pub fn refresh_theme() {
 pub fn set_scrub_mode(on: bool) {
     pdf_engine::api::set_scrub_mode(on);
 }
+
+/// Whether the appearance popover is open: the engine retains rendered
+/// pages' unbaked raws while it is, so the session's first tint drag blits
+/// instead of re-rendering every page (public/engine/state.ts).
+pub fn set_appearance_menu_open(on: bool) {
+    pdf_engine::api::set_appearance_menu_open(on);
+}

@@ -265,3 +265,38 @@ fn CustomColorPicker(
         </MenuPopover>
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_picker_emits_the_css_primaries_it_shows() {
+        assert_eq!(hsl_to_hex(0.0, 100.0, 50.0), "#ff0000");
+        assert_eq!(hsl_to_hex(120.0, 100.0, 50.0), "#00ff00");
+        assert_eq!(hsl_to_hex(240.0, 100.0, 50.0), "#0000ff");
+        assert_eq!(hsl_to_hex(0.0, 0.0, 0.0), "#000000");
+        assert_eq!(hsl_to_hex(0.0, 0.0, 100.0), "#ffffff");
+    }
+
+    #[test]
+    fn a_colour_survives_the_trip_through_the_sliders() {
+        // The picker's whole contract: open it on a stored hex, move nothing,
+        // and the hex written back must be the one that was read. A drift here
+        // silently re-tints every saved highlight the first time the reader
+        // opens the custom swatch.
+        for hex in ["#2563eb", "#e56b64", "#6fd58c", "#a58af0", "#0f172a"] {
+            let (h, s, l) = hex_to_hsl(hex);
+            assert_eq!(hsl_to_hex(h, s, l), hex, "{hex} did not survive the round trip");
+        }
+    }
+
+    #[test]
+    fn a_grey_has_no_hue_to_remember() {
+        // The achromatic branch: d == 0 returns a zeroed hue rather than
+        // dividing by a zero saturation denominator.
+        let (h, sat, l) = hex_to_hsl("#808080");
+        assert_eq!((h, sat), (0.0, 0.0));
+        assert!((l - 50.196).abs() < 0.01, "mid grey should read as ~50% light, got {l}");
+    }
+}

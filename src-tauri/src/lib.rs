@@ -1,4 +1,4 @@
-//! PDF Reader — Tauri backend.
+//! Mareader — Tauri backend.
 //!
 //! Besides hosting the webview this crate owns the two OS touch-points the
 //! frontend cannot do itself:

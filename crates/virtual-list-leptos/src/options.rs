@@ -205,16 +205,4 @@ impl VirtualizerOptions {
         self.retention_max = max_retained;
         self
     }
-
-    /// Sets [`Self::measure_epsilon`].
-    pub fn epsilon(mut self, eps: f64) -> Self {
-        self.measure_epsilon = eps;
-        self
-    }
-
-    /// Sets [`Self::max_scroll_retries`].
-    pub fn max_retries(mut self, retries: u32) -> Self {
-        self.max_scroll_retries = retries;
-        self
-    }
 }

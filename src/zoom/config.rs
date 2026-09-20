@@ -1,10 +1,6 @@
 //! Zoom behaviour knobs in one place: the clamped scale range and the
-//! animation profile. Every view mode shares the same numbers today; the
-//! per-mode split exists so horizontal, vertical and paginated zooms can be
-//! tuned independently later without scattering mode checks through the
-//! pipeline.
+//! animation profile. Every view mode shares one profile.
 
-use reader_core::view::ViewMode;
 use reader_core::zoom_math::{MAX_SCALE, MIN_SCALE};
 
 /// Duration of the zoom tween, in milliseconds. Linear, not eased — see
@@ -91,10 +87,9 @@ impl ZoomProfile {
     }
 }
 
-/// The profile for a view mode. Identical values today on purpose: the
-/// refactor that introduced this config changed the zoom *architecture*, not
-/// the numbers — behaviour stays put until a profile needs to diverge.
-pub fn profile_for(_mode: ViewMode) -> ZoomProfile {
+/// The zoom profile. One for every view mode: the refactor that introduced
+/// this config changed the zoom *architecture*, not the numbers.
+pub fn zoom_profile() -> ZoomProfile {
     ZoomProfile {
         min: MIN_SCALE,
         max: MAX_SCALE,
@@ -115,7 +110,7 @@ mod tests {
 
     #[test]
     fn clamp_honours_the_range_and_survives_garbage() {
-        let p = profile_for(ViewMode::ScrollVertical);
+        let p = zoom_profile();
         assert_eq!(p.clamp(0.01), MIN_SCALE);
         assert_eq!(p.clamp(999.0), MAX_SCALE);
         assert_eq!(p.clamp(1.25), 1.25);
@@ -132,10 +127,10 @@ mod tests {
                 enabled: false,
                 duration_ms: 250.0,
             },
-            retention: profile_for(ViewMode::Single).retention,
+            retention: zoom_profile().retention,
         };
         assert_eq!(p.duration_ms(), 0.0);
-        assert_eq!(profile_for(ViewMode::Single).duration_ms(), ZOOM_ANIM_MS);
+        assert_eq!(zoom_profile().duration_ms(), ZOOM_ANIM_MS);
     }
 
     #[test]
@@ -143,7 +138,7 @@ mod tests {
         // The commit's evictions must still be bridged after the animation
         // itself ends, or the old surface pops before the new geometry
         // stabilises.
-        let p = profile_for(ViewMode::ScrollVertical);
+        let p = zoom_profile();
         assert!(p.retention.grace_ms as f64 > p.duration_ms());
         assert!(p.retention.max_zombies > 0);
     }

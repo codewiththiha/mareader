@@ -6,5 +6,5 @@ fn main() {
     // environment before Tauri (and the AI provider) starts up.
     let _ = dotenvy::dotenv();
 
-    pdf_lib::run()
+    mareader_lib::run()
 }

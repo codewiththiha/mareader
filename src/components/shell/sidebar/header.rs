@@ -24,9 +24,11 @@ pub(crate) fn SidebarHeader(
     // modal the 3-dash menu does.
     let settings_open = use_context::<RwSignal<bool>>()
         .expect("the reader page provides the settings-open signal");
-    // The chrome row's lead: the 48px traffic-light inset on macOS, the
-    // resting 12px everywhere else. Fixed per process, like the split it
-    // comes from — no reason for it to be reactive.
+    // The chrome row's lead: the traffic-light gutter on macOS, the resting
+    // 12px everywhere else. Fixed per process, like the split it comes from
+    // — no reason for it to be reactive. The gutter is the shell
+    // controller's `TRAFFIC_LIGHTS_GUTTER_PX`, and `check-chrome-contracts`
+    // fails the build if the two stop agreeing.
     let lead = if app_chrome::platform::is_macos() {
         "pl-[88px]"
     } else {

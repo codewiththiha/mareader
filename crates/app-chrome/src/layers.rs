@@ -4,7 +4,9 @@
 //! Tailwind compiler scans source text, so every token stays a static literal
 //! and `z-[var(--z-popover)]` etc. ship in `styles.css`. Owned here because
 //! the chrome surfaces are the layering's anchor; every floating surface,
-//! toast and overlay reads the table from `app_chrome::layers`.
+//! toast and overlay reads the table from `app_chrome::layers`. Both halves of
+//! the scale — these constants and the `--z-*` numbers — are checked against
+//! each other by `tools/check-chrome-contracts.ts`.
 
 pub const CONTENT: &str = "z-0";
 pub const CONTROLS: &str = "z-[var(--z-controls)]";

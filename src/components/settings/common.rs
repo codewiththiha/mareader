@@ -18,7 +18,9 @@ use leptos::html;
 use leptos::prelude::*;
 
 use crate::components::primitives::floating::menu_popover::MenuPopover;
+use crate::components::primitives::form::row::Row;
 use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
 
@@ -60,6 +62,62 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
             <Icon name=icon size=17 />
             {move || (active.get() == t).then(|| view! { <span>{label}</span> })}
         </button>
+    }
+}
+
+/// A −/+ adjuster row: the current value formatted on the left, the two
+/// steppers on the right, each disabled at its end of the range. Shared by the
+/// Fonts and Layout tabs, whose adjusters differ only in what they format and
+/// how far they step.
+#[component]
+pub(crate) fn StepperRow(
+    label: &'static str,
+    /// The formatted current value ("17 px", "1.7×", …).
+    display: Signal<String>,
+    #[prop(into)]
+    minus_disabled: Signal<bool>,
+    #[prop(into)]
+    plus_disabled: Signal<bool>,
+    on_minus: Callback<()>,
+    on_plus: Callback<()>,
+    /// What the steppers adjust; each button's tooltip derives from it
+    /// ("Decrease font size" / "Increase font size").
+    #[prop(into)]
+    title: String,
+) -> impl IntoView {
+    let minus_title = format!("Decrease {title}");
+    let plus_title = format!("Increase {title}");
+    view! {
+        <Row label=label>
+            <span class="flex items-center gap-3">
+                // Inert when neither stepper can move, which is the one state
+                // where the number on show is not one the reader can change.
+                <span
+                    class="w-14 text-right text-sm tabular-nums text-ink"
+                    class=("opacity-45", move || minus_disabled.get() && plus_disabled.get())
+                >
+                    {move || display.get()}
+                </span>
+                <span class="flex gap-1.5">
+                    <IconButton
+                        icon=IconName::Minus
+                        size=14
+                        title=minus_title
+                        class="rounded-full bg-line/60 hover:bg-line".to_string()
+                        disabled=minus_disabled
+                        on_click=move || on_minus.run(())
+                    />
+                    <IconButton
+                        icon=IconName::Plus
+                        size=14
+                        title=plus_title
+                        class="rounded-full bg-line/60 hover:bg-line".to_string()
+                        disabled=plus_disabled
+                        on_click=move || on_plus.run(())
+                    />
+                </span>
+            </span>
+        </Row>
     }
 }
 

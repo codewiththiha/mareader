@@ -8,7 +8,7 @@ use leptos::prelude::*;
 
 use crate::components::primitives::form::slider::Slider;
 use reader_core::appearance::NoiseMode;
-use crate::components::primitives::controls::option_button::OptionButton;
+use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::state::AppState;
 use crate::effects::appearance::{AppearanceScrub, preview_appearance};
 
@@ -32,8 +32,8 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
                 .map(|m| {
                     let selected = Signal::derive(move || current() == m);
                     view! {
-                        <OptionButton
-                            selected=selected
+                        <ToggleButton
+                            active=selected
                             on_click=move || {
                                 super::update_appearance(state, move |s| {
                                     s.appearance.noise = m;
@@ -47,7 +47,7 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
                             variant_class="px-2 py-1.5 text-xs"
                         >
                             {m.label()}
-                        </OptionButton>
+                        </ToggleButton>
                     }
                 })
                 .collect_view()}

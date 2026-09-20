@@ -27,6 +27,18 @@ pub fn set_scrub_mode(on: bool) {
     bridge::set_scrub_mode(on);
 }
 
+/// Whether the appearance popover is open. While it is, the engine retains
+/// the unbaked raw of every page that finishes rendering, so the first tint
+/// drag of a session blits retained pixels under the live CSS instead of
+/// re-rendering every page; closing arms the short idle tail that frees
+/// them. A plain flag, not a theme-queue mutation: nothing raster moves.
+pub fn set_appearance_menu_open(on: bool) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::set_appearance_menu_open(on);
+}
+
 /// Release rasters/caches the engine no longer needs (advisory
 /// `pdf.cleanup`). Fired when reading work ends: zoom commit, mode flip,
 /// scroll idle — so memory drops immediately instead of waiting for the
@@ -36,4 +48,16 @@ pub fn sweep() {
         return;
     }
     bridge::sweep();
+}
+
+/// Drop the `.page-snapshot` zoom masks the live page hosts still carry,
+/// zeroing their backing stores. Fired alongside [`sweep`] where reading work
+/// ends: a mask whose render was superseded, or never landed, would otherwise
+/// hold a full-page RGBA surface until the host unmounts (the app-side
+/// `remove_snapshots` only clears a host when ITS OWN render completes).
+pub fn sweep_snapshots() {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::sweep_snapshots();
 }

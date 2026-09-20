@@ -15,8 +15,7 @@ use library_core::folder::Tombstone;
 use library_core::shelf::{Shelf, ALL_SHELF};
 
 use library_core::book::{Book, Fingerprint, Origin};
-use library_core::folder::{FolderOpts, WatchedFolder};
-use library_core::tracking::TrackingTree;
+use library_core::folder::WatchedFolder;
 use library_core::shelf::ShelfKind;
 use reader_core::format::Format;
 
@@ -202,20 +201,13 @@ fn stored_at(id: &str, src: &str, store: &str, n: u32) -> Row {
 
 fn nested(n: u32) -> WatchedFolder {
     WatchedFolder {
-        id: "f1".into(),
-        root: "/books".into(),
-        opts: FolderOpts::default(),
         placed: HashSet::from([fp(n)]),
-        ignored: Vec::new(),
-        last_seen: Vec::new(),
         shelf_map: BTreeMap::from([
             (String::new(), "shelf1".to_string()),
             ("Fiction".to_string(), "shelf2".to_string()),
             ("Fiction/SciFi".to_string(), "shelf3".to_string()),
         ]),
-        scanned_ms: 0,
-        tracking: TrackingTree::default(),
-        shapes: library_core::shape::ShapeTree::default(),
+        ..library_core::testkit::watched_folder("f1", "/books")
     }
 }
 
@@ -342,9 +334,6 @@ fn folder_shelf(id: &str, folder_id: &str, rel: &str) -> Shelf {
 
 fn folder_with_moved_log() -> WatchedFolder {
     WatchedFolder {
-        id: "f1".into(),
-        root: "/books".into(),
-        opts: FolderOpts::default(),
         placed: HashSet::from([fp(7)]),
         ignored: vec![Tombstone {
             fp: fp(7),
@@ -356,14 +345,11 @@ fn folder_with_moved_log() -> WatchedFolder {
             moved: true,
             returned_row: None,
         }],
-        last_seen: Vec::new(),
         shelf_map: BTreeMap::from([
             ("Fiction".to_string(), "shelf2".to_string()),
             ("Fiction/SciFi".to_string(), "shelf3".to_string()),
         ]),
-        scanned_ms: 0,
-        tracking: TrackingTree::default(),
-        shapes: library_core::shape::ShapeTree::default(),
+        ..library_core::testkit::watched_folder("f1", "/books")
     }
 }
 
@@ -403,20 +389,13 @@ fn a_departure_s_landing_does_not_bind_the_log_it_just_wrote() {
 
 fn reading_folder() -> WatchedFolder {
     WatchedFolder {
-        id: "f1".into(),
-        root: "/books".into(),
-        opts: FolderOpts::default(),
         placed: HashSet::from([fp(7), fp(8), fp(9), fp(14)]),
-        ignored: Vec::new(),
-        last_seen: Vec::new(),
         shelf_map: BTreeMap::from([
             (String::new(), "r".to_string()),
             ("Fiction".to_string(), "fic".to_string()),
             ("Fiction/SciFi".to_string(), "sf".to_string()),
         ]),
-        scanned_ms: 0,
-        tracking: TrackingTree::default(),
-        shapes: library_core::shape::ShapeTree::default(),
+        ..library_core::testkit::watched_folder("f1", "/books")
     }
 }
 

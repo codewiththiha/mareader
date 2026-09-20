@@ -17,21 +17,28 @@ import type {
 import { disposeScratch, releaseCanvas } from "./canvas";
 import { PAGE_SNAPSHOT_SELECTOR, TEXT_LAYER_SELECTOR } from "./dom-contract";
 
-export const ENGINE_VERSION = "0.5.0"; // 0.5.0: search fully ported to Rust (extractPageText + setSearchContext); registerPage became typed args
+// The engine's own API version, served as `PDFReader.version()`. It tracks the
+// JS surface rather than the app release, and unlike the six sources
+// `tools/check-versions.ts` compares, nothing here checks it against them.
+export const ENGINE_VERSION = "0.7.0";
 
 /** Cap kept tight: each thumb is a pair of rasters. 16 keeps several
  *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
 export const THUMB_CACHE_MAX = 16;
 
-/** Max pixels per canvas layer. The 16M base (~64 MB RGBA) is the ceiling,
+/** Max pixels per canvas layer. The 12M base (~48 MB RGBA) is the ceiling,
  *  not the target: US-Letter at 100% zoom on a 2x display is ~1.5M px, at
- *  200% ~7.8M. 16M keeps the FULL native devicePixelRatio through ~200% zoom
- *  on any display; total GPU memory is bounded by the 3-page mounted ceiling
- *  (RENDER_BUDGET), not by this. The ceiling scales with the device's
- *  reported memory (navigator.deviceMemory, Chromium-only; elsewhere the
- *  base applies) so a 16 GB machine can push ~200% on a 3x display without
- *  hitting the cap. */
-const PAGE_MAX_PIXELS_BASE = 16 * 1024 * 1024;
+ *  200% ~7.8M, so 12M keeps the FULL native devicePixelRatio through ~245%
+ *  zoom — past where anyone is inspecting rather than reading — while every
+ *  transient surface a zoom commit stacks (scratch, bake output, snapshot
+ *  mask) is a quarter smaller than the 16M this used to be. The footprint
+ *  latches onto the session's dirty high-water mark and never hands it back,
+ *  so the cheapest megabyte is the one a transient never allocates; total
+ *  GPU memory is bounded by the 3-page mounted ceiling (RENDER_BUDGET), not
+ *  by this. The ceiling used to DOUBLE on machines reporting >= 8 GB; that
+ *  bought no visible sharpness and made every transient twice the cost,
+ *  permanently. Low-memory devices still get half the base. */
+const PAGE_MAX_PIXELS_BASE = 12 * 1024 * 1024;
 
 function memoryScaledPixelCeiling(): number {
   // Guarded end to end: `navigator` is absent in the Node smoke harness and
@@ -40,15 +47,34 @@ function memoryScaledPixelCeiling(): number {
   const nav = typeof navigator !== "undefined" ? (navigator as { deviceMemory?: number }) : undefined;
   const memory = nav && nav.deviceMemory;
   if (typeof memory !== "number" || !(memory > 0)) return PAGE_MAX_PIXELS_BASE;
-  if (memory >= 8) return PAGE_MAX_PIXELS_BASE * 2;
   if (memory >= 4) return PAGE_MAX_PIXELS_BASE;
   return PAGE_MAX_PIXELS_BASE / 2;
 }
 
 export const PAGE_MAX_PIXELS = memoryScaledPixelCeiling();
 
-const RAW_IDLE_MS = 10_000;
+// A retained raw is only worth its full-page surface while a tint scrub can
+// still plausibly restore it; the idle timer is the short tail of that
+// window, not a standing keep-alive.
+const RAW_IDLE_MS = 2_000;
+/** How long after a scrub transition a bake still retains its unbaked raw,
+ *  so back-to-back drags restore without a re-render. Outside the window the
+ *  raw is dropped at the bake and the scrub path re-renders on demand
+ *  (preparePagesForScrub) — a raw nobody will ask for is pure peak
+ *  inflation, and the footprint latches onto the peak. */
+const SCRUB_RAW_RETAIN_MS = 30_000;
 const SWEEP_IDLE_MS = 30_000;
+
+/** Drop every zoom mask (`.page-snapshot`) a host still carries, zeroing the
+ *  backing stores before the nodes go: WKWebView does not release a canvas
+ *  IOSurface on DOM removal alone, so a mask dropped without this keeps its
+ *  full-page RGBA buffer alive. */
+function releaseSnapshots(host: HTMLElement): void {
+  host.querySelectorAll(PAGE_SNAPSHOT_SELECTOR).forEach((n) => {
+    releaseCanvas(n as HTMLCanvasElement);
+    n.remove();
+  });
+}
 
 /** The engine's per-document session state: the pdf.js document proxy, live
  *  page surfaces, thumbnail cache, search context, and theme pipeline state.
@@ -88,6 +114,19 @@ class EngineSession {
 
   themeScrubActive = false;
 
+  /** The last scrub-mode transition (Date.now()), recorded by the theme
+   *  queue on the way in AND out. A bake retains its unbaked raw only while
+   *  a scrub inside SCRUB_RAW_RETAIN_MS of this is plausible. */
+  lastScrubAt = 0;
+
+  /** Whether the appearance popover is open, told by the app over the
+   *  bridge (`setAppearanceMenuOpen`). The menu is where a scrub is born:
+   *  while it is open, a bake retains its unbaked raw even with no recent
+   *  scrub, so the FIRST drag of a session blits retained pixels under the
+   *  live CSS instead of re-rendering every page; closing arms the idle
+   *  tail that frees them. */
+  appearanceMenuOpen = false;
+
   private idleTimer: ReturnType<typeof setTimeout> | 0 = 0;
   private rawTimers = new WeakMap<PageState, ReturnType<typeof setTimeout>>();
 
@@ -125,6 +164,35 @@ class EngineSession {
 
   setThemeScrubActive(on: boolean): void {
     this.themeScrubActive = on;
+  }
+
+  /** Remember a scrub transition: bakes landing inside the retention window
+   *  keep their unbaked raw so the next drag restores without a re-render. */
+  noteScrub(): void {
+    this.lastScrubAt = Date.now();
+  }
+
+  /** Open/close the appearance menu's half of the retention gate. Closing
+   *  re-arms the idle timer on every raw the open menu was holding, so the
+   *  surfaces leave on the same short tail a scrub's raws do — the flag
+   *  alone would strand them until the next bake or teardown. */
+  setAppearanceMenuOpen(on: boolean): void {
+    if (this.appearanceMenuOpen === on) return;
+    this.appearanceMenuOpen = on;
+    if (on) return;
+    for (const st of this.stateByCanvasId.values()) {
+      if (!st.dead && st.rawCanvas && st.rawCanvas !== st.canvas) this.dropRawIfIdle(st);
+    }
+  }
+
+  /** Whether a tint scrub is plausible right now — the retention gate for
+   *  the unbaked raw a bake just produced. An open appearance menu counts
+   *  on its own: the dials are on screen, so a drag can start with no
+   *  scrub ever having happened this session. Zero means "never scrubbed
+   *  this session", which alone is not plausible. */
+  scrubIsPlausible(): boolean {
+    if (this.appearanceMenuOpen) return true;
+    return this.lastScrubAt > 0 && Date.now() - this.lastScrubAt < SCRUB_RAW_RETAIN_MS;
   }
 
   bumpRenderCount(): number {
@@ -168,7 +236,7 @@ class EngineSession {
         const links = st.host.querySelector(".linkLayer");
         if (links) links.remove();
         st.host.querySelectorAll(".highlight").forEach((n) => n.remove());
-        st.host.querySelectorAll(PAGE_SNAPSHOT_SELECTOR).forEach((n) => n.remove());
+        releaseSnapshots(st.host);
       } catch (_) {
         /* host already detached */
       }
@@ -195,17 +263,35 @@ class EngineSession {
     }
   }
 
+  /** Drop the zoom masks every live host still carries — a mask whose render
+   *  was superseded, or never landed, keeps a full-page RGBA surface alive
+   *  until the host unmounts. The app-side `remove_snapshots` clears a host
+   *  when ITS render completes; this is the engine-side net for the hosts
+   *  whose completion never came. Fired where reading work ends, alongside
+   *  `sweepPdf`. */
+  sweepSnapshots(): void {
+    for (const st of this.stateByCanvasId.values()) {
+      if (!st.host) continue;
+      try {
+        releaseSnapshots(st.host);
+      } catch (_) {
+        /* host already detached */
+      }
+    }
+  }
+
   /** Keep the unbaked raw briefly so a tint slider can restore it, then free
    *  it. The next theme change / scrub without a raw re-renders from pdf.js.
-   *  The timer is a no-op while scrubbing is active, and teardown
-   *  (releasePageSurfaces) clears it outright. */
+   *  The timer is a no-op while scrubbing is active or the appearance menu
+   *  is open (both are the raw's reason to exist; the menu's close re-arms
+   *  this), and teardown (releasePageSurfaces) clears it outright. */
   dropRawIfIdle(st: PageState): void {
     const prev = this.rawTimers.get(st);
     if (prev) clearTimeout(prev);
     this.rawTimers.set(
       st,
       setTimeout(() => {
-        if (st.dead || this.themeScrubActive) return;
+        if (st.dead || this.themeScrubActive || this.appearanceMenuOpen) return;
         if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
         st.rawCanvas = null;
       }, RAW_IDLE_MS),

@@ -92,6 +92,13 @@ impl ZoomController {
                 grace_hv.reset_retention_grace();
                 grace_v.prune_retained_now();
                 grace_hv.prune_retained_now();
+                // The commit's renders have landed by now: drop the worker
+                // caches they no longer need and any zoom mask a superseded
+                // render left on a host, so a settled zoom stops holding its
+                // peak surfaces — the webview's footprint latches onto the
+                // highest water the session reached.
+                pdf_engine::api::sweep();
+                pdf_engine::api::sweep_snapshots();
             },
         );
         Effect::new(move |_| {
@@ -165,7 +172,6 @@ impl ZoomController {
             // POSITION is captured: the layout relayouts continuously and the
             // actuator holds the reader's view still itself, frame by
             // frame.
-            let mode = state.viewer.mode.get_untracked();
             let transition = ZoomTransition {
                 from: display,
                 to: target,
@@ -179,7 +185,7 @@ impl ZoomController {
             // Bridge the relayouts before they happen: raise the strips'
             // zombie grace so pages the moving window evicts keep their DOM
             // past the animation's end.
-            let retention = config::profile_for(mode).retention;
+            let retention = config::zoom_profile().retention;
             actuator.vertical.set_retention_grace(retention.grace_ms);
             actuator.horizontal.set_retention_grace(retention.grace_ms);
             // The transition goes up BEFORE anything moves: the frames it
@@ -226,8 +232,15 @@ pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     // scale, never a half-landed one.
     state.viewer.zoom.transition.set(None);
     // Nothing renders inside a transaction; sweep the rasters now that the
-    // render scale has moved.
+    // render scale has moved, and drop the zoom masks whose renders the
+    // transition superseded — they would otherwise sit on full-page surfaces
+    // until each host's next completion.
     pdf_engine::api::sweep();
+    pdf_engine::api::sweep_snapshots();
+    // The heap probe at the commit: a zoom is JS-side surfaces, not wasm, so
+    // this line should read FLAT across a session's zooms — the control that
+    // makes a climb at open or at an index build legible as the ratchet it is.
+    crate::memory::log_heap("zoom commit");
     // The raised zombie grace is NOT lowered here: the bridge timer in `drive`
     // does that one grace window later, from the effect watching this very
     // signal — so this function only writes signals and returns, which lets

@@ -46,7 +46,7 @@ let clickClearTimer: ReturnType<typeof setTimeout> | null = null;
 let pointerDownInAiUi = false;
 
 // Every reader page host advertises the format family that painted it and
-// the 1-based page it is showing (both in `./dom-contract`). Asking for
+// the 1-based page it is showing (both in `../engine/dom-contract`). Asking
 // those instead of `.pdf-page` keeps a selection inside a page of type a
 // selection like any other: no selector here grows a second class when a
 // format arrives.

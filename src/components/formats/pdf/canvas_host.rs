@@ -11,6 +11,17 @@ use pdf_core::pixel_grid::snap_px;
 
 use crate::dom_contract::PAGE_SNAPSHOT_CLASS;
 
+/// The last successfully rendered geometry of a host: the size and scale a
+/// stretch rescales FROM. Deliberately the RAW (unsnapped) values — the
+/// stretch ratio must not drift across successive steps, while the size it
+/// writes is snapped (see the note below).
+#[derive(Clone, Copy)]
+pub(super) struct LastGeo {
+    pub w: f64,
+    pub h: f64,
+    pub scale: f64,
+}
+
 /// Resize a `.pdf-page` host so its EXISTING bitmap stretches to `new_scale`,
 /// optionally masking the canvas with a pixel copy first.
 ///
@@ -20,11 +31,16 @@ use crate::dom_contract::PAGE_SNAPSHOT_CLASS;
 /// (font sizes, `setLayerDimensions` container sizing) stays aligned; dropping
 /// it would recompute the layer at scale 1 and misalign selection.
 ///
-/// `mask` should be true only when a render is about to run: pdf.js reassigns
-/// `canvas.width/height` at render start, which wipes the live backing store
-/// and shows white until the new frame paints. During a zoom ANIMATION no
-/// render happens, so no mask is wanted — the real bitmap must stay visible to
-/// be stretched.
+/// `mask` asks for the wipe cover: pdf.js reassigns `canvas.width/height` at
+/// render start, which wipes the live backing store and shows the backdrop
+/// until the new frame paints. `render_queued` declines it again: a caller
+/// that queues a render for this canvas in the same breath (the render effect
+/// always does) gets no mask, because the copy would stack a full-size RGBA
+/// surface on top of the raw + bake surfaces that render allocates — the peak
+/// a zoom commit pays per page — to cover a gap the queued render closes
+/// within frames. During a zoom ANIMATION no render happens at all, so no
+/// mask is wanted there either — the real bitmap must stay visible to be
+/// stretched.
 ///
 /// The stretched size is snapped to the device-pixel grid: the raw product
 /// `size × scale` is fractional at almost every zoom step, and a page whose
@@ -34,11 +50,10 @@ use crate::dom_contract::PAGE_SNAPSHOT_CLASS;
 pub(super) fn stretch_host(
     host_id: &str,
     canvas_id: &str,
-    last_w: f64,
-    last_h: f64,
-    last_scale: f64,
+    last: LastGeo,
     new_scale: f64,
     mask: bool,
+    render_queued: bool,
 ) {
     // Every element this function looks up goes through the shared dom hook;
     // the only thing that still needs the document itself is the snapshot it
@@ -51,12 +66,21 @@ pub(super) fn stretch_host(
         "style",
         &format!(
             "width:{}px;height:{}px;--scale-factor:{}",
-            snap_px(last_w * new_scale / last_scale),
-            snap_px(last_h * new_scale / last_scale),
+            snap_px(last.w * new_scale / last.scale),
+            snap_px(last.h * new_scale / last.scale),
             new_scale
         ),
     );
     if !mask {
+        return;
+    }
+    // A render is already queued for this canvas: it repaints the host within
+    // frames, so a mask would be a full-size RGBA copy stacked on top of the
+    // raw + bake surfaces that render allocates anyway — the peak a zoom
+    // commit pays per page, which the footprint then latches onto. The
+    // stretched bitmap stays live until pdf.js wipes it, which is the moment
+    // the queued render is about to answer.
+    if render_queued {
         return;
     }
     // Read-ahead pages off screen do not need a snapshot mask — it is a

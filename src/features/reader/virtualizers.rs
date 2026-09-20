@@ -2,8 +2,7 @@
 //! and the horizontal strip. Extracted out of `ReaderPage` so the page
 //! component stays a layout + effect coordinator rather than a setup pile.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 use leptos::prelude::*;
 use virtual_list::Viewport;
@@ -11,6 +10,7 @@ use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 
 use reader_core::view::RENDER_BUDGET;
 
+use crate::epoch::epoch_signal;
 use crate::state::ReaderState;
 use crate::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
 
@@ -82,17 +82,15 @@ fn seed_css_heights(state: ReaderState) {
 /// A fingerprint of the document's geometry: page count plus every
 /// intrinsic size. The virtualizers rebuild their layouts when it changes.
 fn geometry_epoch(state: ReaderState) -> Signal<u64> {
-    Signal::derive(move || {
-        let mut hasher = DefaultHasher::new();
-        state.document.num_pages.get().hash(&mut hasher);
+    epoch_signal(move |hasher| {
+        state.document.num_pages.get().hash(hasher);
         state.document.content.metrics.intrinsic.with(|sizes| {
-            sizes.len().hash(&mut hasher);
+            sizes.len().hash(hasher);
             for size in sizes {
-                size.width.to_bits().hash(&mut hasher);
-                size.height.to_bits().hash(&mut hasher);
+                size.width.to_bits().hash(hasher);
+                size.height.to_bits().hash(hasher);
             }
         });
-        hasher.finish()
     })
 }
 

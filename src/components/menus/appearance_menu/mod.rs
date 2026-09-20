@@ -40,7 +40,7 @@ use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
 use crate::components::primitives::floating::menu_popover::MenuPopover;
-use crate::effects::appearance::flush_appearance_commit;
+use crate::effects::appearance::{flush_appearance_commit, set_appearance_menu_open};
 use crate::state::AppState;
 use reader_core::settings::Settings;
 
@@ -80,6 +80,18 @@ pub fn AppearanceMenu(
 ) -> impl IntoView {
     let open = open.unwrap_or_else(|| RwSignal::new(false));
     let root_ref: NodeRef<html::Div> = NodeRef::new();
+
+    // The engine's raw-retention gate: while this popover is open, pages
+    // that finish rendering keep their unbaked rasters, so the first tint
+    // drag of a session blits them under the live CSS instead of
+    // re-rendering every page (src/effects/appearance/mod.rs). Unmount
+    // resets the flag — the engine must not outlive the menu's claim on it,
+    // and a route swap remounts whichever bar carries the menu next.
+    Effect::new(move || {
+        set_appearance_menu_open(open.get());
+    });
+    on_cleanup(|| set_appearance_menu_open(false));
+
     // The texture section's two facts, in one derive: this surface has pages
     // to texture, and the document open on it is a raster one. Tracked, so a
     // text document swapping in takes the section out (and a PDF swaps it
