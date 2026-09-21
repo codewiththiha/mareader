@@ -52,6 +52,19 @@ The app uses the adapter and keeps only app-specific policy locally:
 
 `css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled by the zoom actuator on every frame of a zoom. Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
 
+Since the crate split, this policy+rendering layer is the `reader-app` crate
+(`crates/reader-app`): the reader's state slice, its components, effects, zoom
+pipeline and page assembly live there, reached from the shell through one edge
+(`mareader -> reader-app`). The shell keeps the window: title bar, menus,
+settings modal, the library, storage. What the surface needs from the shell —
+the settings snapshot, the library's cover map, the gloss-save door — arrives
+as narrowed props or Leptos contexts at the route, so the reader build Phase 2
+plans (a second target in an iframe) can mount the same surface with its own
+host. The messages that host will speak — the open params and the pane
+events — are already declared and round-trip tested in
+`crates/reader-core/src/wire.rs` and `crates/ui-kit/src/events.rs`, with zero
+consumers, so Phase 2's IPC is application code against a settled protocol.
+
 ## Reader motion principles
 
 1. Zoom animates the LAYOUT. Every frame of the tween rescales the strips
@@ -121,7 +134,7 @@ The app uses the adapter and keeps only app-specific policy locally:
 
 ## Continuous reader flow
 
-1. `ReaderPage` builds one `Virtualizer` for the continuous surface.
+1. The reader route builds one `Virtualizer` for the continuous surface.
 2. `ScrollShell` binds the scroll container and hands the mounted window to
    `UniversalStripHost`, which picks the format's strip — `PdfPageStrip` or the
    reflowable one. The strip renders `v.items()`, and the PDF's reports measured
@@ -138,7 +151,7 @@ The thumbnail sidebar is a separate grid virtualizer:
 
 - width-aware row windowing lives in `virtual-list`
 - DOM/reactive wiring lives in `virtual-list-leptos`
-- panel-specific constants stay in `src/components/shell/sidebar/panels/thumbnails`
+- panel-specific constants stay in `crates/reader-app/src/components/rail/panels/thumbnails`
 
 That keeps list and grid virtualization on the same geometry stack while letting each surface keep its own rendering policy.
 
@@ -175,7 +188,7 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   open, which is where the next drag is born — and drops it at the bake
   otherwise; the scrub path re-renders on demand.
 - A zoom stretch skips the snapshot mask when a render is queued for the same
-  page (`src/components/formats/pdf/canvas_host.rs`): the mask exists to cover
+  page (`crates/reader-app/src/components/formats/pdf/canvas_host.rs`): the mask exists to cover
   the frames until that render lands, which is not worth a third full-page
   layer.
 - Where reading work ends — the zoom commit, the mode flip, the retention
@@ -191,7 +204,7 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   mounted ceiling, is what drives the engine's resource cache to the mark
   the footprint latches onto.
 - The full-text index builds on the first search, never at open
-  (`src/effects/reader/search.rs`): extraction is the one wasm-side cost
+  (`crates/reader-app/src/effects/search.rs`): extraction is the one wasm-side cost
   that scales with the BOOK — a worker round trip per page, landing in a
   heap that only grows — so an open-time build charged every book that
   ratchet whether or not anyone ever searched it. One build runs at a time;
@@ -256,13 +269,13 @@ The reader has two axes that must not multiply: how a document is *viewed* (sing
 spread, two scroll modes) and what it *is* (PDF, plain text, Markdown). The UI is split
 along the first axis and the crates along the second, and exactly one file joins them.
 
-- `src/components/viewer/` is shape: the mode dispatch, the four layouts, the shells that
+- `crates/reader-app/src/components/viewer/` is shape: the mode dispatch, the four layouts, the shells that
   hold the scroll container, and the reader's own controls (the bottom bar, the overlay
   scrollbar, the page indicator). A layout may not name a format; adding a view mode touches
   this directory and `reader-core`'s `view` module, and no format crate.
-- `src/components/formats/` is substance: `pdf/`, `reflow/`, `txt/`, `md/`. Adding a format
+- `crates/reader-app/src/components/formats/` is substance: `pdf/`, `reflow/`, `txt/`, `md/`. Adding a format
   touches this directory, one parser crate, and one match arm in the open flow.
-- `src/components/viewer/page_host.rs` is the seam, and the only file in the viewer layer
+- `crates/reader-app/src/components/viewer/page_host.rs` is the seam, and the only file in the viewer layer
   allowed to ask which format is open. `UniversalPageHost` takes a page plus a `PageSlot`
   (single, spread left, spread right) and mounts either `PdfPageCanvas` or `ReflowPage`;
   `UniversalStripHost` does the same for the virtualized strip; `UniversalStreamHost`

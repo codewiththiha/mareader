@@ -68,7 +68,7 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- 1,021 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
+- 1,026 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
   layer, and six scripts that keep facts written down twice from drifting.
 
 ---
@@ -836,45 +836,24 @@ src/
   main.rs                 mount entry point
   app/                    bootstrap, routes, the shell that hosts the sidebar
   components/
-    primitives/           button, switch, popover, floating positioning,
-                          motion and interaction hooks (the long-press, the
-                          pointer-drag stream, and the card wrapper that
-                          decides between a tap, a hold and a drag; the
-                          chrome's own primitives — icon, icon button,
-                          tooltip, the generic DOM/timer hooks — live in
-                          app-chrome)
+    primitives/           re-exported from `ui-kit` at the old path, so the
+                          shell's callers keep reading
+                          `components::primitives`
     shell/                the unified application shell: the ShellController
-                          (one source of truth for layout), the titlebar
-                          family, the sidebar rail family
+                          (one source of truth for layout) and the titlebar
+                          family
     menus/                app menu, appearance menu, reader menu
     settings/             the settings modal and its tabs (layout, theme,
                           animations, fonts); the theme tab composes sections
                           it does not own — the AI's from ai/, the raster ones
                           from its own paper module
-    viewer/               the SHAPE of reading: the mode dispatch, the four
-                          layouts (single, two-page, continuous, horizontal),
-                          the shells that own the scroll container,
-                          page_host — the one seam that picks a format —
-                          refresh, the fingerprints an overlay repaints on,
-                          and controls/ (bottom bar, overlay scrollbar, page
-                          indicator, page navigation)
-    formats/              the SUBSTANCE of a document: pdf/ (canvas + strip),
-                          reflow/ (A4 page host, continuous stream, strip,
-                          the spot walk that finds a block's
-                          characters in the DOM, and the search-hit layer that
-                          paints over them), txt/ and md/ block views, and
-                          block_render, the renderer dispatch
-    search/               floating search bar and result list
-    ai/                   selection pill, word card, gloss popover, the anchor
-                          resolvers that place a mark's stroke, and the AI
-                          appearance section of the settings modal
     app_overlays/         drag-and-drop feedback, toast host
   effects/
     app/                  window title, shortcuts, persistence wiring,
-                          drag-and-drop admission, and the library's
-                          app-lifetime wiring (startup measurement, focus
-                          rescan, the progress sink)
-    reader/               fit and zoom follow, page tracking
+                          drag-and-drop admission, reading progress (the one
+                          reader effect that writes the library), and the
+                          library's app-lifetime wiring (startup measurement,
+                          focus rescan)
     appearance/           the appearance-to-CSS bridge (shared, raster,
                           reflow)
   features/
@@ -886,10 +865,13 @@ src/
                           session and its sink, the targets, the table that
                           decides what a drop means, and the layer that
                           draws it)
-    reader/               the reader page and its two virtualizers
-  state/                  the reactive state tree: app (chrome + UI), reader
-                          (document, viewer, zoom, search, gloss, AI selection),
-                          library
+    reader/               the reader ROUTE as the shell sees it: the title
+                          bar clusters, the menus and the settings modal
+                          around the reader crate's surface, plus the one
+                          legal order the reader's effects install in
+  state/                  the shell's state tree: app (chrome + UI) and
+                          library; the reader slice lives in the reader-app
+                          crate and is re-exported here at the old path
   services/               the document open pipeline, the AI chunk bridge, and
                           the library's filesystem wire (the shell's invoke
                           wrappers and progress bridge, the import orchestration
@@ -897,13 +879,7 @@ src/
                           hand)
   storage/                loads and saves over localStorage (settings,
                           library, covers, gloss marks)
-  zoom/                   the zoom pipeline: posted commands, target
-                          resolution, the tween, and the actuator that owns
-                          the one relayout path over both strips
-  dom_contract.rs         the attribute, class and element-id names the engine
-                          reads and the app writes — one table, both sides
-  events.rs               the window-event names the engine dispatches and the
-                          app listens for
+  events.rs               re-export of `ui-kit`'s event table at the old path
 crates/
   ai-core/                the format-agnostic AI core: the word-explanation
                           wire types (WordInfo, AiError, the chunk envelope),
@@ -918,8 +894,13 @@ crates/
                           view modes and spread arithmetic, the settings schema
                           (layout, animation, typography, gloss), the colour
                           pipeline, the presets, filename rules, zoom maths, the
-                          outline shape, and the shared search model — result
-                          shape, the scan both pipelines run, the snippet window
+                          outline shape, the shared search model — result
+                          shape, the scan both pipelines run, the snippet
+                          window — the chrome enums the shell and the reader
+                          share (SidebarMode, Motion), and the Phase-2 wire
+                          contract (the open params and the pane messages,
+                          declared and round-trip tested before anything
+                          consumes them)
   pdf-core/               pure PDF domain math: page layout constants, the
                           outline wire entries and their clamping, the
                           device-pixel grid the page hosts snap to, and the
@@ -939,6 +920,23 @@ crates/
                           add/relink/skip, the sort, the persisted blob and its
                           migration, the merge rule for two rows of one book,
                           and the wire types the shell and the frontend share
+  ui-kit/                 the shared widget kit both wasm builds render with:
+                          the primitives (button, switch, popover, floating
+                          positioning, motion and interaction hooks), the
+                          window-event table and its typed dispatchers, and
+                          the memory probe — a leaf that knows no domain,
+                          with re-exports at the old paths so existing
+                          callers read unchanged
+  reader-app/             the reading surface as its own crate: the reader's
+                          state slice (document, viewer, zoom, search, gloss,
+                          AI selection), the components that render it (the
+                          viewer and its page hosts, the rail, floating
+                          search, the AI selection surfaces), the effects
+                          that keep them in sync, the zoom pipeline, the DOM
+                          contract and the epoch gate. One edge
+                          (`mareader -> reader-app`); what the surface needs
+                          FROM the shell arrives as narrowed props or
+                          contexts, never as an import
   pdf-engine/             wasm-bindgen bridge to the imperative engine
   pdf-paper/              the blend backdrop's colour brain: the detection
                           area, dominant-colour detection (whole page or edge
@@ -1108,7 +1106,7 @@ only the app and silently skip every member crate. The `mareader-shell` crate is
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-1,021 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+1,026 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
 migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
 the animation loops share, and the virtual-list windowing invariants. On top of that, the
