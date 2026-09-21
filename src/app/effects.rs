@@ -28,6 +28,10 @@
 //!    for: it can open a document IMMEDIATELY (a double-clicked file hands the
 //!    backend a path before the webview finishes mounting), so every step
 //!    above must have run by then.
+//! 7. `log_heap("boot")` — the memory probe's idle row
+//!    (`docs/memory-baseline.md`), exactly once per webview, and before any
+//!    document can log `open`: opening is IPC work, this line logs in the
+//!    same synchronous breath that finishes the install.
 //!
 //! INSTALLED ONCE. Each arm registers a window listener, a Tauri subscription,
 //! or both, and none unsubscribe — they live as long as the app. That is wrong
@@ -74,6 +78,14 @@ pub(crate) fn install_app_effects(
     crate::services::window::install_window_state_bridge(state);
     crate::effects::app::library::library_effects(state);
     crate::services::document::init_open_file_handling(state);
+
+    // The memory probe's idle row. The INSTALLED guard above is what makes
+    // the "exactly once" certain, and sitting after the whole install keeps
+    // it ahead of every `open` the log will ever chart: opening a document
+    // is IPC work, this line logs in the same synchronous breath that
+    // finishes the install. The baseline tables in `docs/memory-baseline.md`
+    // read their deltas against this row.
+    crate::memory::log_heap("boot");
 }
 
 /// Global keyboard shortcuts; the open-file action is injected from the app so

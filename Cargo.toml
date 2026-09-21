@@ -67,6 +67,11 @@ web-sys = { version = "0.3", features = [
   "CustomEvent",
   "CustomEventInit",
   "console",
+  # The memory probe (`src/memory.rs`) reaches the JS-heap column through
+  # `window.performance()`; `performance.memory` itself stays reflective —
+  # it is Chromium-only and still flagged, and the probe renders its absence
+  # as a dash — so only the Performance surface is declared here.
+  "Performance",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
