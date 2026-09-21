@@ -33,6 +33,33 @@ pub const REVEAL_ACTIVE_EVENT: &str = "mareader:reveal-active";
 /// the shortcut layer must not know the library page exists.
 pub const FOCUS_LIBRARY_SEARCH_EVENT: &str = "mareader:focus-library-search";
 
+// ── The Phase-2 wire contract ────────────────────────────────────────────
+// Names the split builds will speak once the reader runs in its own frame
+// (payloads in `reader-core::wire`; nothing dispatches or listens yet).
+// Declared here so every event name keeps the one home this table is.
+
+/// Reader → shell: a reader pane's build mounted and took its document
+/// (payload: `reader_core::wire::ReaderReady`).
+pub const READER_READY_EVENT: &str = "mareader:reader-ready";
+/// Reader → shell: the pane closed, carrying the final position
+/// (payload: `reader_core::wire::ReaderClosed`).
+pub const READER_CLOSED_EVENT: &str = "mareader:reader-closed";
+/// Reader → shell: the reading position, throttled reader-side
+/// (payload: `reader_core::wire::Progress`).
+pub const PROGRESS_EVENT: &str = "mareader:progress";
+/// Reader → shell: the resolved paper colour the pane paints
+/// (payload: `reader_core::wire::PanePaper`).
+pub const PANE_PAPER_EVENT: &str = "mareader:pane-paper";
+/// Reader → shell: the pane gained or lost input focus
+/// (payload: `reader_core::wire::PaneFocus`).
+pub const PANE_FOCUS_EVENT: &str = "mareader:pane-focus";
+/// Shell → reader: the appearance model changed at the shell
+/// (payload: `reader_core::wire::AppearanceBroadcast`).
+pub const APPEARANCE_BROADCAST_EVENT: &str = "mareader:appearance-broadcast";
+/// Shell → reader: tear the pane down (no payload:
+/// `reader_core::wire::Destroy`).
+pub const DESTROY_EVENT: &str = "mareader:destroy";
+
 /// Dispatch a typed CustomEvent on `window` with `payload` as its detail.
 pub fn dispatch_typed_event<T: Serialize>(name: &str, payload: &T) {
     let Some(win) = web_sys::window() else {

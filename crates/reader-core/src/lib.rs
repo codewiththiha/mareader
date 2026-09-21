@@ -35,6 +35,7 @@ pub mod search;
 pub mod settings;
 pub mod ui;
 pub mod view;
+pub mod wire;
 pub mod zoom_math;
 
 pub use format::{DocumentKind, Format, SUPPORTED, extensions, first_supported, format_from_ext, format_of, is_supported_mime, is_supported_path, kind_list, kind_names};
