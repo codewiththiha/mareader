@@ -20,10 +20,10 @@
 //! `app_chrome::…`); they moved out when window chrome stopped being the
 //! PDF reader's business.
 //!
-//! Contract: primitives must not know what a PDF reader is. No
-//! `crate::state`, `crate::services`, `crate::effects`, or `pdf_engine`
-//! imports below this point (pure math may come from `pdf_core`, which is
-//! dependency-free and host-testable).
+//! Contract: primitives must not know what a PDF reader is. No `state`,
+//! `services`, `effects`, or `pdf_engine` imports below this point (pure
+//! math may come from `pdf_core`, which is dependency-free and
+//! host-testable).
 
 pub mod controls;
 pub mod feedback;

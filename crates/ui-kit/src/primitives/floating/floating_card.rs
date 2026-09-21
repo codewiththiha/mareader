@@ -2,7 +2,7 @@
 //! cards compose instead of being forced into a simple menu popover.
 //!
 //! One fixed box whose `left/top/width/height/border-radius` come from a
-//! [`FloatBox`] (typically sprung by [`crate::components::primitives::motion::spring::use_spring_box`]),
+//! [`FloatBox`] (typically sprung by [`crate::primitives::motion::spring::use_spring_box`]),
 //! with an inner content wrapper sized to the *expanded* target so text never
 //! reflows as the box morphs, an optional drag-handle slot, progress-driven
 //! opacity/pointer-events, and an optional scroll area.

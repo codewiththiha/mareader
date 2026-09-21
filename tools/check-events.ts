@@ -3,7 +3,7 @@
 // The app and the imperative engine under `public/engine/` talk through
 // CustomEvents on `window` (the engine is a bundled IIFE that cannot hold a
 // Leptos signal and cannot be called from inside). The names cross that
-// boundary declared twice: src/events.rs (the app's whole table, and the
+// boundary declared twice: crates/ui-kit/src/events.rs (the app's whole table, and the
 // only place a Rust listener may take a name from) and
 // public/engine/events.ts (the engine's dispatched half). A disagreement is
 // not a compile error on either side — it is a dispatch into a window nobody
@@ -17,7 +17,7 @@ import { exportedStrings, isFile, read, walk } from "./repo.js";
 
 const ALL_FILES = walk(".");
 
-const APP_TABLE = "src/events.rs";
+const APP_TABLE = "crates/ui-kit/src/events.rs";
 const ENGINE_TABLE = "public/engine/events.ts";
 
 // The two tables — parsed rather than imported, for the same reason as

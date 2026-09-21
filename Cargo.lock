@@ -28,6 +28,8 @@ dependencies = [
  "tauri-bridge",
  "ui-geom",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -77,6 +79,7 @@ version = "0.1.0"
 dependencies = [
  "js-sys",
  "leptos",
+ "reader-core",
  "tauri-bridge",
  "ui-geom",
  "wasm-bindgen",
@@ -2525,6 +2528,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "ui-kit",
 ]
 
 [[package]]
@@ -5048,6 +5052,20 @@ dependencies = [
 [[package]]
 name = "ui-geom"
 version = "0.1.0"
+
+[[package]]
+name = "ui-kit"
+version = "0.1.0"
+dependencies = [
+ "app-chrome",
+ "js-sys",
+ "leptos",
+ "serde",
+ "serde-wasm-bindgen",
+ "ui-geom",
+ "wasm-bindgen",
+ "web-sys",
+]
 
 [[package]]
 name = "unic-char-property"

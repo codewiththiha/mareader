@@ -109,6 +109,8 @@ md-core = { path = "crates/md-core" }
 # blob. Shared with the Tauri shell, which does the IO and measures with the
 # same fingerprint this crate defines.
 library-core = { path = "crates/library-core" }
+# The shared UI kit: primitives, the event table, the memory probe.
+ui-kit = { path = "crates/ui-kit" }
 
 [dev-dependencies]
 # The app's host tests build their books, rows and shelves with the domain
@@ -133,6 +135,7 @@ members = [
   "crates/txt-core",
   "crates/md-core",
   "crates/library-core",
+  "crates/ui-kit",
 ]
 
 [profile.release]

@@ -1,0 +1,78 @@
+[package]
+name = "ui-kit"
+version = "0.1.0"
+edition = "2024"
+description = "The shell- and reader-shared UI kit: the generic primitives (controls, menus, form widgets, floating surfaces, motion, interactions, hooks), the window-event protocol table, and the memory probe. Nothing here knows what a document is."
+license = "MIT"
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+# The chrome crate's own primitives — icon, tooltip, the generic DOM/timer
+# hooks, the layer tokens, and the floating placement/dismissal internals —
+# are what several of these widgets wrap, so the kit names the chrome crate
+# and nothing else workspace-side.
+app-chrome = { path = "../app-chrome" }
+# The spring the motion layer steps.
+ui-geom = { path = "../ui-geom" }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+# The feature list is the app's own, wholesale: the kit is built once per
+# wasm binary and an unused feature costs nothing at either end, while a
+# missing one only surfaces as a compile error in whoever reuses the crate
+# outside the workspace's feature unification.
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Navigator",
+  "Document",
+  "Element",
+  "HtmlElement",
+  "HtmlDivElement",
+  "HtmlCanvasElement",
+  "HtmlInputElement",
+  "HtmlButtonElement",
+  "HtmlSelectElement",
+  "Node",
+  "NodeList",
+  "HtmlCollection",
+  "DomTokenList",
+  "CssStyleDeclaration",
+  "CanvasRenderingContext2d",
+  "Event",
+  "MouseEvent",
+  "KeyboardEvent",
+  "FocusOptions",
+  "WheelEvent",
+  "ResizeObserver",
+  "ResizeObserverEntry",
+  "DomRect",
+  "DomRectList",
+  "Selection",
+  "Range",
+  "Text",
+  "PointerEvent",
+  "EventTarget",
+  "AddEventListenerOptions",
+  "DragEvent",
+  "DataTransfer",
+  "DataTransferItem",
+  "DataTransferItemList",
+  "ScrollToOptions",
+  "ScrollBehavior",
+  "ScrollIntoViewOptions",
+  "ScrollLogicalPosition",
+  "Storage",
+  "MediaQueryList",
+  "CustomEvent",
+  "CustomEventInit",
+  "console",
+  "Performance",
+] }
+
+[lints.rust]
+# Warnings are denied, not printed: a gate that only shows up in the log is a
+# gate that gets read past. The priority applies the group first, so the
+# individual levels below it remain deliberate overrides.
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "forbid"

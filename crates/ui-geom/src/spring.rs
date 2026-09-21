@@ -20,7 +20,7 @@ const SPRING_DAMPING: f64 = 26.0;
 /// The longest frame the integrator is stepped on, in seconds.
 ///
 /// Callers clamp their frame delta to this before stepping — the app's frame
-/// loops read the clock through `src/components/primitives/motion/frame.rs`,
+/// loops read the clock through `crates/ui-kit/src/primitives/motion/frame.rs`,
 /// whose ceiling for spring riders matches this number. It is a convergence
 /// ceiling, not a mathematical stability limit: the convergence tests pin it,
 /// and a step past it overshoots and wobbles rather than explodes. The

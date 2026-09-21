@@ -14,7 +14,7 @@
 //!
 //! This module implements [`SpringValue`] for the floating box and for nothing
 //! else. A domain type that wants to ride the spring brings its own adapter —
-//! the gloss box's is `crate::components::ai::gloss::spring` — because a
+//! the gloss box's is `components::ai::gloss::spring` — because a
 //! primitive that imported a feature crate's type would be breakable by that
 //! crate, and would make every other consumer of the primitive depend on the
 //! feature too.

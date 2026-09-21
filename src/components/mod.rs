@@ -42,8 +42,11 @@ pub mod ai;
 pub mod app_overlays;
 pub mod formats;
 pub mod menus;
-pub mod primitives;
 pub mod search;
 pub mod settings;
 pub mod shell;
 pub mod viewer;
+// The generic widget kit is a crate now (`ui-kit`) — both wasm builds render
+// with it. Re-exported at the old path so the shell's callers keep reading
+// `crate::components::primitives::…`.
+pub use ui_kit::primitives;

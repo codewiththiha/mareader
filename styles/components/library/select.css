@@ -1,6 +1,6 @@
 /* The multi-select a hold starts: what stepping back looks like, the ring that says a card is in
    the set, and the mark that says which ones you tapped. The gesture and its tuning are the press
-   primitive's (`src/components/primitives/interactions/draggable_item.rs`); this is what the
+   primitive's (`crates/ui-kit/src/primitives/interactions/draggable_item.rs`); this is what the
    gesture looks like once it has decided. */
 /* While choosing, the cards not in the set step back, and come forward again
    under the pointer: the reader is about to tap one of them. */
