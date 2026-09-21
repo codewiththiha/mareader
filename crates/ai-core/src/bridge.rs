@@ -2,7 +2,8 @@
 //!
 //! The raw `window.__TAURI__` externs come from `tauri-bridge`; this module
 //! owns the `explain_word` protocol shape (argument keys, fire-and-forget
-//! contract) so no other crate hand-rolls them. The streamed-chunk half is
+//! contract, the logged kickoff) so no other crate hand-rolls them. The
+//! streamed-chunk half is
 //! NOT here: it rides the app-lifetime Tauri listener that re-broadcasts
 //! `ai-stream-chunk` as a window event (the app's `services::ai`), because
 //! parking that closure in the app's reactive owner is load-bearing.
@@ -27,6 +28,23 @@ thread_local! {
 fn set_arg(args: &JsValue, key: &'static LocalKey<JsValue>, value: &str) {
     key.with(|k| {
         let _ = js_sys::Reflect::set(args, k, &JsValue::from_str(value));
+    });
+}
+
+/// The gloss wiring's one kickoff entry point: start the run, log a
+/// failure, move on. Lives beside the protocol rather than in the shell's
+/// AI service so the reader crate can start a run without knowing the
+/// shell — the kickoff IS wire protocol.
+///
+/// `spawn_local` rather than a leptos task: this crate has no leptos
+/// dependency, and a fire-and-forget invoke has no reactive owner to
+/// outlive. Off wasm the future stub aborts — the same inertness rule as
+/// [`explain_word`], and host tests never start a run.
+pub fn invoke_explain_word(word: String, context: String, run: String) {
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Err(e) = explain_word(&word, &context, &run).await {
+            web_sys::console::warn_1(&format!("[ai] explain_word invoke failed: {e}").into());
+        }
     });
 }
 

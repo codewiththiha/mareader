@@ -16,6 +16,7 @@
 //! through the row itself, whichever kind it is.
 
 pub mod blob;
+pub mod covers;
 pub mod book;
 pub mod conflict;
 pub mod folder;

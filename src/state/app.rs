@@ -9,7 +9,12 @@ use leptos::prelude::{Memo, RwSignal};
 use crate::state::library::LibraryState;
 use crate::state::reader::ReaderState;
 use reader_core::appearance::Appearance;
+// The panel mode itself lives in `reader-core` (`reader_core::ui`): the
+// reader's state and the reader build need it too, and this crate re-exports
+// it at `crate::state::SidebarMode` so the shell's callers keep the short
+// path.
 use reader_core::settings::Settings;
+use reader_core::ui::SidebarMode;
 
 /// The appearance slice of the settings, as its own tracked value.
 ///
@@ -40,16 +45,6 @@ impl Toast {
             message: message.into(),
         }
     }
-}
-
-/// Which sidebar panel is open. UI chrome state, not viewer state:
-/// reader-side rendering receives it as a plain signal when it needs to know
-/// and never owns it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SidebarMode {
-    None,
-    Outline,
-    Thumbs,
 }
 
 /// UI chrome state: the sidebar, the toast surface, and the window flag the

@@ -2,27 +2,16 @@
 //!
 //! Owns the app-lifetime side of the wire protocol:
 //! [`install_ai_chunk_bridge`] registers ONE Tauri listener that re-broadcasts
-//! each chunk as a window `CustomEvent` (`mareader:ai-chunk`), and
-//! [`invoke_explain_word`] starts a run through `ai_core::bridge`. The gloss
+//! each chunk as a window `CustomEvent` (`mareader:ai-chunk`). The run
+//! kickoff lives in `ai-core` (`ai_core::bridge::invoke_explain_word`) — it
+//! is wire protocol, and the reader build starts runs of its own. The gloss
 //! popover (and anything else) listens on the window, so document switches
 //! never stack dead Tauri handlers or drop the live one.
 
 pub use ai_core::types::{AiChunk, AiChunkEvent};
-use leptos::task::spawn_local;
 use wasm_bindgen::JsValue;
 
 pub use crate::events::AI_CHUNK_EVENT;
-
-/// Starts an `explain_word` run on the backend, tagged with `run`. The
-/// streamed results arrive as `ai-stream-chunk` events carrying that same id,
-/// re-broadcast by [`install_ai_chunk_bridge`].
-pub fn invoke_explain_word(word: String, context: String, run: String) {
-    spawn_local(async move {
-        if let Err(e) = ai_core::bridge::explain_word(&word, &context, &run).await {
-            web_sys::console::warn_1(&format!("[ai] explain_word invoke failed: {e}").into());
-        }
-    });
-}
 
 /// Register the Tauri `ai-stream-chunk` listener ONCE for the app's life and
 /// re-broadcast every chunk as a window [`AI_CHUNK_EVENT`]. Survives every
