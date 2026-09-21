@@ -74,6 +74,13 @@ pub(crate) fn install_app_effects(
     crate::services::window::install_window_state_bridge(state);
     crate::effects::app::library::library_effects(state);
     crate::services::document::init_open_file_handling(state);
+    // The idle floor, logged last: every app-lifetime effect above is
+    // installed by now, and the double-clicked-file open inside
+    // `init_open_file_handling` awaits the engine on a spawned task, so it
+    // resolves only after this install returns. That makes this line the
+    // "boot" row every later `[mem]` line is measured against — the load
+    // before any document has opened.
+    crate::memory::log_heap("boot");
 }
 
 /// Global keyboard shortcuts; the open-file action is injected from the app so

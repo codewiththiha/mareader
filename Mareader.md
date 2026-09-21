@@ -221,12 +221,18 @@ generation counters reset with the document they were issued for.
 
 The heap is charted from inside, because from outside it is invisible: the
 OS's number folds the wasm linear memory into the webview's total, where
-canvas surfaces dominate. `src/memory.rs` logs the heap's byte length at
-open, close, zoom commit, index build and the reload that resets it (`[mem]`
-lines in the webview console), and the trace IS the leak-versus-latch test —
-steps up once per book, flat across a session's zooms, never back down: that
-is the ratchet working as the platform dictates. A climb per open/close cycle
-would be a leak, and the log is where one shows up first.
+canvas surfaces dominate. `src/memory.rs` logs, one console line per point
+that moves the heap — boot, open, close, zoom commit, index build and the
+reload that resets it (`[mem]` lines in the webview console) — and the trace
+IS the leak-versus-latch test: steps up once per book, flat across a
+session's zooms, never back down, which is the ratchet working as the
+platform dictates. Each line carries three columns, because one number
+answers neither question the trace exists for: the wasm arena (the ratchet
+`memory.grow` makes one-way), the JS heap (the pdf.js half a correct teardown
+should give back, read through `performance.memory` on Chromium and `—`
+elsewhere), and the DOM node count (the cheapest way to see a close that left
+nodes pinned). A climb per open/close cycle in any column would be a leak,
+and the log is where it shows up first.
 
 What the trace is read against is a SHAPE and not a number: a fresh boot is
 some floor X; reading is X plus the mounted canvases; idling on the page

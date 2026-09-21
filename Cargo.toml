@@ -45,6 +45,10 @@ web-sys = { version = "0.3", features = [
   "DomRectList",
   "Selection",
   "Range",
+  # The memory probe reads `performance.memory.usedJSHeapSize` for the js
+  # column of the `[mem]` trace, joining the wasm heap and the DOM node count
+  # the app already reports for itself (`src/memory.rs`).
+  "Performance",
   # The reflowable gloss anchor walks a block's text nodes to turn a character
   # range back into a DOM Range (and reads each node's `data` to count them).
   "Text",
