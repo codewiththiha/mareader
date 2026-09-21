@@ -2501,7 +2501,7 @@ dependencies = [
 
 [[package]]
 name = "mareader"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "ai-core",
  "app-chrome",
@@ -2528,7 +2528,7 @@ dependencies = [
 
 [[package]]
 name = "mareader-shell"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "ai-core",
  "async-stream",
