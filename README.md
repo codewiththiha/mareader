@@ -743,9 +743,11 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
   debounce is still holding before it goes, so the book reopens where the reload found you, and it
   lands on the shelf rather than in a reader with nothing in it.
 - The full-text search index builds on the first search rather than at open, so a book nobody
-  searches never pays the per-page extraction, and the WebAssembly heap logs its size at open,
-  close, zoom commit, index build and reload (`[mem]` lines in the webview console): the plateau of
-  a latch reads differently there from the climb of a leak.
+  searches never pays the per-page extraction, and the memory probe logs one line at boot, open,
+  close, zoom commit, index build and reload (`[mem]` lines in the webview console: the wasm heap,
+  the JS heap where the platform exposes one, and the DOM node count) — the plateau of a latch reads
+  differently there from the climb of a leak. The baseline protocol and its recorded numbers live
+  in `docs/memory-baseline.md`.
 
 ---
 
