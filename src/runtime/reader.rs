@@ -37,7 +37,7 @@ pub fn install(state: AppState, format: &'static str) {
             Some("set-blend") if !closing.get_untracked() => {
                 crate::effects::reader::blend_epoch::apply(state, message["paper"].as_str());
             }
-            Some("chrome-state") => {
+            Some("chrome-state") if !closing.get_untracked() => {
                 chrome.bar.set(message["bar"].as_bool().unwrap_or(false));
                 chrome.rail.set(message["rail"].as_bool().unwrap_or(false));
             }

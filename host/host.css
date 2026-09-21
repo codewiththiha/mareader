@@ -20,12 +20,154 @@ iframe[data-runtime-kind="library"] { display: block; width: 100%; height: 100%;
 .workspace-shelf-chevron { width: 12px; color: var(--color-muted); }
 .workspace-tree-kids { margin-left: 12px; padding-left: 8px; border-left: 1px solid var(--color-line); }
 .workspace-empty { padding: 8px 4px; color: var(--color-muted); }
+
+/* Legacy generic row — kept for Active section compatibility */
 .workspace-book { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; text-align: left; border-radius: 5px; }
 .workspace-book:hover { background: var(--color-paper); }
 .workspace-book:disabled { opacity: .45; }
 .workspace-book-cover { flex: none; width: 24px; height: 32px; border-radius: 3px; overflow: hidden; background: var(--color-paper); display: grid; place-items: center; border: 1px solid var(--color-line); }
 .workspace-book-cover-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .workspace-book-cover .format-badge { font-size: 8px; min-width: 20px; padding: 1px; }
+
+/* Library filesystem — library-page visual language, compact sidebar geometry.
+   Covers are A4 (210/297) cropped, not fixed squares. Same cover cache as
+   LibraryPage, same title treatment, compact row.
+   4-size handling: width is 44px base, scales with density via CSS variable
+   so future view modes can pick 36/44/52/60 without changing markup. */
+.workspace-lib-book {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  border-radius: 6px;
+  transition: background 0.12s ease;
+}
+.workspace-lib-book:hover { background: var(--color-paper); }
+.workspace-lib-book:disabled { opacity: 0.5; }
+.workspace-lib-book:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+.workspace-lib-cover-wrap {
+  flex: none;
+  width: var(--ws-lib-cover-w, 44px);
+  aspect-ratio: 210 / 297;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.08),
+    0 4px 10px -6px rgb(0 0 0 / 0.24);
+  display: grid;
+  place-items: center;
+}
+.workspace-lib-cover {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 210 / 297;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.workspace-lib-cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* cropped A4, not contain/square */
+  object-position: center;
+}
+.workspace-lib-cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(120% 90% at 18% 0%, color-mix(in srgb, var(--color-accent) 45%, var(--color-paper)) 0%, transparent 62%),
+    linear-gradient(160deg, color-mix(in srgb, var(--color-accent) 18%, var(--color-paper)), var(--color-paper) 72%);
+}
+.workspace-lib-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workspace-lib-title {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.25;
+  color: var(--color-ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.workspace-lib-meta {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workspace-lib-format {
+  flex: none;
+  font-size: 9px;
+  min-width: 28px;
+  padding: 2px 4px;
+  border: 1px solid var(--color-line);
+  border-radius: 3px;
+  text-align: center;
+  color: var(--color-muted);
+}
+
+/* Grid for loose books and folder books — library-page-like, 2 columns in narrow sidebar,
+   scales to 1 col when too narrow. Covers are A4 cropped, not fixed squares. */
+.workspace-lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  padding: 4px 2px;
+}
+.workspace-tree-kids .workspace-lib-grid {
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  margin-top: 4px;
+}
+/* When grid contains row-style books, make them card-like: cover top, info bottom */
+.workspace-lib-grid .workspace-lib-book {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid transparent;
+}
+.workspace-lib-grid .workspace-lib-book:hover {
+  border-color: var(--color-line);
+  background: var(--color-paper);
+}
+.workspace-lib-grid .workspace-lib-cover-wrap {
+  width: 100%;
+  aspect-ratio: 210 / 297;
+}
+.workspace-lib-grid .workspace-lib-info {
+  gap: 2px;
+}
+.workspace-lib-grid .workspace-lib-format {
+  align-self: flex-start;
+}
+
+/* Density variants — future-proof for 4 sizes (S/M/L/XL) if view menu wants it) */
+.workspace-sidebar[data-cover-size="s"] { --ws-lib-cover-w: 36px; }
+.workspace-sidebar[data-cover-size="m"] { --ws-lib-cover-w: 44px; }
+.workspace-sidebar[data-cover-size="l"] { --ws-lib-cover-w: 52px; }
+.workspace-sidebar[data-cover-size="xl"] { --ws-lib-cover-w: 60px; }
+.workspace-sidebar[data-cover-size="s"] .workspace-lib-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+.workspace-sidebar[data-cover-size="l"] .workspace-lib-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+.workspace-sidebar[data-cover-size="xl"] .workspace-lib-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
 .workspace-active-row { display: flex; align-items: stretch; }
 .workspace-active-row .workspace-book { flex: 1; min-width: 0; }
 .workspace-active-close { flex: none; width: 26px; margin-left: 4px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--color-line); border-radius: 5px; background: var(--color-surface); color: var(--color-muted); }

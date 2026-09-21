@@ -18,6 +18,12 @@ use pdf_engine::types::DocStatus;
 
 #[component]
 pub(super) fn WorkspaceShell(state: AppState, bridge: WorkspaceBridge) -> impl IntoView {
+    // The workspace is the home: its sidebar must be open by default so the
+    // filesystem tree is visible and the browser test can assert visibility
+    // without waiting for a toggle. Normal readers keep their own default.
+    if state.ui.sidebar.get_untracked() == crate::state::SidebarMode::None {
+        state.ui.sidebar.set(crate::state::SidebarMode::Thumbs);
+    }
     let shell = ShellController::reader(state);
     provide_context(shell);
     let settings_open = RwSignal::new(false);
