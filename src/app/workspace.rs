@@ -19,6 +19,14 @@ use pdf_engine::types::DocStatus;
 #[component]
 pub(super) fn WorkspaceShell(state: AppState, bridge: WorkspaceBridge) -> impl IntoView {
     let shell = ShellController::reader(state);
+    // Workspace Library is the default tab and the sidebar must be present at boot.
+    // The global AppState defaults to SidebarMode::None (closed), but the
+    // workspace's rail is the primary navigation for Library/Thumbnails/Outline
+    // and must start visible — otherwise the browser test waits forever for
+    // `.workspace-sidebar` (plan2 §3).
+    if state.ui.sidebar.get_untracked() == crate::state::SidebarMode::None {
+        state.ui.sidebar.set(crate::state::SidebarMode::Thumbs);
+    }
     provide_context(shell);
     let settings_open = RwSignal::new(false);
     provide_context(settings_open);

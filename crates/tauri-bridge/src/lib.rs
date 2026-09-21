@@ -38,19 +38,35 @@ extern "C" {
     pub async fn open(options: JsValue) -> Result<JsValue, JsValue>;
 }
 
-/// True when the app runs inside Tauri (`window.__TAURI__` is present). Off
-/// wasm there is no window to ask and `false` is also the truthful answer,
-/// which keeps the probe callable from host `cargo test`.
+/// True when the app runs inside Tauri (`window.__TAURI__.core.invoke` is a function).
+/// Off wasm there is no window and `false` is the truthful answer.
+/// The check is stricter than mere `__TAURI__` presence: the wasm-bindgen
+/// `invoke` shim dereferences `window.__TAURI__.core.invoke` eagerly and
+/// throws `TypeError: Reflect.get called on non-object` if the chain is not
+/// an object (e.g. a browser mock that sets `__TAURI__ = {}` without `core`).
+/// Callers must probe this before any `invoke` to avoid panicking the awaiting future.
 pub fn has_tauri() -> bool {
     if !cfg!(target_arch = "wasm32") {
         return false;
     }
-    web_sys::window()
-        .map(|w| {
-            let g: js_sys::Object = w.unchecked_into();
-            js_sys::Reflect::get(&g, &JsValue::from_str("__TAURI__"))
-                .map(|v| !(v.is_undefined() || v.is_null()))
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let g: js_sys::Object = window.unchecked_into();
+    let Ok(tauri) = js_sys::Reflect::get(&g, &JsValue::from_str("__TAURI__")) else {
+        return false;
+    };
+    if tauri.is_undefined() || tauri.is_null() || !tauri.is_object() {
+        return false;
+    }
+    let Ok(core) = js_sys::Reflect::get(&tauri, &JsValue::from_str("core")) else {
+        return false;
+    };
+    if core.is_undefined() || core.is_null() || !core.is_object() {
+        return false;
+    }
+    let Ok(invoke) = js_sys::Reflect::get(&core, &JsValue::from_str("invoke")) else {
+        return false;
+    };
+    js_sys::Function::instanceof(&invoke)
 }

@@ -6,6 +6,7 @@
 
 mod active;
 mod thumbnails;
+pub mod thumbnail_source;
 /// `pub` because the runtime's tree payload is built with the same
 /// hierarchy function the view renders.
 pub mod tree;
