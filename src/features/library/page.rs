@@ -10,7 +10,7 @@ use leptos::prelude::*;
 use app_chrome::hooks::dom::TOOLBAR_LEADING_ID;
 
 use crate::components::menus::appearance_menu::AppearanceMenu;
-use crate::components::shell::controller::ShellController;
+use app_chrome::controller::ShellController;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::features::library::breadcrumb::Breadcrumb;
 use crate::features::library::conflict_modal::{ConflictModal, ShelfConflictModal};
@@ -31,7 +31,7 @@ use crate::state::AppState;
 
 #[component]
 pub fn LibraryPage(state: AppState) -> impl IntoView {
-    let shell = ShellController::titlebar_only(state);
+    let shell = ShellController::titlebar_only(state.settings, state.ui.sidebar);
     provide_context(shell);
 
     // Installed before anything draggable, and a sibling of the content: a

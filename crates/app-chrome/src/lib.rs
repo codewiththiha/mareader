@@ -13,9 +13,12 @@
 //!   - [`titlebar`] — the generic hover/pin titlebar shell + its context
 //!   - [`icon`], [`icon_button`], [`tooltip`] — shared controls
 //!   - [`hooks`] — generic DOM/timer hooks
+//!   - [`controller`] — the ShellController, the shell's single source of
+//!     layout truth (built once per page, provided as context)
 //!   - [`floating`] — placement glue + dismissal mechanics
 //!   - [`layers`] — z-index layer tokens (re-exported by the app)
 
+pub mod controller;
 pub mod floating;
 pub mod hooks;
 pub mod icon;

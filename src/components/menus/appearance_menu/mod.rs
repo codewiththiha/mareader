@@ -35,7 +35,7 @@ use leptos::html;
 use leptos::prelude::*;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::shell::controller::ChromeSurface;
+use app_chrome::controller::ChromeSurface;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;

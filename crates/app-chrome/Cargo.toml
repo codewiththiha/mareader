@@ -7,10 +7,12 @@ license = "MIT"
 
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
-# The only workspace crate this one names: the pure placement math the
-# floating adapters wrap. A leaf with no dependencies of its own, so reusing
-# the chrome crate drags nothing else along.
+# The only two workspace crates this one names: the pure placement math the
+# floating adapters wrap, and the reader core's shell-facing types — the
+# controller answers its questions in terms of `Settings`, `SidebarMode`
+# and `Motion`, which are data, not UI, and live in reader-core.
 ui-geom = { path = "../ui-geom" }
+reader-core = { path = "../reader-core" }
 tauri-bridge = { path = "../tauri-bridge" }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

@@ -9,7 +9,7 @@
 use leptos::children::ChildrenFn;
 use leptos::prelude::*;
 
-use crate::components::shell::controller::ShellController;
+use app_chrome::controller::ShellController;
 
 #[component]
 pub fn PushRail(shell: ShellController, children: ChildrenFn) -> impl IntoView {

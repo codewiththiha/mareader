@@ -13,7 +13,7 @@ use app_chrome::titlebar::root::TitleBar;
 use app_chrome::window::traffic_lights::TrafficLights;
 use app_chrome::window::WindowControls;
 
-use crate::components::shell::controller::ShellController;
+use app_chrome::controller::ShellController;
 use crate::state::AppState;
 
 #[component]

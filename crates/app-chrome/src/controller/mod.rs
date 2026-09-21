@@ -34,16 +34,16 @@
 //! rail". Which of the two lives in the controller as a [`ChromeSurface`],
 //! and everything per-route reads that: where the bar's pin is remembered,
 //! and whether the surface has a rail at all. The traffic-light questions are
-//! macOS-only at heart (`app_chrome::platform`); frameless Windows/Linux
+//! macOS-only at heart ([`crate::platform`]); frameless Windows/Linux
 //! answer constant `false`.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
 
-use app_chrome::hooks::use_timeout::use_debounce_for;
-use crate::state::{AppState, SidebarMode};
+use crate::hooks::use_timeout::use_debounce_for;
 use reader_core::settings::Settings;
+use reader_core::ui::{Motion, SidebarMode};
 
 mod rules;
 
@@ -153,16 +153,35 @@ pub struct ShellController {
 impl ShellController {
     /// The reader's shell: rail + titlebar, with the slide machine live.
     /// Must run inside the page's reactive owner (the machine installs an
-    /// effect and a debouncer).
-    pub fn reader(state: AppState) -> Self {
-        Self::build(state, ChromeSurface::Reader)
+    /// effect and a debouncer). The three signals are the page's own —
+    /// settings, the sidebar mode, and the reader's motion projection
+    /// (read only for the frozen-motion branch of the close machine) —
+    /// handed over rather than reached for, so this crate never learns
+    /// what app state is.
+    pub fn reader(
+        settings: RwSignal<Settings>,
+        sidebar_mode: RwSignal<SidebarMode>,
+        motion: Signal<Motion>,
+    ) -> Self {
+        Self::build(settings, sidebar_mode, motion, ChromeSurface::Reader)
     }
 
     /// A page with a titlebar but no rail (the library): every rail
     /// question answers "no", so the bar keeps its full width, its gutter
     /// and its lights — and the bar's pin is the library's own memory.
-    pub fn titlebar_only(state: AppState) -> Self {
-        Self::build(state, ChromeSurface::Library)
+    /// There is no rail to freeze, so the motion projection is the default
+    /// (everything animates); only the settings and the sidebar signal are
+    /// real inputs here.
+    pub fn titlebar_only(
+        settings: RwSignal<Settings>,
+        sidebar_mode: RwSignal<SidebarMode>,
+    ) -> Self {
+        Self::build(
+            settings,
+            sidebar_mode,
+            Signal::derive(Motion::default),
+            ChromeSurface::Library,
+        )
     }
 
     /// Which surface this controller drives. What the per-route rules below
@@ -172,9 +191,12 @@ impl ShellController {
         self.surface
     }
 
-    fn build(state: AppState, surface: ChromeSurface) -> Self {
-        let settings = state.settings;
-        let sidebar_mode = state.ui.sidebar;
+    fn build(
+        settings: RwSignal<Settings>,
+        sidebar_mode: RwSignal<SidebarMode>,
+        motion: Signal<Motion>,
+        surface: ChromeSurface,
+    ) -> Self {
         // Each surface's bar remembers its own pin, in its own settings
         // field: one shared bit made unhitching the reader's bar unhitch the
         // shelf's with it, and the two are not one decision.
@@ -189,8 +211,7 @@ impl ShellController {
                 SidebarLayout::Push
             }
         });
-        let no_slide =
-            Signal::derive(move || !state.reader.viewer.motion.get().sidebar_slide);
+        let no_slide = Signal::derive(move || !motion.get().sidebar_slide);
 
         // The close machine, verbatim from the old `sidebar_paint` apart from
         // the hold's duration: see the module docs for what each direction
@@ -346,7 +367,7 @@ impl ShellController {
     fn lights_gutter(&self) -> Signal<bool> {
         let this = *self;
         Signal::derive(move || {
-            app_chrome::platform::is_macos()
+            crate::platform::is_macos()
                 && !this.is_overlay().get()
                 && !this.rail_present().get()
         })
@@ -359,7 +380,7 @@ impl ShellController {
     /// `lights_gutter`.
     pub fn bar_gutter(&self) -> Signal<bool> {
         let this = *self;
-        Signal::derive(move || app_chrome::platform::is_macos() && !this.is_overlay().get())
+        Signal::derive(move || crate::platform::is_macos() && !this.is_overlay().get())
     }
 
     /// The bar row's left padding in px: the traffic-light gutter while the

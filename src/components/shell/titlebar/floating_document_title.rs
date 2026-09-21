@@ -56,7 +56,7 @@ use leptos::prelude::*;
 
 use pdf_engine::types::DocStatus;
 use crate::components::ai::anchor::host_id_for_mode;
-use crate::components::shell::controller::ShellController;
+use app_chrome::controller::ShellController;
 use app_chrome::titlebar::root::TitleBarCtx;
 use crate::state::AppState;
 use app_chrome::hooks::dom::{VIEWER_SLOT_ID, by_id};

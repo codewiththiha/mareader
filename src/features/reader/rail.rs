@@ -14,7 +14,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::shell::controller::ShellController;
+use app_chrome::controller::ShellController;
 use crate::components::shell::sidebar::container::{SidebarShell, request_reveal_active};
 use crate::components::shell::sidebar::document_info::BookInfo;
 use crate::components::shell::sidebar::header::SidebarHeader;
