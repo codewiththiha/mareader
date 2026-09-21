@@ -46,7 +46,6 @@ export class FrameRuntime implements ReaderRuntime {
     frame.className = `${kind}-frame`;
     // Stable selectors for tests and CSS — plan §11 expects data-runtime-kind.
     frame.dataset.runtimeKind = kind;
-    frame.dataset.pane = id;
     frame.dataset.generation = this.generation;
     frame.title = kind === "library" ? "Library" : `${config.format.toUpperCase()} reader`;
     frame.src = kind === "library" ? "/library/index.html" : `/reader-${config.format}/index.html`;

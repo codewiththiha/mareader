@@ -29,7 +29,7 @@ pub trait ThumbnailSource {
 }
 
 /// Reader-direct source: wraps pdf-engine's thumbnail cache.
-/// The real PDF reader calls `pdf_engine::thumbnail::request(page)` and
+/// The real PDF reader calls `pdf_engine::api::prefetch_thumb(page, scale)` and
 /// subscribes to the dataUrl map this trait exposes.
 #[derive(Clone)]
 pub struct ReaderThumbnailSource {

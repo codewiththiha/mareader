@@ -192,6 +192,9 @@ fn TreeNode(state: AppState, entry: TreeEntry) -> impl IntoView {
         TreeEntry::Book { id, title, format, missing } => {
             let open_id = id.clone();
             let cover_id = id.clone();
+            let title_for_button = title.clone();
+            let format_for_fallback = format.clone();
+            let format_for_badge = format.clone();
             // Same cover cache as the full LibraryPage — compact presentation but identical source.
             let cover_src = Signal::derive(move || {
                 let books = state.library.books.get();
@@ -204,16 +207,16 @@ fn TreeNode(state: AppState, entry: TreeEntry) -> impl IntoView {
                     data-book-id=id.clone()
                     draggable=if missing { "false" } else { "true" }
                     disabled=missing
-                    title=title.clone()
+                    title=title_for_button
                     on:click=move |_| crate::services::document::open::open_book(state, open_id.clone())
                 >
                     <span class="workspace-book-cover">
-                        <Show when=move || cover_src.get().is_some() fallback=move || view! { <span class="format-badge">{format.to_uppercase()}</span> }>
+                        <Show when=move || cover_src.get().is_some() fallback=move || view! { <span class="format-badge">{format_for_fallback.to_uppercase()}</span> }>
                             <img class="workspace-book-cover-img" alt="" src=move || cover_src.get().unwrap_or_default() loading="lazy" />
                         </Show>
                     </span>
                     <span class="truncate flex-1 text-left">{title}</span>
-                    <span class="format-badge">{format.to_uppercase()}</span>
+                    <span class="format-badge">{format_for_badge.to_uppercase()}</span>
                 </button>
             }
             .into_any()

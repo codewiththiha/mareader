@@ -68,5 +68,5 @@ pub fn has_tauri() -> bool {
     let Ok(invoke) = js_sys::Reflect::get(&core, &JsValue::from_str("invoke")) else {
         return false;
     };
-    js_sys::Function::instanceof(&invoke)
+    !invoke.is_undefined() && !invoke.is_null()
 }
