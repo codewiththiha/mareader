@@ -32,6 +32,11 @@ pub fn install(state: AppState, format: &'static str) {
                     state.settings.set(settings);
                 }
             }
+            // The workspace's Blend state, broadcast to every pane: the shared
+            // paper paints now, not on the next scroll.
+            Some("set-blend") if !closing.get_untracked() => {
+                crate::effects::reader::blend_epoch::apply(state, message["paper"].as_str());
+            }
             Some("chrome-state") => {
                 chrome.bar.set(message["bar"].as_bool().unwrap_or(false));
                 chrome.rail.set(message["rail"].as_bool().unwrap_or(false));

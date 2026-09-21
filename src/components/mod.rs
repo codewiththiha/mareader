@@ -46,4 +46,6 @@ pub mod primitives;
 pub mod search;
 pub mod settings;
 pub mod shell;
+#[cfg(feature = "library")]
+pub mod workspace;
 pub mod viewer;

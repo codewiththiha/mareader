@@ -24,14 +24,11 @@ pub fn SidebarThumbs(
             class=("is-intro", move || intro.get())
         >
             // The engine owns thumbnails; a text document never reaches it,
-            // so the panel mounts nothing for one (the rail's redirect keeps
-            // it un-shown besides).
-            <Show when=crate::runtime::is_workspace fallback=move || view! {
-                <Show when=move || !state.reflowable()>
-                    <ThumbnailsPanel state=state live=live sidebar=sidebar />
-                </Show>
-            }>
-                <div class="workspace-sidebar h-full overflow-auto" />
+            // so the panel mounts nothing for one. The workspace rail never
+            // mounts this host at all — its grid is a remote proxy that this
+            // document-local panel would teach it to render a PDF itself.
+            <Show when=move || !state.reflowable()>
+                <ThumbnailsPanel state=state live=live sidebar=sidebar />
             </Show>
         </div>
     }

@@ -20,6 +20,7 @@ pub fn install_library_effects(state: AppState, a: AppearanceSignal, t: Typograp
 pub fn install_reader_effects(state: AppState, a: AppearanceSignal, t: TypographySignal) {
     appearance(state, a, t);
     crate::effects::reader::blend_backdrop::paper_settings(state);
+    crate::effects::reader::blend_epoch::install(state);
     shortcuts(state);
     crate::effects::reader::link_navigation::link_navigation(state);
     crate::effects::reader::page_selection::page_selection(state);

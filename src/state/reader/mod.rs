@@ -55,6 +55,11 @@ pub struct ReaderState {
     pub search: SearchState,
     pub ai_selection: AiSelectionState,
     pub gloss: GlossState,
+    /// How many blend commands this reader has honoured. The surface effects
+    /// subscribe to it so a shared paper repaints without a scroll.
+    pub blend_epoch: leptos::prelude::RwSignal<u64>,
+    /// The shared blend paper the last set-blend command carried, if any.
+    pub blend_paper: leptos::prelude::RwSignal<Option<String>>,
 }
 
 impl ReaderState {

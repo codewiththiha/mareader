@@ -6,6 +6,7 @@ const READY_TIMEOUT_MS = 30_000;
 const DISPOSE_TIMEOUT_MS = 5_000;
 /** Frame ownership is centralized here. No other host code accesses its DOM. */
 export class FrameRuntime implements ReaderRuntime {
+  private readonly id: string;
   private frame: HTMLIFrameElement | null;
   private port: MessagePort | null = null;
   private scope: TauriScope;
@@ -23,8 +24,9 @@ export class FrameRuntime implements ReaderRuntime {
   private disposeId = 0;
   private event: ((event: Payload) => void) | null;
 
-  constructor(target: HTMLElement, config: ReaderConfig, event: (event: Payload) => void,
+  constructor(id: string, target: HTMLElement, config: ReaderConfig, event: (event: Payload) => void,
     closeWindow: () => Promise<void>, kind: "reader" | "library" = "reader") {
+    this.id = id;
     this.event = event;
     this.scope = new TauriScope(config.path, (message) => this.command(message), closeWindow, kind);
     this.readyPromise = new Promise((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
@@ -60,6 +62,7 @@ export class FrameRuntime implements ReaderRuntime {
     const message = value.payload;
     if (message.type === "ready") {
       if (this.disposal) return;
+      console.log("[runtime] READY", this.id);
       this.loaded = true;
       clearTimeout(this.readyTimer);
       this.resolveReady();
@@ -85,6 +88,7 @@ export class FrameRuntime implements ReaderRuntime {
   }
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
+    console.log("[runtime] DISPOSE", this.id);
     this.disposal = new Promise((resolve) => { this.resolveDisposed = resolve; });
     this.rejectReady(new Error("Reader startup cancelled"));
     clearTimeout(this.readyTimer);
@@ -102,12 +106,22 @@ export class FrameRuntime implements ReaderRuntime {
     this.removed = true;
     clearTimeout(this.readyTimer);
     clearTimeout(this.disposeTimer);
+    console.log("[runtime] DISPOSED", this.id);
     this.scope.dispose();
     this.queued = [];
     if (this.port) { this.port.onmessage = null; this.port.onmessageerror = null; this.port.close(); this.port = null; }
     this.frame?.removeEventListener("load", this.connect);
     this.frame?.removeEventListener("error", this.loadError);
-    this.frame?.remove();
+    // The iframe is the hard lifetime boundary for the WASM instance: the
+    // sequence below (port close, removal, map delete) is the proof that the
+    // instance actually died, logged so a leaked frame is visible in the
+    // console rather than only in the heap profile.
+    const frame = this.frame;
+    if (frame) {
+      console.log("[runtime] iframe still connected?", this.id, frame.isConnected);
+      frame.remove();
+      console.log("[runtime] AFTER REMOVE", this.id, frame.isConnected);
+    }
     this.frame = null;
     this.event = null;
     const resolve = this.resolveDisposed;

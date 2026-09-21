@@ -38,14 +38,16 @@ async function open(path) {
   if (path.endsWith('.pdf')) await frame.locator('canvas').first().waitFor({ timeout: 60_000 });
   else await frame.getByText(path.endsWith('.md') ? 'Chapter One' : 'A plain text document.', { exact: false }).first().waitFor({ timeout: 30_000 });
   assert.equal(await frame.locator('#toolbar-row, .sidebar-aside').count(), 0, 'reader must not mount window chrome');
-  assert.equal(await page.locator('iframe.library-frame').count(), 0, 'library heap must be gone');
+  assert.equal(await page.locator('iframe.library-frame').count(), 0, 'the desktop never mounts the library frame');
   return frame;
 }
 async function closeAll() {
   await page.mouse.move(600, 10);
   await page.locator('button[title="Close this book and return to the library"]').click();
   await count(0);
-  await page.frameLocator('iframe.library-frame').locator('#toolbar-row').waitFor();
+  // Closing the last pane returns to the workspace home: no frames at all,
+  // and no PDF engine in the persistent realm.
+  assert.equal(await page.locator('iframe').count(), 0);
   assert.equal(await page.evaluate(() => typeof window.PDFReader), 'undefined');
 }
 async function split(bookSuffix, edge = 'right', targetId = null, commit = true) {
@@ -72,9 +74,13 @@ async function split(bookSuffix, edge = 'right', targetId = null, commit = true)
 }
 try {
   await page.goto('http://localhost:1420');
-  await page.frameLocator('iframe.library-frame').locator('#toolbar-row').waitFor({timeout: 60_000});
+  // The workspace is the home: it boots into its own shell (sidebar tree and
+  // all), with no library frame to wait for. The sidebar rail is mounted but
+  // docked-closed at boot, so the wait is on attachment, not visibility.
+  await page.locator('.workspace-sidebar').waitFor({ state: 'attached', timeout: 60_000 });
   assert.equal(await page.evaluate(() => __MAREADER_DEBUG__.workspace), true);
   assert.equal(await page.evaluate(() => typeof window.PDFReader), 'undefined');
+  assert.equal(await page.locator('iframe').count(), 0, 'boot mounts the workspace, not a frame');
   // Repeated real PDF instances, followed by both reflow runtimes.
   for (let i=0; i<3; i++) { await open('/samples/Good Title Book.pdf'); await closeAll(); }
   await open('/books/example.txt'); await closeAll();
@@ -90,13 +96,15 @@ try {
     sessionStorage.setItem('workspace-test-library', JSON.stringify(blob));
   });
   await page.reload();
-  await page.frameLocator('iframe.library-frame').locator('#toolbar-row').waitFor();
+  await page.locator('.workspace-sidebar').waitFor({ state: 'attached', timeout: 60_000 });
   await open('/samples/Good Title Book.pdf');
   await page.mouse.move(600, 10);
   await page.locator('button[title="Toggle sidebar"]').click();
   await page.locator('.workspace-sidebar').waitFor({state:'visible'});
-  await page.locator('.workspace-sidebar summary').filter({hasText:'Reading'}).click();
-  await page.locator('.workspace-sidebar summary').filter({hasText:'Documents'}).click();
+  // The seeded nested shelf renders as real tree rows, open by default, with
+  // the child shelf's books visible inside.
+  assert.equal(await page.locator('.workspace-sidebar .workspace-shelf').filter({hasText:'Reading'}).count(), 1);
+  assert.ok((await page.locator('.workspace-shelf').filter({hasText:'Documents'}).count()) >= 1);
   assert(await page.locator('.workspace-sidebar .format-badge').count() >= 3);
   // Cancel, split to four, reject a fifth, replace at the limit.
   await split('example', 'right', null, false);
@@ -133,11 +141,17 @@ try {
   };
   await focusPane(ids[0]);
   await page.getByRole('button', {name:'Thumbnails',exact:true}).click();
-  await page.locator('.workspace-sidebar img[src]').first().waitFor();
+  // Thumbnail cells render a placeholder until the real bitmap arrives, so the
+  // <img> element itself only exists once a page has been rasterized.
+  await page.locator('.workspace-thumb-cell img').first().waitFor({ timeout: 60_000 });
   await focusPane(ids[2]);
   await page.getByText('Thumbnails are available for PDF documents.', {exact:true}).waitFor();
   await page.getByRole('button', {name:'Outline',exact:true}).click();
-  await page.locator('.sidebar-panel').getByText('Chapter One', {exact:true}).waitFor();
+  // The hidden library panel and the Active tabs also carry the md's
+  // "Chapter One" title, so the wait targets the outline row itself.
+  const outlineRow = page.locator('.sidebar-panel [data-outline-index="0"]');
+  await outlineRow.waitFor();
+  assert.equal((await outlineRow.textContent()).trim(), 'Chapter One');
   await page.getByRole('button', {name:'Library',exact:true}).click();
   await focusPane(ids[0]); await setBase('Dark');
   await page.frameLocator(`[data-pane="${ids[0]}"] iframe`).locator('html[data-base="dark"]').waitFor();
@@ -180,7 +194,7 @@ try {
   const kept = await page.evaluate(() => [...__MAREADER_DEBUG__.panes.keys()]);
   assert.deepEqual(kept.sort(), ids.slice(1).sort());
   await closeAll();
-  assert.equal(await page.locator('iframe').count(), 1, 'only a fresh isolated library remains');
+  assert.equal(await page.locator('iframe').count(), 0, 'closing the last pane returns to the frameless workspace home');
   assert.deepEqual(errors, [], `uncaught browser errors: ${errors.join('\n')}`);
   console.log('Workspace browser acceptance: isolated routes, mixed-format four-pane split, preview, limit, replace, focus, close/collapse.');
 } catch (error) {

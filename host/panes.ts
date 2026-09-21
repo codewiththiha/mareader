@@ -1,5 +1,5 @@
 import type { ReaderRuntime } from "./lifecycle";
-import type { Payload, ReaderConfig } from "./protocol";
+import type { Format, Payload, ReaderConfig } from "./protocol";
 /** Authoritative ownership map. Disposal acknowledgment precedes deletion. */
 export class PaneRuntimeManager {
   readonly panes = new Map<string, ReaderRuntime>();
@@ -26,9 +26,42 @@ export class PaneRuntimeManager {
     if (pending) return pending;
     const runtime = this.panes.get(id);
     if (!runtime) return Promise.resolve();
-    const done = runtime.dispose().finally(() => { this.panes.delete(id); this.closing.delete(id); });
+    const done = runtime.dispose().finally(() => {
+      this.panes.delete(id);
+      this.closing.delete(id);
+      console.log("[runtime] LIVE PANES", this.panes.size);
+    });
     this.closing.set(id, done);
     return done;
   }
   async closeAll(): Promise<void> { await Promise.all([...this.panes.keys()].map((id) => this.close(id))); }
+}
+
+/** One pane as the host books it, before the wire shape: the host's own
+ *  bookkeeping, nothing the sidebar could not work out itself. */
+export interface PaneMeta {
+  id: string;
+  bookId: string;
+  title: string | null;
+  format: Format;
+  loading: boolean;
+  closing: boolean;
+}
+
+/** The whole pane set the workspace sidebar derives from: the Active
+ *  section shows and hides on this one payload, and the shared Blend paper
+ *  rides along so the backdrop never waits for a second channel. */
+export function panesPayload(activePaneId: string | null, panes: PaneMeta[], blendPaper: string | null): Payload {
+  return {
+    type: "panes",
+    activePaneId,
+    blendPaper,
+    panes: panes.map((pane) => ({
+      paneId: pane.id,
+      bookId: pane.bookId,
+      title: pane.title,
+      format: pane.format,
+      status: pane.closing ? "closing" : pane.loading ? "loading" : "ready",
+    })),
+  };
 }

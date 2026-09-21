@@ -9,13 +9,15 @@ use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::menus::reader_menu::ReaderMenu;
 use crate::components::settings::modal::SettingsModal;
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use crate::components::workspace::{WorkspaceActive, WorkspaceLibraryTree, WorkspaceThumbnails};
+use crate::runtime::workspace::WorkspaceBridge;
 use app_chrome::hooks::dom::TOOLBAR_LEADING_ID;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::tooltip::Tooltip;
 use pdf_engine::types::DocStatus;
 
 #[component]
-pub(super) fn WorkspaceShell(state: AppState) -> impl IntoView {
+pub(super) fn WorkspaceShell(state: AppState, bridge: WorkspaceBridge) -> impl IntoView {
     let shell = ShellController::reader(state);
     provide_context(shell);
     let settings_open = RwSignal::new(false);
@@ -83,37 +85,54 @@ pub(super) fn WorkspaceShell(state: AppState) -> impl IntoView {
         <AppTitleBar state=state left=left center=center right=right>
             <ChromeRelay shell=shell />
             <div class="reader-bg relative flex h-full w-full overflow-hidden text-ink">
-                <PushRail shell=shell><WorkspaceRail state=state shell=shell /></PushRail>
-                <main id="workspace-layout" class="relative min-w-0 flex-1 overflow-hidden"></main>
+                <PushRail shell=shell><WorkspaceRail state=state shell=shell bridge=bridge /></PushRail>
+                <main
+                    id="workspace-layout"
+                    class="relative min-w-0 flex-1 overflow-hidden"
+                    style=move || {
+                        bridge
+                            .blend_paper
+                            .get()
+                            .map(|paper| format!("background:{paper}"))
+                            .unwrap_or_default()
+                    }
+                ></main>
             </div>
-            <OverlayRail shell=shell><WorkspaceRail state=state shell=shell /></OverlayRail>
+            <OverlayRail shell=shell><WorkspaceRail state=state shell=shell bridge=bridge /></OverlayRail>
             <SettingsModal state=state open=settings_open />
         </AppTitleBar>
     }
 }
 
 #[component]
-fn WorkspaceRail(state: AppState, shell: ShellController) -> impl IntoView {
+fn WorkspaceRail(state: AppState, shell: ShellController, bridge: WorkspaceBridge) -> impl IntoView {
     use crate::components::shell::sidebar::{container::SidebarShell, header::SidebarHeader, document_info::BookInfo};
     use crate::components::shell::sidebar::panels::outline::view::SidebarOutline;
-    use crate::components::shell::sidebar::panels::thumbnails::view::SidebarThumbs;
     use crate::components::shell::sidebar::switcher::PanelSwitcher;
     use crate::state::SidebarMode;
     let tab = expect_context::<RwSignal<&'static str>>();
+    // The panels stay mounted (an `invisible` toggle, never `hidden`): the
+    // virtualized thumbnail window keeps its engine binding across a tab
+    // switch, and the tree keeps its open/closed state.
     view! {
         <SidebarShell mode=shell.sidebar_mode overlay=shell.is_overlay() no_slide=shell.no_slide()
             header=move || view! { <SidebarHeader reader=state.reader sidebar=shell.sidebar_mode /> }
             info_row=move || view! { <BookInfo reader=state.reader cover=state.reader.cover /> }
             panels=move || view! {
-                <div class="workspace-sidebar h-full overflow-auto" hidden=move || tab.get() != "library" />
-                <Show when=move || tab.get() == "thumbnails">
-                    <SidebarThumbs state=state.reader sidebar=shell.sidebar_mode live=shell.thumbs_live()
-                        shown=Signal::derive(|| true) outro=shell.panel_outro() intro=shell.panel_intro() />
-                </Show>
-                <Show when=move || tab.get() == "outline">
+                <div
+                    class="workspace-sidebar sidebar-panel absolute inset-0 overflow-y-auto"
+                    class=("invisible", move || tab.get() != "library")
+                >
+                    <WorkspaceActive bridge=bridge />
+                    <WorkspaceLibraryTree state=state />
+                </div>
+                <div class="sidebar-panel absolute inset-0" class=("invisible", move || tab.get() != "thumbnails")>
+                    <WorkspaceThumbnails state=state bridge=bridge />
+                </div>
+                <div class="sidebar-panel absolute inset-0" class=("invisible", move || tab.get() != "outline")>
                     <SidebarOutline state=state.reader sidebar=shell.sidebar_mode
                         shown=Signal::derive(|| true) outro=shell.panel_outro() intro=shell.panel_intro() />
-                </Show>
+                </div>
             }
             footer=move || view! {
                 <PanelSwitcher mode=shell.sidebar_mode

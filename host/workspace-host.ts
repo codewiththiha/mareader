@@ -1,11 +1,13 @@
 import { FrameRuntime } from "./frame";
-import { PaneRuntimeManager } from "./panes";
-import { COMMAND_EVENT, OUTPUT_EVENT, localCommand, payload, readerConfig, record, type Payload, type ReaderConfig } from "./protocol";
+import { PaneRuntimeManager, panesPayload, type PaneMeta } from "./panes";
+import { OUTPUT_EVENT, localCommand, payload, readerConfig, record, type Payload, type ReaderConfig } from "./protocol";
 import { MIME, hit, internalDrop, leaves, place, rectangles, remove, type Target, type Tree } from "./layout";
 import { tauri } from "./tauri";
 
-interface Book { id: string; title: string; path: string; format: string; missing: boolean }
-interface Shelf { id: string; name: string; parent: string | null; books: string[] }
+interface Book { id: string; title: string; format: string; missing: boolean }
+type TreeRoot =
+  | { kind: "folder"; id: string; title: string; children: TreeRoot[] }
+  | { kind: "book"; id: string; title: string; format: string; missing: boolean };
 interface Meta { config: ReaderConfig; base: Record<string, unknown>; snapshot: Record<string, unknown>; paper?: string }
 // getRandomValues also works on packaged origins without randomUUID support.
 const dragToken = (): string => [...crypto.getRandomValues(new Uint32Array(4))].map((v) => v.toString(16).padStart(8, "0")).join("");
@@ -14,31 +16,35 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
 
 export function bootWorkspace(): void {
   const root = document.getElementById("workspace-root")!;
-  const libraryRoot = document.getElementById("library-root")!;
   const status = document.getElementById("host-status")!;
   const metas = new Map<string, Meta>();
   const slots = new Map<string, HTMLElement>();
-  let library: FrameRuntime | null = null;
   let tree: Tree | null = null;
   let active: string | null = null;
   let nextId = 0;
-  let books: Book[] = [], shelves: Shelf[] = [];
-  let tab = "library";
-  const expanded = new Set<string>();
+  let books: Book[] = [];
   let drag: { token: string; bookId: string } | null = null;
   let drop: Target | null = null;
   let pendingDrop: { target: Target; bookId: string } | null = null;
   let overlay: HTMLElement | null = null;
   let chromeState: Payload = { type: "chrome-state", bar: false, rail: false };
   let shared: { appearance: unknown; source: string; paper?: string } | null = null;
+  // Pane lifecycle bookkeeping for the payload: a pane is loading between
+  // allocation and READY, closing between DISPOSE and the map delete.
+  let loading = new Set<string>();
+  let closing = new Set<string>();
+  // A finished drag must not also fire the row's click open.
+  let suppressClick = false;
+  // Rows the drag session is already bound to: the workspace re-renders them
+  // through Leptos, and a re-bind would stack a second capture per row.
+  const boundRows = new WeakSet<HTMLElement>();
   let queue = Promise.resolve();
   let shuttingDown = false;
   let navigationEpoch = 0;
-  const manager = new PaneRuntimeManager((id, config, event) => new FrameRuntime(slots.get(id)!, config, event, closeWindow), paneEvent);
+  const manager = new PaneRuntimeManager((id, config, event) => new FrameRuntime(id, slots.get(id)!, config, event, closeWindow), paneEvent);
   Object.defineProperty(window, "__MAREADER_DEBUG__", { configurable: true, value: {
     workspace: true, panes: manager.panes,
     get activePane() { return active; }, get tree() { return clone(tree); },
-    get library() { return library !== null; },
     get dragging() { return drag !== null; },
     get dropTarget() { return clone(drop); },
     // Value-only inspection; no second ownership map or frame references.
@@ -87,6 +93,21 @@ export function bootWorkspace(): void {
     settings.layout = { ...(record(settings.layout) ? settings.layout : {}), blend_mode: true };
     return settings;
   }
+  // The workspace's sidebar derives from this one payload: the Active section
+  // shows and hides on it, and its backdrop reads the shared Blend paper off
+  // it. Published after every registry change: open, ready, close, failed,
+  // dispose, and active-pane change.
+  function publishPanes(): void {
+    const entries: PaneMeta[] = [...metas].map(([id, meta]) => ({
+      id,
+      bookId: meta.config.bookId,
+      title: meta.config.title,
+      format: meta.config.format,
+      loading: loading.has(id),
+      closing: closing.has(id),
+    }));
+    localCommand(panesPayload(active, entries, shared?.paper ?? null));
+  }
   function syncChrome(): void {
     const meta = active ? metas.get(active) : undefined;
     if (!meta || !active) { localCommand({ type: "active-state", paneId: null }); return; }
@@ -96,7 +117,9 @@ export function bootWorkspace(): void {
     if (!metas.has(id) || active === id) return;
     // Flush root slider commits synchronously before changing the host target.
     localCommand({ type: "flush-chrome" });
-    active = id; paint(); syncChrome(); renderSidebar();
+    active = id; paint(); syncChrome();
+    localCommand({ type: "focus", paneId: id });
+    publishPanes();
   }
   function updateBlend(): void {
     for (const [id, meta] of metas) {
@@ -105,7 +128,8 @@ export function bootWorkspace(): void {
       manager.command(id, { type: "set-settings", settings });
       manager.command(id, { type: "set-blend", paper: shared?.paper ?? null });
     }
-    layout().style.background = shared?.paper ?? "";
+    // The workspace paints the shared paper itself; the host only publishes.
+    publishPanes();
   }
   function chromeChange(message: Payload): void {
     const id = String(message.paneId), meta = metas.get(id);
@@ -141,9 +165,14 @@ export function bootWorkspace(): void {
     if (!meta) return;
     if (message.type === "focus") focus(id);
     else if (message.type === "snapshot" && record(message.snapshot)) {
-      const structural = !same(meta.snapshot.outline, message.snapshot.outline) || meta.snapshot.numPages !== message.snapshot.numPages;
       meta.snapshot = message.snapshot;
-      if (active === id) { syncChrome(); if (structural && tab !== "library") renderSidebar(); }
+      if (active === id) {
+        // The workspace mirrors chrome through active-state AND tracks the
+        // live movement through the snapshot itself: its thumbnail
+        // current-page highlight must not wait for a scroll or a focus hop.
+        syncChrome();
+        localCommand({ type: "snapshot", snapshot: message.snapshot });
+      }
     } else if (message.type === "cover" && typeof message.dataUrl === "string") {
       meta.config.cover = message.dataUrl;
       if (active === id) syncChrome();
@@ -153,48 +182,34 @@ export function bootWorkspace(): void {
       meta.config.settings = clone(message.settings);
     } else if (message.type === "paper-color" && typeof message.paper === "string" && /^#[a-f0-9]{6}$/i.test(message.paper)) {
       meta.paper = message.paper;
-      if (shared?.source === id) { shared.paper = message.paper; updateBlend(); }
-    } else if (message.type === "thumbnail" && active === id && tab === "thumbnails" && typeof message.dataUrl === "string") {
-      document.querySelectorAll<HTMLImageElement>(`.workspace-sidebar img[data-page="${Number(message.page)}"]`).forEach((image) => { image.src = String(message.dataUrl); });
-      const next = document.querySelector<HTMLImageElement>(".workspace-sidebar img[data-page]:not([src])");
-      if (next) manager.command(id, { type: "request-thumbnails", page: Number(next.dataset.page) });
+      if (shared?.source === id) {
+        shared.paper = message.paper;
+        updateBlend();
+        // The blend source's paper is the workspace's backdrop: push it
+        // through so the shell does not wait for the next registry publish.
+        localCommand(message);
+      }
+    } else if (message.type === "thumbnail" && active === id && typeof message.dataUrl === "string") {
+      // The workspace's grid is the consumer; the host only routes the bitmap.
+      localCommand(message);
     } else if (message.type === "close-request") run(() => closePane(id));
-    else if (message.type === "reload-request") run(async () => { await closeAll(false); location.reload(); });
+    else if (message.type === "reload-request") run(async () => { await closeAll(); location.reload(); });
     else if (message.type === "open-path") localCommand(message);
     else if (message.type === "error") { localCommand(message); run(() => closePane(id)); }
     else localCommand(message);
   }
-  async function showLibrary(): Promise<void> {
-    active = null; shared = null; syncChrome();
-    root.hidden = true; libraryRoot.hidden = false;
-    if (library || shuttingDown) return;
-    const config: ReaderConfig = { bookId: "library", path: "library", format: "txt", title: null, cover: null, resumePage: 1, resumeFraction: null, settings: {} };
-    const frame = new FrameRuntime(libraryRoot, config, libraryEvent, closeWindow, "library");
-    library = frame;
-    try { await frame.ready(); }
-    catch (error) { await frame.dispose(); if (library === frame) library = null; throw error; }
-    status.hidden = true;
-  }
-  function libraryEvent(message: Payload): void {
-    if (message.type === "open-request" && readerConfig(message.config)) {
-      const config = message.config;
-      scheduleOpen(config, null);
-    } else if (message.type === "open-path") localCommand(message);
-    else if (message.type === "reload-request") run(async () => { await closeAll(false); location.reload(); });
-    else if (message.type === "error") localCommand(message);
-  }
   async function open(config: ReaderConfig, target: Target | null): Promise<void> {
     if (shuttingDown) return;
     localCommand({ type: "flush-chrome" });
-    if (library) { await library.dispose(); library = null; localCommand({ type: "reload-library" }); }
     if (tree && !target) target = { pane: active ?? leaves(tree)[0], edge: "center" };
     const id = `p${++nextId}`;
     const projected = place(tree, target, id); // validation before creating anything
+    console.log("[runtime] OPEN", id, config.format);
     if (target?.edge === "center") {
       await manager.close(target.pane);
       slots.get(target.pane)?.remove(); slots.delete(target.pane); metas.delete(target.pane);
     }
-    libraryRoot.hidden = true; root.hidden = false; status.hidden = true;
+    status.hidden = true;
     const slot = document.createElement("section"); slot.className = "workspace-pane"; slot.dataset.pane = id;
     const button = document.createElement("button"); button.className = "pane-close"; button.textContent = "×";
     button.title = "Close pane"; button.setAttribute("aria-label", "Close pane");
@@ -206,17 +221,26 @@ export function bootWorkspace(): void {
     // silently erase a new pane's base profile.
     if (record(base.layout)) base.layout.blend_mode = false;
     metas.set(id, { config, base, snapshot: { page: config.resumePage, numPages: 1, title: config.title, outline: [] } });
-    tree = projected; active = id; paint(); syncChrome(); renderSidebar();
+    tree = projected; active = id; paint(); syncChrome();
+    loading.add(id);
+    publishPanes();
     try {
+      console.log("[runtime] panes", metas.size);
       await manager.open(id, { ...config, settings: effective(metas.get(id)!) });
+      loading.delete(id);
       if (shared && !metas.has(shared.source)) { shared.source = id; shared.paper = metas.get(id)?.paper; }
       updateBlend();
       manager.command(id, chromeState);
+      publishPanes();
     } catch (error) { await closePane(id); throw error; }
   }
   async function closePane(id: string): Promise<void> {
     if (!metas.has(id)) return;
-    await manager.close(id); // DISPOSED/timeout fallback -> port close -> frame removal
+    closing.add(id);
+    publishPanes();
+    // DISPOSED/timeout fallback -> port close -> frame removal
+    await manager.close(id);
+    closing.delete(id);
     slots.get(id)?.remove(); slots.delete(id); metas.delete(id);
     tree = remove(tree, id); // collapse only after the runtime is unreachable
     if (active === id) active = leaves(tree)[0] ?? null;
@@ -225,123 +249,85 @@ export function bootWorkspace(): void {
       if (source) { shared.source = source; shared.paper = metas.get(source)?.paper; } else shared = null;
       updateBlend();
     }
-    paint(); syncChrome(); renderSidebar();
-    if (!tree) await showLibrary();
+    paint(); syncChrome();
+    publishPanes();
   }
-  async function closeAll(returnToLibrary = true): Promise<void> {
+  async function closeAll(): Promise<void> {
     endDrag();
     localCommand({ type: "flush-chrome" });
     await manager.closeAll();
     for (const slot of slots.values()) slot.remove();
     slots.clear(); metas.clear(); tree = null; active = null; shared = null;
-    if (library && !returnToLibrary) { await library.dispose(); library = null; }
-    if (returnToLibrary) await showLibrary();
+    loading.clear(); closing.clear();
+    // With no pane left, the chrome stops mirroring a document: the shell
+    // reads as a home again instead of holding the last pane's title.
+    syncChrome();
+    publishPanes();
   }
   async function closeWindow(): Promise<void> {
-    shuttingDown = true; await closeAll(false);
+    shuttingDown = true; await closeAll();
     allowClose = true; await tauri()?.window.getCurrentWindow().close();
   }
-  function bookRow(book: Book): HTMLElement {
-    const row = document.createElement("button"); row.className = "workspace-book"; row.dataset.bookId = book.id;
-    row.disabled = book.missing; row.draggable = !book.missing;
-    const badge = document.createElement("span"); badge.className = "format-badge"; badge.textContent = book.format.toUpperCase();
-    const title = document.createElement("span"); title.textContent = book.title; title.className = "truncate";
-    row.append(badge, title);
-    let pointerMoved = false;
-    row.onclick = () => { if (pointerMoved) { pointerMoved = false; return; } localCommand({ type: "open-book", bookId: book.id }); };
-    // Tauri's native file-drop handler is kept enabled for OS imports. On
-    // WebView2 it intercepts HTML DnD, so internal desktop gestures use pointer
-    // capture and feed the SAME MIME/session validator and overlay handlers.
-    row.onpointerdown = (down) => {
-      if (!tauri() || book.missing || down.button !== 0) return;
-      pointerMoved = false;
-      const transfer = new DataTransfer();
-      const move = (event: PointerEvent): void => {
-        if (event.pointerId !== down.pointerId) return;
-        if (!pointerMoved && Math.hypot(event.clientX-down.clientX, event.clientY-down.clientY) > 6) {
-          pointerMoved = true;
-          row.setPointerCapture(down.pointerId);
-          drag = { token: dragToken(), bookId: book.id };
-          transfer.setData(MIME, JSON.stringify({ version: 1, source: "library-sidebar", ...drag }));
-          startOverlay();
-        }
-        if (pointerMoved) overlay?.dispatchEvent(new DragEvent("dragover", { dataTransfer: transfer, clientX: event.clientX, clientY: event.clientY, cancelable: true }));
-      };
-      const finish = (event: PointerEvent): void => {
-        if (event.pointerId !== down.pointerId) return;
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", finish);
-        window.removeEventListener("pointercancel", cancel);
-        if (row.hasPointerCapture(down.pointerId)) row.releasePointerCapture(down.pointerId);
-        if (pointerMoved && event.type === "pointerup") overlay?.dispatchEvent(new DragEvent("drop", { dataTransfer: transfer, clientX: event.clientX, clientY: event.clientY, cancelable: true }));
-        endDrag();
-      };
-      const cancel = (event: PointerEvent): void => finish(event);
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", finish);
-      window.addEventListener("pointercancel", cancel);
-    };
-    row.ondragstart = (event) => {
-      if (tauri()) { event.preventDefault(); return; }
-      if (!event.dataTransfer || book.missing) return;
-      drag = { token: dragToken(), bookId: book.id };
-      event.dataTransfer.setData(MIME, JSON.stringify({ version: 1, source: "library-sidebar", ...drag }));
-      event.dataTransfer.effectAllowed = "copy";
-      // The browser must capture the source before inserting the hit surface.
-      requestAnimationFrame(() => { if (drag) startOverlay(); });
-    };
-    row.ondragend = endDrag;
-    return row;
-  }
-  function renderSidebar(): void {
-    document.querySelectorAll<HTMLElement>(".workspace-sidebar").forEach((panel) => {
-      panel.replaceChildren(); panel.dataset.tab = tab;
-      if (panel.hidden) return;
-      if (tab === "library") {
-        const appendShelf = (shelf: Shelf, parent: HTMLElement, ancestors: Set<string>): void => {
-          if (ancestors.has(shelf.id)) return;
-          const seen = new Set(ancestors); seen.add(shelf.id);
-          const group = document.createElement("details"); group.open = expanded.has(shelf.id);
-          const heading = document.createElement("summary"); heading.textContent = shelf.name; group.append(heading);
-          group.ontoggle = () => { if (group.open) expanded.add(shelf.id); else expanded.delete(shelf.id); };
-          for (const child of shelves.filter((s) => s.parent === shelf.id)) appendShelf(child, group, seen);
-          for (const id of shelf.books) { const book = books.find((b) => b.id === id); if (book) group.append(bookRow(book)); }
-          parent.append(group);
-        };
-        for (const shelf of shelves.filter((s) => !s.parent || !shelves.some((p) => p.id === s.parent))) appendShelf(shelf, panel, new Set());
-        const all = document.createElement("details"); all.open = true;
-        const heading = document.createElement("summary"); heading.textContent = "All books"; all.append(heading);
-        for (const book of books) all.append(bookRow(book));
-        panel.append(all);
-      } else {
-        const meta = active ? metas.get(active) : undefined;
-        if (!meta || !active) { panel.textContent = "Open a book to view this panel."; return; }
-        const id = active;
-        if (tab === "outline") {
-          // The original Rust OutlinePanel renders the focused snapshot.
-        } else if (meta.config.format !== "pdf") panel.textContent = "Thumbnails are available for PDF documents.";
-        else {
-          // Bounded window around the current page, not one raster per page.
-          const current = Number(meta.snapshot.page ?? 1), total = Number(meta.snapshot.numPages ?? 1);
-          const first = Math.max(1, current - 4), last = Math.min(total, first + 11);
-          const previous = document.createElement("button"); previous.textContent = "Previous pages";
-          previous.onclick = () => { meta.snapshot.page = Math.max(1, first - 12); renderSidebar(); };
-          panel.append(previous);
-          for (let page = first; page <= last; page++) {
-            const row = document.createElement("button"); row.className = "workspace-thumbnail thumb-card";
-            const image = document.createElement("img"); image.className = "thumb-canvas"; image.dataset.page = String(page); image.alt = `Page ${page}`;
-            const badge = document.createElement("div"); badge.className = `thumb-num${page === current ? " is-current" : ""}`;
-            const label = document.createElement("span"); label.textContent = String(page); badge.append(label);
-            row.append(image, badge);
-            row.onclick = () => manager.command(id, { type: "controls", page }); panel.append(row);
+  // The workspace renders its own rows (Leptos, in this document); the host
+  // only gives them a drag session, bound once per row node.
+  function bindLibraryDrag(): void {
+    for (const row of Array.from(document.querySelectorAll<HTMLButtonElement>(".workspace-book[data-book-id]"))) {
+      if (row.disabled || boundRows.has(row)) continue;
+      boundRows.add(row);
+      let pointerMoved = false;
+      row.onpointerdown = (down) => {
+        // Tauri's native file-drop handler is kept enabled for OS imports. On
+        // WebView2 it intercepts HTML DnD, so internal desktop gestures use
+        // pointer capture and feed the SAME MIME/session validator and
+        // overlay handlers.
+        if (!tauri() || down.button !== 0) return;
+        const book = books.find((b) => b.id === row.dataset.bookId);
+        if (!book || book.missing) return;
+        pointerMoved = false;
+        const transfer = new DataTransfer();
+        const move = (event: PointerEvent): void => {
+          if (event.pointerId !== down.pointerId) return;
+          if (!pointerMoved && Math.hypot(event.clientX-down.clientX, event.clientY-down.clientY) > 6) {
+            pointerMoved = true;
+            row.setPointerCapture(down.pointerId);
+            drag = { token: dragToken(), bookId: book.id };
+            transfer.setData(MIME, JSON.stringify({ version: 1, source: "library-sidebar", ...drag }));
+            startOverlay();
           }
-          const next = document.createElement("button"); next.textContent = "Next pages";
-          next.onclick = () => { meta.snapshot.page = Math.min(total, last + 5); renderSidebar(); };
-          panel.append(next);
-          manager.command(id, { type: "request-thumbnails", page: first });
-        }
-      }
-    });
+          if (pointerMoved) overlay?.dispatchEvent(new DragEvent("dragover", { dataTransfer: transfer, clientX: event.clientX, clientY: event.clientY, cancelable: true }));
+        };
+        const finish = (event: PointerEvent): void => {
+          if (event.pointerId !== down.pointerId) return;
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", finish);
+          window.removeEventListener("pointercancel", cancel);
+          if (row.hasPointerCapture(down.pointerId)) row.releasePointerCapture(down.pointerId);
+          if (pointerMoved && event.type === "pointerup") {
+            overlay?.dispatchEvent(new DragEvent("drop", { dataTransfer: transfer, clientX: event.clientX, clientY: event.clientY, cancelable: true }));
+            // The pointer release lands a split, not an open: the click the
+            // browser synthesises next must not also fire the row's open.
+            suppressClick = true;
+            setTimeout(() => { suppressClick = false; }, 0);
+          }
+          endDrag();
+        };
+        const cancel = (event: PointerEvent): void => finish(event);
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", finish);
+        window.addEventListener("pointercancel", cancel);
+      };
+      row.ondragstart = (event) => {
+        if (tauri()) { event.preventDefault(); return; }
+        const book = books.find((b) => b.id === row.dataset.bookId);
+        if (!event.dataTransfer || !book || book.missing) return;
+        drag = { token: dragToken(), bookId: book.id };
+        event.dataTransfer.setData(MIME, JSON.stringify({ version: 1, source: "library-sidebar", ...drag }));
+        event.dataTransfer.effectAllowed = "copy";
+        // The browser must capture the source before inserting the hit surface.
+        requestAnimationFrame(() => { if (drag) startOverlay(); });
+      };
+      row.ondragend = endDrag;
+    }
   }
   function endDrag(): void { drag = null; drop = null; overlay?.remove(); overlay = null; }
   function startOverlay(): void {
@@ -388,41 +374,56 @@ export function bootWorkspace(): void {
       event.preventDefault(); event.stopImmediatePropagation(); endDrag();
     }
   }, { capture: true });
-  // The library frame is the only writer while its page is mounted. Route
-  // external opens there so its final flush cannot overwrite a newer root row.
-  window.addEventListener(COMMAND_EVENT, (event) => {
-    const value: unknown = (event as CustomEvent).detail;
-    if (library && payload(value) && ["open-path", "open-book"].includes(value.type)) {
-      event.stopImmediatePropagation(); library.command(value);
-    }
+  // A drag that ends on a split must swallow the row click it would
+  // otherwise synthesise; the open belongs to the drop, not the release.
+  window.addEventListener("click", (event) => {
+    if (!suppressClick) return;
+    event.stopPropagation();
+    event.stopImmediatePropagation();
   }, { capture: true });
   window.addEventListener(OUTPUT_EVENT, (event) => {
     const message: unknown = (event as CustomEvent).detail;
     if (!payload(message)) return;
     if (message.type === "workspace-ready") {
-      requestAnimationFrame(() => {
-        localCommand({ type: "reload-library" });
-        run(async () => { await showLibrary(); await takePendingFile(); });
-      });
+      run(takePendingFile);
     } else if (message.type === "library-tree") {
-      const newBooks = Array.isArray(message.books) ? message.books as Book[] : [];
-      const newShelves = Array.isArray(message.shelves) ? message.shelves as Shelf[] : [];
-      const changed = !same(books, newBooks) || !same(shelves, newShelves);
-      books = newBooks; shelves = newShelves;
-      if (changed && !drag) renderSidebar();
+      // The tree is hierarchical: root shelves with nested levels, then the
+      // unfiled books. The host keeps the flat book list the drag session
+      // and the drop preview look up, walked out of the same roots.
+      const roots = Array.isArray(message.roots) ? message.roots as TreeRoot[] : [];
+      const next: Book[] = [];
+      const walk = (node: TreeRoot): void => {
+        if (node.kind === "book") next.push({ id: node.id, title: node.title, format: node.format, missing: node.missing === true });
+        else for (const child of node.children) walk(child);
+      };
+      for (const node of roots) walk(node);
+      const changed = !same(books, next);
+      books = next;
+      if (changed && !drag) bindLibraryDrag();
     } else if (message.type === "open-request" && readerConfig(message.config)) {
       const config = message.config;
       const target = pendingDrop?.bookId === config.bookId ? pendingDrop.target : null;
       pendingDrop = null; scheduleOpen(config, target);
-    } else if (message.type === "sidebar-tab") { tab = String(message.tab); renderSidebar(); }
-    else if (message.type === "chrome-state") {
+    } else if (message.type === "chrome-state") {
       chromeState = message;
       for (const id of manager.panes.keys()) manager.command(id, message);
     }
     else if (message.type === "chrome-change") chromeChange(message);
     else if (message.type === "pane-command" && typeof message.paneId === "string" && payload(message.command)) manager.command(message.paneId, message.command);
-    else if (message.type === "close-all" || message.type === "close-request") requestCloseAll();
-    else if (message.type === "reload-request") run(async () => { await closeAll(false); location.reload(); });
+    else if (message.type === "thumbnail-request" && typeof message.page === "number") {
+      // The workspace's grid asks; the host answers from the PDF engine the
+      // active pane runs, and only while that pane is the one being shown.
+      if (active && metas.get(active)?.config.format === "pdf") {
+        manager.command(active, { type: "request-thumbnails", page: Number(message.page) });
+      }
+    } else if (message.type === "pane-focus" && typeof message.paneId === "string") {
+      focus(String(message.paneId));
+    } else if (message.type === "pane-close" && typeof message.paneId === "string") {
+      const id = String(message.paneId);
+      void manager.close(id);
+      run(() => closePane(id));
+    } else if (message.type === "close-all" || message.type === "close-request") requestCloseAll();
+    else if (message.type === "reload-request") run(async () => { await closeAll(); location.reload(); });
     else if (message.type === "appearance-preview") {
       for (const id of shared ? metas.keys() : active ? [active] : []) manager.command(id, message);
     }
@@ -444,17 +445,16 @@ export function bootWorkspace(): void {
   // Native file drops are ordinary opens, never split input. Desktop book
   // drags use pointer capture so native interception stays enabled.
   retain(tauri()?.event.listen("tauri://drag-drop", (event: unknown) => {
-    // The library page owns import-to-shelf (including multi-file drops).
-    // Do not simultaneously open its first file from the persistent host.
-    if (library) return;
     if (!record(event) || !record(event.payload) || !Array.isArray(event.payload.paths)) return;
-    const path = event.payload.paths[0]; if (typeof path === "string") localCommand({ type: "open-path", path });
+    const path = event.payload.paths[0];
+    if (typeof path === "string") localCommand({ type: "open-path", path });
   }));
   window.addEventListener("popstate", requestCloseAll);
-  window.addEventListener("pagehide", () => { shuttingDown = true; stops.forEach((stop) => stop()); void closeAll(false); }, { once: true });
-  // Rail placement can remount its panel without remounting the workspace.
+  window.addEventListener("pagehide", () => { shuttingDown = true; stops.forEach((stop) => stop()); void closeAll(); }, { once: true });
+  // The workspace re-renders its sidebar through Leptos; the host only binds
+  // its drag session to whatever rows just appeared.
   const observer = new MutationObserver((changes) => {
-    if (changes.some((change) => [...change.addedNodes].some((node) => node instanceof Element && (node.matches(".workspace-sidebar") || node.querySelector(".workspace-sidebar"))))) renderSidebar();
+    if (changes.some((change) => [...change.addedNodes].some((node) => node instanceof Element && (node.matches(".workspace-book") || node.querySelector(".workspace-book"))))) bindLibraryDrag();
   });
   observer.observe(root, { childList: true, subtree: true });
   window.addEventListener("pagehide", () => observer.disconnect(), { once: true });

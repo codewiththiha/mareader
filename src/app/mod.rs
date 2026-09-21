@@ -87,16 +87,28 @@ fn mount_connected_reader(format: &'static str) {
 
 #[cfg(feature = "library")]
 pub fn mount_workspace() {
+    // The workspace IS the library home: it boots from the same persisted
+    // state the library does, so the tree it renders is the real library and
+    // not an empty shelf the host has to fill in.
     console_error_panic_hook::set_once();
     crate::runtime::mark_workspace();
-    let root = document().get_element_by_id("workspace-root").expect("workspace mount target")
+    let root = document()
+        .get_element_by_id("workspace-root")
+        .expect("workspace mount target")
         .unchecked_into::<web_sys::HtmlElement>();
-    leptos::mount::mount_to(root, || {
-        let state = AppState { settings: RwSignal::new(crate::storage::load_settings()), ..AppState::default() };
+    let handle = leptos::mount::mount_to(root, || {
+        let state = bootstrap::create_app_state();
         provide_context(state);
         let (appearance, typography) = bootstrap::provide_app_contexts(state);
         effects::install_workspace_effects(state, appearance, typography);
-        crate::runtime::workspace::install(state);
-        view! { <workspace::WorkspaceShell state=state /><ToastHost state=state /><div class="noise-overlay" /> }
-    }).forget();
+        let bridge = crate::runtime::workspace::install(state);
+        view! {
+            <workspace::WorkspaceShell state=state bridge=bridge />
+            <ToastHost state=state />
+            <div class="noise-overlay" />
+        }
+    });
+    // The mount's cleanup is owned, not forgotten: dropping the handle is
+    // what releases the workspace's signals and listeners.
+    crate::runtime::retain_mount(move || drop(handle));
 }
