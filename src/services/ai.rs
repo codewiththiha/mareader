@@ -8,7 +8,7 @@
 //! popover (and anything else) listens on the window, so document switches
 //! never stack dead Tauri handlers or drop the live one.
 
-pub use ai_core::types::{AiChunk, AiChunkEvent};
+pub use ai_core::types::AiChunkEvent;
 use wasm_bindgen::JsValue;
 
 pub use crate::events::AI_CHUNK_EVENT;

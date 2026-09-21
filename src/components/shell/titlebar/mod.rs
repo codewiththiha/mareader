@@ -10,4 +10,3 @@
 
 pub mod app_title_bar;
 pub mod document_title;
-pub mod floating_document_title;

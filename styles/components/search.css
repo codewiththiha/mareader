@@ -1,7 +1,7 @@
 /* Search hits — one visual language, two painters. A PDF's boxes are
    appended by the engine into the page's text layer
    (public/engine/highlights.ts); a reflowable row paints its own
-   (src/components/formats/reflow/highlight.rs) with the same algorithm —
+   (crates/reader-app/src/components/formats/reflow/highlight.rs) with the same algorithm —
    Range per occurrence, one box per client rect. Both emit the same
    markup (.highlight, .is-active on the stepped-to one, data-match with
    the ordinal), which is why both are styled here and nowhere else: every

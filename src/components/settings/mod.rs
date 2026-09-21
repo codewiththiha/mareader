@@ -2,7 +2,8 @@
 //! strip, the close affordance, the Escape handler), `common` is what the
 //! tabs share, and `layout` / `theme` / `animations` / `fonts` are the tabs
 //! themselves. `theme` composes sections rather than owning them: the AI's
-//! appearance knobs live in `crate::components::ai::settings`, and `paper`
+//! appearance knobs live in `ai` here (the module keeps `AppState`, since
+//! it renders the AI provider rows), and `paper`
 //! holds the raster-only sections it mounts.
 //!
 //! This is its own component group rather than another `menus` sibling because
@@ -20,6 +21,7 @@
 //! * A control another switch disables takes `disabled=` a derived signal, so
 //!   the row stays visible and explains itself instead of vanishing.
 
+pub(crate) mod ai;
 pub(crate) mod animations;
 pub(crate) mod common;
 pub(crate) mod fonts;

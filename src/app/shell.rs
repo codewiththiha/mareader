@@ -7,7 +7,7 @@ use leptos_router::components::{Route, Routes};
 use crate::components::app_overlays::drag_overlay::DragOverlay;
 use crate::effects::app::drag_drop::drag_drop;
 use crate::features::library::LibraryPage;
-use crate::features::reader::ReaderPage;
+use crate::features::reader::ReaderRoute;
 use crate::state::AppState;
 use super::routes::{RedirectHome, RouteSync};
 
@@ -26,7 +26,7 @@ pub(crate) fn AppShell(state: AppState) -> impl IntoView {
                 />
                 <Route
                     path=leptos_router::path!("/reader")
-                    view=move || view! { <ReaderPage state=state /> }
+                    view=move || view! { <ReaderRoute state=state /> }
                 />
             </Routes>
             <div class="noise-overlay"></div>

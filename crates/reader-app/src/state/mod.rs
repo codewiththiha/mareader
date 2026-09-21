@@ -1,0 +1,134 @@
+//! Reader-level reactive state, one file per domain: the document, the viewer
+//! signals, the zoom pipeline's shape, search, the AI text selection and the
+//! gloss marks. Pure UI chrome (sidebar, toast) lives in `state::app`; pure
+//! domain logic in `reader-core` and the format crates.
+//!
+//! This module is the barrel. The domains have nothing to say to each other
+//! beyond the struct at the bottom that owns one of each — with the single
+//! exception of the format questions the chrome keeps asking, which is why
+//! they are answered here, once, as [`ReaderState::reflowable`].
+
+pub mod ai;
+pub mod document;
+pub mod gloss;
+pub mod search;
+pub mod viewer;
+pub mod zoom;
+
+use leptos::prelude::{Callback, Get, GetUntracked};
+
+use reader_core::appearance::TextureMode;
+use reader_core::format::Format;
+use reader_core::view::ViewMode;
+use reflow_core::typography::TextSettings;
+
+// Only the names the app reaches for by their short path are re-exported;
+// the rest are reached through their own module, which is the point of the
+// split.
+pub use ai::{AiSelectionState, SelectionDetail};
+pub use document::{DEFAULT_PAGE_ASPECT, DocumentState, NO_DOCUMENT, ReflowContent};
+pub use gloss::GlossState;
+pub use search::SearchState;
+pub use viewer::{Motion, ViewerSignals};
+pub use zoom::{ZoomCommand, ZoomTransition};
+
+/// The reader's one door to gloss persistence: `persist_gloss` is the
+/// shell's storage (the same module the open flow's load runs through), so
+/// the marks' save crosses as this callback instead of a storage import —
+/// the shell provides it at the route, the reader calls it with the key and
+/// the whole list. A `Callback` so it is `Copy` and rides the controller.
+pub type GlossSave = Callback<(String, Vec<ai_core::gloss::GlossMark>)>;
+
+/// Which persisted list "this document's" marks are. One fact, three readers
+/// — the load at open (the shell's open flow), the save per stroke (the
+/// gloss controller) and the sweep on a removal — so the three cannot
+/// disagree about which list they mean.
+///
+/// Empty when nothing is open or the open has no row the library can name;
+/// every caller reads that as "nowhere to put it" rather than as a key. An
+/// address-only open settles onto its row before any tail loads the marks,
+/// so the empty window is the window where there is no book to have marks
+/// about.
+pub fn gloss_key(reader: &ReaderState) -> String {
+    reader
+        .document
+        .book_id
+        .get_untracked()
+        .unwrap_or_default()
+}
+
+/// Page-host texture, provided via Leptos context by the app shell (derived
+/// from settings). The page canvases and the reflowable page hosts read it to
+/// pick their `texture-*` class; neither ever touches settings.
+pub type TextureSignal = leptos::prelude::Memo<TextureMode>;
+
+/// The reflowable formats' typography, provided via context by the app
+/// bootstrap (derived from settings) — the same pattern [`TextureSignal`] uses,
+/// for the same reason: the pages and the stream all need
+/// the resolved knobs, and none of them may reach into settings to get them.
+pub type TypographySignal = leptos::prelude::Memo<TextSettings>;
+
+/// The reader's slice of app state: everything the format components and the
+/// reader effects read/write. Sidebar/UI chrome is deliberately NOT here — it
+/// is app chrome state, passed in explicitly where the reader needs it.
+#[derive(Clone, Copy, Default)]
+pub struct ReaderState {
+    pub document: DocumentState,
+    pub viewer: ViewerSignals,
+    pub search: SearchState,
+    pub ai_selection: AiSelectionState,
+    pub gloss: GlossState,
+}
+
+impl ReaderState {
+    /// True while a reflowable document (plain text, Markdown) is open.
+    /// TRACKED: a document of the other kind swapping in re-renders the
+    /// caller, so a page host, a `<Show>` and a disabled settings row all
+    /// answer the same question without learning what a file extension is.
+    /// The only yes/no the reader answers about format — a new format means
+    /// one more arm on `Format::is_reflowable`, not one more `if` in the
+    /// viewer.
+    pub fn reflowable(&self) -> bool {
+        self.document.format.get().is_reflowable()
+    }
+
+    /// The same question for an effect or a callback that must not subscribe.
+    pub fn reflowable_now(&self) -> bool {
+        self.document.format.get_untracked().is_reflowable()
+    }
+
+    /// The open format, tracked, for the few callers that need to tell the
+    /// formats apart rather than merely ask whether type reflows: the block
+    /// renderer, which paints Markdown as Markdown and text as text, and the two
+    /// reflow effects that decide whether they take part at all.
+    pub fn format(&self) -> Format {
+        self.document.format.get()
+    }
+
+    /// True while a reflowable document is being read in the continuous
+    /// stream — the one view mode whose reading is not paging. The chrome
+    /// asks this before showing anything page-shaped (the indicator, the
+    /// bottom bar's controls, the settings rows that would lie).
+    pub fn reflow_streaming(&self) -> bool {
+        self.reflowable() && self.viewer.mode.get() == ViewMode::ScrollVertical
+    }
+
+    /// The stream's reading position as a rounded percentage of the whole
+    /// document. Reads `scroll_top` and `container_size` TRACKED, so a derived
+    /// signal around it updates with every scroll tick; the extent is read
+    /// once off the stream's own total — the scroll offset is the thing that
+    /// moves.
+    pub fn stream_percent(&self) -> u32 {
+        let top = self.viewer.scroll_top.get();
+        let (_, viewport_h) = self.viewer.container_size.get();
+        let total = self.document.content.reflow.stream_total.get();
+        (reader_core::view::scroll_fraction(top, total, viewport_h) * 100.0).round() as u32
+    }
+
+    /// The stream's reading position as 0..=1, or `None` while no stream is
+    /// mounted. Purely a snapshot: persistence calls it inside its effect,
+    /// where the tracked reads that matter (the page, the mode) already run.
+    pub fn stream_fraction(&self) -> Option<f64> {
+        self.document.content.reflow.stream_fraction()
+    }
+}

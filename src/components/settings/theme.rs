@@ -2,14 +2,14 @@
 //!
 //! The tab itself owns almost nothing: its two sections belong to the features
 //! they configure, and this module is the composition — the AI's appearance
-//! knobs ([`crate::components::ai::settings::AiAppearanceSection`]), the raster
+//! knobs ([`crate::components::settings::ai::AiAppearanceSection`]), the raster
 //! paper knobs ([`crate::components::settings::paper::PaperSection`], which
 //! gate themselves on a PDF being open), and the pointer to the palette menu
 //! for everything about the reader's own colour.
 
 use leptos::prelude::*;
 
-use crate::components::ai::settings::AiAppearanceSection;
+use crate::components::settings::ai::AiAppearanceSection;
 use crate::components::primitives::menu::separator::Separator;
 use crate::components::settings::paper::PaperSection;
 use crate::state::AppState;

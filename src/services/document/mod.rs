@@ -37,7 +37,7 @@ use crate::state::AppState;
 ///
 /// Every writer of the marks asks here rather than reading the document's
 /// path — the load at open (`crate::services::document::open::enter`), the
-/// save per stroke (`crate::components::ai::gloss::controller`) and the
+/// save per stroke (`reader_app::components::ai::gloss::controller`) and the
 /// sweep on a removal (`crate::services::library::arrange`) — so the three
 /// cannot disagree about which list they mean.
 ///

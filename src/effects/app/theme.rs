@@ -35,6 +35,9 @@
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
+// The `<html>` accessors moved to app-chrome (the reader crate needs them
+// too); re-exported so this module's callers keep one import path.
+pub(crate) use app_chrome::hooks::dom::{document_element, html_style};
 use reader_core::appearance::shared::{noise, texture};
 use reader_core::appearance::Appearance;
 use reader_core::format::Format;
@@ -46,18 +49,6 @@ use crate::effects::appearance::{is_scrubbing, raster, reflow, schedule_save};
 /// The `<html>` element, or `None` off wasm and before the document exists.
 /// The one way this layer reaches the DOM's root: the effects that paint a
 /// class or an attribute on it used to spell the three-hop walk themselves.
-pub(crate) fn document_element() -> Option<web_sys::Element> {
-    web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.document_element())
-}
-
-pub(crate) fn html_style() -> Option<web_sys::CssStyleDeclaration> {
-    document_element()
-        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
-        .map(|h| h.style())
-}
-
 fn body_el() -> Option<web_sys::HtmlElement> {
     web_sys::window()
         .and_then(|w| w.document())

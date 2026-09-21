@@ -1,7 +1,7 @@
 //! Writing the open book's resume point into the library NOW, instead of
 //! leaving it to the progress effect's debounce.
 //!
-//! [`crate::effects::reader::reading_progress`] batches its localStorage write
+//! [`crate::effects::app::reading_progress`] batches its localStorage write
 //! behind a 400 ms debounce, which is right for a continuous scroll and wrong
 //! for anything that ends the session inside that window: a close, and a
 //! reload ([`crate::services::reload`]). Both used to be a page turn away from

@@ -1,0 +1,56 @@
+//! The reflowable document's outline, projected from its own page cut.
+//!
+//! A PDF's chapters are addresses written into the file; a Markdown
+//! document's are `#` markers whose page depends on the reader's typography,
+//! window and current cut. So this effect resolves nothing — it takes the
+//! headings the open flow found (block indices, in `ReflowContent::headings`)
+//! and maps them through the live block→page table, the same table the pages
+//! are drawn from.
+//!
+//! That is why a text document's outline MOVES while you read instead of
+//! going stale: a re-measure that re-cuts the pages republishes `block_page`
+//! and the chapters follow the pagination. It is also why no
+//! `outline_pending` handshake is needed — there is no async lookup; the tree
+//! is complete the frame the cut is.
+//!
+//! The write is guarded because a Leptos `.set()` always notifies: a re-cut
+//! that leaves every heading on its page must not re-render the sidebar, the
+//! floating label or the reveal effect.
+//!
+//! A PDF is not this effect's document, and it says so by returning before
+//! reading anything: its tree is the engine's answer, filed by
+//! `services::document::open::outline`. Writing an empty tree for it instead
+//! would flash the sidebar empty on the way from a Markdown book to a PDF —
+//! the one moment both outlines are in the state.
+
+use std::sync::Arc;
+
+use leptos::prelude::*;
+
+use crate::state::ReaderState;
+
+/// Keep the sidebar's chapter tree in step with the reflowable page cut.
+pub fn reflow_outline(reader: ReaderState) {
+    Effect::new(move |_| {
+        // The format is tracked FIRST and decides participation. Returning
+        // for a PDF is not a lost subscription: opening a Markdown file
+        // flips `format` (the open flow writes it before publishing `Ready`),
+        // re-running this effect, and the two reads below go live.
+        if !reader.format().is_reflowable() {
+            return;
+        }
+        let reflow = reader.document.content.reflow;
+        let headings = reflow.headings.get();
+        let block_page = reflow.block_page.get();
+        let nodes = md_core::headings_to_nodes(headings.as_slice(), block_page.as_slice());
+
+        // Guarded, because a `.set()` always notifies and a re-cut usually leaves
+        // the chapters where they were.
+        let outline = reader.document.outline;
+        let same = outline.with_untracked(|current| current.as_slice() == nodes.as_slice());
+        if !same {
+            outline.set(Arc::new(nodes));
+        }
+    });
+}
+

@@ -41,14 +41,14 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::state::reader::TypographySignal;
+use reader_app::state::TypographySignal;
 use crate::effects::app::motion::publish_motion;
 use crate::effects::app::theme::apply_theme;
 use crate::effects::app::typography::apply_typography;
-use crate::effects::reader::blend_backdrop::paper_settings;
-use crate::effects::reader::link_navigation::link_navigation;
-use crate::effects::reader::page_selection::page_selection;
-use crate::effects::reader::selection_tracking::selection_tracking;
+use reader_app::effects::blend_backdrop::paper_settings;
+use reader_app::effects::link_navigation::link_navigation;
+use reader_app::effects::page_selection::page_selection;
+use reader_app::effects::selection_tracking::selection_tracking;
 use crate::state::{AppState, AppearanceSignal};
 
 /// Whether the app-root effects are already installed. Relaxed ordering: the
@@ -68,12 +68,12 @@ pub(crate) fn install_app_effects(
 
     apply_theme(state, appearance);
     apply_typography(typography);
-    paper_settings(state);
+    paper_settings(state.settings);
     publish_motion(state);
     shortcuts(state);
-    link_navigation(state);
-    page_selection(state);
-    selection_tracking(state);
+    link_navigation(state.reader);
+    page_selection(state.reader);
+    selection_tracking(state.reader);
     crate::services::ai::install_ai_chunk_bridge();
     crate::services::window::install_window_state_bridge(state);
     crate::effects::app::library::library_effects(state);

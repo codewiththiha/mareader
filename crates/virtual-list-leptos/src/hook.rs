@@ -85,7 +85,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     let virtualizer = Virtualizer::from_inner(inner);
 
     // MATERIALIZE THE DERIVED SIGNALS HERE, IN THIS OWNER. The reader's
-    // effects (navigation_sync's scroll->page sync, ReaderPage's pinned
+    // effects (navigation_sync's scroll->page sync, the reader route's pinned
     // window) call `v.dominant()`, and components call items()/rows()/
     // total_size() lazily through these accessors. `Signal::derive_local`
     // registers with the CURRENT owner, and a Leptos effect runs inside a

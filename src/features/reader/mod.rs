@@ -1,6 +1,6 @@
-pub mod page;
-pub(crate) mod rail;
-pub(crate) mod virtualizers;
+//! The `/reader` route, shell side: the title bar, the menus, the settings
+//! modal, and the one legal order the reader's effects are installed in.
 
-pub use page::ReaderPage;
-pub(crate) use virtualizers::use_reader_virtualizers;
+mod route;
+
+pub use route::ReaderRoute;

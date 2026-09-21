@@ -42,7 +42,7 @@ const RETIRED_COVERS_KEY: &str = "pdfreader.covers.v1";
 /// sessions, but NOT across a change in how a page is laid out. If page
 /// rendering metrics ever change, bump this rather than let old marks drift
 /// onto the wrong words. A reflowable mark carries its identity in `context`
-/// instead (a tagged envelope in `components::ai::reflow_anchor`), versioned
+/// instead (a tagged envelope in `reader_app::components::ai::reflow_anchor`), versioned
 /// by its own tag, so a change there needs no new storage key.
 ///
 /// The row id rather than the address is what makes this `v2`: a `v1` map is

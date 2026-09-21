@@ -6,7 +6,7 @@
 
 use leptos::prelude::*;
 
-use crate::state::reader::Motion;
+use reader_app::state::Motion;
 use crate::state::AppState;
 
 /// The `<html>` class that freezes every CSS animation and transition. Its

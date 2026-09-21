@@ -41,6 +41,26 @@ pub fn spring_axis(c: f64, v: f64, t: f64, dt: f64) -> (f64, f64) {
     (c + nv * dt, nv)
 }
 
+/// A value the spring can drive: five numeric fields with a step, a closeness
+/// test and a magnitude test.
+///
+/// `Send + Sync` mirrors what reactive signals stored in `Signal<T>` require
+/// (default storage); plain data types like the boxes qualify trivially. The
+/// trait lives here — beside the integrator it exists for — so the crate that
+/// owns a box shape (`ai-core`'s gloss box, `ui-kit`'s float box) implements
+/// a protocol from its own dependency graph, and no UI crate is ever asked to
+/// implement a foreign trait for a foreign type.
+pub trait SpringValue: Copy + Send + Sync + 'static {
+    /// The all-zero value (rest).
+    fn zero() -> Self;
+    /// Field-wise closeness to `other` within `epsilon`.
+    fn close(&self, other: &Self, epsilon: f64) -> bool;
+    /// One spring step toward `target` from `self` at velocity `vel`.
+    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self);
+    /// Whether every field is below `epsilon` in magnitude.
+    fn all_small(&self, epsilon: f64) -> bool;
+}
+
 #[cfg(test)]
 mod tests {
     use super::spring_axis;
@@ -77,3 +97,4 @@ mod tests {
         let _ = spring_axis(0.0, 0.0, 100.0, 8.0);
     }
 }
+

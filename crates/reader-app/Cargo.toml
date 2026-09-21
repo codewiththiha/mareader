@@ -1,0 +1,97 @@
+[package]
+name = "reader-app"
+version = "0.1.0"
+edition = "2024"
+
+# The reader build (Phase 2) links this crate twice — once through the shell
+# and once as the surface crate of its own binary — so a cdylib is declared
+# and left inert: the shell's edge (`mareader -> reader-app`, rlib) is the
+# only one that produces code today, and adding the second target later is
+# a manifest edit, not a refactor.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+# What the reader reaches for through web-sys: element access for the page
+# hosts and the thumbnails' drive listeners (html::Div/Canvas refs,
+# classList + inline style writes), scroll behaviour, resize observation,
+# the reveal CustomEvent, and the non-passive wheel listener the horizontal
+# strip needs (AddEventListenerOptions). Feature lists are per crate; the
+# shell declares its own (the library and services use more).
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Document",
+  "Element",
+  "HtmlElement",
+  "HtmlDivElement",
+  "HtmlCanvasElement",
+  "HtmlInputElement",
+  "Node",
+  "DomTokenList",
+  "CssStyleDeclaration",
+  "CanvasRenderingContext2d",
+  "Event",
+  "MouseEvent",
+  "PointerEvent",
+  "WheelEvent",
+  "FocusOptions",
+  "ResizeObserver",
+  "ResizeObserverEntry",
+  "DomRect",
+  "DomRectList",
+  "Selection",
+  "Range",
+  # The reflowable gloss anchor walks a block's text nodes to turn a character
+  # range back into a DOM Range (and reads each node's `data` to count them).
+  "Text",
+  "EventTarget",
+  "AddEventListenerOptions",
+  "ScrollToOptions",
+  "ScrollBehavior",
+  "Storage",
+  "CustomEvent",
+  "CustomEventInit",
+] }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+serde_json = "1"
+# Markdown rendering for the reflowable formats: parses each block and
+# emits Leptos views directly (GFM on, raw HTML off, no theme classes —
+# the reader's own stylesheet owns the look).
+leptos-md = "0.1"
+ai-core = { path = "../ai-core" }
+virtual-list = { path = "../virtual-list" }
+virtual-list-leptos = { path = "../virtual-list-leptos" }
+pdf-engine = { path = "../pdf-engine" }
+pdf-paper = { path = "../pdf-paper" }
+tauri-bridge = { path = "../tauri-bridge" }
+app-chrome = { path = "../app-chrome" }
+# The geometry primitives. The motion spring rides `ui_geom::spring`'s
+# integrator, so it clamps to that crate's frame ceiling rather than
+# restating the number.
+ui-geom = { path = "../ui-geom" }
+# The format cores. `reader-core` is everything a reader needs that no format
+# owns (the format list, the view modes, the settings, the colour pipeline);
+# `pdf-core` is the PDF's geometry and text index; `reflow-core` is the shared
+# maths of laying text out, with `txt-core` and `md-core` one parser each on
+# top of it. Nothing here knows about the next format; adding one is a new
+# crate that depends on `reflow-core`, plus one directory here.
+reader-core = { path = "../reader-core" }
+pdf-core = { path = "../pdf-core" }
+reflow-core = { path = "../reflow-core" }
+txt-core = { path = "../txt-core" }
+md-core = { path = "../md-core" }
+# The library's domain — the reader only ever borrows the cover map for the
+# rail's identity row, handed over as a prop rather than reached for.
+library-core = { path = "../library-core" }
+# The shared UI kit: primitives, the event table, the memory probe.
+ui-kit = { path = "../ui-kit" }
+
+[lints.rust]
+# Same policy as the shell: warnings denied, no unsafe. The reader crate is
+# held to exactly the bar the workspace gate enforces.
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "deny"

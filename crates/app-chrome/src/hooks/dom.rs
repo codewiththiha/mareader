@@ -40,6 +40,8 @@ pub const VIEWER_SLOT_ID: &str = "viewer-slot";
 /// rect. Both format families call this, so it lives with the shared lookups.
 /// An empty list (a range the browser will not give rects for) is a normal
 /// answer: "nothing to place".
+use web_sys::wasm_bindgen::JsCast;
+
 pub fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
     let Some(rects) = range.get_client_rects() else {
         return Vec::new();
@@ -129,4 +131,22 @@ pub fn center_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element)
     let target = top - (parent_h - er.height()) / 2.0;
     let max = (parent.scroll_height() as f64 - parent_h).max(0.0);
     parent.set_scroll_top(target.clamp(0.0, max) as i32);
+}
+
+/// The `<html>` element, as the generic `Element` the document gives you.
+/// The root of every document-level write (the theme's CSS-var tints, the
+/// reduced-motion listeners) and the one element that always exists once a
+/// document does.
+pub fn document_element() -> Option<web_sys::Element> {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.document_element())
+}
+
+/// The `<html>` element's inline style — the write surface for the document
+/// -level CSS variables the theme layers set.
+pub fn html_style() -> Option<web_sys::CssStyleDeclaration> {
+    document_element()
+        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+        .map(|h| h.style())
 }

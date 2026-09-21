@@ -1,5 +1,5 @@
 //! The spring, as a Leptos effect, generic over any 5-field [`SpringValue`]
-//! (the floating box, first and foremost: [`app_chrome::floating::types::FloatBox`]).
+//! (the floating box, first and foremost: [`ui_geom::floating::FloatBox`]).
 //!
 //! Springs `value` toward `target`; while `snap` is true (dragging / a forced
 //! beat / reduced-motion) it jumps instead of wobbling.
@@ -12,16 +12,16 @@
 //! continuous — unless a caller hard-resets via [`SpringBox::reset_to`] when a
 //! *new* anchor opens.
 //!
-//! This module implements [`SpringValue`] for the floating box and for nothing
-//! else. A domain type that wants to ride the spring brings its own adapter —
-//! the gloss box's is `components::ai::gloss::spring` — because a
-//! primitive that imported a feature crate's type would be breakable by that
-//! crate, and would make every other consumer of the primitive depend on the
-//! feature too.
+//! This module implements [`SpringValue`] for nothing itself: a trait impl
+//! must sit in the crate of the trait or of the type, so the adapters live
+//! with their types — the floating box's beside its inherent spring methods
+//! in `ui-geom`, the gloss box's in `ai-core` — and this module stays purely
+//! generic over the trait. A primitive that imported a feature crate's type
+//! would be breakable by that crate, and would make every other consumer of
+//! the primitive depend on the feature too.
 
 use leptos::prelude::*;
 
-use app_chrome::floating::types::FloatBox;
 use app_chrome::hooks::use_raf::FrameLoop;
 use ui_geom::spring::MAX_FRAME_S;
 
@@ -30,36 +30,11 @@ use super::frame::frame_delta;
 /// The largest field magnitude that counts as "stopped" for loop teardown.
 const SETTLE_EPS: f64 = 0.6;
 
-/// A value the spring can drive: five numeric fields with a step, a closeness
-/// test and a magnitude test.
-///
-/// `Send + Sync` mirrors what reactive signals stored in `Signal<T>` require
-/// (default storage); plain data types like the boxes qualify trivially.
-pub trait SpringValue: Copy + Send + Sync + 'static {
-    /// The all-zero value (rest).
-    fn zero() -> Self;
-    /// Field-wise closeness to `other` within `epsilon`.
-    fn close(&self, other: &Self, epsilon: f64) -> bool;
-    /// One spring step toward `target` from `self` at velocity `vel`.
-    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self);
-    /// Whether every field is below `epsilon` in magnitude.
-    fn all_small(&self, epsilon: f64) -> bool;
-}
-
-impl SpringValue for FloatBox {
-    fn zero() -> Self {
-        FloatBox::default()
-    }
-    fn close(&self, other: &Self, epsilon: f64) -> bool {
-        self.close(other, epsilon)
-    }
-    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self) {
-        self.step(vel, target, dt)
-    }
-    fn all_small(&self, epsilon: f64) -> bool {
-        self.all_small(epsilon)
-    }
-}
+// The protocol is `ui-geom`'s — it is the data contract of the integrator
+// that module owns, and the crate that owns a box shape implements it there.
+// Re-exported so every path that read the trait from here keeps reading it
+// from here.
+pub use ui_geom::spring::SpringValue;
 
 /// Handle returned by [`use_spring_box`]: the live sprung value plus a way to
 /// hard-jump onto a new anchor so the next morph starts from there.
@@ -165,6 +140,7 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ui_geom::floating::FloatBox;
 
     #[test]
     fn float_step_through_the_trait_settles_on_the_target() {

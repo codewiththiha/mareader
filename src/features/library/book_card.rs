@@ -19,7 +19,7 @@ use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::SeamVocab;
 use crate::services::library::ask_relink;
 use crate::state::AppState;
-use crate::state::reader::DEFAULT_PAGE_ASPECT;
+use reader_app::state::DEFAULT_PAGE_ASPECT;
 
 #[component]
 pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {

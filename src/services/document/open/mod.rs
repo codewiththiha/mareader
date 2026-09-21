@@ -112,7 +112,7 @@ pub fn open_row(state: AppState, row_id: String) {
 /// What a shelf surface calls — a card, a list row, the context menu's Open —
 /// and the only open that can say WHICH book the reader meant when the library
 /// holds two rows of one file. Everything downstream reads the row from
-/// [`crate::state::reader::document::DocumentState::book_id`]: the resume point
+/// [`reader_app::state::document::DocumentState::book_id`]: the resume point
 /// to seed ([`library_core::book::resume_point`]), the key the highlights live
 /// under ([`crate::services::document::gloss_key`]) and the rows a progress
 /// write belongs to ([`library_core::book::rows_for_read`]).
@@ -258,7 +258,7 @@ fn ready(
     // worker round trip per page and the index it fills lives on the wasm
     // heap, which never shrinks — an open-time build charged every book that
     // ratchet whether or not anyone ever searched it. The first search
-    // builds the index instead (`crate::effects::reader::search`), and a
+    // builds the index instead (`reader_app::effects::search`), and a
     // reopen of the same bytes adopts the retained one.
 
     shelf::record(

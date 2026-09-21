@@ -3,7 +3,7 @@
 // The app builds the page hosts; the engine under `public/engine/` paints
 // into them. They never call each other, so everything they share is a name
 // in the DOM: attributes, attribute values, class names and the shape of the
-// element ids, spelled in src/dom_contract.rs (the names Rust uses as
+// element ids, spelled in crates/reader-app/src/dom_contract.rs (the names Rust uses as
 // values) and public/engine/dom-contract.ts (the names the engine reads). A
 // disagreement is not an error on either side — it is a `closest` that
 // returns null, a missing pill or a blank page, with a green build and a
@@ -20,9 +20,9 @@ import { read, walk } from "./repo.js";
 
 const ALL_FILES = walk(".");
 
-const APP_TABLE = "src/dom_contract.rs";
+const APP_TABLE = "crates/reader-app/src/dom_contract.rs";
 const ENGINE_TABLE = "public/engine/dom-contract.ts";
-const ID_BUILDERS = "src/components/viewer/page_host.rs";
+const ID_BUILDERS = "crates/reader-app/src/components/viewer/page_host.rs";
 
 const RUST_SOURCES = ALL_FILES.filter(
   (file) =>

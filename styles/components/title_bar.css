@@ -2,7 +2,7 @@
    one-frame glass rebuild on base-mode swaps, the status bar treatment and
    the frameless caption buttons. */
 
-/* TOOLBAR GLASS — the <header> in src/features/reader/page.rs is absolutely
+/* TOOLBAR GLASS — the <header> in src/features/reader/route.rs is absolutely
    stacked over the viewer and pages scroll underneath it, so the blur has
    real content to sample (a bar with nothing behind it reads as a flat
    fill, however translucent). The background lives here rather than in a

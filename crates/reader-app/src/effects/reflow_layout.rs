@@ -1,0 +1,55 @@
+//! The reflowable page model behind the paged view modes.
+//!
+//! The three paged modes (single, spread, horizontal) lay text pages out as
+//! real A4 sheets: hosts are `A4 × scale`, the size model is `PAGE_HEIGHT`.
+//! Vertical reading is not one of them — the continuous stream virtualizes
+//! blocks directly (`components::formats::reflow::stream`), so the
+//! flow-sized page units this effect used to project for the vertical strip
+//! are gone with the strip.
+//!
+//! What stays is the A4 model's upkeep: whenever the cut or the settled scale
+//! moves while a text document is open in a paged mode, the shared
+//! measurement store (`css_heights`, which the zoom engine anchors against
+//! and rescales in place every frame) is re-projected from the page count. It
+//! never tracks the zoom scale itself: it writes at the settled scale and the
+//! engine's per-frame factors scale afterwards.
+
+use leptos::prelude::*;
+use virtual_list_leptos::Virtualizer;
+
+use reader_core::view::ViewMode;
+use reflow_core::geometry::PAGE_HEIGHT;
+
+use crate::state::ReaderState;
+
+/// Install the projection. Needs the vertical strip's virtualizer because a
+/// model change must rebuild its layout in the same flush.
+pub fn reflow_layout(reader: ReaderState, vertical: Virtualizer) {
+    Effect::new(move |_| {
+        let format = reader.format();
+        let mode = reader.viewer.mode.get();
+        if !format.is_reflowable() {
+            return;
+        }
+        if mode == ViewMode::ScrollVertical {
+            // The stream owns this mode; the page model has no consumer
+            // here (the vertical page strip is not mounted), and writing it
+            // would only fight the open flow's seed from the sidelines.
+            return;
+        }
+        let cuts = reader.document.content.reflow.cuts.get();
+        let scale = reader.viewer.zoom.visual_scale();
+        let sizes = vec![PAGE_HEIGHT * scale; cuts.len()];
+
+        // Skip the write (and the relayout) when the model already agrees —
+        // a zoom tick rescales the store in place, and this effect must not
+        // fight the engine back to the settled scale mid-tween.
+        if reader.document.content.metrics.heights_agree(&sizes) {
+            return;
+        }
+        let metrics = reader.document.content.metrics;
+        metrics.css_heights.set(sizes);
+        let gap = reader.viewer.page_gap.get_untracked();
+        vertical.rescale(1.0, metrics.strip_sizes(gap));
+    });
+}

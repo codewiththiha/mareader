@@ -13,7 +13,7 @@ use crate::components::primitives::menu::kbd::Kbd;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::separator::Separator;
 use crate::components::primitives::menu::shortcut_row::ShortcutRow;
-use crate::state::reader::ZoomCommand;
+use reader_app::state::ZoomCommand;
 use crate::state::AppState;
 
 #[component]

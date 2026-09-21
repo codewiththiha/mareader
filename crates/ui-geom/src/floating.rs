@@ -83,6 +83,24 @@ pub struct FloatBox {
     pub r: f64,
 }
 
+/// The floating box rides the generic spring: the adapter forwards to the
+/// inherent methods, so the spring maths has exactly one definition and the
+/// trait is the shape the (Leptos-side) spring effect consumes.
+impl crate::spring::SpringValue for FloatBox {
+    fn zero() -> Self {
+        FloatBox::default()
+    }
+    fn close(&self, other: &Self, epsilon: f64) -> bool {
+        self.close(other, epsilon)
+    }
+    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self) {
+        self.step(vel, target, dt)
+    }
+    fn all_small(&self, epsilon: f64) -> bool {
+        self.all_small(epsilon)
+    }
+}
+
 impl FloatBox {
     /// One explicit-Euler spring step over all five fields, via
     /// [`crate::spring::spring_axis`]; returns `(next_box, next_velocity)`.

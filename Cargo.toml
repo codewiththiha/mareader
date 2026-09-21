@@ -77,33 +77,22 @@ serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 serde_json = "1"
 console_error_panic_hook = "0.1.7"
-# Markdown rendering for the reflowable formats: parses each block and
-# emits Leptos views directly (GFM on, raw HTML off, no theme classes —
-# the reader's own stylesheet owns the look).
-leptos-md = "0.1"
 ai-core = { path = "crates/ai-core" }
-virtual-list = { path = "crates/virtual-list" }
-virtual-list-leptos = { path = "crates/virtual-list-leptos" }
 pdf-engine = { path = "crates/pdf-engine" }
-pdf-paper = { path = "crates/pdf-paper" }
 tauri-bridge = { path = "crates/tauri-bridge" }
 app-chrome = { path = "crates/app-chrome" }
-# The geometry primitives. The motion spring rides `ui_geom::spring`'s
-# integrator, so it clamps to that crate's frame ceiling rather than
-# restating the number.
-ui-geom = { path = "crates/ui-geom" }
 # The format cores. `reader-core` is everything a reader needs that no format
 # owns (the format list, the view modes, the settings, the colour pipeline);
-# `pdf-core` is the PDF's geometry and text index; `reflow-core` is the shared
-# maths of laying text out, with `txt-core` and `md-core` one parser each on
-# top of it. Nothing here knows about the next format; adding one is a new
-# crate that depends on `reflow-core`, plus one directory in
-# `src/components/formats`.
+# the shared maths of laying text out is `reflow-core`, with `txt-core` and
+# `md-core` one parser each on top of it. The shell's only two consumers are
+# the document-open flow's reflow path; the reader crate owns the rest.
 reader-core = { path = "crates/reader-core" }
-pdf-core = { path = "crates/pdf-core" }
 reflow-core = { path = "crates/reflow-core" }
 txt-core = { path = "crates/txt-core" }
 md-core = { path = "crates/md-core" }
+# The reading surface: the reader's state slice, components, effects, zoom
+# pipeline and page assembly, one edge away (`mareader -> reader-app`).
+reader-app = { path = "crates/reader-app" }
 # The library's domain: the book and its fingerprint, shelves and watched
 # folders, the scan predicate, the rescan ledger, the sort and the persisted
 # blob. Shared with the Tauri shell, which does the IO and measures with the
@@ -136,6 +125,7 @@ members = [
   "crates/md-core",
   "crates/library-core",
   "crates/ui-kit",
+  "crates/reader-app",
 ]
 
 [profile.release]

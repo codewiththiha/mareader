@@ -31,7 +31,7 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
             if state.document.status.get_untracked() == DocStatus::Ready {
                 // Resumes a just-dismissed search (query and all) instead
                 // of opening an empty bar.
-                crate::effects::reader::search::resume_search(state);
+                reader_app::effects::search::resume_search(state);
             } else {
                 crate::events::dispatch_event(crate::events::FOCUS_LIBRARY_SEARCH_EVENT);
             }

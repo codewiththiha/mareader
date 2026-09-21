@@ -124,8 +124,40 @@ pub fn step_spring(cur: GlossBox, vel: GlossBox, target: GlossBox, dt: f64) -> (
     )
 }
 
+/// The gloss box's adapter to the generic spring.
+///
+/// `ui_geom::spring` drives any five-field [`SpringValue`] and knows nothing
+/// about what the fields mean; this is the seam that tells it what a gloss box
+/// is. The impl lives HERE — in the crate that owns [`GlossBox`] — because a
+/// trait impl must sit in the crate of the type or of the trait, and the
+/// dependency already points this way: the card's geometry steps
+/// `ui_geom`'s integrator, the same one the chrome's floating panels ride.
+impl ui_geom::spring::SpringValue for GlossBox {
+    fn zero() -> Self {
+        GlossBox::default()
+    }
+    fn close(&self, other: &Self, epsilon: f64) -> bool {
+        boxes_close(*self, *other, epsilon)
+    }
+    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self) {
+        step_spring(*self, *vel, *target, dt)
+    }
+    fn all_small(&self, epsilon: f64) -> bool {
+        // A velocity is small exactly when it is close to zero, so this is
+        // `boxes_close` against the default rather than a second enumeration of
+        // the five fields that could drift from the one `close` uses.
+        boxes_close(*self, GlossBox::default(), epsilon)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use ui_geom::spring::SpringValue;
+
+    fn gloss(x: f64, y: f64, w: f64, h: f64, r: f64) -> GlossBox {
+        GlossBox { x, y, w, h, r }
+    }
+
     use super::*;
 
     #[test]
@@ -254,5 +286,23 @@ mod tests {
         let box_ = GlossBox { x: 1.0, y: 2.0, w: 3.0, h: 4.0, r: 5.0 };
         let float: ui_geom::floating::FloatBox = box_.into();
         assert_eq!((float.x, float.y, float.w, float.h, float.r), (1.0, 2.0, 3.0, 4.0, 5.0));
+    }
+
+    #[test]
+    fn gloss_all_small_covers_every_field() {
+        // Each field above epsilon on its own must break "all small", or a
+        // still-moving spring would tear its rAF loop down early. This is the
+        // only per-field coverage either crate has: `boxes_close`'s own test
+        // perturbs all five fields together, which a dropped field survives.
+        for above in [
+            gloss(1.0, 0.0, 0.0, 0.0, 0.0),
+            gloss(0.0, 1.0, 0.0, 0.0, 0.0),
+            gloss(0.0, 0.0, 1.0, 0.0, 0.0),
+            gloss(0.0, 0.0, 0.0, 1.0, 0.0),
+            gloss(0.0, 0.0, 0.0, 0.0, 1.0),
+        ] {
+            assert!(!above.all_small(0.6), "{above:?} read as small");
+        }
+        assert!(gloss(0.0, 0.0, 0.0, 0.0, 0.0).all_small(0.6));
     }
 }

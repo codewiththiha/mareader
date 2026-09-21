@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::state::reader::TypographySignal;
+use reader_app::state::TypographySignal;
 use crate::state::{AppState, AppearanceSignal, TextureSignal};
 use crate::storage::{load_covers, load_library, load_settings};
 

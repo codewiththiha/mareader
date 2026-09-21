@@ -8,7 +8,6 @@
 use std::collections::HashSet;
 
 use leptos::prelude::*;
-use serde::{Deserialize, Serialize};
 
 use library_core::blob::LibraryBlob;
 use library_core::book::Row;

@@ -83,7 +83,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     state.reader.viewer.scroll_top.set(0.0);
     // Heights belong to the document that was just closed; leaving them would
     // have the zoom coordinator anchor against a stale column on the first
-    // gesture. ReaderPage re-seeds them from the intrinsic page sizes at the
+    // gesture. ReaderRoute re-seeds them from the intrinsic page sizes at the
     // current scale.
     state.reader.document.content.metrics.css_heights.set(Vec::new());
     // The seed scale comes from the step both open tails share: the same
