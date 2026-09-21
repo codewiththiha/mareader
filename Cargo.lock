@@ -28,6 +28,8 @@ dependencies = [
  "tauri-bridge",
  "ui-geom",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

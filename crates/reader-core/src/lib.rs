@@ -11,7 +11,10 @@
 //!
 //! ## What may live here
 //!
-//! * A type every format needs, or a policy that applies to all of them.
+//! * A type every format needs, or a policy that applies to all of them —
+//!   including the two the app's chrome and the reader's surfaces share:
+//!   [`motion`] (which movements animate) and [`sidebar`] (which rail panel
+//!   is open).
 //! * No `Format` branch: a module that matches on the format belongs to that
 //!   format's crate (`pdf-core`, `txt-core`, `md-core`).
 //! * Only two workspace dependencies, both leaves whose types the persisted
@@ -30,11 +33,15 @@
 pub mod appearance;
 pub mod filename;
 pub mod format;
+pub mod motion;
 pub mod outline;
 pub mod search;
 pub mod settings;
+pub mod sidebar;
 pub mod view;
 pub mod zoom_math;
 
 pub use format::{DocumentKind, Format, SUPPORTED, extensions, first_supported, format_from_ext, format_of, is_supported_mime, is_supported_path, kind_list, kind_names};
+pub use motion::Motion;
 pub use outline::OutlineNode;
+pub use sidebar::SidebarMode;

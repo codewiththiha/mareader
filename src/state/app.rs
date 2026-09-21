@@ -11,6 +11,11 @@ use crate::state::reader::ReaderState;
 use reader_core::appearance::Appearance;
 use reader_core::settings::Settings;
 
+// The rail's panel mode is chrome state both halves of the app hold — the
+// shell's layout controller and the reader's rail — so it lives in
+// `reader-core`. Re-exported from here, where the app's state tree is named.
+pub use reader_core::sidebar::SidebarMode;
+
 /// The appearance slice of the settings, as its own tracked value.
 ///
 /// Every DOM-writing appearance consumer subscribes to THIS rather than to
@@ -40,16 +45,6 @@ impl Toast {
             message: message.into(),
         }
     }
-}
-
-/// Which sidebar panel is open. UI chrome state, not viewer state:
-/// reader-side rendering receives it as a plain signal when it needs to know
-/// and never owns it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SidebarMode {
-    None,
-    Outline,
-    Thumbs,
 }
 
 /// UI chrome state: the sidebar, the toast surface, and the window flag the

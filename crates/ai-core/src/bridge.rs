@@ -6,6 +6,13 @@
 //! NOT here: it rides the app-lifetime Tauri listener that re-broadcasts
 //! `ai-stream-chunk` as a window event (the app's `services::ai`), because
 //! parking that closure in the app's reactive owner is load-bearing.
+//!
+//! [`invoke_explain_word`] is the fire-and-forget wrapper the UI reaches for:
+//! it spawns the kickoff and logs a failure rather than returning one, so a
+//! caller with no way to surface an error still cannot drop the future on the
+//! floor. It spawns on `wasm_bindgen_futures` rather than on a Leptos task,
+//! which keeps this crate free of a reactive dependency — the kickoff owns no
+//! signal and outlives no owner.
 
 use std::thread::LocalKey;
 
@@ -51,4 +58,17 @@ pub async fn explain_word(word: &str, context: &str, run: &str) -> Result<(), St
         .await
         .map(|_| ())
         .map_err(|e| e.as_string().unwrap_or_else(|| "unknown invoke error".to_string()))
+}
+
+/// Fire-and-forget kickoff for the UI: start an `explain_word` run tagged with
+/// `run` and log a failure instead of returning one.
+///
+/// The streamed results arrive as `ai-stream-chunk` events carrying the same
+/// `run` id, re-broadcast by the app's AI service — nothing comes back here.
+pub fn invoke_explain_word(word: String, context: String, run: String) {
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Err(e) = explain_word(&word, &context, &run).await {
+            web_sys::console::warn_1(&format!("[ai] explain_word invoke failed: {e}").into());
+        }
+    });
 }

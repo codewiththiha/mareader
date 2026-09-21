@@ -6,10 +6,8 @@
 //! This module is the reactive half: the signals those rules are applied to.
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use leptos::prelude::*;
-use serde::{Deserialize, Serialize};
 
 use library_core::blob::LibraryBlob;
 use library_core::book::Row;
@@ -20,20 +18,13 @@ use library_core::text::plural;
 use library_core::view::LibraryView;
 use library_core::wire::{ImportPhase, ImportProgress};
 
+// The cover cache's shape is library domain — the shelf fills it, the reader's
+// rail reads one out of it, and storage writes the whole map — so the types
+// live in `library-core` and are re-exported from the state that holds them.
+pub use library_core::covers::{CoverImage, CoverMap};
+
 use crate::services::library::arrange::CopyAsk;
 use crate::services::library::conflict::{ConflictAsk, ShelfConflictAsk};
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CoverImage {
-    pub data_url: String,
-    pub width: f64,
-    pub height: f64,
-}
-
-/// Behind an `Arc`: a cover is tens of kilobytes, and the map is read out of
-/// a signal on every shelf render and cloned whole before every save.
-pub type CoverMap = std::collections::HashMap<String, Arc<CoverImage>>;
 
 /// The shell reports [`ImportPhase`] for the two phases it can see; `Done`
 /// and `Failed` are the frontend's, because only the side that owns the task

@@ -8,7 +8,8 @@ use super::on_true;
 /// in the Layout tab because it is a layout-scale decision; the detail
 /// switches are the Animations tab, which — like every animation here — only
 /// exists while the master is on. The projection that applies the master is
-/// `Motion::from_prefs` in the app crate, so no consumer asks twice.
+/// [`crate::motion::Motion::from_prefs`], beside it in this crate, so no
+/// consumer asks twice.
 ///
 /// Turning a switch off never skips the change itself: it renders the END
 /// frame instantly — the zoom still lands at its target, the page still gets

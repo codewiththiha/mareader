@@ -18,6 +18,7 @@
 pub mod blob;
 pub mod book;
 pub mod conflict;
+pub mod covers;
 pub mod folder;
 pub mod governance;
 pub mod hash;

@@ -2,10 +2,10 @@
 //!
 //! Owns the app-lifetime side of the wire protocol:
 //! [`install_ai_chunk_bridge`] registers ONE Tauri listener that re-broadcasts
-//! each chunk as a window `CustomEvent` (`mareader:ai-chunk`), and
-//! [`invoke_explain_word`] starts a run through `ai_core::bridge`. The gloss
+//! each chunk as a window `CustomEvent` (`mareader:ai-chunk`). The gloss
 //! popover (and anything else) listens on the window, so document switches
-//! never stack dead Tauri handlers or drop the live one.
+//! never stack dead Tauri handlers or drop the live one. The kickoff itself —
+//! [`invoke_explain_word`] — is `ai_core::bridge`'s, re-exported here.
 
 pub use ai_core::types::{AiChunk, AiChunkEvent};
 use leptos::task::spawn_local;
