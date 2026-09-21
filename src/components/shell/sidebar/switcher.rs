@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::controls::toggle_button::{ToggleButton, ToggleVariant};
+use ui_kit::controls::toggle_button::{ToggleButton, ToggleVariant};
 use crate::state::SidebarMode;
 
 /// One rail toggle: the shared pressed/quiet shell + the rail's own size.

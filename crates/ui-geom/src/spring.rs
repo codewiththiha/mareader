@@ -1,4 +1,5 @@
-//! The damped spring every animated box in the reader rides.
+//! The damped spring every animated box in the reader rides, and the shape a
+//! value has to have to ride it.
 //!
 //! Stiffness 210 / damping 26 is mildly underdamped (critical ≈ 29 at mass
 //! 1): a confident pop with one small settle. Both the gloss card
@@ -6,6 +7,15 @@
 //! ([`crate::floating::FloatBox`]) step this same integrator, so the feel of the
 //! two cannot drift apart — which is the whole reason the physics sits in a
 //! crate of its own rather than in whichever feature got it first.
+//!
+//! [`SpringValue`] is the other half of that reason. The loop that drives a
+//! box is a UI concern and lives in the kit (`ui_kit::motion::spring`), but a
+//! trait defined there could only ever be implemented for types the kit can
+//! see: Rust's orphan rule forbids `impl ForeignTrait for ForeignType`, so the
+//! gloss box's adapter could not sit beside the gloss box. Defining the trait
+//! here, in the leaf both riders already depend on, is what lets each domain
+//! type bring its own adapter — [`crate::floating::FloatBox`]'s is at the
+//! bottom of this file, `ai_core::gloss::spring` holds the gloss box's.
 
 /// Spring stiffness for animated boxes. The pair is the tuning every rider
 /// shares — the floating panels and the gloss card both step
@@ -20,7 +30,7 @@ const SPRING_DAMPING: f64 = 26.0;
 /// The longest frame the integrator is stepped on, in seconds.
 ///
 /// Callers clamp their frame delta to this before stepping — the app's frame
-/// loops read the clock through `src/components/primitives/motion/frame.rs`,
+/// loops read the clock through `crates/ui-kit/src/motion/frame.rs`,
 /// whose ceiling for spring riders matches this number. It is a convergence
 /// ceiling, not a mathematical stability limit: the convergence tests pin it,
 /// and a step past it overshoots and wobbles rather than explodes. The
@@ -39,6 +49,43 @@ pub fn spring_axis(c: f64, v: f64, t: f64, dt: f64) -> (f64, f64) {
     let force = SPRING_STIFFNESS * (t - c) - SPRING_DAMPING * v;
     let nv = v + force * dt;
     (c + nv * dt, nv)
+}
+
+/// A value the spring can drive: five numeric fields with a step, a closeness
+/// test and a magnitude test.
+///
+/// `Send + Sync` mirrors what reactive signals stored in `Signal<T>` require
+/// (default storage); plain data types like the boxes qualify trivially.
+///
+/// Defined here rather than beside the loop that drives it so that a domain
+/// type in any crate that already reaches this leaf can implement it for
+/// itself — the orphan rule leaves no other crate able to.
+pub trait SpringValue: Copy + Send + Sync + 'static {
+    /// The all-zero value (rest).
+    fn zero() -> Self;
+    /// Field-wise closeness to `other` within `epsilon`.
+    fn close(&self, other: &Self, epsilon: f64) -> bool;
+    /// One spring step toward `target` from `self` at velocity `vel`.
+    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self);
+    /// Whether every field is below `epsilon` in magnitude.
+    fn all_small(&self, epsilon: f64) -> bool;
+}
+
+impl SpringValue for crate::floating::FloatBox {
+    fn zero() -> Self {
+        Self::default()
+    }
+    fn close(&self, other: &Self, epsilon: f64) -> bool {
+        // The inherent methods of the same name, which is the point: the
+        // adapter is four forwards, and the field list is enumerated once.
+        crate::floating::FloatBox::close(self, other, epsilon)
+    }
+    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self) {
+        crate::floating::FloatBox::step(self, vel, target, dt)
+    }
+    fn all_small(&self, epsilon: f64) -> bool {
+        crate::floating::FloatBox::all_small(self, epsilon)
+    }
 }
 
 #[cfg(test)]

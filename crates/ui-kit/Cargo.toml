@@ -1,0 +1,55 @@
+[package]
+name = "ui-kit"
+version = "0.1.0"
+edition = "2024"
+description = "The app's reusable UI kit: the generic controls, the floating surfaces, the form and overlay building blocks, the pointer/motion interaction layer, and the window-event protocol every layer speaks. Knows no document format and no app state."
+license = "MIT"
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+# The chrome crate's own primitives: the icon set, the icon button, the
+# tooltip, the generic DOM/timer hooks, the floating placement maths and the
+# dismissal mechanics these surfaces are anchored and dismissed by. One
+# direction only — app-chrome knows nothing about this crate.
+app-chrome = { path = "../app-chrome" }
+# The spring integrator `motion::spring` steps, and the frame ceiling it
+# clamps to.
+ui-geom = { path = "../ui-geom" }
+serde = "1"
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Document",
+  "Element",
+  "HtmlElement",
+  "HtmlDivElement",
+  "Node",
+  # `query_selector_all` in the drag wrapper's control-ownership probe.
+  "NodeList",
+  "Event",
+  # The listeners every surface here registers by hand: `add/remove_
+  # event_listener_with_callback` and the `dispatch_event` the event table
+  # sends through.
+  "EventTarget",
+  "MouseEvent",
+  "KeyboardEvent",
+  # The press/hold/drag decision reads `pointer_id` and takes a pointer
+  # capture, so the pointer events are named rather than borrowed from the
+  # mouse ones.
+  "PointerEvent",
+  # `match_media` behind the reduced-motion probe, and the list it hands back.
+  "MediaQueryList",
+  # The window-event protocol: `dispatch_typed_event` builds one, the typed
+  # listener hook reads its `detail` back.
+  "CustomEvent",
+  "CustomEventInit",
+] }
+
+[lints.rust]
+# Warnings are denied, not printed: a gate that only shows up in the log is a
+# gate that gets read past. The priority applies the group first, so the
+# individual levels below it remain deliberate overrides.
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "forbid"

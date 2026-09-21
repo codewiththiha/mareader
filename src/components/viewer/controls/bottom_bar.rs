@@ -28,7 +28,7 @@ use leptos::html;
 use leptos::prelude::*;
 
 use app_chrome::layers::BAR;
-use crate::components::primitives::form::range_input::RangeInput;
+use ui_kit::form::range_input::RangeInput;
 use app_chrome::hooks::dom::page_list;
 use app_chrome::hooks::{DEFAULT_HOVER_DELAY, use_drag_hold, use_hover_reveal_with};
 use super::page_navigation::{PageNavigation, StreamPageNav};

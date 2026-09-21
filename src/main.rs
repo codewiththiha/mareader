@@ -3,7 +3,6 @@ mod components;
 mod dom_contract;
 mod effects;
 mod epoch;
-mod events;
 mod features;
 mod memory;
 mod services;

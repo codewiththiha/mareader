@@ -7,6 +7,7 @@
 
 pub mod geometry;
 pub mod mark;
+pub mod spring;
 
 pub use geometry::{
     boxes_close, is_glossable, is_hintable, place_card, step_spring, GlossBox, MAX_CARD_H_FRAC,

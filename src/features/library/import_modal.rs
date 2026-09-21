@@ -14,11 +14,11 @@ use library_core::folder::{FolderMode, FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR
 use library_core::scan::selectable_formats;
 use reader_core::format::Format;
 
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::primitives::controls::toggle_button::ToggleButton;
-use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::overlay::modal_shell::ModalShell;
-use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
+use ui_kit::controls::button::{Button, ButtonVariant};
+use ui_kit::controls::toggle_button::ToggleButton;
+use ui_kit::menu::section_label::SectionLabel;
+use ui_kit::overlay::modal_shell::ModalShell;
+use ui_kit::overlay::sheet::{SheetBody, SheetFooter};
 use crate::services::library::{ground_tracking, import_folder, pick_folder, GroundWatch};
 use crate::state::AppState;
 

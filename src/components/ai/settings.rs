@@ -14,12 +14,12 @@ use reader_core::settings::{GlossColor, GlossDensity};
 
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::form::slider::Slider;
-use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::overlay::lanes::OverlayPolicy;
-use crate::components::primitives::form::row::Row;
+use ui_kit::form::slider::Slider;
+use ui_kit::menu::section_label::SectionLabel;
+use ui_kit::overlay::lanes::OverlayPolicy;
+use ui_kit::form::row::Row;
 use crate::components::settings::common::StyleSelect;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
+use ui_kit::floating::menu_popover::MenuPopover;
 use crate::state::AppState;
 
 #[component]

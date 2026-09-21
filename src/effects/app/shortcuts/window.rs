@@ -33,7 +33,7 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
                 // of opening an empty bar.
                 crate::effects::reader::search::resume_search(state);
             } else {
-                crate::events::dispatch_event(crate::events::FOCUS_LIBRARY_SEARCH_EVENT);
+                ui_kit::events::dispatch_event(ui_kit::events::FOCUS_LIBRARY_SEARCH_EVENT);
             }
         }
         "1" => {

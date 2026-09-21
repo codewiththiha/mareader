@@ -7,10 +7,10 @@
 use leptos::ev::KeyboardEvent;
 use leptos::prelude::*;
 
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::primitives::form::text_input::TextInput;
-use crate::components::primitives::overlay::modal_shell::ModalShell;
-use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
+use ui_kit::controls::button::{Button, ButtonVariant};
+use ui_kit::form::text_input::TextInput;
+use ui_kit::overlay::modal_shell::ModalShell;
+use ui_kit::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
 use crate::services::library::{rename_row, rename_shelf};
 use crate::state::AppState;
 
@@ -122,7 +122,7 @@ fn commit(state: AppState, sheet: RenameSheet) {
 #[component]
 pub(crate) fn RenameModal(state: AppState, sheet: RenameSheet) -> impl IntoView {
     // Lane arbitration and the Escape rule are the modal shell's (see
-    // `crate::components::primitives::overlay::modal_shell`); closing costs
+    // `ui_kit::overlay::modal_shell`); closing costs
     // nothing because the draft is re-seeded at the next ask.
     view! {
         <ModalShell open=sheet.open aria_label="Rename" width="min(92vw, 380px)">

@@ -11,11 +11,11 @@ use reader_core::settings::{
     FloatingLabelStyle, MAX_COLUMN_WIDTH_PCT, MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
 };
 
-use crate::components::primitives::form::row::Row;
+use ui_kit::form::row::Row;
 use crate::components::settings::common::{StepperRow, StyleSelect};
-use crate::components::primitives::form::slider::Slider;
-use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::controls::switch::Switch;
+use ui_kit::form::slider::Slider;
+use ui_kit::menu::section_label::SectionLabel;
+use ui_kit::controls::switch::Switch;
 use crate::state::AppState;
 
 #[component]

@@ -12,7 +12,7 @@
 //! gear button and the reader menu's item), and the shell registers it, so
 //! opening a menu closes the modal and vice versa without either component
 //! knowing about the other — see
-//! [`lanes`](crate::components::primitives::overlay::lanes).
+//! [`lanes`](ui_kit::overlay::lanes).
 
 use leptos::prelude::*;
 
@@ -23,7 +23,7 @@ use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::overlay::modal_shell::ModalShell;
+use ui_kit::overlay::modal_shell::ModalShell;
 use crate::state::AppState;
 
 #[component]

@@ -25,9 +25,9 @@ use leptos::html;
 use leptos::prelude::*;
 
 use app_chrome::titlebar::root::TitleBarCtx;
-use crate::components::primitives::floating::popover::Popover;
+use crate::floating::popover::Popover;
 use app_chrome::floating::types::PlacementSide;
-use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use crate::overlay::lanes::{OverlayPolicy, use_overlay_lane};
 
 #[component]
 pub fn MenuPopover(

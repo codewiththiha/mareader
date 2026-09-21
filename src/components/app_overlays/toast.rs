@@ -11,9 +11,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::overlay::toast::{ToastData, ToastTone};
-use crate::components::primitives::overlay::toast_host::use_toast_slot;
-use crate::components::primitives::overlay::toast_host::ToastHost as PrimitiveToastHost;
+use ui_kit::overlay::toast::{ToastData, ToastTone};
+use ui_kit::overlay::toast_host::use_toast_slot;
+use ui_kit::overlay::toast_host::ToastHost as PrimitiveToastHost;
 use crate::state::AppState;
 
 #[component]

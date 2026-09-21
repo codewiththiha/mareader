@@ -18,8 +18,8 @@
 //! touch pointer is therefore never a drag, whatever the caller allows.
 //!
 //! This module owns the decision and nothing else: what a movement then does
-//! (payload, targets, drop) belongs to the caller — see
-//! `crate::features::library::dnd` for the shelf's. That is why drag start
+//! (payload, targets, drop) belongs to the caller — see the app crate's
+//! `features::library::dnd` for the shelf's. That is why drag start
 //! and end carry coordinates and the wrapper keeps no drag flag: the visible
 //! half of a drag is a session that can hold four cards at once.
 
@@ -359,7 +359,7 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::primitives::interactions::long_press::SELECT_SLOP_PX;
+    use crate::interactions::long_press::SELECT_SLOP_PX;
 
     #[test]
     fn the_threshold_is_a_radius_around_the_origin() {

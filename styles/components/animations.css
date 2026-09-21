@@ -81,7 +81,7 @@ html.animations-off .loader .loader-dot {
   transition: none;
 }
 
-/* The loading mark (primitives/feedback/loader.rs): three dots stepping
+/* The loading mark (crates/ui-kit/src/feedback.rs): three dots stepping
    around the corners of a square, painted in currentColor, sized by an
    inline width with the aspect ratio keeping it square.
 

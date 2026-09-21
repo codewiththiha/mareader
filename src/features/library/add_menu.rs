@@ -14,11 +14,11 @@ use library_core::ledger::{Recovered, index_by_fp, recoverables};
 use library_core::shelf::{ALL_SHELF, find};
 use library_core::text::{human_age, human_size};
 
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::primitives::menu::menu_item::MenuItem;
-use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::menu::separator::Separator;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
+use ui_kit::controls::button::{Button, ButtonVariant};
+use ui_kit::menu::menu_item::MenuItem;
+use ui_kit::menu::section_label::SectionLabel;
+use ui_kit::menu::separator::Separator;
+use ui_kit::floating::menu_popover::MenuPopover;
 use crate::features::library::import_modal::ImportSheet;
 use crate::services::library::{
     folder_label, import_files, pick_documents, pick_documents_in, restore_deleted_book,

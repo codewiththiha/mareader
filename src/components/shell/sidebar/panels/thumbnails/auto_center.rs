@@ -266,7 +266,7 @@ fn install_reveal_listener(
         let reveal_drive = reveal_drive.clone();
         let v = v.clone();
         let handle = window_event_listener(
-            leptos::ev::Custom::new(crate::events::REVEAL_ACTIVE_EVENT),
+            leptos::ev::Custom::new(ui_kit::events::REVEAL_ACTIVE_EVENT),
             move |_: web_sys::CustomEvent| {
                 if sidebar.get_untracked() != SidebarMode::Thumbs {
                     return;

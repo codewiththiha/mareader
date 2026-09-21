@@ -2,12 +2,12 @@
 //! `StyleSelect` dropdown. The tabs (in their own files) build on these; `modal`
 //! is the shell that hosts them.
 //!
-//! The labelled `Row` these sit beside is
-//! [`crate::components::primitives::form::row::Row`]: the library's import
-//! sheet and removal receipt are built out of the same rows, and a component two
-//! features reach into a third for is a primitive with the wrong address.
-//! `StyleSelect` stays because it is built on the toolbar's `MenuPopover`, and
-//! moving it would make `primitives` depend on `shell` — the wrong way round.
+//! The labelled `Row` these sit beside is [`ui_kit::form::row::Row`]: the
+//! library's import sheet and removal receipt are built out of the same rows,
+//! and a component two features reach into a third for is a primitive with the
+//! wrong address. `StyleSelect` stays because it is built on the toolbar's
+//! `MenuPopover`, and moving it would make `ui-kit` depend on `shell` — the
+//! wrong way round.
 //!
 //! `TabButton` takes the tab to display as a SEPARATE signal from the one it
 //! writes, because the tab set is not fixed: the Animations tab only exists
@@ -17,12 +17,12 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::primitives::floating::menu_popover::MenuPopover;
-use crate::components::primitives::form::row::Row;
+use ui_kit::floating::menu_popover::MenuPopover;
+use ui_kit::form::row::Row;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::menu::menu_item::MenuItem;
-use crate::components::primitives::overlay::lanes::OverlayPolicy;
+use ui_kit::menu::menu_item::MenuItem;
+use ui_kit::overlay::lanes::OverlayPolicy;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tab {

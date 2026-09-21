@@ -103,6 +103,11 @@ pdf-core = { path = "crates/pdf-core" }
 reflow-core = { path = "crates/reflow-core" }
 txt-core = { path = "crates/txt-core" }
 md-core = { path = "crates/md-core" }
+# The reusable UI kit every surface renders with — the generic controls, the
+# floating surfaces, the overlay lanes, the pointer gestures — and the
+# `mareader:*` window-event table. It moved out of `components/primitives` so
+# that the shell and the reader can each compile it without the other.
+ui-kit = { path = "crates/ui-kit" }
 # The library's domain: the book and its fingerprint, shelves and watched
 # folders, the scan predicate, the rescan ledger, the sort and the persisted
 # blob. Shared with the Tauri shell, which does the IO and measures with the
@@ -128,6 +133,7 @@ members = [
   "crates/pdf-paper",
   "crates/tauri-bridge",
   "crates/app-chrome",
+  "crates/ui-kit",
   "crates/reflow-core",
   "crates/txt-core",
   "crates/md-core",

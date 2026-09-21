@@ -28,7 +28,7 @@ use leptos::prelude::*;
 use reader_core::zoom_math::smoothstep;
 
 use crate::components::ai::gloss::phase::{AiPhase, GlossPhase};
-use crate::components::primitives::floating::floating_card::FloatingCard;
+use ui_kit::floating::floating_card::FloatingCard;
 use app_chrome::floating::types::FloatBox;
 
 use super::placement::CARD_WIDTH;

@@ -6,13 +6,13 @@ use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 
-use crate::components::primitives::floating::menu_popover::MenuPopover;
+use ui_kit::floating::menu_popover::MenuPopover;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::menu::kbd::Kbd;
-use crate::components::primitives::menu::menu_item::MenuItem;
-use crate::components::primitives::menu::separator::Separator;
-use crate::components::primitives::menu::shortcut_row::ShortcutRow;
+use ui_kit::menu::kbd::Kbd;
+use ui_kit::menu::menu_item::MenuItem;
+use ui_kit::menu::separator::Separator;
+use ui_kit::menu::shortcut_row::ShortcutRow;
 use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
 

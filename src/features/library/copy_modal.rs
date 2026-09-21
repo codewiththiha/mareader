@@ -7,9 +7,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::primitives::overlay::modal_shell::ModalShell;
-use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
+use ui_kit::controls::button::{Button, ButtonVariant};
+use ui_kit::overlay::modal_shell::ModalShell;
+use ui_kit::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
 use crate::services::library::{CopyAnswer, CopyAsk, answer_copy, cancel_copy};
 use crate::state::AppState;
 

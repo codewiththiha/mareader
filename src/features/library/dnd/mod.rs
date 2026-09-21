@@ -12,7 +12,7 @@ pub mod layer;
 pub mod target;
 
 /// Longer than the selection hold
-/// (`crate::components::primitives::interactions::long_press::SELECT_PRESS_MS`)
+/// (`ui_kit::interactions::long_press::SELECT_PRESS_MS`)
 /// on purpose: a reader crossing a shelf rests over cards on the way past.
 pub const FOLD_DWELL_MS: i32 = 650;
 

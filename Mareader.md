@@ -1187,7 +1187,7 @@ starts a multi-select, a movement files the card somewhere else. Handled as thre
 race — the hold completes and the click it generates opens the book it was meant to select, or the
 press drifts two pixels and cancels a gesture the reader was still making.
 
-`components::primitives::interactions::draggable_item` decides instead. The mode is chosen once per
+`ui_kit::interactions::draggable_item` decides instead. The mode is chosen once per
 press and locked until the pointer is released: the hold timer firing wins, or the pointer
 travelling past a 6px threshold wins, or neither happening before release means it was a tap.
 Travelling past the threshold while nothing is draggable is its own fourth answer rather than a tap,

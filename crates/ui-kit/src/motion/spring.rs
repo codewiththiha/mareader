@@ -12,54 +12,28 @@
 //! continuous — unless a caller hard-resets via [`SpringBox::reset_to`] when a
 //! *new* anchor opens.
 //!
-//! This module implements [`SpringValue`] for the floating box and for nothing
-//! else. A domain type that wants to ride the spring brings its own adapter —
-//! the gloss box's is `crate::components::ai::gloss::spring` — because a
-//! primitive that imported a feature crate's type would be breakable by that
-//! crate, and would make every other consumer of the primitive depend on the
-//! feature too.
+//! The value shape this drives is [`SpringValue`], `ui_geom::spring`'s, and
+//! the adapters are not here: a domain type brings its own, next to itself
+//! (`ui_geom`'s for the floating box, `ai_core::gloss::spring`'s for the gloss
+//! box). A primitive that imported a feature crate's type would be breakable
+//! by that crate, and would make every other consumer of the primitive depend
+//! on the feature too — and Rust's orphan rule would not let it work at all
+//! once the trait and the type came from two different crates.
 
 use leptos::prelude::*;
 
-use app_chrome::floating::types::FloatBox;
 use app_chrome::hooks::use_raf::FrameLoop;
 use ui_geom::spring::MAX_FRAME_S;
+
+// Re-exported because this module's generic surface is spelled in it
+// (`SpringBox<T: SpringValue>`), and a caller naming the bound should not have
+// to know which leaf crate defines it.
+pub use ui_geom::spring::SpringValue;
 
 use super::frame::frame_delta;
 
 /// The largest field magnitude that counts as "stopped" for loop teardown.
 const SETTLE_EPS: f64 = 0.6;
-
-/// A value the spring can drive: five numeric fields with a step, a closeness
-/// test and a magnitude test.
-///
-/// `Send + Sync` mirrors what reactive signals stored in `Signal<T>` require
-/// (default storage); plain data types like the boxes qualify trivially.
-pub trait SpringValue: Copy + Send + Sync + 'static {
-    /// The all-zero value (rest).
-    fn zero() -> Self;
-    /// Field-wise closeness to `other` within `epsilon`.
-    fn close(&self, other: &Self, epsilon: f64) -> bool;
-    /// One spring step toward `target` from `self` at velocity `vel`.
-    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self);
-    /// Whether every field is below `epsilon` in magnitude.
-    fn all_small(&self, epsilon: f64) -> bool;
-}
-
-impl SpringValue for FloatBox {
-    fn zero() -> Self {
-        FloatBox::default()
-    }
-    fn close(&self, other: &Self, epsilon: f64) -> bool {
-        self.close(other, epsilon)
-    }
-    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self) {
-        self.step(vel, target, dt)
-    }
-    fn all_small(&self, epsilon: f64) -> bool {
-        self.all_small(epsilon)
-    }
-}
 
 /// Handle returned by [`use_spring_box`]: the live sprung value plus a way to
 /// hard-jump onto a new anchor so the next morph starts from there.
@@ -165,6 +139,10 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The floating box's adapter lives in `ui-geom` beside the type; it is
+    // imported here because this test walks the adapter THROUGH the loop's own
+    // settle epsilon, which is the pair of numbers that has to agree.
+    use app_chrome::floating::types::FloatBox;
 
     #[test]
     fn float_step_through_the_trait_settles_on_the_target() {

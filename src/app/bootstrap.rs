@@ -65,6 +65,6 @@ pub(crate) fn provide_app_contexts(state: AppState) -> (AppearanceSignal, Typogr
     // One overlay-lane registry for the whole app: menus and modals arbitrate
     // through it, and portaled surfaces resolve it like any other descendant
     // of the root.
-    provide_context(crate::components::primitives::overlay::lanes::OverlayBoard::default());
+    provide_context(ui_kit::overlay::lanes::OverlayBoard::default());
     (appearance, typography)
 }

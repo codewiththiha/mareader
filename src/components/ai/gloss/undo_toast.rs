@@ -17,8 +17,8 @@ use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::selection_mode::{UNDO_WINDOW_MS, UndoBatch};
-use crate::components::primitives::overlay::toast::{ToastAction, ToastData, ToastPanel, ToastTone};
-use crate::components::primitives::overlay::toast_host::use_toast_slot;
+use ui_kit::overlay::toast::{ToastAction, ToastData, ToastPanel, ToastTone};
+use ui_kit::overlay::toast_host::use_toast_slot;
 use crate::state::AppState;
 
 #[component]

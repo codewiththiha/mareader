@@ -49,7 +49,7 @@ use crate::state::SidebarMode;
 /// by both panels and could not distinguish "asked twice" from "asked once"
 /// without extra bookkeeping. Same mechanism the PDF link layer uses.
 pub(crate) fn request_reveal_active() {
-    crate::events::dispatch_event(crate::events::REVEAL_ACTIVE_EVENT);
+    ui_kit::events::dispatch_event(ui_kit::events::REVEAL_ACTIVE_EVENT);
 }
 
 #[component]

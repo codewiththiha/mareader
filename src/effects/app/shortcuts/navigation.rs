@@ -14,7 +14,7 @@ use std::cell::Cell;
 
 use reader_core::view::{ViewMode, spread_step_next, spread_step_prev};
 use app_chrome::hooks::dom::{h_page_list, page_list};
-use crate::components::primitives::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
+use ui_kit::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
 use crate::state::ReaderState;
 
 use super::is_chrome_scroll_target;

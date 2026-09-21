@@ -57,10 +57,10 @@ use leptos::prelude::*;
 use crate::components::ai::gloss::selection_mode::{
     dispatch_gloss_context, toggle_selected, LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
 };
-use crate::components::primitives::interactions::long_press::{LongPressOptions, use_long_press};
+use ui_kit::interactions::long_press::{LongPressOptions, use_long_press};
 
-pub use crate::events::GLOSS_OPEN_EVENT;
-use crate::events::dispatch_typed_event;
+pub use ui_kit::events::GLOSS_OPEN_EVENT;
+use ui_kit::events::dispatch_typed_event;
 
 /// Exact-fit stroke radius. Shared with `ai::anchor::pdf::screen_box` so the
 /// morphing surface settles onto EXACTLY the box the stroke occupies — one

@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
-use crate::components::primitives::form::text_input::TextInput;
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use ui_kit::form::text_input::TextInput;
+use ui_kit::controls::button::{Button, ButtonVariant};
 use app_chrome::icon::{Icon, IconName};
 use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;

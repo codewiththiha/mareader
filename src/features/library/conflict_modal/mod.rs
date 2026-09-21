@@ -13,7 +13,7 @@ mod shelf;
 
 use leptos::prelude::*;
 
-use crate::components::primitives::overlay::modal_shell::ModalShell;
+use ui_kit::overlay::modal_shell::ModalShell;
 use crate::state::AppState;
 
 use covered::describe_covered;

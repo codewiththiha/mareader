@@ -11,7 +11,7 @@ pub use ai_core::types::{AiChunk, AiChunkEvent};
 use leptos::task::spawn_local;
 use wasm_bindgen::JsValue;
 
-pub use crate::events::AI_CHUNK_EVENT;
+pub use ui_kit::events::AI_CHUNK_EVENT;
 
 /// Starts an `explain_word` run on the backend, tagged with `run`. The
 /// streamed results arrive as `ai-stream-chunk` events carrying that same id,
@@ -59,6 +59,6 @@ pub fn install_ai_chunk_bridge() {
             }
         };
 
-        crate::events::dispatch_typed_event(AI_CHUNK_EVENT, &chunk);
+        ui_kit::events::dispatch_typed_event(AI_CHUNK_EVENT, &chunk);
     });
 }

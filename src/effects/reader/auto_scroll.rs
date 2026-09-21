@@ -12,7 +12,7 @@ use leptos::prelude::*;
 use app_chrome::hooks::dom::{h_page_list, page_list};
 use app_chrome::hooks::use_raf::FrameLoop;
 
-use crate::components::primitives::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
+use ui_kit::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
 use crate::state::ReaderState;
 
 const AUTO_SCROLL_PX_PER_SEC: f64 = 72.0;

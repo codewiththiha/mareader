@@ -12,8 +12,8 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::primitives::controls::switch::Switch;
+use crate::controls::button::{Button, ButtonVariant};
+use crate::controls::switch::Switch;
 
 use super::sheet::{SheetBody, SheetFooter, SheetHeader};
 
@@ -67,7 +67,7 @@ pub fn QuestionSheet(
     /// how many wait, and the switch the answers read.
     #[prop(optional)]
     apply_all: Option<(usize, RwSignal<bool>)>,
-    /// The answers: [`ChoiceRow`](crate::components::primitives::menu::choice_row::ChoiceRow)s,
+    /// The answers: [`ChoiceRow`](crate::menu::choice_row::ChoiceRow)s,
     /// in the order the sheet means them to be read. Passed as the component's
     /// inner content, which is what the `children` name is for.
     children: Children,

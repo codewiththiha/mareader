@@ -22,16 +22,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::components::ai::gloss::controller::GlossController;
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
-use crate::components::primitives::hooks::use_custom_event::{dispatch_typed_event, use_typed_event};
+use ui_kit::hooks::use_custom_event::{dispatch_typed_event, use_typed_event};
 use crate::state::AppState;
 
-pub use crate::events::GLOSS_CONTEXT_EVENT;
+pub use ui_kit::events::GLOSS_CONTEXT_EVENT;
 
 /// How long a press must hold before it becomes a selection gesture, and how far
 /// it may drift. Re-exported from the primitive that owns them, so the library's
 /// shelf and a page's highlights answer "how long is a long press?" with one
 /// number rather than two that happen to match.
-pub use crate::components::primitives::interactions::long_press::{
+pub use ui_kit::interactions::long_press::{
     SELECT_PRESS_MS as LONG_PRESS_MS, SELECT_SLOP_PX as LONG_PRESS_SLOP_PX,
 };
 

@@ -11,10 +11,10 @@ use leptos::prelude::*;
 
 use reader_core::settings::PaperArea;
 
-use crate::components::primitives::controls::switch::Switch;
-use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::menu::separator::Separator;
-use crate::components::primitives::form::row::Row;
+use ui_kit::controls::switch::Switch;
+use ui_kit::menu::section_label::SectionLabel;
+use ui_kit::menu::separator::Separator;
+use ui_kit::form::row::Row;
 use crate::components::settings::common::StyleSelect;
 use crate::state::AppState;
 

@@ -10,10 +10,10 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use crate::components::primitives::interactions::draggable_item::{
+use ui_kit::interactions::draggable_item::{
     DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
 };
-use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
+use ui_kit::interactions::long_press::SELECT_PRESS_MS;
 use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::facts::BookFacts;

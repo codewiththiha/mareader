@@ -4,7 +4,7 @@
 // IIFE. So the boundary is three event names, and a name that disagrees
 // fails at runtime and nowhere else — no compiler, no type, no error:
 // internal links silently stop navigating, or the "Explain" pill never
-// appears. The app's full table is `src/events.rs` (which also holds the
+// appears. The app's full table is `crates/ui-kit/src/events.rs` (which also holds the
 // events the app dispatches to itself); only these three cross in this
 // direction. `tools/check-events.ts` fails CI when the tables disagree or a
 // raw `pdfreader:` or `mareader:` literal appears anywhere but the tables.

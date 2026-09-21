@@ -2,7 +2,7 @@
 //! and the bar that acts on it.
 //!
 //! The gesture is the app's one card wrapper at the app's one hold tuning
-//! (`crate::components::primitives::interactions::draggable_item`), so holding
+//! (`ui_kit::interactions::draggable_item`), so holding
 //! a book feels exactly like holding a highlight.
 
 use std::collections::HashSet;
@@ -15,12 +15,12 @@ use app_chrome::floating::types::PlacementSide;
 use app_chrome::icon::{Icon, IconName};
 use library_core::shelf::{ALL_SHELF, Shelf, can_nest};
 
-use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
-use crate::components::primitives::menu::menu_item::MenuItem;
-use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::menu::separator::Separator;
-use crate::components::primitives::overlay::action_bar::ActionBar;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
+use ui_kit::controls::button::{Button, ButtonTone, ButtonVariant};
+use ui_kit::menu::menu_item::MenuItem;
+use ui_kit::menu::section_label::SectionLabel;
+use ui_kit::menu::separator::Separator;
+use ui_kit::overlay::action_bar::ActionBar;
+use ui_kit::floating::menu_popover::MenuPopover;
 use crate::features::library::content::{FolderOrder, ShelfOrder, level_rows};
 use crate::features::library::dnd::controller::DragPayload;
 use crate::features::library::remove_modal::RemoveSheet;

@@ -19,8 +19,6 @@
 //! * [`hooks`]          — chunk ingestion (measurement is the generic hook).
 //! * [`selection_mode`] — multi-select mode: entry guards, exit paths, the
 //!   context-menu listener, the undo pipeline.
-//! * [`spring`]         — the gloss box's adapter to the generic spring
-//!   primitive (the dependency points this way, never into `primitives`).
 //! * [`phase`]          — the card's two orthogonal phase machines: its box
 //!   ([`phase::GlossPhase`]) and its data ([`phase::AiPhase`]).
 //! * [`mark_layer`]     — the persistent highlighter stroke layer per page
@@ -36,7 +34,7 @@
 //!
 //! Generic mechanics (viewport, reduced motion, spring, drag, long press,
 //! dismissal, measurement, shimmer, context-menu/toast shells) live in
-//! `crate::components::primitives`; this module keeps only the policy.
+//! `ui_kit`; this module keeps only the policy.
 
 pub mod context_menu;
 pub mod controller;
@@ -50,7 +48,6 @@ pub mod phase;
 pub mod placement;
 pub mod selection_bar;
 pub mod selection_mode;
-pub mod spring;
 pub mod targeting;
 pub mod undo_toast;
 pub mod word_info;

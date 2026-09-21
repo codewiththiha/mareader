@@ -13,7 +13,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use crate::components::primitives::hooks::use_custom_event::use_raw_event;
+use ui_kit::hooks::use_custom_event::use_raw_event;
 use crate::state::AppState;
 
 /// The JS protocol of the `mareader:selection-pages` event detail: `null`
@@ -37,7 +37,7 @@ fn parse_selection(detail: &JsValue) -> Option<(u32, u32)> {
 }
 
 pub fn page_selection(state: AppState) {
-    use_raw_event(crate::events::SELECTION_PAGES_EVENT, move |detail| {
+    use_raw_event(ui_kit::events::SELECTION_PAGES_EVENT, move |detail| {
         match parse_selection(detail) {
             Some((first, last)) => {
                 let total = state.reader.document.num_pages.get_untracked().max(1);

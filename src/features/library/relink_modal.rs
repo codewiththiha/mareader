@@ -7,9 +7,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::menu::choice_row::ChoiceRow;
-use crate::components::primitives::overlay::modal_shell::ModalShell;
-use crate::components::primitives::overlay::question_sheet::QuestionSheet;
+use ui_kit::menu::choice_row::ChoiceRow;
+use ui_kit::overlay::modal_shell::ModalShell;
+use ui_kit::overlay::question_sheet::QuestionSheet;
 use crate::services::library::{cancel_relink, relink_dialog, relink_search_folder};
 use crate::state::AppState;
 

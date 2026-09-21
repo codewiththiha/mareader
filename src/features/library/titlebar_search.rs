@@ -14,8 +14,8 @@ use app_chrome::icon::{Icon, IconName};
 use library_core::query::{self, Suggestion, SUGGEST_LIMIT};
 use library_core::text::plural;
 
-use crate::components::primitives::floating::menu_popover::MenuPopover;
-use crate::events::FOCUS_LIBRARY_SEARCH_EVENT;
+use ui_kit::floating::menu_popover::MenuPopover;
+use ui_kit::events::FOCUS_LIBRARY_SEARCH_EVENT;
 use crate::features::library::search_suggest::SearchSuggestions;
 use crate::services::library::reveal_book;
 use crate::state::AppState;

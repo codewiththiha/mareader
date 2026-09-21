@@ -9,7 +9,7 @@ use ai_core::types::WordInfo;
 use reader_core::settings::GlossDensity;
 use leptos::prelude::*;
 
-use crate::components::primitives::feedback::LoadingShimmer;
+use ui_kit::feedback::LoadingShimmer;
 
 /// The body's density-dependent class sets: the gap between sections, the
 /// meaning's line height and the gap between usage examples. One tuple per

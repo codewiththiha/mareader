@@ -26,9 +26,9 @@ use app_chrome::hooks::use_resize_observer::observe_elements;
 use app_chrome::icon::{Icon, IconName};
 use library_core::shelf::{ALL_SHELF, Shelf, ancestors};
 
-use crate::components::primitives::form::text_input::TextInput;
-use crate::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
-use crate::components::primitives::floating::menu_popover::MenuPopover;
+use ui_kit::form::text_input::TextInput;
+use ui_kit::menu::menu_item::{MenuItem, MenuItemTone};
+use ui_kit::floating::menu_popover::MenuPopover;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::services::library::{ask_shelf_apart, duplicate_shelf, rename_shelf};

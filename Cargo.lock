@@ -2520,6 +2520,7 @@ dependencies = [
  "tauri-bridge",
  "txt-core",
  "ui-geom",
+ "ui-kit",
  "virtual-list",
  "virtual-list-leptos",
  "wasm-bindgen",
@@ -5048,6 +5049,20 @@ dependencies = [
 [[package]]
 name = "ui-geom"
 version = "0.1.0"
+
+[[package]]
+name = "ui-kit"
+version = "0.1.0"
+dependencies = [
+ "app-chrome",
+ "js-sys",
+ "leptos",
+ "serde",
+ "serde-wasm-bindgen",
+ "ui-geom",
+ "wasm-bindgen",
+ "web-sys",
+]
 
 [[package]]
 name = "unic-char-property"

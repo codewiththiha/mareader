@@ -111,7 +111,7 @@ impl DragController {
         this
     }
 
-    /// Not `crate::components::primitives::interactions::drag`: that primitive
+    /// Not `ui_kit::interactions::drag`: that primitive
     /// finishes a drag one way; here a release and a cancellation are different
     /// answers.
     fn bind_session(&self) {

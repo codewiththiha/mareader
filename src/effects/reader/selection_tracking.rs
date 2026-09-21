@@ -27,7 +27,7 @@ use wasm_bindgen::JsValue;
 use ai_core::gloss::PageAnchor;
 
 use crate::components::ai::anchor::{FormatAnchorBridge, PdfAnchorBridge, ReflowAnchorBridge};
-use crate::components::primitives::hooks::use_custom_event::use_raw_event;
+use ui_kit::hooks::use_custom_event::use_raw_event;
 use crate::components::ai::reflow_anchor;
 use crate::state::AppState;
 use crate::state::reader::SelectionDetail;
@@ -74,7 +74,7 @@ fn anchor_for(detail: &SelectionDetail, state: AppState) -> Option<PageAnchor> {
 }
 
 pub fn selection_tracking(state: AppState) {
-    use_raw_event(crate::events::SELECTION_DETAIL_EVENT, move |detail| {
+    use_raw_event(ui_kit::events::SELECTION_DETAIL_EVENT, move |detail| {
         match parse_selection_detail(detail) {
             Some(selection) => {
                 let anchor = anchor_for(&selection, state);

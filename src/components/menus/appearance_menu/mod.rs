@@ -7,8 +7,8 @@
 //!   backdrop is still clickable, so press-driven closing once left this menu and
 //!   the settings modal open at once. `MenuPopover` registers this popover's open
 //!   signal with the overlay board
-//!   ([`crate::components::primitives::overlay::lanes`]) as
-//!   [`OverlayPolicy::MENU`][crate::components::primitives::overlay::lanes::OverlayPolicy],
+//!   ([`ui_kit::overlay::lanes`]) as
+//!   [`OverlayPolicy::MENU`][ui_kit::overlay::lanes::OverlayPolicy],
 //!   and the board evicts whichever surface loses. Nothing here does that work.
 //! - NOTHING inside closes it. Choosing a preset and then nudging its tint is the
 //!   normal workflow, and a popover that vanished on the first click would make
@@ -34,12 +34,12 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use ui_kit::controls::button::{Button, ButtonVariant};
 use crate::components::shell::controller::ChromeSurface;
 use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::menu::separator::Separator;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
+use ui_kit::menu::section_label::SectionLabel;
+use ui_kit::menu::separator::Separator;
+use ui_kit::floating::menu_popover::MenuPopover;
 use crate::effects::appearance::{flush_appearance_commit, set_appearance_menu_open};
 use crate::state::AppState;
 use reader_core::settings::Settings;

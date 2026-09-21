@@ -14,12 +14,12 @@ use app_chrome::icon_button::IconButton;
 use library_core::sort::SortKey;
 use library_core::view::{CoverFit, LibraryLayout, LibraryView};
 
-use crate::components::primitives::controls::toggle_button::ToggleButton;
+use ui_kit::controls::toggle_button::ToggleButton;
 use crate::services::library::create_shelf_and_enter;
-use crate::components::primitives::menu::menu_item::MenuItem;
-use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::menu::separator::Separator;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
+use ui_kit::menu::menu_item::MenuItem;
+use ui_kit::menu::section_label::SectionLabel;
+use ui_kit::menu::separator::Separator;
+use ui_kit::floating::menu_popover::MenuPopover;
 use crate::state::AppState;
 
 const SORTS: [SortKey; 5] = [

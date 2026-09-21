@@ -17,8 +17,8 @@ use library_core::shelf::{ALL_SHELF, Shelf, children_of, find, members_of};
 use library_core::sort::{self, SortKey};
 use library_core::book::Row;
 
-use crate::components::primitives::feedback::CenteredLoader;
-use crate::components::primitives::motion::reduced_motion::prefers_reduced_motion;
+use ui_kit::feedback::CenteredLoader;
+use ui_kit::motion::reduced_motion::prefers_reduced_motion;
 use crate::features::library::context_menu::{LibraryContextMenu, LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};

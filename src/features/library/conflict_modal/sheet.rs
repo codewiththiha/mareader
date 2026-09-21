@@ -7,8 +7,8 @@ use leptos::prelude::*;
 
 use library_core::conflict::Placement;
 
-use crate::components::primitives::menu::choice_row::ChoiceRow;
-use crate::components::primitives::overlay::question_sheet::QuestionSheet;
+use ui_kit::menu::choice_row::ChoiceRow;
+use ui_kit::overlay::question_sheet::QuestionSheet;
 use crate::services::library::conflict;
 use crate::state::AppState;
 

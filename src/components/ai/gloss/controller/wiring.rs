@@ -20,7 +20,7 @@ use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::mark_layer::GLOSS_OPEN_EVENT;
 use crate::components::ai::gloss::phase::{AiPhase, GlossPhase};
 use app_chrome::hooks::use_viewport::viewport_size;
-use crate::components::primitives::motion::spring::SpringBox;
+use ui_kit::motion::spring::SpringBox;
 use crate::services::ai::invoke_explain_word;
 use crate::state::AppState;
 

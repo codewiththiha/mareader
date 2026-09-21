@@ -10,7 +10,7 @@
 use leptos::prelude::*;
 
 use crate::components::ai::settings::AiAppearanceSection;
-use crate::components::primitives::menu::separator::Separator;
+use ui_kit::menu::separator::Separator;
 use crate::components::settings::paper::PaperSection;
 use crate::state::AppState;
 

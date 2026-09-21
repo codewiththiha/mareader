@@ -4,10 +4,10 @@ use leptos::prelude::*;
 
 use app_chrome::icon::IconName;
 
-use crate::components::primitives::floating::context_menu::ContextMenu;
-use crate::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
-use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::menu::separator::Separator;
+use ui_kit::floating::context_menu::ContextMenu;
+use ui_kit::menu::menu_item::{MenuItem, MenuItemTone};
+use ui_kit::menu::section_label::SectionLabel;
+use ui_kit::menu::separator::Separator;
 use crate::features::library::content::{FolderOrder, ShelfOrder};
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::rename_modal::RenameSheet;
@@ -214,7 +214,7 @@ fn EntryMenu(
                         ruled,
                     } = item;
                     // A second line is a different row shape, not a longer
-                    // one (see `crate::components::primitives::menu::menu_item`):
+                    // one (see `ui_kit::menu::menu_item`):
                     // the two cases build two rows, and no tooltip passes the
                     // empty one.
                     let row = match sublabel {

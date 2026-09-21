@@ -3,7 +3,7 @@
 //! leptos — unit-testable via `cargo test -p ui-geom floating`.
 //!
 //! The "mechanism" half of the floating system, whose views live in the app
-//! (src/components/primitives/floating) and whose DOM adapters live in
+//! (crates/ui-kit/src/floating) and whose DOM adapters live in
 //! `app-chrome`: placement *policy* (which side a panel prefers, what it
 //! contains) belongs to the callers; the math here only answers "given this
 //! anchor and this panel, where does it go, and is it inside the viewport?".

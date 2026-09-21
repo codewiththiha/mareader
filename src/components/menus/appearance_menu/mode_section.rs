@@ -11,9 +11,9 @@ use leptos::prelude::*;
 
 use crate::components::menus::appearance_menu::hue_picker::HuePicker;
 use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::form::slider::Slider;
+use ui_kit::form::slider::Slider;
 use reader_core::appearance::BaseMode;
-use crate::components::primitives::controls::toggle_button::ToggleButton;
+use ui_kit::controls::toggle_button::ToggleButton;
 use crate::components::settings::fonts::update_text;
 use crate::state::AppState;
 use crate::effects::appearance::{AppearanceScrub, preview_appearance};

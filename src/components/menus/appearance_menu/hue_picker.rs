@@ -13,7 +13,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::form::range_input::RangeInput;
+use ui_kit::form::range_input::RangeInput;
 
 /// Named landmarks on the hue circle. These are the hues behind the classic
 /// reading modes plus the obvious cool/neutral choices, so the presets are

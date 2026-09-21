@@ -13,11 +13,11 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::use_custom_event::use_raw_event;
+use ui_kit::hooks::use_custom_event::use_raw_event;
 use crate::state::AppState;
 
 pub fn link_navigation(state: AppState) {
-    use_raw_event(crate::events::NAVIGATE_EVENT, move |detail| {
+    use_raw_event(ui_kit::events::NAVIGATE_EVENT, move |detail| {
         let Some(page) = js_sys::Reflect::get(detail, &"page".into())
             .ok()
             .and_then(|v| v.as_f64())

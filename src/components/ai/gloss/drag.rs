@@ -9,7 +9,7 @@ use leptos::prelude::*;
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::placement::clamped_origin;
 use app_chrome::hooks::use_viewport::viewport_size;
-use crate::components::primitives::interactions::drag::use_pointer_drag;
+use ui_kit::interactions::drag::use_pointer_drag;
 
 pub struct CardDrag {
     /// Hand to the surface's drag handle: `(client_x, client_y, box_now)`.

@@ -20,7 +20,7 @@
 //!   the `RwSignal<bool>` it already had, so there is exactly one bit per
 //!   surface.
 //! * Nothing here knows what an overlay looks like. Position, focus and
-//!   dismissal stay in [`crate::components::primitives::floating`]; this module
+//!   dismissal stay in [`crate::floating`]; this module
 //!   is only the "who yields to whom" table.
 //!
 //! # Adding a surface
@@ -43,7 +43,7 @@ impl Lanes {
     /// No lanes at all: a surface that neither holds nor clears anything.
     /// (`Default` can't be used for this — its impl isn't `const`.)
     pub const NONE: Self = Self(0);
-    /// Anchored menus and popovers ([`MenuPopover`](crate::components::primitives::floating::menu_popover::MenuPopover)-hosted).
+    /// Anchored menus and popovers ([`MenuPopover`](crate::floating::menu_popover::MenuPopover)-hosted).
     pub const POPOVER: Self = Self(1 << 0);
     /// Modal dialogs, of which the reader has exactly one today: settings.
     pub const MODAL: Self = Self(1 << 1);

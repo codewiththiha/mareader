@@ -23,8 +23,8 @@ use crate::components::ai::gloss::hooks::use_content_measure::use_content_measur
 use crate::components::ai::gloss::placement::{expanded_target, spring_target};
 use crate::components::ai::gloss::phase::GlossPhase;
 use app_chrome::hooks::use_viewport::use_viewport;
-use crate::components::primitives::motion::reduced_motion::reduced_motion_signal;
-use crate::components::primitives::motion::spring::{SpringBox, use_spring_box};
+use ui_kit::motion::reduced_motion::reduced_motion_signal;
+use ui_kit::motion::spring::{SpringBox, use_spring_box};
 use crate::state::AppState;
 
 /// The targeting bundle consumed by the lifecycle hooks and the surface.

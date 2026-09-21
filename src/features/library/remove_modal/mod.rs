@@ -17,11 +17,11 @@ use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use library_core::text::{human_size, plural};
 
-use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
-use crate::components::primitives::controls::switch::Switch;
-use crate::components::primitives::overlay::modal_shell::ModalShell;
-use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
-use crate::components::primitives::form::row::Row;
+use ui_kit::controls::button::{Button, ButtonTone, ButtonVariant};
+use ui_kit::controls::switch::Switch;
+use ui_kit::overlay::modal_shell::ModalShell;
+use ui_kit::overlay::sheet::{SheetBody, SheetFooter};
+use ui_kit::form::row::Row;
 use crate::services::library::{ReadingData, remove_entries};
 use crate::state::AppState;
 
