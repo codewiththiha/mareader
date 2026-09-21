@@ -8,6 +8,8 @@
 //! that wires chrome to a format.
 //!
 //! Layout:
+//!   - [`controller`] — the shell's layout rulebook: one source of truth for
+//!     the rail's presence, the panels' paint and the bar's gutter
 //!   - [`platform`] — the desktop the webview is running on
 //!   - [`window`] — window commands, caption cluster, traffic lights
 //!   - [`titlebar`] — the generic hover/pin titlebar shell + its context
@@ -16,6 +18,7 @@
 //!   - [`floating`] — placement glue + dismissal mechanics
 //!   - [`layers`] — z-index layer tokens (re-exported by the app)
 
+pub mod controller;
 pub mod floating;
 pub mod hooks;
 pub mod icon;

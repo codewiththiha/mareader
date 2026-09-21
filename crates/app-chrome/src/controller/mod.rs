@@ -28,22 +28,31 @@
 //! collapsing flag and last panel in, a bool out — so the cases that matter
 //! are tests there, not prose here.
 //!
-//! TWO PAGES, ONE RULEBOOK. The reader builds the controller with
-//! [`ShellController::reader`]; the library with
-//! [`ShellController::titlebar_only`], which answers every rail question "no
-//! rail". Which of the two lives in the controller as a [`ChromeSurface`],
-//! and everything per-route reads that: where the bar's pin is remembered,
-//! and whether the surface has a rail at all. The traffic-light questions are
-//! macOS-only at heart (`app_chrome::platform`); frameless Windows/Linux
-//! answer constant `false`.
+//! TWO PAGES, ONE RULEBOOK. The reader builds the controller over a surface
+//! that has a rail; the library over [`ChromeSurface::Library`], which answers
+//! every rail question "no rail". Which of the two it is lives in the
+//! controller as the surface, and everything per-route reads that: where the
+//! bar's pin is remembered, and whether the surface has a rail at all. The
+//! traffic-light questions are macOS-only at heart ([`crate::platform`]);
+//! frameless Windows/Linux answer constant `false`.
+//!
+//! NOTHING HERE KNOWS WHAT AN APP IS. [`ShellController::build`] takes the
+//! four values it drives — the settings it writes its pin back into, the rail
+//! mode it owns the questions about, the motion projection that says whether
+//! the slide animates, and the surface — rather than an app state struct, so
+//! the crate stays a leaf the shell and the reader can each build over. That
+//! is what lets the reader's own chrome live in a separate binary later
+//! without this rulebook being copied or forked.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
 
-use app_chrome::hooks::use_timeout::use_debounce_for;
-use crate::state::{AppState, SidebarMode};
+use reader_core::motion::Motion;
 use reader_core::settings::Settings;
+use reader_core::sidebar::SidebarMode;
+
+use crate::hooks::use_timeout::use_debounce_for;
 
 mod rules;
 
@@ -64,12 +73,12 @@ enum SidebarLayout {
 /// canvas release key off this so they land with the end of the width slide;
 /// the aside's own transition is the matching `duration-300` — keep them in
 /// step.
-pub(crate) const SIDEBAR_SLIDE_MS: u64 = 300;
+pub const SIDEBAR_SLIDE_MS: u64 = 300;
 
 /// How long the FLOATING rail's fade takes. The overlay wrapper carries the
 /// matching `duration-200`, so the rail, its shadow and the native lights
 /// land on the same frame.
-pub(crate) const SIDEBAR_FADE_MS: u64 = 200;
+pub const SIDEBAR_FADE_MS: u64 = 200;
 
 /// The close hold for a layout's rail: docked waits out the width slide,
 /// floating waits out the fade.
@@ -117,9 +126,9 @@ impl ChromeSurface {
 /// and provided as context; see the module docs for the question API.
 #[derive(Clone, Copy)]
 pub struct ShellController {
-    /// Which sidebar panel is open. The signal itself belongs to
-    /// `AppState::ui` — the controller centralizes the QUESTIONS about it,
-    /// not the storage.
+    /// Which sidebar panel is open. The signal itself belongs to whoever
+    /// built the controller — the controller centralizes the QUESTIONS about
+    /// it, not the storage.
     pub sidebar_mode: RwSignal<SidebarMode>,
     /// Pin state for THIS surface's title bar. One wiring, two memories:
     /// [`set_titlebar_pinned`](Self::set_titlebar_pinned) persists to the
@@ -135,7 +144,7 @@ pub struct ShellController {
     /// Push or Overlay, from Settings → Layout.
     layout: Signal<SidebarLayout>,
     /// Whether the rail's slide tween is frozen (Settings → Animations,
-    /// master already applied — `state.reader.viewer.motion`).
+    /// master already applied by the motion projection handed to `build`).
     no_slide: Signal<bool>,
 
     /// The panel a reopen should restore (also the panel kept painted
@@ -151,20 +160,6 @@ pub struct ShellController {
 }
 
 impl ShellController {
-    /// The reader's shell: rail + titlebar, with the slide machine live.
-    /// Must run inside the page's reactive owner (the machine installs an
-    /// effect and a debouncer).
-    pub fn reader(state: AppState) -> Self {
-        Self::build(state, ChromeSurface::Reader)
-    }
-
-    /// A page with a titlebar but no rail (the library): every rail
-    /// question answers "no", so the bar keeps its full width, its gutter
-    /// and its lights — and the bar's pin is the library's own memory.
-    pub fn titlebar_only(state: AppState) -> Self {
-        Self::build(state, ChromeSurface::Library)
-    }
-
     /// Which surface this controller drives. What the per-route rules below
     /// read, and what a page hands the chrome that differs per route (the
     /// appearance menu's sections).
@@ -172,9 +167,20 @@ impl ShellController {
         self.surface
     }
 
-    fn build(state: AppState, surface: ChromeSurface) -> Self {
-        let settings = state.settings;
-        let sidebar_mode = state.ui.sidebar;
+    /// Build the controller for one surface. Must run inside that page's
+    /// reactive owner: the close machine installs an effect and a debouncer.
+    ///
+    /// `motion` is the reader's projection of the animation settings
+    /// ([`Motion`]), already carrying the master switch, so the machine reads
+    /// one flag rather than re-deriving the policy. A surface with no rail
+    /// still hands one: the machine is built the same way either way, and the
+    /// answers simply never turn on it.
+    pub fn build(
+        settings: RwSignal<Settings>,
+        sidebar_mode: RwSignal<SidebarMode>,
+        motion: Signal<Motion>,
+        surface: ChromeSurface,
+    ) -> Self {
         // Each surface's bar remembers its own pin, in its own settings
         // field: one shared bit made unhitching the reader's bar unhitch the
         // shelf's with it, and the two are not one decision.
@@ -189,8 +195,7 @@ impl ShellController {
                 SidebarLayout::Push
             }
         });
-        let no_slide =
-            Signal::derive(move || !state.reader.viewer.motion.get().sidebar_slide);
+        let no_slide = Signal::derive(move || !motion.get().sidebar_slide);
 
         // The close machine, verbatim from the old `sidebar_paint` apart from
         // the hold's duration: see the module docs for what each direction
@@ -346,7 +351,7 @@ impl ShellController {
     fn lights_gutter(&self) -> Signal<bool> {
         let this = *self;
         Signal::derive(move || {
-            app_chrome::platform::is_macos()
+            crate::platform::is_macos()
                 && !this.is_overlay().get()
                 && !this.rail_present().get()
         })
@@ -359,7 +364,7 @@ impl ShellController {
     /// `lights_gutter`.
     pub fn bar_gutter(&self) -> Signal<bool> {
         let this = *self;
-        Signal::derive(move || app_chrome::platform::is_macos() && !this.is_overlay().get())
+        Signal::derive(move || crate::platform::is_macos() && !this.is_overlay().get())
     }
 
     /// The bar row's left padding in px: the traffic-light gutter while the

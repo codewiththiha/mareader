@@ -10,7 +10,8 @@
 
 use leptos::prelude::*;
 
-use crate::components::shell::controller::ShellController;
+use app_chrome::controller::ChromeSurface;
+use crate::components::shell::controller_for;
 use crate::components::shell::sidebar::overlay::OverlayRail;
 use crate::components::shell::sidebar::push::PushRail;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
@@ -44,7 +45,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // context for the title bar, the traffic lights, the floating label and
     // both rail mount points. It owns the open/close slide machine, so the
     // chrome stays aligned with the rail's pixels for the whole slide.
-    let shell = ShellController::reader(state);
+    let shell = controller_for(state, ChromeSurface::Reader);
     provide_context(shell);
 
     let rv = use_reader_virtualizers(vs);

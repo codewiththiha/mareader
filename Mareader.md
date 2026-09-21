@@ -1326,7 +1326,7 @@ gliding there.
 
 The library's bar is the reader's shape — leading cluster, centred slot, trailing cluster, the
 built-in pin — filled with the shelf's jobs, and the ways the two routes differ are one vocabulary
-rather than scattered facts: `ChromeSurface` (`components::shell::controller`) names the route, and
+rather than scattered facts: `ChromeSurface` (`app_chrome::controller`) names the route, and
 every per-route rule reads that name. The pin is remembered per surface, in one settings field each,
 because unhitching the reader's bar out of a document's way says nothing about the shelf's — and the
 shelf's defaults to pinned, since its bar is how the reader moves. The appearance menu drops its

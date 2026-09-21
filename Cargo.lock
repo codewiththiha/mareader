@@ -79,6 +79,7 @@ version = "0.1.0"
 dependencies = [
  "js-sys",
  "leptos",
+ "reader-core",
  "tauri-bridge",
  "ui-geom",
  "wasm-bindgen",

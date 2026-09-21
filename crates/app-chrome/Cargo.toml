@@ -7,10 +7,16 @@ license = "MIT"
 
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
-# The only workspace crate this one names: the pure placement math the
-# floating adapters wrap. A leaf with no dependencies of its own, so reusing
-# the chrome crate drags nothing else along.
+# The pure placement math the floating adapters wrap. A leaf with no
+# dependencies of its own, so reusing the chrome crate drags nothing else
+# along.
 ui-geom = { path = "../ui-geom" }
+# The shell's layout rulebook (`controller`) is written in the reader's
+# vocabulary: which rail panel is open, whether the slide animates, and the
+# settings field a bar's pin persists to. All three are format-agnostic
+# reader domain, and all three are pure — no leptos, no DOM — so the chrome
+# crate still drags in nothing that renders.
+reader-core = { path = "../reader-core" }
 tauri-bridge = { path = "../tauri-bridge" }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

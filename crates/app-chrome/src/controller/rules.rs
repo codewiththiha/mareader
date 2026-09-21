@@ -17,7 +17,7 @@
 //! takes the collapsing flag for that reason, and the tests are the cases a
 //! reader would otherwise have to reason out from the animation.
 
-use crate::state::SidebarMode;
+use reader_core::sidebar::SidebarMode;
 
 /// Whether the rail is still painted and therefore still owns title-bar
 /// chrome space. Stays true through the close slide after the raw mode has
@@ -61,7 +61,7 @@ mod tests {
     use super::{
         panel_is_shown, sidebar_is_present, thumbnail_cells_are_live, thumbs_should_stay_mounted,
     };
-    use crate::state::SidebarMode;
+    use reader_core::sidebar::SidebarMode;
 
     #[test]
     fn a_close_keeps_the_open_panel_painted_until_the_motion_ends() {

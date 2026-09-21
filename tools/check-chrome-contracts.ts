@@ -198,7 +198,7 @@ if (rustTokens.length > 0 && cssTokens.length > 0 && sameOrder) {
 //            padding, and by the rail header's own while the rail owns that
 //            corner. Different widths put the lights off-centre in one of
 //            them, which is the title-bar-height failure one section up.
-const SHELL_CONTROLLER = "src/components/shell/controller/mod.rs";
+const SHELL_CONTROLLER = "crates/app-chrome/src/controller/mod.rs";
 const SIDEBAR_ASIDE = "src/components/shell/sidebar/container.rs";
 const SIDEBAR_OVERLAY = "src/components/shell/sidebar/overlay.rs";
 const SIDEBAR_HEADER = "src/components/shell/sidebar/header.rs";
@@ -225,12 +225,12 @@ function agreeNumber(label: string, unit: string, values: [file: string, value: 
 }
 
 const slideMs = sole(
-  /^pub\(crate\) const SIDEBAR_SLIDE_MS: u64 = (\d+);/gm,
+  /^pub const SIDEBAR_SLIDE_MS: u64 = (\d+);/gm,
   read(SHELL_CONTROLLER),
   `${SHELL_CONTROLLER} (SIDEBAR_SLIDE_MS)`,
 );
 const fadeMs = sole(
-  /^pub\(crate\) const SIDEBAR_FADE_MS: u64 = (\d+);/gm,
+  /^pub const SIDEBAR_FADE_MS: u64 = (\d+);/gm,
   read(SHELL_CONTROLLER),
   `${SHELL_CONTROLLER} (SIDEBAR_FADE_MS)`,
 );
