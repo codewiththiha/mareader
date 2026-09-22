@@ -47,7 +47,7 @@ pub fn close_document(state: AppState) {
         // The heap probe's other half: what the session left behind on the
         // wasm side once the shelf is as empty as it gets — the retained
         // index (kept for a reopen's adoption), the covers, the library.
-        crate::memory::log_heap("close");
+        app_chrome::memory::log_heap("close");
     });
 
     // One call sheds everything the open flow wrote — the identity, the outline

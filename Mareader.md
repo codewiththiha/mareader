@@ -40,15 +40,23 @@ a fling slides cheap placeholders past the reader's eyes; every partly-visible
 item is inside the band by construction, so nothing on screen is ever a
 placeholder, and the band never changes what mounts or what the extent says.
 
-## 3. Reader app: policy + rendering
+## 3. `reader-app`: policy + rendering
 
-The app uses the adapter and keeps only app-specific policy locally:
+`crates/reader-app` uses the adapter and keeps only reader-specific policy:
 
 - view-mode state, plus the format-agnostic view policy (page gap, render
   budget, spread arithmetic) that lives in `crates/reader-core`'s `view` module
-- toolbar inset
-- page rendering, text/search overlays, and chrome
+- page rendering, text/search overlays, the rail, and the zoom pipeline
 - measurement storage in `css_heights`
+
+It is a crate and not a directory so that the boundary is a compiler check: the
+reader cannot name the shell's `AppState`, its storage, its library or its
+routes. What it needs from the window arrives as a prop or a context — a
+`ReaderState`, a settings signal, a cover map, the `ShellController` that
+answers every layout question the rail and the bars share, and one injected
+callback for the gloss marks it owes localStorage. The toolbar inset stayed on
+the other side of that line for exactly this reason: it is a fact about a bar,
+and `app-chrome` owns the bars.
 
 `css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled by the zoom actuator on every frame of a zoom. Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
 
@@ -84,7 +92,7 @@ The app uses the adapter and keeps only app-specific policy locally:
    transitions; decorative entrance keyframes do not come back. Whether they run
    at all is the reader's call: Settings → Layout holds the master switch, and
    Settings → Animations holds one switch per motion the reader models. Both are
-   projected into `state::reader::Motion` by the shell, which is what every gate
+   projected into `reader_core::motion::Motion` by the shell, which is what every gate
    reads — the master is applied once, there, and nothing downstream asks twice.
 10. The page host is sized by its inline width/height, which ARE the page
     geometry, so it never lets the flex engine renegotiate them — a shrink
@@ -127,7 +135,7 @@ The app uses the adapter and keeps only app-specific policy locally:
    reflowable one. The strip renders `v.items()`, and the PDF's reports measured
    page heights back into both `css_heights` and the virtualizer; a page of type
    is A4 by definition, so there the cut publishes its sizes instead
-   (`effects::reader::reflow_layout`).
+   (`reader_app::effects::reflow_layout`).
 3. Navigation sync uses the virtualizer for dominant-page tracking and page-to-scroll jumps.
 4. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
 5. Zoom runs through one controller: commands resolve to a target, the tween relays the layout out through the actuator frame by frame — `css_heights`, both strips and the page hosts all follow the live display scale — and the render scale catches up once, at the end.
@@ -138,7 +146,7 @@ The thumbnail sidebar is a separate grid virtualizer:
 
 - width-aware row windowing lives in `virtual-list`
 - DOM/reactive wiring lives in `virtual-list-leptos`
-- panel-specific constants stay in `src/components/shell/sidebar/panels/thumbnails`
+- panel-specific constants stay in `crates/reader-app/src/components/rail/panels/thumbnails`
 
 That keeps list and grid virtualization on the same geometry stack while letting each surface keep its own rendering policy.
 
@@ -175,7 +183,7 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   open, which is where the next drag is born — and drops it at the bake
   otherwise; the scrub path re-renders on demand.
 - A zoom stretch skips the snapshot mask when a render is queued for the same
-  page (`src/components/formats/pdf/canvas_host.rs`): the mask exists to cover
+  page (`crates/reader-app/src/components/formats/pdf/canvas_host.rs`): the mask exists to cover
   the frames until that render lands, which is not worth a third full-page
   layer.
 - Where reading work ends — the zoom commit, the mode flip, the retention
@@ -191,7 +199,7 @@ on how many pages rasterised at once, under a pixel ceiling that doubled to
   mounted ceiling, is what drives the engine's resource cache to the mark
   the footprint latches onto.
 - The full-text index builds on the first search, never at open
-  (`src/effects/reader/search.rs`): extraction is the one wasm-side cost
+  (`crates/reader-app/src/effects/search.rs`): extraction is the one wasm-side cost
   that scales with the BOOK — a worker round trip per page, landing in a
   heap that only grows — so an open-time build charged every book that
   ratchet whether or not anyone ever searched it. One build runs at a time;
@@ -221,7 +229,7 @@ generation counters reset with the document they were issued for.
 
 The heap is charted from inside, because from outside it is invisible: the
 OS's number folds the wasm linear memory into the webview's total, where
-canvas surfaces dominate. `src/memory.rs` logs, one console line per point
+canvas surfaces dominate. `crates/app-chrome/src/memory.rs` logs, one console line per point
 that moves the heap — boot, open, close, zoom commit, index build and the
 reload that resets it (`[mem]` lines in the webview console) — and the trace
 IS the leak-versus-latch test: steps up once per book, flat across a
@@ -260,13 +268,13 @@ The reader has two axes that must not multiply: how a document is *viewed* (sing
 spread, two scroll modes) and what it *is* (PDF, plain text, Markdown). The UI is split
 along the first axis and the crates along the second, and exactly one file joins them.
 
-- `src/components/viewer/` is shape: the mode dispatch, the four layouts, the shells that
+- `crates/reader-app/src/components/viewer/` is shape: the mode dispatch, the four layouts, the shells that
   hold the scroll container, and the reader's own controls (the bottom bar, the overlay
   scrollbar, the page indicator). A layout may not name a format; adding a view mode touches
   this directory and `reader-core`'s `view` module, and no format crate.
-- `src/components/formats/` is substance: `pdf/`, `reflow/`, `txt/`, `md/`. Adding a format
+- `crates/reader-app/src/components/formats/` is substance: `pdf/`, `reflow/`, `txt/`, `md/`. Adding a format
   touches this directory, one parser crate, and one match arm in the open flow.
-- `src/components/viewer/page_host.rs` is the seam, and the only file in the viewer layer
+- `crates/reader-app/src/components/viewer/page_host.rs` is the seam, and the only file in the viewer layer
   allowed to ask which format is open. `UniversalPageHost` takes a page plus a `PageSlot`
   (single, spread left, spread right) and mounts either `PdfPageCanvas` or `ReflowPage`;
   `UniversalStripHost` does the same for the virtualized strip; `UniversalStreamHost`
@@ -279,7 +287,7 @@ along the first axis and the crates along the second, and exactly one file joins
   floating chapter label and a selection anchor address a page of Markdown exactly as they
   address a page of pixels.
 
-The state mirrors it: `state::reader::document` holds the document's identity (path, title,
+The state mirrors it: `reader_app::state::document` holds the document's identity (path, title,
 format, page count, outline) and, beside it, a `DocumentContent` with two halves: `metrics`,
 the page-size store both families write (`page1_size`, `intrinsic`, `css_heights`), and
 `reflow`, the reflowable pipeline's own blocks, heights and current cut. A PDF fills the
@@ -310,7 +318,7 @@ format-agnostic.
   what lets the paginator pack pages tightly: no single block is taller than a few lines of type,
   so a page bottom never carries a blank band a pushed-over paragraph used to leave. The heights
   are then refined block by block as the reader's own rows render: each mounted row reports its
-  measured scale-1 height into the shared store (`effects::reader::reflow_measure`), debounced so
+  measured scale-1 height into the shared store (`reader_app::effects::reflow_measure`), debounced so
   a fling costs one re-cut, not one per frame, and a typography or width-dial change re-runs the
   pure estimate instead of any DOM. Pagination is therefore measurement-true, and re-cuts whenever
   a typography knob moves — holding the reader on the block they were reading.
@@ -333,11 +341,11 @@ format-agnostic.
   search hits through its own virtualizer, and runs a render band wider than its visible window:
   rows inside the band carry type, rows the band has not reached are empty boxes at the
   virtualizer's own heights. What it renders is also what it measures: the mounted rows report
-  their scale-1 heights into the shared store (`effects::reader::reflow_measure`), which debounces
+  their scale-1 heights into the shared store (`reader_app::effects::reflow_measure`), which debounces
   them into the page cut, so a column narrower than the page model still lays out truthfully.
   Single, spread and horizontal keep real A4 sheets.
 - A Markdown document gets the sidebar's outline panel for real: `md_core::headings_of_blocks`
-  finds the headings among the final blocks and `effects::reader::reflow_outline` projects them
+  finds the headings among the final blocks and `reader_app::effects::reflow_outline` projects them
   onto the live block→page table, so the chapter tree follows every re-cut instead of going
   stale. The tree lands in the same `document.outline` signal a PDF's `/Outlines` dictionary
   fills, in the same `reader_core::outline::OutlineNode` shape — the panel cannot tell the two

@@ -49,6 +49,15 @@ web-sys = { version = "0.3", features = [
   "Range",
   "DomRectList",
   "HtmlDivElement",
+  # `hooks::dom::html_style` walks `<html>` to its inline declaration block,
+  # which is where the appearance and typography effects paint their tokens.
+  "HtmlElement",
+  "CssStyleDeclaration",
+  # The memory probe: `performance.memory.usedJSHeapSize` for its js column,
+  # and `getElementsByTagName("*").length` for its dom one.
+  "Performance",
+  "HtmlCollection",
+  "NodeList",
   "ResizeObserver",
   "ResizeObserverEntry",
   "Event",

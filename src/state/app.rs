@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use leptos::prelude::{Memo, RwSignal};
 
 use crate::state::library::LibraryState;
-use crate::state::reader::ReaderState;
+use reader_app::state::ReaderState;
 use reader_core::appearance::Appearance;
 use reader_core::settings::Settings;
 

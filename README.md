@@ -824,6 +824,18 @@ generic windowing-math library under the viewer, and `ui-geom` the geometry ever
 surface places itself with — a leaf with no dependencies, so the window chrome and the AI
 card can share one placement rule and one spring without either depending on the other.
 
+Above the cores the frontend splits in two, and the split is a boundary rather
+than a directory convention. `crates/reader-app` is everything that is true of
+an OPEN document — its state, its viewer, its formats, its AI surfaces, its
+rail, its zoom, its effects — and `src/` is everything that is true of a
+WINDOW: the route, the library, the bars, the settings modal and the
+persistence that binds them. The dependency runs one way (the shell mounts the
+reader, never the reverse), and the reader cannot name the shell's `AppState`:
+it is handed a `ReaderState`, a settings signal, a cover map, a
+`ShellController` and one injected callback for the mark list it owes storage.
+Both halves still compile into the one wasm binary and the one window today;
+the boundary exists so that a document can be given a window of its own.
+
 PDFs and text documents share one page/zoom/navigation machinery above the rendering layer; only
 the leaf differs. A PDF page is a canvas the pdf.js engine paints; a text page is an A4 host the
 reader lays out with real type. Both report the same per-page sizes into the same virtualized
@@ -832,49 +844,29 @@ strips, so view modes, zoom and navigation are format-agnostic.
 ### Project layout
 
 ```
-src/
+src/                        the SHELL: the window, the library, and the route
+                            that mounts a reader
   main.rs                 mount entry point
-  app/                    bootstrap, routes, the shell that hosts the sidebar
+  app/                    bootstrap, routes, the app-root effects, the shell
+                          that hosts a page
   components/
-    primitives/           button, switch, popover, floating positioning,
-                          motion and interaction hooks (the long-press, the
-                          pointer-drag stream, and the card wrapper that
-                          decides between a tap, a hold and a drag; the
-                          chrome's own primitives — icon, icon button,
-                          tooltip, the generic DOM/timer hooks — live in
-                          app-chrome)
-    shell/                the unified application shell: the ShellController
-                          (one source of truth for layout), the titlebar
-                          family, the sidebar rail family
+    shell/                the application shell: the titlebar family, and the
+                          one adapter that builds the layout rulebook
+                          (app-chrome's ShellController) out of this app's
+                          state
     menus/                app menu, appearance menu, reader menu
     settings/             the settings modal and its tabs (layout, theme,
                           animations, fonts); the theme tab composes sections
-                          it does not own — the AI's from ai/, the raster ones
-                          from its own paper module
-    viewer/               the SHAPE of reading: the mode dispatch, the four
-                          layouts (single, two-page, continuous, horizontal),
-                          the shells that own the scroll container,
-                          page_host — the one seam that picks a format —
-                          refresh, the fingerprints an overlay repaints on,
-                          and controls/ (bottom bar, overlay scrollbar, page
-                          indicator, page navigation)
-    formats/              the SUBSTANCE of a document: pdf/ (canvas + strip),
-                          reflow/ (A4 page host, continuous stream, strip,
-                          the spot walk that finds a block's
-                          characters in the DOM, and the search-hit layer that
-                          paints over them), txt/ and md/ block views, and
-                          block_render, the renderer dispatch
-    search/               floating search bar and result list
-    ai/                   selection pill, word card, gloss popover, the anchor
-                          resolvers that place a mark's stroke, and the AI
-                          appearance section of the settings modal
+                          it does not own — the AI's appearance knobs and the
+                          raster-only paper sections are both modules here,
+                          because both edit the global settings blob
     app_overlays/         drag-and-drop feedback, toast host
   effects/
     app/                  window title, shortcuts, persistence wiring,
-                          drag-and-drop admission, and the library's
-                          app-lifetime wiring (startup measurement, focus
-                          rescan, the progress sink)
-    reader/               fit and zoom follow, page tracking
+                          drag-and-drop admission, the reading-position
+                          write-back, and the library's app-lifetime wiring
+                          (startup measurement, focus rescan, the progress
+                          sink)
     appearance/           the appearance-to-CSS bridge (shared, raster,
                           reflow)
   features/
@@ -886,25 +878,42 @@ src/
                           session and its sink, the targets, the table that
                           decides what a drop means, and the layer that
                           draws it)
-    reader/               the reader page and its two virtualizers
-  state/                  the reactive state tree: app (chrome + UI), reader
-                          (document, viewer, zoom, search, gloss, AI selection),
-                          library
+    reader/               the reader route: the title bar's three clusters and
+                          the settings modal, around reader-app's own root
   services/               the document open pipeline, the AI chunk bridge, and
                           the library's filesystem wire (the shell's invoke
                           wrappers and progress bridge, the import orchestration
                           that runs the ledger, and the moves a reader makes by
                           hand)
+  state/                  the reactive state tree the window owns: app
+                          (settings, chrome, UI) and library (rows, shelves,
+                          covers). The open document's state is reader-app's,
+                          re-exported here for the callers that reach for it
+                          by the short name
   storage/                loads and saves over localStorage (settings,
-                          library, covers, gloss marks)
-  zoom/                   the zoom pipeline: posted commands, target
-                          resolution, the tween, and the actuator that owns
-                          the one relayout path over both strips
-  dom_contract.rs         the attribute, class and element-id names the engine
-                          reads and the app writes — one table, both sides
-  events.rs               the window-event names the engine dispatches and the
-                          app listens for
+                          library, covers, gloss marks) — the one door to
+                          persistence, which is why the reader injects a
+                          callback instead of writing a mark itself
 crates/
+  reader-app/             the READER: an open document's reactive state, the
+                          viewer and its four layouts, one component module
+                          per format, the AI reading surfaces, the search
+                          overlays, the rail and its panels, the zoom
+                          pipeline, the effects that keep all of it in sync,
+                          and the two names it shares with the engine
+                          (dom_contract.rs, epoch.rs). It cannot name the
+                          shell's AppState: everything arrives as a
+                          ReaderState, a settings signal, a cover map and a
+                          layout controller
+  ui-kit/                 the generic UI every surface renders with: button,
+                          switch, popover, floating positioning, motion and
+                          interaction hooks (the long-press, the pointer-drag
+                          stream, and the card wrapper that decides between a
+                          tap, a hold and a drag), plus events.rs — the
+                          window-event names the engine dispatches and the
+                          app listens for. It knows nothing about a document
+                          reader, which is what lets the shell and the reader
+                          each compile it without the other
   ai-core/                the format-agnostic AI core: the word-explanation
                           wire types (WordInfo, AiError, the chunk envelope),
                           the gloss card's geometry (stepping `ui-geom`'s
@@ -938,7 +947,8 @@ crates/
                           predicate, the rescan ledger that answers
                           add/relink/skip, the sort, the persisted blob and its
                           migration, the merge rule for two rows of one book,
-                          and the wire types the shell and the frontend share
+                          the cover map, and the wire types the shell and the
+                          frontend share
   pdf-engine/             wasm-bindgen bridge to the imperative engine
   pdf-paper/              the blend backdrop's colour brain: the detection
                           area, dominant-colour detection (whole page or edge
@@ -955,9 +965,11 @@ crates/
   app-chrome/             format-agnostic window chrome: the platform probe,
                           the window commands, the caption cluster (Windows
                           squares, GNOME circles), the native macOS traffic
-                          lights, the generic titlebar shell, the floating
-                          surface adapters (placement glue, shared dismissal),
-                          and the shared UI primitives + hooks those surfaces
+                          lights, the generic titlebar shell, the
+                          ShellController every chrome component asks its
+                          layout questions of, the floating surface adapters
+                          (placement glue, shared dismissal), the memory
+                          probe, and the DOM/timer hooks those surfaces
                           render with
 public/
   readerEngine.ts         the format-agnostic bundle (the selection tracker),

@@ -79,6 +79,6 @@ mod tests {
 
         let id = state.library.books.with_untracked(|rows| rows[0].id().to_string());
         assert_eq!(state.reader.document.book_id.get_untracked().as_deref(), Some(id.as_str()));
-        assert_eq!(crate::services::document::gloss_key(state), id);
+        assert_eq!(crate::services::document::gloss_key(&state.reader), id);
     }
 }

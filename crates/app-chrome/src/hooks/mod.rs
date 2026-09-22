@@ -4,8 +4,8 @@
 //!
 //! Contract: nothing here may know what a PDF reader is. The one hook that is
 //! NOT format-agnostic — the typed CustomEvent hook dispatching the app's own
-//! event protocol — stays in the app
-//! (`primitives::hooks::use_custom_event`).
+//! event protocol — lives with the event table it dispatches
+//! (`ui_kit::hooks::use_custom_event`).
 //!
 //! Two composites live here as well. [`hover_reveal`] owns the whole
 //! auto-hide surface (shared `hovered` truth, hold recheck, pin) so the title

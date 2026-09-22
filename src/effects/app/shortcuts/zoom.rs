@@ -1,6 +1,6 @@
 //! The `+`/`-` zoom steps.
 
-use crate::state::reader::ZoomCommand;
+use reader_app::state::ZoomCommand;
 use crate::state::ReaderState;
 
 /// Applies a manual zoom step — a plain command post: the controller resolves

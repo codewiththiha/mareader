@@ -76,7 +76,7 @@ pub fn shortcuts(
             if state.search.visible.get() {
                 // Closes the bar but leaves the muted highlights behind; the
                 // next interaction with the document clears them.
-                crate::effects::reader::search::dismiss_search(state);
+                reader_app::effects::search::dismiss_search(state);
             } else if sidebar.get() != SidebarMode::None {
                 sidebar.set(SidebarMode::None);
             }

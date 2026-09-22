@@ -11,8 +11,8 @@
 
 use leptos::prelude::*;
 
-use crate::state::reader::TypographySignal;
-use crate::effects::app::theme::html_style;
+use reader_app::state::TypographySignal;
+use app_chrome::hooks::dom::html_style;
 
 /// Install the typography painter. Runs once at boot (the persisted
 /// typography must be live before the first text document renders) and on

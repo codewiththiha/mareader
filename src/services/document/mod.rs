@@ -7,12 +7,12 @@
 //! point the progress effect is still debouncing, written now. Both exits call
 //! it — the close, and the reload in [`crate::services::reload`].
 //!
-//! [`gloss_key`] is the one fact the lifecycle owns that is not about the
-//! engine: which book the open document is. The address alone cannot say —
-//! the library may hold two rows of one file — and every reader of the
-//! highlights and writer of a resume point needs the answer. It is the row's
-//! id, so a conversion or a move keeps the marks without carrying them
-//! anywhere.
+//! Which book the open document is — [`gloss_key`], re-exported from the
+//! reader's state — is the one fact the lifecycle asks that is not about the
+//! engine. The address alone cannot say it: the library may hold two rows of
+//! one file, and every reader of the highlights and writer of a resume point
+//! needs the answer. It is the row's id, so a conversion or a move keeps the
+//! marks without carrying them anywhere.
 
 pub mod close;
 pub(crate) mod flush;
@@ -22,35 +22,8 @@ pub(crate) mod session;
 pub use close::close_document;
 pub(crate) use flush::flush_read_point;
 pub use open::{init_open_file_handling, open_dialog, open_path, open_row};
+// The key the open document's marks are stored under is the reader's fact —
+// it reads the open document's row id — so it lives with the reader's state
+// and the lifecycle re-exports the question it keeps asking.
+pub use reader_app::state::gloss_key;
 
-use leptos::prelude::*;
-
-use crate::state::AppState;
-
-/// The key the open document's highlights are stored under: the id of the
-/// row the library holds for it.
-///
-/// An id rather than a string derived from the address: an id does not move
-/// when the bytes do, so a conversion or a merge keeps the marks where they
-/// are, and two rows of one file keep their lists apart because each has its
-/// own id.
-///
-/// Every writer of the marks asks here rather than reading the document's
-/// path — the load at open (`crate::services::document::open::enter`), the
-/// save per stroke (`crate::components::ai::gloss::controller`) and the
-/// sweep on a removal (`crate::services::library::arrange`) — so the three
-/// cannot disagree about which list they mean.
-///
-/// Empty when nothing is open or the open has no row the library can name;
-/// every caller reads that as "nowhere to put it" rather than as a key. An
-/// address-only open settles onto its row before any tail loads the marks
-/// (`crate::services::document::open`), so the empty window is the window
-/// where there is no book to have marks about.
-pub(crate) fn gloss_key(state: AppState) -> String {
-    state
-        .reader
-        .document
-        .book_id
-        .get_untracked()
-        .unwrap_or_default()
-}

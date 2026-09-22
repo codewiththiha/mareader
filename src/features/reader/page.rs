@@ -1,6 +1,14 @@
-//! The `/reader` route: sidebar + viewer slot + the app title bar, plus the
-//! floating doc title, page pill, bottom bar and floating search. The viewer
-//! slot switches on viewer.mode.
+//! The `/reader` route: the app title bar around the reader's own root, plus
+//! the settings modal the window owns.
+//!
+//! The split along this seam is the whole point of the file. Everything that
+//! is true of an OPEN DOCUMENT — the rail, the viewer slot, the floating
+//! surfaces over it, and the effects that keep them in sync — is
+//! `reader_app`'s, mounted here as one component. What is left is what is
+//! true of a WINDOW: the bar and its three clusters, the Library button that
+//! closes the document, the settings modal, and the two facts the reader
+//! cannot own (the persisted settings, and where a reading position is
+//! written).
 //!
 //! Slot wiring is the SINGLE coordinator's job — branches must not edit this
 //! file. The shell's layout truth lives in one `ShellController` built here
@@ -10,35 +18,29 @@
 
 use leptos::prelude::*;
 
+use ai_core::gloss::GlossMark;
 use app_chrome::controller::ChromeSurface;
-use crate::components::shell::controller_for;
-use crate::components::shell::sidebar::overlay::OverlayRail;
-use crate::components::shell::sidebar::push::PushRail;
-use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
-use crate::components::shell::titlebar::document_title::CenteredDocTitle;
-use crate::components::shell::titlebar::floating_document_title::FloatingDocumentTitle;
+use app_chrome::hooks::dom::TOOLBAR_LEADING_ID;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::tooltip::Tooltip;
+use pdf_engine::types::DocStatus;
+use reader_app::state::GlossSave;
+use ui_kit::controls::button::{Button, ButtonVariant};
+
 use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::menus::reader_menu::ReaderMenu;
 use crate::components::settings::modal::SettingsModal;
-use ui_kit::controls::button::{Button, ButtonVariant};
-use app_chrome::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
-use app_chrome::icon::{Icon, IconName};
-use app_chrome::tooltip::Tooltip;
-use crate::features::reader::rail::ReaderRail;
-use crate::components::viewer::controls::bottom_bar::ReaderBottomBar;
-use crate::components::viewer::controls::page_indicator::PageIndicator;
-use crate::effects::reader::navigation_sync::navigation_sync;
-use crate::effects::reader::reading_progress::reading_progress;
-use crate::features::reader::use_reader_virtualizers;
+use crate::components::shell::controller_for;
+use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
+use crate::components::shell::titlebar::document_title::CenteredDocTitle;
+use crate::effects::app::reading_progress::reading_progress;
 use crate::services::document::close_document;
 use crate::state::AppState;
-use reader_core::settings::PageIndicatorStyle;
-use pdf_engine::types::DocStatus;
 
 #[component]
 pub fn ReaderPage(state: AppState) -> impl IntoView {
-    // The viewer slice of app state, handed to the reusable viewer components
-    // and effects (all field paths match the app-level state).
+    // The viewer slice of app state, handed to the reader's own root and to
+    // every component and effect inside it.
     let vs = state.reader;
 
     // The shell's layout brain: one controller for the whole page, provided as
@@ -48,89 +50,19 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let shell = controller_for(state, ChromeSurface::Reader);
     provide_context(shell);
 
-    let rv = use_reader_virtualizers(vs);
-
-    // The layout prefs (page gap, page margin) resolve their settings into the
-    // strips' size models. Installed BEFORE the reflow layout effect below,
-    // which reads the gap they resolve.
-    crate::effects::reader::layout_prefs::layout_prefs(
-        state,
-        rv.virtualizer.clone(),
-        rv.h_virtualizer.clone(),
-    );
-
-    // The paged text modes' A4 page model upkeep: page-unit sizes projected
-    // into the shared measurement store whenever the format, the mode or the
-    // cut moves, and reverted when they stop asking for it (the vertical
-    // reading mode is the stream's, which virtualizes blocks directly).
-    // Installed AFTER the gap effects so its relayout reads the gap they just
-    // resolved.
-    crate::effects::reader::reflow_layout::reflow_layout(state, rv.virtualizer.clone());
-    // The reflowable measurement pipeline: the pipe the stream's and the
-    // page hosts' block measurements flow through into the page cut, and the
-    // re-estimate that follows the typography and the width dials. Installed
-    // beside the layout it feeds.
-    crate::effects::reader::reflow_measure::install_reflow_measure(state);
-    // The Markdown outline follows the same page cut, so it is installed beside
-    // it: one re-cut republishes the pages AND moves the chapters.
-    crate::effects::reader::reflow_outline::reflow_outline(state);
-
-    // What a mode flip owes: the incoming strip's anchor, the stream's zoom, the
-    // outgoing view's rasters, and the fit the next mode owns.
-    crate::effects::reader::mode_change::mode_change(state);
-
-    let actuator = crate::zoom::actuator::ZoomActuator::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
-    // Driven once at setup. The controller itself is dropped when setup
-    // returns; what outlives it are the effects `drive` installs, which live as
-    // long as this page's reactive owner. Everything downstream only posts
-    // commands; nothing else writes a zoom scale or rescales a strip.
-    let zoom = crate::zoom::ZoomController::new(actuator);
-    zoom.drive(vs);
-    // Installed BEFORE reading_progress, and that is a contract rather than a
-    // habit: Leptos runs effects in insertion order, so when a zoom
-    // transaction closes both wake in the same flush — this one replays its
-    // held jump first, and reading progress then persists the page the reader
-    // actually asked for instead of the stale dominant the strip still
-    // shows.
-    navigation_sync(vs, rv.virtualizer.clone(), rv.h_virtualizer.clone());
-    // The zoom sources come last, after the controller that consumes them: a
-    // container follow on every frame of a sidebar slide or window drag (each
-    // burst has its own switch; with it off the follow lands the end frame
-    // once instead of frame by frame), and a debounced refit when a fit's
-    // other inputs move (mode, and the page too — only while Auto Resize is
-    // on).
-    crate::effects::reader::zoom_watchers::follow_watcher(state, state.ui.sidebar);
-    crate::effects::reader::zoom_watchers::fit_watcher(state);
-    crate::effects::reader::auto_scroll::auto_scroll(vs);
-    reading_progress(state);
-    // The blend backdrop's geometry half: the viewport's ladder position per
-    // scroll tick (the engine owns the colours it drives). The backdrop
-    // carries no texture — each page's own ::before paints the gutter
-    // (textures.css, BLEND BLEED) — so there is nothing here to sync, only the
-    // colour position the engine consumes. The SETTINGS half lives at the app
-    // root, ahead of the first document open.
-    crate::effects::reader::blend_backdrop::blend_backdrop(state);
-
-    crate::effects::reader::first_paint::first_paint_gate(state);
-
-    let status = state.reader.document.status;
-    let is_ready = move || status.get() == DocStatus::Ready;
-
     let settings_open = RwSignal::new(false);
     // The settings modal is opened from several places (the 3-dash menu's
     // Settings… item, the sidebar header's gear) that sit under different
     // mount points, so the open signal is shared through context rather than
     // threaded as a prop through the rail composition.
     provide_context(settings_open);
-    let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
-    let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
-    let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
-    // Continuous text reading has no meaningful page number: while the stream
-    // is live the badge is a percentage of the document whatever the indicator
-    // style says — and the style selector stands disabled for exactly as long,
-    // so it cannot show a choice that is not being honoured.
-    let stream_live = Signal::derive(move || vs.reflow_streaming());
-    let stream_percent = Signal::derive(move || vs.stream_percent());
+
+    // The reader's one write to storage, injected rather than reached for:
+    // the marks land in the library's blob, which is this crate's to own. See
+    // `reader_app::state::GlossSave`.
+    provide_context::<GlossSave>(Callback::new(move |(key, marks): (String, Vec<GlossMark>)| {
+        crate::storage::persist_gloss(&key, &marks)
+    }));
 
     // Left: sidebar toggle + Library; title centered; right: the 3-dash view
     // menu + Appearance.
@@ -191,131 +123,26 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     view! {
         <AppTitleBar state=state left=left center=center right=right>
-            // overflow-hidden clips the hidden ReaderBottomBar's slide-down translate
-            // so it can never leak a phantom scrollbar onto the window.
-            <div
-                class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
-                class=("blend", move || {
-                    // The blend class swaps the backdrop AND the page hosts
-                    // onto the engine's one computed paper colour
-                    // (styles/components/shell.css, styles/page_host.css),
-                    // killing the fractional-edge rim a second paper colour
-                    // under the canvas used to show. A text/Markdown page is
-                    // its OWN paper (the surface paints --tx-paper), so the
-                    // class must not run for it or a second paper colour
-                    // stacks under the text page.
-                    state.settings.with(|st| st.layout.blend_mode)
-                        && !state.reader.reflowable()
-                })
-            >
-                <div class="relative flex min-h-0 flex-1">
-                    // DOCKED: the rail is a flex sibling of `<main>`, so the
-                    // page gives up the width. `PushRail` renders nothing
-                    // while the controller says the layout is overlay.
-                    <PushRail shell=shell>
-                        <ReaderRail state=state shell=shell />
-                    </PushRail>
-                    <main
-                        id=VIEWER_SLOT_ID
-                        class="relative min-w-0 flex-1 overflow-hidden"
-                        class=("no-page-shadow", move || !state.settings.with(|st| st.layout.page_shadow))
-                    >
-                        <Show when=is_ready>
-                            <crate::components::viewer::Viewer
-                                state=vs
-                                virtualizer=rv.virtualizer_view.get_value()
-                                h_virtualizer=rv.h_virtualizer_view.get_value()
-                                progress_visible=progress_visible
-                            />
-                        </Show>
-                        // The first-paint cover (the gate effects above own
-                        // its timing): an opaque sheet of the paper the reader
-                        // is about to paint, over everything the viewer slot
-                        // stacks, until the reading surface has landed on the
-                        // resume point. Lifting is seamless in every theme
-                        // because it wears the same paper token as the surface
-                        // underneath.
-                        <Show when=move || is_ready() && !state.reader.viewer.first_paint.get()>
-                            <div
-                                class=format!(
-                                    "absolute inset-0 {} flex items-center justify-center",
-                                    app_chrome::layers::DRAG_OVERLAY
-                                )
-                                style=move || format!(
-                                    "background:{}",
-                                    if state.reader.reflowable() {
-                                        "var(--tx-paper)"
-                                    } else {
-                                        "var(--color-paper)"
-                                    }
-                                )
-                            >
-                                <ui_kit::feedback::CenteredLoader />
-                            </div>
-                        </Show>
-                        <FloatingDocumentTitle state=state />
-                        // Corner page counter, gated on a ready document and
-                        // positioned by the page; the indicator itself is
-                        // reusable UI with no knowledge of AppState.
-                        <Show when=move || is_ready() && show_indicator.get()>
-                            <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", app_chrome::layers::CONTROLS)>
-                                <PageIndicator
-                                    current=Signal::derive(move || {
-                                        if stream_live.get() {
-                                            stream_percent.get()
-                                        } else {
-                                            vs.viewer.page.get()
-                                        }
-                                    })
-                                    total=Signal::derive(move || {
-                                        if stream_live.get() {
-                                            100
-                                        } else {
-                                            vs.document.num_pages.get()
-                                        }
-                                    })
-                                    style=Signal::derive(move || {
-                                        if stream_live.get() {
-                                            PageIndicatorStyle::Percentage
-                                        } else {
-                                            indicator_style.get()
-                                        }
-                                    })
-                                    hidden=Signal::derive(move || state.reader.gloss.selection_active.get())
-                                />
-                            </div>
-                        </Show>
-                        <ReaderBottomBar
-                            reader=vs
-                        />
-                        <crate::components::search::floating_search::FloatingSearch
-                            state=vs
-                            virtualizer=rv.virtualizer_view
-                        />
-                        <crate::components::ai::selection_pill::SelectionPill state=state />
-                        <crate::components::ai::gloss::gloss_ai_popover::GlossAiPopover state=state />
-                    </main>
-                </div>
-            </div>
-            // OVERLAY: `OverlayRail` mounts OUTSIDE `.reader-bg`, which is a
-            // stacking context at z-index 0 — a rail inside it would paint
-            // under the title bar's band and hand the band its whole 48px
-            // header (close, search, More, and the native traffic lights the
-            // header's 88px gutter reserves). Out here its own z-popover
-            // outranks the bar, so the rail covers the bar's left corner
-            // (Library button included) and takes the lights with it, and the
-            // bar reads as one full-width surface either way. Renders nothing
-            // while the controller says the layout is docked.
-            <OverlayRail shell=shell>
-                <ReaderRail state=state shell=shell />
-            </OverlayRail>
+            <reader_app::features::ReaderRoot
+                reader=vs
+                settings=state.settings
+                covers=state.library.covers
+                shell
+                // Installed by the reader root, at the point in its effect
+                // order the zoom contract asks for: after `navigation_sync`,
+                // so a closing zoom transaction replays its held jump before
+                // the page this persists is read. It is the shell's effect —
+                // it writes the library's rows and their blob — running on the
+                // reader's clock.
+                record_progress=Callback::new(move |_| reading_progress(state))
+            />
             // The settings modal belongs to the window, not to the viewer: as a
             // child of `main` it sat inside `.reader-bg`, which is a stacking
             // context (position:relative + z-index:0), so the title bar's band
             // — a SIBLING of `.reader-bg` at z-bar — painted over the top of an
-            // open modal. As a sibling of the page, its own z-popover token
-            // outranks the bar, which is what a modal is supposed to do. It
-            // also renders after the floating rail, so it wins their shared
+            // open modal. As a sibling of the reader root, its own z-popover
+            // token outranks the bar, which is what a modal is supposed to do.
+            // It also renders after the floating rail, so it wins their shared
             // z-popover token and still covers it.
             <SettingsModal state=state open=settings_open />
         </AppTitleBar>

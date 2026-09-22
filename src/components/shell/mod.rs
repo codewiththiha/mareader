@@ -1,22 +1,20 @@
 //! The unified application shell: the chrome that wraps a page rather than
 //! the page's content.
 //!
-//!   * `sidebar` — the rail family: the shared aside container, the two
-//!     mount points (docked and floating), the header, the identity row,
-//!     the switcher and the panel hosts.
 //!   * `titlebar` — the bar family: the generic hover/pin shell, the app
 //!     wiring around it, the native traffic lights, the document titles and
 //!     the popover policy toolbar menus share.
 //!
-//! One part of this family is not here: the layout rulebook every chrome
-//! component asks — [`ShellController`] — is `app_chrome::controller`, because
-//! whichever half of the app is rendering needs it and neither may own it.
+//! Two parts of this family are not here. The layout rulebook every chrome
+//! component asks — [`ShellController`] — is `app_chrome::controller`, and the
+//! rail it drives is the reader's (`reader_app::components::rail`): both are
+//! needed by whichever half of the app is rendering, so neither may live in
+//! the half that happens to be the shell today.
 //!
 //! The shell is deliberately separate from the reader (`features/reader`):
 //! pages, zoom, search and virtualization are the reader's business; the
 //! shell only owns the frame around them.
 
-pub mod sidebar;
 pub mod titlebar;
 
 use app_chrome::controller::{ChromeSurface, ShellController};

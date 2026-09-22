@@ -5,7 +5,7 @@
 //! list of objects the app can drop: WebKit returns freed arenas to the OS
 //! only under pressure, and the wasm linear memory never shrinks at all, so
 //! the number the OS reports sits at the session's high-water mark until the
-//! page dies (`src/memory.rs`, Mareader.md "The memory model"). A reload is
+//! page dies (`crates/app-chrome/src/memory.rs`, Mareader.md "The memory model"). A reload is
 //! what a force-quit does minus the quit — the one lever left, offered rather
 //! than imposed.
 //!
@@ -23,7 +23,7 @@ pub fn reload_app(state: AppState) {
     // The heap line before the reload is the one worth having: it is the
     // number the restart is about to give back, and after it the process is
     // new and every earlier reading is gone.
-    crate::memory::log_heap("reload");
+    app_chrome::memory::log_heap("reload");
     crate::services::document::flush_read_point(state);
     app_chrome::window::api::reload_window();
 }

@@ -1,6 +1,6 @@
+//! The reader route: the title bar and the settings modal around
+//! `reader_app`'s own root.
+
 pub mod page;
-pub(crate) mod rail;
-pub(crate) mod virtualizers;
 
 pub use page::ReaderPage;
-pub(crate) use virtualizers::use_reader_virtualizers;

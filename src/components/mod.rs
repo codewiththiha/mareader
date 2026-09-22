@@ -1,27 +1,22 @@
 //! The application's component system, organized by what a component is used
 //! for:
 //!
-//!   * `ai`           — AI-assisted reading (selection pill, explanation
-//!     popover)
-//!   * `shell`        — the application shell (the ShellController that owns
-//!     layout truth, the titlebar family, the sidebar rail family)
+//!   * `shell`        — the application shell: the titlebar family and the
+//!     adapter that builds the layout rulebook (`app_chrome::controller`) out
+//!     of this app's state
 //!   * `menus`        — menu features (appearance_menu, reader_menu)
 //!   * `settings`     — the reader settings modal: one module per tab
 //!   * `app_overlays` — transient UI (toast, drag feedback)
-//!   * `viewer`       — the viewing machinery: which layout, which shell, and
-//!     the reader-only controls around them
-//!   * `formats`      — one module per format, plus the page host that picks
-//!     between them
-//!   * `search`       — search presentation shared by reader surfaces
 //!
-//! `viewer` and `formats` point in one direction only: a viewer layout may ask
-//! the page host for a page, never a format module directly — which keeps the
-//! two growth axes (shapes of viewing, kinds of document) from being
-//! multiplied into each other. Generic UI — the button, the popover, the
-//! overlay lanes, the pointer gestures — is not a group here at all: it lives
-//! in the `ui-kit` crate (`ui_kit::controls::button::Button`), which knows
-//! nothing about a document reader and is therefore free to reach upward into
-//! none of `state`/`services`/`effects`/`pdf_engine`.
+//! What an OPEN DOCUMENT paints is not here: the viewer and its layouts, the
+//! format modules, the AI reading surfaces, the search overlays and the rail
+//! are `reader_app::components`. This crate holds the window around them.
+//!
+//! Generic UI — the button, the popover, the overlay lanes, the pointer
+//! gestures — is not a group here either: it lives in the `ui-kit` crate
+//! (`ui_kit::controls::button::Button`), which knows nothing about a document
+//! reader and is therefore free to reach upward into none of
+//! `state`/`services`/`effects`/`pdf_engine`.
 //!
 //! Project rules:
 //!
@@ -37,11 +32,7 @@
 //! * A Leptos `.set()` always notifies, even when unchanged. Guard writes that
 //!   run in a loop or animation frame.
 
-pub mod ai;
 pub mod app_overlays;
-pub mod formats;
 pub mod menus;
-pub mod search;
 pub mod settings;
 pub mod shell;
-pub mod viewer;

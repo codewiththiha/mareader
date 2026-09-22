@@ -1,0 +1,111 @@
+[package]
+name = "reader-app"
+version = "0.1.0"
+edition = "2024"
+description = "The document reader: the reactive state of an open document, the viewer and its four layouts, one component module per format, the AI reading features, the search surfaces, the rail and its panels, the zoom pipeline, and the effects that keep all of it in sync. It knows what a page is and nothing about a window, a library or a route."
+license = "MIT"
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+# The two cores this crate renders: the reader's format-agnostic domain and
+# the AI features' wire types. Neither may name this one back.
+reader-core = { path = "../reader-core" }
+ai-core = { path = "../ai-core" }
+# The format cores. Each is a parser or a geometry library with no leptos in
+# it, which is why a format is a directory here and a crate there.
+pdf-core = { path = "../pdf-core" }
+pdf-engine = { path = "../pdf-engine" }
+pdf-paper = { path = "../pdf-paper" }
+reflow-core = { path = "../reflow-core" }
+md-core = { path = "../md-core" }
+# Markdown rendering for the reflowable formats: parses each block and emits
+# Leptos views directly (GFM on, raw HTML off, no theme classes — the
+# reader's own stylesheet owns the look).
+leptos-md = "0.1"
+# The virtualizer the strips and the thumbnail grid scroll with, and the
+# Leptos binding that turns a budget into a rendered window.
+virtual-list = { path = "../virtual-list" }
+virtual-list-leptos = { path = "../virtual-list-leptos" }
+# Generic UI, the window-event table and the chrome this crate asks layout
+# questions of. All three are shared with the shell; none is owned by it.
+ui-kit = { path = "../ui-kit" }
+app-chrome = { path = "../app-chrome" }
+# The rail's document row renders a cover, and the cover map is the library's.
+library-core = { path = "../library-core" }
+# The reader reaches the Tauri backend for exactly two things, both through
+# this bridge: whether a backend is there at all, and the explain-word
+# kickoff ai-core fires.
+tauri-bridge = { path = "../tauri-bridge" }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+# The reader is the half of the app that lives in the DOM: it paints canvases,
+# measures blocks, walks text nodes back to character ranges, listens for the
+# window events the engine raises, and observes every strip it mounts. The
+# feature list is the app's own minus `Storage` — persistence belongs to the
+# shell, and this crate reaches it through an injected callback rather than
+# through localStorage.
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Navigator",
+  "Document",
+  "Element",
+  "HtmlElement",
+  "HtmlDivElement",
+  "HtmlCanvasElement",
+  "HtmlInputElement",
+  "HtmlButtonElement",
+  "HtmlSelectElement",
+  "Node",
+  "NodeList",
+  "HtmlCollection",
+  "DomTokenList",
+  "CssStyleDeclaration",
+  "CanvasRenderingContext2d",
+  "Event",
+  "MouseEvent",
+  "KeyboardEvent",
+  "FocusOptions",
+  "WheelEvent",
+  "ResizeObserver",
+  "ResizeObserverEntry",
+  "DomRect",
+  "DomRectList",
+  "Selection",
+  "Range",
+  # The memory probe reads `performance.memory.usedJSHeapSize` for the js
+  # column of the `[mem]` trace, joining the wasm heap and the DOM node count
+  # the app already reports for itself (`crates/app-chrome/src/memory.rs`).
+  "Performance",
+  # The reflowable gloss anchor walks a block's text nodes to turn a character
+  # range back into a DOM Range (and reads each node's `data` to count them).
+  "Text",
+  "PointerEvent",
+  "EventTarget",
+  "AddEventListenerOptions",
+  "DragEvent",
+  "DataTransfer",
+  "DataTransferItem",
+  "DataTransferItemList",
+  "ScrollToOptions",
+  "ScrollBehavior",
+  # The library's reveal: taking the reader to a book means centering its card in
+  # the scroller, and `scroll_into_view` with no options cannot say "centered" or
+  # "smoothly".
+  "ScrollIntoViewOptions",
+  "ScrollLogicalPosition",
+  "MediaQueryList",
+  "CustomEvent",
+  "CustomEventInit",
+  "console",
+] }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+serde_json = "1"
+
+[lints.rust]
+# Warnings are denied, not printed: a gate that only shows up in the log is a
+# gate that gets read past. The priority applies the group first, so the
+# individual levels below it remain deliberate overrides.
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "deny"

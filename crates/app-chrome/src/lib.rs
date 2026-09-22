@@ -17,6 +17,8 @@
 //!   - [`hooks`] — generic DOM/timer hooks
 //!   - [`floating`] — placement glue + dismissal mechanics
 //!   - [`layers`] — z-index layer tokens (re-exported by the app)
+//!   - [`memory`] — the heap probe: the wasm, JS and DOM numbers a `[mem]`
+//!     line reports
 
 pub mod controller;
 pub mod floating;
@@ -28,5 +30,6 @@ pub mod titlebar;
 pub mod tooltip;
 pub mod window;
 pub mod layers;
+pub mod memory;
 
 pub use titlebar::TITLE_BAR_H;

@@ -11,14 +11,14 @@ line, form `[mem] <tag>: wasm <x> MB | js <y> MB | dom <n> nodes`:
 
 | Pool | What lives there | How it is read |
 |---|---|---|
-| **wasm** | Leptos signal graph, reflow blocks/heights/cuts, `SearchIndex`, gloss marks, library rows/covers | `src/memory.rs::wasm_heap_bytes` — `memory.grow` is monotonic, so this column is a ratchet: freed Rust only punches holes inside the arena. |
-| **js** | pdf.js document, page render tasks, thumb LRU, canvas pool, DOM backing | `performance.memory.usedJSHeapSize` via `src/memory.rs::js_heap_bytes` — Chromium/WebView2 only; prints `—` on WebKitGTK and WKWebView, where the name is `undefined`. |
-| **dom** | Every node the webview holds | `src/memory.rs::dom_node_count` — `getElementsByTagName("*").length`. The cheapest leak detector: a close that leaves the tree at reader size has left nodes pinned by something. |
+| **wasm** | Leptos signal graph, reflow blocks/heights/cuts, `SearchIndex`, gloss marks, library rows/covers | `crates/app-chrome/src/memory.rs::wasm_heap_bytes` — `memory.grow` is monotonic, so this column is a ratchet: freed Rust only punches holes inside the arena. |
+| **js** | pdf.js document, page render tasks, thumb LRU, canvas pool, DOM backing | `performance.memory.usedJSHeapSize` via `crates/app-chrome/src/memory.rs::js_heap_bytes` — Chromium/WebView2 only; prints `—` on WebKitGTK and WKWebView, where the name is `undefined`. |
+| **dom** | Every node the webview holds | `crates/app-chrome/src/memory.rs::dom_node_count` — `getElementsByTagName("*").length`. The cheapest leak detector: a close that leaves the tree at reader size has left nodes pinned by something. |
 | **rss** (outside) | Everything above plus webview + canvases | Activity Monitor / Task Manager — the column the app cannot read about itself; recorded by hand. |
 
 ## Instrumentation landed this phase
 
-- `src/memory.rs` widens `log_heap` from one column (`wasm`) to three
+- `crates/app-chrome/src/memory.rs` widens `log_heap` from one column (`wasm`) to three
   (`wasm | js | dom`), joining `js_heap_bytes` and `dom_node_count` to the
   existing `wasm_heap_bytes`. Off wasm the probe stays inert, as it was.
 - `"Performance"` added to the root `web-sys` feature list for the js probe.

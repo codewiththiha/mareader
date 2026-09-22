@@ -6,7 +6,7 @@
 //! through the shell's `read_file_text` command and handed to its format's
 //! parser. From here a text document and a PDF are the same object — pages of
 //! the same A4 sheet through the same scale pipeline — and the one difference
-//! is what paints inside a page (`components::formats::reflow`).
+//! is what paints inside a page (`reader_app::components::formats::reflow`).
 //!
 //! Two things make this the whole format-specific surface of the open flow:
 //!
@@ -15,7 +15,7 @@
 //! * pagination starts from the pure estimate — character counts against the
 //!   column width — so the reader is up the instant the file is read; the
 //!   measurement pipeline then refines it block by block
-//!   (`crate::effects::reader::reflow_measure`).
+//!   (`reader_app::effects::reflow_measure`).
 //!
 //! Markdown also gets an outline, and it is seeded rather than resolved: the
 //! headings are already in the text, so there is no resolver tail to race,
@@ -37,7 +37,7 @@ use reflow_core::geometry::{geometry, PAGE_HEIGHT};
 use reflow_core::pager::estimate_heights;
 
 use crate::state::AppState;
-use crate::state::reader::document::reflow::estimate_metrics;
+use reader_app::state::document::reflow::estimate_metrics;
 
 use super::session;
 
@@ -235,7 +235,12 @@ fn ready(
 
     // The estimate's cut, published before the resume page is chosen: the
     // clamp inside `resume_page` is against the page count this cut produced.
-    let cut = state.reader.document.content.reflow.set_initial_heights(state, heights, geo);
+    let cut = state.reader.document.content.reflow.set_initial_heights(
+        state.reader.viewer.page.get_untracked(),
+        state.reader.viewer.zoom.visual_scale(),
+        heights,
+        geo,
+    );
     state.reader.document.publish_cut(&cut);
     let resume = super::enter::resume_page(saved_page, cut.num_pages);
     state.reader.viewer.page.set(resume);

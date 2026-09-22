@@ -1,15 +1,11 @@
 mod app;
 mod components;
-mod dom_contract;
 mod effects;
-mod epoch;
 mod features;
-mod memory;
 mod services;
 mod state;
 mod storage;
 mod time;
-mod zoom;
 
 use app::*;
 use leptos::prelude::*;

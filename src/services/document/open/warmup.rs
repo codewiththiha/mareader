@@ -5,7 +5,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use pdf_engine::api as engine;
 
-use crate::components::shell::sidebar::panels::thumbnails::geometry::THUMB_SCALE;
+use reader_app::components::rail::panels::thumbnails::geometry::THUMB_SCALE;
 
 /// How many pages to pre-render. The rail shows roughly this many at once.
 const WARM_PAGES: u32 = 16;

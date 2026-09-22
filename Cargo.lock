@@ -2508,13 +2508,11 @@ dependencies = [
  "console_error_panic_hook",
  "js-sys",
  "leptos",
- "leptos-md",
  "leptos_router",
  "library-core",
  "md-core",
- "pdf-core",
  "pdf-engine",
- "pdf-paper",
+ "reader-app",
  "reader-core",
  "reflow-core",
  "serde",
@@ -2522,10 +2520,7 @@ dependencies = [
  "serde_json",
  "tauri-bridge",
  "txt-core",
- "ui-geom",
  "ui-kit",
- "virtual-list",
- "virtual-list-leptos",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -3466,6 +3461,34 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "reader-app"
+version = "0.1.0"
+dependencies = [
+ "ai-core",
+ "app-chrome",
+ "js-sys",
+ "leptos",
+ "leptos-md",
+ "library-core",
+ "md-core",
+ "pdf-core",
+ "pdf-engine",
+ "pdf-paper",
+ "reader-core",
+ "reflow-core",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "tauri-bridge",
+ "ui-kit",
+ "virtual-list",
+ "virtual-list-leptos",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

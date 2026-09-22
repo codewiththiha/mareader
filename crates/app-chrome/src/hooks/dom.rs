@@ -6,6 +6,8 @@
 //! (toolbar clusters, viewer slot) are named constants here too, so a rename
 //! is one edit rather than a misspelling in nine.
 
+use wasm_bindgen::JsCast;
+
 /// Id of the continuous viewer's scroll container.
 pub const PAGE_LIST_ID: &str = "page-list";
 
@@ -129,4 +131,20 @@ pub fn center_in_scroll_parent(el: &web_sys::Element, parent: &web_sys::Element)
     let target = top - (parent_h - er.height()) / 2.0;
     let max = (parent.scroll_height() as f64 - parent_h).max(0.0);
     parent.set_scroll_top(target.clamp(0.0, max) as i32);
+}
+
+/// The `<html>` element, or `None` off wasm and before the document exists.
+/// The one way any layer reaches the DOM's root: the effects that paint a
+/// class or an attribute on it used to spell the three-hop walk themselves,
+/// and the reader's layout prefs and gloss anchors need the same two hops.
+pub fn document_element() -> Option<web_sys::Element> {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.document_element())
+}
+
+pub fn html_style() -> Option<web_sys::CssStyleDeclaration> {
+    document_element()
+        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+        .map(|h| h.style())
 }

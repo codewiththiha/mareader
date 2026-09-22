@@ -24,7 +24,7 @@ use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 
 use crate::state::AppState;
-use crate::zoom::target::FitDims;
+use reader_app::zoom::target::FitDims;
 
 /// Which document is open, in the fields both formats have. `outline` is
 /// `None` for a format whose chapter tree resolves after the open; a format
@@ -97,7 +97,7 @@ pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
 /// one file's marks on a different book at the same address.
 pub(super) fn load_marks(state: AppState) {
     state.reader.gloss.reset();
-    let key = crate::services::document::gloss_key(state);
+    let key = crate::services::document::gloss_key(&state.reader);
     if key.is_empty() {
         return;
     }
@@ -150,7 +150,7 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
         // The column-width dial stays out of this budget: a reflowable page
         // box already carries it through the geometry it was cut with, and a
         // PDF page IS the column — the same contract the live fit maths holds
-        // (`crate::zoom::target`).
+        // (`reader_app::zoom::target`).
         const DOCKED_RAIL_W: f64 = 288.0;
         let (vw, vh) = app_chrome::hooks::use_viewport::viewport_size();
         let docked = !state.settings.with_untracked(|s| s.layout.sidebar_overlay)
