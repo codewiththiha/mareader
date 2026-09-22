@@ -68,7 +68,7 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- 1,021 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
+- 1,028 Rust tests across the workspace, plus a stub-vm smoke suite for the TypeScript
   layer, and six scripts that keep facts written down twice from drifting.
 
 ---
@@ -901,17 +901,19 @@ crates/
                           overlays, the rail and its panels, the zoom
                           pipeline, the effects that keep all of it in sync,
                           and the two names it shares with the engine
-                          (dom_contract.rs, epoch.rs). It cannot name the
-                          shell's AppState: everything arrives as a
-                          ReaderState, a settings signal, a cover map and a
-                          layout controller
+                          (dom_contract.rs, epoch.rs), plus wire.rs — the
+                          frames it exchanges with whatever hosts it. It
+                          cannot name the shell's AppState: everything
+                          arrives as a ReaderState, a settings signal, a
+                          cover map and a layout controller
   ui-kit/                 the generic UI every surface renders with: button,
                           switch, popover, floating positioning, motion and
                           interaction hooks (the long-press, the pointer-drag
                           stream, and the card wrapper that decides between a
                           tap, a hold and a drag), plus events.rs — the
                           window-event names the engine dispatches and the
-                          app listens for. It knows nothing about a document
+                          app listens for, and the frame names a reader and
+                          its host use. It knows nothing about a document
                           reader, which is what lets the shell and the reader
                           each compile it without the other
   ai-core/                the format-agnostic AI core: the word-explanation
@@ -927,8 +929,10 @@ crates/
                           view modes and spread arithmetic, the settings schema
                           (layout, animation, typography, gloss), the colour
                           pipeline, the presets, filename rules, zoom maths, the
-                          outline shape, and the shared search model — result
-                          shape, the scan both pipelines run, the snippet window
+                          outline shape, the shared search model — result
+                          shape, the scan both pipelines run, the snippet
+                          window — and the wire payloads a reader and its host
+                          exchange (wire.rs)
   pdf-core/               pure PDF domain math: page layout constants, the
                           outline wire entries and their clamping, the
                           device-pixel grid the page hosts snap to, and the
@@ -1120,7 +1124,7 @@ only the app and silently skip every member crate. The `mareader-shell` crate is
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-1,021 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+1,028 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
 migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
 the animation loops share, and the virtual-list windowing invariants. On top of that, the

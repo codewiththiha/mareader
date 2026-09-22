@@ -48,6 +48,13 @@ placeholder, and the band never changes what mounts or what the extent says.
   budget, spread arithmetic) that lives in `crates/reader-core`'s `view` module
 - page rendering, text/search overlays, the rail, and the zoom pipeline
 - measurement storage in `css_heights`
+- the frames it exchanges with whatever hosts it
+  (`crates/reader-app/src/wire.rs`), paired with the payloads in
+  `crates/reader-core/src/wire.rs`: five out, two in. Nothing dispatches
+  them yet, because a reader is still a route in the shell's own window and
+  the shell calls it directly. The pairing is written down and tested ahead
+  of that, because a payload is a type and a name is a string two programs
+  agree on — and only one of the two has a compiler on both ends.
 
 It is a crate and not a directory so that the boundary is a compiler check: the
 reader cannot name the shell's `AppState`, its storage, its library or its

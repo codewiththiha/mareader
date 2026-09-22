@@ -14,7 +14,8 @@
 //! * A type every format needs, or a policy that applies to all of them —
 //!   including the two the app's chrome and the reader's surfaces share:
 //!   [`motion`] (which movements animate) and [`sidebar`] (which rail panel
-//!   is open).
+//!   is open), and the [`wire`] payloads a reader and its host hand each
+//!   other, which are the same shape whichever format is open.
 //! * No `Format` branch: a module that matches on the format belongs to that
 //!   format's crate (`pdf-core`, `txt-core`, `md-core`).
 //! * Only two workspace dependencies, both leaves whose types the persisted
@@ -39,6 +40,7 @@ pub mod search;
 pub mod settings;
 pub mod sidebar;
 pub mod view;
+pub mod wire;
 pub mod zoom_math;
 
 pub use format::{DocumentKind, Format, SUPPORTED, extensions, first_supported, format_from_ext, format_of, is_supported_mime, is_supported_path, kind_list, kind_names};

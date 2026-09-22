@@ -2,7 +2,7 @@
 name = "reader-core"
 version = "0.1.0"
 edition = "2024"
-description = "The reader's format-agnostic domain: the format registry, the persisted settings and appearance models, the theme presets, the zoom ladder, the view-mode and spread maths, the search result model and the outline node. No wasm, no DOM, no leptos, no knowledge of any one format — unit-testable on the host."
+description = "The reader's format-agnostic domain: the format registry, the persisted settings and appearance models, the theme presets, the zoom ladder, the view-mode and spread maths, the search result model, the outline node, and the wire payloads a reader and its host exchange. No wasm, no DOM, no leptos, no knowledge of any one format — unit-testable on the host."
 license = "MIT"
 
 [dependencies]

@@ -26,6 +26,10 @@
 //!   - [`dom_contract`] and [`epoch`] — the two names this crate shares with
 //!     the JavaScript engine: the ids it builds page hosts under, and the
 //!     generation counter that tells a stale render task to stop.
+//!   - [`wire`] — the frames this crate exchanges with whatever hosts it, and
+//!     the payload each one carries. Written down and tested before anything
+//!     dispatches one, because a name is the only part of that exchange no
+//!     compiler spans.
 //!
 //! What does NOT live here, and the rule that keeps it out:
 //!
@@ -56,4 +60,5 @@ pub mod effects;
 pub mod epoch;
 pub mod features;
 pub mod state;
+pub mod wire;
 pub mod zoom;
