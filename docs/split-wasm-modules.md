@@ -88,7 +88,7 @@ WKWebView
 
 The bootloader is the only owner of instance handles. A Leptos component must not close over the loader. If it does, the drop is theatre.
 
-**Routes.** Two URLs, owned by the bootloader, not by `leptos_router` inside one binary. `/` is the library session. `/reader` is the reading session. Today's `RouteSync` (Ready ⇒ `/reader`, otherwise `/`) becomes a bootloader transition. Panes are not routes. A route per format cannot be a split view, and a route change that tore the host down would kill the other pane.
+**Routes.** Two document lifetimes, owned by the bootloader, not by `leptos_router` inside one binary. `/` is the library session. The reading session is `/?session=reader` — a query on the entry URL, not the path `/reader`. Tauri's asset protocol does not SPA-fallback, so a full GET of `/reader` can 404. The Phase 1 spec is `docs/phase-1-session-boundary.md`: the drop is a navigation of the existing Trunk binary, not a second wasm file and not an in-page instance swap. Panes are not routes. A route per format cannot be a split view, and a route change that tore the host down would kill the other pane.
 
 **Slots.** The host renders a grid of empty divs. A format module calls `mount_to` on the div it is given, never `mount_to_body`. The host does not import the format crate. It does not know a PDF page host from a reflow page host. It knows a slot id, a format, and a bridge. `UniversalPageHost` stays inside the format module. The viewer's rule — a layout may not name a format — survives, one level up: the host may not name a format's widgets, only its module.
 
