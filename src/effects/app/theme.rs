@@ -171,8 +171,11 @@ pub fn paint_appearance_now(a: Appearance, ink_contrast: f64) {
         buf.push_str(value);
         buf.push(';');
     }
-    // NB: the cssText setter cannot fail — no Result to discard here.
-    style.set_css_text(&buf);
+    // The setter throws in WKWebView once a previous session has written the
+    // declaration. Reflect::set reports failure instead of aborting the mount.
+    let key = wasm_bindgen::JsValue::from_str("cssText");
+    let value = wasm_bindgen::JsValue::from_str(&buf);
+    let _ = js_sys::Reflect::set(style.as_ref(), &key, &value);
 }
 
 pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {

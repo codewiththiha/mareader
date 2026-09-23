@@ -32,6 +32,14 @@ pub fn App() -> impl IntoView {
     }
 }
 
+#[cfg(all(
+    target_arch = "wasm32",
+    any(feature = "session-library", feature = "session-host")
+))]
+fn document_body() -> Option<web_sys::HtmlElement> {
+    web_sys::window()?.document()?.body()
+}
+
 #[cfg(all(feature = "session-library", target_arch = "wasm32"))]
 mod shelf {
     use std::any::Any;
@@ -54,8 +62,13 @@ mod shelf {
         provide_context(state);
         let (appearance, typography) = provide_app_contexts(state);
         install_library_session(state, appearance, typography);
-        let handle =
-            leptos::mount::mount_to_body(move || view! { <LibrarySession state=state /> });
+        // `mount_to_body` forgets the handle, so dropping it does not unmount.
+        // The next session would then assign into a view this one still owns.
+        let body = match super::document_body() {
+            Some(body) => body,
+            None => wasm_bindgen::throw_str("document.body is missing"),
+        };
+        let handle = leptos::mount::mount_to(body, move || view! { <LibrarySession state=state /> });
         HANDLE.with(|slot| {
             *slot.borrow_mut() = Some(Box::new(handle));
         });
@@ -99,8 +112,14 @@ mod reader_host {
         console_error_panic_hook::set_once();
         crate::memory::log_heap("host-mount");
         // The same tree the Trunk bin mounted. `boot.kind` is already reader,
-        // so this is the chrome, not a second shelf.
-        let handle = leptos::mount::mount_to_body(|| view! { <App /> });
+        // so this is the chrome, not a second shelf. `mount_to` keeps the
+        // handle: `mount_to_body` forgets it, and a forgotten view cannot be
+        // unmounted when the book closes.
+        let body = match super::document_body() {
+            Some(body) => body,
+            None => wasm_bindgen::throw_str("document.body is missing"),
+        };
+        let handle = leptos::mount::mount_to(body, || view! { <App /> });
         HANDLE.with(|slot| {
             *slot.borrow_mut() = Some(Box::new(handle));
         });

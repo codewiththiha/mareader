@@ -134,12 +134,7 @@ let hostHandle: FormatHandle | null = null;
 let liveKind: "library" | "reader" = kind;
 let swapping = false;
 let generation = 0;
-
-function nullGlue(glue: FormatGlue): void {
-  for (const key of Object.keys(glue)) {
-    glue[key] = undefined;
-  }
-}
+let blobNonce = 0;
 
 function reportFailure(path: string, message: string): void {
   console.error("[format]", message);
@@ -183,7 +178,20 @@ async function killPdfWorker(): Promise<void> {
 }
 
 function forgetPdfReader(): void {
-  (globalThis as { PDFReader?: unknown }).PDFReader = undefined;
+  // The facade is frozen. Replacing the binding is fine; assigning through a
+  // non-writable binding is the Safari error that aborts the shelf swap.
+  // Neither failure may stop the next instance from mounting.
+  const host = globalThis as { PDFReader?: unknown };
+  try {
+    delete host.PDFReader;
+  } catch {
+    // Non-configurable.
+  }
+  try {
+    host.PDFReader = undefined;
+  } catch {
+    // Non-writable. Leave the frozen facade; do not write its fields.
+  }
   engineReady = null;
 }
 
@@ -221,7 +229,6 @@ async function releaseHandle(handle: FormatHandle | null | undefined): Promise<v
   } catch (err) {
     console.error("[format] release failed", err);
   }
-  nullGlue(handle.glue);
   URL.revokeObjectURL(handle.blobUrl);
   console.info(`[mem] ${handle.format} instance gone`);
 }
@@ -267,7 +274,10 @@ async function wasmModule(format: FormatId): Promise<WebAssembly.Module> {
 async function importGlue(path: string, label: string): Promise<{ glue: FormatGlue; blobUrl: string }> {
   const { bytes } = await fetchAsset(path, label);
   const source = new TextDecoder().decode(bytes);
-  const named = `${source}\n//# sourceURL=${path}\n`;
+  // A fresh source each import. A webview that keys the module map by text
+  // would otherwise hand back the module whose bindings release() just cleared,
+  // and the next init assigns into that sealed environment.
+  const named = `${source}\n// mareader-instance ${++blobNonce}\n//# sourceURL=${path}\n`;
   const blobUrl = URL.createObjectURL(new Blob([named], { type: "text/javascript" }));
   try {
     const glue = (await import(blobUrl)) as FormatGlue;
@@ -467,14 +477,22 @@ async function showLibrary(fromHistory: boolean): Promise<void> {
       throw new Error("library switch left the reader alive");
     }
     sessionStorage.removeItem(HANDOFF_KEY);
-    await dropEveryBook();
-    await dropHost();
-    await dropLibrary();
-    await killPdfWorker();
-    forgetPdfReader();
-    clearBody();
-    boot.kind = "library";
-    boot.open = null;
+    // Drop the live closures before dispose, so unmount does not call into a
+    // slot the next instance is about to replace.
+    resetBridge();
+    await settle("drop books", () => dropEveryBook());
+    await settle("drop host", () => dropHost());
+    await settle("drop library", () => dropLibrary());
+    await settle("pdf worker", () => killPdfWorker());
+    await settle("pdf facade", () => forgetPdfReader());
+    await settle("clear body", () => clearBody());
+    clearShellStyle();
+    try {
+      boot.kind = "library";
+      boot.open = null;
+    } catch (err) {
+      console.error("[boot] could not mark the shelf", err);
+    }
     libraryHandle = await startSession(LIBRARY_GLUE, LIBRARY_WASM, "library");
     liveKind = "library";
     console.info("[mem] library module mounted; reader host released");
@@ -511,6 +529,7 @@ async function showReader(payload: Handoff, fromHistory: boolean): Promise<void>
     forgetPdfReader();
     clearBody();
     paintShell();
+    resetBridge();
     boot.kind = "reader";
     boot.open = payload;
     try {
@@ -539,6 +558,61 @@ async function showReader(payload: Handoff, fromHistory: boolean): Promise<void>
   } finally {
     swapping = false;
     pumpQueue();
+  }
+}
+
+function resetBridge(): void {
+  // Dead closures from the instance we are about to release. The next mount
+  // installs its own. Assigning onto the old slot can hit a sealed field.
+  try {
+    window.__MAREADER_SLOT = {};
+  } catch {
+    const slot = window.__MAREADER_SLOT;
+    if (slot) {
+      try {
+        slot.report = undefined;
+      } catch {
+        // Sealed.
+      }
+      try {
+        slot.command = undefined;
+      } catch {
+        // Sealed.
+      }
+    }
+  }
+  try {
+    boot.flush = () => {};
+  } catch {
+    // The host sealed the callback. pagehide no-ops if that closure is already dead.
+  }
+}
+
+function clearShellStyle(): void {
+  const root = document.documentElement;
+  const body = document.body;
+  if (root) {
+    try {
+      root.style.removeProperty("background");
+    } catch {
+      // Inline style stays.
+    }
+  }
+  if (body) {
+    try {
+      body.style.removeProperty("background");
+      body.style.removeProperty("color");
+    } catch {
+      // Inline style stays.
+    }
+  }
+}
+
+async function settle(label: string, step: () => Promise<void> | void): Promise<void> {
+  try {
+    await step();
+  } catch (err) {
+    console.error(`[boot] ${label} failed`, err);
   }
 }
 
@@ -597,7 +671,6 @@ function abandonNow(): void {
     } catch {
       // Binding already clear.
     }
-    nullGlue(handle.glue);
     URL.revokeObjectURL(handle.blobUrl);
   }
   releaseCanvases();
