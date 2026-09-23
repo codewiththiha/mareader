@@ -109,7 +109,7 @@ Three processes, not one invocation with three `-p` flags. One invocation unifie
 
 `tools/build-frontend.mjs` builds the three crates `--release` for `wasm32-unknown-unknown`, runs `wasm-bindgen --target web --out-name` at the lock's `wasm-bindgen` version (`0.2.127`), runs `wasm-opt -Oz` (never `-z`), and leaves `formats/pdf.js`, `formats/pdf_bg.wasm`, and the text and Markdown pairs in `dist/formats/`. The release job installs `wasm-bindgen-cli` at that version and `binaryen` so `wasm-opt` is on `PATH`. Trunk's own wasm-opt is not assumed to be on `PATH`.
 
-A `trunk serve` that has not run the script will 404 the format glue. The loader surfaces that. It does not fall back to opening the book in the host.
+Trunk's `[serve]` sets `no_spa`, and a `post_build` hook runs the same script into the staging dir, so `trunk serve` has the files. A missing glue is a 404, which the loader surfaces. It does not fall back to opening the book in the host, and it does not import the app page: that page starts with `<`, and importing it is `Unexpected token '<'` in a blob the debugger names `source`.
 
 `public/session/format-loader.ts` holds the pure decisions (which artifact, the drop order, the one-slot rule). `tools/bundle-engine.mjs` emits it next to the handoff module, and the web lane runs `tools/test-format-loader.mjs` the way it runs the handoff test. The boot script imports the loader. Dynamic `import()` of the glue stays a variable, so esbuild cannot inline a format wasm into `sessionBoot.js`.
 

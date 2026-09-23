@@ -2,7 +2,7 @@
 // after `npm run build:ts`. Node, not a browser: the module has no DOM.
 
 import assert from "node:assert/strict";
-import { DROP_ORDER, SLOT_KEY, artifactFor, gluePath, wasmPath } from "../scripts/format-loader.js";
+import { DROP_ORDER, SLOT_KEY, artifactFor, gluePath, looksLikeHtml, wasmPath } from "../scripts/format-loader.js";
 
 assert.equal(SLOT_KEY, "slot");
 assert.deepEqual(DROP_ORDER, [
@@ -35,4 +35,12 @@ assert.equal(wasmPath("pdf"), "formats/pdf_bg.wasm");
 assert.equal(wasmPath("text"), "formats/text_bg.wasm");
 assert.equal(wasmPath("md"), "formats/md_bg.wasm");
 
+assert.equal(looksLikeHtml("text/html", "export"), true);
+assert.equal(looksLikeHtml("text/html; charset=utf-8", ""), true);
+assert.equal(looksLikeHtml(null, "<!doctype html>\n"), true);
+assert.equal(looksLikeHtml(null, "\n  <html>"), true);
+assert.equal(looksLikeHtml("application/javascript", "export default function"), false);
+assert.equal(looksLikeHtml(null, "export async function mount"), false);
+
 console.log("format loader ok");
+

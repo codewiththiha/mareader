@@ -15,7 +15,7 @@ import {
   type Handoff,
   type HistoryMode,
 } from "./handoff";
-import { HOST_PDF, SLOT_KEY, artifactFor, gluePath, wasmPath, type FormatId } from "./format-loader";
+import { HOST_PDF, SLOT_KEY, artifactFor, gluePath, looksLikeHtml, wasmPath, type FormatId } from "./format-loader";
 
 const PDFJS = "/vendor/pdfjs/pdf.min.mjs";
 const PDF_ENGINE = "/pdfEngine.js";
@@ -40,7 +40,7 @@ interface SlotBridge {
 }
 
 interface FormatGlue {
-  default?: (input: string | WebAssembly.Module) => Promise<unknown>;
+  default?: (input: { module_or_path: WebAssembly.Module }) => Promise<unknown>;
   mount?: (payload: string) => Promise<void>;
   dispose?: () => Promise<void>;
   [key: string]: unknown;
@@ -152,15 +152,39 @@ async function release(handle: FormatHandle | undefined): Promise<void> {
   console.info("[mem] format instance gone");
 }
 
+function assetUrl(path: string): string {
+  return new URL(path, document.baseURI).href;
+}
+
+// A 200 is not proof of a module. trunk serve, without no_spa, answers a
+// missing formats/pdf.js with index.html. That body starts with `<`, and
+// importing it is `Unexpected token '<'` in a blob named `source`.
+async function fetchAsset(path: string, kind: string): Promise<{ url: string; bytes: Uint8Array }> {
+  const url = assetUrl(path);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${kind} missing: ${path}`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const head = new TextDecoder().decode(bytes.subarray(0, 64));
+  if (looksLikeHtml(response.headers.get("content-type"), head)) {
+    throw new Error(`${kind} was the app page, not a module: ${path}`);
+  }
+  return { url, bytes };
+}
+
+function isWasm(bytes: Uint8Array): boolean {
+  return bytes.length >= 4 && bytes[0] === 0 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
+}
+
 async function wasmModule(format: FormatId): Promise<WebAssembly.Module> {
   const cached = modules.get(format);
   if (cached) return cached;
-  const url = wasmPath(format);
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`format wasm missing: ${url}`);
+  const path = wasmPath(format);
+  const { bytes } = await fetchAsset(path, "format wasm");
+  if (!isWasm(bytes)) {
+    throw new Error(`format wasm is not wasm: ${path}`);
   }
-  const bytes = await response.arrayBuffer();
   const compiled = await WebAssembly.compile(bytes);
   modules.set(format, compiled);
   return compiled;
@@ -182,13 +206,13 @@ async function mountFormatNow(payload: string): Promise<void> {
       await loadPdfEngine();
     }
     if (mine !== generation) return;
-    const glueUrl = gluePath(format);
-    const response = await fetch(glueUrl);
-    if (!response.ok) {
-      throw new Error(`format glue missing: ${glueUrl}`);
-    }
-    const source = await response.text();
-    const blobUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    const gluePathname = gluePath(format);
+    const { url: glueUrl, bytes } = await fetchAsset(gluePathname, "format glue");
+    const source = new TextDecoder().decode(bytes);
+    // sourceURL is the name the debugger shows. Without it a blob is `source`,
+    // which is not the book on the title bar.
+    const named = `${source}\n//# sourceURL=${gluePathname}\n`;
+    const blobUrl = URL.createObjectURL(new Blob([named], { type: "text/javascript" }));
     // A variable, so the bundler cannot inline the glue or the wasm it loads.
     const glue = (await import(blobUrl)) as FormatGlue;
     if (mine !== generation) {
@@ -205,7 +229,7 @@ async function mountFormatNow(payload: string): Promise<void> {
       return;
     }
     // A Module, not an Instance. init builds a new heap from it.
-    await glue.default(compiled);
+    await glue.default({ module_or_path: compiled });
     if (mine !== generation) {
       nullGlue(glue);
       URL.revokeObjectURL(blobUrl);

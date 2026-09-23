@@ -45,3 +45,13 @@ export function gluePath(format: FormatId): string {
 export function wasmPath(format: FormatId): string {
   return `formats/${format}_bg.wasm`;
 }
+
+/** Trunk's dev server answers a missing file with the app page, and that page
+ *  starts with `<`. Importing it is `Unexpected token '<'` in a blob the
+ *  debugger names `source`, while the title bar still shows the book. A
+ *  missing artifact must fail as a missing artifact. */
+export function looksLikeHtml(contentType: string | null, head: string): boolean {
+  if (contentType && contentType.toLowerCase().includes("text/html")) return true;
+  const start = head.replace(/^\uFEFF/, "").trimStart();
+  return start.startsWith("<");
+}

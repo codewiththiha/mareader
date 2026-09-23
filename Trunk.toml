@@ -88,3 +88,15 @@ command_arguments = ["./node_modules/@tailwindcss/cli/dist/index.mjs", "-i", "st
 [serve]
 port = 1420
 open = false
+# The app has no client routes. The session is a query, not a path. Without
+# this, a missing formats/pdf.js is index.html with status 200, and the boot
+# script imports that page.
+no_spa = true
+
+# Format artifacts, after the host is in the staging dir and before it is
+# moved to dist. A trunk serve that skips this answers the glue URL with the
+# app page.
+[[hooks]]
+stage = "post_build"
+command = "node"
+command_arguments = ["./tools/build-formats.mjs"]

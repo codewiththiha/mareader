@@ -1056,6 +1056,7 @@ zoom control posts a request to it rather than writing the scale directly.
 rustup target add wasm32-unknown-unknown
 cargo install trunk
 cargo install tauri-cli --version "^2" --locked
+cargo install wasm-bindgen-cli --version 0.2.127 --locked
 ```
 
 ### Installation
