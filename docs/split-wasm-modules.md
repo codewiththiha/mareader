@@ -177,7 +177,7 @@ Overview only. Each one is a later pass. None of them is a shared-memory split, 
 
 1. **Session boundary.** `library.wasm` and one `reader.wasm` that still contains every format. Bootloader swaps them. pdf.js becomes a dynamic import owned by the reader. Storage bridge for resume, gloss, and covers. Leaving `/reader` drops the reader instance. This is the exit-to-library win, and it ships on its own. The reader binary is allowed to be fat. What it is not allowed to do is stay alive on the shelf.
 
-2. **Format instances.** The fat reader becomes the host plus `pdf.wasm`, `text.wasm`, and `md.wasm`. One slot. Switching format, or closing the book, drops the format instance. Closing the book also drops the host. Sidebar and appearance talk across the bridge. Search-index retention is deleted here, because its reason is gone.
+2. **Format instances.** The fat reader becomes the host plus `pdf.wasm`, `text.wasm`, and `md.wasm`. One slot. Switching format, or closing the book, drops the format instance. Closing the book also drops the host. Sidebar and appearance talk across the bridge. Search-index retention is deleted here, because its reason is gone. The spec is `docs/phase-2-format-instances.md`.
 
 3. **The grid.** More than one slot. Hover suggestion from `SUPPORTED`. Focus moves the rail and the appearance sections. Blend writes the PDF pane's paper onto the other slots as CSS variables. No new route.
 
