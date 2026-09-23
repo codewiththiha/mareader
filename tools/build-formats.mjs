@@ -29,6 +29,7 @@ const formats = [
   { pkg: "format-text", wasm: "format_text.wasm", name: "text", dir: outDir },
   { pkg: "format-md", wasm: "format_md.wasm", name: "md", dir: outDir },
   { pkg: "session-library", wasm: "session_library.wasm", name: "library", dir: sessionDir },
+  { pkg: "session-host", wasm: "session_host.wasm", name: "host", dir: sessionDir },
 ];
 
 function toolPath(name) {

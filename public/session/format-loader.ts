@@ -28,9 +28,13 @@ export const DROP_ORDER = [
   "clear-handle",
 ] as const;
 
-/** The shelf artifact. Not a format. The reader host does not start on that page. */
+/** The shelf artifact. Not a format. It is not alive while a book is open. */
 export const LIBRARY_GLUE = "sessions/library.js";
 export const LIBRARY_WASM = "sessions/library_bg.wasm";
+
+/** The reader chrome. Not a format. It is not alive on the shelf. */
+export const HOST_GLUE = "sessions/host.js";
+export const HOST_WASM = "sessions/host_bg.wasm";
 
 /** Every book artifact. A library switch drops all of them, not only the slot. */
 export const BOOK_FORMATS = [HOST_PDF, "text", "md"] as const;
@@ -47,6 +51,11 @@ export function dropsFor(event: "to-library" | "to-reader" | "switch-book"): rea
   }
   if (event === "to-reader") return ["library", "pdf-worker", "canvases"];
   return ["slot"];
+}
+
+/** The only session alive after a switch. The other one has been released. */
+export function aliveAfter(event: "to-library" | "to-reader"): "library" | "reader-host" {
+  return event === "to-library" ? "library" : "reader-host";
 }
 
 /** Unknown extensions are PDF. That is the same rule the open flow uses, so

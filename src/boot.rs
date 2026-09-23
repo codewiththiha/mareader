@@ -1,14 +1,11 @@
 //! The page-lifetime boundary between the shelf and the reader.
 //!
-//! wasm-bindgen's glue is one instance per page, and Trunk starts the reader
-//! host from `index.html`. A second `init` of that glue does not build a
-//! second heap, and nothing in the page can drop it. The reclaim is still to
-//! leave the document. The shelf is a different artifact: the boot script
-//! starts it and does not let the reader host evaluate, so a closed book is
-//! not in the shelf heap. Opening or closing a book flushes the durable
-//! stores first. Closing also drops every book module (not only a format
-//! switch) before the navigation. The next shelf page loads those stores into
-//! a new library instance. It does not open the file in this heap.
+//! Trunk's host glue cannot be released, so the boot script never lets it
+//! evaluate. The shelf and the reader chrome are separate artifacts the boot
+//! script instantiates. Opening a book releases the shelf instance and starts
+//! a new host. Closing releases every book module and that host, then starts
+//! a new shelf instance. The URL changes with the history API. A document
+//! navigation does not drop the previous wasm in this webview.
 //!
 //! The session is a query on `/`, not the path `/reader`. Tauri's asset
 //! protocol does not SPA-fallback, so a full GET of `/reader` can 404.
@@ -159,9 +156,9 @@ pub fn leave_for_reader(state: AppState, path: String, book_id: Option<String>) 
     }
 }
 
-/// Reader to shelf. The script drops every book module, then replaces the
-/// URL, so Back does not restore a reader query and the shelf does not keep
-/// the book heap.
+/// Reader to shelf. The script drops every book module and the reader host,
+/// then starts a new shelf instance in this page. A document load does not
+/// drop the previous wasm in this webview.
 pub fn enter_library() {
     #[cfg(target_arch = "wasm32")]
     {

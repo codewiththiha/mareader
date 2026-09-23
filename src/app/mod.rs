@@ -81,3 +81,53 @@ pub fn mount_shelf() {
 pub fn dispose_shelf() {
     shelf::dispose();
 }
+
+#[cfg(all(feature = "session-host", target_arch = "wasm32"))]
+mod reader_host {
+    use std::any::Any;
+    use std::cell::RefCell;
+
+    use leptos::prelude::*;
+
+    use super::{
+        create_app_state, install_reader_session, provide_app_contexts, ReaderSession,
+    };
+
+    thread_local! {
+        static HANDLE: RefCell<Option<Box<dyn Any>>> = const { RefCell::new(None) };
+    }
+
+    pub fn mount() {
+        console_error_panic_hook::set_once();
+        crate::memory::log_heap("host-mount");
+        let state = create_app_state();
+        provide_context(state);
+        let (appearance, typography) = provide_app_contexts(state);
+        install_reader_session(state, appearance, typography);
+        let handle =
+            leptos::mount::mount_to_body(move || view! { <ReaderSession state=state /> });
+        HANDLE.with(|slot| {
+            *slot.borrow_mut() = Some(Box::new(handle));
+        });
+    }
+
+    pub fn dispose() {
+        crate::memory::log_heap("host-drop");
+        HANDLE.with(|slot| {
+            slot.borrow_mut().take();
+        });
+    }
+}
+
+/// Mount the reader chrome and nothing else. The host artifact calls this.
+/// The shelf module is already released, so this heap does not hold the shelf.
+#[cfg(all(feature = "session-host", target_arch = "wasm32"))]
+pub fn mount_reader() {
+    reader_host::mount();
+}
+
+/// Drop the reader chrome. The book instance is released separately, first.
+#[cfg(all(feature = "session-host", target_arch = "wasm32"))]
+pub fn dispose_reader() {
+    reader_host::dispose();
+}

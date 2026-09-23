@@ -1,9 +1,9 @@
-// Runs before the Trunk wasm module. Module scripts are ordered, and this
-// file top-level-awaits, so the wasm module does not evaluate until the boot
-// object exists. A shelf boot never lets that module evaluate: the shelf is
-// its own wasm instance, and the reader host must not start beside it. A
-// reader boot loads the reader engine only. pdf.js arrives with a PDF format
-// mount, not with the page.
+// Runs before the Trunk wasm module and never resolves, so that binary never
+// evaluates. It has no release(). The shelf and the reader chrome are
+// separate instances this file starts and drops. Opening a book releases
+// the shelf and starts a new host. Returning releases that host and every
+// book module, then starts a new shelf. The URL changes with history, not
+// a document load: a query navigation kept the previous wasm.
 //
 // Specifiers are variables on purpose. A literal import would let the bundler
 // inline pdf.js or a format wasm into this file.
@@ -11,17 +11,18 @@
 import {
   HANDOFF_KEY,
   decideSession,
-  navigation,
   parseHandoff,
   withSession,
   type Handoff,
-  type HistoryMode,
 } from "./handoff";
 import {
+  HOST_GLUE,
   HOST_PDF,
+  HOST_WASM,
   LIBRARY_GLUE,
   LIBRARY_WASM,
   SLOT_KEY,
+  aliveAfter,
   artifactFor,
   dropsFor,
   gluePath,
@@ -57,9 +58,9 @@ interface FormatGlue {
   mount?: (payload?: string) => Promise<void>;
   detach?: () => void;
   dispose?: () => Promise<void>;
-  // Clears the module-scope `wasm` binding and the cached memory views.
-  // Nulling exports does not. Without this the instance stays reachable
-  // from the module map after the blob URL is revoked.
+  // Drops `wasmInstance`, `wasm`, and the cached memory views inside the
+  // glue module. Nulling exports does not. Without this the module map
+  // keeps the linear memory after the blob URL is revoked.
   release?: () => void;
   [key: string]: unknown;
 }
@@ -107,21 +108,13 @@ function loadPdfEngine(): Promise<void> {
   return engineReady;
 }
 
-function go(next: string, prefer: "push" | "replace"): void {
-  const mode: HistoryMode = navigation(location.href, next, prefer);
-  if (mode === "reload") location.reload();
-  else if (mode === "push") location.assign(next);
-  else location.replace(next);
-}
-
 const raw = sessionStorage.getItem(HANDOFF_KEY);
 const kind = decideSession(location.search, raw);
 
-// A reader URL with nothing to open is not a reader. Hang this module so the
-// wasm script behind it never starts on a page that is already leaving.
+// A reader URL with nothing to open is not a reader. Fix the URL in place.
+// location.replace would load another document and leave this one alive.
 if (new URLSearchParams(location.search).get("session") === "reader" && kind !== "reader") {
-  location.replace(withSession(location.href, "library"));
-  await new Promise(() => {});
+  history.replaceState({ session: "library" }, "", withSession(location.href, "library"));
 }
 
 if (kind === "reader") {
@@ -141,6 +134,9 @@ const live = new Set<FormatHandle>();
 const released = new WeakSet<FormatHandle>();
 const modules = new Map<FormatId, WebAssembly.Module>();
 let libraryHandle: FormatHandle | null = null;
+let hostHandle: FormatHandle | null = null;
+let liveKind: "library" | "reader" = kind;
+let swapping = false;
 let generation = 0;
 
 function nullGlue(glue: FormatGlue): void {
@@ -373,80 +369,136 @@ function requireLibraryPlan(): void {
   }
 }
 
-async function leaveToLibrary(): Promise<void> {
-  try {
-    requireLibraryPlan();
-    await dropEveryBook();
-    await killPdfWorker();
-    releaseCanvases();
-    forgetPdfReader();
-  } catch (err) {
-    console.error("[boot] shelf switch drop failed", err);
-    releaseCanvases();
-    try {
-      await killPdfWorker();
-    } catch {
-      // Already logged.
-    }
-    forgetPdfReader();
-  }
-  console.info("[mem] shelf switch: book modules released");
-  // The reader host is Trunk's module. Nothing in this page can drop it.
-  // The navigation does, and the next page does not start it.
-  go(withSession(location.href, "library"), "replace");
+function clearBody(): void {
+  releaseCanvases();
+  document.body.replaceChildren();
 }
 
-async function leaveToReader(): Promise<void> {
-  const plan = dropsFor("to-reader");
-  if (!plan.includes("library")) {
-    throw new Error("reader switch does not drop the library module");
-  }
-  try {
-    await dropLibrary();
-    if (plan.includes("pdf-worker")) await killPdfWorker();
-    if (plan.includes("canvases")) releaseCanvases();
-    forgetPdfReader();
-  } catch (err) {
-    console.error("[boot] library drop failed", err);
-    releaseCanvases();
-    forgetPdfReader();
-  }
-  go(withSession(location.href, "reader"), "push");
+async function dropHost(): Promise<void> {
+  const handle = hostHandle;
+  hostHandle = null;
+  await releaseHandle(handle);
 }
 
-async function startLibrary(): Promise<void> {
-  const imported = await importGlue(LIBRARY_GLUE, "library glue");
+function rememberUrl(nextKind: "library" | "reader", mode: "push" | "replace"): void {
   try {
-    const { bytes } = await fetchAsset(LIBRARY_WASM, "library wasm");
+    const next = withSession(location.href, nextKind);
+    if (location.href === next) return;
+    if (mode === "push") history.pushState({ session: nextKind }, "", next);
+    else history.replaceState({ session: nextKind }, "", next);
+  } catch (err) {
+    console.error("[boot] history update failed", err);
+  }
+}
+
+type PendingSwap =
+  | { kind: "library"; fromHistory: boolean }
+  | { kind: "reader"; payload: Handoff; fromHistory: boolean };
+
+let queued: PendingSwap | null = null;
+
+function pumpQueue(): void {
+  const next = queued;
+  queued = null;
+  if (!next) return;
+  if (next.kind === "library") void showLibrary(next.fromHistory);
+  else void showReader(next.payload, next.fromHistory);
+}
+
+async function startSession(
+  gluePathname: string,
+  wasmFile: string,
+  label: string,
+): Promise<FormatHandle> {
+  const imported = await importGlue(gluePathname, label);
+  try {
+    const { bytes } = await fetchAsset(wasmFile, label);
     if (!isWasm(bytes)) {
-      throw new Error(`library wasm is not wasm: ${LIBRARY_WASM}`);
+      throw new Error(`${label} is not wasm: ${wasmFile}`);
     }
     const compiled = await WebAssembly.compile(bytes);
     await imported.glue.default?.({ module_or_path: compiled });
-    const handle: FormatHandle = {
-      glue: imported.glue,
-      blobUrl: imported.blobUrl,
-      format: "library",
-    };
-    libraryHandle = handle;
+    const handle: FormatHandle = { glue: imported.glue, blobUrl: imported.blobUrl, format: label };
     await imported.glue.mount?.();
+    return handle;
   } catch (err) {
-    if (libraryHandle) {
-      await releaseHandle(libraryHandle);
-    } else {
-      try {
-        imported.glue.release?.();
-      } catch {
-        // Init never finished.
-      }
-      URL.revokeObjectURL(imported.blobUrl);
+    try {
+      imported.glue.release?.();
+    } catch {
+      // Init never finished.
     }
+    URL.revokeObjectURL(imported.blobUrl);
     throw err;
   }
-  console.info("[mem] library module mounted; reader host not started");
-  // Do not resolve. The next module script is the reader host, and starting
-  // it on the shelf would keep the book graph in this page.
-  await new Promise(() => {});
+}
+
+// In-page. A query navigation does not drop the previous wasm in this
+// webview, which is why each open/close kept another instance. The leaving
+// module is disposed and released before the arriving one is created.
+async function showLibrary(fromHistory: boolean): Promise<void> {
+  if (swapping) {
+    queued = { kind: "library", fromHistory };
+    return;
+  }
+  if (liveKind === "library" && libraryHandle && live.size === 0 && !hostHandle) return;
+  swapping = true;
+  try {
+    requireLibraryPlan();
+    if (aliveAfter("to-library") !== "library") {
+      throw new Error("library switch left the reader alive");
+    }
+    sessionStorage.removeItem(HANDOFF_KEY);
+    await dropEveryBook();
+    await dropHost();
+    await dropLibrary();
+    await killPdfWorker();
+    forgetPdfReader();
+    clearBody();
+    boot.kind = "library";
+    boot.open = null;
+    libraryHandle = await startSession(LIBRARY_GLUE, LIBRARY_WASM, "library");
+    liveKind = "library";
+    console.info("[mem] library module mounted; reader host released");
+    if (!fromHistory) rememberUrl("library", "replace");
+  } catch (err) {
+    console.error("[boot] shelf switch failed", err);
+    showBootError(err instanceof Error ? err.message : "Could not return to the library");
+  } finally {
+    swapping = false;
+    pumpQueue();
+  }
+}
+
+async function showReader(payload: Handoff, fromHistory: boolean): Promise<void> {
+  if (swapping) return;
+  swapping = true;
+  try {
+    const plan = dropsFor("to-reader");
+    if (!plan.includes("library") || aliveAfter("to-reader") !== "reader-host") {
+      throw new Error("reader switch does not drop the library module");
+    }
+    boot.kind = "reader";
+    boot.open = payload;
+    sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(payload));
+    await dropLibrary();
+    if (plan.includes("pdf-worker")) await killPdfWorker();
+    forgetPdfReader();
+    clearBody();
+    try {
+      await load(READER_ENGINE);
+    } catch (err) {
+      console.error("[boot] reader engine failed to load", err);
+    }
+    hostHandle = await startSession(HOST_GLUE, HOST_WASM, "reader-host");
+    liveKind = "reader";
+    console.info("[mem] reader host mounted; library module released");
+    if (!fromHistory) rememberUrl("reader", "push");
+  } catch (err) {
+    console.error("[boot] reader switch failed", err);
+    showBootError(err instanceof Error ? err.message : "Could not open the book");
+  } finally {
+    swapping = false;
+  }
 }
 
 function showBootError(message: string): void {
@@ -460,9 +512,11 @@ function abandonNow(): void {
   generation += 1;
   const pending = [...live];
   if (libraryHandle) pending.push(libraryHandle);
+  if (hostHandle) pending.push(hostHandle);
   handles.clear();
   live.clear();
   libraryHandle = null;
+  hostHandle = null;
   for (const handle of pending) {
     if (released.has(handle)) continue;
     released.add(handle);
@@ -506,12 +560,12 @@ const boot: Boot = {
         ? { path: payload.path, bookId: payload.bookId }
         : { path: payload.path };
     sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(stored));
-    void leaveToReader();
+    void showReader(stored, false);
   },
   enterLibrary() {
     sessionStorage.removeItem(HANDOFF_KEY);
     this.open = null;
-    void leaveToLibrary();
+    void showLibrary(false);
   },
   clearHandoff() {
     sessionStorage.removeItem(HANDOFF_KEY);
@@ -540,16 +594,33 @@ window.addEventListener("unload", () => {
   window.__MAREADER_BOOT?.flush();
   abandonNow();
 });
-
-if (kind === "library") {
-  try {
-    await startLibrary();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not load the library module";
-    console.error("[boot] library module failed", err);
-    showBootError(message);
-    // Still do not start the reader host. A failed shelf is not a license
-    // to open the book in the old heap.
-    await new Promise(() => {});
+window.addEventListener("popstate", () => {
+  if (swapping) return;
+  const next = decideSession(location.search, sessionStorage.getItem(HANDOFF_KEY));
+  if (next === liveKind) return;
+  if (next === "library") {
+    void showLibrary(true);
+    return;
   }
+  const open = boot.open ?? parseHandoff(sessionStorage.getItem(HANDOFF_KEY));
+  if (open) void showReader(open, true);
+});
+
+try {
+  if (kind === "reader") {
+    hostHandle = await startSession(HOST_GLUE, HOST_WASM, "reader-host");
+    liveKind = "reader";
+    console.info("[mem] reader host mounted; library module not started");
+  } else {
+    libraryHandle = await startSession(LIBRARY_GLUE, LIBRARY_WASM, "library");
+    liveKind = "library";
+    console.info("[mem] library module mounted; reader host not started");
+  }
+} catch (err) {
+  const message = err instanceof Error ? err.message : "Could not load the session module";
+  console.error("[boot] session module failed", err);
+  showBootError(message);
 }
+// The next module script is Trunk's host. It must not evaluate: that binary
+// cannot be released, and a second copy is the leak.
+await new Promise(() => {});

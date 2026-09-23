@@ -15,6 +15,7 @@ format-pdf = []
 format-text = []
 format-md = []
 session-library = []
+session-host = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
@@ -147,6 +148,7 @@ members = [
   "crates/format-text",
   "crates/format-md",
   "crates/session-library",
+  "crates/session-host",
 ]
 
 [profile.release]

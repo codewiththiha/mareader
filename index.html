@@ -20,10 +20,10 @@
     <!-- Session boot (public/sessionBoot.js, from public/session/boot.ts).
          A module script BEFORE the rust link: Trunk replaces that link with a
          module script in place, module scripts run in order, and this one
-         top-level-awaits. A shelf boot loads the library module and does not
-         resolve, so this host wasm never starts on the shelf. A reader boot
-         returns after the reader engine, and this host wasm starts. pdf.js is
-         not imported for either boot; a PDF format mount loads it. The engines
+         top-level-awaits and never resolves. Trunk's host cannot be released,
+         so it must not evaluate. The boot script starts the shelf module or
+         the reader-host module and drops the one it leaves. pdf.js is not
+         imported for either boot; a PDF format mount loads it. The engines
          stay copy-file'd so those dynamic imports resolve in the packaged app. -->
     <link data-trunk rel="copy-file" href="public/sessionBoot.js" />
     <script type="module" src="/sessionBoot.js"></script>

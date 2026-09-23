@@ -25,10 +25,10 @@ pub fn close_document(state: AppState) {
     let _ = super::session::claim();
 
     // A reader page does not tear the book down by resetting signals in this
-    // heap. The bootloader drops every book module, terminates the pdf.js
-    // worker, and only then navigates. The navigation is what drops the
-    // reader host, which this page cannot free. Flush first: the progress
-    // debounce and the theme debounce both die with the document.
+    // heap. The bootloader drops every book module, the reader host, and the
+    // pdf.js worker, then starts a new shelf instance in this page. Flush
+    // first: the progress debounce and the theme debounce both die with the
+    // host instance.
     if crate::boot::should_swap() {
         crate::boot::flush_durable(state);
         crate::boot::enter_library();

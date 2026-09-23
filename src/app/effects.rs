@@ -1,7 +1,7 @@
 //! The app-root effects, installed once, per session.
 //!
-//! The shelf and the reader are different pages (`src/boot.rs`). Each installs
-//! only what that page can use. A second mount in the same page (hot reload)
+//! The shelf and the reader are different wasm instances (`src/boot.rs`). Each
+//! installs only what that instance can use. A second mount in the same instance
 //! is still a no-op: the listeners do not unsubscribe, and stacking them would
 //! handle every keystroke twice.
 //!

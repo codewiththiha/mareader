@@ -5,9 +5,12 @@ import assert from "node:assert/strict";
 import {
   BOOK_FORMATS,
   DROP_ORDER,
+  HOST_GLUE,
+  HOST_WASM,
   LIBRARY_GLUE,
   LIBRARY_WASM,
   SLOT_KEY,
+  aliveAfter,
   artifactFor,
   dropsFor,
   gluePath,
