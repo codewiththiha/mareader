@@ -168,6 +168,9 @@ jobs:
       - name: Check Markdown format artifact
         run: cargo check -p format-md --target wasm32-unknown-unknown --locked
 
+      - name: Check library session artifact
+        run: cargo check -p session-library --target wasm32-unknown-unknown --locked
+
       # Feature unification hides under-declared dependencies: inside the
       # workspace another crate turns on the web-sys features this one uses,
       # so a missing feature only surfaces for whoever reuses the crate on

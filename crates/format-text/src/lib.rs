@@ -8,6 +8,11 @@ pub async fn mount(payload: String) {
 }
 
 #[wasm_bindgen]
+pub fn detach() {
+    mareader::format_runtime::detach();
+}
+
+#[wasm_bindgen]
 pub async fn dispose() {
     mareader::format_runtime::dispose().await;
 }

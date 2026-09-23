@@ -2,17 +2,42 @@
 // after `npm run build:ts`. Node, not a browser: the module has no DOM.
 
 import assert from "node:assert/strict";
-import { DROP_ORDER, SLOT_KEY, artifactFor, gluePath, looksLikeHtml, wasmPath } from "../scripts/format-loader.js";
+import {
+  BOOK_FORMATS,
+  DROP_ORDER,
+  LIBRARY_GLUE,
+  LIBRARY_WASM,
+  SLOT_KEY,
+  artifactFor,
+  dropsFor,
+  gluePath,
+  looksLikeHtml,
+  wasmPath,
+} from "../scripts/format-loader.js";
 
 assert.equal(SLOT_KEY, "slot");
 assert.deepEqual(DROP_ORDER, [
   "flush",
   "dispose",
   "teardown",
+  "release-binding",
   "null-glue",
   "drop-instance",
   "clear-handle",
 ]);
+assert.equal(DROP_ORDER.includes("release-binding"), true);
+assert.equal(DROP_ORDER.includes("keep-instance"), false);
+
+assert.deepEqual(BOOK_FORMATS, ["pdf", "text", "md"]);
+assert.equal(LIBRARY_GLUE, "sessions/library.js");
+assert.equal(LIBRARY_WASM, "sessions/library_bg.wasm");
+assert.deepEqual(dropsFor("to-library"), ["pdf", "text", "md", "pdf-worker", "canvases", "reader-host"]);
+assert.deepEqual(dropsFor("to-reader"), ["library", "pdf-worker", "canvases"]);
+assert.deepEqual(dropsFor("switch-book"), ["slot"]);
+assert.equal(dropsFor("to-library").includes("pdf"), true);
+assert.equal(dropsFor("to-library").includes("text"), true);
+assert.equal(dropsFor("to-library").includes("md"), true);
+assert.equal(dropsFor("switch-book").includes("md"), false);
 assert.equal(DROP_ORDER.includes("keep-instance"), false);
 
 assert.equal(artifactFor("/tmp/a.pdf"), "pdf");

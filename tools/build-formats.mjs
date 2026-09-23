@@ -1,7 +1,8 @@
-// The three format artifacts. Trunk's post_build hook runs this, and the
-// staging dir it writes is what becomes dist/formats. Without these files
-// `trunk serve` answers `formats/pdf.js` with index.html. Importing that page
-// is `Unexpected token '<'` in a blob the debugger names `source`.
+// The three format artifacts and the shelf artifact. Trunk's post_build hook
+// runs this, and the staging dir it writes is what becomes dist/formats and
+// dist/sessions. Without these files `trunk serve` answers the glue URL with
+// index.html. Importing that page is `Unexpected token '<'` in a blob the
+// debugger names `source`.
 //
 // Three cargo processes, not one: one invocation unifies features, so a text
 // artifact would still compile the PDF open arm.
@@ -11,6 +12,7 @@ import { existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { patchGlueFile } from "./patch-wasm-glue.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const release = process.env.TRUNK_PROFILE === "release";
@@ -18,10 +20,15 @@ const outDir = process.env.TRUNK_STAGING_DIR
   ? join(process.env.TRUNK_STAGING_DIR, "formats")
   : join(root, "dist", "formats");
 
+const sessionDir = process.env.TRUNK_STAGING_DIR
+  ? join(process.env.TRUNK_STAGING_DIR, "sessions")
+  : join(root, "dist", "sessions");
+
 const formats = [
-  { pkg: "format-pdf", wasm: "format_pdf.wasm", name: "pdf" },
-  { pkg: "format-text", wasm: "format_text.wasm", name: "text" },
-  { pkg: "format-md", wasm: "format_md.wasm", name: "md" },
+  { pkg: "format-pdf", wasm: "format_pdf.wasm", name: "pdf", dir: outDir },
+  { pkg: "format-text", wasm: "format_text.wasm", name: "text", dir: outDir },
+  { pkg: "format-md", wasm: "format_md.wasm", name: "md", dir: outDir },
+  { pkg: "session-library", wasm: "session_library.wasm", name: "library", dir: sessionDir },
 ];
 
 function toolPath(name) {
@@ -67,6 +74,7 @@ if (!reported.includes("0.2.127")) {
 const opt = release ? requireTool("wasm-opt", "Install binaryen so wasm-opt is on PATH.") : null;
 
 mkdirSync(outDir, { recursive: true });
+mkdirSync(sessionDir, { recursive: true });
 
 const profileDir = release ? "release" : "debug";
 
@@ -83,8 +91,8 @@ for (const format of formats) {
   run("cargo", cargoArgs);
 
   const input = join(root, "target", "wasm32-unknown-unknown", profileDir, format.wasm);
-  const glue = join(outDir, `${format.name}.js`);
-  const wasm = join(outDir, `${format.name}_bg.wasm`);
+  const glue = join(format.dir, `${format.name}.js`);
+  const wasm = join(format.dir, `${format.name}_bg.wasm`);
   const fresh =
     existsSync(glue) &&
     existsSync(wasm) &&
@@ -92,10 +100,18 @@ for (const format of formats) {
     statSync(wasm).mtimeMs >= statSync(input).mtimeMs;
   if (fresh) continue;
 
-  run(bindgen, ["--target", "web", "--out-dir", outDir, "--out-name", format.name, input]);
+  run(bindgen, ["--target", "web", "--out-dir", format.dir, "--out-name", format.name, input]);
   if (opt) {
-    const optimized = join(outDir, `${format.name}_bg.opt.wasm`);
+    const optimized = join(format.dir, `${format.name}_bg.opt.wasm`);
     run(opt, ["-Oz", "-o", optimized, wasm]);
     renameSync(optimized, wasm);
   }
+  patchGlueFile(glue);
+}
+
+// A fresh glue from an earlier build still needs release(). Skipping bindgen
+// must not skip the unmount.
+for (const format of formats) {
+  const glue = join(format.dir, `${format.name}.js`);
+  if (existsSync(glue)) patchGlueFile(glue);
 }

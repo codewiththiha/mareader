@@ -24,3 +24,5 @@ mod zoom;
 
 #[cfg(format_runtime)]
 pub mod format_runtime;
+#[cfg(all(feature = "session-library", target_arch = "wasm32"))]
+pub mod session_library;

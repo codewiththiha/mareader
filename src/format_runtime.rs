@@ -64,12 +64,13 @@ pub async fn mount(payload: String) {
     }
 }
 
-/// Flush, dispose the Leptos owner, then tear the format engine down. The
-/// bootloader nulls the glue after this returns.
-pub async fn dispose() {
+/// Drop the view. Synchronous, so pagehide can run it before the document
+/// freezes. The PDF worker is not this call: that destroy is async, and a
+/// frozen page will not finish the future. The bootloader terminates the
+/// worker from JS.
+pub fn detach() {
     #[cfg(target_arch = "wasm32")]
     {
-        crate::memory::log_heap("format-drop");
         null_command();
         // Thumbs first: their cleanup reads the view's signals. Dropping the
         // view owner first would unmount those signals out from under them.
@@ -79,11 +80,22 @@ pub async fn dispose() {
         VIEW.with(|slot| {
             slot.borrow_mut().take();
         });
+        crate::boot::set_in_format(false);
+    }
+}
+
+/// Flush, dispose the Leptos owner, then tear the format engine down. The
+/// bootloader releases the glue's `wasm` binding after this returns. Nulling
+/// exports does not free that binding.
+pub async fn dispose() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        crate::memory::log_heap("format-drop");
+        detach();
         #[cfg(feature = "format-pdf")]
         {
             pdf_engine::api::destroy().await;
         }
-        crate::boot::set_in_format(false);
     }
 }
 

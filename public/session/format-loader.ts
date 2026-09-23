@@ -15,16 +15,39 @@ export type FormatId = typeof HOST_PDF | "text" | "md";
 /** One handle. Phase 3 keys a map by slot id. This phase has one slot. */
 export const SLOT_KEY = "slot";
 
-/** The overview's drop order, applied to the one slot. The boot script walks
- *  this. A step that is skipped is a drop that did not happen. */
+/** The overview's drop order, applied to one instance. `release-binding` is
+ *  the step that actually frees the wasm-bindgen heap. Nulling exports is not
+ *  that step. A step that is skipped is a drop that did not happen. */
 export const DROP_ORDER = [
   "flush",
   "dispose",
   "teardown",
+  "release-binding",
   "null-glue",
   "drop-instance",
   "clear-handle",
 ] as const;
+
+/** The shelf artifact. Not a format. The reader host does not start on that page. */
+export const LIBRARY_GLUE = "sessions/library.js";
+export const LIBRARY_WASM = "sessions/library_bg.wasm";
+
+/** Every book artifact. A library switch drops all of them, not only the slot. */
+export const BOOK_FORMATS = [HOST_PDF, "text", "md"] as const;
+
+/**
+ * What a switch has to drop. `to-library` is not the format-switch condition:
+ * pdf, text, and md all go, then the worker, the canvases, and the reader
+ * host. `switch-book` drops only the slot. `to-reader` drops the shelf module
+ * and any cover worker the shelf started.
+ */
+export function dropsFor(event: "to-library" | "to-reader" | "switch-book"): readonly string[] {
+  if (event === "to-library") {
+    return [...BOOK_FORMATS, "pdf-worker", "canvases", "reader-host"];
+  }
+  if (event === "to-reader") return ["library", "pdf-worker", "canvases"];
+  return ["slot"];
+}
 
 /** Unknown extensions are PDF. That is the same rule the open flow uses, so
  *  the loader and the artifact agree about which heap a file belongs in. */

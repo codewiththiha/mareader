@@ -1,6 +1,6 @@
 # Phase 2: format instances
 
-The reader page from phase 1 stays the host. It stops being the thing that holds the book. One slot, the div that already exists (`#viewer-slot`). The book is a format instance: `pdf.wasm`, `text.wasm`, or `md.wasm`. Switching books drops that instance and mounts another. Closing the book still navigates to `/`, which drops the host and the instance with the document. Sidebar and appearance cross a bridge of copied values. Search-index retention is deleted, because the instance it was retained for is gone.
+The reader page from phase 1 stays the host. It stops being the thing that holds the book. One slot, the div that already exists (`#viewer-slot`). The book is a format instance: `pdf.wasm`, `text.wasm`, or `md.wasm`. Switching books drops that instance and mounts another. The shelf is its own artifact, `sessions/library.wasm`. Closing the book drops every book module — pdf, text, and md, not only the one in the slot and not only a format-to-format switch — terminates the pdf.js worker, then navigates to `/`. That navigation drops the reader host, which cannot be freed in place. The next page starts the library module and does not start the host, so the shelf heap is not the book heap. Sidebar and appearance cross a bridge of copied values. Search-index retention is deleted, because the instance it was retained for is gone.
 
 `docs/split-wasm-modules.md` stays the overview. `docs/phase-1-session-boundary.md` stays the session boundary. This file is the spec for the format instance. It does not reopen the session boundary, and it does not start the slot grid, the cover-generation session, or `memory.discard`.
 
@@ -18,6 +18,7 @@ An iframe around the format module was rejected in the overview. CSS variables w
 
 | Artifact | Lifetime | Holds | Must not hold |
 | --- | --- | --- | --- |
+| `sessions/library.wasm` | The shelf page | Shelf UI, stored covers, the library blob | An open book, a format instance, the reader host |
 | Host (Trunk bin, `data-bin="mareader"`) | The reader page | Title bar, rail geometry, menus, the empty slot, a copied snapshot | Document bytes, pdf.js, a block tree, a page host |
 | `pdf.wasm` | One PDF book | pdf.js, the worker, the canvases, the search index, the PDF page hosts | A text block tree |
 | `text.wasm` | One text book | The block tree, the reflow page hosts | A PDF document, pdf.js |
@@ -31,7 +32,9 @@ The three crates do not depend on each other. The host does not depend on them. 
 
 `VIEWER_SLOT_ID` (`viewer-slot`) is the slot. No new DOM id. The host renders it empty. The format module is the only thing that mounts into it. No grid, no second slot, no hover suggestion. Those are phase 3.
 
-A second open while this page is already the reader does not navigate. `leave_for_reader` sees `is_reader()`, flushes, and asks the bootloader to drop the format instance and mount the new book's artifact into the same div. The host chrome stays. A second open from the shelf is still the phase 1 document navigation: the shelf has no host to keep. Close is still `enter_library`. The format instance dies because the document dies. The bootloader also drops its handle on `pagehide`, so a slow navigation cannot leave a key set, but the reclaim is the document death, not an in-page trick on the host.
+A second open while this page is already the reader does not navigate. `leave_for_reader` sees `is_reader()`, flushes, and asks the bootloader to drop the format instance and mount the new book's artifact into the same div. The host chrome stays. A second open from the shelf drops the library module, then navigates. The shelf has no reader host to keep: the boot script never lets that module evaluate on a shelf boot.
+
+Close is `enter_library`, and that path is not the format-switch condition. Before the URL changes it awaits dispose of every live book instance, calls `release()` on the glue, awaits `PDFReader.destroy()` so `loadingTask.destroy()` terminates the worker, and zeros canvas backing stores. Then it navigates. Document death drops the Trunk host. It is not a substitute for the awaited drop: pagehide cannot finish an async dispose, and a worker that was not destroyed outlives the document. `pagehide` still runs the synchronous half (`detach`, `release`, `destroy`) so Back, which does not call `enter_library`, does not freeze the book heap into the back-forward cache.
 
 `should_swap` is false inside a format instance. A thread-local, `IN_FORMAT`, is set for the mount and cleared on dispose. The format instance opens in-process. It must not see the host's boot object and navigate again. Without that flag a format mount would hand the open back to the host and the host would mount another instance.
 
@@ -52,7 +55,7 @@ Drop order, from the overview, applied to the one slot:
 1. Flush. The host flushes before it asks. The format instance reports the page and any in-flight gloss stroke through the bridge, and the host writes the stores, before dispose. A debounced timer dies with the instance, so the write is immediate.
 2. Dispose the Leptos owner for that mount. Cleanup runs here. `ResizeObserver`s disconnect. Portaled gloss nodes are removed here. A cleanup that runs after the instance is gone aborts the runtime.
 3. Format teardown. PDF: the existing `destroy()` — sweep, release canvases, destroy the loading task, null the document — then drop the dynamic import of pdf.js and null `PDFReader`. Text and Markdown: disposing the owner drops the block `Vec`. There is no second engine.
-4. Null the glue. Every export, the wasm-bindgen object, every `Uint8Array` over `memory.buffer`.
+4. Release the binding, then null the glue. wasm-bindgen's web target keeps the instance in a module-scope `let wasm` and keeps `cached*Memory0` views of `memory.buffer`. Nulling exports does not clear those, and revoking the blob URL does not evict the module map, so the linear memory stays reachable. `release()` is appended to the glue and assigns those bindings. It runs after dispose, because dispose still needs `wasm`.
 5. Drop the instance. The `Module` may stay, keyed by format, so the next open of the same format skips download and compile. Do not keep the instance.
 6. Clear the handle key. If it is still set, the drop is not done.
 
@@ -121,7 +124,8 @@ New:
 - `src/lib.rs` — rlib root. Same modules as the bin. No `main`.
 - `src/format_runtime.rs` — `mount` / `dispose`, compiled only with a format feature. Sets `IN_FORMAT`, builds the one-row state, `mount_to`s the slot, runs the document open and the document effects the host page used to install.
 - `src/slot.rs` — host-side bridge client. Feature-off. Registers `__MAREADER_SLOT`, applies a snapshot onto the chrome signals, sends a command.
-- `crates/format-pdf`, `crates/format-text`, `crates/format-md` — cdylibs. Each exports `mount` and `dispose` and enables one feature. They do not import each other.
+- `crates/format-pdf`, `crates/format-text`, `crates/format-md` — cdylibs. Each exports `mount`, `detach`, and `dispose` and enables one feature. They do not import each other.
+- `crates/session-library` — the shelf cdylib. Exports `mount`, `detach`, and `dispose`. The boot script starts it on a shelf boot and does not let the Trunk host evaluate.
 - `public/session/format-loader.ts` — artifact choice, blob evaluation, drop order.
 - `tools/build-frontend.mjs` — Trunk, then the three format artifacts. The release half of the build.
 - `tools/test-format-loader.mjs` — the pure decisions, in the web lane.
@@ -132,7 +136,7 @@ Changed:
 - `Cargo.lock` — the three path packages. No new registry crates.
 - `index.html` — `data-bin="mareader"` on the rust link.
 - `src-tauri/tauri.conf.json` — `beforeBuildCommand` runs Trunk, then the format script.
-- `.github/workflows/ci.yml` — the three crates named in the wasm lane. The web lane runs the loader test.
+- `.github/workflows/ci.yml` — the three format crates and the library artifact named in the wasm lane. The web lane runs the loader test and the glue-release test.
 - `.github/workflows/release.yml` — `wasm-bindgen-cli` 0.2.127 and `binaryen`, so the script can run inside `beforeBuildCommand`.
 - `public/session/boot.ts` — a reader boot does not import pdf.js. `mountFormat` / `dropFormat` on the boot object.
 - `src/boot.rs` — a second open on the reader page remounts. Close still leaves the page. `IN_FORMAT` makes `should_swap` false for the format instance.

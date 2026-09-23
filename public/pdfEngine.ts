@@ -82,13 +82,23 @@ function cancelAndReleasePages(): void {
 }
 
 async function destroy(): Promise<void> {
+  // Invoke the loading-task destroy before the first await. pagehide cannot
+  // wait, and pdf.js terminates the worker when destroy() is called, not when
+  // the promise settles. A second call is a no-op (loader.ts WeakSet).
+  const lt = session.loadingTask;
+  session.setLoadingTask(null);
+  const workerGone = destroyTask(lt);
   try {
-    // The advisory worker cleanup, run while the document is still alive:
-    // pdf.cleanup() drops the resolved-page and font caches pdf.js holds for
-    // it. Nothing after this point can — the teardown below nulls the
-    // document and fires the worker's death, so a shelf-side sweep() arriving
-    // after destroy resolves finds no document to clean.
-    session.sweepPdf();
+    // pdf.cleanup() drops the resolved-page and font caches while the
+    // document is still alive. After the worker is gone there is nothing to
+    // clean.
+    if (session.pdf && typeof session.pdf.cleanup === "function") {
+      try {
+        await session.pdf.cleanup();
+      } catch (_) {
+        /* advisory */
+      }
+    }
     cancelAndReleasePages();
     session.stateByCanvasId.clear();
     for (const task of session.thumbTasks.values()) {
@@ -105,14 +115,6 @@ async function destroy(): Promise<void> {
     session.thumbCache.clear();
     session.setSearchQuery("");
     session.setActiveMatchValue(null);
-    if (session.loadingTask) {
-      // Guarded behind a WeakSet in loader.ts: open's own timeout may be
-      // destroying the same task right now, and a second destroy() on a
-      // pdf.js LoadingTask double-frees the worker.
-      const lt = session.loadingTask;
-      session.setLoadingTask(null);
-      destroyTask(lt).catch(() => { /* fire-and-forget */ });
-    }
   } finally {
     // Teardown always completes: a release that throws must not skip the
     // document null-out, or the next open() sees a half-dead session.
@@ -125,6 +127,11 @@ async function destroy(): Promise<void> {
     // book it was themed for.
     publishBakedPaper();
     disposeScratch();
+    try {
+      await workerGone;
+    } catch (_) {
+      /* already guarded */
+    }
   }
 }
 
@@ -208,12 +215,12 @@ function stats(): Stats {
 }
 
 function releaseAllSurfaces(): void {
-  cancelAndReleasePages();
-  for (const entry of session.thumbCache.values()) session.releaseThumbEntry(entry);
+  // Zero canvases in this turn. destroy() terminates the worker before it
+  // awaits, which is the part pagehide can still finish.
   try {
     document.querySelectorAll("canvas").forEach((c) => releaseCanvas(c as HTMLCanvasElement));
   } catch (_) { /* document already torn down */ }
-  disposeScratch();
+  void destroy();
 }
 
 globalThis.addEventListener("pagehide", releaseAllSurfaces);

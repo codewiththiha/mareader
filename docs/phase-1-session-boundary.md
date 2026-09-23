@@ -1,6 +1,6 @@
 # Phase 1: the session boundary
 
-Leaving the reader must drop the reader heap. pdf.js must not load on a shelf boot. Resume, gloss, and covers must be flushed through the stores that already exist before the page dies. A second open recycles; it does not open into the heap that already holds a book. The reader in this phase is still the fat binary: every format stays linked. Panes, a host/format split, a slot grid, and deleting the search-index retention are later phases. This file is the spec for the boundary. `docs/split-wasm-modules.md` stays the overview.
+Leaving the reader must drop the reader heap. pdf.js must not load on a shelf boot. Resume, gloss, and covers must be flushed through the stores that already exist before the page dies. A second open recycles; it does not open into the heap that already holds a book. The reader in this phase is still the fat binary: every format stays linked. The shelf later became its own module (`docs/phase-2-format-instances.md`); document death alone did not return the book heap. Panes, a host/format split, a slot grid, and deleting the search-index retention are later phases. This file is the spec for the boundary. `docs/split-wasm-modules.md` stays the overview.
 
 ## Why the drop is a document navigation
 

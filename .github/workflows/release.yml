@@ -151,8 +151,9 @@ jobs:
         with:
           tool: trunk,tauri-cli@2
 
-      # beforeBuildCommand builds the format artifacts. wasm-bindgen must match
-      # the lock (0.2.127). wasm-opt is not assumed to be Trunk's copy.
+      # beforeBuildCommand builds the format artifacts and the shelf module.
+      # wasm-bindgen must match the lock (0.2.127). wasm-opt is not assumed
+      # to be Trunk's copy.
       - name: Install wasm-bindgen and binaryen
         uses: taiki-e/install-action@v2
         with:
