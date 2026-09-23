@@ -263,7 +263,7 @@ impl ReflowContent {
         // at.
         super::ReflowCut {
             num_pages: n,
-            page_size: pdf_engine::types::PageSize { width: geo.width, height: PAGE_HEIGHT },
+            page_size: reader_core::PageSize { width: geo.width, height: PAGE_HEIGHT },
             css_height: PAGE_HEIGHT * state.reader.viewer.zoom.visual_scale(),
             page: new_page.clamp(1, n.max(1)),
         }

@@ -20,7 +20,7 @@
 
 use leptos::prelude::*;
 
-use pdf_engine::types::PageSize;
+use reader_core::PageSize;
 
 /// How close two laid-out heights must be to count as the same one: half a
 /// CSS pixel. These are heights at a fractional scale, so re-measuring the

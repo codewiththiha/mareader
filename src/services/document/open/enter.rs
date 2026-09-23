@@ -17,7 +17,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use ai_core::gloss::GlossMark;
-use pdf_engine::types::{DocStatus, PageSize};
+use reader_core::{DocStatus, PageSize};
 use reader_core::format::Format;
 use reader_core::outline::OutlineNode;
 use reader_core::view::ViewMode;

@@ -4,10 +4,10 @@
 //! state struct cannot be silently forgotten here).
 
 use leptos::prelude::*;
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 use wasm_bindgen_futures::spawn_local;
 
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 use pdf_engine::api as engine;
 use crate::state::{AppState, SidebarMode};
 
@@ -48,7 +48,7 @@ pub fn close_document(state: AppState) {
     // synchronously and lets the worker die in the background — so this can
     // never hang, and a fast close → reopen is safe: the reopen's own
     // destroy() is idempotent. A text or markdown artifact has no engine.
-    #[cfg(any(not(format_runtime), feature = "format-pdf"))]
+    #[cfg(all(format_runtime, feature = "format-pdf"))]
     spawn_local(async move {
         _ = engine::destroy().await;
         // Finish the job: destroy() runs the advisory worker cleanup itself
@@ -81,6 +81,6 @@ pub fn close_document(state: AppState) {
     // The paper session forgets the book and drops the backdrop back to the
     // theme paper; in-flight samples die with the generation bump. A text or
     // markdown artifact has no paper session.
-    #[cfg(any(not(format_runtime), feature = "format-pdf"))]
+    #[cfg(all(format_runtime, feature = "format-pdf"))]
     pdf_engine::backdrop::document_close();
 }

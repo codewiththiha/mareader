@@ -37,6 +37,9 @@ pub fn refresh_theme() {
     if crate::slot::post_theme() {
         return;
     }
+    // The format module applies this in its own heap. The shelf and the host
+    // have no engine to bake.
+    #[cfg(all(format_runtime, feature = "format-pdf"))]
     pdf_engine::api::refresh_theme();
 }
 
@@ -48,6 +51,7 @@ pub fn set_scrub_mode(on: bool) {
     if crate::slot::post_scrub(on) {
         return;
     }
+    #[cfg(all(format_runtime, feature = "format-pdf"))]
     pdf_engine::api::set_scrub_mode(on);
 }
 
@@ -58,5 +62,6 @@ pub fn set_appearance_menu_open(on: bool) {
     if crate::slot::post_menu(on) {
         return;
     }
+    #[cfg(all(format_runtime, feature = "format-pdf"))]
     pdf_engine::api::set_appearance_menu_open(on);
 }

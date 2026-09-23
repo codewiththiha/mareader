@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 use app_chrome::icon::{Icon, IconName};
 use crate::state::library::CoverMap;
 use crate::state::{NO_DOCUMENT, ReaderState};

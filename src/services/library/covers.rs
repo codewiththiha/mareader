@@ -11,7 +11,6 @@ use std::sync::Arc;
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use pdf_engine::api as engine;
 use reader_core::format::Format;
 
 use crate::state::library::{CoverImage, CoverMap};
@@ -100,6 +99,7 @@ pub(crate) fn prune_now(state: AppState) {
     });
 }
 
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 pub fn file_cover(state: AppState, path: String, data_url: String, width: f64, height: f64) {
     state.library.covers.update(|covers| {
         covers.insert(
@@ -138,21 +138,9 @@ fn drain(state: AppState) {
             .covers
             .with_untracked(|covers| covers.contains_key(&path));
         if !have {
-            // The shelf does not load pdf.js at boot. The first missing cover
-            // is what imports it; a shelf with nothing to render never does.
-            crate::boot::ensure_pdf_engine().await;
-            match engine::cover_data_url(&path, COVER_WIDTH).await {
-                Ok(cover) => {
-                    RETRIES.with(|retries| retries.borrow_mut().remove(&path));
-                    file_cover(state, path, cover.data_url, cover.width, cover.height);
-                }
-                Err(_) => {
-                    let first_failure = RETRIES.with(|retries| retries.borrow_mut().insert(path.clone()));
-                    if first_failure {
-                        QUEUE.with(|queue| queue.borrow_mut().push(path.clone()));
-                    }
-                }
-            }
+            // A missing cover is not rendered here. Loading the PDF bridge to
+            // paint page 1 kept that bridge in the shelf heap after every
+            // close. Stored covers still show. A later session can fill a miss.
         }
         drain(state);
     });

@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 #[cfg(all(format_runtime, target_arch = "wasm32"))]
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 use crate::state::ReaderState;

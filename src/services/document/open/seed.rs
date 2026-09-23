@@ -3,16 +3,23 @@
 //! is mounted. The order is the interesting part; each step says why it is
 //! where it is.
 
+use reader_core::PageSize;
+
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 use leptos::prelude::*;
-
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 use reader_core::format::Format;
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 use reader_core::filename::document_title;
-use pdf_engine::types::{OpenResult, PageSize};
-
+#[cfg(all(format_runtime, feature = "format-pdf"))]
+use pdf_engine::types::OpenResult;
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 use super::enter;
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 use crate::state::AppState;
 
 /// What the rest of the flow needs to know once the state is seeded.
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 pub(super) struct Seeded {
     /// The document's display name, for the shelf record.
     pub name: Option<String>,
@@ -23,6 +30,7 @@ pub(super) struct Seeded {
 
 /// Write everything the fresh mount will read, the resume page included;
 /// the strip anchors itself to it on mount.
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u32) -> Seeded {
     let page1 = open.page1_size;
     let num_pages = open.num_pages;

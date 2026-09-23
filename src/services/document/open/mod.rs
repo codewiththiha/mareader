@@ -10,17 +10,17 @@
 //! tail owns its own content seeding and calls [`enter`] for everything a
 //! reader expects to behave the same whatever the file extension was.
 
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 mod cover;
 mod enter;
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 mod outline;
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(any(all(format_runtime, feature = "format-pdf"), test))]
 mod seed;
 mod shelf;
 #[cfg(any(not(format_runtime), feature = "format-text", feature = "format-md"))]
 mod reflow;
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 mod warmup;
 
 use leptos::prelude::*;
@@ -32,10 +32,9 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use reader_core::format::{Format, format_of};
-use pdf_engine::api as engine;
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 use library_core::book::ReadPoint;
 use library_core::book::resume_point;
 use crate::state::{AppState, Toast};
@@ -57,7 +56,7 @@ use super::session;
 pub fn init_open_file_handling(state: AppState) {
     let st = state;
     spawn_local(async move {
-        if let Some(path) = engine::take_pending_file().await {
+        if let Some(path) = take_pending_file().await {
             open_path(st, path);
         }
     });
@@ -71,22 +70,33 @@ pub fn init_open_file_handling(state: AppState) {
     crate::services::tauri_listen("document-open-file", move |_ev: web_sys::Event| {
         let st = cb_state;
         spawn_local(async move {
-            if let Some(path) = engine::take_pending_file().await {
+            if let Some(path) = take_pending_file().await {
                 open_path(st, path);
             }
         });
     });
 }
 
+/// The OS handoff is a Tauri command. It is not a PDF render, and calling it
+/// through the PDF bridge linked that bridge into the shelf.
+async fn take_pending_file() -> Option<String> {
+    if !tauri_bridge::has_tauri() {
+        return None;
+    }
+    let value = tauri_bridge::invoke("take_pending_file", js_sys::Object::new().into())
+        .await
+        .ok()?;
+    value.as_string().filter(|path| !path.is_empty())
+}
+
 /// Native open-dialog flow: pick a file, then run the shared open-flow.
 ///
-/// Cancel (the engine's own [`CANCELLED`](pdf_engine::api::dialog::CANCELLED) sentence) is a
-/// silent no-op; any other error surfaces on the doc status / status bar.
+/// Cancel is a silent no-op; any other error surfaces on the doc status / status bar.
 pub fn open_dialog(state: AppState) {
     spawn_local(async move {
-        match engine::pick_document().await {
+        match crate::services::library::pick_one_document().await {
             Ok(path) => open_path(state, path),
-            Err(msg) if msg != pdf_engine::api::dialog::CANCELLED => fail(state, msg),
+            Err(msg) if msg != crate::services::library::OPEN_CANCELLED => fail(state, msg),
             Err(_) => {}
         }
     });
@@ -238,15 +248,15 @@ fn open_at(state: AppState, book_id: Option<String>, path: String) {
     }
 }
 
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 fn dispatch_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
     open_pdf(state, path, saved_page, stamp);
 }
 
-#[cfg(all(format_runtime, not(feature = "format-pdf")))]
+#[cfg(not(all(format_runtime, feature = "format-pdf")))]
 fn dispatch_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
     let _ = (path, saved_page, stamp);
-    fail(state, "this format module does not open PDF files".into());
+    fail(state, "PDF opens in the format module".into());
 }
 
 #[cfg(any(not(format_runtime), feature = "format-text", feature = "format-md"))]
@@ -276,8 +286,9 @@ fn dispatch_reflow(
 
 /// The PDF tail of the open flow: hand the path to the engine and seed from
 /// its answer.
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 fn open_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
+    use pdf_engine::api as engine;
     spawn_local(async move {
         // The boot script imports the engine before a reader page starts.
         // This is the backstop for a script-order miss, and the shelf never
@@ -301,7 +312,7 @@ fn open_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
 }
 
 /// The book opened: seed the state, mark it ready, and start the tails.
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 fn ready(
     state: AppState,
     path: String,
@@ -309,6 +320,7 @@ fn ready(
     saved_page: u32,
     stamp: u64,
 ) {
+    use pdf_engine::api as engine;
     let seeded = seed::seed(state, &path, open, saved_page);
 
     // The book is ready: mark it LAST, after every signal the fresh mount

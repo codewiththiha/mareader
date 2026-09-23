@@ -24,7 +24,7 @@ use reader_core::zoom_math::FitMode;
 #[cfg(target_arch = "wasm32")]
 use crate::state::AppState;
 #[cfg(target_arch = "wasm32")]
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Deserialize)]

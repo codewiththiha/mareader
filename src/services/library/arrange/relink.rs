@@ -9,8 +9,7 @@ use wasm_bindgen_futures::spawn_local;
 use library_core::book::{find_book_mut, find_row, stem_of, Origin};
 use library_core::folder::FolderOpts;
 use library_core::scan::selectable_formats;
-use pdf_engine::api::dialog::CANCELLED;
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 
 use super::super::{file_name, pick_folder};
 use crate::services::library::covers::{self, prune_now};
@@ -101,15 +100,13 @@ fn relink_book_on(state: AppState, book_id: String, path: String, on_task: Optio
     });
 }
 
-/// The engine's own picker rather than a second dialog implementation: the
-/// same question with the same filter. Cancel is compared against the
-/// engine's constant, so a wording change on either side is a compile error
-/// rather than a cancel that quietly turns into an error toast.
+/// The shelf's own picker. The PDF bridge used to own this dialog, which
+/// linked that bridge into the library artifact.
 pub fn relink_dialog(state: AppState, book_id: String) {
     spawn_local(async move {
-        match pdf_engine::api::pick_document().await {
+        match crate::services::library::pick_one_document().await {
             Ok(path) => relink_book(state, book_id, path),
-            Err(message) if message == CANCELLED => {}
+            Err(message) if message == crate::services::library::OPEN_CANCELLED => {}
             Err(message) => toast(state, message),
         }
     });

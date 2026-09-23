@@ -185,6 +185,10 @@ pub fn delete_stored(path: &str) {
     });
 }
 
+/// Cancel sentence for a dismissed open. Not the PDF bridge's constant: the
+/// shelf and the host must not link that crate to know a dialog was dismissed.
+pub const OPEN_CANCELLED: &str = "Open cancelled";
+
 pub async fn pick_documents() -> Result<Vec<String>, String> {
     pick(Options {
         directory: false,
@@ -194,6 +198,22 @@ pub async fn pick_documents() -> Result<Vec<String>, String> {
     })
     .await
     .map(|paths| paths.unwrap_or_default())
+}
+
+/// One file, for Open and for relinking a missing book. The PDF bridge used
+/// to own this dialog. It does not.
+pub async fn pick_one_document() -> Result<String, String> {
+    let paths = pick(Options {
+        directory: false,
+        multiple: false,
+        filter: true,
+        default_path: None,
+    })
+    .await?;
+    match paths.and_then(|list| list.into_iter().next()) {
+        Some(path) if !path.is_empty() => Ok(path),
+        _ => Err(OPEN_CANCELLED.to_string()),
+    }
 }
 
 pub async fn pick_documents_in(default_path: String) -> Result<Vec<String>, String> {

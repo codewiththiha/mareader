@@ -86,10 +86,6 @@ interface PdfFacade {
   destroy?: () => Promise<void>;
 }
 
-function engineLoaded(): boolean {
-  return typeof (globalThis as { PDFReader?: unknown }).PDFReader !== "undefined";
-}
-
 function pdfFacade(): PdfFacade | null {
   const pdf = (globalThis as { PDFReader?: PdfFacade }).PDFReader;
   return pdf ?? null;
@@ -97,19 +93,6 @@ function pdfFacade(): PdfFacade | null {
 
 async function load(url: string): Promise<void> {
   await import(url);
-}
-
-let engineReady: Promise<void> | null = null;
-
-function loadPdfEngine(): Promise<void> {
-  if (engineLoaded()) return Promise.resolve();
-  if (!engineReady) {
-    engineReady = (async () => {
-      await load(PDFJS);
-      await load(PDF_ENGINE);
-    })();
-  }
-  return engineReady;
 }
 
 const raw = sessionStorage.getItem(HANDOFF_KEY);
@@ -133,6 +116,39 @@ if (kind === "reader") {
 const handles = new Map<string, FormatHandle>();
 const live = new Set<FormatHandle>();
 const released = new WeakSet<FormatHandle>();
+let runtimeSeq = 0;
+const runtimeOf = new WeakMap<FormatHandle, number>();
+
+interface RuntimeMark {
+  role: string;
+}
+
+function runtimeTable(): Map<number, RuntimeMark> {
+  const host = globalThis as typeof globalThis & {
+    __MAREADER_ACTIVE_RUNTIMES?: Map<number, RuntimeMark>;
+  };
+  if (!host.__MAREADER_ACTIVE_RUNTIMES) host.__MAREADER_ACTIVE_RUNTIMES = new Map();
+  return host.__MAREADER_ACTIVE_RUNTIMES;
+}
+
+function noteRuntime(handle: FormatHandle): void {
+  if (runtimeOf.has(handle)) return;
+  const id = ++runtimeSeq;
+  runtimeOf.set(handle, id);
+  runtimeTable().set(id, { role: handle.format });
+}
+
+function forgetRuntime(handle: FormatHandle): void {
+  const id = runtimeOf.get(handle);
+  if (id === undefined) return;
+  runtimeOf.delete(handle);
+  runtimeTable().delete(id);
+}
+
+function mountedRoles(): string {
+  const roles = [...runtimeTable().values()].map((mark) => mark.role);
+  return roles.length === 0 ? "none" : roles.join(",");
+}
 let libraryHandle: FormatHandle | null = null;
 let hostHandle: FormatHandle | null = null;
 const active = new Map<SessionModuleId, FormatHandle>();
@@ -206,7 +222,6 @@ function forgetPdfReader(): void {
   // dropped the worker. Do not assign through the facade: that is the Safari
   // readonly error, and it used to abort the shelf before the new module
   // mounted.
-  engineReady = null;
 }
 
 // Dispose while `wasm` is still set, then release the binding. Revoking the
@@ -248,7 +263,11 @@ async function releaseHandle(handle: FormatHandle | null | undefined): Promise<v
     console.error("[format] release failed", err);
   }
   URL.revokeObjectURL(handle.blobUrl);
-  console.info(`[mem] ${handle.format} instance gone`);
+  // The module map keeps the namespace. Drop our reference so the only
+  // remaining owner is that map, and release() has already cleared its instance.
+  handle.glue = {} as FormatGlue;
+  forgetRuntime(handle);
+  console.info(`[mem] ${handle.format} instance gone; still mounted: ${mountedRoles()}`);
 }
 
 function assetUrl(path: string): string {
@@ -325,7 +344,6 @@ async function mountFormatNow(payload: string): Promise<void> {
       discardPrepared(prepared);
       return;
     }
-    if (format === HOST_PDF) await loadPdfEngine();
     if (mine !== generation) {
       discardPrepared(prepared);
       return;
@@ -482,6 +500,7 @@ async function startSession(
 }
 
 function remember(id: SessionModuleId, handle: FormatHandle): void {
+  noteRuntime(handle);
   active.set(id, handle);
   if (id === "library") libraryHandle = handle;
   else if (id === "reader-host") hostHandle = handle;
@@ -881,6 +900,7 @@ function frameHandles(win: FrameWindow): FormatHandle[] {
 }
 
 function rememberFrame(win: FrameWindow, handle: FormatHandle): void {
+  noteRuntime(handle);
   frameHandles(win).push(handle);
 }
 
@@ -1540,7 +1560,11 @@ const boot: Boot = {
     this.open = null;
   },
   ensureEngine() {
-    return loadPdfEngine();
+    // pdf.js belongs to the book frame. Importing it here kept the worker
+    // in the shelf page after the book had been released.
+    const win = frameWindow(bookFrame);
+    if (win) return loadEngineIn(win);
+    return Promise.resolve();
   },
   mountFormat(payload) {
     const win = frameWindow(bookFrame);

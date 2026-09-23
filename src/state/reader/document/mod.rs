@@ -32,7 +32,7 @@ use leptos::prelude::*;
 
 #[cfg(any(not(format_runtime), feature = "format-pdf"))]
 use pdf_core::outline::OutlineEntry;
-use pdf_engine::types::{DocStatus, PageSize};
+use reader_core::{DocStatus, PageSize};
 use reader_core::format::Format;
 use reader_core::outline::OutlineNode;
 

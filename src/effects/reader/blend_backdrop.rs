@@ -102,6 +102,7 @@ pub fn blend_backdrop(state: AppState) {
         // report: the position is the page itself, and the backdrop switches
         // with the page turn.
         if viewer.mode.get() != ViewMode::ScrollVertical {
+            #[cfg(feature = "format-pdf")]
             pdf_engine::backdrop::position(f64::from(page));
             return;
         }

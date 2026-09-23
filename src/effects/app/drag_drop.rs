@@ -27,7 +27,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 use reader_core::format;
 use web_sys::Event;
 

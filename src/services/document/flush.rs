@@ -11,7 +11,7 @@
 use leptos::prelude::*;
 
 use library_core::book::{Row, rows_for_read};
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 use reader_core::view::ViewMode;
 
 use crate::state::AppState;

@@ -22,7 +22,7 @@ use crate::state::AppState;
 use app_chrome::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::tooltip::Tooltip;
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 
 #[component]
 pub fn ReaderPage(state: AppState) -> impl IntoView {

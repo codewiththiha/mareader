@@ -14,7 +14,7 @@ use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 
 use crate::state::AppState;
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 
 struct PageRect {
     left: RwSignal<f64>,

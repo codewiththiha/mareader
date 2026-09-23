@@ -11,7 +11,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use app_chrome::hooks::dom::by_id;
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 use library_core::query;
 use library_core::shelf::{ALL_SHELF, Shelf, children_of, find, members_of};
 use library_core::sort::{self, SortKey};

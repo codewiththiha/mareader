@@ -31,6 +31,7 @@ use crate::state::ReaderState;
 use reader_core::view::ViewMode;
 use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
 #[cfg(feature = "format-pdf")]
+#[cfg(feature = "format-pdf")]
 use pdf_engine::api as engine;
 
 /// Height of the floating search bar plus its gap, in CSS px. The bar hangs

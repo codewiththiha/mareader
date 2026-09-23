@@ -28,6 +28,7 @@
 //! `ui-geom`, a dependency-free leaf.
 
 pub mod appearance;
+pub mod document;
 pub mod filename;
 pub mod format;
 pub mod outline;
@@ -37,4 +38,5 @@ pub mod view;
 pub mod zoom_math;
 
 pub use format::{DocumentKind, Format, SUPPORTED, extensions, first_supported, format_from_ext, format_of, is_supported_mime, is_supported_path, kind_list, kind_names};
+pub use document::{DocStatus, PageSize};
 pub use outline::OutlineNode;

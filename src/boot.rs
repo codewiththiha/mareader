@@ -133,7 +133,7 @@ pub fn leave_for_reader(state: AppState, path: String, book_id: Option<String>) 
             .reader
             .document
             .status
-            .set(pdf_engine::types::DocStatus::Opening);
+            .set(reader_core::DocStatus::Opening);
         state.reader.document.path.set(Some(path.clone()));
         state.reader.document.book_id.set(book_id.clone());
         // Already the reader page: drop the format instance and mount the
@@ -196,11 +196,11 @@ pub fn install_flush(state: AppState) {
     }
 }
 
-/// Load pdf.js and the engine if this page has not already. The shelf calls
-/// this from the cover queue; the reader open calls it before asking the
-/// engine to open, in case the boot script's import lost the race.
+/// Load pdf.js into the format instance if it is not already there. The shelf
+/// does not call this. A cover render used to, and that left the bridge in
+/// the library heap.
 pub async fn ensure_pdf_engine() {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(feature = "format-pdf", target_arch = "wasm32"))]
     {
         if pdf_engine::has_pdf_reader() {
             return;
@@ -242,7 +242,7 @@ pub fn apply_handoff(state: AppState) {
             .reader
             .document
             .status
-            .set(pdf_engine::types::DocStatus::Opening);
+            .set(reader_core::DocStatus::Opening);
         state.reader.document.path.set(Some(open.path.clone()));
         state.reader.document.book_id.set(open.book_id.clone());
         crate::slot::mount_format(state, open.path, open.book_id);

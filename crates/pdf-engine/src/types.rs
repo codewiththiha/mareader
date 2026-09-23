@@ -7,12 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PageSize {
-    pub width: f64,
-    pub height: f64,
-}
+// Shared with the shelf and the host. Defining them here made every session
+// artifact link this crate just to name an open's status.
+pub use reader_core::{DocStatus, PageSize};
 
 /// One flattened chapter, exactly as `pdfEngine.js` resolves it. The type is
 /// `pdf-core`'s rather than the engine's: the entries cross this boundary on
@@ -83,15 +80,6 @@ pub struct CoverResult {
     pub data_url: String,
     pub width: f64,
     pub height: f64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DocStatus {
-    Idle,
-    Opening,
-    Ready,
-    Error,
 }
 
 /// `{ok:true, page, width, height, data}` — the raw page frame the paper

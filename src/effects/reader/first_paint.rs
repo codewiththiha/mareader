@@ -13,7 +13,7 @@
 
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 
 use crate::state::AppState;
 

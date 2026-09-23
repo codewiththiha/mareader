@@ -54,7 +54,7 @@ use leptos::html;
 use leptos::portal::Portal;
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
+use reader_core::DocStatus;
 
 use crate::components::shell::controller::ShellController;
 use app_chrome::titlebar::root::TitleBarCtx;
