@@ -88,6 +88,10 @@ pub fn AppearanceMenu(
     // resets the flag — the engine must not outlive the menu's claim on it,
     // and a route swap remounts whichever bar carries the menu next.
     Effect::new(move || {
+        // Status is a dependency so the flag is posted again when a format
+        // instance reports ready. The first post can land before that
+        // instance has installed its command listener.
+        let _ = state.reader.document.status.get();
         set_appearance_menu_open(open.get());
     });
     on_cleanup(|| set_appearance_menu_open(false));

@@ -19,12 +19,14 @@ pub enum ZoomCommand {
     Step(i32),
     /// Re-resolve the active fit mode (width / page) against the current
     /// window, view mode and page. Stands down when no fit mode is active.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     Refit,
     /// Re-resolve a manual zoom against the current window. The reader's
     /// chosen `desired` is authoritative up to the clamp: a manual zoom is
     /// never shrunk back to the fit width, so a page the reader zoomed in on
     /// stays at that scale (and overflows with a scroll affordance, rather
     /// than being cropped by a size the app chose).
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     Constrain,
     /// The space around the page moved — a sidebar slide or a window drag.
     /// Resolves to whichever of the two above owns the scale (a fit mode when
@@ -34,6 +36,7 @@ pub enum ZoomCommand {
     /// has to fit in and the flex engine squishes the paper. Its geometry
     /// lands in the frame it was asked for; its crisp render is held until the
     /// container has been quiet, so the burst costs one raster pass.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     Follow,
 }
 
@@ -48,16 +51,21 @@ pub enum ZoomCommand {
 pub struct ZoomTransition {
     /// Visual scale the tween started from, so a retarget continues from
     /// wherever the eye currently is instead of teleporting.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub from: f64,
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub to: f64,
     /// `Date::now()` at (re)targeting; a retarget restarts the clock.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub start_ms: f64,
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub animate: bool,
     /// True while this is a container [`ZoomCommand::Follow`] transaction. The
     /// distinction is load-bearing twice over: a follow's commit is HELD (the
     /// controller lands its geometry in the frame the size was reported and the
     /// settle deadline renders once the burst stops), and a watcher may only
     /// retarget a transaction of this kind — never a gesture's tween.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub following: bool,
 }
 
@@ -123,6 +131,7 @@ impl ZoomState {
 
     /// The scale the in-flight transition is heading to, if any. Manual
     /// steps chain from this so a fast `+ +` advances two presets.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub fn in_flight_target(&self) -> Option<f64> {
         self.transition.get_untracked().map(|t| t.to)
     }

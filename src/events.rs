@@ -15,14 +15,19 @@ use serde::Serialize;
 /// AI chunk stream, bridged from the Tauri backend by `services::ai`.
 pub const AI_CHUNK_EVENT: &str = "mareader:ai-chunk";
 /// Open the gloss card for a mark (carries the `GlossMark` as detail).
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const GLOSS_OPEN_EVENT: &str = "mareader:gloss-open";
 /// Ask for a mark's remove menu (carries the `ContextTarget` as detail).
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const GLOSS_CONTEXT_EVENT: &str = "mareader:gloss-context";
 /// Internal link jump, dispatched by the engine's link layer.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const NAVIGATE_EVENT: &str = "mareader:navigate";
 /// Page-range selection from the engine's thumbnail/id scanner.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const SELECTION_PAGES_EVENT: &str = "mareader:selection-pages";
 /// Text-selection detail, dispatched by the engine's text layer.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const SELECTION_DETAIL_EVENT: &str = "mareader:selection-detail";
 /// One-shot "scroll the sidebar to where the reader is" gesture.
 pub const REVEAL_ACTIVE_EVENT: &str = "mareader:reveal-active";

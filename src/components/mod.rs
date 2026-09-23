@@ -40,10 +40,13 @@
 
 pub mod ai;
 pub mod app_overlays;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod formats;
 pub mod menus;
 pub mod primitives;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod search;
 pub mod settings;
 pub mod shell;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod viewer;

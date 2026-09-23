@@ -13,6 +13,7 @@
 //!   * [`drag`] — a raw pointer stream on `window`, for the surfaces that move
 //!     something themselves.
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod drag;
 pub mod draggable_item;
 pub mod long_press;

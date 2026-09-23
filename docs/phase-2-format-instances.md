@@ -98,14 +98,16 @@ Do not persist the index. Persisting it into the host would put the book back in
 Push CI does not run Trunk. The wasm lane names the three crates or they rot:
 
 ```
-cargo check -p format-pdf -p format-text -p format-md --target wasm32-unknown-unknown --locked
+cargo check -p format-pdf --target wasm32-unknown-unknown --locked
+cargo check -p format-text --target wasm32-unknown-unknown --locked
+cargo check -p format-md --target wasm32-unknown-unknown --locked
 ```
 
-The host proof stays the existing `cargo check --target wasm32-unknown-unknown --locked` of the root package, which does not enable a format feature. Workspace clippy and `cargo test --workspace` unify features, because the format crates depend on the app with a feature. That build compiles the view. It is not the shipped host. The feature-off wasm check is the host proof. Both have to compile. `warnings = deny` already covers the feature-off check. No `allow(dead_code)` to paper over a module the host no longer calls.
+Three processes, not one invocation with three `-p` flags. One invocation unifies features, so a text mount would still compile the PDF open arm and the check would not prove the split. The host proof stays the existing `cargo check --target wasm32-unknown-unknown --locked` of the root package, which does not enable a format feature. Workspace clippy and `cargo test --workspace` unify features, because the format crates depend on the app with a feature. That build compiles the view. It is not the shipped host. The feature-off wasm check is the host proof. Both have to compile. `warnings = deny` already covers the feature-off check. No `allow(dead_code)` to paper over a module the host no longer calls.
 
-`src-tauri/tauri.conf.json` `beforeBuildCommand` grows from `trunk build --release` to a script that runs that one Trunk build, then builds the three cdylibs. Not a second Trunk target. The dist directory does not move. `frontendDist` stays `../dist`.
+`src-tauri/tauri.conf.json` `beforeBuildCommand` grows from `trunk build --release` to `node tools/build-frontend.mjs`. A shell script is not a `beforeBuildCommand` on Windows. The node script runs that one Trunk build, then builds the three cdylibs. Not a second Trunk target. The dist directory does not move. `frontendDist` stays `../dist`.
 
-`tools/build-format-wasm.sh` builds the three crates `--release` for `wasm32-unknown-unknown`, runs `wasm-bindgen --target web` at the lock's `wasm-bindgen` version (`0.2.127`), runs `wasm-opt -z`, and copies `formats/pdf.js`, `formats/pdf_bg.wasm`, and the text and Markdown pairs into `dist/formats/`. The release job installs `wasm-bindgen-cli` at that version and `binaryen` so `wasm-opt` is on `PATH`. Trunk's own wasm-opt is not assumed to be on `PATH`.
+`tools/build-frontend.mjs` builds the three crates `--release` for `wasm32-unknown-unknown`, runs `wasm-bindgen --target web --out-name` at the lock's `wasm-bindgen` version (`0.2.127`), runs `wasm-opt -Oz` (never `-z`), and leaves `formats/pdf.js`, `formats/pdf_bg.wasm`, and the text and Markdown pairs in `dist/formats/`. The release job installs `wasm-bindgen-cli` at that version and `binaryen` so `wasm-opt` is on `PATH`. Trunk's own wasm-opt is not assumed to be on `PATH`.
 
 A `trunk serve` that has not run the script will 404 the format glue. The loader surfaces that. It does not fall back to opening the book in the host.
 
@@ -121,7 +123,7 @@ New:
 - `src/slot.rs` — host-side bridge client. Feature-off. Registers `__MAREADER_SLOT`, applies a snapshot onto the chrome signals, sends a command.
 - `crates/format-pdf`, `crates/format-text`, `crates/format-md` — cdylibs. Each exports `mount` and `dispose` and enables one feature. They do not import each other.
 - `public/session/format-loader.ts` — artifact choice, blob evaluation, drop order.
-- `tools/build-format-wasm.sh` — the release half of the build.
+- `tools/build-frontend.mjs` — Trunk, then the three format artifacts. The release half of the build.
 - `tools/test-format-loader.mjs` — the pure decisions, in the web lane.
 
 Changed:

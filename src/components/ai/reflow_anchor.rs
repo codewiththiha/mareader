@@ -42,8 +42,10 @@ use serde::{Deserialize, Serialize};
 
 use super::anchor::host_id_for_mode;
 use super::gloss::mark_layer::MARK_RADIUS;
+#[cfg(any(feature = "format-text", feature = "format-md"))]
 use app_chrome::hooks::dom::range_rects;
-use crate::components::formats::reflow::spot::{clamp_span, range_for_span};
+#[cfg(any(feature = "format-text", feature = "format-md"))]
+use crate::components::formats::reflow::spot::range_for_span;
 use crate::components::viewer::page_host::block_row_id;
 use crate::dom_contract::BLOCK_INDEX_ATTR;
 use crate::effects::app::theme::document_element;
@@ -299,8 +301,18 @@ pub fn spot_screen_box_in(
             }
         }
     }
-    let range = range_for_span(&el, spot.start, spot.end)?;
-    union_box(&range_rects(&range))
+    // The walk lives in the reflow module, which a PDF artifact does not
+    // compile. A PDF mark never asks this function.
+    #[cfg(any(feature = "format-text", feature = "format-md"))]
+    {
+        let range = range_for_span(&el, spot.start, spot.end)?;
+        union_box(&range_rects(&range))
+    }
+    #[cfg(not(any(feature = "format-text", feature = "format-md")))]
+    {
+        let _ = (el, spot);
+        None
+    }
 }
 
 /// A live selection's spot and the page it sits on, for a reflowable document.
@@ -345,7 +357,10 @@ fn spot_of_range(range: &web_sys::Range, row: &web_sys::Element, block: usize) -
     // and one character in the engine's tracker too.
     let start = String::from(before.to_string()).chars().count();
     let span = String::from(range.to_string()).chars().count();
-    let (start, end) = clamp_span(start, start + span, total);
+    // Same clamp as `formats::reflow::spot::clamp_span`. Inlined so a PDF
+    // artifact, which does not compile that module, can still build the spot.
+    let start = start.min(total);
+    let end = (start + span).clamp(start, total);
     Some(ReflowSpot::new(block, start, end))
 }
 

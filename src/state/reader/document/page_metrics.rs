@@ -106,6 +106,7 @@ impl PageMetrics {
     /// book's heights only to hand them straight back is the allocation the
     /// zoom path was written to avoid. The horizontal strip has its own model
     /// (intrinsic widths times scale, plus margin on the scroll axis).
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub fn strip_sizes(&self, gap: f64) -> impl Fn(usize) -> f64 {
         let heights = self.css_heights;
         move |index: usize| {

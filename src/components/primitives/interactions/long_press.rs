@@ -5,12 +5,18 @@
 //! Extracted from the gloss mark layer, where it was inline; the same
 //! gesture serves annotations, thumbnails and future touch interactions.
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use std::rc::Rc;
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use leptos::prelude::*;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use wasm_bindgen::JsCast;
 
-use super::press_core::{self, PendingTimer};
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
+use super::press_core;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+use super::press_core::PendingTimer;
 
 /// How long a press must hold before it becomes a SELECTION gesture.
 ///
@@ -23,9 +29,11 @@ pub const SELECT_PRESS_MS: i32 = 450;
 /// How far the pointer may drift during that hold without cancelling it. A touch
 /// drag is never perfectly still, and a slop tight enough to demand stillness is a
 /// gesture that feels broken on a trackpad.
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 pub const SELECT_SLOP_PX: f64 = 8.0;
 
 /// What the gesture needs from the caller.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub struct LongPressOptions {
     /// How long a press must hold before it completes (ms).
     pub press_ms: i32,
@@ -42,6 +50,7 @@ pub struct LongPressOptions {
 
 /// Handlers to spread onto the element, plus the live "pressing" tint and the
 /// one-shot suppression probes for the events that follow a completed press.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub struct LongPressHandlers {
     pub on_pointerdown: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
     pub on_pointermove: Rc<dyn Fn(&leptos::ev::PointerEvent)>,
@@ -62,6 +71,7 @@ pub struct LongPressHandlers {
 /// the same clear the drag wrapper's hold uses, because a stale `setTimeout`
 /// calling into a dropped wasm shim is a crash rather than a wrong answer, and
 /// there is one right way to drop it.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 fn cancel_press(
     press_active: StoredValue<bool, LocalStorage>,
     timer: StoredValue<PendingTimer, LocalStorage>,
@@ -74,11 +84,13 @@ fn cancel_press(
 /// slop radius. The arithmetic is [`press_core::outside_radius`]'s, shared with
 /// the drag wrapper's threshold: a slop and a threshold are the same question
 /// asked of two gestures — has this pointer left where it landed.
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 fn within_slop(dx: f64, dy: f64, slop_px: f64) -> bool {
     !press_core::outside_radius(dx, dy, slop_px)
 }
 
 /// Build the long-press handlers, owned by the current reactive owner.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub fn use_long_press(options: LongPressOptions) -> LongPressHandlers {
     let LongPressOptions {
         press_ms,

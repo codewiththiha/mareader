@@ -264,6 +264,9 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
 /// teardown that reached into a disposed signal would panic where a dropped
 /// save would not.
 pub fn persist_library(library: LibraryState) {
+    if crate::boot::in_format() {
+        return;
+    }
     if let Err(e) = save_library(&library.snapshot()) {
         e.report();
     }
@@ -273,6 +276,9 @@ pub fn persist_library(library: LibraryState) {
 /// the cap in `crate::services::library::covers::COVER_CAP` is only a real quota if the
 /// images are written back after a prune, not just dropped from memory.
 pub fn persist_covers(library: LibraryState) {
+    if crate::boot::in_format() {
+        return;
+    }
     if let Err(e) = library.covers.with_untracked(save_covers) {
         e.report();
     }

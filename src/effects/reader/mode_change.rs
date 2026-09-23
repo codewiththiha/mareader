@@ -64,7 +64,9 @@ pub fn mode_change(state: AppState) {
         // and zoom masks together, the pair every other settle point drops:
         // a mask the flip superseded would otherwise hold a full-page
         // surface until its host unmounts.
+        #[cfg(feature = "format-pdf")]
         pdf_engine::api::sweep();
+        #[cfg(feature = "format-pdf")]
         pdf_engine::api::sweep_snapshots();
         let auto = state.settings.with(|s| s.layout.auto_scale);
         if mode == ViewMode::ScrollHorizontal {

@@ -47,7 +47,16 @@ pub(crate) fn flush_read_point(state: AppState) {
     // means — including that a book read in pages carries no fraction.
     let streaming = state.reader.reflowable_now()
         && state.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
-    let fraction = if streaming { state.reader.stream_fraction() } else { None };
+    // The stream lives in the format instance. The host's copy of the
+    // fraction is the snapshot, not `stream_fraction`, which reads a tree
+    // this heap does not have.
+    let fraction = if crate::slot::active() {
+        crate::slot::fraction_now()
+    } else if streaming {
+        state.reader.stream_fraction()
+    } else {
+        None
+    };
     // The rows this read belongs to, by the same rule the progress debounce
     // writes and the open records: the book the reader named when it is a
     // book of its own, every shared row at the address otherwise. Read before

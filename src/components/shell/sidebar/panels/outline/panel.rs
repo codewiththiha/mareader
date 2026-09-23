@@ -292,7 +292,9 @@ pub fn OutlinePanel(
                                         // document, and the highlight only has
                                         // somewhere to show if the panel stays.
                                         on:click=move |_| {
-                                            state.viewer.page.set(page);
+                                            if !crate::slot::post_page(page) {
+                                                state.viewer.page.set(page);
+                                            }
                                         }
                                     >
                                         {title}

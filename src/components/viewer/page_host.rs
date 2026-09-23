@@ -38,9 +38,12 @@ use leptos::prelude::*;
 use virtual_list_leptos::Virtualizer;
 
 use reader_core::view::{Axis, ViewMode};
+#[cfg(any(feature = "format-text", feature = "format-md"))]
 use reflow_core::geometry::SpineSide;
 
+#[cfg(feature = "format-pdf")]
 use crate::components::formats::pdf::{GlossOverlayProps, PdfPageCanvas, PdfPageStrip};
+#[cfg(any(feature = "format-text", feature = "format-md"))]
 use crate::components::formats::reflow::{ReflowPage, ReflowPageStrip, ReflowStreamLayout};
 use crate::components::viewer::shells::scroll_shell::ScrollShell;
 use crate::state::ReaderState;
@@ -71,6 +74,7 @@ impl PageSlot {
     /// is on. A spread's pages are FIXED to their sides — the spine sits between
     /// the two hosts, so a page's own parity is irrelevant there; every other
     /// slot alternates with parity like a bound book.
+    #[cfg(any(feature = "format-text", feature = "format-md"))]
     pub fn spine(self) -> SpineSide {
         match self {
             PageSlot::Single => SpineSide::Auto,
@@ -109,12 +113,14 @@ pub fn block_row_id(block: usize) -> String {
 /// The canvas element id of `page` in `mode`: the host id with the canvas
 /// suffix. Kept next to [`host_id_for_mode`] because the pair must never drift —
 /// the engine registers a canvas against its host.
+#[cfg(feature = "format-pdf")]
 pub(crate) fn canvas_id_for_mode(mode: ViewMode, page: u32) -> String {
     host_id_for_mode(mode, page).replacen("-pg", "-cv", 1)
 }
 
 /// The host id of a strip page, by axis — the same scheme as
 /// [`host_id_for_mode`], since an axis is a scroll mode with its paging.
+/// Both format families build a strip, so this is not PDF-only.
 pub(crate) fn host_id_for_axis(axis: Axis, page: u32) -> String {
     host_id_for_mode(
         match axis {
@@ -125,6 +131,7 @@ pub(crate) fn host_id_for_axis(axis: Axis, page: u32) -> String {
     )
 }
 
+#[cfg(feature = "format-pdf")]
 pub(crate) fn canvas_id_for_axis(axis: Axis, page: u32) -> String {
     canvas_id_for_mode(
         match axis {
@@ -153,6 +160,7 @@ pub fn UniversalPageHost(
     // neither layout has to know that a page of type needs one and a page of
     // pixels needs both.
     let page_scale = state.viewer.zoom.display.read_only();
+    #[cfg(feature = "format-pdf")]
     let texture = use_context::<crate::state::TextureSignal>()
         .expect("TextureSignal must be provided by app bootstrap");
     let host_id = host_id_for_mode(page_slot.mode(), page);
@@ -160,34 +168,50 @@ pub fn UniversalPageHost(
     view! {
         {move || {
             if state.reflowable() {
-                view! {
-                    <ReflowPage
-                        page=page
-                        state=state
-                        scale=page_scale
-                        host_id=host_id.clone()
-                        spine=page_slot.spine()
-                        class=class.clone()
-                    />
+                #[cfg(any(feature = "format-text", feature = "format-md"))]
+                {
+                    view! {
+                        <ReflowPage
+                            page=page
+                            state=state
+                            scale=page_scale
+                            host_id=host_id.clone()
+                            spine=page_slot.spine()
+                            class=class.clone()
+                        />
+                    }
+                    .into_any()
                 }
-                .into_any()
+                #[cfg(not(any(feature = "format-text", feature = "format-md")))]
+                {
+                    let _ = (page, state, page_scale, host_id.as_str(), page_slot, class.as_str());
+                    ().into_any()
+                }
             } else {
-                view! {
-                    <PdfPageCanvas
-                        page=page
-                        scale=page_scale
-                        render_scale=state.viewer.zoom.committed
-                        zoom_animating=state.viewer.zooming()
-                        gesture_owns=state.viewer.gesture_owns()
-                        texture=texture
-                        canvas_id=canvas_id_for_mode(page_slot.mode(), page)
-                        host_id=host_id.clone()
-                        render_text=true
-                        gloss_overlay=GlossOverlayProps::from_gloss(state)
-                        class=class.clone()
-                    />
+                #[cfg(feature = "format-pdf")]
+                {
+                    view! {
+                        <PdfPageCanvas
+                            page=page
+                            scale=page_scale
+                            render_scale=state.viewer.zoom.committed
+                            zoom_animating=state.viewer.zooming()
+                            gesture_owns=state.viewer.gesture_owns()
+                            texture=texture
+                            canvas_id=canvas_id_for_mode(page_slot.mode(), page)
+                            host_id=host_id.clone()
+                            render_text=true
+                            gloss_overlay=GlossOverlayProps::from_gloss(state)
+                            class=class.clone()
+                        />
+                    }
+                    .into_any()
                 }
-                .into_any()
+                #[cfg(not(feature = "format-pdf"))]
+                {
+                    let _ = (page, page_scale, host_id.as_str(), class.as_str(), state);
+                    ().into_any()
+                }
             }
         }}
     }
@@ -214,27 +238,43 @@ pub fn UniversalStripHost(
         {move || {
             let virtualizer = v.get_value();
             if state.reflowable() {
-                view! {
-                    <ReflowPageStrip
-                        state=state
-                        virtualizer=virtualizer
-                        axis=axis
-                        scroller_id=scroller_id
-                        list_ref=list_ref
-                    />
+                #[cfg(any(feature = "format-text", feature = "format-md"))]
+                {
+                    view! {
+                        <ReflowPageStrip
+                            state=state
+                            virtualizer=virtualizer
+                            axis=axis
+                            scroller_id=scroller_id
+                            list_ref=list_ref
+                        />
+                    }
+                    .into_any()
                 }
-                .into_any()
+                #[cfg(not(any(feature = "format-text", feature = "format-md")))]
+                {
+                    let _ = (state, virtualizer, axis, scroller_id, list_ref);
+                    ().into_any()
+                }
             } else {
-                view! {
-                    <PdfPageStrip
-                        state=state
-                        virtualizer=virtualizer
-                        axis=axis
-                        scroller_id=scroller_id
-                        list_ref=list_ref
-                    />
+                #[cfg(feature = "format-pdf")]
+                {
+                    view! {
+                        <PdfPageStrip
+                            state=state
+                            virtualizer=virtualizer
+                            axis=axis
+                            scroller_id=scroller_id
+                            list_ref=list_ref
+                        />
+                    }
+                    .into_any()
                 }
-                .into_any()
+                #[cfg(not(feature = "format-pdf"))]
+                {
+                    let _ = (state, virtualizer, axis, scroller_id, list_ref);
+                    ().into_any()
+                }
             }
         }}
     }
@@ -255,7 +295,15 @@ pub fn UniversalStreamHost(
     view! {
         {move || {
             if state.reflowable() {
-                view! { <ReflowStreamLayout state=state progress_visible=progress /> }.into_any()
+                #[cfg(any(feature = "format-text", feature = "format-md"))]
+                {
+                    view! { <ReflowStreamLayout state=state progress_visible=progress /> }.into_any()
+                }
+                #[cfg(not(any(feature = "format-text", feature = "format-md")))]
+                {
+                    let _ = (state, progress);
+                    ().into_any()
+                }
             } else {
                 view! {
                     <ScrollShell

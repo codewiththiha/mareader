@@ -97,7 +97,9 @@ impl ZoomController {
                 // render left on a host, so a settled zoom stops holding its
                 // peak surfaces — the webview's footprint latches onto the
                 // highest water the session reached.
+                #[cfg(feature = "format-pdf")]
                 pdf_engine::api::sweep();
+                #[cfg(feature = "format-pdf")]
                 pdf_engine::api::sweep_snapshots();
             },
         );
@@ -235,7 +237,9 @@ pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     // render scale has moved, and drop the zoom masks whose renders the
     // transition superseded — they would otherwise sit on full-page surfaces
     // until each host's next completion.
+    #[cfg(feature = "format-pdf")]
     pdf_engine::api::sweep();
+    #[cfg(feature = "format-pdf")]
     pdf_engine::api::sweep_snapshots();
     // The heap probe at the commit: a zoom is JS-side surfaces, not wasm, so
     // this line should read FLAT across a session's zooms — the control that

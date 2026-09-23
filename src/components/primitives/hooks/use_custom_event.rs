@@ -3,17 +3,23 @@
 //! table live in `crate::events` (layer-neutral, so services can use them
 //! too); this module keeps the reactive listener half.
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use std::rc::Rc;
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use leptos::prelude::*;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use serde::de::DeserializeOwned;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use wasm_bindgen::JsValue;
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub use crate::events::dispatch_typed_event;
 
 /// Listen for a typed window CustomEvent, parsing `detail` into `T` and
 /// forwarding to `on_event`. The listener is owned by the current reactive
 /// owner; malformed payloads are dropped rather than panicking.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub fn use_typed_event<T: DeserializeOwned>(name: &'static str, on_event: impl Fn(T) + 'static) {
     let on_event = Rc::new(on_event);
     listen(name, move |ev: web_sys::CustomEvent| {
@@ -27,6 +33,7 @@ pub fn use_typed_event<T: DeserializeOwned>(name: &'static str, on_event: impl F
 /// it on cleanup — the half both hooks share, and the half that matters,
 /// because a Leptos window listener does NOT unregister when its handle is
 /// dropped.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 fn listen(name: &'static str, handler: impl Fn(web_sys::CustomEvent) + 'static) {
     let handle = window_event_listener(leptos::ev::Custom::new(name), handler);
     on_cleanup(move || handle.remove());
@@ -42,6 +49,7 @@ fn listen(name: &'static str, handler: impl Fn(web_sys::CustomEvent) + 'static) 
 /// listener does NOT unregister when its handle is dropped. Every effect that
 /// installed one used to carry a comment saying so; this is the one place that
 /// now has to.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub fn use_raw_event(name: &'static str, on_detail: impl Fn(&JsValue) + 'static) {
     let on_detail = Rc::new(on_detail);
     listen(name, move |ev: web_sys::CustomEvent| on_detail(&ev.detail()));

@@ -1,17 +1,20 @@
 //! Zoom behaviour knobs in one place: the clamped scale range and the
 //! animation profile. Every view mode shares one profile.
 
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 use reader_core::zoom_math::{MAX_SCALE, MIN_SCALE};
 
 /// Duration of the zoom tween, in milliseconds. Linear, not eased — see
 /// `animation.rs` for why the commit seam must not decelerate. 120ms keeps a
 /// manual step feeling immediate while still reading as motion.
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 const ZOOM_ANIM_MS: f64 = 120.0;
 
 /// How long an item evicted by ORDINARY SCROLLING stays mounted after it
 /// leaves the window, milliseconds. Applied where the strips are built
 /// (their virtualizers opt into retention with this grace); a zoom
 /// transaction raises it to `ZOOM_GRACE_MS` for its duration.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const STRIP_SCROLL_GRACE_MS: u32 = 120;
 
 /// How long an item evicted by a ZOOM COMMIT stays mounted, milliseconds.
@@ -19,10 +22,12 @@ pub const STRIP_SCROLL_GRACE_MS: u32 = 120;
 /// window jumps, and the pages it evicts are still on screen — the grace
 /// outlives the animation so the old surface never vanishes before the new
 /// geometry stabilises.
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 pub const ZOOM_GRACE_MS: u32 = 300;
 
 /// Ceiling on simultaneously retained (zombie) items per virtualizer. The
 /// bridge is bounded or it would stop being virtualization.
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 pub const MAX_ZOMBIES: usize = 12;
 
 /// How long the space around the page must be quiet before a container follow
@@ -32,15 +37,18 @@ pub const MAX_ZOMBIES: usize = 12;
 /// The same window doubles as the pause a fit-driven refit waits for after a
 /// page turn, where following the layout per frame would mean zooming at every
 /// row boundary of a mixed-size book.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const FOLLOW_SETTLE_MS: u64 = 180;
 
 /// Scales closer than this are the same scale. One margin for the whole
 /// pipeline: the resolver uses it to call a boundary step a no-op and the
 /// coordinator to decline a transition that would not move. Two numbers would
 /// mean a step one layer considers settled and the other animates.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub(crate) const SETTLED_EPSILON: f64 = 0.0005;
 
 /// How (and whether) a zoom animates.
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ZoomAnimationConfig {
     pub enabled: bool,
@@ -48,6 +56,7 @@ pub(crate) struct ZoomAnimationConfig {
 }
 
 /// How evicted virtual items are bridged across a window change.
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ZoomRetentionConfig {
     /// Grace period items evicted by a zoom commit keep their DOM, in
@@ -57,6 +66,7 @@ pub(crate) struct ZoomRetentionConfig {
 }
 
 /// The zoom behaviour profile for one view mode.
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ZoomProfile {
     pub min: f64,
@@ -65,6 +75,7 @@ pub struct ZoomProfile {
     pub retention: ZoomRetentionConfig,
 }
 
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 impl ZoomProfile {
     /// Clamp a proposed scale into the profile's range. A non-finite input
     /// (NaN, infinity — a corrupt measurement upstream) collapses to the
@@ -89,6 +100,7 @@ impl ZoomProfile {
 
 /// The zoom profile. One for every view mode: the refactor that introduced
 /// this config changed the zoom *architecture*, not the numbers.
+#[cfg(any(test, all(format_runtime, target_arch = "wasm32")))]
 pub fn zoom_profile() -> ZoomProfile {
     ZoomProfile {
         min: MIN_SCALE,

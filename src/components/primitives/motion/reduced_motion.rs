@@ -1,9 +1,12 @@
 //! `prefers-reduced-motion` helpers: a non-reactive snapshot and a reactive
 //! signal kept in sync by the underlying `MediaQueryList`.
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use wasm_bindgen::closure::Closure;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use wasm_bindgen::JsCast;
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use leptos::prelude::*;
 
 /// True when the OS asks for reduced motion (a non-reactive snapshot).
@@ -23,6 +26,7 @@ pub fn prefers_reduced_motion() -> bool {
 /// in its own slot and only cleared; the `Clone`-able `MediaQueryList` and
 /// callback `Function` are retrieved *inside* the cleanup so the listener is
 /// removed before the closure is freed.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub fn reduced_motion_signal() -> RwSignal<bool> {
     let s = RwSignal::new(prefers_reduced_motion());
     let mql_store = StoredValue::new_local(None::<web_sys::MediaQueryList>);

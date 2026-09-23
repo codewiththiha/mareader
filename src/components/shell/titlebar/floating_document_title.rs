@@ -55,7 +55,7 @@ use leptos::portal::Portal;
 use leptos::prelude::*;
 
 use pdf_engine::types::DocStatus;
-use crate::components::ai::anchor::host_id_for_mode;
+
 use crate::components::shell::controller::ShellController;
 use app_chrome::titlebar::root::TitleBarCtx;
 use crate::state::AppState;
@@ -88,23 +88,14 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
             // the zoom transition ends, so skipping here loses nothing.
             if state.reader.viewer.zooming_now() { return; }
 
-            // THE page under the eyes, by id — never an arbitrary mounted
-            // page. The id format is the anchor module's; duplicating it here
-            // once drifted from the single-page host convention.
-            let page = state.reader.viewer.page.get_untracked().max(1);
-            let mode = state.reader.viewer.mode.get_untracked();
-            // A missing host is the ordinary virtualization gap (the page
-            // under the eyes is between mounts), so this stays a silent
-            // `by_id` — but the viewer slot itself is chrome.
-            let Some(doc_el) = by_id(&host_id_for_mode(mode, page)) else { return };
+            // The page rect is the snapshot. This heap does not walk a
+            // page-host id; those ids live in the format instance.
+            let (page_left, canvas_w) = crate::slot::page_geometry();
             let Some(viewer) = by_id(VIEWER_SLOT_ID) else { return };
+            if canvas_w <= 0.0 { return; }
 
-            let pr = doc_el.get_bounding_client_rect();
             let vr = viewer.get_bounding_client_rect();
-            let canvas_w = pr.width();
-            if canvas_w <= 0.0 { return; } // not laid out yet: keep last budget
-
-            let gap = (pr.left() - vr.left()).max(0.0);
+            let gap = (page_left - vr.left()).max(0.0);
             // Overlap allowance only when there is a real blank margin. When
             // the page spans the viewer (fit-width, zoomed-in), the label
             // would sit on the page and must disappear entirely instead of
@@ -146,6 +137,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
     // page indefinitely after zooming, because zooming does not move
     // `page`/`container_size` (the anchored page stays dominant).
     Effect::new(move |_| {
+        _ = crate::slot::page_geometry();
         _ = state.reader.viewer.container_size.get();
         _ = state.reader.viewer.page.get();
         _ = state.reader.viewer.mode.get();

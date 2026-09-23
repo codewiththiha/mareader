@@ -3,6 +3,18 @@ name = "mareader"
 version = "0.1.1"
 edition = "2024"
 
+[lib]
+path = "src/lib.rs"
+# rlib only. A cdylib on this package would collide with the bin wasm Trunk
+# emits, and Trunk would stop being the host. Format artifacts are separate crates.
+crate-type = ["rlib"]
+
+[features]
+default = []
+format-pdf = []
+format-text = []
+format-md = []
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
@@ -130,6 +142,9 @@ members = [
   "crates/txt-core",
   "crates/md-core",
   "crates/library-core",
+  "crates/format-pdf",
+  "crates/format-text",
+  "crates/format-md",
 ]
 
 [profile.release]

@@ -4,4 +4,5 @@
 
 pub mod app;
 pub mod appearance;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod reader;

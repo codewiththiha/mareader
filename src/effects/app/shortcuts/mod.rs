@@ -73,17 +73,40 @@ pub fn shortcuts(
         // guard. Closes the floating search overlay first, then the
         // sidebar.
         if key == "Escape" {
+            // The format instance owns the search bar. This heap only closes
+            // the rail, and only when the bar is not up — one Escape must not
+            // dismiss the search and the rail together.
+            #[cfg(not(format_runtime))]
+            if crate::slot::active() {
+                if !crate::slot::search_visible() && sidebar.get() != SidebarMode::None {
+                    sidebar.set(SidebarMode::None);
+                }
+                return;
+            }
+            #[cfg(all(format_runtime, target_arch = "wasm32"))]
             if state.search.visible.get() {
-                // Closes the bar but leaves the muted highlights behind; the
-                // next interaction with the document clears them.
                 crate::effects::reader::search::dismiss_search(state);
-            } else if sidebar.get() != SidebarMode::None {
+                return;
+            }
+            if sidebar.get() != SidebarMode::None {
                 sidebar.set(SidebarMode::None);
             }
             return;
         }
 
         if is_form_target(&ev) {
+            return;
+        }
+
+        // Document keys are the format instance's. Both heaps hear the same
+        // keydown; handling them here as well would zoom and scroll twice.
+        // Cmd/Ctrl+O still opens a file from this heap.
+        #[cfg(not(format_runtime))]
+        if crate::slot::active() {
+            if (ev.meta_key() || ev.ctrl_key()) && ev.key().eq_ignore_ascii_case("o") {
+                ev.prevent_default();
+                on_open();
+            }
             return;
         }
 

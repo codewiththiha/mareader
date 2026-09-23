@@ -137,12 +137,14 @@ pub struct ViewerSignals {
 
 impl ViewerSignals {
     /// Claim `awaiting_anchor` for a new scrolling-strip anchor.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub(crate) fn begin_anchor(&self) -> u64 {
         let generation = self.anchor_generation.get_untracked().wrapping_add(1);
         self.anchor_generation.set(generation);
         generation
     }
 
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub(crate) fn owns_anchor(&self, generation: u64) -> bool {
         self.anchor_generation.get_untracked() == generation
     }
@@ -197,6 +199,7 @@ impl ViewerSignals {
     /// True while a zoom transaction is in flight: renders are suspended,
     /// page/scroll synchronisation and geometry feedback are frozen, and the
     /// mounted window is pinned around the dominant page.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub fn zooming(&self) -> Signal<bool> {
         let transition = self.zoom.transition;
         Signal::derive(move || transition.get().is_some())
@@ -217,6 +220,7 @@ impl ViewerSignals {
     /// transition too: a window drag with a hand-picked zoom is not a gesture,
     /// and pages must not start rasterising at a display scale that is already
     /// obsolete two frames later.
+    #[cfg(all(format_runtime, target_arch = "wasm32", feature = "format-pdf"))]
     pub fn gesture_owns(&self) -> Signal<bool> {
         let transition = self.zoom.transition;
         let fit = self.fit;

@@ -31,6 +31,7 @@ use leptos::prelude::*;
 
 use reader_core::view::ViewMode;
 use reader_core::settings::LayoutSettings;
+#[cfg(feature = "format-pdf")]
 use pdf_paper::{DEFAULT_EDGE_WIDTH, PaperConfig};
 
 use crate::state::AppState;
@@ -60,6 +61,7 @@ pub fn paper_settings(state: AppState) {
 
 /// Hand one snapshot of the layout settings to the paper session.
 fn publish(layout: LayoutSettings) {
+    #[cfg(feature = "format-pdf")]
     pdf_engine::backdrop::configure(
         layout.blend_mode,
         PaperConfig {
@@ -67,6 +69,8 @@ fn publish(layout: LayoutSettings) {
             edge_width: DEFAULT_EDGE_WIDTH,
         },
     );
+    #[cfg(not(feature = "format-pdf"))]
+    let _ = layout;
 }
 
 /// Geometry → the session. Called once from ReaderPage, alongside the other
@@ -107,7 +111,10 @@ pub fn blend_backdrop(state: AppState) {
         // Borrow, don't clone: this effect runs on every scroll tick while
         // blend is on, and the column can be a thousand heights deep.
         let pos = heights.with(|column| paper_position(column, gap, scroll, viewport_h));
+        #[cfg(feature = "format-pdf")]
         pdf_engine::backdrop::position(if pos > 0.0 { pos } else { f64::from(page) });
+        #[cfg(not(feature = "format-pdf"))]
+        let _ = pos;
     });
 }
 

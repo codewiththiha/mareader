@@ -28,11 +28,18 @@ export const AI_POPOVER_ATTR = "data-ai-popover";
 /**
  * The engine only ever branches on `reflow`: a PDF host is the path it has
  * always taken, and the app decides what to do with a `host` value it does
- * not recognise. `HOST_PDF` is therefore the app's to declare
- * (`src/dom_contract.rs`), and the check forbids spelling either value as a
- * literal all the same.
+ * not recognise. Both values are still constants here, so a session script
+ * can name a PDF host without spelling the literal. The check forbids either
+ * value as a literal outside this file.
  */
 export const HOST_REFLOW = "reflow";
+
+/**
+ * The other host value. The engine never branches on it — a PDF host is the
+ * path it has always taken — but the session loader has to name the format,
+ * and a literal here is the same string the DOM contract owns.
+ */
+export const HOST_PDF = "pdf";
 
 /** The text layer inside a PDF host: the app builds it, the engine fills it. */
 export const TEXT_LAYER_CLASS = "textLayer";

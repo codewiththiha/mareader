@@ -1,9 +1,9 @@
-//! Thumbnails panel host: the absolutely-stacked panel wrapper with its
-//! paint/outro toggles, around the reusable [`ThumbnailsPanel`].
+//! Thumbnails panel host: the absolutely-stacked panel wrapper, and the empty
+//! scroller the PDF instance fills. The host does not render cells. A cell
+//! that called the engine would build engine state in this heap.
 
 use leptos::prelude::*;
 
-use super::ThumbnailsPanel;
 use crate::state::ReaderState;
 use crate::state::app::SidebarMode;
 
@@ -16,6 +16,7 @@ pub(crate) fn SidebarThumbs(
     outro: Signal<bool>,
     intro: Signal<bool>,
 ) -> impl IntoView {
+    let _ = (sidebar, live);
     view! {
         <div
             class="sidebar-panel absolute inset-0 flex flex-col"
@@ -23,11 +24,13 @@ pub(crate) fn SidebarThumbs(
             class=("is-outro", move || outro.get())
             class=("is-intro", move || intro.get())
         >
-            // The engine owns thumbnails; a text document never reaches it,
-            // so the panel mounts nothing for one (the rail's redirect keeps
-            // it un-shown besides).
             <Show when=move || !state.reflowable()>
-                <ThumbnailsPanel state=state live=live sidebar=sidebar />
+                <div
+                    id="thumb-scroll"
+                    data-thumb-mount=""
+                    data-thumb-scale={super::geometry::THUMB_SCALE.to_string()}
+                    class="relative flex-1 overflow-y-auto p-3"
+                ></div>
             </Show>
         </div>
     }

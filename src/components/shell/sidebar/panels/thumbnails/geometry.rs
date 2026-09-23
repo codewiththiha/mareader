@@ -13,11 +13,14 @@
 pub const THUMB_SCALE: f64 = 0.25;
 /// Fixed CSS-px width of each thumbnail cell. Fits two abreast in the w-72
 /// sidebar.
+#[cfg(any(test, all(feature = "format-pdf", target_arch = "wasm32")))]
 pub const CELL_W: f64 = 120.0;
 /// CSS-px gap between columns (`grid-cols-2 gap-3`). Distinct from
 /// [`ROW_GAP`]: cross and main gaps are different knobs in the adapter.
+#[cfg(any(test, all(feature = "format-pdf", target_arch = "wasm32")))]
 pub const GAP_CROSS: f64 = 12.0;
 /// CSS-px gap between rows (the page-number band lives inside each cell).
+#[cfg(any(test, all(feature = "format-pdf", target_arch = "wasm32")))]
 const ROW_GAP: f64 = 8.0;
 /// Extra rows rendered above/below the visible window (pre-render margin).
 ///
@@ -25,15 +28,19 @@ const ROW_GAP: f64 = 8.0;
 /// new row shows its skeleton for the one render it takes; cached rows still
 /// blit synchronously. The second buffer row means a fast grid fling meets warm
 /// rows instead of skeletons.
+#[cfg(all(feature = "format-pdf", target_arch = "wasm32"))]
 pub const ROW_BUFFER: usize = 2;
 /// Fallback viewport height used before the bound container has reported its
 /// real size.
+#[cfg(all(feature = "format-pdf", target_arch = "wasm32"))]
 pub const MIN_VIEWPORT_H: f64 = 720.0;
 /// CSS-px padding on the scroll container (`p-3`).
+#[cfg(any(test, all(feature = "format-pdf", target_arch = "wasm32")))]
 pub const PAD: f64 = 12.0;
 
 /// Height of one grid row (thumbnail + the gap beneath it) for a page whose
 /// aspect ratio is `aspect` (height / width).
+#[cfg(any(test, all(feature = "format-pdf", target_arch = "wasm32")))]
 pub fn row_height(aspect: f64) -> f64 {
     CELL_W * aspect + ROW_GAP
 }

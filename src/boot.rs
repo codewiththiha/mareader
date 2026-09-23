@@ -8,13 +8,13 @@
 //! sessionStorage, loads pdf.js only for a reader boot, and publishes
 //! `window.__MAREADER_BOOT` before the wasm module evaluates. Opening or
 //! closing a book flushes the durable stores and navigates. The next page
-//! loads those stores and, for a reader boot, applies the handoff through the
-//! ordinary open path.
+//! loads those stores and mounts the format instance into the slot. It does
+//! not open the file in this heap.
 //!
 //! The session is a query on `/`, not the path `/reader`. Tauri's asset
 //! protocol does not SPA-fallback, so a full GET of `/reader` can 404.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use leptos::prelude::*;
 
@@ -28,6 +28,14 @@ thread_local! {
     /// The open path hands off whenever a boot object is present; without this
     /// the apply would navigate again and the reader would reload forever.
     static APPLYING: Cell<bool> = const { Cell::new(false) };
+    /// Set for the life of a format mount. The format instance opens in this
+    /// heap. It must not see the host's boot object and navigate again.
+    static IN_FORMAT: Cell<bool> = const { Cell::new(false) };
+    static HANDOFF_APPLIED: Cell<bool> = const { Cell::new(false) };
+    /// The resume the host put in the mount payload. `open_at` reads this
+    /// before the library, which a format heap does not hold.
+    static RESUME: Cell<Option<(u32, Option<f64>)>> = const { Cell::new(None) };
+    static DISPLAY_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -66,10 +74,42 @@ pub fn is_reader() -> bool {
     }
 }
 
-/// Open and close leave the page, except while a handoff is being applied and
-/// except in a host test, which has no boot object.
+/// Open and close leave the page, except while a handoff is being applied,
+/// except inside a format instance, and except in a host test, which has no
+/// boot object.
 pub fn should_swap() -> bool {
-    boot_present() && !APPLYING.with(|flag| flag.get())
+    !in_format() && boot_present() && !APPLYING.with(|flag| flag.get())
+}
+
+/// True while this heap is a format instance. The host's copy stays false.
+pub fn in_format() -> bool {
+    IN_FORMAT.with(|flag| flag.get())
+}
+
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+pub fn set_in_format(on: bool) {
+    IN_FORMAT.with(|flag| flag.set(on));
+}
+
+/// Park the payload's resume so the open does not ask an empty library.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+pub fn set_resume_override(page: u32, fraction: Option<f64>) {
+    RESUME.with(|slot| slot.set(Some((page, fraction))));
+}
+
+pub fn take_resume_override() -> Option<(u32, Option<f64>)> {
+    RESUME.with(|slot| slot.take())
+}
+
+/// The library's name for the row, when the document's own title is not one.
+/// A format heap does not hold the row.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+pub fn set_display_name(name: Option<String>) {
+    DISPLAY_NAME.with(|slot| *slot.borrow_mut() = name.filter(|n| !n.is_empty()));
+}
+
+pub fn display_name_override() -> Option<String> {
+    DISPLAY_NAME.with(|slot| slot.borrow().clone())
 }
 
 /// Write everything the next page will load, then leave. Debounced timers die
@@ -99,6 +139,14 @@ pub fn leave_for_reader(state: AppState, path: String, book_id: Option<String>) 
             .status
             .set(pdf_engine::types::DocStatus::Opening);
         state.reader.document.path.set(Some(path.clone()));
+        state.reader.document.book_id.set(book_id.clone());
+        // Already the reader page: drop the format instance and mount the
+        // next book into the same slot. The chrome stays. The import waiter
+        // is the shelf's problem; this page has already loaded.
+        if is_reader() {
+            crate::slot::mount_format(state, path, book_id);
+            return;
+        }
         let ticket = bump_leave();
         if imports_busy(state) {
             defer(state, ticket, path, book_id);
@@ -178,30 +226,29 @@ pub async fn ensure_pdf_engine() {
     }
 }
 
-/// The reader page's first act: take the handoff and open it in this heap.
-/// Missing payload means the boot script should already have left; if it
-/// didn't, leave now rather than mount an empty reader.
+/// The reader page's first act: take the handoff and mount its format
+/// instance. This heap does not open the file. Missing payload means the
+/// boot script should already have left; if it didn't, leave now rather
+/// than sit on an empty reader. Once: the effect that calls this has no
+/// signal reads, and a second apply would mount the book twice.
 pub fn apply_handoff(state: AppState) {
+    if HANDOFF_APPLIED.with(|flag| flag.replace(true)) {
+        return;
+    }
     #[cfg(target_arch = "wasm32")]
     {
         let Some(open) = take_open() else {
             enter_library();
             return;
         };
-        APPLYING.with(|flag| flag.set(true));
-        if let Some(id) = open.book_id.clone() {
-            let exists = state.library.books.with_untracked(|books| {
-                library_core::book::find_by_id(books, &id).is_some()
-            });
-            if exists {
-                crate::services::document::open::open_book(state, id);
-            } else {
-                crate::services::document::open_path(state, open.path);
-            }
-        } else {
-            crate::services::document::open_path(state, open.path);
-        }
-        APPLYING.with(|flag| flag.set(false));
+        state
+            .reader
+            .document
+            .status
+            .set(pdf_engine::types::DocStatus::Opening);
+        state.reader.document.path.set(Some(open.path.clone()));
+        state.reader.document.book_id.set(open.book_id.clone());
+        crate::slot::mount_format(state, open.path, open.book_id);
     }
     #[cfg(not(target_arch = "wasm32"))]
     {

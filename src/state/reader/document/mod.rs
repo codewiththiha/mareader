@@ -30,6 +30,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
+#[cfg(any(not(format_runtime), feature = "format-pdf"))]
 use pdf_core::outline::OutlineEntry;
 use pdf_engine::types::{DocStatus, PageSize};
 use reader_core::format::Format;
@@ -175,12 +176,14 @@ impl DocumentState {
     /// Height-over-width aspect of page 1 (tracked read). Every
     /// fixed-geometry surface that sizes itself against the first sheet goes
     /// through here, so the fallback policy lives in exactly one place.
+    #[cfg(all(feature = "format-pdf", target_arch = "wasm32"))]
     pub fn page1_aspect(&self) -> f64 {
         page_aspect(self.content.metrics.page1_size.get())
     }
 
     /// Same, read untracked — for rAF/scroll callbacks that must not
     /// subscribe to geometry.
+    #[cfg(all(feature = "format-pdf", target_arch = "wasm32"))]
     pub fn page1_aspect_now(&self) -> f64 {
         page_aspect(self.content.metrics.page1_size.get_untracked())
     }
@@ -199,6 +202,7 @@ impl DocumentState {
     /// cannot tell these chapters from the ones `md_core` derives, and the
     /// `page_count` clamp stops an outline authored against a re-saved file
     /// from jumping past the last sheet.
+    #[cfg(any(not(format_runtime), feature = "format-pdf"))]
     pub fn set_pdf_outline(&self, entries: Vec<OutlineEntry>, page_count: u32) {
         self.outline.set(Arc::new(pdf_core::outline::to_nodes(entries, page_count)));
     }
@@ -231,6 +235,7 @@ pub const NO_DOCUMENT: &str = "No document";
 /// [`DEFAULT_PAGE_ASPECT`] when the size is missing or its width is not
 /// positive — dividing by a zero-width sheet would poison every height
 /// derived from it.
+#[cfg(any(test, all(feature = "format-pdf", target_arch = "wasm32")))]
 pub(crate) fn page_aspect(size: Option<PageSize>) -> f64 {
     match size {
         Some(s) if s.width > 0.0 => s.height / s.width,

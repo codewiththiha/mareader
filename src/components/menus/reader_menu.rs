@@ -24,7 +24,11 @@ fn ModeButton(state: AppState, m: ViewMode, icon: IconName, title: &'static str)
             icon=icon
             title=title
             pressed=pressed
-            on_click=move || state.reader.viewer.mode.set(m)
+            on_click=move || {
+                if !crate::slot::post_mode(m) {
+                    state.reader.viewer.mode.set(m);
+                }
+            }
         />
     }
 }
@@ -37,7 +41,11 @@ fn FitButton(state: AppState, f: FitMode, icon: IconName, title: &'static str) -
             icon=icon
             title=title
             pressed=pressed
-            on_click=move || state.reader.viewer.fit.set(f)
+            on_click=move || {
+                if !crate::slot::post_fit(f) {
+                    state.reader.viewer.fit.set(f);
+                }
+            }
         />
     }
 }
@@ -69,13 +77,21 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                     <IconButton
                         icon=IconName::ZoomOut
                         title="Zoom out (-)"
-                        on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(-1), true)
+                        on_click=move || {
+                            if !crate::slot::post_zoom(-1) {
+                                state.reader.viewer.zoom.post(ZoomCommand::Step(-1), true);
+                            }
+                        }
                     />
                     <span class="text-sm font-medium tabular-nums text-ink">{percent}</span>
                     <IconButton
                         icon=IconName::ZoomIn
                         title="Zoom in (+)"
-                        on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(1), true)
+                        on_click=move || {
+                            if !crate::slot::post_zoom(1) {
+                                state.reader.viewer.zoom.post(ZoomCommand::Step(1), true);
+                            }
+                        }
                     />
                 </div>
                 <div class="flex items-center justify-center gap-1 px-2 py-1">
@@ -97,7 +113,12 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                             label="Auto Scroll".to_string()
                             disabled=disabled
                             selected=Signal::derive(move || r.viewer.auto_scroll.get())
-                            on_click=move || r.viewer.auto_scroll.update(|v| *v = !*v)
+                            on_click=move || {
+                                let next = !r.viewer.auto_scroll.get();
+                                if !crate::slot::post_auto(next) {
+                                    r.viewer.auto_scroll.set(next);
+                                }
+                            }
                         >
                             <span class="ml-auto flex gap-0.5"><Kbd>"Shift"</Kbd><Kbd>"A"</Kbd></span>
                         </MenuItem>
@@ -143,11 +164,7 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                 <div class="mt-1 flex items-center justify-between border-t border-line px-1 py-1">
                     <span class="text-xs text-muted">"Mareader"</span>
                     <span class="text-xs text-muted">{
-                        if pdf_engine::has_pdf_reader() {
-                            format!("v{}", pdf_engine::version())
-                        } else {
-                            String::new()
-                        }
+                        format!("v{}", env!("CARGO_PKG_VERSION"))
                     }</span>
                 </div>
             </MenuPopover>

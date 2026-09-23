@@ -155,6 +155,19 @@ jobs:
       - name: Check wasm frontend
         run: cargo check --target wasm32-unknown-unknown --locked
 
+      # The host check above enables no format feature. These three are the
+      # format artifacts. One cargo invocation unifies features, so a text
+      # mount would still compile the PDF open arm. Three processes, one
+      # feature each.
+      - name: Check PDF format artifact
+        run: cargo check -p format-pdf --target wasm32-unknown-unknown --locked
+
+      - name: Check text format artifact
+        run: cargo check -p format-text --target wasm32-unknown-unknown --locked
+
+      - name: Check Markdown format artifact
+        run: cargo check -p format-md --target wasm32-unknown-unknown --locked
+
       # Feature unification hides under-declared dependencies: inside the
       # workspace another crate turns on the web-sys features this one uses,
       # so a missing feature only surfaces for whoever reuses the crate on
@@ -256,6 +269,9 @@ jobs:
       # the module; the emission above is what the test imports.
       - name: Session handoff
         run: node tools/test-session-boot.mjs
+
+      - name: Format loader
+        run: node tools/test-format-loader.mjs
 
       # The stylesheet is compiled by a Trunk pre_build hook, which meant nothing
       # but a release build ever ran it: a broken @apply or a token that stopped

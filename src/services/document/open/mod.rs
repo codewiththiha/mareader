@@ -10,12 +10,17 @@
 //! tail owns its own content seeding and calls [`enter`] for everything a
 //! reader expects to behave the same whatever the file extension was.
 
+#[cfg(any(not(format_runtime), feature = "format-pdf"))]
 mod cover;
 mod enter;
+#[cfg(any(not(format_runtime), feature = "format-pdf"))]
 mod outline;
+#[cfg(any(not(format_runtime), feature = "format-pdf"))]
 mod seed;
 mod shelf;
+#[cfg(any(not(format_runtime), feature = "format-text", feature = "format-md"))]
 mod reflow;
+#[cfg(any(not(format_runtime), feature = "format-pdf"))]
 mod warmup;
 
 use leptos::prelude::*;
@@ -30,7 +35,9 @@ use reader_core::format::{Format, format_of};
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 
-use library_core::book::{ReadPoint, resume_point};
+#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+use library_core::book::ReadPoint;
+use library_core::book::resume_point;
 use crate::state::{AppState, Toast};
 
 use super::session;
@@ -153,6 +160,13 @@ pub fn open_path(state: AppState, path: String) {
     open_at(state, None, path);
 }
 
+/// The format instance's open. The host already named the row; this heap does
+/// not look the library up to find it.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+pub fn open_named(state: AppState, book_id: Option<String>, path: String) {
+    open_at(state, book_id, path);
+}
+
 /// The open itself, with the row the reader named when they named one. See
 /// [`open_book`] for what the id buys and [`open_path`] for the opens that
 /// have nothing but an address.
@@ -211,18 +225,58 @@ fn open_at(state: AppState, book_id: Option<String>, path: String) {
     // last session left one. Which ROW answers is the id's business: a book of
     // its own resumes where its own reader left off, not where the twin at
     // the address did.
-    let (saved_page, saved_fraction) = state.library.books.with_untracked(|books| {
-        resume_point(books, book_id.as_deref(), &path)
-    });
+    let (saved_page, saved_fraction) = match crate::boot::take_resume_override() {
+        Some(point) => point,
+        None => state.library.books.with_untracked(|books| {
+            resume_point(books, book_id.as_deref(), &path)
+        }),
+    };
 
     match format_of(&path) {
-        Format::Pdf => open_pdf(state, path, saved_page, stamp),
-        fmt => reflow::open_reflowable(state, path, fmt, saved_page, saved_fraction, stamp),
+        Format::Pdf => dispatch_pdf(state, path, saved_page, stamp),
+        fmt => dispatch_reflow(state, path, fmt, saved_page, saved_fraction, stamp),
     }
+}
+
+#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+fn dispatch_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
+    open_pdf(state, path, saved_page, stamp);
+}
+
+#[cfg(all(format_runtime, not(feature = "format-pdf")))]
+fn dispatch_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
+    let _ = (path, saved_page, stamp);
+    fail(state, "this format module does not open PDF files".into());
+}
+
+#[cfg(any(not(format_runtime), feature = "format-text", feature = "format-md"))]
+fn dispatch_reflow(
+    state: AppState,
+    path: String,
+    format: Format,
+    saved_page: u32,
+    saved_fraction: Option<f64>,
+    stamp: u64,
+) {
+    reflow::open_reflowable(state, path, format, saved_page, saved_fraction, stamp);
+}
+
+#[cfg(all(format_runtime, not(any(feature = "format-text", feature = "format-md"))))]
+fn dispatch_reflow(
+    state: AppState,
+    path: String,
+    format: Format,
+    saved_page: u32,
+    saved_fraction: Option<f64>,
+    stamp: u64,
+) {
+    let _ = (path, format, saved_page, saved_fraction, stamp);
+    fail(state, "this format module does not open text files".into());
 }
 
 /// The PDF tail of the open flow: hand the path to the engine and seed from
 /// its answer.
+#[cfg(any(not(format_runtime), feature = "format-pdf"))]
 fn open_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
     spawn_local(async move {
         // The boot script imports the engine before a reader page starts.
@@ -247,6 +301,7 @@ fn open_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
 }
 
 /// The book opened: seed the state, mark it ready, and start the tails.
+#[cfg(any(not(format_runtime), feature = "format-pdf"))]
 fn ready(
     state: AppState,
     path: String,
@@ -270,11 +325,9 @@ fn ready(
     outline::resolve(state, path.clone(), stamp);
 
     // No eager search-index build here, deliberately: extraction costs one
-    // worker round trip per page and the index it fills lives on the wasm
-    // heap, which never shrinks — an open-time build charged every book that
-    // ratchet whether or not anyone ever searched it. The first search
-    // builds the index instead (`crate::effects::reader::search`), and a
-    // reopen of the same bytes adopts the retained one.
+    // worker round trip per page. The first search builds the index. The
+    // index dies with the format instance, so a reopen extracts into a new
+    // heap rather than adopting anything this one kept.
 
     shelf::record(
         state,

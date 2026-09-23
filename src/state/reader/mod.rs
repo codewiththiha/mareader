@@ -25,12 +25,18 @@ use reflow_core::typography::TextSettings;
 // Only the names the app reaches for by their short path are re-exported;
 // the rest are reached through their own module, which is the point of the
 // split.
-pub use ai::{AiSelectionState, SelectionDetail};
-pub use document::{DEFAULT_PAGE_ASPECT, DocumentState, NO_DOCUMENT, ReflowContent};
+pub use ai::AiSelectionState;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+pub use ai::SelectionDetail;
+pub use document::{DEFAULT_PAGE_ASPECT, DocumentState, NO_DOCUMENT};
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+pub use document::ReflowContent;
 pub use gloss::GlossState;
 pub use search::SearchState;
 pub use viewer::{Motion, ViewerSignals};
-pub use zoom::{ZoomCommand, ZoomTransition};
+pub use zoom::ZoomCommand;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+pub use zoom::ZoomTransition;
 
 /// Page-host texture, provided via Leptos context by the app shell (derived
 /// from settings). The page canvases and the reflowable page hosts read it to
@@ -93,6 +99,7 @@ impl ReaderState {
     /// signal around it updates with every scroll tick; the extent is read
     /// once off the stream's own total — the scroll offset is the thing that
     /// moves.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub fn stream_percent(&self) -> u32 {
         let top = self.viewer.scroll_top.get();
         let (_, viewport_h) = self.viewer.container_size.get();

@@ -2,6 +2,7 @@
 
 use leptos::prelude::*;
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use pdf_engine::types::DocStatus;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
@@ -28,11 +29,15 @@ pub(super) fn handle_modifier_shortcut<F: Fn() + 'static>(
         // shelf is what is on screen.
         "f" => {
             ev.prevent_default();
+            #[cfg(all(format_runtime, target_arch = "wasm32"))]
             if state.document.status.get_untracked() == DocStatus::Ready {
-                // Resumes a just-dismissed search (query and all) instead
-                // of opening an empty bar.
                 crate::effects::reader::search::resume_search(state);
             } else {
+                crate::events::dispatch_event(crate::events::FOCUS_LIBRARY_SEARCH_EVENT);
+            }
+            #[cfg(not(format_runtime))]
+            {
+                let _ = state;
                 crate::events::dispatch_event(crate::events::FOCUS_LIBRARY_SEARCH_EVENT);
             }
         }

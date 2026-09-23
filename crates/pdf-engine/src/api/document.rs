@@ -45,14 +45,10 @@ pub async fn outline() -> Result<Vec<OutlineEntry>, EngineError> {
     Ok(payload.outline)
 }
 
-/// Tear the engine document down (used when returning to the library shelf).
-///
-/// The Rust-owned search index deliberately SURVIVES: it is keyed by the
-/// document's content fingerprint, so reopening the same book adopts it
-/// instead of re-extracting every page (a rebuild per open/close cycle
-/// ratchets the wasm heap, which never shrinks back). The next different
-/// document's open drops it ([`super::search::scope_to_document`]).
+/// Tear the engine document down, and the Rust search index with it. The
+/// index used to outlive the book. The format instance does not.
 pub async fn destroy() {
+    super::search::clear_index();
     let _ = bridge::destroy().await;
 }
 

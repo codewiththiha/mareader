@@ -72,6 +72,7 @@ pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
             .get_untracked()
             .and_then(|id| state.library.row(&id))
             .map(|row| row.display_name())
+            .or_else(crate::boot::display_name_override)
             .or(doc.title.clone()),
     };
     document.title.set(title);

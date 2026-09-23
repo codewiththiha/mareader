@@ -8,4 +8,5 @@
 
 pub mod frame;
 pub mod reduced_motion;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod spring;

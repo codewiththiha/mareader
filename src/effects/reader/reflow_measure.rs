@@ -77,6 +77,7 @@ thread_local! {
 /// `doc_id` is the block list's `Arc` pointer (see
 /// `crate::state::reader::document::reflow::ReflowContent::document_id`): the
 /// flush drops a batch whose document has since been swapped out.
+#[cfg(any(feature = "format-text", feature = "format-md"))]
 pub fn ingest(doc_id: usize, scale: f64, batch: &[(usize, f64)]) {
     if batch.is_empty() {
         return;

@@ -11,13 +11,20 @@
 //! those two owns the scale right now, so the same numbers govern a slide, a
 //! drag and a pause after one.
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use leptos::prelude::*;
 
 use reader_core::view::ViewMode;
-use reader_core::zoom_math::{FitMode, clamp_scale, fit_scale, nearest_zoom};
+use reader_core::zoom_math::{FitMode, clamp_scale, fit_scale};
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+use reader_core::zoom_math::nearest_zoom;
 
-use crate::state::reader::{ReaderState, ZoomCommand};
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+use crate::state::reader::ReaderState;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+use crate::state::reader::ZoomCommand;
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use super::config::{SETTLED_EPSILON, ZoomProfile, zoom_profile};
 
 /// Resolve a command to the scale it wants, or `None` when it must stand down
@@ -27,6 +34,7 @@ use super::config::{SETTLED_EPSILON, ZoomProfile, zoom_profile};
 /// chain from it so a fast `+ +` advances two presets rather than resolving
 /// the same one twice. Every read here is untracked — the caller's effect
 /// subscribes to the command signal and nothing else.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f64>) -> Option<f64> {
     let zoom = state.viewer.zoom;
     let profile = zoom_profile();
@@ -69,6 +77,7 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
 /// `None` with no fit mode: a refit of a hand-picked zoom would resolve to the
 /// current scale AND clobber `desired`, resurrecting an old number as the
 /// ceiling. Callers post it only while a fit is active.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 fn fit_owned_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
     let fit = state.viewer.fit.get_untracked();
     if fit == FitMode::None {
@@ -91,6 +100,7 @@ fn fit_owned_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
 /// `desired` — never from the live scale times a container ratio — is also why
 /// a slide does not accumulate rounding and land somewhere the reader never
 /// asked for.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
     if state.viewer.fit.get_untracked() != FitMode::None {
         return None; // a fit mode owns the scale while it is active
@@ -125,6 +135,7 @@ impl FitDims {
     /// Collect the fit inputs from the reader state. `None` while the
     /// container or the document is still unmeasured — fitting to a
     /// placeholder would slam the page to the minimum scale.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub(crate) fn of(state: &ReaderState) -> Option<Self> {
         let page = state.viewer.page.get_untracked().max(1);
         let p1 = state.document.content.metrics.page1_size.get_untracked()?;

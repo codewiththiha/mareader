@@ -62,3 +62,15 @@ await esbuild.build({
   target: "es2022",
   logLevel: "info",
 });
+
+// The format-loader decisions, emitted the same way. No DOM.
+await esbuild.build({
+  absWorkingDir: root,
+  entryPoints: ["public/session/format-loader.ts"],
+  bundle: true,
+  format: "esm",
+  outfile: "scripts/format-loader.js",
+  platform: "neutral",
+  target: "es2022",
+  logLevel: "info",
+});

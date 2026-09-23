@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run build:ts && trunk serve",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "trunk build --release",
+    "beforeBuildCommand": "node tools/build-frontend.mjs",
     "frontendDist": "../dist"
   },
   "app": {

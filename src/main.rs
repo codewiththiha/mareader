@@ -1,13 +1,16 @@
 mod app;
 mod boot;
 mod components;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 mod dom_contract;
 mod effects;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 mod epoch;
 mod events;
 mod features;
 mod memory;
 mod services;
+mod slot;
 mod state;
 mod storage;
 mod time;

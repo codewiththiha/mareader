@@ -11,10 +11,11 @@
 //!     document-change invalidation; wires in the auto-center effects.
 //!   * `view` — the rail's host around `panel`.
 
+#[cfg(all(feature = "format-pdf", target_arch = "wasm32"))]
 pub mod auto_center;
 pub mod geometry;
+#[cfg(all(feature = "format-pdf", target_arch = "wasm32"))]
 pub mod panel;
+#[cfg(all(feature = "format-pdf", target_arch = "wasm32"))]
 pub mod thumbnail_cell;
 pub mod view;
-
-pub(crate) use panel::ThumbnailsPanel;

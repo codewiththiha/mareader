@@ -23,6 +23,7 @@ pub enum ToastTone {
     #[default]
     Error,
     /// The "removed X — Undo" style: neutral with an accent action.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     Undo,
 }
 
@@ -75,6 +76,7 @@ fn tone_classes(tone: ToastTone) -> (&'static str, IconName) {
             "border-red-400/50 bg-red-950/95 text-red-100",
             IconName::Close,
         ),
+        #[cfg(all(format_runtime, target_arch = "wasm32"))]
         ToastTone::Undo => (
             "border-line bg-surface text-ink",
             IconName::Undo,

@@ -1272,6 +1272,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "format-md"
+version = "0.1.0"
+dependencies = [
+ "mareader",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "format-pdf"
+version = "0.1.0"
+dependencies = [
+ "mareader",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "format-text"
+version = "0.1.0"
+dependencies = [
+ "mareader",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -11,8 +11,13 @@
 //! know its own format and the shared cores, and nothing else. Adding a format
 //! means one directory here, one parser crate, and one arm in the host's match.
 
+#[cfg(any(feature = "format-text", feature = "format-md"))]
 pub mod block_render;
+#[cfg(any(feature = "format-text", feature = "format-md"))]
 pub mod md;
+#[cfg(feature = "format-pdf")]
 pub mod pdf;
+#[cfg(any(feature = "format-text", feature = "format-md"))]
 pub mod reflow;
+#[cfg(any(feature = "format-text", feature = "format-md"))]
 pub mod txt;

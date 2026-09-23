@@ -62,10 +62,22 @@ pub(crate) fn SidebarHeader(
                     title="Search (Cmd/Ctrl+F)"
                     data_search_chrome=true
                     on_click=move || {
-                        if reader.search.visible.get() {
-                            crate::effects::reader::search::dismiss_search(reader);
-                        } else {
+                        let on = !reader.search.visible.get();
+                        #[cfg(not(format_runtime))]
+                        {
+                            let _ = crate::slot::post_search(on);
+                        }
+                        #[cfg(all(format_runtime, target_arch = "wasm32"))]
+                        if on {
                             crate::effects::reader::search::resume_search(reader);
+                        } else {
+                            crate::effects::reader::search::dismiss_search(reader);
+                        }
+                        // Unified host build: the bar lives in the format wasm,
+                        // and this heap has no bridge to post to.
+                        #[cfg(all(format_runtime, not(target_arch = "wasm32")))]
+                        {
+                            let _ = on;
                         }
                     }
                 />

@@ -1,0 +1,17 @@
+[package]
+name = "format-pdf"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+mareader = { path = "../..", features = ["format-pdf"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+
+[lints.rust]
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "deny"

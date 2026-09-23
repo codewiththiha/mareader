@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use leptos::html;
 use leptos::prelude::*;
 use virtual_list::{Budget, GridSpec, Viewport};
 use virtual_list_leptos::{ScrollMode, VirtualRow, VirtualizerOptions, use_virtualizer};
@@ -20,7 +19,6 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
-use app_chrome::hooks::use_resize_observer::use_resize_observer;
 use app_chrome::hooks::use_timeout::use_debounce;
 use crate::state::ReaderState;
 use crate::state::app::SidebarMode;
@@ -117,7 +115,6 @@ pub fn ThumbnailsPanel(
         }
     });
 
-    let scroll_ref: NodeRef<html::Div> = NodeRef::new();
     let auto = AutoCenter::new(v.clone());
     let drive_owner = auto.last_user_drive.clone();
     let drive_closure_slot: DriveClosureSlot = StoredValue::new_local(None);
@@ -125,10 +122,15 @@ pub fn ThumbnailsPanel(
     let v_bind = v.clone();
 
     Effect::new(move |_| {
-        let Some(div) = scroll_ref.get() else {
+        // The host owns `#thumb-scroll`. This mount fills it; a second div
+        // would be a second id, and the virtualizer would measure the wrong one.
+        let Some(div) = web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| doc.get_element_by_id("thumb-scroll"))
+        else {
             return;
         };
-        let el: web_sys::Element = div.clone().unchecked_into();
+        let el: web_sys::Element = div;
         v_bind.bind_container(el.clone());
         // Measure NOW so the auto-center glide has a true viewport on its
         // first run. The container ResizeObserver only fires on size
@@ -182,19 +184,10 @@ pub fn ThumbnailsPanel(
     // observes the container from `bind_container`); the `live` gate drops or
     // restores cells but never changes the container's size, so a manual
     // remeasure on it was a duplicate read.
-    let v_resize = v.clone();
-    use_resize_observer(scroll_ref, move |_| {
-        v_resize.remeasure_container();
-    });
-
     auto.install(state, sidebar);
 
     view! {
-        <div
-            id="thumb-scroll"
-            node_ref=scroll_ref
-            class="relative flex-1 overflow-y-auto p-3"
-        >
+        <>
             <div
                 aria-hidden="true"
                 style:height=move || format!("{}px", total_size.get())
@@ -246,6 +239,6 @@ pub fn ThumbnailsPanel(
                     }
                 }
             />
-        </div>
+        </>
     }
 }

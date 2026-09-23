@@ -39,12 +39,17 @@
 //! same single-owner guarantee without a process-wide registry. `drive` runs
 //! exactly as long as the reader page owns it.
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod actuator;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod animation;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod command;
 pub mod config;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod coordinator;
 pub mod target;
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub use coordinator::ZoomController;
 

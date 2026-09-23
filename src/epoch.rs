@@ -9,9 +9,12 @@
 //! of the file. What the hash is *of* stays with each caller; this owns the
 //! rest, so "what an epoch is" has one home.
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use std::collections::hash_map::DefaultHasher;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use std::hash::Hasher;
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use leptos::prelude::*;
 
 /// A `Signal` that re-reads only when `hash` produces a different `u64`.
@@ -21,6 +24,7 @@ use leptos::prelude::*;
 /// a pointer identity, a `Vec` of sizes — without the signal's type naming it.
 /// `Send + Sync` is what `Signal::derive` asks of its closure; each call site's
 /// captured state already satisfies it, but a generic has to say so.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub fn epoch_signal(hash: impl Fn(&mut DefaultHasher) + Send + Sync + 'static) -> Signal<u64> {
     Signal::derive(move || {
         let mut hasher = DefaultHasher::new();

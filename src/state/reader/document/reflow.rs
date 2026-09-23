@@ -157,6 +157,11 @@ impl ReflowContent {
 
     /// One block by index, read untracked (the render paths read it tracked
     /// through their own `For`, which owns the key).
+    #[cfg(all(
+        format_runtime,
+        target_arch = "wasm32",
+        any(feature = "format-text", feature = "format-md")
+    ))]
     pub fn block_at(&self, index: usize) -> Option<TextBlock> {
         self.blocks.with_untracked(|blocks| blocks.get(index).cloned())
     }
@@ -166,6 +171,11 @@ impl ReflowContent {
     /// instead of reusing index keys the outgoing file occupied — which is why
     /// this read is TRACKED: the key is only worth having if a new document
     /// can reach the closure that computes it.
+    #[cfg(all(
+        format_runtime,
+        target_arch = "wasm32",
+        any(feature = "format-text", feature = "format-md")
+    ))]
     pub fn document_id(&self) -> usize {
         self.blocks.with(|blocks| Arc::as_ptr(blocks) as usize)
     }
@@ -178,6 +188,7 @@ impl ReflowContent {
     /// follows the best-known numbers. Splitting the two doors lets a
     /// measurement land without a full re-cut's paperwork when nothing moved,
     /// and a dial move re-cut without a measurement in sight.
+    #[cfg(any(not(format_runtime), feature = "format-text", feature = "format-md"))]
     pub fn set_initial_heights(
         &self,
         state: crate::state::AppState,
@@ -203,6 +214,7 @@ impl ReflowContent {
     /// a document setting the reader's page count is one module writing
     /// another's state. The caller hands the answer to
     /// [`super::DocumentState::publish_cut`].
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub fn recut(
         &self,
         state: crate::state::AppState,

@@ -5,15 +5,9 @@
 //! each page over via `bridge::extract_page_text` and everything after that —
 //! lowercasing, occurrence matching, snippet building, result ordering —
 //! happens here, on the wasm heap. The index is built LAZILY: the document's
-//! first search pays the extraction, never the open flow — a build scales
-//! with the book and lands on a wasm heap that only grows, so an eager build
-//! would ratchet the footprint of every book nobody ever searched. A retained
-//! index is ADOPTED when it was built for the same document: the open flow
-//! scopes the index to the document's pdf.js content fingerprint
-//! ([`scope_to_document`]), and a reopen of the same bytes skips the
-//! extraction entirely. A full rebuild per open/close cycle churned the
-//! worker and the wasm heap — and wasm memory only ever grows, so every
-//! cycle ratcheted the footprint up. After the build, a query is a pure
+//! first search pays the extraction, never the open flow. The index dies with
+//! the format instance ([`scope_to_document`] clears; it does not adopt), so a
+//! reopen extracts into a new heap. After the build, a query is a pure
 //! in-Rust scan: no pdf.js round trip, no per-query extraction.
 //!
 //! Extraction is concurrent in bounded batches ([`SEARCH_PAGE_CONCURRENCY`]
@@ -37,74 +31,25 @@ use crate::bridge;
 /// renders; deliberately a plain const, not a setting.
 pub const SEARCH_PAGE_CONCURRENCY: usize = 3;
 
-/// The identity of the document an index belongs to: its content fingerprint
-/// (the path when the engine reports none) and the page count it covers.
-#[derive(Clone, PartialEq, Eq)]
-struct IndexKey {
-    identity: String,
-    num_pages: u32,
-}
-
 thread_local! {
     static INDEX: RefCell<SearchIndex> = RefCell::new(SearchIndex::new());
-    /// The document the open flow scoped the index to, if any.
-    static SCOPED: RefCell<Option<IndexKey>> = const { RefCell::new(None) };
-    /// What INDEX holds: the key it was BUILT for and how many pages the
-    /// build indexed. `None` until a build completes — a half-extracted
-    /// index (an open abandoned mid-build) is never adopted.
-    static BUILT: RefCell<Option<(IndexKey, u32)>> = const { RefCell::new(None) };
 }
 
 fn with<R>(f: impl FnOnce(&mut SearchIndex) -> R) -> R {
     INDEX.with(|i| f(&mut i.borrow_mut()))
 }
 
-/// Scope the retained index to the document being opened. The fingerprint is
-/// the content identity pdf.js derived from these exact bytes — it survives a
-/// rename and changes on an in-place edit, which neither a path nor a stat
-/// can promise from inside the webview; the path is the fallback for engines
-/// that report none. `num_pages` rides along so a key can never adopt an
-/// index of a different length.
-///
-/// Called synchronously from the open flow BEFORE the route flips, so the
-/// first search of the new book can never query the old book's text: a
-/// retained index for any other document is dropped here and now. The
-/// retained index deliberately SURVIVES a close — that is the whole point of
-/// the cache — and one bounded index (the last book's text) is cheaper than
-/// the wasm-heap ratchet a re-extraction pays on every reopen.
+/// Drop whatever index this heap holds. The signature stays so the open flow
+/// does not grow a second call. Nothing is adopted: the instance dies with
+/// the book, and a reopen extracts into the next heap. The arguments are the
+/// document the caller just opened; they are not a cache key.
 pub fn scope_to_document(fingerprint: Option<&str>, path: &str, num_pages: u32) {
-    let identity = fingerprint.filter(|f| !f.is_empty()).unwrap_or(path);
-    let scoped = (!identity.is_empty()).then(|| IndexKey {
-        identity: identity.to_string(),
-        num_pages,
-    });
-    SCOPED.with(|s| *s.borrow_mut() = scoped);
-    if adopted_count(num_pages).is_none() {
-        with(|i| i.clear());
-        BUILT.with(|b| *b.borrow_mut() = None);
-    }
+    let _ = (fingerprint, path, num_pages);
+    clear_index();
 }
 
-/// The retained index's page count when it was built for exactly the scoped
-/// document; `None` when anything disagrees or the index is empty.
-fn adopted_count(num_pages: u32) -> Option<u32> {
-    let scoped = SCOPED.with(|s| s.borrow().clone())?;
-    if scoped.num_pages != num_pages {
-        return None;
-    }
-    let (built, indexed) = BUILT.with(|b| b.borrow().clone())?;
-    (built == scoped && indexed > 0 && with(|i| !i.is_empty())).then_some(indexed)
-}
-
-/// Remember what a finished build produced, so the next open of the same
-/// document adopts it. A build whose page count no longer matches the scope
-/// (a different document opened underneath the builder) records nothing.
-fn record_build(num_pages: u32, indexed: u32) {
-    let built = SCOPED
-        .with(|s| s.borrow().clone())
-        .filter(|key| key.num_pages == num_pages)
-        .map(|key| (key, indexed));
-    BUILT.with(|b| *b.borrow_mut() = built);
+pub(crate) fn clear_index() {
+    with(|i| i.clear());
 }
 
 /// `{ok:true, page, items:[{str,x,y,w,h}]}` — engine.extractPageText. The
@@ -128,21 +73,14 @@ struct ItemPayload {
 }
 
 /// Extract every page (concurrently, [`SEARCH_PAGE_CONCURRENCY`] per turn) and
-/// build the in-process index — unless the index retained from the last build
-/// was made for this exact document, in which case the extraction is skipped
-/// entirely. Returns the number of pages indexed; the caller usually ignores
+/// build the in-process index. Returns the number of pages indexed; the caller usually ignores
 /// it — the `{ok:true, count}` envelope shape is kept for the engine
 /// contract. Unreadable pages are skipped, never fatal: a corrupted page must
 /// not kill a search.
 pub async fn build_search_index(num_pages: u32) -> Result<u32, EngineError> {
     require_pdf_reader()?;
-    if let Some(indexed) = adopted_count(num_pages) {
-        return Ok(indexed);
-    }
     with(|i| i.clear());
-    BUILT.with(|b| *b.borrow_mut() = None);
     if num_pages == 0 {
-        record_build(num_pages, 0);
         return Ok(0);
     }
 
@@ -176,7 +114,6 @@ pub async fn build_search_index(num_pages: u32) -> Result<u32, EngineError> {
         }
         cursor = end + 1;
     }
-    record_build(num_pages, indexed);
     Ok(indexed)
 }
 
@@ -219,46 +156,37 @@ mod tests {
 
     fn reset() {
         with(|i| i.clear());
-        SCOPED.with(|s| *s.borrow_mut() = None);
-        BUILT.with(|b| *b.borrow_mut() = None);
     }
 
-    /// A finished build for one page of "moby", simulated without the engine:
-    /// scope, extract, record — the three steps `build_search_index` runs.
-    fn simulate_built(fingerprint: Option<&str>, path: &str, num_pages: u32) {
-        scope_to_document(fingerprint, path, num_pages);
+    fn plant() {
         with(|i| i.add_page(PageText { page: 1, items: vec![item("moby")] }));
-        record_build(num_pages, 1);
     }
 
     #[test]
-    fn reopening_the_same_book_adopts_the_retained_index() {
+    fn reopening_the_same_book_does_not_adopt() {
         reset();
-        simulate_built(Some("fp-a"), "/shelf/book.pdf", 1);
+        plant();
         scope_to_document(Some("fp-a"), "/shelf/book.pdf", 1);
-        assert_eq!(adopted_count(1), Some(1));
-        assert_eq!(with(|i| i.query("moby").total), 1);
+        assert!(with(|i| i.is_empty()));
+        assert_eq!(with(|i| i.query("moby").total), 0);
     }
 
     #[test]
-    fn a_different_book_drops_the_retained_index() {
+    fn a_different_book_finds_nothing() {
         reset();
-        simulate_built(Some("fp-a"), "/shelf/book.pdf", 1);
+        plant();
         scope_to_document(Some("fp-b"), "/shelf/other.pdf", 1);
-        assert_eq!(adopted_count(1), None);
         assert!(with(|i| i.is_empty()));
     }
 
     #[test]
-    fn without_a_fingerprint_the_path_is_the_identity() {
+    fn a_path_is_not_a_cache_key() {
         reset();
-        simulate_built(None, "/shelf/book.pdf", 1);
+        plant();
         scope_to_document(None, "/shelf/book.pdf", 1);
-        assert_eq!(adopted_count(1), Some(1));
-        // Same address, different length: the page count guards the key, so
-        // an edited file at the old path never adopts the stale index.
+        assert!(with(|i| i.is_empty()));
+        plant();
         scope_to_document(None, "/shelf/book.pdf", 2);
-        assert_eq!(adopted_count(2), None);
         assert!(with(|i| i.is_empty()));
     }
 }

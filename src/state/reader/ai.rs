@@ -43,6 +43,7 @@ impl SelectionDetail {
     /// Markdown). Decided by the host the tracker found rather than by the open
     /// document's format, so a selection that outlives a document switch cannot
     /// be anchored through the wrong pipeline.
+    #[cfg(all(format_runtime, target_arch = "wasm32"))]
     pub fn is_reflow(&self) -> bool {
         self.host.as_deref() == Some(crate::dom_contract::HOST_REFLOW)
     }

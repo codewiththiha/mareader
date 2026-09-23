@@ -11,6 +11,9 @@ mod shell;
 use leptos::prelude::*;
 
 use bootstrap::{create_app_state, provide_app_contexts};
+
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+pub(crate) use bootstrap::provide_app_contexts as bootstrap_contexts;
 use effects::{install_library_session, install_reader_session};
 use shell::{LibrarySession, ReaderSession};
 

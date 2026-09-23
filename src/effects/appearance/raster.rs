@@ -34,6 +34,9 @@ pub fn token_vars(a: &Appearance) -> Vec<(&'static str, String)> {
 /// pages + cached thumbnails). A no-op while no PDF reader is mounted —
 /// the guard lives in the engine api.
 pub fn refresh_theme() {
+    if crate::slot::post_theme() {
+        return;
+    }
     pdf_engine::api::refresh_theme();
 }
 
@@ -42,6 +45,9 @@ pub fn refresh_theme() {
 /// the live CSS filter/blend so the page re-colours per frame; leaving
 /// re-renders the pre-themed (baked) rasters from the raws.
 pub fn set_scrub_mode(on: bool) {
+    if crate::slot::post_scrub(on) {
+        return;
+    }
     pdf_engine::api::set_scrub_mode(on);
 }
 
@@ -49,5 +55,8 @@ pub fn set_scrub_mode(on: bool) {
 /// pages' unbaked raws while it is, so the session's first tint drag blits
 /// instead of re-rendering every page (public/engine/state.ts).
 pub fn set_appearance_menu_open(on: bool) {
+    if crate::slot::post_menu(on) {
+        return;
+    }
     pdf_engine::api::set_appearance_menu_open(on);
 }

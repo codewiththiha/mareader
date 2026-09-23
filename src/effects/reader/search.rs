@@ -30,6 +30,7 @@ use app_chrome::TITLE_BAR_H;
 use crate::state::ReaderState;
 use reader_core::view::ViewMode;
 use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
+#[cfg(feature = "format-pdf")]
 use pdf_engine::api as engine;
 
 /// Height of the floating search bar plus its gap, in CSS px. The bar hangs
@@ -48,6 +49,12 @@ pub async fn run_search(state: ReaderState) {
         run_reflow_search(state);
         return;
     }
+    #[cfg(feature = "format-pdf")]
+    run_pdf_search(state).await;
+}
+
+#[cfg(feature = "format-pdf")]
+async fn run_pdf_search(state: ReaderState) {
     if !state.search.index_built.get_untracked() {
         // One build at a time. The first search of a big book takes seconds —
         // a worker round trip per page, ~3 pages per turn (see
@@ -149,6 +156,7 @@ pub fn clear_search(state: ReaderState) {
     // A reflowable document's boxes are painted by the rows themselves, off the
     // query and the match list below, so there is nothing to clear on the engine
     // side — and the call must not reach an engine that has no document.
+    #[cfg(feature = "format-pdf")]
     if !state.reflowable_now() {
         engine::clear_highlights();
     }
@@ -178,6 +186,7 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
     // Only the engine has to be TOLD which match is current: it owns the boxes
     // it paints into the page's text layer. A reflowable document's rows read
     // `search.active` themselves and re-class the box that answers to it.
+    #[cfg(feature = "format-pdf")]
     if !state.reflowable_now() {
         engine::set_active_match(m.page, m.index as i32);
     }

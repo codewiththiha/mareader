@@ -17,6 +17,12 @@ use crate::state::AppState;
 /// store on the main thread, right when the reader was fighting for both. A
 /// failed render just leaves the stylised fallback cover on the shelf.
 pub(super) fn ensure(state: AppState, path: String, stamp: u64) {
+    // The cover store is the host's. A format heap's cache is empty, and
+    // writing it back would drop every other cover. The shelf fills a miss.
+    if crate::boot::in_format() {
+        let _ = (state, path, stamp);
+        return;
+    }
     if state
         .library
         .covers

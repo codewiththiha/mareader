@@ -21,6 +21,12 @@ use crate::state::AppState;
 /// "All" order — reading in place is the default, and a file opened from a dialog
 /// or a drop is not a file the app should copy anywhere.
 pub(crate) fn record(state: AppState, path: &str, title: Option<String>, point: ReadPoint) {
+    // A format heap does not hold the library. Persisting here would replace
+    // the host's blob with this heap's empty one. The host writes the row.
+    if crate::boot::in_format() {
+        let _ = (state, path, title, point);
+        return;
+    }
     // Persist last path (the settings-watch effect writes localStorage
     // automatically). Kept for schema stability; the library below is the real
     // store.

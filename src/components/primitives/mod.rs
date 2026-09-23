@@ -29,6 +29,7 @@ pub mod controls;
 pub mod feedback;
 pub mod floating;
 pub mod form;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod hooks;
 pub mod interactions;
 pub mod menu;

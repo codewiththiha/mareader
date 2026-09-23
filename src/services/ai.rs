@@ -7,7 +7,10 @@
 //! popover (and anything else) listens on the window, so document switches
 //! never stack dead Tauri handlers or drop the live one.
 
-pub use ai_core::types::{AiChunk, AiChunkEvent};
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
+pub use ai_core::types::AiChunk;
+pub use ai_core::types::AiChunkEvent;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 use leptos::task::spawn_local;
 use wasm_bindgen::JsValue;
 
@@ -16,6 +19,7 @@ pub use crate::events::AI_CHUNK_EVENT;
 /// Starts an `explain_word` run on the backend, tagged with `run`. The
 /// streamed results arrive as `ai-stream-chunk` events carrying that same id,
 /// re-broadcast by [`install_ai_chunk_bridge`].
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub fn invoke_explain_word(word: String, context: String, run: String) {
     spawn_local(async move {
         if let Err(e) = ai_core::bridge::explain_word(&word, &context, &run).await {

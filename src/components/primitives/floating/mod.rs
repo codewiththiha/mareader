@@ -11,6 +11,7 @@
 //! like, composed out of that plumbing.
 
 pub mod context_menu;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod floating_card;
 pub mod menu_popover;
 pub mod popover;

@@ -9,9 +9,13 @@
 //!   * `settings` — the AI's appearance knobs, hosted by the settings modal's
 //!     Theme tab.
 
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod anchor;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod gloss;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod reflow_anchor;
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub mod selection_pill;
 pub mod settings;
 
@@ -20,7 +24,7 @@ pub mod settings;
 /// The anchor watchers and the card interactions both reason about the same
 /// question — a gloss origin of some height, some distance down the viewport —
 /// and both were building the identical box by hand.
-#[cfg(test)]
+#[cfg(all(test, format_runtime, target_arch = "wasm32"))]
 pub(crate) mod fixture {
     use ai_core::gloss::GlossBox;
 

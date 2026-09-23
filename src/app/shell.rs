@@ -33,10 +33,8 @@ pub(crate) fn LibrarySession(state: AppState) -> impl IntoView {
 
 #[component]
 pub(crate) fn ReaderSession(state: AppState) -> impl IntoView {
-    // After the reader effects, so paper settings are published before this
-    // open asks the engine for a colour.
-    crate::boot::apply_handoff(state);
-
+    // The handoff mounts from ReaderPage, after `#viewer-slot` is in the
+    // document. Applying here raced that div.
     let drag_active = RwSignal::new(false);
     drag_drop(state, drag_active);
 

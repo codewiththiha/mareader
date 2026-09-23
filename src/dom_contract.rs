@@ -38,12 +38,15 @@
 /// The attribute every reader page host carries, naming the format family that
 /// painted it. The engine's selection tracker and the app's own captures both
 /// find their host through it, so a new format adds one attribute and joins.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const HOST_ATTR: &str = "data-reader-host";
 
 /// The [`HOST_ATTR`] value a reflowable page or stream block carries.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const HOST_REFLOW: &str = "reflow";
 
 /// The [`HOST_ATTR`] value a PDF page carries.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const HOST_PDF: &str = "pdf";
 
 /// On a rendered block: which block of the document it is, in document order.
@@ -53,12 +56,14 @@ pub const HOST_PDF: &str = "pdf";
 /// continuous stream resolve identically. The lookup half is the element id,
 /// [`crate::components::viewer::page_host::block_row_id`], resolved per mark
 /// per refresh.
+#[cfg(all(format_runtime, target_arch = "wasm32"))]
 pub const BLOCK_INDEX_ATTR: &str = "data-block-index";
 
 /// The class of the still-bitmap overlay a zoom stretches while a re-render is
 /// on its way. `crate::components::formats::pdf::canvas_host` creates and
 /// removes it; the engine's teardown clears any that outlived a document — a
 /// snapshot left in a recycled host would show the previous page's pixels.
+#[cfg(all(format_runtime, target_arch = "wasm32", feature = "format-pdf"))]
 pub const PAGE_SNAPSHOT_CLASS: &str = "page-snapshot";
 
 /// The class of the text layer inside a PDF host. The app builds the empty
@@ -66,4 +71,5 @@ pub const PAGE_SNAPSHOT_CLASS: &str = "page-snapshot";
 /// positioned spans, replaces it on a zoom, and queries it when a selection
 /// must know which layer of the document it is in. Both sides look it up by
 /// this name.
+#[cfg(all(format_runtime, target_arch = "wasm32", feature = "format-pdf"))]
 pub const TEXT_LAYER_CLASS: &str = "textLayer";

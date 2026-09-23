@@ -1,10 +1,10 @@
 // Runs before the Trunk wasm module. Module scripts are ordered, and this
 // file top-level-awaits, so the wasm module does not evaluate until the boot
-// object exists and — for a reader — the engines have been imported.
+// object exists. A reader boot loads the reader engine only. pdf.js arrives
+// with a PDF format mount, not with the page.
 //
 // Specifiers are variables on purpose. A literal import would let the bundler
-// inline pdf.js into this file, which is the opposite of "the shelf does not
-// load pdf.js".
+// inline pdf.js or a format wasm into this file.
 
 import {
   HANDOFF_KEY,
@@ -15,6 +15,7 @@ import {
   type Handoff,
   type HistoryMode,
 } from "./handoff";
+import { HOST_PDF, SLOT_KEY, artifactFor, gluePath, wasmPath, type FormatId } from "./format-loader";
 
 const PDFJS = "/vendor/pdfjs/pdf.min.mjs";
 const PDF_ENGINE = "/pdfEngine.js";
@@ -28,12 +29,32 @@ interface Boot {
   enterLibrary(): void;
   clearHandoff(): void;
   ensureEngine(): Promise<void>;
+  mountFormat(payload: string): Promise<void>;
+  dropFormat(): Promise<void>;
   flush(): void;
+}
+
+interface SlotBridge {
+  report?: (snapshot: string) => void;
+  command?: (command: string) => void;
+}
+
+interface FormatGlue {
+  default?: (input: string | WebAssembly.Module) => Promise<unknown>;
+  mount?: (payload: string) => Promise<void>;
+  dispose?: () => Promise<void>;
+  [key: string]: unknown;
+}
+
+interface FormatHandle {
+  glue: FormatGlue;
+  blobUrl: string;
 }
 
 declare global {
   interface Window {
     __MAREADER_BOOT?: Boot;
+    __MAREADER_SLOT?: SlotBridge;
   }
 }
 
@@ -77,11 +98,149 @@ if (new URLSearchParams(location.search).get("session") === "reader" && kind !==
 
 if (kind === "reader") {
   try {
-    await loadPdfEngine();
     await load(READER_ENGINE);
   } catch (err) {
-    console.error("[boot] reader engines failed to load", err);
+    console.error("[boot] reader engine failed to load", err);
   }
+}
+
+// One slot. The map exists so a second mount has a key to clear; phase 3
+// adds keys, it does not add a second owner of this one.
+const handles = new Map<string, FormatHandle>();
+const modules = new Map<FormatId, WebAssembly.Module>();
+let generation = 0;
+
+function nullGlue(glue: FormatGlue): void {
+  for (const key of Object.keys(glue)) {
+    glue[key] = undefined;
+  }
+}
+
+function reportFailure(path: string, message: string): void {
+  console.error("[format]", message);
+  const report = window.__MAREADER_SLOT?.report;
+  if (typeof report !== "function") return;
+  report(
+    JSON.stringify({
+      path,
+      status: "error",
+      error: message,
+      title: "",
+      page: 1,
+      pageCount: 1,
+      format: artifactFor(path) === "md" ? "markdown" : artifactFor(path),
+      firstPaint: true,
+    }),
+  );
+}
+
+// Drop order is DROP_ORDER. Flush already happened on the host side before
+// it asked. Dispose runs the format's owner cleanup and its engine teardown.
+// Nulling the glue drops the exports and any memory view it closed over.
+// The Module cache is code and stays. The instance does not.
+async function release(handle: FormatHandle | undefined): Promise<void> {
+  if (!handle) return;
+  try {
+    if (typeof handle.glue.dispose === "function") {
+      await handle.glue.dispose();
+    }
+  } catch (err) {
+    console.error("[format] dispose failed", err);
+  }
+  nullGlue(handle.glue);
+  URL.revokeObjectURL(handle.blobUrl);
+  console.info("[mem] format instance gone");
+}
+
+async function wasmModule(format: FormatId): Promise<WebAssembly.Module> {
+  const cached = modules.get(format);
+  if (cached) return cached;
+  const url = wasmPath(format);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`format wasm missing: ${url}`);
+  }
+  const bytes = await response.arrayBuffer();
+  const compiled = await WebAssembly.compile(bytes);
+  modules.set(format, compiled);
+  return compiled;
+}
+
+async function mountFormatNow(payload: string): Promise<void> {
+  let path = "";
+  try {
+    const parsed = JSON.parse(payload) as { path?: unknown };
+    path = typeof parsed.path === "string" ? parsed.path : "";
+    if (path.length === 0) return;
+    const mine = ++generation;
+    const previous = handles.get(SLOT_KEY);
+    handles.delete(SLOT_KEY);
+    await release(previous);
+    if (mine !== generation) return;
+    const format = artifactFor(path);
+    if (format === HOST_PDF) {
+      await loadPdfEngine();
+    }
+    if (mine !== generation) return;
+    const glueUrl = gluePath(format);
+    const response = await fetch(glueUrl);
+    if (!response.ok) {
+      throw new Error(`format glue missing: ${glueUrl}`);
+    }
+    const source = await response.text();
+    const blobUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    // A variable, so the bundler cannot inline the glue or the wasm it loads.
+    const glue = (await import(blobUrl)) as FormatGlue;
+    if (mine !== generation) {
+      URL.revokeObjectURL(blobUrl);
+      return;
+    }
+    if (typeof glue.default !== "function" || typeof glue.mount !== "function") {
+      URL.revokeObjectURL(blobUrl);
+      throw new Error(`format glue has no mount: ${glueUrl}`);
+    }
+    const compiled = await wasmModule(format);
+    if (mine !== generation) {
+      URL.revokeObjectURL(blobUrl);
+      return;
+    }
+    // A Module, not an Instance. init builds a new heap from it.
+    await glue.default(compiled);
+    if (mine !== generation) {
+      nullGlue(glue);
+      URL.revokeObjectURL(blobUrl);
+      return;
+    }
+    handles.set(SLOT_KEY, { glue, blobUrl });
+    await glue.mount(payload);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not load the format module";
+    reportFailure(path, message);
+  }
+}
+
+async function dropFormatNow(): Promise<void> {
+  generation += 1;
+  const handle = handles.get(SLOT_KEY);
+  handles.delete(SLOT_KEY);
+  await release(handle);
+}
+
+function abandonNow(): void {
+  generation += 1;
+  const handle = handles.get(SLOT_KEY);
+  handles.delete(SLOT_KEY);
+  if (!handle) return;
+  const dispose = handle.glue.dispose;
+  if (typeof dispose === "function") {
+    try {
+      void dispose();
+    } catch {
+      // The document is leaving. The reclaim is that death.
+    }
+  }
+  nullGlue(handle.glue);
+  URL.revokeObjectURL(handle.blobUrl);
 }
 
 const boot: Boot = {
@@ -116,16 +275,26 @@ const boot: Boot = {
   ensureEngine() {
     return loadPdfEngine();
   },
+  mountFormat(payload) {
+    return mountFormatNow(payload);
+  },
+  dropFormat() {
+    return dropFormatNow();
+  },
   flush() {},
 };
 
 window.__MAREADER_BOOT = boot;
+window.__MAREADER_SLOT = window.__MAREADER_SLOT ?? {};
 
-// pagehide is the flush. unload is the back-forward-cache opt-out: a cached
-// document is still alive, and a living document still holds the wasm heap.
+// pagehide is the flush, then the format handle. unload is the
+// back-forward-cache opt-out: a cached document is still alive, and a living
+// document still holds the wasm heap.
 window.addEventListener("pagehide", () => {
   window.__MAREADER_BOOT?.flush();
+  abandonNow();
 });
 window.addEventListener("unload", () => {
   window.__MAREADER_BOOT?.flush();
+  abandonNow();
 });
