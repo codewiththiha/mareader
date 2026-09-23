@@ -14,7 +14,12 @@ import {
   artifactFor,
   dropsFor,
   gluePath,
+  isFormatModule,
+  isSessionModuleId,
   looksLikeHtml,
+  moduleGlue,
+  moduleWasm,
+  releaseBefore,
   wasmPath,
 } from "../scripts/format-loader.js";
 
@@ -69,6 +74,27 @@ assert.equal(looksLikeHtml(null, "<!doctype html>\n"), true);
 assert.equal(looksLikeHtml(null, "\n  <html>"), true);
 assert.equal(looksLikeHtml("application/javascript", "export default function"), false);
 assert.equal(looksLikeHtml(null, "export async function mount"), false);
+
+assert.deepEqual(releaseBefore("library"), ["pdf", "text", "md", "reader-host"]);
+assert.deepEqual(releaseBefore("reader-host"), ["library", "pdf", "text", "md"]);
+assert.deepEqual(releaseBefore("pdf"), ["library", "pdf", "text", "md"]);
+assert.deepEqual(releaseBefore("text"), ["library", "pdf", "text", "md"]);
+assert.deepEqual(releaseBefore("md"), ["library", "pdf", "text", "md"]);
+assert.equal(releaseBefore("library").includes("library"), false);
+assert.equal(releaseBefore("text").includes("reader-host"), false);
+assert.equal(releaseBefore("md").includes("reader-host"), false);
+assert.equal(moduleGlue("library"), LIBRARY_GLUE);
+assert.equal(moduleWasm("library"), LIBRARY_WASM);
+assert.equal(moduleGlue("reader-host"), HOST_GLUE);
+assert.equal(moduleWasm("reader-host"), HOST_WASM);
+assert.equal(moduleGlue("text"), "formats/text.js");
+assert.equal(moduleWasm("md"), "formats/md_bg.wasm");
+assert.equal(moduleGlue("pdf"), gluePath("pdf"));
+assert.equal(isFormatModule("text"), true);
+assert.equal(isFormatModule("md"), true);
+assert.equal(isFormatModule("library"), false);
+assert.equal(isSessionModuleId("reader-host"), true);
+assert.equal(isSessionModuleId("epub"), false);
 
 console.log("format loader ok");
 

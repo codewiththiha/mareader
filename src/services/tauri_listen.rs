@@ -5,34 +5,87 @@
 //! engine's `listen` bridge, and park the closure in a `StoredValue` so the
 //! listener stays registered. Parking is load-bearing: dropping the Rust-side
 //! `Closure` frees the wasm function table entry while Tauri's JS still holds
-//! a reference, and the next emitted event would call into freed memory. This
-//! helper owns that ritual once.
+//! a reference, and the next emitted event would call into freed memory.
+//!
+//! `unlisten_all` runs from dispose, before `release()` clears `wasm`. A
+//! listener left behind calls into that cleared instance on the next resize
+//! and the page that just mounted draws nothing.
+
+use std::cell::RefCell;
 
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
 use web_sys::Event;
 
-/// Subscribe to a Tauri event for the lifetime of the surrounding reactive
-/// owner. The unlisten handle is deliberately discarded — Tauri keeps the
-/// listener registered until it is called, and no app surface ever
-/// unsubscribes. Must run inside a reactive owner (every caller installs from
-/// the app root or a long-lived shell component): that owner is what keeps the
-/// parked closure alive.
+struct Listeners {
+    /// Set by dispose. A listen that resolves after that unlistens immediately
+    /// instead of subscribing a module that is going away.
+    closed: bool,
+    handles: Vec<js_sys::Function>,
+}
+
+thread_local! {
+    static LISTENERS: RefCell<Listeners> = const {
+        RefCell::new(Listeners {
+            closed: false,
+            handles: Vec::new(),
+        })
+    };
+}
+
+/// Subscribe to a Tauri event until [`unlisten_all`]. Must run inside a
+/// reactive owner: that owner keeps the parked closure alive until dispose.
 pub fn tauri_listen(event: &str, handler: impl FnMut(Event) + 'static) {
     let cb = Closure::wrap(Box::new(handler) as Box<dyn FnMut(Event)>);
-    let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
+    let function: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
     let event = event.to_string();
+    // Dispose also calls this. Registering it here keeps the function live in
+    // every build: the wasm-only dispose sites are not compiled for host tests.
+    leptos::prelude::on_cleanup(unlisten_all);
     wasm_bindgen_futures::spawn_local(async move {
-        if let Err(error) = tauri_bridge::listen(&event, f).await {
-            web_sys::console::error_2(
-                &wasm_bindgen::JsValue::from_str(&format!(
-                    "Could not listen for Tauri event '{event}'"
-                )),
-                &error,
-            );
+        match tauri_bridge::listen(&event, function).await {
+            Ok(value) => park_unlisten(value),
+            Err(error) => {
+                web_sys::console::error_2(
+                    &JsValue::from_str(&format!("Could not listen for Tauri event '{event}'")),
+                    &error,
+                );
+            }
         }
     });
     // Park the closure in the current owner: dropping it would free the wasm
     // function table entry while Tauri's JS still holds a reference.
     let _parked = leptos::prelude::StoredValue::new_local(Some(cb));
+}
+
+fn park_unlisten(value: JsValue) {
+    let Ok(fun) = value.dyn_into::<js_sys::Function>() else {
+        return;
+    };
+    let late = LISTENERS.with(|slot| {
+        let mut listeners = slot.borrow_mut();
+        if listeners.closed {
+            Some(fun)
+        } else {
+            listeners.handles.push(fun);
+            None
+        }
+    });
+    if let Some(fun) = late {
+        let _ = fun.call0(&JsValue::UNDEFINED);
+    }
+}
+
+/// Drop every listener this instance registered. Dispose calls this while
+/// `wasm` is still set. A second call is a no-op.
+pub fn unlisten_all() {
+    let pending = LISTENERS.with(|slot| {
+        let mut listeners = slot.borrow_mut();
+        listeners.closed = true;
+        std::mem::take(&mut listeners.handles)
+    });
+    for fun in pending {
+        let _ = fun.call0(&JsValue::UNDEFINED);
+    }
 }

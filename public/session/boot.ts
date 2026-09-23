@@ -1,9 +1,10 @@
 // Runs before the Trunk wasm module and never resolves, so that binary never
-// evaluates. It has no release(). The shelf and the reader chrome are
-// separate instances this file starts and drops. Opening a book releases
-// the shelf and starts a new host. Returning releases that host and every
-// book module, then starts a new shelf. The URL is not changed: a history
-// update in this webview unloads the document and leaves the empty window.
+// evaluates. It has no release(). The shelf, the reader chrome, and each
+// book format are modules this file activates and deactivates. Opening a
+// book deactivates the shelf completely and activates a new host, then a
+// pdf, text, or markdown module. Returning deactivates those and activates
+// a new shelf. The URL is not changed: a history update in this webview
+// unloads the document and leaves the empty window.
 //
 // Specifiers are variables on purpose. A literal import would let the bundler
 // inline pdf.js or a format wasm into this file.
@@ -15,19 +16,18 @@ import {
   type Handoff,
 } from "./handoff";
 import {
-  HOST_GLUE,
   HOST_PDF,
-  HOST_WASM,
-  LIBRARY_GLUE,
-  LIBRARY_WASM,
   SLOT_KEY,
   aliveAfter,
   artifactFor,
   dropsFor,
-  gluePath,
+  isFormatModule,
+  isSessionModuleId,
   looksLikeHtml,
-  wasmPath,
-  type FormatId,
+  moduleGlue,
+  moduleWasm,
+  releaseBefore,
+  type SessionModuleId,
 } from "./format-loader";
 
 const PDFJS = "/vendor/pdfjs/pdf.min.mjs";
@@ -44,6 +44,8 @@ interface Boot {
   ensureEngine(): Promise<void>;
   mountFormat(payload: string): Promise<void>;
   dropFormat(): Promise<void>;
+  activate(module: string, payload?: string): Promise<void>;
+  deactivate(module: string): Promise<void>;
   flush(): void;
 }
 
@@ -53,7 +55,9 @@ interface SlotBridge {
 }
 
 interface FormatGlue {
-  default?: (input: { module_or_path: WebAssembly.Module }) => Promise<unknown>;
+  default?: (
+    input: WebAssembly.Module | { module_or_path: WebAssembly.Module },
+  ) => Promise<unknown>;
   mount?: (payload?: string) => Promise<void>;
   detach?: () => void;
   dispose?: () => Promise<void>;
@@ -128,9 +132,9 @@ if (kind === "reader") {
 const handles = new Map<string, FormatHandle>();
 const live = new Set<FormatHandle>();
 const released = new WeakSet<FormatHandle>();
-const modules = new Map<FormatId, WebAssembly.Module>();
 let libraryHandle: FormatHandle | null = null;
 let hostHandle: FormatHandle | null = null;
+const active = new Map<SessionModuleId, FormatHandle>();
 let liveKind: "library" | "reader" = kind;
 let swapping = false;
 let generation = 0;
@@ -178,20 +182,11 @@ async function killPdfWorker(): Promise<void> {
 }
 
 function forgetPdfReader(): void {
-  // The facade is frozen. Replacing the binding is fine; assigning through a
-  // non-writable binding is the Safari error that aborts the shelf swap.
-  // Neither failure may stop the next instance from mounting.
-  const host = globalThis as { PDFReader?: unknown };
-  try {
-    delete host.PDFReader;
-  } catch {
-    // Non-configurable.
-  }
-  try {
-    host.PDFReader = undefined;
-  } catch {
-    // Non-writable. Leave the frozen facade; do not write its fields.
-  }
+  // The facade is frozen, and pdf.js does not re-evaluate, so deleting the
+  // binding would leave the next book unable to open. destroy() already
+  // dropped the worker. Do not assign through the facade: that is the Safari
+  // readonly error, and it used to abort the shelf before the new module
+  // mounted.
   engineReady = null;
 }
 
@@ -203,6 +198,10 @@ async function releaseHandle(handle: FormatHandle | null | undefined): Promise<v
   released.add(handle);
   live.delete(handle);
   if (libraryHandle === handle) libraryHandle = null;
+  if (hostHandle === handle) hostHandle = null;
+  for (const [id, value] of active) {
+    if (value === handle) active.delete(id);
+  }
   for (const [key, value] of handles) {
     if (value === handle) handles.delete(key);
   }
@@ -258,26 +257,17 @@ function isWasm(bytes: Uint8Array): boolean {
   return bytes.length >= 4 && bytes[0] === 0 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
 }
 
-async function wasmModule(format: FormatId): Promise<WebAssembly.Module> {
-  const cached = modules.get(format);
-  if (cached) return cached;
-  const path = wasmPath(format);
-  const { bytes } = await fetchAsset(path, "format wasm");
-  if (!isWasm(bytes)) {
-    throw new Error(`format wasm is not wasm: ${path}`);
-  }
-  const compiled = await WebAssembly.compile(bytes);
-  modules.set(format, compiled);
-  return compiled;
-}
-
 async function importGlue(path: string, label: string): Promise<{ glue: FormatGlue; blobUrl: string }> {
   const { bytes } = await fetchAsset(path, label);
   const source = new TextDecoder().decode(bytes);
   // A fresh source each import. A webview that keys the module map by text
   // would otherwise hand back the module whose bindings release() just cleared,
   // and the next init assigns into that sealed environment.
-  const named = `${source}\n// mareader-instance ${++blobNonce}\n//# sourceURL=${path}\n`;
+  const instance = ++blobNonce;
+  // A stable sourceURL is a module-map key in this webview, so the second
+  // import came back as the module release() had just cleared and the next
+  // init assigned into that sealed environment.
+  const named = `${source}\n// mareader-instance ${instance}\n//# sourceURL=${path}?instance=${instance}\n`;
   const blobUrl = URL.createObjectURL(new Blob([named], { type: "text/javascript" }));
   try {
     const glue = (await import(blobUrl)) as FormatGlue;
@@ -300,51 +290,34 @@ async function mountFormatNow(payload: string): Promise<void> {
     const parsed = JSON.parse(payload) as { path?: unknown };
     path = typeof parsed.path === "string" ? parsed.path : "";
     if (path.length === 0) return;
-    const mine = ++generation;
-    const previous = handles.get(SLOT_KEY);
-    handles.delete(SLOT_KEY);
-    await releaseHandle(previous);
-    if (mine !== generation) return;
     const format = artifactFor(path);
-    if (format === HOST_PDF) {
-      await loadPdfEngine();
-    }
-    if (mine !== generation) return;
-    const gluePathname = gluePath(format);
-    const imported = await importGlue(gluePathname, "format glue");
+    const mine = ++generation;
+    // Compile the next book before dropping the one on screen, so a missing
+    // artifact leaves the current page up.
+    const prepared = await prepareModule(format);
     if (mine !== generation) {
-      URL.revokeObjectURL(imported.blobUrl);
+      discardPrepared(prepared);
       return;
     }
-    const compiled = await wasmModule(format);
+    for (const id of releaseBefore(format)) {
+      await settle(id, () => deactivateModule(id));
+    }
     if (mine !== generation) {
-      URL.revokeObjectURL(imported.blobUrl);
+      discardPrepared(prepared);
       return;
     }
-    let handle: FormatHandle | null = null;
-    try {
-      await imported.glue.default?.({ module_or_path: compiled });
-      handle = { glue: imported.glue, blobUrl: imported.blobUrl, format };
-      if (mine !== generation) {
-        await releaseHandle(handle);
-        return;
-      }
-      live.add(handle);
-      handles.set(SLOT_KEY, handle);
-      await imported.glue.mount?.(payload);
-    } catch (err) {
-      if (handle && !released.has(handle)) {
-        await releaseHandle(handle);
-      } else {
-        try {
-          imported.glue.release?.();
-        } catch {
-          // Init never finished.
-        }
-        URL.revokeObjectURL(imported.blobUrl);
-      }
-      throw err;
+    if (format === HOST_PDF) await loadPdfEngine();
+    if (mine !== generation) {
+      discardPrepared(prepared);
+      return;
     }
+    const handle = await activateSession(prepared, format, payload);
+    if (mine !== generation) {
+      await releaseHandle(handle);
+      return;
+    }
+    remember(format, handle);
+    console.info(`[mem] ${format} module mounted`);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not load the format module";
     reportFailure(path, message);
@@ -360,12 +333,6 @@ async function dropEveryBook(): Promise<void> {
   }
 }
 
-async function dropLibrary(): Promise<void> {
-  const handle = libraryHandle;
-  libraryHandle = null;
-  await releaseHandle(handle);
-}
-
 function requireLibraryPlan(): void {
   const plan = dropsFor("to-library");
   for (const id of [HOST_PDF, "text", "md", "pdf-worker", "canvases", "reader-host"]) {
@@ -377,13 +344,13 @@ function requireLibraryPlan(): void {
 
 function clearBody(): void {
   releaseCanvases();
-  document.body.replaceChildren();
-}
-
-async function dropHost(): Promise<void> {
-  const handle = hostHandle;
-  hostHandle = null;
-  await releaseHandle(handle);
+  const body = ensureBody();
+  if (!body) return;
+  try {
+    body.replaceChildren();
+  } catch {
+    // The next mount creates its own nodes.
+  }
 }
 
 type PendingSwap =
@@ -431,23 +398,57 @@ async function prepareSession(
   }
 }
 
-async function activateSession(prepared: PreparedSession, label: string): Promise<FormatHandle> {
+async function startGlue(glue: FormatGlue, compiled: WebAssembly.Module): Promise<void> {
+  const init = glue.default;
+  if (typeof init !== "function") throw new Error("module has no init");
+  // Prefer the compiled module. The object form assigns back into the
+  // parameter, and WKWebView throws "Attempted to assign to readonly
+  // property" when that glue is entered again. Fall back once for a glue
+  // that only accepts the object.
   try {
-    await prepared.imported.glue.default?.({ module_or_path: prepared.compiled });
+    await init(compiled);
+  } catch (directErr) {
+    try {
+      await init({ module_or_path: compiled });
+    } catch {
+      throw directErr;
+    }
+  }
+}
+
+async function activateSession(
+  prepared: PreparedSession,
+  label: string,
+  payload?: string,
+): Promise<FormatHandle> {
+  const glue = prepared.imported.glue;
+  try {
+    await startGlue(glue, prepared.compiled);
     const handle: FormatHandle = {
-      glue: prepared.imported.glue,
+      glue,
       blobUrl: prepared.imported.blobUrl,
       format: label,
     };
-    await prepared.imported.glue.mount?.();
+    if (payload === undefined) await glue.mount?.();
+    else await glue.mount?.(payload);
     return handle;
   } catch (err) {
     try {
-      prepared.imported.glue.release?.();
+      if (typeof glue.dispose === "function") await glue.dispose();
+      else glue.detach?.();
     } catch {
-      // Init never finished.
+      // Init never finished, or the view is already gone.
     }
-    URL.revokeObjectURL(prepared.imported.blobUrl);
+    try {
+      glue.release?.();
+    } catch {
+      // Binding already clear.
+    }
+    try {
+      URL.revokeObjectURL(prepared.imported.blobUrl);
+    } catch {
+      // Already revoked.
+    }
     throw err;
   }
 }
@@ -461,9 +462,117 @@ async function startSession(
   return activateSession(prepared, label);
 }
 
+function remember(id: SessionModuleId, handle: FormatHandle): void {
+  active.set(id, handle);
+  if (id === "library") libraryHandle = handle;
+  else if (id === "reader-host") hostHandle = handle;
+  else {
+    live.add(handle);
+    handles.set(SLOT_KEY, handle);
+  }
+}
+
+function prepareModule(id: SessionModuleId): Promise<PreparedSession> {
+  return prepareSession(moduleGlue(id), moduleWasm(id), id);
+}
+
+function discardPrepared(prepared: PreparedSession): void {
+  try {
+    prepared.imported.glue.release?.();
+  } catch {
+    // Init never finished.
+  }
+  try {
+    URL.revokeObjectURL(prepared.imported.blobUrl);
+  } catch {
+    // Already revoked.
+  }
+}
+
+async function deactivateModule(id: SessionModuleId): Promise<void> {
+  const pending: FormatHandle[] = [];
+  const known = active.get(id);
+  if (known) pending.push(known);
+  active.delete(id);
+  if (id === "library" && libraryHandle && !pending.includes(libraryHandle)) pending.push(libraryHandle);
+  if (id === "reader-host" && hostHandle && !pending.includes(hostHandle)) pending.push(hostHandle);
+  if (isFormatModule(id)) {
+    for (const handle of live) {
+      if (handle.format === id && !pending.includes(handle)) pending.push(handle);
+    }
+  }
+  if (id === "library") libraryHandle = null;
+  if (id === "reader-host") hostHandle = null;
+  for (const handle of pending) await releaseHandle(handle);
+  if (id === HOST_PDF) {
+    await killPdfWorker();
+    forgetPdfReader();
+    releaseCanvases();
+  }
+  console.info(`[mem] ${id} deactivated`);
+}
+
+function ensureBody(): HTMLElement | null {
+  const root = document.documentElement;
+  if (!root) return null;
+  if (document.body && document.body.isConnected) return document.body;
+  try {
+    const body = document.createElement("body");
+    root.appendChild(body);
+    return body;
+  } catch {
+    return document.body;
+  }
+}
+
+function pageHasView(): boolean {
+  return !!document.body && document.body.childElementCount > 0;
+}
+
+function markPage(next: "library" | "reader", open: Handoff | null): void {
+  try {
+    boot.kind = next;
+    boot.open = open;
+  } catch (err) {
+    console.error("[boot] could not mark the page", err);
+  }
+}
+
+async function mountFresh(
+  id: SessionModuleId,
+  first: PreparedSession,
+  payload?: string,
+): Promise<FormatHandle> {
+  let prepared = first;
+  let last: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const handle = await activateSession(prepared, id, payload);
+      if ((id === "library" || id === "reader-host") && !pageHasView()) {
+        await releaseHandle(handle);
+        throw new Error(`${id} mounted without a view`);
+      }
+      try {
+        void document.body?.offsetHeight;
+      } catch {
+        // A failed reflow must not hide a view that is already mounted.
+      }
+      return handle;
+    } catch (err) {
+      last = err;
+      console.error(`[boot] ${id} activate failed`, err);
+      if (attempt === 1) break;
+      prepared = await prepareModule(id);
+    }
+  }
+  throw last instanceof Error ? last : new Error(`could not activate ${id}`);
+}
+
 // In-page. A query navigation does not drop the previous wasm in this
 // webview, which is why each open/close kept another instance. The leaving
-// module is disposed and released before the arriving one is created.
+// modules are deactivated — disposed and released — before the arriving one
+// is created. The next module is fetched first, so a missing artifact does
+// not clear the page.
 async function showLibrary(fromHistory: boolean): Promise<void> {
   if (swapping) {
     queued = { kind: "library", fromHistory };
@@ -471,34 +580,41 @@ async function showLibrary(fromHistory: boolean): Promise<void> {
   }
   if (liveKind === "library" && libraryHandle && live.size === 0 && !hostHandle) return;
   swapping = true;
+  let tornDown = false;
   try {
     requireLibraryPlan();
     if (aliveAfter("to-library") !== "library") {
       throw new Error("library switch left the reader alive");
     }
+    const prepared = await prepareModule("library");
+    // Cancel a book mount that is still in flight, then drop every module
+    // the shelf must not share the page with.
+    generation += 1;
     sessionStorage.removeItem(HANDOFF_KEY);
-    // Drop the live closures before dispose, so unmount does not call into a
-    // slot the next instance is about to replace.
     resetBridge();
-    await settle("drop books", () => dropEveryBook());
-    await settle("drop host", () => dropHost());
-    await settle("drop library", () => dropLibrary());
+    for (const id of releaseBefore("library")) {
+      await settle(id, () => deactivateModule(id));
+    }
+    await settle("stale shelf", () => deactivateModule("library"));
     await settle("pdf worker", () => killPdfWorker());
     await settle("pdf facade", () => forgetPdfReader());
-    await settle("clear body", () => clearBody());
-    clearShellStyle();
-    try {
-      boot.kind = "library";
-      boot.open = null;
-    } catch (err) {
-      console.error("[boot] could not mark the shelf", err);
-    }
-    libraryHandle = await startSession(LIBRARY_GLUE, LIBRARY_WASM, "library");
+    await settle("clear body", () => {
+      ensureBody();
+      clearBody();
+    });
+    tornDown = true;
+    paintShell();
+    markPage("library", null);
+    const handle = await mountFresh("library", prepared);
+    remember("library", handle);
     liveKind = "library";
     console.info("[mem] library module mounted; reader host released");
   } catch (err) {
     console.error("[boot] shelf switch failed", err);
-    showBootError(err instanceof Error ? err.message : "Could not return to the library");
+    if (tornDown) {
+      const message = err instanceof Error ? err.message : "Could not return to the library";
+      showBootError(message);
+    }
   } finally {
     swapping = false;
     pumpQueue();
@@ -511,50 +627,52 @@ async function showReader(payload: Handoff, fromHistory: boolean): Promise<void>
     return;
   }
   swapping = true;
+  let tornDown = false;
   try {
     const plan = dropsFor("to-reader");
     if (!plan.includes("library") || aliveAfter("to-reader") !== "reader-host") {
       throw new Error("reader switch does not drop the library module");
     }
-    // Do not touch the URL. This webview treats a history change as a
-    // navigation and replaces the document with the empty window.
-    // Fetch the host before dropping the shelf, so a missing artifact
-    // leaves the library on screen.
     sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(payload));
-    const prepared = await prepareSession(HOST_GLUE, HOST_WASM, "reader-host");
-    await dropEveryBook();
-    await dropLibrary();
-    await dropHost();
-    if (plan.includes("pdf-worker")) await killPdfWorker();
-    forgetPdfReader();
-    clearBody();
-    paintShell();
+    const prepared = await prepareModule("reader-host");
+    generation += 1;
     resetBridge();
-    boot.kind = "reader";
-    boot.open = payload;
+    for (const id of releaseBefore("reader-host")) {
+      await settle(id, () => deactivateModule(id));
+    }
+    await settle("stale host", () => deactivateModule("reader-host"));
+    if (plan.includes("pdf-worker")) await settle("pdf worker", () => killPdfWorker());
+    await settle("clear body", () => {
+      ensureBody();
+      clearBody();
+    });
+    tornDown = true;
+    paintShell();
+    markPage("reader", payload);
     try {
       await load(READER_ENGINE);
     } catch (err) {
       console.error("[boot] reader engine failed to load", err);
     }
-    hostHandle = await activateSession(prepared, "reader-host");
+    const handle = await mountFresh("reader-host", prepared);
+    remember("reader-host", handle);
     liveKind = "reader";
     console.info("[mem] reader host mounted; library module released");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not open the book";
     console.error("[boot] reader switch failed", err);
-    boot.kind = "library";
-    boot.open = null;
+    markPage("library", null);
     hostHandle = null;
     liveKind = "library";
-    if (!libraryHandle) {
+    if (tornDown && !libraryHandle) {
       try {
-        libraryHandle = await startSession(LIBRARY_GLUE, LIBRARY_WASM, "library");
+        const again = await prepareModule("library");
+        remember("library", await activateSession(again, "library"));
       } catch (restoreErr) {
         console.error("[boot] shelf restore failed", restoreErr);
       }
     }
-    showBootError(message);
+    if (tornDown || !libraryHandle) showBootError(message);
   } finally {
     swapping = false;
     pumpQueue();
@@ -588,26 +706,6 @@ function resetBridge(): void {
   }
 }
 
-function clearShellStyle(): void {
-  const root = document.documentElement;
-  const body = document.body;
-  if (root) {
-    try {
-      root.style.removeProperty("background");
-    } catch {
-      // Inline style stays.
-    }
-  }
-  if (body) {
-    try {
-      body.style.removeProperty("background");
-      body.style.removeProperty("color");
-    } catch {
-      // Inline style stays.
-    }
-  }
-}
-
 async function settle(label: string, step: () => Promise<void> | void): Promise<void> {
   try {
     await step();
@@ -616,35 +714,60 @@ async function settle(label: string, step: () => Promise<void> | void): Promise<
   }
 }
 
+function safeStyle(node: HTMLElement, prop: string, value: string): void {
+  try {
+    node.style.setProperty(prop, value);
+  } catch {
+    try {
+      const prev = node.getAttribute("style") ?? "";
+      node.setAttribute("style", `${prev};${prop}:${value}`);
+    } catch {
+      // A failed paint must not become a blank window.
+    }
+  }
+}
+
 function paintShell(): void {
   const root = document.documentElement;
-  const body = document.body;
+  const body = ensureBody();
   if (!root || !body) return;
   // The shelf view is what paints the window. Once it is gone, a transparent
   // document shows the webview's own background — the empty Tauri window.
-  root.style.background = "#1c1917";
-  body.style.background = "#1c1917";
-  body.style.color = "#fafaf9";
+  // These writes must not throw: the error overlay calls this, and a throw
+  // here is how a failed return became a blank page.
+  safeStyle(root, "background", "#1c1917");
+  safeStyle(body, "background", "#1c1917");
+  safeStyle(body, "color", "#fafaf9");
 }
 
 function showBootError(message: string): void {
-  paintShell();
-  if (!document.body) return;
-  const node = document.createElement("div");
-  node.setAttribute("role", "alert");
-  node.style.cssText = [
-    "position:fixed",
-    "inset:0",
-    "z-index:2147483647",
-    "box-sizing:border-box",
-    "background:#1c1917",
-    "color:#fafaf9",
-    "font:16px/1.45 ui-sans-serif,system-ui,sans-serif",
-    "padding:28px",
-    "white-space:pre",
-  ].join(";");
-  node.textContent = message;
-  document.body.appendChild(node);
+  try {
+    paintShell();
+    const body = ensureBody();
+    if (!body) return;
+    const node = document.createElement("div");
+    node.setAttribute("role", "alert");
+    const css = [
+      "position:fixed",
+      "inset:0",
+      "z-index:2147483647",
+      "box-sizing:border-box",
+      "background:#1c1917",
+      "color:#fafaf9",
+      "font:16px/1.45 ui-sans-serif,system-ui,sans-serif",
+      "padding:28px",
+      "white-space:pre",
+    ].join(";");
+    try {
+      node.setAttribute("style", css);
+    } catch {
+      // The text is still readable if the stylesheet has a color.
+    }
+    node.textContent = message || "Could not open the page";
+    body.appendChild(node);
+  } catch (err) {
+    console.error("[boot] could not show the failure", err);
+  }
 }
 
 // pagehide cannot await. detach and release are sync. destroy() terminates
@@ -658,6 +781,7 @@ function abandonNow(): void {
   live.clear();
   libraryHandle = null;
   hostHandle = null;
+  active.clear();
   for (const handle of pending) {
     if (released.has(handle)) continue;
     released.add(handle);
@@ -720,6 +844,24 @@ const boot: Boot = {
   dropFormat() {
     return dropEveryBook();
   },
+  activate(module, payload) {
+    if (!isSessionModuleId(module)) {
+      return Promise.reject(new Error(`unknown module ${module}`));
+    }
+    if (module === "library") return showLibrary(false);
+    if (module === "reader-host") {
+      const open = this.open ?? parseHandoff(sessionStorage.getItem(HANDOFF_KEY));
+      if (!open) return Promise.reject(new Error("reader host needs a book"));
+      return showReader(open, false);
+    }
+    return mountFormatNow(payload ?? "");
+  },
+  deactivate(module) {
+    if (!isSessionModuleId(module)) {
+      return Promise.reject(new Error(`unknown module ${module}`));
+    }
+    return deactivateModule(module);
+  },
   flush() {},
 };
 
@@ -748,11 +890,11 @@ window.addEventListener("popstate", () => {
 
 try {
   if (kind === "reader") {
-    hostHandle = await startSession(HOST_GLUE, HOST_WASM, "reader-host");
+    remember("reader-host", await startSession(moduleGlue("reader-host"), moduleWasm("reader-host"), "reader-host"));
     liveKind = "reader";
     console.info("[mem] reader host mounted; library module not started");
   } else {
-    libraryHandle = await startSession(LIBRARY_GLUE, LIBRARY_WASM, "library");
+    remember("library", await startSession(moduleGlue("library"), moduleWasm("library"), "library"));
     liveKind = "library";
     console.info("[mem] library module mounted; reader host not started");
   }

@@ -72,6 +72,7 @@ pub fn detach() {
     #[cfg(target_arch = "wasm32")]
     {
         null_command();
+        crate::services::tauri_listen::unlisten_all();
         // Thumbs first: their cleanup reads the view's signals. Dropping the
         // view owner first would unmount those signals out from under them.
         THUMBS.with(|slot| {

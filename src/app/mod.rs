@@ -92,6 +92,9 @@ pub fn mount_shelf() {
 /// Drop the shelf view. Idempotent: a second call finds an empty handle.
 #[cfg(all(feature = "session-library", target_arch = "wasm32"))]
 pub fn dispose_shelf() {
+    // Drop Tauri listeners before the owner, so a resize during the next
+    // mount cannot call into this instance after release().
+    crate::services::tauri_listen::unlisten_all();
     shelf::dispose();
 }
 
@@ -143,5 +146,6 @@ pub fn mount_reader() {
 /// Drop the reader chrome. The book instance is released separately, first.
 #[cfg(all(feature = "session-host", target_arch = "wasm32"))]
 pub fn dispose_reader() {
+    crate::services::tauri_listen::unlisten_all();
     reader_host::dispose();
 }

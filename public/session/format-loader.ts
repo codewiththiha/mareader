@@ -87,3 +87,46 @@ export function looksLikeHtml(contentType: string | null, head: string): boolean
   const start = head.replace(/^\uFEFF/, "").trimStart();
   return start.startsWith("<");
 }
+
+export type SessionModuleId = "library" | "reader-host" | FormatId;
+
+/** Glue and wasm for one activatable module. Page modules and book modules
+ *  share this so a switch does not grow a second loader. */
+export function moduleGlue(id: SessionModuleId): string {
+  if (id === "library") return LIBRARY_GLUE;
+  if (id === "reader-host") return HOST_GLUE;
+  return gluePath(id);
+}
+
+export function moduleWasm(id: SessionModuleId): string {
+  if (id === "library") return LIBRARY_WASM;
+  if (id === "reader-host") return HOST_WASM;
+  return wasmPath(id);
+}
+
+export function isSessionModuleId(value: string): value is SessionModuleId {
+  return (
+    value === "library" ||
+    value === "reader-host" ||
+    value === HOST_PDF ||
+    value === "text" ||
+    value === "md"
+  );
+}
+
+export function isFormatModule(id: SessionModuleId): id is FormatId {
+  return id === HOST_PDF || id === "text" || id === "md";
+}
+
+/**
+ * What must be disposed and released before `id` is instantiated. A book and
+ * the shelf are never alive together. A format switch drops every book
+ * module, including a previous instance of itself, and leaves the host up.
+ * The page ids are not in their own list: the caller drops a stale instance
+ * of the arriving page before creating the new one.
+ */
+export function releaseBefore(id: SessionModuleId): readonly SessionModuleId[] {
+  if (id === "library") return [...BOOK_FORMATS, "reader-host"];
+  if (id === "reader-host") return ["library", ...BOOK_FORMATS];
+  return ["library", ...BOOK_FORMATS];
+}
