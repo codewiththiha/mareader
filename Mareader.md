@@ -151,11 +151,14 @@ only two of them are the app's.
 footprint: private dirty pages, plus pages already freed but not yet reclaimed
 (`MADV_FREE`, which a machine under no pressure never reclaims), plus
 GPU-backed canvas surfaces. JSC's heap, bmalloc and the wasm linear memory
-only grow — freed blocks go back to their own free lists, not to the OS. The
-library after a read therefore never reads like the library cold, and no app
-code can make it: only kernel pressure or the death of the process gives a
-footprint back. Everything the app can do is keep the high-water mark low,
-because the footprint latches onto the highest peak the session reached.
+only grow — freed blocks go back to their own free lists, not to the OS.
+While a page lives, the library after a read therefore never reads like the
+library cold: only kernel pressure or the death of the document gives a
+footprint back. Leaving the reader destroys that page
+(`docs/phase-1-session-boundary.md`), which is the same class of reclaim as
+Reload Window. Everything the app can do inside a living page is keep the
+high-water mark low, because the footprint latches onto the highest peak that
+page reached.
 
 **The peaks are the app's.** Every transient full-page surface is a permanent
 cost, and a zoom commit used to stack four of them per mounted page — the live

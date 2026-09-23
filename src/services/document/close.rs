@@ -22,6 +22,15 @@ pub fn close_document(state: AppState) {
     // that window would be undone by the book it just closed.
     let _ = super::session::claim();
 
+    // A reader page does not tear the engine down in this heap. The page is
+    // about to die, and that death is the teardown. Flush first: the progress
+    // debounce and the theme debounce both die with the document.
+    if crate::boot::should_swap() {
+        crate::boot::flush_durable(state);
+        crate::boot::enter_library();
+        return;
+    }
+
     // Flush the current reading position NOW, before the signals are reset:
     // the reading-progress effect writes the library signal synchronously but
     // debounces the localStorage save, and closing (then possibly quitting)

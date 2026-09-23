@@ -248,9 +248,14 @@ jobs:
       # Type-checks tsconfig.json with --noEmit and then emits the tools, so a
       # separate type-check step would put the same compiler over the same files
       # twice for the same answer. What the steps below consume is the emission:
-      # scripts/*.js and the three engine bundles.
+      # scripts/*.js, the engine bundles, and the session boot.
       - name: Build TypeScript
         run: npm run build:ts
+
+      # The session handoff is pure data. The boot script and this test share
+      # the module; the emission above is what the test imports.
+      - name: Session handoff
+        run: node tools/test-session-boot.mjs
 
       # The stylesheet is compiled by a Trunk pre_build hook, which meant nothing
       # but a release build ever ran it: a broken @apply or a token that stopped

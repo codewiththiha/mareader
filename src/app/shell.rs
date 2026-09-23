@@ -1,38 +1,53 @@
-//! The routed shell: syncs URL with document state, renders the current page,
-//! and hosts the app-global overlays (noise + drag feedback).
+//! The two page shells.
+//!
+//! The library page and the reader page are not routes of one mounted tree.
+//! Each is the whole document. `public/session/boot.ts` picks one before wasm
+//! starts, and leaving one for the other is a navigation that drops the
+//! previous page's wasm instance. `src/boot.rs` owns that handoff.
 
 use leptos::prelude::*;
-use leptos_router::components::{Route, Routes};
 
 use crate::components::app_overlays::drag_overlay::DragOverlay;
+use crate::components::app_overlays::toast::ToastHost;
 use crate::effects::app::drag_drop::drag_drop;
 use crate::features::library::LibraryPage;
 use crate::features::reader::ReaderPage;
 use crate::state::AppState;
-use super::routes::{RedirectHome, RouteSync};
 
 #[component]
-pub(crate) fn AppShell(state: AppState) -> impl IntoView {
+pub(crate) fn LibrarySession(state: AppState) -> impl IntoView {
     let drag_active = RwSignal::new(false);
     drag_drop(state, drag_active);
 
     view! {
         <>
-            <RouteSync state=state />
-            <Routes fallback=move || view! { <RedirectHome /> }>
-                <Route
-                    path=leptos_router::path!("/")
-                    view=move || view! { <LibraryPage state=state /> }
-                />
-                <Route
-                    path=leptos_router::path!("/reader")
-                    view=move || view! { <ReaderPage state=state /> }
-                />
-            </Routes>
+            <LibraryPage state=state />
             <div class="noise-overlay"></div>
             <Show when=move || drag_active.get()>
                 <DragOverlay />
             </Show>
+            <ToastHost state=state />
+        </>
+    }
+}
+
+#[component]
+pub(crate) fn ReaderSession(state: AppState) -> impl IntoView {
+    // After the reader effects, so paper settings are published before this
+    // open asks the engine for a colour.
+    crate::boot::apply_handoff(state);
+
+    let drag_active = RwSignal::new(false);
+    drag_drop(state, drag_active);
+
+    view! {
+        <>
+            <ReaderPage state=state />
+            <div class="noise-overlay"></div>
+            <Show when=move || drag_active.get()>
+                <DragOverlay />
+            </Show>
+            <ToastHost state=state />
         </>
     }
 }

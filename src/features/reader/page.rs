@@ -1,4 +1,4 @@
-//! The `/reader` route: sidebar + viewer slot + the app title bar, plus the
+//! The reading page: sidebar + viewer slot + the app title bar, plus the
 //! floating doc title, page pill, bottom bar and floating search. The viewer
 //! slot switches on viewer.mode.
 //!
@@ -164,7 +164,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 <Show when=move || {
                     matches!(
                         state.reader.document.status.get(),
-                        DocStatus::Ready | DocStatus::Opening
+                        DocStatus::Ready | DocStatus::Opening | DocStatus::Error
                     )
                 }>
                     <Tooltip text="Library">
@@ -219,6 +219,22 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         class="relative min-w-0 flex-1 overflow-hidden"
                         class=("no-page-shadow", move || !state.settings.with(|st| st.layout.page_shadow))
                     >
+                        <Show when=move || state.reader.document.status.get() == DocStatus::Opening>
+                            <div class="absolute inset-0 flex items-center justify-center bg-paper">
+                                <crate::components::primitives::feedback::CenteredLoader />
+                            </div>
+                        </Show>
+                        <Show when=move || state.reader.document.status.get() == DocStatus::Error>
+                            <div class="absolute inset-0 flex items-center justify-center px-8 text-center text-muted">
+                                <p class="text-lg">
+                                    {move || {
+                                        state.reader.document.error.get().unwrap_or_else(|| {
+                                            "Could not open this document".to_string()
+                                        })
+                                    }}
+                                </p>
+                            </div>
+                        </Show>
                         <Show when=is_ready>
                             <crate::components::viewer::Viewer
                                 state=vs

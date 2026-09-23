@@ -1,43 +1,24 @@
-//! The app-root effects, installed once and in the one order that works.
+//! The app-root effects, installed once, per session.
 //!
-//! One entry point gives the ordering contract a home: two of the steps are
-//! order-dependent in ways that fail silently.
+//! The shelf and the reader are different pages (`src/boot.rs`). Each installs
+//! only what that page can use. A second mount in the same page (hot reload)
+//! is still a no-op: the listeners do not unsubscribe, and stacking them would
+//! handle every keystroke twice.
 //!
-//! THE ORDER, and why each step is where it is:
+//! Shelf order: paint, input, the Tauri bridges, the flush hook, then the
+//! library's own startup (progress sink, measurement, rescan), and the OS-file
+//! handoff last so a double-clicked book does not land in the middle of that
+//! pass. The shelf does not publish paper settings and does not install reader
+//! effects. It never opens a document in this heap.
 //!
-//! 1. `apply_theme` + `apply_typography` — both page kinds paint from the
-//!    custom properties these write, so they must be on `<html>` before the
-//!    first frame; late, the reader flashes the untinted palette (or a text
-//!    document the default type).
-//! 2. `paper_settings` — the paper session's blend and detection settings must
-//!    land before the FIRST document opens: the open flow asks the engine's
-//!    per-document colour cache under the reader's real settings, earlier than
-//!    any reader mounts. Asked under defaults, the first book's backdrop is
-//!    quietly the wrong colour.
-//! 3. `publish_motion` — the reduced-motion projection, needed by the reader's
-//!    pipeline and by CSS the app does not model.
-//! 4. The input and selection arms, in any order among themselves.
-//! 5. The app-lifetime Tauri listeners, in any order between them:
-//!    `install_ai_chunk_bridge` (AI chunks) and `install_window_state_bridge`
-//!    (the frameless maximize flag). Then `library_effects`
-//!    (`crate::effects::app::library`): the library's progress sink, the
-//!    startup measurement pass, and a rescan of the watched folders once it
-//!    has — before the OS handoff below, so a double-clicked book never lands
-//!    in the middle of that first pass.
-//! 6. `init_open_file_handling` — LAST, and the step the ordering is really
-//!    for: it can open a document IMMEDIATELY (a double-clicked file hands the
-//!    backend a path before the webview finishes mounting), so every step
-//!    above must have run by then.
-//!
-//! INSTALLED ONCE. Each arm registers a window listener, a Tauri subscription,
-//! or both, and none unsubscribe — they live as long as the app. That is wrong
-//! for a second mount (hot reload, hydration retry), where listeners would
-//! stack and every keystroke be handled twice; the guard below makes the
-//! second install a no-op.
+//! Reader order: paint, then `paper_settings` — the blend must be published
+//! before the handoff open asks the engine for a colour — then the reader
+//! input arms, the bridges, the flush hook, and the OS-file handoff last. No
+//! shelf rescan and no cover backfill: both would fight the book this page is
+//! about to open, and the next shelf boot runs them.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::state::reader::TypographySignal;
 use crate::effects::app::motion::publish_motion;
 use crate::effects::app::theme::apply_theme;
 use crate::effects::app::typography::apply_typography;
@@ -45,15 +26,15 @@ use crate::effects::reader::blend_backdrop::paper_settings;
 use crate::effects::reader::link_navigation::link_navigation;
 use crate::effects::reader::page_selection::page_selection;
 use crate::effects::reader::selection_tracking::selection_tracking;
+use crate::state::reader::TypographySignal;
 use crate::state::{AppState, AppearanceSignal};
 
-/// Whether the app-root effects are already installed. Relaxed ordering: the
+/// Whether this page's effects are already installed. Relaxed ordering: the
 /// webview is single-threaded, so this only has to be a flag, never a fence.
 static INSTALLED: AtomicBool = AtomicBool::new(false);
 
-/// Install every app-lifetime effect, in the order documented above. Safe to
-/// call more than once — later calls do nothing.
-pub(crate) fn install_app_effects(
+/// Shelf page. See the module note for the order.
+pub(crate) fn install_library_session(
     state: AppState,
     appearance: AppearanceSignal,
     typography: TypographySignal,
@@ -61,7 +42,27 @@ pub(crate) fn install_app_effects(
     if INSTALLED.swap(true, Ordering::Relaxed) {
         return;
     }
+    apply_theme(state, appearance);
+    apply_typography(typography);
+    publish_motion(state);
+    shortcuts(state);
+    crate::services::ai::install_ai_chunk_bridge();
+    crate::services::window::install_window_state_bridge(state);
+    crate::boot::install_flush(state);
+    crate::effects::app::library::library_effects(state);
+    crate::services::document::init_open_file_handling(state);
+}
 
+/// Reader page. `paper_settings` is synchronous and lands before the OS-file
+/// pull and before the component applies the handoff.
+pub(crate) fn install_reader_session(
+    state: AppState,
+    appearance: AppearanceSignal,
+    typography: TypographySignal,
+) {
+    if INSTALLED.swap(true, Ordering::Relaxed) {
+        return;
+    }
     apply_theme(state, appearance);
     apply_typography(typography);
     paper_settings(state);
@@ -72,7 +73,7 @@ pub(crate) fn install_app_effects(
     selection_tracking(state);
     crate::services::ai::install_ai_chunk_bridge();
     crate::services::window::install_window_state_bridge(state);
-    crate::effects::app::library::library_effects(state);
+    crate::boot::install_flush(state);
     crate::services::document::init_open_file_handling(state);
 }
 

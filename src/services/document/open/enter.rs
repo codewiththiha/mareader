@@ -3,12 +3,12 @@
 //! A PDF and a reflowable document are opened by different tails — one waits
 //! on the engine, the other on a file read and a parser — but they end in the
 //! same place: the same identity fields written, the same gloss marks loaded,
-//! the same resume clamp, startup scale, route flip and shelf record. Those
+//! the same resume clamp, startup scale, status flip and shelf record. Those
 //! steps live here once, so a step added here reaches every format at once.
 //!
 //! Deliberately NOT here: the order in which a tail seeds its own content.
 //! Both tails depend on an order only they can see — heights published at the
-//! seed scale, the anchor guard up before the page is written, the route
+//! seed scale, the anchor guard up before the page is written, the status
 //! flipping last — and a shared function would hide the sequence that makes
 //! it correct.
 
@@ -167,9 +167,9 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
     (startup_fit, scale)
 }
 
-/// The document is open: flip the route. LAST, and after every signal the
+/// The document is open: mark it ready. LAST, and after every signal the
 /// fresh mount reads is in its new-document state — `status = Ready` is what
-/// mounts the reader, so anything written after this is written under a live
+/// shows the viewer, so anything written after this is written under a live
 /// view. A successful open also dismisses a stale error toast and drops the
 /// previous document's search, which must not linger into this one.
 pub(super) fn enter_ready(state: AppState) {

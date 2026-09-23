@@ -17,25 +17,15 @@
          pre-build hook) must ship next to the engine in the packaged app; the
          engine falls back to inline baking when it cannot find it. -->
     <link data-trunk rel="copy-file" href="public/bake.worker.js" />
-    <!-- The reader bundle: the format-agnostic half of the browser side (today
-         the selection tracker, public/readerEngine.ts). It has no pdf.js
-         dependency, so it goes first — and like the engine below it must run
-         before the wasm, because the app reads selection state as soon as its
-         first components mount. -->
-    <script type="module" src="/readerEngine.js"></script>
-    <!-- pdf.js (ESM-only in v6): must load BEFORE the engine so globalThis.pdfjsLib exists. -->
-    <script type="module" src="/vendor/pdfjs/pdf.min.mjs"></script>
-    <!-- The imperative engine wrapper: sets window.PDFReader (see
-         public/pdfEngine.ts — Trunk's pre-build hook compiles it to
-         public/pdfEngine.js on every build). MUST execute BEFORE the Leptos
-         wasm (the rust link below): module scripts run in order, and the
-         app reaches for window.PDFReader as soon as its first components
-         mount (the engine version probe in the menus). If the wasm module
-         (which top-level-awaits init) ran first, it could finish
-         instantiating before this script had executed, leaving
-         window.PDFReader undefined and panicking those probes. Ordering
-         these first removes the race. -->
-    <script type="module" src="/pdfEngine.js"></script>
+    <!-- Session boot (public/sessionBoot.js, from public/session/boot.ts).
+         A module script BEFORE the rust link: Trunk replaces that link with a
+         module script in place, module scripts run in order, and this one
+         top-level-awaits. A shelf boot returns immediately and does not import
+         pdf.js. A reader boot imports pdf.js, the engine, and the reader
+         bundle before the wasm module evaluates. The engines stay copy-file'd
+         so those dynamic imports resolve in the packaged app. -->
+    <link data-trunk rel="copy-file" href="public/sessionBoot.js" />
+    <script type="module" src="/sessionBoot.js"></script>
     <link data-trunk rel="rust" data-wasm-opt="z" />
   </head>
   <body></body>

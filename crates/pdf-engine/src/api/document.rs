@@ -64,14 +64,25 @@ pub async fn cover_data_url(path: &str, max_width: f64) -> Result<CoverResult, E
     resolve::<CoverResult>(value, "cover")
 }
 
-/// Collect the pending OS-opened PDF path from the backend (double-click,
+/// Collect the pending OS-opened path from the backend (double-click,
 /// "Open with", default-app launch), if any. Consumes it, so a stray double
 /// wake-up can never open the same file twice. Resolves None (never errors)
 /// outside Tauri and whenever the backend has nothing queued.
+///
+/// The command is Tauri's, not pdf.js's. A shelf boot has not loaded
+/// `PDFReader`, and that must not drop the file the OS just handed over. When
+/// the engine is present the existing bridge path stays, so a reader page
+/// behaves as before.
 pub async fn take_pending_file() -> Option<String> {
-    if !tauri_bridge::has_tauri() || !bridge::has_pdf_reader() {
+    if !tauri_bridge::has_tauri() {
         return None;
     }
-    let value = bridge::take_pending_file().await;
+    if bridge::has_pdf_reader() {
+        let value = bridge::take_pending_file().await;
+        return value.as_string().filter(|s| !s.is_empty());
+    }
+    let value = tauri_bridge::invoke("take_pending_file", js_sys::Object::new().into())
+        .await
+        .ok()?;
     value.as_string().filter(|s| !s.is_empty())
 }

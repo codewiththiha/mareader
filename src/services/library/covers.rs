@@ -138,6 +138,9 @@ fn drain(state: AppState) {
             .covers
             .with_untracked(|covers| covers.contains_key(&path));
         if !have {
+            // The shelf does not load pdf.js at boot. The first missing cover
+            // is what imports it; a shelf with nothing to render never does.
+            crate::boot::ensure_pdf_engine().await;
             match engine::cover_data_url(&path, COVER_WIDTH).await {
                 Ok(cover) => {
                     RETRIES.with(|retries| retries.borrow_mut().remove(&path));

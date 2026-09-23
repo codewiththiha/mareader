@@ -140,11 +140,12 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
 
 /// Whether the app is looking at the library rather than at a document.
 ///
-/// Read from the document status and not from the location, because the status IS
-/// the route: the app navigates to `/reader` when a document is ready and back
-/// to `/` when it is not, so anything short of ready is the library page. Asking
-/// the router instead would mean a hook with no reactive owner to belong to, from
-/// inside a Tauri listener whose closure outlives every owner the app has.
+/// Read from the document status, not from the URL. The shelf never becomes
+/// Ready, so a drop there imports. A reader that has finished opening is
+/// Ready, so a drop there opens — and that open leaves the page rather than
+/// stacking a second book into this heap (`src/boot.rs`). Asking the URL
+/// would mean a hook with no reactive owner, from inside a Tauri listener
+/// whose closure outlives every owner the app has.
 fn on_library_page(state: AppState) -> bool {
     state.reader.document.status.get_untracked() != DocStatus::Ready
 }

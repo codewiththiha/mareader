@@ -11,8 +11,9 @@ target = "./index.html"
 # starts. Trunk 0.21.x canonicalizes each entry at startup, and a missing path
 # is a hard error (https://github.com/trunk-rs/trunk/issues/256) — so these are
 # real paths, not globs, and an entry matches its whole subtree (the watcher
-# compares against every ancestor of the changed path). `scripts/` and the three
-# bundles are generated and gitignored, which is why `beforeDevCommand` runs
+# compares against every ancestor of the changed path). `scripts/`, the engine
+# bundles, and the session boot are generated and gitignored, which is why
+# `beforeDevCommand` runs
 # `npm run build:ts` first: on a fresh clone nothing would otherwise exist for
 # the watcher to canonicalize. (Trunk's main branch has since switched this list
 # to globset patterns, where a bare directory no longer matches its children —
@@ -47,10 +48,12 @@ ignore = [
     "./public/pdfEngine.js",
     "./public/readerEngine.js",
     "./public/bake.worker.js",
+    "./public/sessionBoot.js",
 ]
 
-# Bundle the engine with esbuild (IIFE, no import graph). `node` runs the
-# JS API so Windows Trunk can spawn it (no npx / .cmd).
+# Bundle the browser TypeScript. The engines are IIFEs; the session boot is
+# an ESM module because it top-level-awaits before the wasm starts. `node`
+# runs the JS API so Windows Trunk can spawn it (no npx / .cmd).
 [[hooks]]
 stage = "pre_build"
 command = "node"

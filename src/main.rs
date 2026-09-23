@@ -1,4 +1,5 @@
 mod app;
+mod boot;
 mod components;
 mod dom_contract;
 mod effects;

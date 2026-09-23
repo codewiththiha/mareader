@@ -25,6 +25,7 @@ pub(super) fn ensure(state: AppState, path: String, stamp: u64) {
         return;
     }
     spawn_local(async move {
+        crate::boot::ensure_pdf_engine().await;
         let cover = engine::cover_data_url(&path, COVER_WIDTH).await;
         // A cover rendered by a superseded attempt is page 1 of whatever the
         // engine has open NOW, not of the book it was asked for; filing it

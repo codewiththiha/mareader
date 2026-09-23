@@ -96,21 +96,19 @@ pub async fn close_window() {
 /// handle is not involved, and neither is the backend.
 ///
 /// The address is parked on the root first, and that is load-bearing rather
-/// than cosmetic. The reader's route sync (`src/app/routes.rs`) keeps
-/// `/reader` in the URL bar for as long as a book is open, so a reload from
-/// there boots a router that matches the reader, mounts the whole reader —
-/// its effects, its virtualizers, its engine registrations — against a
-/// document state that is empty, and then bounces to the shelf and tears it
-/// all back down. Replacing the address before the reload makes the boot land
-/// where the app is actually going: the shelf, with the book's resume point
-/// waiting on it.
+/// than cosmetic. A reading session lives at `/?session=reader`
+/// (`src/boot.rs`). A reload that kept the query would boot the reader
+/// against an empty handoff and bounce. Replacing the address before the
+/// reload makes the boot land where the app is actually going: the shelf,
+/// with the book's resume point waiting in storage.
 pub fn reload_window() {
     let Some(win) = web_sys::window() else {
         return;
     };
     // Best-effort: a history object that refuses the write leaves the address
-    // where it was, and the reload below still restarts the app — onto the
-    // reader mount the router then walks back, which is what it did before.
+    // where it was. The reload still restarts the app. The caller clears the
+    // handoff first, so a reader query that survives this write has nothing
+    // to open and the boot script leaves for the shelf.
     if let Ok(history) = win.history() {
         let _ = history.replace_state_with_url(&JsValue::NULL, "", Some("/"));
     }

@@ -24,6 +24,9 @@ pub fn reload_app(state: AppState) {
     // number the restart is about to give back, and after it the process is
     // new and every earlier reading is gone.
     crate::memory::log_heap("reload");
-    crate::services::document::flush_read_point(state);
+    // Settings and covers too: their timers die with the page, same as the
+    // reading-position debounce this used to flush alone.
+    crate::boot::flush_durable(state);
+    crate::boot::clear_handoff();
     app_chrome::window::api::reload_window();
 }

@@ -157,6 +157,14 @@ pub fn open_path(state: AppState, path: String) {
 /// [`open_book`] for what the id buys and [`open_path`] for the opens that
 /// have nothing but an address.
 fn open_at(state: AppState, book_id: Option<String>, path: String) {
+    // A shelf has no reader mounted, and a reader that is not applying a
+    // handoff must not open a second book into this heap. Both leave the
+    // page. `src/boot.rs` is the boundary. Host tests have no boot object
+    // and stay in-process.
+    if crate::boot::should_swap() {
+        crate::boot::leave_for_reader(state, path, book_id);
+        return;
+    }
     // Claim the document state for THIS attempt. Pick a second book while the
     // first is still resolving and the loser's tail would otherwise still run:
     // writing the old book's page count, geometry and scale over the new one's
@@ -217,6 +225,13 @@ fn open_at(state: AppState, book_id: Option<String>, path: String) {
 /// its answer.
 fn open_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
     spawn_local(async move {
+        // The boot script imports the engine before a reader page starts.
+        // This is the backstop for a script-order miss, and the shelf never
+        // reaches here.
+        crate::boot::ensure_pdf_engine().await;
+        if !session::owns(stamp) {
+            return;
+        }
         let opened = engine::open(&path).await;
         // The engine answered — but a second open (or a close) may have taken
         // the document state over while it was working. Standing down here is
@@ -231,7 +246,7 @@ fn open_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
     });
 }
 
-/// The book opened: seed the state, flip the route, and start the tails.
+/// The book opened: seed the state, mark it ready, and start the tails.
 fn ready(
     state: AppState,
     path: String,
@@ -241,11 +256,11 @@ fn ready(
 ) {
     let seeded = seed::seed(state, &path, open, saved_page);
 
-    // The book is ready: flip the route LAST, after every signal the fresh
-    // mount reads (page, heights, scale) is in its new-document state. The
-    // resume page is one of them: the strip scrolls to `viewer.page` as it
-    // binds its container (`ScrollShell`), so there is no second jump to
-    // schedule here.
+    // The book is ready: mark it LAST, after every signal the fresh mount
+    // reads (page, heights, scale) is in its new-document state. Status is
+    // what shows the viewer; nothing here navigates. The resume page is one
+    // of those signals: the strip scrolls to `viewer.page` as it binds its
+    // container (`ScrollShell`), so there is no second jump to schedule here.
     enter::enter_ready(state);
 
     // The engine's own highlight layer belongs to the previous book; the

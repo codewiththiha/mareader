@@ -27,6 +27,7 @@
     "public/pdfEngine.ts",
     "public/engine/**/*.ts",
     "public/readerEngine.ts",
-    "public/reader/**/*.ts"
+    "public/reader/**/*.ts",
+    "public/session/**/*.ts"
   ]
 }

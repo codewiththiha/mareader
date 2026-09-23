@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** One IIFE bundle. The entry and the output are the only facts that differ
- *  between the three; every other option was repeated in each. */
+ *  between the engine bundles; every other option was repeated in each. */
 function bundle(entryPoints, outfile) {
   return esbuild.build({
     absWorkingDir: root,
@@ -36,3 +36,29 @@ await bundle(["public/readerEngine.ts"], "public/readerEngine.js");
 // to pdfEngine.js so index.html can copy-file it to the dist root — copying
 // public/engine/ wholesale would ship the TypeScript sources.
 await bundle(["public/engine/theme/bake.worker.ts"], "public/bake.worker.js");
+
+// The session boot. ESM, not an IIFE: it top-level-awaits the engines before
+// the wasm module evaluates, and an IIFE cannot await. Dynamic import() of a
+// variable is left as an import, so pdf.js is not inlined into this file.
+await esbuild.build({
+  absWorkingDir: root,
+  entryPoints: ["public/session/boot.ts"],
+  bundle: true,
+  format: "esm",
+  outfile: "public/sessionBoot.js",
+  platform: "browser",
+  target: "es2022",
+  logLevel: "info",
+});
+
+// The handoff decisions, emitted for the web-lane test. No DOM.
+await esbuild.build({
+  absWorkingDir: root,
+  entryPoints: ["public/session/handoff.ts"],
+  bundle: true,
+  format: "esm",
+  outfile: "scripts/session-handoff.js",
+  platform: "neutral",
+  target: "es2022",
+  logLevel: "info",
+});

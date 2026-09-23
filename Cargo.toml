@@ -6,6 +6,8 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
+# Unused. The session boundary replaced the in-page router; removing the crate
+# would rewrite Cargo.lock, which this pass does not do.
 leptos_router = "0.8"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
