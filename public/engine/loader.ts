@@ -86,10 +86,14 @@ function getPdfjs(): PdfjsLib {
   if (l.GlobalWorkerOptions && !workerSrcConfigured) {
     workerSrcConfigured = true;
     try {
-      l.GlobalWorkerOptions.workerSrc = new URL(
-        "/vendor/pdfjs/pdf.worker.min.mjs",
-        globalThis.location?.href || "http://localhost/",
-      ).href;
+      // A book frame's location is the initial empty document. Its base URI
+      // is the webview origin, and that is what the worker constructor can
+      // fetch. location.href of that frame is not.
+      const base =
+        (globalThis.document?.baseURI && globalThis.document.baseURI !== "about:blank"
+          ? globalThis.document.baseURI
+          : globalThis.location?.href) || "http://localhost/";
+      l.GlobalWorkerOptions.workerSrc = new URL("/vendor/pdfjs/pdf.worker.min.mjs", base).href;
     } catch (_) {
       l.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.mjs";
     }

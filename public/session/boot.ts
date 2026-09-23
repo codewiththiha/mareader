@@ -1,10 +1,11 @@
 // Runs before the Trunk wasm module and never resolves, so that binary never
-// evaluates. It has no release(). The shelf, the reader chrome, and each
-// book format are modules this file activates and deactivates. Opening a
-// book deactivates the shelf completely and activates a new host, then a
-// pdf, text, or markdown module. Returning deactivates those and activates
-// a new shelf. The URL is not changed: a history update in this webview
-// unloads the document and leaves the empty window.
+// evaluates. It has no release(). The shelf is a module in this document.
+// Opening a book deactivates that module completely, then activates the
+// reader host and one format module in a child frame. Returning disposes
+// that frame — host, format, and the pdf.js worker live there, so removing
+// it is what makes them unreachable — and activates a new shelf here. The
+// URL is not changed: a history update in this webview unloads the document
+// and leaves the empty window.
 //
 // Specifiers are variables on purpose. A literal import would let the bundler
 // inline pdf.js or a format wasm into this file.
@@ -139,6 +140,23 @@ let liveKind: "library" | "reader" = kind;
 let swapping = false;
 let generation = 0;
 let blobNonce = 0;
+// The open book. Null on the shelf. The parent must not keep the frame's
+// window, glue, or worker after this is cleared.
+let bookFrame: HTMLIFrameElement | null = null;
+
+interface FrameWindow extends Window {
+  Blob: typeof Blob;
+  URL: typeof URL;
+  Function: typeof Function;
+  WebAssembly: typeof WebAssembly;
+  __MAREADER_UNLISTEN?: Array<() => void>;
+  __MAREADER_SILENCE?: () => void;
+  __MAREADER_HANDLES?: FormatHandle[];
+  __mareaderEngine?: Promise<void>;
+  PDFReader?: PdfFacade;
+  __TAURI__?: unknown;
+  __TAURI_INTERNALS__?: unknown;
+}
 
 function reportFailure(path: string, message: string): void {
   console.error("[format]", message);
@@ -526,6 +544,8 @@ function ensureBody(): HTMLElement | null {
 }
 
 function pageHasView(): boolean {
+  const mount = document.getElementById("mareader-root");
+  if (mount) return mount.childElementCount > 0;
   return !!document.body && document.body.childElementCount > 0;
 }
 
@@ -568,6 +588,503 @@ async function mountFresh(
   throw last instanceof Error ? last : new Error(`could not activate ${id}`);
 }
 
+function viewportBox(): { w: number; h: number } {
+  const w = window.innerWidth || document.documentElement?.clientWidth || screen.width || 1280;
+  const h = window.innerHeight || document.documentElement?.clientHeight || screen.height || 800;
+  return { w: Math.max(w, 320), h: Math.max(h, 240) };
+}
+
+function sizeRoot(root: HTMLElement): void {
+  const box = viewportBox();
+  safeStyle(root, "position", "fixed");
+  safeStyle(root, "top", "0");
+  safeStyle(root, "left", "0");
+  safeStyle(root, "width", `${box.w}px`);
+  safeStyle(root, "height", `${box.h}px`);
+  safeStyle(root, "overflow", "hidden");
+  safeStyle(root, "background", "#f4f1ea");
+  safeStyle(root, "color", "#1c1917");
+  safeStyle(root, "z-index", "1");
+}
+
+// Percentage height on the body collapses after a large canvas layer leaves.
+// The shelf then mounts and paints nothing. This box has a real height.
+function ensureMountRoot(doc: Document = document): HTMLElement {
+  const existing = doc.getElementById("mareader-root");
+  if (existing instanceof HTMLElement) {
+    sizeRoot(existing);
+    return existing;
+  }
+  const body = doc.body ?? ensureBody();
+  if (!body) throw new Error("document.body is missing");
+  const root = doc.createElement("div");
+  root.id = "mareader-root";
+  sizeRoot(root);
+  body.appendChild(root);
+  return root;
+}
+
+function fillMounted(root: HTMLElement): void {
+  for (const child of Array.from(root.children)) {
+    if (!(child instanceof HTMLElement)) continue;
+    if (child.classList.contains("noise-overlay")) continue;
+    // The title band is absolute and only a few pixels tall. Stretching it
+    // covers the shelf and eats every click.
+    if (child.classList.contains("absolute") || child.classList.contains("fixed")) continue;
+    safeStyle(child, "min-height", "100%");
+    safeStyle(child, "height", "100%");
+    safeStyle(child, "box-sizing", "border-box");
+  }
+}
+
+function forceRepaint(node: HTMLElement): void {
+  safeStyle(node, "transform", "translateZ(0)");
+  try {
+    void node.offsetHeight;
+  } catch {
+    // A failed reflow must not hide a view that is already mounted.
+  }
+  requestAnimationFrame(() => {
+    try {
+      node.style.removeProperty("transform");
+    } catch {
+      // The layer can keep the hint.
+    }
+    try {
+      void node.offsetHeight;
+    } catch {
+      // Already painted.
+    }
+  });
+}
+
+function resetChrome(): void {
+  const root = document.documentElement;
+  const body = document.body;
+  const hiding = ["filter", "opacity", "visibility", "content-visibility", "transform", "zoom"];
+  if (root) {
+    try {
+      root.classList.remove("appearance-scrubbing", "theme-switching");
+    } catch {
+      // classList can be sealed after a reader session.
+    }
+    safeStyle(root, "height", "100%");
+    for (const prop of hiding) {
+      try {
+        root.style.removeProperty(prop);
+      } catch {
+        // Leave the declaration.
+      }
+    }
+  }
+  if (body) {
+    safeStyle(body, "height", "100%");
+    safeStyle(body, "margin", "0");
+    safeStyle(body, "overflow", "hidden");
+    for (const prop of [...hiding, "display"]) {
+      try {
+        body.style.removeProperty(prop);
+      } catch {
+        // Leave the declaration.
+      }
+    }
+  }
+}
+
+function libraryVisible(): boolean {
+  const root = document.getElementById("mareader-root");
+  if (!(root instanceof HTMLElement) || root.childElementCount === 0) return false;
+  const box = root.getBoundingClientRect();
+  return box.width > 40 && box.height > 40;
+}
+
+interface FetchedModule {
+  source: string;
+  bytes: Uint8Array;
+}
+
+async function fetchModule(id: SessionModuleId): Promise<FetchedModule> {
+  const glue = await fetchAsset(moduleGlue(id), id);
+  const wasm = await fetchAsset(moduleWasm(id), id);
+  if (!isWasm(wasm.bytes)) throw new Error(`${id} is not wasm`);
+  return { source: new TextDecoder().decode(glue.bytes), bytes: wasm.bytes };
+}
+
+function frameWindow(frame: HTMLIFrameElement | null): FrameWindow | null {
+  const win = frame?.contentWindow as FrameWindow | null;
+  return win ?? null;
+}
+
+function frameHandles(win: FrameWindow): FormatHandle[] {
+  if (!win.__MAREADER_HANDLES) win.__MAREADER_HANDLES = [];
+  return win.__MAREADER_HANDLES;
+}
+
+function rememberFrame(win: FrameWindow, handle: FormatHandle): void {
+  frameHandles(win).push(handle);
+}
+
+async function releaseFrameFormats(win: FrameWindow): Promise<void> {
+  const handles = frameHandles(win);
+  const formats = handles.filter((handle) => handle.format !== "reader-host" && handle.format !== "library");
+  for (const handle of formats) await releaseHandle(handle);
+  win.__MAREADER_HANDLES = handles.filter(
+    (handle) => handle.format === "reader-host" || handle.format === "library",
+  );
+}
+
+function installSilence(win: FrameWindow): void {
+  const unlistens: Array<() => void> = [];
+  win.__MAREADER_UNLISTEN = unlistens;
+  win.__MAREADER_SILENCE = () => {
+    for (const fn of unlistens.splice(0)) {
+      try {
+        fn();
+      } catch {
+        // Already removed.
+      }
+    }
+  };
+}
+
+function shareHostGlobals(win: FrameWindow): void {
+  const parent = window as FrameWindow;
+  if (parent.__TAURI__) win.__TAURI__ = parent.__TAURI__;
+  if (parent.__TAURI_INTERNALS__) win.__TAURI_INTERNALS__ = parent.__TAURI_INTERNALS__;
+}
+
+function copyStyles(idoc: Document): void {
+  const base = idoc.createElement("base");
+  base.href = document.baseURI;
+  idoc.head.appendChild(base);
+  for (const node of document.querySelectorAll('link[rel="stylesheet"], style')) {
+    if (node instanceof HTMLLinkElement) {
+      const link = idoc.createElement("link");
+      link.rel = "stylesheet";
+      link.href = node.href;
+      idoc.head.appendChild(link);
+    } else if (node instanceof HTMLStyleElement) {
+      const style = idoc.createElement("style");
+      style.textContent = node.textContent;
+      idoc.head.appendChild(style);
+    }
+  }
+  try {
+    idoc.documentElement.className = document.documentElement.className;
+  } catch {
+    // The frame starts unthemed; the host paints its own.
+  }
+}
+
+async function importIn(
+  win: FrameWindow,
+  source: string,
+  label: string,
+): Promise<{ glue: FormatGlue; blobUrl: string }> {
+  const instance = ++blobNonce;
+  const named = `${source}\n// mareader-instance ${instance}\n//# sourceURL=mareader-${label}-${instance}.mjs\n`;
+  const blob = new win.Blob([named], { type: "text/javascript" });
+  const blobUrl = win.URL.createObjectURL(blob);
+  const importer = win.Function("u", "return import(u)") as (this: unknown, u: string) => Promise<FormatGlue>;
+  try {
+    const glue = await importer.call(win, blobUrl);
+    if (typeof glue.default !== "function" || typeof glue.mount !== "function") {
+      throw new Error(`${label} has no mount`);
+    }
+    if (typeof glue.release !== "function") {
+      throw new Error(`${label} has no release()`);
+    }
+    return { glue, blobUrl };
+  } catch (err) {
+    try {
+      win.URL.revokeObjectURL(blobUrl);
+    } catch {
+      // Already revoked.
+    }
+    throw err;
+  }
+}
+
+async function startIn(win: FrameWindow, glue: FormatGlue, bytes: Uint8Array): Promise<void> {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const compiled = await win.WebAssembly.compile(copy);
+  await startGlue(glue, compiled);
+}
+
+async function loadScriptsIn(win: FrameWindow, urls: string[]): Promise<void> {
+  const importer = win.Function("u", "return import(u)") as (this: unknown, u: string) => Promise<unknown>;
+  for (const url of urls) await importer.call(win, assetUrl(url));
+}
+
+async function loadEngineIn(win: FrameWindow): Promise<void> {
+  if (win.PDFReader) return;
+  if (!win.__mareaderEngine) {
+    win.__mareaderEngine = loadScriptsIn(win, [PDFJS, PDF_ENGINE]);
+  }
+  await win.__mareaderEngine;
+  const pdfjs = (win as unknown as { pdfjsLib?: { GlobalWorkerOptions?: { workerSrc: string } } }).pdfjsLib;
+  if (pdfjs?.GlobalWorkerOptions) {
+    pdfjs.GlobalWorkerOptions.workerSrc = assetUrl("/vendor/pdfjs/pdf.worker.min.mjs");
+  }
+}
+
+function installFrameBoot(win: FrameWindow, payload: Handoff): void {
+  const frameBoot: Boot = {
+    kind: "reader",
+    open: payload,
+    takeOpen() {
+      const value = this.open;
+      this.open = null;
+      return value;
+    },
+    enterReader(next) {
+      if (!next || typeof next.path !== "string" || next.path.length === 0) return;
+      setTimeout(() => {
+        void showReader(next, false);
+      }, 0);
+    },
+    enterLibrary() {
+      // The caller is inside this frame. Destroying it on this stack aborts
+      // the call before the shelf can mount.
+      setTimeout(() => {
+        void showLibrary(false);
+      }, 0);
+    },
+    clearHandoff() {
+      this.open = null;
+      sessionStorage.removeItem(HANDOFF_KEY);
+    },
+    ensureEngine() {
+      return loadEngineIn(win);
+    },
+    mountFormat(body) {
+      return mountFormatIn(win, body);
+    },
+    dropFormat() {
+      return releaseFrameFormats(win);
+    },
+    activate(module, body) {
+      if (!isSessionModuleId(module)) return Promise.reject(new Error(`unknown module ${module}`));
+      if (module === "library") {
+        setTimeout(() => {
+          void showLibrary(false);
+        }, 0);
+        return Promise.resolve();
+      }
+      if (isFormatModule(module)) return mountFormatIn(win, body ?? "");
+      return Promise.reject(new Error(`unknown module ${module}`));
+    },
+    deactivate(module) {
+      if (!isSessionModuleId(module)) return Promise.reject(new Error(`unknown module ${module}`));
+      if (isFormatModule(module)) return releaseFrameFormats(win);
+      if (module === "reader-host") return destroyBookFrame();
+      return Promise.resolve();
+    },
+    flush() {},
+  };
+  win.__MAREADER_BOOT = frameBoot;
+  win.__MAREADER_SLOT = {};
+}
+
+async function mountFormatIn(win: FrameWindow, payload: string): Promise<void> {
+  let path = "";
+  try {
+    const parsed = JSON.parse(payload) as { path?: unknown };
+    path = typeof parsed.path === "string" ? parsed.path : "";
+    if (path.length === 0) return;
+    const format = artifactFor(path);
+    const mine = ++generation;
+    const fetched = await fetchModule(format);
+    if (mine !== generation) return;
+    if (format === HOST_PDF) await loadEngineIn(win);
+    if (mine !== generation) return;
+    await releaseFrameFormats(win);
+    if (mine !== generation) return;
+    const imported = await importIn(win, fetched.source, format);
+    const handle: FormatHandle = { glue: imported.glue, blobUrl: imported.blobUrl, format };
+    try {
+      await startIn(win, imported.glue, fetched.bytes);
+      await imported.glue.mount?.(payload);
+    } catch (err) {
+      try {
+        if (typeof imported.glue.dispose === "function") await imported.glue.dispose();
+        else imported.glue.detach?.();
+      } catch {
+        // Init never finished.
+      }
+      try {
+        imported.glue.release?.();
+      } catch {
+        // Binding already clear.
+      }
+      try {
+        win.URL.revokeObjectURL(imported.blobUrl);
+      } catch {
+        // Already revoked.
+      }
+      throw err;
+    }
+    if (mine !== generation) {
+      await releaseHandle(handle);
+      return;
+    }
+    rememberFrame(win, handle);
+    console.info(`[mem] ${format} module mounted in the book frame`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not load the format module";
+    const report = win.__MAREADER_SLOT?.report;
+    console.error("[format]", message);
+    if (typeof report === "function" && path.length > 0) {
+      const format = artifactFor(path);
+      report(
+        JSON.stringify({
+          path,
+          status: "error",
+          error: message,
+          title: "",
+          page: 1,
+          pageCount: 1,
+          format: format === "md" ? "markdown" : format,
+          firstPaint: true,
+        }),
+      );
+    }
+  }
+}
+
+async function createBookFrame(payload: Handoff, host: FetchedModule): Promise<HTMLIFrameElement> {
+  const frame = document.createElement("iframe");
+  frame.setAttribute("title", "Book");
+  const box = viewportBox();
+  safeStyle(frame, "position", "fixed");
+  safeStyle(frame, "top", "0");
+  safeStyle(frame, "left", "0");
+  safeStyle(frame, "width", `${box.w}px`);
+  safeStyle(frame, "height", `${box.h}px`);
+  safeStyle(frame, "border", "0");
+  safeStyle(frame, "background", "#1c1917");
+  safeStyle(frame, "z-index", "2");
+  const body = ensureBody();
+  if (!body) throw new Error("document.body is missing");
+  body.appendChild(frame);
+  // WKWebView creates the child document on the next frame, not in the
+  // append itself. Writing before that throws and the shelf comes back.
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+  try {
+    let idoc = frame.contentDocument;
+    let win = frame.contentWindow as FrameWindow | null;
+    if (!idoc || !win) throw new Error("book frame is not same-origin");
+    idoc.open();
+    idoc.write("<!doctype html><html><head></head><body></body></html>");
+    idoc.close();
+    idoc = frame.contentDocument;
+    win = frame.contentWindow as FrameWindow | null;
+    if (!idoc || !win) throw new Error("book frame lost its document");
+    copyStyles(idoc);
+    shareHostGlobals(win);
+    installSilence(win);
+    installFrameBoot(win, payload);
+    ensureMountRoot(idoc);
+    try {
+      await loadScriptsIn(win, [READER_ENGINE]);
+    } catch (err) {
+      console.error("[boot] reader engine failed to load", err);
+    }
+    const imported = await importIn(win, host.source, "reader-host");
+    const handle: FormatHandle = {
+      glue: imported.glue,
+      blobUrl: imported.blobUrl,
+      format: "reader-host",
+    };
+    try {
+      await startIn(win, imported.glue, host.bytes);
+      await imported.glue.mount?.();
+    } catch (err) {
+      try {
+        if (typeof imported.glue.dispose === "function") await imported.glue.dispose();
+        else imported.glue.detach?.();
+      } catch {
+        // Init never finished.
+      }
+      try {
+        imported.glue.release?.();
+      } catch {
+        // Binding already clear.
+      }
+      throw err;
+    }
+    rememberFrame(win, handle);
+    const inner = idoc.getElementById("mareader-root");
+    if (inner instanceof HTMLElement) fillMounted(inner);
+    return frame;
+  } catch (err) {
+    try {
+      frame.remove();
+    } catch {
+      // Already gone.
+    }
+    throw err;
+  }
+}
+
+async function destroyBookFrame(): Promise<void> {
+  const frame = bookFrame;
+  bookFrame = null;
+  if (!frame) return;
+  const win = frameWindow(frame);
+  try {
+    win?.__MAREADER_BOOT?.flush?.();
+  } catch {
+    // The host already flushed before asking to leave.
+  }
+  try {
+    win?.__MAREADER_SILENCE?.();
+  } catch {
+    // No listeners parked.
+  }
+  const handles = win?.__MAREADER_HANDLES ? [...win.__MAREADER_HANDLES] : [];
+  if (win) win.__MAREADER_HANDLES = [];
+  for (const handle of handles) {
+    try {
+      if (typeof handle.glue.dispose === "function") await handle.glue.dispose();
+      else handle.glue.detach?.();
+    } catch {
+      // The view is already gone.
+    }
+    try {
+      handle.glue.release?.();
+    } catch {
+      // Binding already clear.
+    }
+    try {
+      URL.revokeObjectURL(handle.blobUrl);
+    } catch {
+      // Already revoked.
+    }
+  }
+  try {
+    const pdf = win?.PDFReader;
+    if (pdf && typeof pdf.destroy === "function") {
+      await Promise.race([
+        pdf.destroy(),
+        new Promise((resolve) => {
+          setTimeout(resolve, 1200);
+        }),
+      ]);
+    }
+  } catch {
+    // The frame removal ends the worker if destroy did not.
+  }
+  try {
+    frame.remove();
+  } catch {
+    // Already gone.
+  }
+}
+
 // In-page. A query navigation does not drop the previous wasm in this
 // webview, which is why each open/close kept another instance. The leaving
 // modules are deactivated — disposed and released — before the arriving one
@@ -578,20 +1095,25 @@ async function showLibrary(fromHistory: boolean): Promise<void> {
     queued = { kind: "library", fromHistory };
     return;
   }
-  if (liveKind === "library" && libraryHandle && live.size === 0 && !hostHandle) return;
+  if (liveKind === "library" && libraryHandle && !bookFrame && live.size === 0 && !hostHandle && libraryVisible()) {
+    return;
+  }
   swapping = true;
   let tornDown = false;
+  let prepared: PreparedSession | null = null;
   try {
     requireLibraryPlan();
     if (aliveAfter("to-library") !== "library") {
       throw new Error("library switch left the reader alive");
     }
-    const prepared = await prepareModule("library");
-    // Cancel a book mount that is still in flight, then drop every module
-    // the shelf must not share the page with.
+    prepared = await prepareModule("library");
     generation += 1;
     sessionStorage.removeItem(HANDOFF_KEY);
     resetBridge();
+    // The book frame still holds the host, the format, and the worker. Drop
+    // it before the new shelf instance exists. The two must not be alive
+    // together.
+    await destroyBookFrame();
     for (const id of releaseBefore("library")) {
       await settle(id, () => deactivateModule(id));
     }
@@ -603,13 +1125,20 @@ async function showLibrary(fromHistory: boolean): Promise<void> {
       clearBody();
     });
     tornDown = true;
+    resetChrome();
     paintShell();
+    const root = ensureMountRoot();
     markPage("library", null);
-    const handle = await mountFresh("library", prepared);
+    const handed = prepared;
+    prepared = null;
+    const handle = await mountFresh("library", handed);
     remember("library", handle);
     liveKind = "library";
-    console.info("[mem] library module mounted; reader host released");
+    fillMounted(root);
+    forceRepaint(root);
+    console.info("[mem] library module mounted; book frame released");
   } catch (err) {
+    if (prepared) discardPrepared(prepared);
     console.error("[boot] shelf switch failed", err);
     if (tornDown) {
       const message = err instanceof Error ? err.message : "Could not return to the library";
@@ -634,7 +1163,7 @@ async function showReader(payload: Handoff, fromHistory: boolean): Promise<void>
       throw new Error("reader switch does not drop the library module");
     }
     sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(payload));
-    const prepared = await prepareModule("reader-host");
+    const fetched = await fetchModule("reader-host");
     generation += 1;
     resetBridge();
     for (const id of releaseBefore("reader-host")) {
@@ -642,6 +1171,7 @@ async function showReader(payload: Handoff, fromHistory: boolean): Promise<void>
     }
     await settle("stale host", () => deactivateModule("reader-host"));
     if (plan.includes("pdf-worker")) await settle("pdf worker", () => killPdfWorker());
+    await destroyBookFrame();
     await settle("clear body", () => {
       ensureBody();
       clearBody();
@@ -649,30 +1179,34 @@ async function showReader(payload: Handoff, fromHistory: boolean): Promise<void>
     tornDown = true;
     paintShell();
     markPage("reader", payload);
-    try {
-      await load(READER_ENGINE);
-    } catch (err) {
-      console.error("[boot] reader engine failed to load", err);
-    }
-    const handle = await mountFresh("reader-host", prepared);
-    remember("reader-host", handle);
+    bookFrame = await createBookFrame(payload, fetched);
+    hostHandle = null;
     liveKind = "reader";
-    console.info("[mem] reader host mounted; library module released");
+    console.info("[mem] book frame mounted; library module released");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not open the book";
     console.error("[boot] reader switch failed", err);
+    await destroyBookFrame();
     markPage("library", null);
     hostHandle = null;
     liveKind = "library";
     if (tornDown && !libraryHandle) {
       try {
+        resetChrome();
+        ensureMountRoot();
         const again = await prepareModule("library");
-        remember("library", await activateSession(again, "library"));
+        const handle = await mountFresh("library", again);
+        remember("library", handle);
+        const root = document.getElementById("mareader-root");
+        if (root instanceof HTMLElement) {
+          fillMounted(root);
+          forceRepaint(root);
+        }
       } catch (restoreErr) {
         console.error("[boot] shelf restore failed", restoreErr);
       }
     }
-    if (tornDown || !libraryHandle) showBootError(message);
+    if (!libraryHandle) showBootError(message);
   } finally {
     swapping = false;
     pumpQueue();
@@ -743,28 +1277,22 @@ function paintShell(): void {
 function showBootError(message: string): void {
   try {
     paintShell();
-    const body = ensureBody();
-    if (!body) return;
+    resetChrome();
+    const root = ensureMountRoot();
+    root.replaceChildren();
     const node = document.createElement("div");
     node.setAttribute("role", "alert");
-    const css = [
-      "position:fixed",
-      "inset:0",
-      "z-index:2147483647",
-      "box-sizing:border-box",
-      "background:#1c1917",
-      "color:#fafaf9",
-      "font:16px/1.45 ui-sans-serif,system-ui,sans-serif",
-      "padding:28px",
-      "white-space:pre",
-    ].join(";");
-    try {
-      node.setAttribute("style", css);
-    } catch {
-      // The text is still readable if the stylesheet has a color.
-    }
+    safeStyle(node, "position", "fixed");
+    safeStyle(node, "inset", "0");
+    safeStyle(node, "z-index", "2147483647");
+    safeStyle(node, "box-sizing", "border-box");
+    safeStyle(node, "background", "#1c1917");
+    safeStyle(node, "color", "#fafaf9");
+    safeStyle(node, "font", "16px/1.45 ui-sans-serif, system-ui, sans-serif");
+    safeStyle(node, "padding", "28px");
     node.textContent = message || "Could not open the page";
-    body.appendChild(node);
+    root.appendChild(node);
+    forceRepaint(root);
   } catch (err) {
     console.error("[boot] could not show the failure", err);
   }
@@ -774,6 +1302,15 @@ function showBootError(message: string): void {
 // the pdf.js worker when it is called, before its promise settles.
 function abandonNow(): void {
   generation += 1;
+  const frame = bookFrame;
+  bookFrame = null;
+  if (frame) {
+    try {
+      frame.remove();
+    } catch {
+      // The document is leaving.
+    }
+  }
   const pending = [...live];
   if (libraryHandle) pending.push(libraryHandle);
   if (hostHandle) pending.push(hostHandle);
@@ -839,6 +1376,10 @@ const boot: Boot = {
     return loadPdfEngine();
   },
   mountFormat(payload) {
+    const win = frameWindow(bookFrame);
+    if (win?.__MAREADER_BOOT && win.__MAREADER_BOOT !== boot) {
+      return win.__MAREADER_BOOT.mountFormat(payload);
+    }
     return mountFormatNow(payload);
   },
   dropFormat() {
@@ -854,12 +1395,19 @@ const boot: Boot = {
       if (!open) return Promise.reject(new Error("reader host needs a book"));
       return showReader(open, false);
     }
+    const win = frameWindow(bookFrame);
+    if (win?.__MAREADER_BOOT && win.__MAREADER_BOOT !== boot && isFormatModule(module)) {
+      return win.__MAREADER_BOOT.mountFormat(payload ?? "");
+    }
     return mountFormatNow(payload ?? "");
   },
   deactivate(module) {
     if (!isSessionModuleId(module)) {
       return Promise.reject(new Error(`unknown module ${module}`));
     }
+    const win = frameWindow(bookFrame);
+    if (win && isFormatModule(module)) return releaseFrameFormats(win);
+    if (module === "reader-host" && bookFrame) return destroyBookFrame();
     return deactivateModule(module);
   },
   flush() {},
@@ -888,14 +1436,36 @@ window.addEventListener("popstate", () => {
   if (open) void showReader(open, true);
 });
 
+window.addEventListener("resize", () => {
+  const root = document.getElementById("mareader-root");
+  if (root instanceof HTMLElement) sizeRoot(root);
+  if (!bookFrame) return;
+  const box = viewportBox();
+  safeStyle(bookFrame, "width", `${box.w}px`);
+  safeStyle(bookFrame, "height", `${box.h}px`);
+  const inner = bookFrame.contentDocument?.getElementById("mareader-root");
+  if (inner instanceof HTMLElement) sizeRoot(inner);
+});
+
 try {
   if (kind === "reader") {
-    remember("reader-host", await startSession(moduleGlue("reader-host"), moduleWasm("reader-host"), "reader-host"));
-    liveKind = "reader";
-    console.info("[mem] reader host mounted; library module not started");
+    const open = boot.open ?? parseHandoff(sessionStorage.getItem(HANDOFF_KEY));
+    if (open) {
+      await showReader(open, false);
+    } else {
+      const root = ensureMountRoot();
+      remember("library", await startSession(moduleGlue("library"), moduleWasm("library"), "library"));
+      liveKind = "library";
+      fillMounted(root);
+      forceRepaint(root);
+      console.info("[mem] library module mounted; reader host not started");
+    }
   } else {
+    const root = ensureMountRoot();
     remember("library", await startSession(moduleGlue("library"), moduleWasm("library"), "library"));
     liveKind = "library";
+    fillMounted(root);
+    forceRepaint(root);
     console.info("[mem] library module mounted; reader host not started");
   }
 } catch (err) {

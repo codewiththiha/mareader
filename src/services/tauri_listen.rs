@@ -63,6 +63,11 @@ fn park_unlisten(value: JsValue) {
     let Ok(fun) = value.dyn_into::<js_sys::Function>() else {
         return;
     };
+    // The boot reads this array from the frame that owns the listener and
+    // calls it before that frame is removed. A handle that lives only in this
+    // instance cannot be reached once `release()` has cleared `wasm`.
+    #[cfg(target_arch = "wasm32")]
+    remember_js_unlisten(&fun);
     let late = LISTENERS.with(|slot| {
         let mut listeners = slot.borrow_mut();
         if listeners.closed {
@@ -75,6 +80,20 @@ fn park_unlisten(value: JsValue) {
     if let Some(fun) = late {
         let _ = fun.call0(&JsValue::UNDEFINED);
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn remember_js_unlisten(fun: &js_sys::Function) {
+    let Some(win) = web_sys::window() else {
+        return;
+    };
+    let Ok(list) = js_sys::Reflect::get(&win, &JsValue::from_str("__MAREADER_UNLISTEN")) else {
+        return;
+    };
+    let Ok(list) = list.dyn_into::<js_sys::Array>() else {
+        return;
+    };
+    list.push(fun);
 }
 
 /// Drop every listener this instance registered. Dispose calls this while

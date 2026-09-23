@@ -37,7 +37,16 @@ pub fn App() -> impl IntoView {
     any(feature = "session-library", feature = "session-host")
 ))]
 fn document_body() -> Option<web_sys::HtmlElement> {
-    web_sys::window()?.document()?.body()
+    use wasm_bindgen::JsCast;
+    let document = web_sys::window()?.document()?;
+    // The boot places this before mount. A body whose percentage height
+    // collapsed after the canvases left is a mounted shelf that paints nothing.
+    if let Some(root) = document.get_element_by_id("mareader-root") {
+        if let Ok(el) = root.dyn_into::<web_sys::HtmlElement>() {
+            return Some(el);
+        }
+    }
+    document.body()
 }
 
 #[cfg(all(feature = "session-library", target_arch = "wasm32"))]

@@ -40,29 +40,28 @@ export function patchGlueSource(source) {
   const cached = [...source.matchAll(CACHED)].map((match) => match[1]);
   const init = source.match(/\bfunction (__wbg_init|init)\b/)?.[1] ?? null;
   const lines = ["export function release() {"];
-  // The instance first. A later throw must not skip this.
-  if (declared(source, "wasmInstance")) lines.push("  wasmInstance = undefined;");
-  if (declared(source, "wasmModule")) lines.push("  wasmModule = undefined;");
-  lines.push("  wasm = undefined;");
-  for (const name of cached) lines.push(`  ${name} = null;`);
+  // Each write is its own try. One sealed binding must not skip the instance.
+  const drop = (stmt) => lines.push(`  try { ${stmt} } catch (_) { /* sealed */ }`);
+  if (declared(source, "wasmInstance")) drop("wasmInstance = undefined;");
+  if (declared(source, "wasmModule")) drop("wasmModule = undefined;");
+  drop("wasm = undefined;");
+  for (const name of cached) drop(`${name} = null;`);
   // #3130: the externref heap is not reset by init, and its slots keep JS
   // values that can still see the old memory. `let heap` is the web glue.
   if (declared(source, "heap")) {
-    lines.push("  heap = new Array(1024).fill(undefined);");
-    lines.push("  heap.push(undefined, null, true, false);");
+    drop("heap = new Array(1024).fill(undefined);");
+    drop("heap.push(undefined, null, true, false);");
   } else if (/\bconst heap\b/.test(source)) {
-    lines.push("  for (let i = 0; i < heap.length; i++) heap[i] = undefined;");
+    drop("for (let i = 0; i < heap.length; i++) heap[i] = undefined;");
   }
   if (declared(source, "heap_next")) {
-    lines.push("  heap_next = heap.length;");
+    drop("heap_next = heap.length;");
   }
-  if (declared(source, "numBytesDecoded")) lines.push("  numBytesDecoded = 0;");
-  if (declared(source, "WASM_VECTOR_LEN")) lines.push("  WASM_VECTOR_LEN = 0;");
+  if (declared(source, "numBytesDecoded")) drop("numBytesDecoded = 0;");
+  if (declared(source, "WASM_VECTOR_LEN")) drop("WASM_VECTOR_LEN = 0;");
   // Older glue stored the compiled module here. 0.2.127 web glue does not.
   if (init) {
-    lines.push(
-      `  try { ${init}.__wbindgen_wasm_module = undefined; } catch (_) { /* not this glue */ }`,
-    );
+    drop(`${init}.__wbindgen_wasm_module = undefined;`);
   }
   lines.push("}", "");
   return `${source.replace(/\s*$/, "\n")}${lines.join("\n")}`;
