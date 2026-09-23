@@ -143,6 +143,7 @@ let blobNonce = 0;
 // The open book. Null on the shelf. The parent must not keep the frame's
 // window, glue, or worker after this is cleared.
 let bookFrame: HTMLIFrameElement | null = null;
+let returnedFromBook = false;
 
 interface FrameWindow extends Window {
   Blob: typeof Blob;
@@ -629,9 +630,39 @@ function ensureMountRoot(doc: Document = document): HTMLElement {
 }
 
 
-// The shelf can mount beside this root. A fixed root then covers every card,
-// and only the title bar stays visible. Lift the shelf above that fill and
-// give the grid a specified size so the books do not depend on a percentage.
+function buryBookFrames(): void {
+  bookFrame = null;
+  document.querySelectorAll("iframe").forEach((frame) => {
+    if (!(frame instanceof HTMLElement)) return;
+    safeStyle(frame, "display", "none");
+    safeStyle(frame, "visibility", "hidden");
+    safeStyle(frame, "pointer-events", "none");
+    safeStyle(frame, "z-index", "0");
+    try {
+      frame.remove();
+    } catch {
+      // Hidden, so it cannot cover the shelf even if removal is refused.
+    }
+  });
+}
+
+function kickDocumentPaint(): void {
+  // display:none on body can stick in this webview and leave the return blank.
+  // A zoom nudge rebuilds the layer tree without hiding the document.
+  const html = document.documentElement;
+  safeStyle(html, "zoom", "1.001");
+  try {
+    void html.offsetHeight;
+  } catch {
+    // The reflow is the point; a thrown read still leaves the zoom set.
+  }
+  try {
+    html.style.removeProperty("zoom");
+  } catch {
+    safeStyle(html, "zoom", "1");
+  }
+}
+
 function revealShelf(): void {
   const box = viewportBox();
   const root = document.getElementById("mareader-root");
@@ -673,6 +704,84 @@ function revealShelf(): void {
     safeStyle(node, "width", "100%");
     safeStyle(node, "grid-template-columns", `repeat(${cols}, minmax(9.5rem, 1fr))`);
   });
+}
+
+
+function applyReturnLayout(): void {
+  // The book frame is position:fixed at z-index 2, the same layer as the shelf.
+  // After it is removed this webview keeps that layer and the new shelf, still
+  // fixed, paints as an empty window. Put the page back in flow and above it.
+  buryBookFrames();
+  const box = viewportBox();
+  const html = document.documentElement;
+  const body = document.body;
+  if (html) {
+    safeStyle(html, "height", `${box.h}px`);
+    safeStyle(html, "min-height", `${box.h}px`);
+  }
+  if (body) {
+    safeStyle(body, "position", "relative");
+    safeStyle(body, "display", "block");
+    safeStyle(body, "width", `${box.w}px`);
+    safeStyle(body, "height", `${box.h}px`);
+    safeStyle(body, "min-height", `${box.h}px`);
+    safeStyle(body, "overflow", "hidden");
+    safeStyle(body, "background", "var(--color-paper)");
+    safeStyle(body, "color", "var(--color-ink)");
+  }
+  const root = document.getElementById("mareader-root");
+  if (root instanceof HTMLElement) {
+    safeStyle(root, "position", "relative");
+    safeStyle(root, "top", "auto");
+    safeStyle(root, "left", "auto");
+    safeStyle(root, "z-index", "3");
+    safeStyle(root, "width", `${box.w}px`);
+    safeStyle(root, "height", `${box.h}px`);
+    safeStyle(root, "min-height", `${box.h}px`);
+    safeStyle(root, "overflow", "auto");
+    safeStyle(root, "background", "var(--color-paper)");
+    safeStyle(root, "color", "var(--color-ink)");
+  }
+  revealShelf();
+  if (root instanceof HTMLElement) {
+    // revealShelf puts the fill back under the shelf. On return the fill is
+    // the page, and it has to stay above a book frame that failed to detach.
+    safeStyle(root, "position", "relative");
+    safeStyle(root, "z-index", "3");
+  }
+  const level = document.getElementById("library-level");
+  let surface: HTMLElement | null = level;
+  while (
+    surface &&
+    surface.parentElement &&
+    surface.parentElement !== document.body &&
+    surface.parentElement !== root
+  ) {
+    surface = surface.parentElement;
+  }
+  if (!(surface instanceof HTMLElement) && root instanceof HTMLElement) {
+    for (const child of Array.from(root.children)) {
+      if (child instanceof HTMLElement && !child.classList.contains("noise-overlay")) {
+        surface = child;
+        break;
+      }
+    }
+  }
+  if (surface instanceof HTMLElement) {
+    safeStyle(surface, "position", "relative");
+    safeStyle(surface, "top", "auto");
+    safeStyle(surface, "left", "auto");
+    safeStyle(surface, "width", `${box.w}px`);
+    safeStyle(surface, "height", `${box.h}px`);
+    safeStyle(surface, "min-height", `${box.h}px`);
+    safeStyle(surface, "z-index", "3");
+    safeStyle(surface, "overflow", "auto");
+  }
+}
+
+function paintReturn(): void {
+  applyReturnLayout();
+  kickDocumentPaint();
 }
 
 function fillMounted(root: HTMLElement): void {
@@ -1165,6 +1274,7 @@ async function showLibrary(fromHistory: boolean): Promise<void> {
     // it before the new shelf instance exists. The two must not be alive
     // together.
     await destroyBookFrame();
+    buryBookFrames();
     for (const id of releaseBefore("library")) {
       await settle(id, () => deactivateModule(id));
     }
@@ -1186,9 +1296,11 @@ async function showLibrary(fromHistory: boolean): Promise<void> {
     remember("library", handle);
     liveKind = "library";
     fillMounted(root);
-    revealShelf();
-    forceRepaint(root);
-    requestAnimationFrame(() => revealShelf());
+    returnedFromBook = true;
+    paintReturn();
+    requestAnimationFrame(() => applyReturnLayout());
+    setTimeout(() => applyReturnLayout(), 50);
+    setTimeout(() => applyReturnLayout(), 250);
     console.info("[mem] library module mounted; book frame released");
   } catch (err) {
     if (prepared) discardPrepared(prepared);
@@ -1235,6 +1347,7 @@ async function showReader(payload: Handoff, fromHistory: boolean): Promise<void>
     bookFrame = await createBookFrame(payload, fetched);
     hostHandle = null;
     liveKind = "reader";
+    returnedFromBook = false;
     console.info("[mem] book frame mounted; library module released");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not open the book";
@@ -1491,6 +1604,10 @@ window.addEventListener("popstate", () => {
 });
 
 window.addEventListener("resize", () => {
+  if (!bookFrame && returnedFromBook) {
+    applyReturnLayout();
+    return;
+  }
   const root = document.getElementById("mareader-root");
   if (root instanceof HTMLElement) sizeRoot(root);
   revealShelf();
