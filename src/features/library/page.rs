@@ -87,7 +87,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             // that box, so the cards and the paper token have a real surface.
             <div
                 class="overflow-hidden bg-paper text-ink"
-                style="position:absolute;top:0;right:0;bottom:0;left:0;z-index:0;background:var(--color-paper);color:var(--color-ink)"
+                style="position:absolute;top:0;left:0;width:100vw;height:100vh;z-index:2;overflow:auto;box-sizing:border-box;padding-top:48px;background:var(--color-paper);color:var(--color-ink)"
             >
                 <LibraryContent state=state />
             </div>

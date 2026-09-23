@@ -73,6 +73,7 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
     view! {
         <div
             class="lib-list divide-y divide-line rounded-xl border border-line"
+            style="width:100%"
             class=("lib-list-selecting", move || state.library.selecting.get())
         >
             <For each=move || roots.get() key=|s| s.id.clone() let:shelf>

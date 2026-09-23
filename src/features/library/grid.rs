@@ -68,7 +68,12 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
             node_ref=grid_ref
             class="lib-grid"
             class=("lib-grid-selecting", move || state.library.selecting.get())
-            style=move || format!("--lib-cols:{}", columns.get())
+            style=move || {
+                let cols = columns.get();
+                format!(
+                    "--lib-cols:{cols};display:grid;width:100%;grid-template-columns:repeat({cols},minmax(9.5rem,1fr))"
+                )
+            }
         >
             <For each=move || folders.0.get() key=|s| s.id.clone() let:shelf>
                 <FolderCard state=state shelf=shelf />

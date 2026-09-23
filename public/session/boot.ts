@@ -606,7 +606,9 @@ function sizeRoot(root: HTMLElement): void {
   // what kept a dark shelf looking light after the module mounted.
   safeStyle(root, "background", "var(--color-paper)");
   safeStyle(root, "color", "var(--color-ink)");
-  safeStyle(root, "z-index", "1");
+  // Below the shelf. A higher layer here paints over the books: the title
+  // bar escapes on its own z-index, and the grid does not.
+  safeStyle(root, "z-index", "0");
 }
 
 // Percentage height on the body collapses after a large canvas layer leaves.
@@ -624,6 +626,53 @@ function ensureMountRoot(doc: Document = document): HTMLElement {
   sizeRoot(root);
   body.appendChild(root);
   return root;
+}
+
+
+// The shelf can mount beside this root. A fixed root then covers every card,
+// and only the title bar stays visible. Lift the shelf above that fill and
+// give the grid a specified size so the books do not depend on a percentage.
+function revealShelf(): void {
+  const box = viewportBox();
+  const root = document.getElementById("mareader-root");
+  if (root instanceof HTMLElement) safeStyle(root, "z-index", "0");
+  const level = document.getElementById("library-level");
+  let surface: HTMLElement | null = level;
+  while (
+    surface &&
+    surface.parentElement &&
+    surface.parentElement !== document.body &&
+    surface.parentElement !== root
+  ) {
+    surface = surface.parentElement;
+  }
+  if (surface instanceof HTMLElement) {
+    safeStyle(surface, "position", "absolute");
+    safeStyle(surface, "top", "0");
+    safeStyle(surface, "left", "0");
+    safeStyle(surface, "width", `${box.w}px`);
+    safeStyle(surface, "height", `${box.h}px`);
+    safeStyle(surface, "z-index", "2");
+    safeStyle(surface, "overflow", "auto");
+    safeStyle(surface, "box-sizing", "border-box");
+    safeStyle(surface, "background", "var(--color-paper)");
+    safeStyle(surface, "color", "var(--color-ink)");
+  }
+  if (level instanceof HTMLElement) {
+    safeStyle(level, "display", "block");
+    safeStyle(level, "width", "100%");
+    safeStyle(level, "min-height", `${Math.max(box.h - 48, 200)}px`);
+    safeStyle(level, "height", "auto");
+    safeStyle(level, "overflow", "visible");
+  }
+  document.querySelectorAll(".lib-grid").forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    const token = node.style.getPropertyValue("--lib-cols").trim();
+    const cols = /^[0-9]+$/.test(token) || token === "auto-fill" || token === "auto-fit" ? token : "auto-fill";
+    safeStyle(node, "display", "grid");
+    safeStyle(node, "width", "100%");
+    safeStyle(node, "grid-template-columns", `repeat(${cols}, minmax(9.5rem, 1fr))`);
+  });
 }
 
 function fillMounted(root: HTMLElement): void {
@@ -1137,7 +1186,9 @@ async function showLibrary(fromHistory: boolean): Promise<void> {
     remember("library", handle);
     liveKind = "library";
     fillMounted(root);
+    revealShelf();
     forceRepaint(root);
+    requestAnimationFrame(() => revealShelf());
     console.info("[mem] library module mounted; book frame released");
   } catch (err) {
     if (prepared) discardPrepared(prepared);
@@ -1202,6 +1253,7 @@ async function showReader(payload: Handoff, fromHistory: boolean): Promise<void>
         const root = document.getElementById("mareader-root");
         if (root instanceof HTMLElement) {
           fillMounted(root);
+          revealShelf();
           forceRepaint(root);
         }
       } catch (restoreErr) {
@@ -1441,6 +1493,7 @@ window.addEventListener("popstate", () => {
 window.addEventListener("resize", () => {
   const root = document.getElementById("mareader-root");
   if (root instanceof HTMLElement) sizeRoot(root);
+  revealShelf();
   if (!bookFrame) return;
   const box = viewportBox();
   safeStyle(bookFrame, "width", `${box.w}px`);
@@ -1459,7 +1512,9 @@ try {
       remember("library", await startSession(moduleGlue("library"), moduleWasm("library"), "library"));
       liveKind = "library";
       fillMounted(root);
+      revealShelf();
       forceRepaint(root);
+      requestAnimationFrame(() => revealShelf());
       console.info("[mem] library module mounted; reader host not started");
     }
   } else {
@@ -1467,7 +1522,9 @@ try {
     remember("library", await startSession(moduleGlue("library"), moduleWasm("library"), "library"));
     liveKind = "library";
     fillMounted(root);
+    revealShelf();
     forceRepaint(root);
+    requestAnimationFrame(() => revealShelf());
     console.info("[mem] library module mounted; reader host not started");
   }
 } catch (err) {
