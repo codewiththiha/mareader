@@ -199,8 +199,9 @@ pub fn install_flush(state: AppState) {
 /// Load pdf.js into the format instance if it is not already there. The shelf
 /// does not call this. A cover render used to, and that left the bridge in
 /// the library heap.
+#[cfg(feature = "format-pdf")]
 pub async fn ensure_pdf_engine() {
-    #[cfg(all(feature = "format-pdf", target_arch = "wasm32"))]
+    #[cfg(target_arch = "wasm32")]
     {
         if pdf_engine::has_pdf_reader() {
             return;

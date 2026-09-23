@@ -6,6 +6,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
+#[cfg(any(all(format_runtime, feature = "format-pdf"), test))]
 use std::sync::Arc;
 
 use leptos::prelude::*;
@@ -13,13 +14,16 @@ use wasm_bindgen_futures::spawn_local;
 
 use reader_core::format::Format;
 
-use crate::state::library::{CoverImage, CoverMap};
+#[cfg(any(all(format_runtime, feature = "format-pdf"), test))]
+use crate::state::library::CoverImage;
+use crate::state::library::CoverMap;
 use crate::state::AppState;
 use library_core::book::{Book, Row, book_rows};
 
 /// One width for both renders of the same art — the import queue's and the
 /// open pipeline's: two widths would be two renders and a cache that misses
 /// on the other one.
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 pub(crate) const COVER_WIDTH: f64 = 240.0;
 
 pub const COVER_CAP: usize = 60;

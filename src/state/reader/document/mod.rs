@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
-#[cfg(any(not(format_runtime), feature = "format-pdf"))]
+#[cfg(all(format_runtime, feature = "format-pdf"))]
 use pdf_core::outline::OutlineEntry;
 use reader_core::{DocStatus, PageSize};
 use reader_core::format::Format;
@@ -202,7 +202,7 @@ impl DocumentState {
     /// cannot tell these chapters from the ones `md_core` derives, and the
     /// `page_count` clamp stops an outline authored against a re-saved file
     /// from jumping past the last sheet.
-    #[cfg(any(not(format_runtime), feature = "format-pdf"))]
+    #[cfg(all(format_runtime, feature = "format-pdf"))]
     pub fn set_pdf_outline(&self, entries: Vec<OutlineEntry>, page_count: u32) {
         self.outline.set(Arc::new(pdf_core::outline::to_nodes(entries, page_count)));
     }
