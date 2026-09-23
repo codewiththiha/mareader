@@ -2,8 +2,8 @@
 // evaluates. It has no release(). The shelf and the reader chrome are
 // separate instances this file starts and drops. Opening a book releases
 // the shelf and starts a new host. Returning releases that host and every
-// book module, then starts a new shelf. The URL changes with history, not
-// a document load: a query navigation kept the previous wasm.
+// book module, then starts a new shelf. The URL is not changed: a history
+// update in this webview unloads the document and leaves the empty window.
 //
 // Specifiers are variables on purpose. A literal import would let the bundler
 // inline pdf.js or a format wasm into this file.
@@ -12,7 +12,6 @@ import {
   HANDOFF_KEY,
   decideSession,
   parseHandoff,
-  withSession,
   type Handoff,
 } from "./handoff";
 import {
@@ -111,11 +110,8 @@ function loadPdfEngine(): Promise<void> {
 const raw = sessionStorage.getItem(HANDOFF_KEY);
 const kind = decideSession(location.search, raw);
 
-// A reader URL with nothing to open is not a reader. Fix the URL in place.
-// location.replace would load another document and leave this one alive.
-if (new URLSearchParams(location.search).get("session") === "reader" && kind !== "reader") {
-  history.replaceState({ session: "library" }, "", withSession(location.href, "library"));
-}
+// A reader URL with nothing to open is not a reader. Do not navigate: a URL
+// change in this webview unloads the document and leaves the empty window.
 
 if (kind === "reader") {
   try {
@@ -380,17 +376,6 @@ async function dropHost(): Promise<void> {
   await releaseHandle(handle);
 }
 
-function rememberUrl(nextKind: "library" | "reader", mode: "push" | "replace"): void {
-  try {
-    const next = withSession(location.href, nextKind);
-    if (location.href === next) return;
-    if (mode === "push") history.pushState({ session: nextKind }, "", next);
-    else history.replaceState({ session: nextKind }, "", next);
-  } catch (err) {
-    console.error("[boot] history update failed", err);
-  }
-}
-
 type PendingSwap =
   | { kind: "library"; fromHistory: boolean }
   | { kind: "reader"; payload: Handoff; fromHistory: boolean };
@@ -405,11 +390,18 @@ function pumpQueue(): void {
   else void showReader(next.payload, next.fromHistory);
 }
 
-async function startSession(
+interface PreparedSession {
+  imported: { glue: FormatGlue; blobUrl: string };
+  compiled: WebAssembly.Module;
+}
+
+// Fetch and compile only. No instance yet, so the shelf can stay on screen
+// while this fails. Instantiating here would put two heaps in the page.
+async function prepareSession(
   gluePathname: string,
   wasmFile: string,
   label: string,
-): Promise<FormatHandle> {
+): Promise<PreparedSession> {
   const imported = await importGlue(gluePathname, label);
   try {
     const { bytes } = await fetchAsset(wasmFile, label);
@@ -417,10 +409,7 @@ async function startSession(
       throw new Error(`${label} is not wasm: ${wasmFile}`);
     }
     const compiled = await WebAssembly.compile(bytes);
-    await imported.glue.default?.({ module_or_path: compiled });
-    const handle: FormatHandle = { glue: imported.glue, blobUrl: imported.blobUrl, format: label };
-    await imported.glue.mount?.();
-    return handle;
+    return { imported, compiled };
   } catch (err) {
     try {
       imported.glue.release?.();
@@ -430,6 +419,36 @@ async function startSession(
     URL.revokeObjectURL(imported.blobUrl);
     throw err;
   }
+}
+
+async function activateSession(prepared: PreparedSession, label: string): Promise<FormatHandle> {
+  try {
+    await prepared.imported.glue.default?.({ module_or_path: prepared.compiled });
+    const handle: FormatHandle = {
+      glue: prepared.imported.glue,
+      blobUrl: prepared.imported.blobUrl,
+      format: label,
+    };
+    await prepared.imported.glue.mount?.();
+    return handle;
+  } catch (err) {
+    try {
+      prepared.imported.glue.release?.();
+    } catch {
+      // Init never finished.
+    }
+    URL.revokeObjectURL(prepared.imported.blobUrl);
+    throw err;
+  }
+}
+
+async function startSession(
+  gluePathname: string,
+  wasmFile: string,
+  label: string,
+): Promise<FormatHandle> {
+  const prepared = await prepareSession(gluePathname, wasmFile, label);
+  return activateSession(prepared, label);
 }
 
 // In-page. A query navigation does not drop the previous wasm in this
@@ -459,7 +478,6 @@ async function showLibrary(fromHistory: boolean): Promise<void> {
     libraryHandle = await startSession(LIBRARY_GLUE, LIBRARY_WASM, "library");
     liveKind = "library";
     console.info("[mem] library module mounted; reader host released");
-    if (!fromHistory) rememberUrl("library", "replace");
   } catch (err) {
     console.error("[boot] shelf switch failed", err);
     showBootError(err instanceof Error ? err.message : "Could not return to the library");
@@ -470,40 +488,89 @@ async function showLibrary(fromHistory: boolean): Promise<void> {
 }
 
 async function showReader(payload: Handoff, fromHistory: boolean): Promise<void> {
-  if (swapping) return;
+  if (swapping) {
+    queued = { kind: "reader", payload, fromHistory };
+    return;
+  }
   swapping = true;
   try {
     const plan = dropsFor("to-reader");
     if (!plan.includes("library") || aliveAfter("to-reader") !== "reader-host") {
       throw new Error("reader switch does not drop the library module");
     }
-    boot.kind = "reader";
-    boot.open = payload;
+    // Do not touch the URL. This webview treats a history change as a
+    // navigation and replaces the document with the empty window.
+    // Fetch the host before dropping the shelf, so a missing artifact
+    // leaves the library on screen.
     sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(payload));
+    const prepared = await prepareSession(HOST_GLUE, HOST_WASM, "reader-host");
+    await dropEveryBook();
     await dropLibrary();
+    await dropHost();
     if (plan.includes("pdf-worker")) await killPdfWorker();
     forgetPdfReader();
     clearBody();
+    paintShell();
+    boot.kind = "reader";
+    boot.open = payload;
     try {
       await load(READER_ENGINE);
     } catch (err) {
       console.error("[boot] reader engine failed to load", err);
     }
-    hostHandle = await startSession(HOST_GLUE, HOST_WASM, "reader-host");
+    hostHandle = await activateSession(prepared, "reader-host");
     liveKind = "reader";
     console.info("[mem] reader host mounted; library module released");
-    if (!fromHistory) rememberUrl("reader", "push");
   } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not open the book";
     console.error("[boot] reader switch failed", err);
-    showBootError(err instanceof Error ? err.message : "Could not open the book");
+    boot.kind = "library";
+    boot.open = null;
+    hostHandle = null;
+    liveKind = "library";
+    if (!libraryHandle) {
+      try {
+        libraryHandle = await startSession(LIBRARY_GLUE, LIBRARY_WASM, "library");
+      } catch (restoreErr) {
+        console.error("[boot] shelf restore failed", restoreErr);
+      }
+    }
+    showBootError(message);
   } finally {
     swapping = false;
+    pumpQueue();
   }
 }
 
+function paintShell(): void {
+  const root = document.documentElement;
+  const body = document.body;
+  if (!root || !body) return;
+  // The shelf view is what paints the window. Once it is gone, a transparent
+  // document shows the webview's own background — the empty Tauri window.
+  root.style.background = "#1c1917";
+  body.style.background = "#1c1917";
+  body.style.color = "#fafaf9";
+}
+
 function showBootError(message: string): void {
+  paintShell();
   if (!document.body) return;
-  document.body.textContent = message;
+  const node = document.createElement("div");
+  node.setAttribute("role", "alert");
+  node.style.cssText = [
+    "position:fixed",
+    "inset:0",
+    "z-index:2147483647",
+    "box-sizing:border-box",
+    "background:#1c1917",
+    "color:#fafaf9",
+    "font:16px/1.45 ui-sans-serif,system-ui,sans-serif",
+    "padding:28px",
+    "white-space:pre",
+  ].join(";");
+  node.textContent = message;
+  document.body.appendChild(node);
 }
 
 // pagehide cannot await. detach and release are sync. destroy() terminates

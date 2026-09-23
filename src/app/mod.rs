@@ -89,9 +89,7 @@ mod reader_host {
 
     use leptos::prelude::*;
 
-    use super::{
-        create_app_state, install_reader_session, provide_app_contexts, ReaderSession,
-    };
+    use super::App;
 
     thread_local! {
         static HANDLE: RefCell<Option<Box<dyn Any>>> = const { RefCell::new(None) };
@@ -100,12 +98,9 @@ mod reader_host {
     pub fn mount() {
         console_error_panic_hook::set_once();
         crate::memory::log_heap("host-mount");
-        let state = create_app_state();
-        provide_context(state);
-        let (appearance, typography) = provide_app_contexts(state);
-        install_reader_session(state, appearance, typography);
-        let handle =
-            leptos::mount::mount_to_body(move || view! { <ReaderSession state=state /> });
+        // The same tree the Trunk bin mounted. `boot.kind` is already reader,
+        // so this is the chrome, not a second shelf.
+        let handle = leptos::mount::mount_to_body(|| view! { <App /> });
         HANDLE.with(|slot| {
             *slot.borrow_mut() = Some(Box::new(handle));
         });
