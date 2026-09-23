@@ -203,7 +203,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     });
 
     view! {
-        <div class="flex h-full w-full flex-col">
+        <div class="flex h-full w-full flex-col" style="display:flex;flex-direction:column;height:100%;width:100%;min-height:0">
             // An open cannot be aborted from here and does not need to be:
             // picking another file claims a new session stamp, and the
             // in-flight attempt drops its own tail (see
@@ -242,6 +242,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
                     <div
                         id=LEVEL_DOM_ID
                         class="min-h-0 flex-1 overflow-y-auto pt-12"
+                        style="flex:1 1 auto;min-height:0;width:100%;overflow-y:auto"
                         // "New shelf" and "select all" belong to the level;
                         // a card's own right-click stops propagating, so this
                         // only hears the space between cards.
@@ -254,7 +255,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
                             );
                         }
                     >
-                        <div class="mx-auto w-full max-w-6xl px-6 py-8">
+                        <div class="mx-auto w-full max-w-6xl px-6 py-8" style="width:100%;max-width:72rem;box-sizing:border-box">
                             {move || {
                                 if is_list.get() {
                                     view! { <ListView state=state /> }.into_any()

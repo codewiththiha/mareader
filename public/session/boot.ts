@@ -602,8 +602,10 @@ function sizeRoot(root: HTMLElement): void {
   safeStyle(root, "width", `${box.w}px`);
   safeStyle(root, "height", `${box.h}px`);
   safeStyle(root, "overflow", "hidden");
-  safeStyle(root, "background", "#f4f1ea");
-  safeStyle(root, "color", "#1c1917");
+  // Paper and ink come from the appearance tokens. A literal fill here is
+  // what kept a dark shelf looking light after the module mounted.
+  safeStyle(root, "background", "var(--color-paper)");
+  safeStyle(root, "color", "var(--color-ink)");
   safeStyle(root, "z-index", "1");
 }
 
@@ -1269,9 +1271,9 @@ function paintShell(): void {
   // document shows the webview's own background — the empty Tauri window.
   // These writes must not throw: the error overlay calls this, and a throw
   // here is how a failed return became a blank page.
-  safeStyle(root, "background", "#1c1917");
-  safeStyle(body, "background", "#1c1917");
-  safeStyle(body, "color", "#fafaf9");
+  safeStyle(root, "background", "var(--color-paper)");
+  safeStyle(body, "background", "var(--color-paper)");
+  safeStyle(body, "color", "var(--color-ink)");
 }
 
 function showBootError(message: string): void {

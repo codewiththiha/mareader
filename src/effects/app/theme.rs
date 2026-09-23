@@ -65,6 +65,33 @@ fn body_el() -> Option<web_sys::HtmlElement> {
         .and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok())
 }
 
+/// The visible page is not always `<body>`. The session boot mounts into
+/// `#mareader-root` and used to paint that box a fixed light fill, which hid
+/// the paper token. Re-assert the token here so an appearance change reaches
+/// the surface the reader is looking at.
+fn paint_mount_surface() {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    if let Some(root) = doc
+        .get_element_by_id("mareader-root")
+        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+    {
+        let style = root.style();
+        let _ = style.set_property("background-color", "var(--color-paper)");
+        let _ = style.set_property("color", "var(--color-ink)");
+    }
+    if let Some(body) = body_el() {
+        let style = body.style();
+        let _ = style.set_property("background-color", "var(--color-paper)");
+        let _ = style.set_property("color", "var(--color-ink)");
+    }
+    if let Some(style) = html_style() {
+        let _ = style.set_property("background-color", "var(--color-paper)");
+        let _ = style.set_property("color", "var(--color-ink)");
+    }
+}
+
 /// The layer every format shares: the base-mode attribute, the `.dark`
 /// class, the colour scheme, and the texture / grain dials. None of it
 /// knows which format is open.
@@ -108,6 +135,8 @@ fn paint_shared(a: &Appearance) {
             }
         });
     }
+
+    paint_mount_surface();
 
     let Some(body) = body_el() else { return };
     let class = body.class_list();

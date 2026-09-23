@@ -79,7 +79,16 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
 
     view! {
         <AppTitleBar state=state left=left center=center right=right>
-            <div class="relative h-full w-full overflow-hidden bg-paper text-ink">
+            // Percentage height collapses when this page is mounted into a
+            // root whose used height is auto. The title bar keeps its own
+            // box; the grid does not, so the shelf looks empty and the
+            // hardcoded root fill shows instead of the chosen paper.
+            // The mount root is positioned and sized. An absolute inset fills
+            // that box, so the cards and the paper token have a real surface.
+            <div
+                class="overflow-hidden bg-paper text-ink"
+                style="position:absolute;top:0;right:0;bottom:0;left:0;z-index:0;background:var(--color-paper);color:var(--color-ink)"
+            >
                 <LibraryContent state=state />
             </div>
             // A drag is over when a modal opens; a ghost floating on top of a
