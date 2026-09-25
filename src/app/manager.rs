@@ -1,24 +1,28 @@
-//! The runtime manager: the one navigation authority (§10) and the owner of
-//! "which runtime is active". Its type makes two primary runtimes
-//! unspeakable, and it never starts a runtime before the previous one's
-//! dispose promise resolved (§5).
+//! The runtime manager: the one navigation authority (§10), the owner of
+//! "which runtime is active", and the Shell minder of the frame lifecycle —
+//! insertion, handshake, ready-timeout, two-phase disposal (§12). A runtime
+//! is a frame ([`crate::app::frame::Driver`]), never a module the shell
+//! executes; what the manager serializes is the sequence around the frames:
+//! never two at once, never a start before the outgoing disposal resolved.
 //!
-//! Every step of a start can fail — the artifact is missing, its wasm rejects,
-//! the start export is gone — and a failed start is a VISIBLE state, never a
-//! panic. A panic inside the shell wasm takes the whole shell with it, leaving
-//! the window on its last painted frame: that is how a missing `/library.js`
-//! became a blank window with a silent terminal. So the loader, the init and
-//! the start export each report the stage they failed in (§6), the host paints
-//! a loading state before the first await and an error state after a failure
-//! (§11), and the page's own placeholder steps aside once the host paints.
+//! Every step can still fail — the artifact page does not load, its wasm
+//! rejects, the frame simply never says `Ready` — and a failed start is a
+//! VISIBLE named state, never a window on its last painted frame. So each
+//! stage has a bound (§6, §11), the host paints its loading state before any
+//! await, and a failure paints the error state with runtime / stage / cause.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::Mutex;
 
 use runtime_contract::boundary::LaunchDocument;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 use crate::app::boot::{self, BootError, BootPhase, BootStage, RuntimeName};
+use crate::app::frame::{
+    Driver, FrameEvent, FrameKind, FrameVocabulary, heard_summary, protocol_boot_stage,
+    protocol_stage_label,
+};
 use crate::state::{ActiveRuntime, ShellState};
 
 /// The active-runtime slot. `Starting` holds the in-flight disposal/load so a
@@ -26,18 +30,24 @@ use crate::state::{ActiveRuntime, ShellState};
 pub enum Slot {
     None,
     Starting,
-    Library { id: u32, module: js_sys::Object },
-    Reader { id: u32, module: js_sys::Object },
+    Library { driver: Rc<Driver> },
+    Reader { driver: Rc<Driver> },
+}
+
+impl Slot {
+    fn driver(&self) -> Option<Rc<Driver>> {
+        match self {
+            Slot::Library { driver } | Slot::Reader { driver } => Some(driver.clone()),
+            _ => None,
+        }
+    }
 }
 
 pub struct RuntimeManager {
     slot: Mutex<Slot>,
     /// What the runtime host is showing (§6, §11), in the plain form the
-    /// diagnostics probe reads: the probe runs from JS, outside any reactive
-    /// context, so this is a value and not a signal — the same shape as
-    /// `doc_status`/`doc_error` beside it. The host's own DOM is the other half
-    /// of the same fact, and the coverage watch in `boot.rs` reads THAT rather
-    /// than any shell-side copy of it.
+    /// diagnostics probe reads. The pair (state + error) is always written
+    /// together so a probe can never read one side stale.
     pub boot_state: Mutex<String>,
     pub boot_error: Mutex<Option<serde_json::Value>>,
     /// Create/dispose counts for the diagnostics identity (§21): a reader →
@@ -45,30 +55,24 @@ pub struct RuntimeManager {
     pub reader_sessions_created: std::sync::atomic::AtomicU64,
     pub reader_disposes_completed: std::sync::atomic::AtomicU64,
     pub library_sessions_created: std::sync::atomic::AtomicU64,
-    /// Library disposals that COMPLETED (the dispose promise resolved). The
-    /// pair with `reader_disposes_completed` is what proves the handoff order
-    /// in either direction: a replacement becomes active only after the
-    /// outgoing runtime's count has moved.
     pub library_disposes_completed: std::sync::atomic::AtomicU64,
     host: Mutex<Option<web_sys::Element>>,
-    /// Starts are serialized. A navigation that lands while a start is still
-    /// loading becomes the PENDING request instead of a second start running
-    /// beside the first: two starts interleaving their awaits could both mount
-    /// into the host, and one runtime at a time is the invariant the host is
-    /// built around (§10, §11). Newest request wins — the user's last intent.
+    /// Starts are serialized (§10): a navigation mid-start becomes the
+    /// pending request, newest intent wins.
     starting: std::sync::atomic::AtomicBool,
     pending: Mutex<Option<(RuntimeName, Option<LaunchDocument>)>>,
-    /// The last reader digest, cached for the probe (the reader pushes on
-    /// every change that matters).
+    /// The last reader digest, cached for the probe.
     pub last_digest: Mutex<Option<serde_json::Value>>,
     pub doc_status: Mutex<String>,
     pub doc_error: Mutex<Option<String>>,
-}
-
-thread_local! {
-    /// The library module namespace, cached after the first load (compiled
-    /// code, not live state).
-    static LIBRARY_MODULE: RefCell<Option<js_sys::Object>> = const { RefCell::new(None) };
+    /// The frame generations ever seen sending a message for a generation
+    /// that is not the frame they belong to (§35): a ledger, not a gate —
+    /// the generation check is the gate.
+    stale_frames_seen: Cell<u64>,
+    /// The shell state, attached once the Shell component exists, so the
+    /// driver's event hook can reach the services and the navigation calls
+    /// with the same handle the bridge closures use.
+    shell_state: RefCell<Option<ShellState>>,
 }
 
 impl RuntimeManager {
@@ -87,13 +91,21 @@ impl RuntimeManager {
             last_digest: Mutex::new(None),
             doc_status: Mutex::new("Idle".to_string()),
             doc_error: Mutex::new(None),
+            stale_frames_seen: Cell::new(0),
+            shell_state: RefCell::new(None),
         }
     }
 
+    /// Attach the shell state (called once from the Shell component, before
+    /// the first boot). The manager stores it because frame events arrive
+    /// from drivers the manager created — the state handle the bridge
+    /// closures capture is exactly the handle the frame path needs.
+    pub fn attach_state(&self, state: ShellState) {
+        *self.shell_state.borrow_mut() = Some(state);
+    }
+
     /// Publish a boot phase: the diagnostics probe's copy, and the native
-    /// host's boot report. The phase is written as one pair (state + error) so
-    /// a probe can never read a failure's state beside the previous runtime's
-    /// error, or the reverse.
+    /// host's boot report, written as one pair (state + error).
     fn set_phase(&self, phase: BootPhase) {
         *self.boot_error.lock().unwrap() = phase.error().map(BootError::to_json);
         *self.boot_state.lock().unwrap() = phase.as_str().to_string();
@@ -117,16 +129,13 @@ impl RuntimeManager {
         self.host.lock().unwrap().clone()
     }
 
-    /// Boot: whichever runtime the URL names (§11 — the route tells the
-    /// shell which runtime should be active; the manager starts it).
+    /// Boot: whichever runtime the URL names (§11).
     pub fn boot(state: ShellState) {
         let path = web_sys::window()
             .map(|w| w.location().pathname().unwrap_or_default())
             .unwrap_or_default();
         let launch = crate::services::launch_from_url();
         if path == "/reader" && launch.path.is_empty() {
-            // A /reader URL with no launch data cannot open a document: the
-            // same bounce the unified app's RouteSync had.
             navigate("/");
             state.manager.start_library(&state);
             return;
@@ -160,19 +169,16 @@ impl RuntimeManager {
         });
     }
 
-    /// The one start sequence. Its failure path is closed: `run_start` either
-    /// leaves a live session in the slot or an error state in the host.
     async fn start(&self, runtime: RuntimeName, launch: Option<LaunchDocument>) {
         if let Err(error) = self.run_start(runtime, launch).await {
             self.fail(error);
         }
     }
 
-    /// One start at a time. A second request arriving mid-start is queued and
-    /// run when the current one settles, so two starts cannot interleave their
-    /// awaits into the same host. The flag and the queue are checked without
-    /// an await between them, which on wasm's single-threaded executor is what
-    /// makes the window between "queue is empty" and "flag cleared" empty too.
+    /// One start at a time — the queue discipline is unchanged from the
+    /// module-loader era, and it means exactly what it meant then with a
+    /// heavier boundary: two starts never interleave their awaits into the
+    /// same host.
     async fn start_serialized(&self, runtime: RuntimeName, launch: Option<LaunchDocument>) {
         if self
             .starting
@@ -189,9 +195,6 @@ impl RuntimeManager {
                 None => {
                     self.starting
                         .store(false, std::sync::atomic::Ordering::SeqCst);
-                    // A request that landed after the take but before the flag
-                    // cleared saw the flag SET, so it queued instead of opening
-                    // its own loop: pick it up here rather than stranding it.
                     if self.pending.lock().unwrap().is_none() {
                         return;
                     }
@@ -207,9 +210,6 @@ impl RuntimeManager {
         runtime: RuntimeName,
         launch: Option<LaunchDocument>,
     ) -> Result<(), BootError> {
-        // A watch from the runtime being replaced is stale now: it must not
-        // take the loading state away from this start's host (§11).
-        boot::stop_watch();
         let host = match self.host() {
             Some(host) => host,
             None => {
@@ -217,30 +217,49 @@ impl RuntimeManager {
                 return Err(BootError::new(runtime, BootStage::Start, message));
             }
         };
-        // §11: covered BEFORE the first await. The card is additive (it
-        // removes the shell's own boot nodes and leaves a mounted runtime's
-        // DOM alone), so the outgoing session stays visible underneath it until
-        // its disposal takes it away — and the host is never bare if that
-        // disposal is the only thing on screen.
+        // §11: covered BEFORE the first await.
         boot::paint_loading(&host, runtime);
         self.set_phase(BootPhase::Loading(runtime));
-        // §5/§10: the outgoing session is gone before the replacement exists.
-        self.dispose_active().await?;
+        // §5/§10: the outgoing frame is gone (and acknowledged) before the
+        // replacement exists.
+        self.dispose_active().await;
         *self.slot.lock().unwrap() = Slot::Starting;
-        // The disposal may have removed the last thing in the host (its own
-        // DOM): re-paint in the same synchronous step, so nothing is ever
-        // uncovered between the teardown and the load.
         clear_host(&host);
         boot::paint_loading(&host, runtime);
-        let module = self.load_module(runtime).await?;
-        let start = start_export(&module, runtime)?;
-        let value = call_start(&start, &module, &host, runtime, launch)?;
-        let Some(id) = value.as_f64() else {
-            let name = runtime.artifact();
-            let message = format!("the {name} start export returned no session id");
+
+        let generation = crate::app::frame::next_generation();
+        let kind = match runtime {
+            RuntimeName::Library => FrameKind::Library,
+            RuntimeName::Reader => FrameKind::Reader,
+        };
+        let Some(driver) = Driver::new(kind, &host, generation) else {
+            let message = format!("the {} frame element could not be created", runtime.label());
             return Err(BootError::new(runtime, BootStage::Start, message));
         };
-        let id = id as u32;
+        let manager_events = self.events_hook();
+        driver.start(launch.clone(), manager_events);
+        let _ = wasm_bindgen_futures::JsFuture::from(driver.wait_ready()).await;
+        let outcome = driver.take_ready_outcome();
+        match outcome {
+            Some(Ok(())) => {}
+            Some(Err(stage)) => {
+                let cause = format!(
+                    "{} — {}",
+                    crate::app::frame::fatal_cause(&driver, stage),
+                    heard_summary(&driver)
+                );
+                driver.teardown();
+                return Err(BootError::new(runtime, stage.boot_stage(), cause));
+            }
+            None => {
+                // The driver tore itself down before answering: impossible by
+                // construction (its gates are never dropped without resolve),
+                // but a blank outcome is never a boot.
+                driver.teardown();
+                let message = "the frame's boot gate closed without a verdict";
+                return Err(BootError::new(runtime, BootStage::Start, message));
+            }
+        }
         match runtime {
             RuntimeName::Reader => {
                 self.reader_sessions_created
@@ -252,71 +271,123 @@ impl RuntimeManager {
             }
         }
         *self.slot.lock().unwrap() = match runtime {
-            RuntimeName::Reader => Slot::Reader { id, module },
-            RuntimeName::Library => Slot::Library { id, module },
+            RuntimeName::Reader => Slot::Reader { driver },
+            RuntimeName::Library => Slot::Library { driver },
         };
-        // The runtime's session exists; its DOM may not be there yet (the
-        // reader's first render is a suspense anchor), so the loading state
-        // stays until it has painted, and the page placeholder goes with it.
-        boot::mark_active(&host, runtime);
+        boot::set_active(&host, runtime);
         self.set_phase(BootPhase::Active(runtime));
         Ok(())
     }
 
+    /// The dispatch closure every driver reports through. Everything here is
+    /// generation-checked against the CURRENT slot: a stale frame cannot
+    /// raise its own events into the live state (§35), and the stale ledger
+    /// counts what was dropped. The hook runs on wasm's single thread, so
+    /// the slot lock is never contended here.
+    fn events_hook(&self) -> Rc<dyn Fn(u64, FrameEvent)> {
+        let state = self.shell_state.borrow().clone();
+        let Some(state) = state else {
+            return Rc::new(|_generation, _event| {});
+        };
+        Rc::new(move |generation, event| {
+            let manager = state.manager.clone();
+            match event {
+                FrameEvent::Contact | FrameEvent::Stage(_) | FrameEvent::Ready => {}
+                FrameEvent::Painted => {
+                    let current = manager
+                        .slot
+                        .lock()
+                        .unwrap()
+                        .driver()
+                        .map(|driver| driver.generation());
+                    if current != Some(generation) {
+                        return;
+                    }
+                    if let Some(host) = manager.host() {
+                        boot::clear_loading(&host);
+                    }
+                    boot::uncover_page();
+                }
+                FrameEvent::Failed { stage, cause } => {
+                    // A live runtime turned on its own failure (§11): the
+                    // error state is the outcome — the frame is taken down,
+                    // nothing half-mounted survives, and the phase names it.
+                    let current = manager.slot.lock().unwrap().driver();
+                    let Some(driver) = current else {
+                        return;
+                    };
+                    if driver.generation() != generation {
+                        manager.stale_frames_seen.set(manager.stale_frames_seen.get() + 1);
+                        return;
+                    }
+                    let runtime: RuntimeName = driver.kind().into();
+                    driver.teardown();
+                    *manager.slot.lock().unwrap() = Slot::None;
+                    let label = protocol_stage_label(stage);
+                    let message = format!("{cause} (protocol stage {label})");
+                    let error = BootError::new(runtime, protocol_boot_stage(stage), message);
+                    if let Some(host) = manager.host() {
+                        clear_host(&host);
+                        boot::paint_error(&host, &error);
+                    }
+                    manager.set_phase(BootPhase::Failed(error));
+                }
+                FrameEvent::DisposeComplete => {
+                    // The driver that awaited it resolves its own gate; the
+                    // event is the frame's bookkeeping signal.
+                }
+                FrameEvent::Boundary(vocabulary) => {
+                    let state = state.clone();
+                    manager.dispatch_boundary(&state, generation, vocabulary);
+                }
+                FrameEvent::Stale => {
+                    manager.stale_frames_seen.set(manager.stale_frames_seen.get() + 1);
+                }
+            }
+        })
+    }
+
     /// A failed start: the host paints the error state and the console keeps
-    /// the detail (§6). Nothing half-mounted survives it, and the slot stays
-    /// `Starting` — there is no live session to dispose later.
+    /// the detail (§6).
     fn fail(&self, error: BootError) {
-        // The error state IS the outcome: nothing may cover it, and no coverage
-        // watch from the failed start may remove it.
-        boot::stop_watch();
         boot::uncover_page();
         match self.host() {
             Some(host) => {
                 clear_host(&host);
                 boot::paint_error(&host, &error);
             }
-            // Without a host there is nothing to paint into; the console line
-            // is then the only place the failure can show (the phase signal
-            // still carries it for the diagnostics probe).
             None => web_sys::console::error_1(&JsValue::from_str(&error.console_line())),
         }
         self.set_phase(BootPhase::Failed(error));
     }
 
-    /// Dispose the live runtime and AWAIT it (§5/§10): the replacement must not
-    /// become active while the outgoing session is still tearing down. A
-    /// dispose that cannot run is a failure, not something to continue past —
-    /// continuing would put two live sessions in one host (§10).
-    async fn dispose_active(&self) -> Result<(), BootError> {
-        let live = match &*self.slot.lock().unwrap() {
-            Slot::Library { id, module } => Some((RuntimeName::Library, *id, module.clone())),
-            Slot::Reader { id, module } => Some((RuntimeName::Reader, *id, module.clone())),
-            _ => None,
+    /// Dispose the live frame and AWAIT it (§5/§10, §12): graceful first
+    /// (`DisposeComplete`), forced removal after the strict timeout — never
+    /// silent. Both outcomes COMPLETE the exchange (the forced one simply
+    /// names itself), so the caller has no error to fold back into a boot.
+    async fn dispose_active(&self) {
+        let (runtime, driver) = match &*self.slot.lock().unwrap() {
+            Slot::Library { driver } => (RuntimeName::Library, driver.clone()),
+            Slot::Reader { driver } => (RuntimeName::Reader, driver.clone()),
+            Slot::None | Slot::Starting => return,
         };
-        let Some((runtime, id, module)) = live else {
-            return Ok(());
-        };
-        let export = match runtime {
-            RuntimeName::Library => "mareaderLibraryDispose",
-            RuntimeName::Reader => "mareaderReaderDispose",
-        };
-        let key = JsValue::from_str(export);
-        let dispose = match js_sys::Reflect::get(&module, &key) {
-            Ok(dispose) => dispose,
-            Err(_) => return Err(missing_export(runtime, export)),
-        };
-        if !dispose.is_function() {
-            return Err(missing_export(runtime, export));
+        let promise = driver.grace_dispose();
+        let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+        match driver.take_dispose_outcome() {
+            Some(Ok(())) | None => {
+                driver.teardown();
+            }
+            Some(Err(_stage)) => {
+                // §12's forced path: the removal proceeds, the fact lands in
+                // the digest, and the shell keeps moving — a hung disposal
+                // must not hold the next runtime hostage.
+                let heard = heard_summary(&driver);
+                web_sys::console::warn_1(&JsValue::from_str(&format!(
+                    "[mareader] forced frame removal for {runtime:?} ({heard})"
+                )));
+                driver.teardown();
+            }
         }
-        let dispose: js_sys::Function = dispose.unchecked_into();
-        let promise = dispose
-            .call1(&module, &JsValue::from_f64(id as f64))
-            .map_err(|err| BootError::new(runtime, BootStage::Dispose, js_message(&err)))?;
-        let promise: js_sys::Promise = promise.unchecked_into();
-        wasm_bindgen_futures::JsFuture::from(promise)
-            .await
-            .map_err(|err| BootError::new(runtime, BootStage::Dispose, js_message(&err)))?;
         match runtime {
             RuntimeName::Reader => {
                 self.reader_disposes_completed
@@ -328,54 +399,26 @@ impl RuntimeManager {
             }
         }
         *self.slot.lock().unwrap() = Slot::None;
-        Ok(())
     }
 
-    /// One dynamic import of a runtime artifact, initialized. The loader caches
-    /// the module namespace per artifact (compiled code may be cached); the
-    /// LIVE session is what each start call creates — the module's wasm
-    /// INSTANCE is initialized here, once per import, and the sessions above it
-    /// come and go.
-    async fn load_module(&self, runtime: RuntimeName) -> Result<js_sys::Object, BootError> {
-        if let Some(module) = cached_module(runtime) {
-            return Ok(module);
-        }
-        let path = format!("/{}.js", runtime.artifact());
-        let promise = crate::app::loader::dyn_import(&path);
-        let value = wasm_bindgen_futures::JsFuture::from(promise)
-            .await
-            .map_err(|err| BootError::new(runtime, BootStage::ModuleLoad, js_message(&err)))?;
-        let module: js_sys::Object = value.unchecked_into();
-        // A dynamically imported artifact does not initialize itself (§12): its
-        // `default` export is the wasm-bindgen init, and the `*Start` exports
-        // below are only callable once it has resolved. A module without it is
-        // not a runtime artifact, which is a failure worth naming rather than
-        // skipping past.
-        let key = JsValue::from_str("default");
-        let init = match js_sys::Reflect::get(&module, &key) {
-            Ok(init) => init,
-            Err(_) => return Err(no_init_export(runtime)),
-        };
-        if !init.is_function() {
-            return Err(no_init_export(runtime));
-        }
-        let init: js_sys::Function = init.unchecked_into();
-        let promise = init
-            .call0(&module)
-            .map_err(|err| BootError::new(runtime, BootStage::Init, js_message(&err)))?;
-        let promise: js_sys::Promise = promise.unchecked_into();
-        wasm_bindgen_futures::JsFuture::from(promise)
-            .await
-            .map_err(|err| BootError::new(runtime, BootStage::Init, js_message(&err)))?;
-        cache_module(runtime, &module);
-        Ok(module)
-    }
-
-    /// A library open command: navigate + start the reader (§13's sequence —
-    /// the shell captures the minimal launch data and starts the runtime).
+    /// A library open command: navigate + start the reader (§13's sequence).
     pub fn open_document(&self, state: &ShellState, launch: LaunchDocument) {
         navigate("/reader");
         self.start_reader(state, launch);
+    }
+
+    /// Deliver a shell frame to the live library frame's lane: the shell
+    /// command surface's frame-era form. A delivery with no live library
+    /// frame is dropped — the request that produced it outlived its
+    /// generation, and a replacement frame never inherits its traffic (§35).
+    pub fn deliver_library_frame(&self, body: &runtime_contract::protocol::ShellFrame) {
+        let current = self.slot.lock().unwrap().driver();
+        let Some(driver) = current else {
+            return;
+        };
+        if driver.kind() == FrameKind::Library {
+            driver.send(body);
+        }
     }
 
     /// A reader handback: dispose the reader, then the library is active.
@@ -384,28 +427,99 @@ impl RuntimeManager {
         self.start_library(state);
     }
 
-    /// Deliver one command JSON to the LIVE library session's command export.
-    /// A delivery with no live library session is dropped: the request that
-    /// produced it outlived its generation, and a replacement session never
-    /// inherits a predecessor's queue traffic (§5's ordering in miniature).
-    pub fn deliver_library_command(&self, json: &str) {
-        let guard = self.slot.lock().unwrap_or_else(|e| e.into_inner());
-        let Slot::Library { id, module } = &*guard else {
-            return;
-        };
-        let key = JsValue::from_str("mareaderLibraryCommand");
-        let Ok(cmd) = js_sys::Reflect::get(module, &key) else {
-            return;
-        };
-        if !cmd.is_function() {
+    /// The frame-dispatched boundary vocabulary. Called by the driver's
+    /// event hook; the hook itself is generation-gated at the port.
+    pub fn dispatch_boundary(&self, state: &ShellState, generation: u64, item: FrameVocabulary) {
+        let current = self
+            .slot
+            .lock()
+            .unwrap()
+            .driver()
+            .map(|driver| driver.generation());
+        if current != Some(generation) {
+            self.stale_frames_seen
+                .set(self.stale_frames_seen.get() + 1);
             return;
         }
-        let cmd: js_sys::Function = cmd.unchecked_into();
-        let _ = cmd.call2(
-            module,
-            &JsValue::from_f64(*id as f64),
-            &JsValue::from_str(json),
-        );
+        match item {
+            FrameVocabulary::OpenDocument(launch) => {
+                self.open_document(state, *launch);
+            }
+            FrameVocabulary::NavigateLibrary => {
+                self.navigate_library(state);
+            }
+            FrameVocabulary::ReadPoint(point) => crate::services::apply_read_point(&point),
+            FrameVocabulary::SaveSettings(settings) => {
+                crate::services::save_settings(&settings);
+            }
+            FrameVocabulary::SaveLibrary(blob) => {
+                crate::services::save_library(&blob);
+            }
+            FrameVocabulary::SaveCovers(covers) => {
+                let _ = storage::save_covers(&covers);
+            }
+            FrameVocabulary::SaveCover { path, image } => {
+                crate::services::save_cover(&path, image);
+            }
+            FrameVocabulary::BakeCover { path } => {
+                self.bake_for_library(state, generation, path);
+            }
+            FrameVocabulary::DocStatus(report) => {
+                if report.status != "Ready" {
+                    let live = self.active() == Some(ActiveRuntime::Reader);
+                    if live && report.status == "Idle" {
+                        self.navigate_library(state);
+                    }
+                }
+                *self.doc_status.lock().unwrap() = report.status.clone();
+                *self.doc_error.lock().unwrap() = report.error.clone();
+            }
+            FrameVocabulary::PublishDigest(json) => {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
+                    *self.last_digest.lock().unwrap() = Some(value);
+                }
+            }
+            FrameVocabulary::Reload => {
+                crate::diagnostics::log_reload_heap();
+                app_chrome::window::api::reload_window();
+            }
+            FrameVocabulary::ResolveLaunch { request, path } => {
+                let document = crate::services::resolve_launch(&path).map(Box::new);
+                if let Some(driver) = self.slot.lock().unwrap().driver() {
+                    driver.send(&runtime_contract::protocol::ShellFrame::ResolveLaunchAnswer {
+                        request,
+                        document,
+                    });
+                }
+            }
+        }
+    }
+
+    /// A cover bake the library frame asked for: the Shell bakes with its own
+    /// engine (the frame never gets one) and answers over the ASKING frame's
+    /// lane — generation-stamped, so a bake that outlived its frame dies at
+    /// the boundary (§35).
+    fn bake_for_library(&self, state: &ShellState, generation: u64, path: String) {
+        let manager = state.manager.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let width = runtime_contract::covers::COVER_WIDTH;
+            let image = pdf_engine::api::cover_data_url(&path, width)
+                .await
+                .ok()
+                .map(|cover| runtime_contract::covers::CoverImage {
+                    data_url: cover.data_url,
+                    width: cover.width,
+                    height: cover.height,
+                });
+            let current = manager.slot.lock().unwrap().driver();
+            let Some(driver) = current else {
+                return;
+            };
+            if driver.generation() != generation || driver.kind() != FrameKind::Library {
+                return;
+            }
+            driver.send(&runtime_contract::protocol::ShellFrame::CoverBaked { path, image });
+        });
     }
 }
 
@@ -416,12 +530,6 @@ impl Default for RuntimeManager {
 }
 
 /// Tell the native host which runtime is live, or where the boot stopped.
-///
-/// One line per phase transition — a boot paints three or four in a session,
-/// never one per frame — and nothing at all in the web build (`has_tauri` is
-/// false there). Without it, a native window that never booted its frontend
-/// is indistinguishable from one that did: the exact blind spot the packaged
-/// app had. tools/tauri-smoke.mjs reads these lines as its assertion.
 fn report_boot(phase: &BootPhase) {
     if !tauri_bridge::has_tauri() {
         return;
@@ -443,99 +551,12 @@ fn report_boot(phase: &BootPhase) {
     });
 }
 
-fn missing_export(runtime: RuntimeName, export: &str) -> BootError {
-    let name = runtime.artifact();
-    let message = format!("the {name} module does not export {export}()");
-    BootError::new(runtime, BootStage::Dispose, message)
-}
-
-fn no_init_export(runtime: RuntimeName) -> BootError {
-    let name = runtime.artifact();
-    let message = format!("the {name} module exports no default wasm init");
-    BootError::new(runtime, BootStage::Init, message)
-}
-
-/// The `*Start` export, or the failure that says which one is missing.
-fn start_export(
-    module: &js_sys::Object,
-    runtime: RuntimeName,
-) -> Result<js_sys::Function, BootError> {
-    let export = match runtime {
-        RuntimeName::Library => "mareaderLibraryStart",
-        RuntimeName::Reader => "mareaderReaderStart",
-    };
-    let key = JsValue::from_str(export);
-    let start = match js_sys::Reflect::get(module, &key) {
-        Ok(start) => start,
-        Err(_) => return Err(missing_start(runtime, export)),
-    };
-    if !start.is_function() {
-        return Err(missing_start(runtime, export));
-    }
-    Ok(start.unchecked_into())
-}
-
-fn missing_start(runtime: RuntimeName, export: &str) -> BootError {
-    let name = runtime.artifact();
-    let message = format!("the {name} module does not export {export}()");
-    BootError::new(runtime, BootStage::Start, message)
-}
-
-/// Call the runtime's start export. The reader takes the launch payload as a
-/// second argument; the library takes the host alone.
-fn call_start(
-    start: &js_sys::Function,
-    module: &js_sys::Object,
-    host: &web_sys::Element,
-    runtime: RuntimeName,
-    launch: Option<LaunchDocument>,
-) -> Result<JsValue, BootError> {
-    let host: JsValue = host.clone().into();
-    let result = match launch {
-        Some(launch) => {
-            let json = serde_json::to_string(&launch)
-                .map_err(|err| BootError::new(runtime, BootStage::Start, err.to_string()))?;
-            start.call2(module, &host, &JsValue::from_str(&json))
-        }
-        None => start.call1(module, &host),
-    };
-    result.map_err(|err| BootError::new(runtime, BootStage::Start, js_message(&err)))
-}
-
-/// The browser's reason, in words. A rejected `import()` is an Error whose
-/// `message` names the URL; a thrown panic value is usually a string.
-fn js_message(value: &JsValue) -> String {
-    let message = js_sys::Reflect::get(value, &JsValue::from_str("message"))
-        .ok()
-        .and_then(|message| message.as_string());
-    if let Some(message) = message {
-        return message;
-    }
-    if let Some(text) = value.as_string() {
-        return text;
-    }
-    js_sys::JSON::stringify(value)
-        .ok()
-        .and_then(|text| text.as_string())
-        .unwrap_or_else(|| format!("{value:?}"))
-}
-
-fn cached_module(runtime: RuntimeName) -> Option<js_sys::Object> {
-    match runtime {
-        RuntimeName::Library => LIBRARY_MODULE.with(|module| module.borrow().clone()),
-        RuntimeName::Reader => None,
-    }
-}
-
-fn cache_module(runtime: RuntimeName, module: &js_sys::Object) {
-    if runtime == RuntimeName::Library {
-        LIBRARY_MODULE.with(|cache| *cache.borrow_mut() = Some(module.clone()));
-    }
-}
-
 fn clear_host(host: &web_sys::Element) {
-    // Remove the outgoing runtime's DOM before the next mounts (§11 — never
-    // mounted underneath).
+    // Remove the outgoing frame's element and the shell's previous boot
+    // markup before the next frames (§11 — never mounted underneath). The
+    // frame's element carries `data-mareader-runtime-frame`; the boot markup
+    // carries its own attr, and both are handled additively here because a
+    // disposed frame is already gone.
     while let Some(child) = host.first_child() {
         let _ = host.remove_child(&child);
     }

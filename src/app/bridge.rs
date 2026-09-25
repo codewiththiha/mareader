@@ -83,19 +83,9 @@ pub fn install(state: ShellState) {
                         width: cover.width,
                         height: cover.height,
                     });
-            #[derive(serde::Serialize)]
-            #[serde(tag = "kind", rename_all = "camelCase")]
-            enum Answer {
-                #[serde(rename_all = "camelCase")]
-                CoverBaked {
-                    path: String,
-                    image: Option<runtime_contract::covers::CoverImage>,
-                },
-            }
-            let answer = Answer::CoverBaked { path, image };
-            if let Ok(json) = serde_json::to_string(&answer) {
-                st.manager.deliver_library_command(&json);
-            }
+            st.manager.deliver_library_frame(
+                &runtime_contract::protocol::ShellFrame::CoverBaked { path, image },
+            );
         });
     });
     let st = state.clone();

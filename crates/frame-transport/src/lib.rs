@@ -25,8 +25,29 @@ use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
 use runtime_contract::covers::CoverMap;
 use runtime_contract::protocol::{RuntimeEnvelope, RuntimeFrame};
 
-#[cfg(target_arch = "wasm32")]
 pub mod wasm;
+
+/// Parse the frame boot marker out of an artifact page's query string
+/// (`?hosted=1&g=17&n=<nonce>`, §5/§6): absent when the page IS the whole
+/// app (standalone boot), complete when a Shell created this frame with an
+/// identity it will echo in its channel offer. A HALF marker (the flag
+/// without the identity) is not a marker at all — the boot falls back rather
+/// than mint a frame the Shell cannot address.
+pub fn parse_hosted_marker(search: &str) -> Option<(u64, String)> {
+    let query = search.strip_prefix('?').unwrap_or(search);
+    let mut hosted = false;
+    let mut generation: Option<u64> = None;
+    let mut nonce: Option<String> = None;
+    for pair in query.split('&').filter(|pair| !pair.is_empty()) {
+        match pair.split_once('=') {
+            Some(("hosted", value)) => hosted = value == "1",
+            Some(("g", value)) => generation = value.parse().ok(),
+            Some(("n", value)) if !value.is_empty() => nonce = Some(value.to_string()),
+            _ => {}
+        }
+    }
+    if hosted { generation.zip(nonce) } else { None }
+}
 
 /// The `kind` of the one message that is NOT on the port: the Shell's own
 /// `postMessage` that transfers the port and the frame identity to a freshly
@@ -145,14 +166,15 @@ impl<W: Wire> PortShellApi<W> {
     /// The request id a resolve answer will arrive tagged with, plus the
     /// ticket the async opener polls. The opener's flow (see the reader's
     /// document-open service) cannot be synchronous over a port: ask, then
-    /// await the ticket.
-    pub fn ask_resolve_launch(&self, path: &str) -> ResolveTicket {
+    /// await the ticket — or park a continuation behind the id, the two
+    /// shells of the same round trip.
+    pub fn ask_resolve_launch(&self, path: &str) -> (u64, ResolveTicket) {
         let (id, ticket) = self.resolves.issue();
         self.emit(RuntimeFrame::ResolveLaunch {
             request: id,
             path: path.to_string(),
         });
-        ticket
+        (id, ticket)
     }
 }
 
@@ -265,10 +287,26 @@ mod tests {
     }
 
     #[test]
+    fn the_marker_parses_only_as_a_whole_identity() {
+        assert_eq!(
+            parse_hosted_marker("?hosted=1&g=17&n=f7a2"),
+            Some((17, "f7a2".to_string()))
+        );
+        // Standalone pages carry none of this.
+        assert_eq!(parse_hosted_marker(""), None);
+        assert_eq!(parse_hosted_marker("?open=/samples/a.pdf"), None);
+        // The flag without the identity is not a frame.
+        assert_eq!(parse_hosted_marker("?hosted=1"), None);
+        assert_eq!(parse_hosted_marker("?hosted=1&g=17"), None);
+        // A nonsense generation falls with the flag.
+        assert_eq!(parse_hosted_marker("?hosted=1&g=x&n=y"), None);
+    }
+
+    #[test]
     fn a_resolve_round_trip_pairs_the_answer_to_its_request() {
         let (api, wire, resolves) = api();
-        let first = api.ask_resolve_launch("/books/first.pdf");
-        let second = api.ask_resolve_launch("/books/second.pdf");
+        let (_first_id, first) = api.ask_resolve_launch("/books/first.pdf");
+        let (_second_id, second) = api.ask_resolve_launch("/books/second.pdf");
         let posted = wire.posted.borrow();
         assert_eq!(posted.len(), 2);
         assert!(posted[0].contains(r#""request":1"#), "{}", posted[0]);

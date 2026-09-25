@@ -92,7 +92,13 @@ pub fn open_dialog(ctx: crate::context::ReaderContext) {
 pub fn open_path(ctx: crate::context::ReaderContext, path: String) {
     // An in-session open (drop, dialog): the row identity, resume point,
     // display name and cover are answered by the boundary against the
-    // persisted library — the session itself holds no library state.
+    // persisted library — the session itself holds no library state. Over a
+    // frame port that answer cannot come synchronously, so the frame's own
+    // flow parks the continuation until the answer lands.
+    if ctx.api == crate::context::ApiHandle::Frame {
+        crate::frame::open_path_in_frame(ctx, path);
+        return;
+    }
     let launch = ctx
         .api
         .resolve_launch(&path)

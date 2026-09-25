@@ -5,6 +5,28 @@
 pub mod context;
 pub mod effects_library;
 pub mod features;
+#[cfg(target_arch = "wasm32")]
+pub mod frame;
+
+/// The frame boot is a wasm-artifact path: on the host lanes there is no
+/// iframe, no port, nothing to boot — the same rules as the memory probe's
+/// host shape. The stub keeps the frame's call sites compiling (`context`'s
+/// `ApiHandle::Frame` dispatch, the bin's boot gate) with the frame's own
+/// signatures: an api that never exists and a boot that is never hosted.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod frame {
+    /// Off wasm an artifact is never frame-hosted.
+    pub fn boot_if_hosted() -> bool {
+        false
+    }
+
+    /// The frame api never exists off-wasm: nothing to run `f` against.
+    pub fn with_api<R>(
+        _f: impl FnOnce(&frame_transport::PortShellApi<frame_transport::wasm::PortWire>) -> R,
+    ) -> Option<R> {
+        None
+    }
+}
 pub mod services;
 pub mod state;
 

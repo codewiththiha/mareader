@@ -44,6 +44,9 @@ pub struct ReaderContext {
 pub enum ApiHandle {
     Js,
     Standalone,
+    /// The hosted frame: the boundary calls leave over the frame's port,
+    /// stamped with the boot's generation (`crate::frame`).
+    Frame,
 }
 
 impl ShellApi for ApiHandle {
@@ -51,72 +54,106 @@ impl ShellApi for ApiHandle {
         match self {
             ApiHandle::Js => JsShellApi.open_document(launch),
             ApiHandle::Standalone => StandaloneApi.open_document(launch),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.open_document(launch));
+            }
         }
     }
     fn navigate_library(&self) {
         match self {
             ApiHandle::Js => JsShellApi.navigate_library(),
             ApiHandle::Standalone => StandaloneApi.navigate_library(),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.navigate_library());
+            }
         }
     }
     fn read_point(&self, point: &ReadPoint) {
         match self {
             ApiHandle::Js => JsShellApi.read_point(point),
             ApiHandle::Standalone => StandaloneApi.read_point(point),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.read_point(point));
+            }
         }
     }
     fn save_settings(&self, settings: &Settings) {
         match self {
             ApiHandle::Js => JsShellApi.save_settings(settings),
             ApiHandle::Standalone => StandaloneApi.save_settings(settings),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.save_settings(settings));
+            }
         }
     }
     fn save_library(&self, blob: &library_core::blob::LibraryBlob) {
         match self {
             ApiHandle::Js => JsShellApi.save_library(blob),
             ApiHandle::Standalone => StandaloneApi.save_library(blob),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.save_library(blob));
+            }
         }
     }
     fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
         match self {
             ApiHandle::Js => JsShellApi.save_covers(covers),
             ApiHandle::Standalone => StandaloneApi.save_covers(covers),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.save_covers(covers));
+            }
         }
     }
     fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         match self {
             ApiHandle::Js => JsShellApi.save_cover(path, image),
             ApiHandle::Standalone => StandaloneApi.save_cover(path, image),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.save_cover(path, image));
+            }
         }
     }
     fn bake_cover(&self, path: &str) {
         match self {
             ApiHandle::Js => JsShellApi.bake_cover(path),
             ApiHandle::Standalone => StandaloneApi.bake_cover(path),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.bake_cover(path));
+            }
         }
     }
     fn doc_status(&self, report: &DocStatusReport) {
         match self {
             ApiHandle::Js => JsShellApi.doc_status(report),
             ApiHandle::Standalone => StandaloneApi.doc_status(report),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.doc_status(report));
+            }
         }
     }
     fn publish_digest(&self, json: String) {
         match self {
             ApiHandle::Js => JsShellApi.publish_digest(json),
             ApiHandle::Standalone => StandaloneApi.publish_digest(json),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.publish_digest(json));
+            }
         }
     }
     fn reload(&self) {
         match self {
             ApiHandle::Js => JsShellApi.reload(),
             ApiHandle::Standalone => StandaloneApi.reload(),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.reload());
+            }
         }
     }
     fn resolve_launch(&self, path: &str) -> Option<LaunchDocument> {
         match self {
             ApiHandle::Js => JsShellApi.resolve_launch(path),
             ApiHandle::Standalone => StandaloneApi.resolve_launch(path),
+            ApiHandle::Frame => crate::frame::with_api(|api| api.resolve_launch(path)).flatten(),
         }
     }
 }

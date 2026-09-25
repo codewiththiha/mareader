@@ -47,7 +47,7 @@ fn main() {
     // hosted import reaches here too. Boot standalone only when nothing
     // hosts this artifact: hosted, the Shell calls `mareaderLibraryStart`
     // with its own mount target (§12).
-    if !library_runtime::shell_hosted() {
+    if !library_runtime::shell_hosted() && !library_runtime::frame::boot_if_hosted() {
         deploy_standalone_engine();
         library_runtime::run_standalone();
     }

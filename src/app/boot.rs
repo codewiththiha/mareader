@@ -9,7 +9,7 @@
 //!   moment as "the runtime painted": `mount_to` clears the container it is
 //!   handed, and a runtime whose first render is a suspense anchor paints no
 //!   elements for a frame or more, so the shell keeps its loading card up
-//!   until the runtime's own DOM is in the host (see [`watch_paint`]);
+//!   until the frame's own `Painted` (or its bounded grace) says it [[crate::app::frame]]);
 //! * a failure is VISIBLE and NAMED — runtime, stage (module load / init /
 //!   start) and the underlying failure — while the console keeps the detail.
 //!
@@ -23,12 +23,9 @@
 //! LibraryPage does not come back: the user gets this error surface, which
 //! names what failed and where.
 
-use std::cell::RefCell;
-
 use serde_json::json;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
-use wasm_bindgen::closure::Closure;
 
 /// Which runtime a boot state or failure is about.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -215,21 +212,6 @@ const BOOT_ATTR: &str = "data-mareader-boot";
 const ACTIVE_ATTR: &str = "data-mareader-active";
 /// Which boot node is the shell's loading state, as opposed to the error state.
 const LOADING: &str = "load";
-/// How long a runtime gets to stop churning DOM before the coverage watch
-/// stands down. A boot's paint order is not one event (a suspense fallback, the
-/// document's own arrival, a view swap), so the host is watched across the
-/// whole handover rather than at a single moment.
-const WATCH_WINDOW_MS: f64 = 30_000.0;
-
-thread_local! {
-    /// The running coverage watch and the generation that owns it: a watch
-    /// started for a runtime that has since been replaced must not touch the
-    /// host its successor is painting into.
-    static WATCH_OBSERVER: RefCell<Option<web_sys::MutationObserver>> =
-        const { RefCell::new(None) };
-    static WATCH_GENERATION: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
-    static NEXT_WATCH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
-}
 
 fn document() -> Option<web_sys::Document> {
     web_sys::window().and_then(|w| w.document())
@@ -373,89 +355,16 @@ fn retry_button(on_click: &js_sys::Function, label: &str) -> Option<web_sys::Ele
     Some(button.unchecked_into())
 }
 
-/// Mark the host as holding a live runtime, then keep the window covered until
-/// that runtime has painted. Called after the runtime's start export returned:
-/// "active" is the manager's word for "the session exists", and a session can
-/// exist for a frame or more before its first element is in the DOM — the
-/// window is not allowed to be uncovered in between (§11).
-pub fn mark_active(host: &web_sys::Element, runtime: RuntimeName) {
+/// Mark the host as holding a live runtime: the machine-readable fact (§11)
+/// the lifecycle suites and diagnostics read. In the frame world the
+/// runtime's DOM lives inside the iframe this host carries, so the host's
+/// own active stamp is what the diagnostics and suites read — set once the
+/// frame announced `Ready`. The loading cover still lifts only on the
+/// frame's own `Painted` (or its bounded grace expiring in the driver): the
+/// same rule the coverage watch used to keep when the runtime mounted
+/// straight into the host.
+pub fn set_active(host: &web_sys::Element, runtime: RuntimeName) {
     let _ = host.set_attribute(ACTIVE_ATTR, runtime.artifact());
-    if painted(host) {
-        // Painted inside its own start call (the library does): nothing to
-        // cover, and the placeholder can go in this same step.
-        clear_loading(host);
-        uncover_page();
-    } else {
-        cover(host, runtime);
-    }
-    // The watch goes on either way, and that is the point: what is in the host
-    // at this instant is the runtime's FIRST state, not its final one. A view
-    // swap that takes the old DOM out before the new is in is exactly the
-    // window this exists for — checking once and standing down is how the host
-    // went bare with the loading state already gone.
-    watch_paint(host.clone(), runtime);
-}
-
-/// The coverage watch: keep the window covered while a runtime's DOM is not
-/// there, and take the shell's card (and the page's placeholder) away the
-/// moment it is.
-///
-/// A MutationObserver, not a timer, and that choice is the whole point: its
-/// callback runs in the microtask checkpoint of the task that mutated the host,
-/// so re-covering cannot be observed from another task — a timer would leave a
-/// real hole of up to a tick, which is a blank window at 60 Hz.
-fn watch_paint(host: web_sys::Element, runtime: RuntimeName) {
-    let generation = NEXT_WATCH.with(|n| {
-        let next = n.get().wrapping_add(1);
-        n.set(next);
-        next
-    });
-    // The previous watch belongs to a runtime that is already gone.
-    stop_watch();
-    let observed = host.clone();
-    let since = js_sys::Date::now();
-    let callback = Closure::<dyn FnMut()>::new(move || {
-        if WATCH_GENERATION.with(|current| current.get()) != generation {
-            stop_watch();
-            return;
-        }
-        if js_sys::Date::now() - since > WATCH_WINDOW_MS {
-            stop_watch();
-            return;
-        }
-        if painted(&observed) {
-            clear_loading(&observed);
-            uncover_page();
-            return;
-        }
-        cover(&observed, runtime);
-    });
-    let Ok(observer) = web_sys::MutationObserver::new(callback.as_ref().unchecked_ref()) else {
-        // Without an observer the card painted by the caller still covers the
-        // window; only the handover would be missed, so this is not fatal.
-        return;
-    };
-    let init = web_sys::MutationObserverInit::new();
-    init.set_child_list(true);
-    if observer.observe_with_options(&host, &init).is_err() {
-        return;
-    }
-    // The observer holds the JS function, and the function holds the closure:
-    // `into_js_value` gives that ownership to JS, and both are collected once
-    // [`stop_watch`] disconnects and drops the observer.
-    drop(callback.into_js_value());
-    WATCH_OBSERVER.with(|slot| *slot.borrow_mut() = Some(observer));
-    WATCH_GENERATION.with(|slot| slot.set(generation));
-}
-
-/// Stop the coverage watch, if one is running.
-pub fn stop_watch() {
-    WATCH_OBSERVER.with(|slot| {
-        if let Some(observer) = slot.borrow_mut().take() {
-            observer.disconnect();
-        }
-    });
-    WATCH_GENERATION.with(|slot| slot.set(0));
 }
 
 /// Remove the shell's boot markup. Scoped to `[data-mareader-boot]`: a mounted

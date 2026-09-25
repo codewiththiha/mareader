@@ -7,7 +7,7 @@
 mod boot;
 mod bootstrap;
 mod bridge;
-mod loader;
+pub(crate) mod frame;
 pub(crate) mod manager;
 
 use leptos::html;
@@ -16,6 +16,7 @@ use leptos::prelude::*;
 #[component]
 pub fn Shell() -> impl IntoView {
     let state = bootstrap::create_shell_state();
+    state.manager.attach_state(state.clone());
     provide_context(state.clone());
 
     // The bridge: the boundary runtimes call back through (§14). Installed

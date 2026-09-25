@@ -127,8 +127,16 @@ async function snap() {
     if (!raw) return null;
     const s = JSON.parse(raw);
     let liveCanvasBytes = 0;
-    for (const c of document.querySelectorAll("canvas")) {
-      liveCanvasBytes += c.width * c.height * 4;
+    // Runtime DOM lives inside the host's frame now: canvases count across
+    // both documents (§21's sampling is byte-faithful, not frame-blind).
+    const docs = [document];
+    for (const frame of document.querySelectorAll("#runtime-host iframe.runtime-frame")) {
+      if (frame.contentDocument) docs.push(frame.contentDocument);
+    }
+    for (const d of docs) {
+      for (const c of d.querySelectorAll("canvas")) {
+        liveCanvasBytes += c.width * c.height * 4;
+      }
     }
     s.liveCanvasBytes = liveCanvasBytes;
     s.jsHeapBytes = performance.memory?.usedJSHeapSize ?? null;
@@ -275,7 +283,7 @@ async function clickCloseNow() {
   // swallowed in a plain browser. Dispatch on the button itself: same
   // handler, same close path the packaged app runs.
   await page.evaluate(() => {
-    const btn = document.querySelector('button[title*="Close this book"]');
+    const btn = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector('button[title*="Close this book"]');
     if (!btn) throw new Error("close button not found");
     btn.click();
   });
@@ -379,7 +387,7 @@ async function raceCloseDuringRender() {
     if (!raw) return false;
     const s = JSON.parse(raw);
     if (s.engine.activeRenders > 0) {
-      const btn = document.querySelector('button[title*="Close this book"]');
+      const btn = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector('button[title*="Close this book"]');
       if (btn) { btn.click(); return true; }
     }
     return false;
@@ -392,7 +400,7 @@ async function raceCloseDuringPrefetch() {
     if (!raw) return false;
     const s = JSON.parse(raw);
     if (s.engine.activePrefetches > 0) {
-      const btn = document.querySelector('button[title*="Close this book"]');
+      const btn = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector('button[title*="Close this book"]');
       if (btn) { btn.click(); return true; }
     }
     return false;
@@ -497,6 +505,11 @@ async function startHostSampler() {
       } catch {
         diag = null;
       }
+      const frames = host ? host.querySelectorAll("iframe.runtime-frame") : [];
+      let runtimeDoc = null;
+      for (const f of frames) {
+        if (f.contentDocument) runtimeDoc = f.contentDocument;
+      }
       return {
         t: Math.round(performance.now()),
         host: host !== null,
@@ -504,8 +517,9 @@ async function startHostSampler() {
         empty: host !== null && host.children.length === 0,
         bootNodes: host ? host.querySelectorAll("[data-mareader-boot]").length : 0,
         active: host ? host.getAttribute("data-mareader-active") : null,
-        library: host ? host.querySelectorAll(".lib-grid").length : 0,
-        reader: host ? host.querySelectorAll(".reader-bg").length : 0,
+        library: runtimeDoc ? runtimeDoc.querySelectorAll(".lib-grid").length : 0,
+        reader: runtimeDoc ? runtimeDoc.querySelectorAll(".reader-bg").length : 0,
+        frames: frames.length,
         placeholder: document.getElementById("shell-boot") !== null,
         bootState: diag?.bootState ?? null,
         activeRuntime: diag?.activeRuntime ?? null,
@@ -588,14 +602,19 @@ function firstViolation(violations, context = []) {
 async function libraryDomState() {
   return page.evaluate(() => {
     const host = document.getElementById("runtime-host");
+    let runtimeDoc = null;
+    for (const f of host?.querySelectorAll("iframe.runtime-frame") ?? []) {
+      if (f.contentDocument) runtimeDoc = f.contentDocument;
+    }
     return {
       path: location.pathname,
       active: host?.getAttribute("data-mareader-active") ?? null,
-      library: host?.querySelectorAll(".lib-grid").length ?? 0,
-      reader: host?.querySelectorAll(".reader-bg").length ?? 0,
+      library: runtimeDoc?.querySelectorAll(".lib-grid").length ?? 0,
+      reader: runtimeDoc?.querySelectorAll(".reader-bg").length ?? 0,
       bootNodes: host?.querySelectorAll("[data-mareader-boot]").length ?? 0,
       placeholder: document.getElementById("shell-boot") !== null,
       hosts: document.querySelectorAll("#runtime-host").length,
+      frames: host?.querySelectorAll("iframe.runtime-frame").length ?? 0,
     };
   });
 }
@@ -620,12 +639,13 @@ async function waitForDom(label, predicate, timeoutMs = 30_000) {
 
 async function clickBook(title, label, timeout = 45_000) {
   try {
-    await page.locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
+    await page.frameLocator("iframe.runtime-frame").locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
   } catch {
     // The grid's gesture layer can swallow a synthetic hit; dispatching on
     // the row is the same app open path either way.
     await page.evaluate((needle) => {
-      const el = [...document.querySelectorAll(".book-title")]
+      const doc = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument;
+      const el = [...(doc?.querySelectorAll(".book-title") ?? [])]
         .find((n) => (n.textContent ?? "").includes(needle));
       if (!el) throw new Error("book row not found in the library");
       el.click();
@@ -692,6 +712,9 @@ if (libraryDom.placeholder) {
 }
 if (libraryDom.hosts !== 1) {
   throw new Error(`[/] expected exactly one runtime host, found ${libraryDom.hosts}`);
+}
+if (libraryDom.frames !== 1) {
+  throw new Error(`[/] expected exactly one live runtime frame, found ${libraryDom.frames}`);
 }
 assertArtifactLoaded("/library.js", "/");
 assertArtifactLoaded("/library_bg.wasm", "/");
@@ -847,6 +870,9 @@ if (readerRouteDom.reader !== 1 || readerRouteDom.library !== 0 || readerRouteDo
 }
 if (readerRouteDom.placeholder) {
   throw new Error("[/reader] the page's boot placeholder outlived the boot");
+}
+if (readerRouteDom.frames !== 1) {
+  throw new Error(`[/reader] expected exactly one live runtime frame, found ${readerRouteDom.frames}`);
 }
 assertArtifactLoaded("/reader.js", "/reader");
 assertArtifactLoaded("/reader_bg.wasm", "/reader");
@@ -1073,9 +1099,10 @@ for (const where of jumpTargets) {
   const fromPage = beforeSnap.readerPage;
   // A new measurement generation: every raster the engine starts from now
   // carries this id, so the trace assertion reads exactly this jump.
-  const gen = await page.evaluate(() => window.PDFReader.beginRenderGeneration());
+  const gen = await page.evaluate(() =>
+    document.querySelector("#runtime-host iframe.runtime-frame")?.contentWindow?.PDFReader.beginRenderGeneration());
   await page.evaluate((w) => {
-    const list = document.querySelector("#page-list");
+    const list = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector("#page-list");
     list.scrollTop = w === "end" ? list.scrollHeight
       : w === "top" ? 0
       : list.scrollHeight / 4;
@@ -1116,7 +1143,10 @@ for (const where of jumpTargets) {
   // catch a skipped page being rasterized (a small burst looks identical);
   // the trace names the pages.
   const trace = await page.evaluate((g) =>
-    window.PDFReader.renderTrace().filter((e) => e.gen === g), gen);
+    {
+      const api = document.querySelector("#runtime-host iframe.runtime-frame")?.contentWindow?.PDFReader;
+      return api.renderTrace().filter((e) => e.gen === g);
+    }, gen);
   if (trace.length === 0) {
     throw new Error(`fast jump to ${where} produced no traced raster (trace dead?)`);
   }
@@ -1226,7 +1256,7 @@ for (let attempt = 1; attempt <= 3 && !searchRaceWon; attempt += 1) {
   await openBook(searchBooks[attempt - 1]);
   await page.mouse.click(700, 450);
   await page.keyboard.press("Control+f");
-  const searchBox = page.locator('input[placeholder^="Search in document"]');
+  const searchBox = page.frameLocator("iframe.runtime-frame").locator('input[placeholder^="Search in document"]');
   await searchBox.focus();
   await page.keyboard.type("the");
   await page.keyboard.press("Enter");
@@ -1237,7 +1267,7 @@ for (let attempt = 1; attempt <= 3 && !searchRaceWon; attempt += 1) {
       if (!raw) return false;
       const s = JSON.parse(raw);
       if (s.engine.searchActive > 0) {
-        const btn = document.querySelector('button[title*="Close this book"]');
+        const btn = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector('button[title*="Close this book"]');
         if (btn) { btn.click(); return true; }
       }
       return false;
@@ -1367,14 +1397,14 @@ currentStage = "stage11-same-page-x10";
 // (2k-1 after open k, 2k after close k) — "every cycle starts from epoch 1"
 // is a reload artifact this stage exists to stop assuming.
 async function openFromLibrary(cycle) {
-  const card = page.locator('.book-title[title*="Programming Pearls"]').first();
+  const card = page.frameLocator("iframe.runtime-frame").locator('.book-title[title*="Programming Pearls"]').first();
   try {
     await card.click({ timeout: 5_000 });
   } catch {
     // The grid's gesture layer can swallow a synthetic hit; dispatching on
     // the row is the same app open path either way.
     await page.evaluate(() => {
-      const t = [...document.querySelectorAll(".book-title")]
+      const t = [...document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelectorAll(".book-title")]
         .find((el) => (el.textContent ?? "").includes("Programming Pearls"));
       if (!t) throw new Error("book row not found in the library");
       t.click();

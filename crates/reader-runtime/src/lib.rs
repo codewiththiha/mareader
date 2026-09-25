@@ -18,6 +18,31 @@ pub mod context;
 pub mod diagnostics;
 pub mod effects;
 pub mod features;
+#[cfg(target_arch = "wasm32")]
+pub mod frame;
+
+/// The frame boot is a wasm-artifact path — off wasm there is no iframe and
+/// no port. The stub compiles the frame's call sites (`context`'s dispatch,
+/// the document open flow's frame branch, the bin's gate) with the frame's
+/// own signatures.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod frame {
+    /// Off wasm an artifact is never frame-hosted.
+    pub fn boot_if_hosted() -> bool {
+        false
+    }
+
+    /// The frame api never exists off-wasm: nothing to run `f` against.
+    pub fn with_api<R>(
+        _f: impl FnOnce(&frame_transport::PortShellApi<frame_transport::wasm::PortWire>) -> R,
+    ) -> Option<R> {
+        None
+    }
+
+    /// The frame open flow never runs off-wasm; the branch that would call
+    /// this is never taken, so the parked continuation never exists.
+    pub fn open_path_in_frame(_ctx: crate::context::ReaderContext, _path: String) {}
+}
 pub mod runtime;
 pub mod services;
 pub mod state;

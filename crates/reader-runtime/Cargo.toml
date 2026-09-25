@@ -16,6 +16,7 @@ app-chrome = { path = "../app-chrome" }
 app-state = { path = "../app-state" }
 app-ui = { path = "../app-ui" }
 console_error_panic_hook = "0.1.7"
+frame-transport = { path = "../frame-transport" }
 js-sys = "0.3"
 leptos = { version = "0.8", features = ["csr"] }
 leptos-md = "0.1"

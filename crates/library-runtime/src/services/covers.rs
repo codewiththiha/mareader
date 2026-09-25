@@ -163,8 +163,12 @@ fn drain(state: crate::context::LibraryContext) {
     match state.api {
         // The hosted bake: the request crosses the boundary, the answer
         // comes back as `coverBaked` into this session (a stale generation is
-        // dropped Shell-side), and [`on_baked`] moves the queue on.
-        crate::context::ApiHandle::Js => state.api.bake_cover(&path),
+        // dropped Shell-side), and [`on_baked`] moves the queue on. The frame
+        // carries the same round trip over its port — the boundary asks, the
+        // answer lands, one retry policy for both transports.
+        crate::context::ApiHandle::Js | crate::context::ApiHandle::Frame => {
+            state.api.bake_cover(&path);
+        }
         // The standalone artifact deploys the engine beside itself and
         // reaches it through the facade; the settle files through the same
         // [`on_baked`], so the retry/persist policy is literally one body.
