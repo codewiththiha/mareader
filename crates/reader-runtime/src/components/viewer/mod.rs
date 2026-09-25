@@ -20,7 +20,7 @@
 //!     so anything painted over it, move without the scroller moving.
 //!
 //! The reactive primitives these components read are NOT here: they live in
-//! `src/state/reader/viewer.rs` (a plain signals bundle) and in `reader-core`'s
+//! `src/state/viewer.rs` (a plain signals bundle) and in `reader-core`'s
 //! `view` module, and each component reads only the bundle it names in its props.
 //!
 //! [`layouts`]: layouts

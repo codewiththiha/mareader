@@ -89,6 +89,12 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi.save_cover(path, image),
         }
     }
+    fn bake_cover(&self, path: &str) {
+        match self {
+            ApiHandle::Js => JsShellApi.bake_cover(path),
+            ApiHandle::Standalone => StandaloneApi.bake_cover(path),
+        }
+    }
     fn doc_status(&self, report: &DocStatusReport) {
         match self {
             ApiHandle::Js => JsShellApi.doc_status(report),
@@ -244,6 +250,12 @@ impl ShellApi for JsShellApi {
             Some(serde_json::to_string(&One { path, image }).unwrap_or_default()),
         );
     }
+    /// Never bridged: baking a shelf cover is the LIBRARY's command. The
+    /// reader's in-session cover work (resume art, document covers) runs on
+    /// its own artifact engine and never crosses this boundary — a reader
+    /// session that somehow asks is dropped here, loudly impossible rather
+    /// than ever wiring a second bake path.
+    fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, report: &runtime_contract::boundary::DocStatusReport) {
         self.call(
             "docStatus",
@@ -322,6 +334,7 @@ impl ShellApi for StandaloneApi {
         map.insert(path.to_string(), std::sync::Arc::new(image.clone()));
         let _ = storage::save_covers(&map);
     }
+    fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
     fn reload(&self) {

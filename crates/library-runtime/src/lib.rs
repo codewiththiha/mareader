@@ -32,6 +32,9 @@ thread_local! {
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
     static NEXT_ID: Cell<u32> = const { Cell::new(1) };
     static PENDING_DISPOSE: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
+    /// The live session's context, for the Shell → runtime commands that
+    /// land outside any page event (a bake answer; an open handoff).
+    static LIVE_CTX: RefCell<Option<LibraryContext>> = const { RefCell::new(None) };
 }
 
 /// Mount a library session into `host`.
@@ -49,10 +52,11 @@ pub fn start_session(host: &web_sys::Element, api: context::ApiHandle) -> u32 {
     });
 
     let host: web_sys::HtmlElement = host.clone().unchecked_into();
+    let state = context::LibraryContext::new(api);
+    LIVE_CTX.with(|c| *c.borrow_mut() = Some(state));
     let handle = mount_to(host, move || {
         // Scoped to THIS session: the state seeds from storage, the effects
         // (grid gestures, dnd, import flows) install, the UI mounts.
-        let state = context::LibraryContext::new(api);
         provide_context(state.library.covers);
         // One overlay registry for this session: the shelf's menus and modals
         // arbitrate through it, and it dies with the unmount.
@@ -69,6 +73,37 @@ pub fn start_session(host: &web_sys::Element, api: context::ApiHandle) -> u32 {
     id
 }
 
+/// The command envelope the Shell delivers to a LIVE library session.
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum LibraryCommand {
+    /// A cover-bake request answered: the engine's raster, or `None` when
+    /// the bake failed (the queue's one-retry policy decides from there).
+    #[serde(rename_all = "camelCase")]
+    CoverBaked {
+        path: String,
+        /// Arc-free on the wire; the filing queue re-wraps it.
+        image: Option<Box<runtime_contract::covers::CoverImage>>,
+    },
+}
+
+/// Run one command against the live session. Commands for a session id that
+/// is no longer live are dropped, not answered — the Shell's generation
+/// guard and this check are the two walls a stale frame's traffic hits.
+pub fn command(id: u32, cmd: LibraryCommand) {
+    let live = SESSION.with(|s| s.borrow().as_ref().is_some_and(|x| x.id == id));
+    if !live {
+        return;
+    }
+    if let Some(ctx) = LIVE_CTX.with(|c| *c.borrow()) {
+        match cmd {
+            LibraryCommand::CoverBaked { path, image } => {
+                services::covers::on_baked(ctx, path, image.map(|image| *image));
+            }
+        }
+    }
+}
+
 /// Dispose the library session (the manager replaces runtimes; the reader is
 /// no different except in direction).
 pub fn dispose(id: u32) -> js_sys::Promise {
@@ -83,6 +118,7 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     }
     SESSION.with(|s| {
         if let Some(session) = s.borrow_mut().take() {
+            LIVE_CTX.with(|c| *c.borrow_mut() = None);
             // The library session owns no async engine tails: the unmount's
             // cleanups are synchronous (listeners, observers, timers), so the
             // promise resolves on the next microtask via a plain resolve.
@@ -156,4 +192,15 @@ pub fn mareader_library_start(host: wasm_bindgen::JsValue) -> u32 {
 #[wasm_bindgen(js_name = mareaderLibraryDispose)]
 pub fn mareader_library_dispose(id: u32) -> js_sys::Promise {
     dispose(id)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = mareaderLibraryCommand)]
+pub fn mareader_library_command(id: u32, cmd_json: String) {
+    // A malformed envelope is dropped: the Shell's serializer and this
+    // schema are generated from one type, so disagreement is a bug, not
+    // input to recover from.
+    if let Ok(cmd) = serde_json::from_str::<LibraryCommand>(&cmd_json) {
+        command(id, cmd);
+    }
 }

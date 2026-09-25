@@ -98,6 +98,15 @@ pub trait ShellApi {
     /// Reader → Shell: one generated cover (the reader owns the engine that
     /// bakes it; the Shell owns the persisted map it lands in).
     fn save_cover(&self, path: &str, image: &crate::covers::CoverImage);
+    /// Library → Shell: bake page 1 of the book at `path` into cover art.
+    ///
+    /// A COMMAND, not a call: the library artifact owns no engine, so the
+    /// Shell bakes it for the shelf's import queue. The answer comes back as
+    /// the session command `coverBaked { path, image }` — `image: None` when
+    /// the bake failed — and only ever into the LIVE session's generation: a
+    /// bake that outlived its frame is dropped by the Shell, never misfiled
+    /// into a replacement session's state.
+    fn bake_cover(&self, path: &str);
     /// Reader → Shell: the document status changed (URL policy + probe).
     fn doc_status(&self, report: &DocStatusReport);
     /// Reader → Shell: the diagnostics digest (the Shell's probe merges it).
@@ -120,6 +129,7 @@ pub struct RecordApi {
     pub read_points: std::cell::RefCell<Vec<ReadPoint>>,
     pub library_calls: std::cell::RefCell<u32>,
     pub settings_saves: std::cell::RefCell<u32>,
+    pub bakes: std::cell::RefCell<Vec<String>>,
 }
 
 impl ShellApi for RecordApi {
@@ -138,6 +148,9 @@ impl ShellApi for RecordApi {
     }
     fn save_covers(&self, _covers: &crate::covers::CoverMap) {}
     fn save_cover(&self, _path: &str, _image: &crate::covers::CoverImage) {}
+    fn bake_cover(&self, path: &str) {
+        self.bakes.borrow_mut().push(path.to_string());
+    }
     fn doc_status(&self, _report: &DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
     fn reload(&self) {}

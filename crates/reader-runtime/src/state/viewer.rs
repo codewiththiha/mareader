@@ -30,7 +30,7 @@ pub struct ViewerSignals {
     /// selection's anchor and focus up to the nearest page host, parses the
     /// page from its id, and dispatches `mareader:selection-pages`;
     /// `effects::reader::page_selection` is the single writer of this signal,
-    /// and `features::reader::virtualizers` merges the range into the
+    /// and `features::virtualizers` merges the range into the
     /// virtualizer's PINNED window so the selected pages stay mounted while
     /// the selection lives.
     pub selected_pages: RwSignal<Option<(u32, u32)>>,
@@ -72,7 +72,7 @@ pub struct ViewerSignals {
     /// when their mount anchor lands (DOM text paints synchronously), and
     /// the paginated modes — which have no anchor to land — release on
     /// their first frame after mount. A safety net in
-    /// `features::reader::page` guarantees a release either way. For
+    /// `features::page` guarantees a release either way. For
     /// exactly that long an opaque cover the colour of the reader's paper
     /// masks the viewer there, so the first renders — however healthy — are
     /// never watched arriving: the reader appears already settled on the
@@ -207,6 +207,7 @@ impl Default for ViewerSignals {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reader_core::settings::AnimationSettings;
 
     #[test]
     fn the_master_switch_freezes_every_detail() {

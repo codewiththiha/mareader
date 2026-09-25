@@ -18,7 +18,6 @@ console_error_panic_hook = "0.1.7"
 js-sys = "0.3"
 leptos = { version = "0.8", features = ["csr"] }
 library-core = { path = "../library-core" }
-pdf-engine = { path = "../pdf-engine" }
 reader-core = { path = "../reader-core" }
 runtime-contract = { path = "../runtime-contract" }
 serde = { version = "1", features = ["derive"] }
@@ -31,6 +30,8 @@ wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
   "Window", "Document", "Element", "HtmlElement", "HtmlDivElement",
   "HtmlInputElement", "HtmlButtonElement", "HtmlSelectElement", "Node",
+  "HtmlHeadElement",
+  "HtmlScriptElement",
   "NodeList", "HtmlCollection", "DomTokenList", "CssStyleDeclaration",
   "Event", "MouseEvent", "KeyboardEvent", "WheelEvent", "DragEvent",
   "DataTransfer", "DomRect", "ResizeObserver", "ResizeObserverEntry",

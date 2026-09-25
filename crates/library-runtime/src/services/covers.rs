@@ -1,25 +1,29 @@
 //! The shelf's covers, rendered away from the reader.
 //!
-//! A cover is page 1 of a book as a small JPEG, and the engine can render one from a
-//! path with nothing open — which is what makes a cover at IMPORT time possible at
-//! all.
+//! A cover is page 1 of a book as a small JPEG. The library carries no engine
+//! to render one: a hosted session ASKS the Shell across the boundary
+//! (`ShellApi::bake_cover`, answered by the `coverBaked` command), and the
+//! standalone artifact deploys the engine beside itself and reaches it
+//! through [`crate::services::cover_engine`]. Either way the queue is a
+//! request/response drain, one path in flight, with one retry per path.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use leptos::prelude::*;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::spawn_local;
 
-use pdf_engine::api as engine;
-use reader_core::format::Format;
-
 use library_core::book::{Book, Row, book_rows};
+use reader_core::format::Format;
+use runtime_contract::boundary::ShellApi;
 use runtime_contract::covers::{CoverImage, CoverMap};
 
 /// One width for both renders of the same art — the import queue's and the
 /// open pipeline's: two widths would be two renders and a cache that misses
 /// on the other one.
+#[cfg(target_arch = "wasm32")]
 pub(crate) const COVER_WIDTH: f64 = 240.0;
 
 pub const COVER_CAP: usize = 60;
@@ -48,6 +52,10 @@ thread_local! {
     static QUEUE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static DRAINING: RefCell<bool> = const { RefCell::new(false) };
     static DIRTY: RefCell<bool> = const { RefCell::new(false) };
+    /// Requests whose answer (a `coverBaked` command, or the standalone
+    /// facade's settle) has not come back yet. Guards against a path being
+    /// queued twice while its bake is in flight.
+    static PENDING: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
     /// One retry each: a cover can fail for a reason that is true for a second — a file still being copied, a worker still warming up — but a queue that re-attempts a genuinely unrenderable file forever never drains.
     static RETRIES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
@@ -140,28 +148,134 @@ fn drain(state: crate::context::LibraryContext) {
         }
         return;
     };
-    spawn_local(async move {
-        let have = state
-            .library
-            .covers
-            .with_untracked(|covers| covers.contains_key(&path));
-        if !have {
-            match engine::cover_data_url(&path, COVER_WIDTH).await {
-                Ok(cover) => {
-                    RETRIES.with(|retries| retries.borrow_mut().remove(&path));
-                    file_cover(state, path, cover.data_url, cover.width, cover.height);
-                }
-                Err(_) => {
-                    let first_failure =
-                        RETRIES.with(|retries| retries.borrow_mut().insert(path.clone()));
-                    if first_failure {
-                        QUEUE.with(|queue| queue.borrow_mut().push(path.clone()));
-                    }
-                }
+    let have = state
+        .library
+        .covers
+        .with_untracked(|covers| covers.contains_key(&path));
+    let in_flight = PENDING.with(|pending| pending.borrow().contains(&path));
+    if have || in_flight {
+        drain(state);
+        return;
+    }
+    PENDING.with(|pending| {
+        pending.borrow_mut().insert(path.clone());
+    });
+    match state.api {
+        // The hosted bake: the request crosses the boundary, the answer
+        // comes back as `coverBaked` into this session (a stale generation is
+        // dropped Shell-side), and [`on_baked`] moves the queue on.
+        crate::context::ApiHandle::Js => state.api.bake_cover(&path),
+        // The standalone artifact deploys the engine beside itself and
+        // reaches it through the facade; the settle files through the same
+        // [`on_baked`], so the retry/persist policy is literally one body.
+        crate::context::ApiHandle::Standalone => {
+            // The bake worker is a wasm artifact: on the host test lane the
+            // request stays PENDING, exactly like a hosted `bakeCover` whose
+            // answer never comes, so host tests exercise the queue/retry
+            // policy and nobody schedules a wasm future off-wasm.
+            #[cfg(target_arch = "wasm32")]
+            spawn_local(async move {
+                let baked = super::cover_engine::bake(&path, COVER_WIDTH).await.0;
+                on_baked(state, path, baked);
+            });
+            #[cfg(not(target_arch = "wasm32"))]
+            let _ = (state, path);
+        }
+    }
+}
+
+/// One bake answer for `path`: files the art and clears the retry, or
+/// requeues once on the first failure and drops the path on the second —
+/// then moves the queue on. Called from the session command surface
+/// (`coverBaked`, hosted) and from the standalone facade's settle: one body,
+/// one retry policy, no second drain semantics for either deployment.
+pub fn on_baked(
+    state: crate::context::LibraryContext,
+    path: String,
+    image: Option<runtime_contract::covers::CoverImage>,
+) {
+    PENDING.with(|pending| pending.borrow_mut().remove(&path));
+    match image {
+        Some(image) => {
+            RETRIES.with(|retries| retries.borrow_mut().remove(&path));
+            file_cover(state, path, image.data_url, image.width, image.height);
+        }
+        None => {
+            let first_failure = RETRIES.with(|retries| retries.borrow_mut().insert(path.clone()));
+            if first_failure {
+                QUEUE.with(|queue| queue.borrow_mut().push(path.clone()));
             }
         }
-        drain(state);
-    });
+    }
+    drain(state);
+}
+
+#[cfg(test)]
+mod answer_tests {
+    use super::*;
+
+    #[test]
+    fn a_success_files_the_art_and_clears_the_retry() {
+        let state = crate::context::LibraryContext::default();
+        // A cover belongs to a shelf row: the drain's dry-queue prune throws
+        // out any art whose book is gone, so the success path is only
+        // observable over a library that holds the book.
+        state.library.books.update(|rows| {
+            rows.push(Row::Book(Book::new(
+                "a".to_string(),
+                library_core::testkit::fingerprint(),
+                Format::Pdf,
+                library_core::book::Origin::Linked {
+                    src: "/a.pdf".to_string(),
+                },
+                0,
+            )));
+        });
+        RETRIES.with(|retries| retries.borrow_mut().insert("/a.pdf".to_string()));
+        PENDING.with(|pending| pending.borrow_mut().insert("/a.pdf".to_string()));
+        QUEUE.with(|queue| queue.borrow_mut().clear());
+        on_baked(
+            state,
+            "/a.pdf".to_string(),
+            Some(CoverImage {
+                data_url: "data:image/jpeg;base64,x".to_string(),
+                width: 240.0,
+                height: 320.0,
+            }),
+        );
+        assert!(
+            state
+                .library
+                .covers
+                .with_untracked(|covers| covers.contains_key("/a.pdf"))
+        );
+        assert!(RETRIES.with(|retries| !retries.borrow().contains("/a.pdf")));
+        assert!(PENDING.with(|pending| !pending.borrow().contains("/a.pdf")));
+    }
+
+    #[test]
+    fn the_first_failure_requeues_once_the_second_does_not() {
+        let state = crate::context::LibraryContext::default();
+        for (path, pre_seeded) in [("/first.pdf", false), ("/second.pdf", true)] {
+            QUEUE.with(|queue| queue.borrow_mut().clear());
+            RETRIES.with(|retries| {
+                retries.borrow_mut().clear();
+                if pre_seeded {
+                    retries.borrow_mut().insert(path.to_string());
+                }
+            });
+            PENDING.with(|pending| pending.borrow_mut().insert(path.to_string()));
+            on_baked(state, path.to_string(), None);
+            // A requeued path does not sit in the queue for long: the drain
+            // that closes on_baked pops it straight back into PENDING to
+            // re-issue the bake. Pending is the observable form of "requeued";
+            // a path that already spent its retry is in neither set.
+            let outstanding = PENDING.with(|pending| pending.borrow().contains(&path.to_string()));
+            assert_eq!(outstanding, !pre_seeded, "{path}");
+            let queued_again = QUEUE.with(|queue| queue.borrow().contains(&path.to_string()));
+            assert!(!queued_again, "{path}");
+        }
+    }
 }
 
 #[cfg(test)]

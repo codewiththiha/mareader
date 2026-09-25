@@ -58,6 +58,46 @@ pub fn install(state: ShellState) {
             crate::services::save_cover(&one.path, one.image);
         }
     });
+    // The shelf's bake queue has no engine: it asks, the Shell bakes, the
+    // answer re-enters through the library session's command surface —
+    // generation-checked, so a bake that outlived its frame is dropped.
+    let st = state.clone();
+    register(&bridge, "bakeCover", move |json: String| {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Bake {
+            path: String,
+        }
+        let Ok(bake) = serde_json::from_str::<Bake>(&json) else {
+            return;
+        };
+        let st = st.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let path = bake.path;
+            let image =
+                pdf_engine::api::cover_data_url(&path, runtime_contract::covers::COVER_WIDTH)
+                    .await
+                    .ok()
+                    .map(|cover| runtime_contract::covers::CoverImage {
+                        data_url: cover.data_url,
+                        width: cover.width,
+                        height: cover.height,
+                    });
+            #[derive(serde::Serialize)]
+            #[serde(tag = "kind", rename_all = "camelCase")]
+            enum Answer {
+                #[serde(rename_all = "camelCase")]
+                CoverBaked {
+                    path: String,
+                    image: Option<runtime_contract::covers::CoverImage>,
+                },
+            }
+            let answer = Answer::CoverBaked { path, image };
+            if let Ok(json) = serde_json::to_string(&answer) {
+                st.manager.deliver_library_command(&json);
+            }
+        });
+    });
     let st = state.clone();
     register(&bridge, "docStatus", move |json: String| {
         if let Ok(report) =

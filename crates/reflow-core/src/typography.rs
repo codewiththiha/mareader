@@ -42,9 +42,11 @@ mod tests {
 
     #[test]
     fn char_width_estimates_stay_inside_the_sanity_band() {
-        let mut s = TextSettings::default();
         // The unknown/unmatched face falls back to the serif estimate.
-        s.default_font = FontChoice::BuiltIn("not-shipped-yet".into());
+        let mut s = TextSettings {
+            default_font: FontChoice::BuiltIn("not-shipped-yet".into()),
+            ..TextSettings::default()
+        };
         assert_eq!(body_char_width(&s), 0.5);
         // Every bundled font lands in the readable band.
         for f in builtin_fonts() {

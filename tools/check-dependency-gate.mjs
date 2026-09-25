@@ -27,15 +27,16 @@ import { execFileSync } from "node:child_process";
 
 /** The workspace crates whose graphs carry the boundary. `forbid` names the
  *  crates that must NEVER appear in that graph, at any depth.
- *
- *  The Phase A frame commit appends the last piece the graph cannot prove
- *  until runtimes ride iframes:
- *      { crate: "library-runtime", forbid: ["pdf-engine", "pdf-core"] }
- *  Today the library shelf still bakes covers through the engine in-process;
- *  the bake crosses the frame port in the same commit the engine leaves the
- *  library's manifest.
  */
 const RULES = [
+  {
+    // The shelf knows the PDF as FORMAT metadata only (`Format::Pdf`); the
+    // execution of one — engine and geometry both — belongs to the reader
+    // and the Shell's bake service. Its bake queue crosses the boundary, so
+    // this graph must carry no PDF code at any depth.
+    crate: "library-runtime",
+    forbid: ["pdf-engine", "pdf-core"],
+  },
   {
     crate: "app-state",
     forbid: [

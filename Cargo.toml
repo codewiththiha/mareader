@@ -85,6 +85,11 @@ app-chrome = { path = "crates/app-chrome" }
 app-state = { path = "crates/app-state" }
 runtime-contract = { path = "crates/runtime-contract" }
 app-ui = { path = "crates/app-ui" }
+# The cover-bake service: the hosted shelf carries no engine, so its import
+# queue asks the Shell to bake (ShellApi::bake_cover) and the Shell runs the
+# engine side of that request. The engine never leaves this page: the shell
+# mounts no document surfaces, it only renders small cover rasters.
+pdf-engine = { path = "crates/pdf-engine" }
 storage = { path = "crates/storage" }
 # The shell hosts runtimes; it owns none of what a runtime owns. Its only
 # domain reads are the persisted settings schema (`reader-core`), the

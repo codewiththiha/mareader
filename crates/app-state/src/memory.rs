@@ -22,7 +22,7 @@
 //! instruments. The step-per-book and flat-across-zooms shape holds in both.
 //!
 //! Off wasm the probe is inert rather than a panic: the wasm-bindgen stubs
-//! abort when called natively — the same rule `crate::time` runs its clock
+//! abort when called natively — the same rule `runtime_contract::time` runs its clock
 //! under — and a host test has no heap to report.
 
 /// The wasm linear memory's current size in bytes; `None` off wasm (host

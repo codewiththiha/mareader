@@ -383,6 +383,30 @@ impl RuntimeManager {
         navigate("/");
         self.start_library(state);
     }
+
+    /// Deliver one command JSON to the LIVE library session's command export.
+    /// A delivery with no live library session is dropped: the request that
+    /// produced it outlived its generation, and a replacement session never
+    /// inherits a predecessor's queue traffic (§5's ordering in miniature).
+    pub fn deliver_library_command(&self, json: &str) {
+        let guard = self.slot.lock().unwrap_or_else(|e| e.into_inner());
+        let Slot::Library { id, module } = &*guard else {
+            return;
+        };
+        let key = JsValue::from_str("mareaderLibraryCommand");
+        let Ok(cmd) = js_sys::Reflect::get(module, &key) else {
+            return;
+        };
+        if !cmd.is_function() {
+            return;
+        }
+        let cmd: js_sys::Function = cmd.unchecked_into();
+        let _ = cmd.call2(
+            module,
+            &JsValue::from_f64(*id as f64),
+            &JsValue::from_str(json),
+        );
+    }
 }
 
 impl Default for RuntimeManager {

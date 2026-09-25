@@ -60,6 +60,12 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi::new().save_cover(path, image),
         }
     }
+    fn bake_cover(&self, path: &str) {
+        match self {
+            ApiHandle::Js => JsShellApi.bake_cover(path),
+            ApiHandle::Standalone => StandaloneApi::new().bake_cover(path),
+        }
+    }
     fn doc_status(&self, report: &runtime_contract::boundary::DocStatusReport) {
         match self {
             ApiHandle::Js => JsShellApi.doc_status(report),
@@ -234,6 +240,17 @@ impl ShellApi for JsShellApi {
             Some(serde_json::to_string(&One { path, image }).unwrap_or_default()),
         );
     }
+    fn bake_cover(&self, path: &str) {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Bake<'a> {
+            path: &'a str,
+        }
+        self.call(
+            "bakeCover",
+            Some(serde_json::to_string(&Bake { path }).unwrap_or_default()),
+        );
+    }
     fn doc_status(&self, report: &runtime_contract::boundary::DocStatusReport) {
         self.call(
             "docStatus",
@@ -287,6 +304,10 @@ impl ShellApi for StandaloneApi {
         map.insert(path.to_string(), std::sync::Arc::new(image.clone()));
         let _ = storage::save_covers(&map);
     }
+    /// Never reached: the standalone bake runs from `covers.rs`' drain
+    /// directly, because it needs this session's context to file the answer
+    /// — see [`crate::services::cover_engine`].
+    fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
     fn reload(&self) {
