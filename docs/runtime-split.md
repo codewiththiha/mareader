@@ -203,6 +203,21 @@ Standalone pages install a storage-backed shell substitute so the same
 entry code runs unhosted; the trait keeps exactly these two implementations
 (plus the recorder the host tests use).
 
+## Artifact sizes
+
+Released from the build contract's CI log (Deep CI #186 on this branch's tip,
+2026-09-25 — `tools/check-runtime-artifacts.mjs` prints every artifact's size):
+
+| artifact | bytes | what it says |
+| --- | --- | --- |
+| `library.js` + `library_bg.wasm` | 62,013 / 1,854,894 | the dependency split's library artifact: it has no `pdf-engine` execution half — every page render it ever asks for crosses the boundary |
+| `reader.js` + `reader_bg.wasm` | 83,702 / 2,213,394 | the reader artifact: `pdf-engine`, `pdf-core`, `reflow-core`, `virtual-list`, `md-core`, `txt-core` are all compiled in, as the dependency gate asserts |
+
+These run lower than any same-page baseline by carving the two runtimes'
+distinct dependency closures apart; the gate
+(`tools/check-dependency-gate.mjs`, `cargo tree` over the wasm32 target
+graph) is what promises those closures never reconverge again.
+
 ## Asset loading
 
 `styles.css`, `public/vendor` (pdf.js), `pdfEngine.js`, `readerEngine.js`,
