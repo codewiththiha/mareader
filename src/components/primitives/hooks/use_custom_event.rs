@@ -44,5 +44,7 @@ fn listen(name: &'static str, handler: impl Fn(web_sys::CustomEvent) + 'static) 
 /// now has to.
 pub fn use_raw_event(name: &'static str, on_detail: impl Fn(&JsValue) + 'static) {
     let on_detail = Rc::new(on_detail);
-    listen(name, move |ev: web_sys::CustomEvent| on_detail(&ev.detail()));
+    listen(name, move |ev: web_sys::CustomEvent| {
+        on_detail(&ev.detail())
+    });
 }

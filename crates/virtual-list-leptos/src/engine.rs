@@ -898,15 +898,24 @@ mod tests {
         let surface = TestSurface::default();
         let mut core = list_core(100, 100.0, 200.0);
         // Instant: adopted into the core state immediately, no echo needed.
-        assert!(core.scroll_to_index(50, Align::Start, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_index(50, Align::Start, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert_eq!(core.scroll_top(), 5_000.0);
         assert_eq!(surface.writes(), vec![(5_000.0, false)]);
 
         let _ = core.on_scroll(5_000.0);
         // Auto within two viewports: smooth, so nothing adopts locally yet.
-        assert!(core.scroll_to_index(52, Align::Start, ScrollMode::Auto, &surface).is_none());
+        assert!(
+            core.scroll_to_index(52, Align::Start, ScrollMode::Auto, &surface)
+                .is_none()
+        );
         // Auto beyond two viewports: instant, adopted locally.
-        assert!(core.scroll_to_index(0, Align::Start, ScrollMode::Auto, &surface).is_some());
+        assert!(
+            core.scroll_to_index(0, Align::Start, ScrollMode::Auto, &surface)
+                .is_some()
+        );
         assert_eq!(surface.writes()[1], (5_200.0, true));
         assert_eq!(surface.writes()[2], (0.0, false));
         assert_eq!(core.scroll_top(), 0.0);
@@ -923,7 +932,10 @@ mod tests {
         let _ = core.on_scroll(5_000.0); // old document, deep scroll
 
         // Scroll to the top of the NEW document: instant, adopted now.
-        assert!(core.scroll_to_offset(0.0, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_offset(0.0, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert_eq!(core.scroll_top(), 0.0);
 
         // The count rebuild that follows anchors at the adopted 0.
@@ -961,7 +973,10 @@ mod tests {
         // until it does the core still works from the old position. That is
         // the window the bounded re-aim protects: measurements keep moving
         // the target before the echo lands.
-        assert!(core.scroll_to_index(50, Align::Start, ScrollMode::Smooth, &surface).is_none());
+        assert!(
+            core.scroll_to_index(50, Align::Start, ScrollMode::Smooth, &surface)
+                .is_none()
+        );
 
         let mut retries = 0;
         for round in 0..5 {
@@ -1146,12 +1161,21 @@ mod tests {
             },
         );
         let surface = TestSurface::default();
-        assert!(core.scroll_to_offset(-12.0, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_offset(-12.0, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert_eq!(core.scroll_top(), -12.0);
         assert_eq!(surface.writes(), vec![(-12.0, false)]);
-        assert!(core.scroll_to_index(0, Align::Center, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_index(0, Align::Center, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert!(surface.writes()[1].0 < 0.0);
-        assert!(core.scroll_to_offset(-500.0, ScrollMode::Instant, &surface).is_some());
+        assert!(
+            core.scroll_to_offset(-500.0, ScrollMode::Instant, &surface)
+                .is_some()
+        );
         assert_eq!(surface.writes()[2].0, -12.0);
         assert_eq!(core.scroll_top(), -12.0);
     }
@@ -1203,7 +1227,11 @@ mod tests {
         let _ = core.on_scroll(2_000.0);
         let items = core.items();
         assert!(!items.is_empty());
-        assert!(items.iter().all(|item| item.state == VirtualItemState::Active));
+        assert!(
+            items
+                .iter()
+                .all(|item| item.state == VirtualItemState::Active)
+        );
         assert_eq!(core.render_range(), core.range());
     }
 

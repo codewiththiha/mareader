@@ -10,8 +10,8 @@ use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
 use crate::services::library::conflict;
 use crate::services::library::reveal_shelf;
-use crate::state::library::{AlreadyNote, NoteKind};
 use crate::state::AppState;
+use crate::state::library::{AlreadyNote, NoteKind};
 
 #[component]
 pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {

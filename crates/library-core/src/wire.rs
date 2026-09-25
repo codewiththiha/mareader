@@ -197,8 +197,7 @@ mod tests {
         assert_eq!(answer.results.len(), 1);
         assert!(answer.results[0].is_ok());
         assert_eq!(answer.results[0].measured, None);
-        let none: RelocateResult =
-            serde_json::from_str(r#"{"root":"","results":[]}"#).unwrap();
+        let none: RelocateResult = serde_json::from_str(r#"{"root":"","results":[]}"#).unwrap();
         assert!(none.root.is_empty() && none.results.is_empty());
     }
 

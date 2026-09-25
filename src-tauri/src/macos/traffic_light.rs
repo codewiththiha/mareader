@@ -25,16 +25,16 @@
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     use objc2::rc::Retained;
     use objc2_app_kit::{NSButton, NSView, NSWindow, NSWindowButton};
     use objc2_core_foundation::{CGPoint, CGRect};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use tauri::{
-        plugin::{Builder, TauriPlugin},
         Window, WindowEvent,
+        plugin::{Builder, TauriPlugin},
     };
 
     // The wasm side's canonical source is `app_chrome::TITLE_BAR_H` (h-12);
@@ -60,13 +60,19 @@ mod imp {
     }
 
     fn natural_origin_y() -> f64 {
-        *NATURAL_BUTTON_ORIGIN_Y.get().unwrap_or(&FALLBACK_BUTTON_ORIGIN_Y)
+        *NATURAL_BUTTON_ORIGIN_Y
+            .get()
+            .unwrap_or(&FALLBACK_BUTTON_ORIGIN_Y)
     }
 
     /// `y` = distance from the title-bar container's top to the button's top.
     /// After AppKit applies it, the button's window-top position is
     /// `y - button_origin_y` because `origin.y` (AppKit's rest) is preserved.
-    fn compute_traffic_light_y(header_height: f64, button_height: f64, button_origin_y: f64) -> f64 {
+    fn compute_traffic_light_y(
+        header_height: f64,
+        button_height: f64,
+        button_origin_y: f64,
+    ) -> f64 {
         ((header_height - button_height) / 2.0 + button_origin_y).max(0.0)
     }
 
@@ -82,7 +88,11 @@ mod imp {
         if laid_out && frame.origin.y > 0.0 && frame.origin.y < 20.0 {
             let _ = NATURAL_BUTTON_ORIGIN_Y.set(frame.origin.y);
         }
-        let h = if laid_out { frame.size.height } else { FALLBACK_BUTTON_HEIGHT };
+        let h = if laid_out {
+            frame.size.height
+        } else {
+            FALLBACK_BUTTON_HEIGHT
+        };
         (h, natural_origin_y())
     }
 
@@ -100,7 +110,9 @@ mod imp {
     /// `set_traffic_light_position` (it would ping-pong via tao's
     /// `inset_traffic_lights` on every `drawRect`).
     fn position_traffic_lights(ns_window: &NSWindow, visible: bool, header_height: f64) {
-        let Some(buttons) = standard_buttons(ns_window) else { return };
+        let Some(buttons) = standard_buttons(ns_window) else {
+            return;
+        };
         let views: [&NSView; 3] = [&buttons[0], &buttons[1], &buttons[2]];
         let close = views[0];
 
@@ -145,18 +157,27 @@ mod imp {
         let spacing = if spacing.abs() < 0.5 { 20.0 } else { spacing };
         let y = natural_origin_y();
         for (i, v) in views.into_iter().enumerate() {
-            v.setFrameOrigin(CGPoint { x: TRAFFIC_LIGHT_X_INSET + i as f64 * spacing, y });
+            v.setFrameOrigin(CGPoint {
+                x: TRAFFIC_LIGHT_X_INSET + i as f64 * spacing,
+                y,
+            });
         }
     }
 
     /// Resolve the `NSWindow` behind a Tauri `Window` via `raw-window-handle`.
     fn with_ns_window<F: FnOnce(&NSWindow)>(window: &Window, f: F) {
-        let Ok(handle) = window.window_handle() else { return };
-        let RawWindowHandle::AppKit(h) = handle.as_raw() else { return };
+        let Ok(handle) = window.window_handle() else {
+            return;
+        };
+        let RawWindowHandle::AppKit(h) = handle.as_raw() else {
+            return;
+        };
         // SAFETY: `ns_view` is the window's content view, alive while the
         // window is. We only borrow through it for the duration of `f`.
         let view = unsafe { &*h.ns_view.as_ptr().cast::<NSView>() };
-        let Some(ns_window) = view.window() else { return };
+        let Some(ns_window) = view.window() else {
+            return;
+        };
         f(&ns_window);
     }
 
@@ -175,7 +196,9 @@ mod imp {
             HEADER_HEIGHT_BITS.store(header_height.to_bits(), Ordering::Relaxed);
         }
         let effective = self::header_height();
-        with_ns_window(&window, |ns| position_traffic_lights(ns, visible, effective));
+        with_ns_window(&window, |ns| {
+            position_traffic_lights(ns, visible, effective)
+        });
     }
 
     pub fn init() -> TauriPlugin<tauri::Wry> {
@@ -190,7 +213,10 @@ mod imp {
                 // window resize.
                 let w = window.clone();
                 window.on_window_event(move |event| {
-                    if matches!(event, WindowEvent::ThemeChanged(_) | WindowEvent::Resized(_)) {
+                    if matches!(
+                        event,
+                        WindowEvent::ThemeChanged(_) | WindowEvent::Resized(_)
+                    ) {
                         reapply(&w);
                     }
                 });

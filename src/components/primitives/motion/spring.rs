@@ -93,7 +93,10 @@ pub struct SpringBox<T: SpringValue> {
 /// (or use the generic `FloatBox`); the gloss word card is the reference
 /// consumer (`ai/gloss/targeting.rs`), and its rustdoc history is the
 /// recipe.
-pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bool>) -> SpringBox<T> {
+pub fn use_spring_box<T: SpringValue>(
+    target: Signal<Option<T>>,
+    snap: Signal<bool>,
+) -> SpringBox<T> {
     let value = RwSignal::new(target.get_untracked());
     let vel = StoredValue::new_local(T::zero());
     let last_ms = StoredValue::new_local(f64::NAN);

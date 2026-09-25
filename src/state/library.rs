@@ -327,7 +327,8 @@ impl LibraryState {
     /// Empty for a row that is not there, which makes a drag of a row another
     /// surface just removed a no-op.
     pub fn row_name(&self, row_id: &str) -> String {
-        self.row(row_id).map_or_else(String::new, |r| r.display_name())
+        self.row(row_id)
+            .map_or_else(String::new, |r| r.display_name())
     }
 
     /// Empty for a shelf the list no longer holds and for the root, which is not a shelf.
@@ -413,9 +414,8 @@ impl LibraryState {
     /// Same, read untracked — for a callback that must not subscribe.
     pub fn shelf_tracked_now(&self, shelf_id: &str) -> bool {
         self.folders.with_untracked(|folders| {
-            self.shelves.with_untracked(|shelves| {
-                Governance::new(folders, shelves).shelf_tracked(shelf_id)
-            })
+            self.shelves
+                .with_untracked(|shelves| Governance::new(folders, shelves).shelf_tracked(shelf_id))
         })
     }
 

@@ -69,7 +69,10 @@ impl Progress {
     fn tick(&mut self, app: &AppHandle, name: &str) {
         self.done = self.done.saturating_add(1);
         self.since_emit = self.since_emit.saturating_add(1);
-        if self.done > 1 && self.since_emit < EMIT_EVERY && self.last.elapsed().as_millis() < EMIT_INTERVAL_MS {
+        if self.done > 1
+            && self.since_emit < EMIT_EVERY
+            && self.last.elapsed().as_millis() < EMIT_INTERVAL_MS
+        {
             return;
         }
         self.flush(app, name);
@@ -215,7 +218,10 @@ fn scan(
 #[tauri::command]
 pub async fn verify_paths(paths: Vec<String>) -> Result<Vec<PathCheck>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        paths.iter().map(|path| check_path(path)).collect::<Vec<PathCheck>>()
+        paths
+            .iter()
+            .map(|path| check_path(path))
+            .collect::<Vec<PathCheck>>()
     })
     .await
     .map_err(|e| format!("verify worker failed: {e}"))
@@ -292,7 +298,10 @@ fn copy_one(
         measured: None,
     };
     if crate::ensure_readable_document(&request.from).is_err() {
-        return fail(format!("not a document this app may copy: {}", request.from));
+        return fail(format!(
+            "not a document this app may copy: {}",
+            request.from
+        ));
     }
     let target = match store_path(app, &request.from, &request.id) {
         Ok(t) => t,
@@ -327,7 +336,11 @@ fn measure_copy(target: &Path) -> Fingerprint {
     let Ok(meta) = fs::metadata(target) else {
         return Fingerprint::of(0, 0, &[]);
     };
-    Fingerprint::of(meta.len(), mtime_ms(meta.modified().ok()), &read_head(target))
+    Fingerprint::of(
+        meta.len(),
+        mtime_ms(meta.modified().ok()),
+        &read_head(target),
+    )
 }
 
 /// A copy owes the ledger a measurement of its own: a stored row is known by
@@ -357,7 +370,9 @@ fn delete(app: &AppHandle, path: &str) -> Result<(), String> {
     let root = store_root(app)?;
     let target = PathBuf::from(path);
     let Some(target) = contained_in(&root, &target) else {
-        return Err(format!("refusing to delete a file outside the store: {path}"));
+        return Err(format!(
+            "refusing to delete a file outside the store: {path}"
+        ));
     };
     match fs::remove_file(&target) {
         Ok(()) => {}
@@ -470,7 +485,7 @@ fn relocate(app: &AppHandle, requests: &[BookFileRequest]) -> RelocateResult {
                         measured: None,
                     })
                     .collect(),
-            }
+            };
         }
     };
     let items = store::items_root(&path_to_string(&root));
@@ -497,7 +512,10 @@ fn relocate_one(root: &Path, items: &str, request: &BookFileRequest) -> StoreRes
     };
     let source = Path::new(&request.from);
     if !inside_store(root, source) {
-        return fail(format!("refusing to move a file outside the store: {}", request.from));
+        return fail(format!(
+            "refusing to move a file outside the store: {}",
+            request.from
+        ));
     }
     let ext = extension_of(source).to_lowercase();
     let Some(ext) = store::migrated_ext(&ext) else {
@@ -505,7 +523,10 @@ fn relocate_one(root: &Path, items: &str, request: &BookFileRequest) -> StoreRes
     };
     let target = PathBuf::from(store::source_path(items, &request.id, ext));
     if !inside_store(root, &target) {
-        return fail(format!("refusing to write outside the store: {}", request.id));
+        return fail(format!(
+            "refusing to write outside the store: {}",
+            request.id
+        ));
     }
     if same_file(source, &target) {
         return StoreResult {
@@ -694,9 +715,18 @@ mod tests {
         let escape = store.join("..").join("books").join("dune.pdf");
         assert!(!inside_store(&store, &escape));
         let target = store.join("items").join("b018c4f9e2a0").join("source.pdf");
-        assert!(!target.exists(), "the target is the file this move would make");
-        assert!(inside_store(&store, &target), "and it is inside all the same");
-        assert!(!inside_store(&store, &store.join("items").join("..").join("..").join("etc")));
+        assert!(
+            !target.exists(),
+            "the target is the file this move would make"
+        );
+        assert!(
+            inside_store(&store, &target),
+            "and it is inside all the same"
+        );
+        assert!(!inside_store(
+            &store,
+            &store.join("items").join("..").join("..").join("etc")
+        ));
 
         assert!(same_file(&copy, &copy));
         assert!(same_file(&copy, &store.join("pdf").join("dune_ab12.pdf")));
@@ -727,11 +757,16 @@ mod tests {
         fs::write(&path, b"%PDF-1.7 a book").expect("a scratch file");
 
         let backdated = SystemTime::now() - Duration::from_secs(7 * 24 * 3600);
-        let file = fs::File::options().write(true).open(&path).expect("a handle");
+        let file = fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("a handle");
         file.set_times(fs::FileTimes::new().set_modified(backdated))
             .expect("a host that sets a stamp");
         drop(file);
-        let before = fs::metadata(&path).and_then(|m| m.modified()).expect("a stamp to read");
+        let before = fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .expect("a stamp to read");
         assert_eq!(
             before, backdated,
             "the backdating took, so the assertion below means something"
@@ -739,7 +774,9 @@ mod tests {
 
         own_stamp(&path);
 
-        let after = fs::metadata(&path).and_then(|m| m.modified()).expect("a stamp to read");
+        let after = fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .expect("a stamp to read");
         assert!(
             after > before + Duration::from_secs(3600),
             "the stamp is the copy's own, not the source's week-old one"
@@ -779,12 +816,18 @@ mod tests {
         fs::remove_file(&source).expect("a removal");
         sweep_the_books_folder(&root, &resolved);
         assert!(!item.exists(), "the book's folder left with the book");
-        assert!(root.join("items").exists(), "the items root is the store's own");
+        assert!(
+            root.join("items").exists(),
+            "the items root is the store's own"
+        );
 
         let resolved = one.canonicalize().expect("a resolution");
         fs::remove_file(&one).expect("a removal");
         sweep_the_books_folder(&root, &resolved);
-        assert!(legacy.exists(), "a bucket two books shared keeps the second");
+        assert!(
+            legacy.exists(),
+            "a bucket two books shared keeps the second"
+        );
         let resolved = two.canonicalize().expect("a resolution");
         fs::remove_file(&two).expect("a removal");
         sweep_the_books_folder(&root, &resolved);
@@ -793,7 +836,10 @@ mod tests {
         let resolved = loose.canonicalize().expect("a resolution");
         fs::remove_file(&loose).expect("a removal");
         sweep_the_books_folder(&root, &resolved);
-        assert!(root.exists(), "the store root is never a leaf's folder to take");
+        assert!(
+            root.exists(),
+            "the store root is never a leaf's folder to take"
+        );
 
         let _ = fs::remove_dir_all(&root);
     }

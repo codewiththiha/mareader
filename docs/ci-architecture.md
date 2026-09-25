@@ -50,8 +50,8 @@ macos-shell     clippy + test of mareader-shell, natively on macOS
   in prose is not a second database of executable tests.
 - **rustfmt is required, permanently.** After the one intentional
   normalization commit, `cargo fmt --all -- --check` stays in the required
-  path. `.github/workflows/fmt.yml` exists to produce the next such commit
-  (dispatch it when a toolchain bump rewrites the tree); it is a maintenance
+  path. The one-shot `.github/workflows/fmt.yml` exists only to produce that
+  kind of commit (push a message containing `[fmt]`); it is a maintenance
   tool, not a gate.
 - **The wasm check stays.** It is an architectural check, not a duplicate of
   host compilation: it is the only lane that sees `wasm32`-only code. The

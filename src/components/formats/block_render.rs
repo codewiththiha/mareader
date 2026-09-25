@@ -87,7 +87,11 @@ pub fn BlockView(
     // The tail of a split paragraph drops its paragraph space (see
     // `reflow_core::block::subdivide_with`); the class does exactly that, for
     // both formats, from here.
-    let class = if block.continuation { "tx-block tx-cont" } else { "tx-block" };
+    let class = if block.continuation {
+        "tx-block tx-cont"
+    } else {
+        "tx-block"
+    };
     // The id is the lookup half of the pair the attribute is the identity half
     // of: `data-block-index` is what the engine's selection tracker walks up
     // to, the id is what the gloss projection resolves a mark's block with,

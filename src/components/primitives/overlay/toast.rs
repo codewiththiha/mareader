@@ -75,10 +75,7 @@ fn tone_classes(tone: ToastTone) -> (&'static str, IconName) {
             "border-red-400/50 bg-red-950/95 text-red-100",
             IconName::Close,
         ),
-        ToastTone::Undo => (
-            "border-line bg-surface text-ink",
-            IconName::Undo,
-        ),
+        ToastTone::Undo => ("border-line bg-surface text-ink", IconName::Undo),
     }
 }
 

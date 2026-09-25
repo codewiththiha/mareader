@@ -11,7 +11,7 @@ use library_core::ledger;
 use library_core::shelf::{self as shelves_ops};
 
 use super::claim::gate_root;
-use super::gate::{proceed_folder, RootPlan};
+use super::gate::{RootPlan, proceed_folder};
 use crate::services::library::arrange::{self, ReadingData};
 use crate::state::AppState;
 
@@ -30,12 +30,7 @@ pub(crate) fn replace_shelf_with_folder(
     });
 }
 
-fn sweep_and_walk_into(
-    state: AppState,
-    root: String,
-    opts: FolderOpts,
-    existing_id: String,
-) {
+fn sweep_and_walk_into(state: AppState, root: String, opts: FolderOpts, existing_id: String) {
     let doomed: Vec<String> = {
         let (rows, shelves) = state.library.snapshot_rows();
         shelves_ops::members_of(&rows, &shelves, &existing_id)

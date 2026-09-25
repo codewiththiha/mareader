@@ -194,7 +194,10 @@ impl CopyAsk {
                 UNTOUCHED.to_string(),
             ],
             (true, _) => vec![
-                format!("Moving it out stores its {cost}; the copy lands as “{}”.", copies[0]),
+                format!(
+                    "Moving it out stores its {cost}; the copy lands as “{}”.",
+                    copies[0]
+                ),
                 UNTOUCHED.to_string(),
             ],
             (false, 0) => vec![
@@ -421,7 +424,9 @@ fn ground_of(state: AppState, ids: &[String]) -> Option<String> {
     let books = state.library.books.get_untracked();
     let folders = state.library.folders.get_untracked();
     ids.iter().find_map(|id| {
-        let fp = find_row(&books, id).and_then(|row| row.book()).map(|b| b.fp)?;
+        let fp = find_row(&books, id)
+            .and_then(|row| row.book())
+            .map(|b| b.fp)?;
         let folder = folders
             .iter()
             .find(|f| f.mode().reads_in_place() && f.placed.contains(&fp))?;

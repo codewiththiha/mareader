@@ -39,7 +39,12 @@ pub(crate) mod fixture {
 
     /// An appearance with only the tint dial set; everything else default.
     pub(crate) fn tinted(base: BaseMode, hue: u16, strength: u8) -> Appearance {
-        Appearance { base, tint_hue: hue, tint_strength: strength, ..Default::default() }
+        Appearance {
+            base,
+            tint_hue: hue,
+            tint_strength: strength,
+            ..Default::default()
+        }
     }
 
     /// (L, C, H) of an emitted colour literal.
@@ -47,4 +52,3 @@ pub(crate) mod fixture {
         parse_color(value).unwrap_or_else(|| panic!("not a colour this reader emits: {value}"))
     }
 }
-

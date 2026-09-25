@@ -5,9 +5,9 @@
 
 use leptos::prelude::*;
 
-use reader_core::format::Format;
-use reader_core::filename::document_title;
 use pdf_engine::types::{OpenResult, PageSize};
+use reader_core::filename::document_title;
+use reader_core::format::Format;
 
 use super::enter;
 use crate::state::AppState;
@@ -60,7 +60,12 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
         .content
         .metrics
         .intrinsic
-        .set(intrinsic_sizes(&open.page_widths, &open.page_heights, &page1, num_pages));
+        .set(intrinsic_sizes(
+            &open.page_widths,
+            &open.page_heights,
+            &page1,
+            num_pages,
+        ));
 
     // Gloss highlights for THIS document, loaded where the reflowable tail
     // loads them: before anything mounts, so the first painted page already
@@ -85,7 +90,13 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // have the zoom coordinator anchor against a stale column on the first
     // gesture. ReaderPage re-seeds them from the intrinsic page sizes at the
     // current scale.
-    state.reader.document.content.metrics.css_heights.set(Vec::new());
+    state
+        .reader
+        .document
+        .content
+        .metrics
+        .css_heights
+        .set(Vec::new());
     // The seed scale comes from the step both open tails share: the same
     // geometry the first live refit will use, including the stream exception
     // that has no page to fit.

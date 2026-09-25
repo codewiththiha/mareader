@@ -1,18 +1,18 @@
 use super::asking::{CopyAnswer, CopyAsk, books_the_rung_takes};
 use super::moves::{insert_many, place_many, reorder_root};
-use super::shelves::delete_shelf;
 use super::shelf_departure::{
     ReturnPath, departing_book_ids, departing_sets, return_path, target_is_family,
 };
+use super::shelves::delete_shelf;
 use super::*;
 use std::collections::{BTreeMap, HashSet};
 
 use leptos::prelude::*;
 
 use crate::state::AppState;
-use library_core::book::{find_book_mut, Row};
+use library_core::book::{Row, find_book_mut};
 use library_core::folder::Tombstone;
-use library_core::shelf::{Shelf, ALL_SHELF};
+use library_core::shelf::{ALL_SHELF, Shelf};
 
 use library_core::book::{Book, Fingerprint, Origin};
 use library_core::folder::WatchedFolder;
@@ -116,7 +116,10 @@ fn a_bulk_move_to_the_root_removes_each_clean_row_from_every_shelf() {
             .all(|shelf| !shelf.books.iter().any(|id| id == "a" || id == "b")),
         "a move to All uses the same everywhere-removal as a single-row move"
     );
-    assert_eq!(ids(&state.library.books.get_untracked()), vec!["c", "d", "a", "b"]);
+    assert_eq!(
+        ids(&state.library.books.get_untracked()),
+        vec!["c", "d", "a", "b"]
+    );
 }
 
 #[test]
@@ -272,7 +275,11 @@ fn a_rung_the_reader_deleted_is_ground_the_book_has_left() {
 #[test]
 fn a_rung_that_already_left_its_tree_owes_no_second_copy() {
     let mut shelves = tree();
-    shelves.push(library_core::testkit::departed_shelf("moved", &[], Some("fic")));
+    shelves.push(library_core::testkit::departed_shelf(
+        "moved",
+        &[],
+        Some("fic"),
+    ));
     let folders = vec![reading_folder()];
     assert!(
         !library_core::shelf::departs_on_move(&shelves, &folders, "moved", None),
@@ -358,7 +365,12 @@ fn a_departure_s_landing_does_not_bind_the_log_it_just_wrote() {
     let owner = Owner::new();
     owner.set();
     let state = AppState::default();
-    let mut rows = vec![stored_at("b1", "/books/Fiction/SciFi/dune.md", "/store/b1.md", 9)];
+    let mut rows = vec![stored_at(
+        "b1",
+        "/books/Fiction/SciFi/dune.md",
+        "/store/b1.md",
+        9,
+    )];
     find_book_mut(&mut rows, "b1").unwrap().title = Some("Dune".to_string());
     state.library.books.set(rows);
     state
@@ -367,17 +379,19 @@ fn a_departure_s_landing_does_not_bind_the_log_it_just_wrote() {
         .set(vec![folder_shelf("shelf2", "f1", "Fiction")]);
     state.library.folders.set(vec![folder_with_moved_log()]);
     let bound = |state: AppState| {
-        state.library.folders.with_untracked(|folders| {
-            folders[0].ignored[0].returned_row.is_some()
-        })
+        state
+            .library
+            .folders
+            .with_untracked(|folders| folders[0].ignored[0].returned_row.is_some())
     };
 
     // The shape of a return without being one: binding here would spend the log on the row that just left.
     move_row(state, "b1", "shelf2", None, Departed::ThisGesture);
     assert!(!bound(state), "a departure is not a return");
-    let filed = state.library.shelves.with_untracked(|shelves| {
-        shelves[0].books.iter().any(|id| id == "b1")
-    });
+    let filed = state
+        .library
+        .shelves
+        .with_untracked(|shelves| shelves[0].books.iter().any(|id| id == "b1"));
     assert!(filed, "and the move itself still happened");
 
     move_row(state, "b1", "shelf2", None, Departed::No);
@@ -410,7 +424,13 @@ fn own(id: &str, name: &str, parent: Option<&str>, books: &[&str]) -> Shelf {
     }
 }
 
-fn rung(id: &str, folder_id: &str, rel: Option<&str>, parent: Option<&str>, books: &[&str]) -> Shelf {
+fn rung(
+    id: &str,
+    folder_id: &str,
+    rel: Option<&str>,
+    parent: Option<&str>,
+    books: &[&str],
+) -> Shelf {
     Shelf {
         kind: ShelfKind::Folder {
             folder_id: folder_id.to_string(),
@@ -424,7 +444,13 @@ fn tree() -> Vec<Shelf> {
     vec![
         rung("r", "f1", None, None, &["top", "shown2"]),
         rung("fic", "f1", Some("Fiction"), Some("r"), &["mid"]),
-        rung("sf", "f1", Some("Fiction/SciFi"), Some("fic"), &["deep", "shown2", "loose", "kept"]),
+        rung(
+            "sf",
+            "f1",
+            Some("Fiction/SciFi"),
+            Some("fic"),
+            &["deep", "shown2", "loose", "kept"],
+        ),
         own("mine", "Mine", Some("fic"), &[]),
         own("elsewhere", "Elsewhere", None, &[]),
     ]
@@ -449,7 +475,11 @@ fn a_departing_rung_carries_the_books_standing_on_the_rungs_it_takes() {
     assert!(subtree.contains("sf"));
     assert!(rungs.contains("sf"));
     let ids = departing_book_ids(&rows(), &shelves, &folder, &rungs, &subtree);
-    assert_eq!(ids, vec!["deep".to_string()], "only the book whose OWN rung is the one leaving");
+    assert_eq!(
+        ids,
+        vec!["deep".to_string()],
+        "only the book whose OWN rung is the one leaving"
+    );
 }
 
 #[test]
@@ -458,9 +488,18 @@ fn a_book_shown_on_a_departing_rung_keeps_its_link_when_its_ground_stays() {
     let folder = reading_folder();
     // "shown2" is a member of "sf" below it, but its address stands on the ROOT rung, which is not departing.
     let (subtree, rungs) = departing_sets(&shelves, "f1", "fic");
-    assert!(subtree.contains("sf"), "the subtree rides with the shelf the hand named");
-    assert!(subtree.contains("mine"), "and the reader's own shelf inside it rides too");
-    assert!(!subtree.contains("r"), "the rung above is not part of the ride");
+    assert!(
+        subtree.contains("sf"),
+        "the subtree rides with the shelf the hand named"
+    );
+    assert!(
+        subtree.contains("mine"),
+        "and the reader's own shelf inside it rides too"
+    );
+    assert!(
+        !subtree.contains("r"),
+        "the rung above is not part of the ride"
+    );
     let ids = departing_book_ids(&rows(), &shelves, &folder, &rungs, &subtree);
     assert_eq!(
         ids,
@@ -527,7 +566,9 @@ fn the_ask_names_the_copies_the_level_s_next_free_names() {
         ask.lines[0]
     );
     assert!(
-        ask.options.iter().all(|one| one.answer != CopyAnswer::WithoutCopies),
+        ask.options
+            .iter()
+            .all(|one| one.answer != CopyAnswer::WithoutCopies),
         "a reader's own shelf is nobody's family, so the drop owes no way home"
     );
 }
@@ -560,11 +601,36 @@ fn a_displaced_folder_s_root_shelf_goes_home_by_the_fold() {
         }
         _ => panic!("the fold is a displaced root shelf's way home"),
     }
-    assert!(target_is_family(&shelves, &folders, Some("fic"), "/books/Fiction/SciFi"));
-    assert!(target_is_family(&shelves, &folders, Some("r"), "/books/Fiction/SciFi"));
-    assert!(!target_is_family(&shelves, &folders, Some("mine"), "/books/Fiction/SciFi"));
-    assert!(!target_is_family(&shelves, &folders, None, "/books/Fiction/SciFi"));
-    assert!(!target_is_family(&shelves, &folders, Some("gone"), "/books/Fiction/SciFi"));
+    assert!(target_is_family(
+        &shelves,
+        &folders,
+        Some("fic"),
+        "/books/Fiction/SciFi"
+    ));
+    assert!(target_is_family(
+        &shelves,
+        &folders,
+        Some("r"),
+        "/books/Fiction/SciFi"
+    ));
+    assert!(!target_is_family(
+        &shelves,
+        &folders,
+        Some("mine"),
+        "/books/Fiction/SciFi"
+    ));
+    assert!(!target_is_family(
+        &shelves,
+        &folders,
+        None,
+        "/books/Fiction/SciFi"
+    ));
+    assert!(!target_is_family(
+        &shelves,
+        &folders,
+        Some("gone"),
+        "/books/Fiction/SciFi"
+    ));
 }
 
 #[test]
@@ -572,20 +638,13 @@ fn an_off_seat_rung_goes_home_by_the_reseat_and_a_seated_one_is_home() {
     let (shelves, folders) = family_state();
     assert!(return_path(&shelves, &folders, "fic").is_none());
     let mut off = shelves.clone();
-    off.iter_mut()
-        .find(|s| s.id == "fic")
-        .unwrap()
-        .parent = Some("mine".to_string());
+    off.iter_mut().find(|s| s.id == "fic").unwrap().parent = Some("mine".to_string());
     match return_path(&off, &folders, "fic") {
         Some(ReturnPath::Reseat { seat }) => assert_eq!(seat.as_deref(), Some("r")),
         _ => panic!("the reseat is an off-seat rung's way home"),
     }
     let mut lifted = shelves.clone();
-    lifted
-        .iter_mut()
-        .find(|s| s.id == "r")
-        .unwrap()
-        .parent = Some("mine".to_string());
+    lifted.iter_mut().find(|s| s.id == "r").unwrap().parent = Some("mine".to_string());
     match return_path(&lifted, &folders, "r") {
         Some(ReturnPath::Reseat { seat }) => assert_eq!(seat, None),
         _ => panic!("the root's seat is the library's own level"),
@@ -630,15 +689,26 @@ fn taking_a_rung_apart_brings_its_books_up_one_level_inside_the_tree() {
     delete_shelf(state, "two");
 
     let shelves = state.library.shelves.get_untracked();
-    assert!(shelves.iter().all(|s| s.id != "two"), "one level, and only that one");
-    let one = shelves.iter().find(|s| s.id == "one").expect("the level above it stands");
+    assert!(
+        shelves.iter().all(|s| s.id != "two"),
+        "one level, and only that one"
+    );
+    let one = shelves
+        .iter()
+        .find(|s| s.id == "one")
+        .expect("the level above it stands");
     assert_eq!(
         one.books,
         vec!["b1".to_string(), "b2".to_string()],
         "the books come up exactly one level"
     );
     assert_eq!(
-        state.library.folder("f1").expect("the row").shelf_map.get("1st/2nd"),
+        state
+            .library
+            .folder("f1")
+            .expect("the row")
+            .shelf_map
+            .get("1st/2nd"),
         None,
         "and the folder's map lets the rung go"
     );
@@ -655,7 +725,10 @@ fn the_level_below_a_hole_still_hangs_inside_the_tree() {
     delete_shelf(state, "two");
 
     let shelves = state.library.shelves.get_untracked();
-    let root = shelves.iter().find(|s| s.id == "root").expect("the tree's own rung");
+    let root = shelves
+        .iter()
+        .find(|s| s.id == "root")
+        .expect("the tree's own rung");
     assert_eq!(
         root.books,
         vec!["b0".to_string(), "b1".to_string(), "b2".to_string()],
@@ -677,7 +750,12 @@ fn a_level_holding_books_read_in_place_asks_before_it_comes_apart() {
 
     ask_shelf_apart(state, "two");
 
-    let ask = state.library.copy_ask.ask.get_untracked().expect("the question is up");
+    let ask = state
+        .library
+        .copy_ask
+        .ask
+        .get_untracked()
+        .expect("the question is up");
     assert_eq!(ask.action, "Take shelf apart");
     assert!(
         ask.lines[0].contains("The 2 books read in place here"),
@@ -689,11 +767,18 @@ fn a_level_holding_books_read_in_place_asks_before_it_comes_apart() {
         "and it names the level the reader picked"
     );
     assert!(
-        ask.options.iter().any(|one| one.answer == CopyAnswer::Copy && one.primary),
+        ask.options
+            .iter()
+            .any(|one| one.answer == CopyAnswer::Copy && one.primary),
         "a level read in place comes apart as copies, and the copies are what the button offers"
     );
     assert!(
-        state.library.shelves.get_untracked().iter().any(|s| s.id == "two"),
+        state
+            .library
+            .shelves
+            .get_untracked()
+            .iter()
+            .any(|s| s.id == "two"),
         "nothing is gone before the reader answers"
     );
 
@@ -704,7 +789,12 @@ fn a_level_holding_books_read_in_place_asks_before_it_comes_apart() {
         "the sheet closes with the answer"
     );
     assert!(
-        state.library.shelves.get_untracked().iter().any(|s| s.id == "two"),
+        state
+            .library
+            .shelves
+            .get_untracked()
+            .iter()
+            .any(|s| s.id == "two"),
         "and a question the reader backed out of leaves the tree alone"
     );
 }
@@ -757,7 +847,14 @@ fn a_level_the_library_already_stores_comes_apart_without_a_question() {
         state.library.copy_ask.ask.get_untracked().is_none(),
         "nothing to copy, nothing to ask"
     );
-    assert!(state.library.shelves.get_untracked().iter().all(|s| s.id != "sf"));
+    assert!(
+        state
+            .library
+            .shelves
+            .get_untracked()
+            .iter()
+            .all(|s| s.id != "sf")
+    );
 }
 
 #[test]
@@ -772,9 +869,17 @@ fn a_level_with_nothing_read_in_place_asks_nothing() {
     ask_shelf_apart(state, "one");
     assert!(state.library.copy_ask.ask.get_untracked().is_none());
     let shelves = state.library.shelves.get_untracked();
-    assert!(shelves.iter().all(|s| s.id != "one"), "the empty level comes apart at once");
+    assert!(
+        shelves.iter().all(|s| s.id != "one"),
+        "the empty level comes apart at once"
+    );
     assert_eq!(
-        shelves.iter().find(|s| s.id == "two").expect("the rung below").parent.as_deref(),
+        shelves
+            .iter()
+            .find(|s| s.id == "two")
+            .expect("the rung below")
+            .parent
+            .as_deref(),
         Some("root"),
         "and it brings the level below it up inside the tree"
     );
@@ -782,7 +887,14 @@ fn a_level_with_nothing_read_in_place_asks_nothing() {
     state.library.shelves.set(tree());
     ask_shelf_apart(state, "mine");
     assert!(state.library.copy_ask.ask.get_untracked().is_none());
-    assert!(state.library.shelves.get_untracked().iter().all(|s| s.id != "mine"));
+    assert!(
+        state
+            .library
+            .shelves
+            .get_untracked()
+            .iter()
+            .all(|s| s.id != "mine")
+    );
 }
 
 #[test]
@@ -801,7 +913,14 @@ fn the_root_rung_has_nothing_above_it_to_come_up_to() {
         shelves.iter().all(|s| !s.books.contains(&"b0".to_string())),
         "the root's books stand on no rung"
     );
-    let two = shelves.iter().find(|s| s.id == "two").expect("the rung below stands");
+    let two = shelves
+        .iter()
+        .find(|s| s.id == "two")
+        .expect("the rung below stands");
     assert_eq!(two.books, vec!["b1".to_string(), "b2".to_string()]);
-    assert_eq!(two.parent.as_deref(), Some("one"), "and still hangs inside the tree");
+    assert_eq!(
+        two.parent.as_deref(),
+        Some("one"),
+        "and still hangs inside the tree"
+    );
 }

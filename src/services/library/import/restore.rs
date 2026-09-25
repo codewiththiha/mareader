@@ -5,20 +5,20 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{add_book, book_rows, find_row, Book, Fingerprint, Origin};
-use library_core::folder::{self as folder_ops, rel_under, Tombstone};
+use library_core::book::{Book, Fingerprint, Origin, add_book, book_rows, find_row};
+use library_core::folder::{self as folder_ops, Tombstone, rel_under};
 use library_core::id;
 use library_core::ledger;
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops};
 
 use super::files::{found_from_check, land_file, settle_ledger};
-use super::tasks::{fail, finish_task, push_task, task_id, FailMode};
 use super::root_shelf_of;
-use crate::services::library::covers;
+use super::tasks::{FailMode, fail, finish_task, push_task, task_id};
 use crate::services::library as ipc;
-use crate::state::library::ImportTask;
+use crate::services::library::covers;
 use crate::state::AppState;
+use crate::state::library::ImportTask;
 use crate::time::now_ms;
 
 /// A file whose log binds itself to a living row is an import that succeeds
@@ -62,8 +62,7 @@ pub(super) fn take_represented(
 pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint) {
     let taken = state.library.folders.with_untracked(|folders| {
         folder_ops::find(folders, &folder_id).and_then(|f| {
-            ledger::find_tombstone(f, &fp)
-                .map(|entry| (f.opts.clone(), entry.clone()))
+            ledger::find_tombstone(f, &fp).map(|entry| (f.opts.clone(), entry.clone()))
         })
     });
     let Some((opts, entry)) = taken else {
@@ -110,13 +109,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
 
         let mut book = Book {
             title: entry.title.clone(),
-            ..Book::new(
-                book_id,
-                found.fp,
-                found.admitted_format(),
-                origin,
-                now,
-            )
+            ..Book::new(book_id, found.fp, found.admitted_format(), origin, now)
         };
         if opts.mode().copies_files() {
             book.adopt_measurement(measured);
@@ -180,8 +173,14 @@ pub(super) enum CoveredFate {
     /// An explicit import spends the log the way a folder walk does: the book
     /// comes back as the folder's own linked book, in its place, wearing the
     /// name the shelf showed.
-    Restore { folder_id: String, stone: Tombstone },
-    Ask { folder_id: String, row_id: String },
+    Restore {
+        folder_id: String,
+        stone: Tombstone,
+    },
+    Ask {
+        folder_id: String,
+        row_id: String,
+    },
 }
 
 /// A living row at the file's very address answers first — the walk's own

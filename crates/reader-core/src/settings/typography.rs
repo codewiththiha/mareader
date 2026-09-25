@@ -164,8 +164,13 @@ impl SystemFont {
 
     pub fn family(self) -> TextFamily {
         match self {
-            Self::UiSerif | Self::Georgia | Self::TimesNewRoman | Self::Palatino
-            | Self::Garamond | Self::Baskerville | Self::Charter => TextFamily::Serif,
+            Self::UiSerif
+            | Self::Georgia
+            | Self::TimesNewRoman
+            | Self::Palatino
+            | Self::Garamond
+            | Self::Baskerville
+            | Self::Charter => TextFamily::Serif,
             Self::UiMono | Self::CourierNew | Self::Menlo | Self::Consolas | Self::Monaco => {
                 TextFamily::Monospace
             }
@@ -464,7 +469,10 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: TextSettings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
-        assert!(json.contains("\"default_font\":\"system:baskerville\""), "{json}");
+        assert!(
+            json.contains("\"default_font\":\"system:baskerville\""),
+            "{json}"
+        );
         assert!(json.contains("\"mono_font\":\"system:consolas\""), "{json}");
         assert!(json.contains("\"serif_font\":\"builtin:future\""), "{json}");
     }
@@ -496,7 +504,11 @@ mod tests {
     #[test]
     fn column_align_carries_labels_and_classes() {
         assert_eq!(TextColumnAlign::default(), TextColumnAlign::Center);
-        let all = [TextColumnAlign::Left, TextColumnAlign::Center, TextColumnAlign::Right];
+        let all = [
+            TextColumnAlign::Left,
+            TextColumnAlign::Center,
+            TextColumnAlign::Right,
+        ];
         // Every choice names itself, and positions with its own class.
         for (i, a) in all.iter().enumerate() {
             assert_eq!(a.label(), ["Left", "Center", "Right"][i]);

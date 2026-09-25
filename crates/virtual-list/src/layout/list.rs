@@ -59,7 +59,6 @@ impl<B: StripBackend> ListLayout<B> {
     pub fn gap(&self) -> f64 {
         self.gap
     }
-
 }
 
 impl<B: StripBackend> Layout for ListLayout<B> {
@@ -120,7 +119,8 @@ impl<B: StripBackend> Layout for ListLayout<B> {
         budget: Budget,
         hint: &mut usize,
     ) -> Option<Window> {
-        self.backend.window_hinted(scroll, viewport.main, budget, hint)
+        self.backend
+            .window_hinted(scroll, viewport.main, budget, hint)
     }
 
     #[inline]
@@ -182,7 +182,11 @@ mod tests {
         let mut hint = 0usize;
         let mut pos = 0.0;
         while pos < l.total() {
-            assert_eq!(l.index_at(pos), l.index_at_hinted(pos, &mut hint), "index_at {pos}");
+            assert_eq!(
+                l.index_at(pos),
+                l.index_at_hinted(pos, &mut hint),
+                "index_at {pos}"
+            );
             pos += 17.0;
         }
         let budget = Budget::items(2, 64);

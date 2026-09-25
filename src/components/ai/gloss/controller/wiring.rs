@@ -19,15 +19,15 @@ use leptos::prelude::*;
 use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::mark_layer::GLOSS_OPEN_EVENT;
 use crate::components::ai::gloss::phase::{AiPhase, GlossPhase};
-use app_chrome::hooks::use_viewport::viewport_size;
 use crate::components::primitives::motion::spring::SpringBox;
 use crate::services::ai::invoke_explain_word;
 use crate::state::AppState;
+use app_chrome::hooks::use_viewport::viewport_size;
 
+use super::GlossController;
 use super::content::GlossContent;
 use super::geometry::GlossGeometry;
 use super::open::GlossOpen;
-use super::GlossController;
 
 /// Every open (stroke click OR Explain pill) arrives as a CustomEvent that
 /// carries the mark and bumps the nonce. Tracking `request` is what makes a
@@ -237,13 +237,9 @@ pub fn use_open_effect(
                 let mark = begin_open(&state, ctrl, &watch, &spring, viewport, pending);
                 match ctrl.cache.get(&mark.id) {
                     Some(info) => serve_cached(ctrl, processing_id, info),
-                    None => begin_fetch(
-                        ctrl.content,
-                        ctrl.geometry,
-                        ctrl.open,
-                        processing_id,
-                        mark,
-                    ),
+                    None => {
+                        begin_fetch(ctrl.content, ctrl.geometry, ctrl.open, processing_id, mark)
+                    }
                 }
             }
         }
@@ -275,7 +271,12 @@ mod tests {
     #[test]
     fn no_pending_mark_means_a_stale_flag() {
         assert_eq!(
-            open_verdict(None, Some(&mark(3, "word", 10.0)), GlossPhase::Expanded, true),
+            open_verdict(
+                None,
+                Some(&mark(3, "word", 10.0)),
+                GlossPhase::Expanded,
+                true
+            ),
             OpenVerdict::ClearFlag
         );
     }
@@ -323,9 +324,19 @@ mod tests {
         let a = mark(3, "word", 10.0);
         let b = mark(3, "other", 80.0);
         let c = mark(4, "word", 10.0);
-        for gphase in [GlossPhase::Processing, GlossPhase::Expanded, GlossPhase::Compact] {
-            assert_eq!(open_verdict(Some(&b), Some(&a), gphase, true), OpenVerdict::Open);
-            assert_eq!(open_verdict(Some(&c), Some(&a), gphase, true), OpenVerdict::Open);
+        for gphase in [
+            GlossPhase::Processing,
+            GlossPhase::Expanded,
+            GlossPhase::Compact,
+        ] {
+            assert_eq!(
+                open_verdict(Some(&b), Some(&a), gphase, true),
+                OpenVerdict::Open
+            );
+            assert_eq!(
+                open_verdict(Some(&c), Some(&a), gphase, true),
+                OpenVerdict::Open
+            );
         }
     }
 

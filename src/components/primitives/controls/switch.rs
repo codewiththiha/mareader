@@ -18,7 +18,8 @@ pub fn Switch(
         }
     };
     let knob = move || {
-        let base = "inline-block h-4 w-4 transform rounded-full bg-white/90 shadow transition-transform";
+        let base =
+            "inline-block h-4 w-4 transform rounded-full bg-white/90 shadow transition-transform";
         if checked.get() {
             format!("{base} translate-x-6")
         } else {

@@ -56,8 +56,7 @@ pub fn Viewer(
     virtualizer: Virtualizer,
     /// The horizontal strip's virtualizer (same role when mode is scroll-horizontal).
     h_virtualizer: Virtualizer,
-    #[prop(into)]
-    progress_visible: Signal<bool>,
+    #[prop(into)] progress_visible: Signal<bool>,
 ) -> impl IntoView {
     // The virtualizers are parked in local (non-thread-safe) storage so the
     // reactive dispatch closure only has to capture Send-friendly handles,

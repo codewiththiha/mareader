@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 
-use library_core::book::{add_book, book_rows, book_rows_mut, Book, Fingerprint, Origin, Row};
+use library_core::book::{Book, Fingerprint, Origin, Row, add_book, book_rows, book_rows_mut};
 use library_core::conflict::Arrival;
 use library_core::folder::{FolderMode, FolderOpts, WatchedFolder};
 use library_core::id;
@@ -17,20 +17,20 @@ use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf};
 
-use super::copy::{copy_batch, Landed};
-use super::gate::{run_fold, seed_member_rungs, Continuation, Fold, RootPlan};
+use super::copy::{Landed, copy_batch};
+use super::gate::{Continuation, Fold, RootPlan, run_fold, seed_member_rungs};
 use super::kept;
 use super::reshape::{reshape_row, reshape_the_tree, shape_moved, write_shape};
 use super::restore::take_represented;
-use super::tasks::{fail, finish_task, push_task, run_total, update_task, FailMode};
-use super::{rel_of, rung_label, Asked};
+use super::tasks::{FailMode, fail, finish_task, push_task, run_total, update_task};
+use super::{Asked, rel_of, rung_label};
+use crate::services::library as ipc;
 use crate::services::library::conflict::{self, ConflictAsk};
 use crate::services::library::covers;
-use crate::services::library::reveal;
 use crate::services::library::folder_label;
-use crate::services::library as ipc;
-use crate::state::library::{ImportTask, NoteKind};
+use crate::services::library::reveal;
 use crate::state::AppState;
+use crate::state::library::{ImportTask, NoteKind};
 use crate::time::now_ms;
 
 /// One spelling for the two loops a folder run mints through — the books it
@@ -55,13 +55,7 @@ pub(super) fn chain_for(
             _ => rung_label(rung, root),
         },
         |rung, id, name, parent| {
-            let mut minted = Shelf::folder_shelf(
-                id,
-                name,
-                &folder_id,
-                rel_of(rung),
-                parent,
-            );
+            let mut minted = Shelf::folder_shelf(id, name, &folder_id, rel_of(rung), parent);
             // Minted by the scan, so the scan owns its rung — until a hand
             // moves it, which is `reparent`'s mark to clear.
             minted.manual_parent = merged;
@@ -202,9 +196,7 @@ fn planned_placements(
     if plan.rename.is_none() && plan.into.is_none() {
         return (Vec::new(), Vec::new());
     }
-    adds.retain(|f| {
-        !snap.registry.contains_key(&f.fp) || snap.copy_paths.contains(&f.path)
-    });
+    adds.retain(|f| !snap.registry.contains_key(&f.fp) || snap.copy_paths.contains(&f.path));
     let shelves_now = state.library.shelves.get_untracked();
     let mut replacements = Vec::new();
     let mut asks = Vec::new();
@@ -241,13 +233,15 @@ fn screen_merge_adds(
     };
     let shelves_now = state.library.shelves.get_untracked();
     let mut asks = Vec::new();
-    adds.retain(|file| match merge_collision(snap, &shelves_now, folder, &into, file) {
-        Some(ask) => {
-            asks.push(ask);
-            false
-        }
-        None => true,
-    });
+    adds.retain(
+        |file| match merge_collision(snap, &shelves_now, folder, &into, file) {
+            Some(ask) => {
+                asks.push(ask);
+                false
+            }
+            None => true,
+        },
+    );
     asks
 }
 
@@ -346,9 +340,7 @@ pub(super) fn mint_walked_row(
     new_shelves: &mut Vec<Shelf>,
 ) -> Minted {
     let own_copy = landing.copy_paths.contains(&file.path);
-    if !own_copy
-        && let Some(existing) = book_rows_mut(books).find(|b| b.path() == file.path)
-    {
+    if !own_copy && let Some(existing) = book_rows_mut(books).find(|b| b.path() == file.path) {
         existing.heal(file.fp);
         folder.mark_placed(file.fp);
         return Minted::Healed;
@@ -386,9 +378,8 @@ pub(super) fn mint_walked_row(
     // one-row-per-fingerprint rule is right for a walk and wrong for the
     // second instance the reader just asked for.
     let beside_its_own_copy = landing.mode.reads_in_place()
-        && book_rows(books).any(|b| {
-            !b.independent && b.fp == file.fp && b.origin.is_store_copy_of(&file.path)
-        });
+        && book_rows(books)
+            .any(|b| !b.independent && b.fp == file.fp && b.origin.is_store_copy_of(&file.path));
     if own_copy {
         book.independent = true;
         book.adopt_measurement(own_measurement);
@@ -488,10 +479,7 @@ fn plan_the_walk(
     // The ledger answered Skip for the copy run's own files — their content
     // is known — but the run owes each a book of its own.
     if !copy_paths.is_empty() {
-        for file in found
-            .iter()
-            .filter(|f| copy_paths.contains(&f.path))
-        {
+        for file in found.iter().filter(|f| copy_paths.contains(&f.path)) {
             if !adds.iter().any(|a| a.path == file.path) {
                 adds.push(file.clone());
             }
@@ -576,7 +564,10 @@ fn plan_the_walk(
 /// name a rung the first minted, and the id is what makes a rung the same
 /// rung.
 pub(super) fn page_shelves(state: AppState, minted: Vec<Shelf>) {
-    state.library.shelves.update(|shelves| page_into(shelves, minted));
+    state
+        .library
+        .shelves
+        .update(|shelves| page_into(shelves, minted));
 }
 
 /// [`page_shelves`] for a caller already inside a shelf write: the paging
@@ -701,7 +692,9 @@ pub(super) async fn run_folder(
     let moved_shape = shape_moved(
         &folders,
         &root,
-        plan.fold.as_ref().map(|Fold { tree_id, .. }| tree_id.as_str()),
+        plan.fold
+            .as_ref()
+            .map(|Fold { tree_id, .. }| tree_id.as_str()),
         &answered,
         &opts,
     );
@@ -734,7 +727,15 @@ pub(super) async fn run_folder(
         seed_member_rungs(state, &mut folder, &found);
     }
 
-    let mut walk = plan_the_walk(state, &mut folder, &mut books, &mut found, asked, &plan, quiet);
+    let mut walk = plan_the_walk(
+        state,
+        &mut folder,
+        &mut books,
+        &mut found,
+        asked,
+        &plan,
+        quiet,
+    );
 
     if walk.adds.is_empty()
         && walk.relinked == 0
@@ -798,12 +799,14 @@ pub(super) async fn run_folder(
     // rescan concurrently, and two tasks that both counted the library as it was BEFORE their walks
     // would mint the same id twice.
     let adds = std::mem::take(&mut walk.adds);
-    let pending: Vec<(String, &FoundFile)> = adds
-        .iter()
-        .map(|file| (id::next_id(now), file))
-        .collect();
+    let pending: Vec<(String, &FoundFile)> =
+        adds.iter().map(|file| (id::next_id(now), file)).collect();
     let replaced = walk.replacements.len();
-    let expected = run_total(pending.len() as u32, walk.relinked + walk.healed + replaced, 0);
+    let expected = run_total(
+        pending.len() as u32,
+        walk.relinked + walk.healed + replaced,
+        0,
+    );
     if quiet {
         let mut card = ImportTask::new(task.clone(), folder_label(&root));
         card.total = expected;
@@ -918,10 +921,10 @@ pub(super) async fn run_folder(
 /// same reason the books are — two imports running at once must not each replace
 /// the other's folder row.
 pub(super) fn write_folder(state: AppState, folder: WatchedFolder) {
-    state.library.folders.update(|folders| {
-        match folders.iter().position(|f| f.id == folder.id) {
+    state.library.folders.update(
+        |folders| match folders.iter().position(|f| f.id == folder.id) {
             Some(at) => folders[at] = folder,
             None => folders.push(folder),
-        }
-    });
+        },
+    );
 }

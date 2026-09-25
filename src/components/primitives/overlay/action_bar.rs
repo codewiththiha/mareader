@@ -13,10 +13,8 @@ pub fn ActionBar(
     /// Extra classes on the pill (positioning, surface name…).
     #[prop(optional, into)]
     class: Option<String>,
-    #[prop(default = "toolbar")]
-    role: &'static str,
-    #[prop(optional, into)]
-    aria_label: Option<String>,
+    #[prop(default = "toolbar")] role: &'static str,
+    #[prop(optional, into)] aria_label: Option<String>,
 ) -> impl IntoView {
     let base = format!(
         "fixed bottom-5 right-5 {} flex items-center gap-1 rounded-full border border-line \
@@ -34,8 +32,7 @@ pub fn ActionBar(
     // too but would pretend static strings are reactive. Only visibility is
     // actually reactive here.
     let pill_class: StoredValue<String, LocalStorage> = StoredValue::new_local(pill_class);
-    let aria_label: StoredValue<Option<String>, LocalStorage> =
-        StoredValue::new_local(aria_label);
+    let aria_label: StoredValue<Option<String>, LocalStorage> = StoredValue::new_local(aria_label);
 
     view! {
         <Show when=move || visible.get()>

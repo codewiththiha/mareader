@@ -128,8 +128,14 @@ mod tests {
     #[test]
     fn expiry_and_reactivation_prune() {
         let retained = vec![
-            RetainedItem { index: 0, expires_at: 500.0 },
-            RetainedItem { index: 9, expires_at: 9_000.0 },
+            RetainedItem {
+                index: 0,
+                expires_at: 500.0,
+            },
+            RetainedItem {
+                index: 9,
+                expires_at: 9_000.0,
+            },
         ];
         // At t=1000 the first has expired; 9 is alive but back in the window.
         let pruned = prune_retained(retained, window(8, 12), 1_000.0);
@@ -138,7 +144,10 @@ mod tests {
 
     #[test]
     fn unexpired_items_outside_the_window_survive_pruning() {
-        let retained = vec![RetainedItem { index: 3, expires_at: 9_000.0 }];
+        let retained = vec![RetainedItem {
+            index: 3,
+            expires_at: 9_000.0,
+        }];
         let pruned = prune_retained(retained, window(8, 12), 1_000.0);
         assert_eq!(pruned.len(), 1);
     }

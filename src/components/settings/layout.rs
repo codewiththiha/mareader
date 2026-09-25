@@ -5,17 +5,17 @@
 
 use leptos::prelude::*;
 
-use reader_core::view::ViewMode;
-use reader_core::zoom_math::FitMode;
 use reader_core::settings::{
     FloatingLabelStyle, MAX_COLUMN_WIDTH_PCT, MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
 };
+use reader_core::view::ViewMode;
+use reader_core::zoom_math::FitMode;
 
+use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::form::row::Row;
-use crate::components::settings::common::{StepperRow, StyleSelect};
 use crate::components::primitives::form::slider::Slider;
 use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::controls::switch::Switch;
+use crate::components::settings::common::{StepperRow, StyleSelect};
 use crate::state::AppState;
 
 #[component]
@@ -27,9 +27,8 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
     // the stored pref to 0 while that mode is on — so the adjuster sits
     // disabled until another mode returns. The stored value is untouched and
     // comes back with it.
-    let horizontal_mode = Signal::derive(move || {
-        state.reader.viewer.mode.get() == ViewMode::ScrollHorizontal
-    });
+    let horizontal_mode =
+        Signal::derive(move || state.reader.viewer.mode.get() == ViewMode::ScrollHorizontal);
     // A reflowable document answers to the typography and the width dials,
     // not to page chrome, and a PDF's page is the document's own: rows that
     // would only lie about what they control leave the tree entirely rather

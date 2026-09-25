@@ -17,9 +17,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::form::row::Row;
+use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::state::AppState;
 
 #[component]

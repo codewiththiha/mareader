@@ -32,7 +32,11 @@ mod tests {
 
     #[test]
     fn the_pair_is_emitted_as_unit_fractions() {
-        let a = Appearance { texture_opacity: 90, texture_scale: 150, ..Default::default() };
+        let a = Appearance {
+            texture_opacity: 90,
+            texture_scale: 150,
+            ..Default::default()
+        };
         let vars = css_vars(&a);
         assert_eq!(vars[0], ("--texture-opacity", "0.900".to_string()));
         assert_eq!(vars[1], ("--texture-scale-user", "1.500".to_string()));

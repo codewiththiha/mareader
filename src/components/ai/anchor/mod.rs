@@ -34,24 +34,24 @@
 //! re-exported, so every consumer reaches it all through
 //! `crate::components::ai::anchor`.
 
-use ai_core::gloss::{mark_id, GlossBox, GlossMark, ReflowSpot};
+use ai_core::gloss::{GlossBox, GlossMark, ReflowSpot, mark_id};
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use app_chrome::hooks::dom::by_id;
 use crate::state::ReaderState;
+use app_chrome::hooks::dom::by_id;
 
 pub mod pdf;
 pub mod reflow;
 pub mod watch;
 
-pub use pdf::{capture_selection_mark, PdfAnchorBridge};
+pub use pdf::{PdfAnchorBridge, capture_selection_mark};
 // The invalidation fingerprints are a viewer concern — what makes type move —
 // and live there now; re-exported here because every watcher and stroke layer
 // in this feature reaches for them through this module.
 pub use crate::components::viewer::refresh::{layer_refresh, no_invalidation, reflow_invalidation};
 pub use reflow::ReflowAnchorBridge;
-pub use watch::{origin_outside_band, watch_page_anchor, AnchorWatch};
+pub use watch::{AnchorWatch, origin_outside_band, watch_page_anchor};
 
 pub use ai_core::gloss::PageAnchor;
 
@@ -178,10 +178,7 @@ pub fn stroke_resolver(
             if let Some(page) = page {
                 let current = spot
                     .and_then(|s| {
-                        super::reflow_anchor::page_of_block(
-                            state.document.content.reflow,
-                            s.block,
-                        )
+                        super::reflow_anchor::page_of_block(state.document.content.reflow, s.block)
                     })
                     .unwrap_or(mark.page);
                 if current != page {

@@ -10,8 +10,8 @@ use leptos::prelude::*;
 
 use app_chrome::platform::{is_macos, uses_frameless_controls};
 use app_chrome::titlebar::root::TitleBar;
-use app_chrome::window::traffic_lights::TrafficLights;
 use app_chrome::window::WindowControls;
+use app_chrome::window::traffic_lights::TrafficLights;
 
 use crate::components::shell::controller::ShellController;
 use crate::state::AppState;
@@ -21,15 +21,15 @@ pub fn AppTitleBar(
     state: AppState,
     #[prop(into)] left: ViewFn,
     /// Centered overlay passed through to the generic title bar. Defaults to empty.
-    #[prop(into, default = ViewFn::from(|| ()))] center: ViewFn,
+    #[prop(into, default = ViewFn::from(|| ()))]
+    center: ViewFn,
     #[prop(into)] right: ViewFn,
     children: Children,
 ) -> impl IntoView {
     // The page (reader or library) provides the shell controller; the
     // library's is rail-less, which is how its bar keeps the full window
     // width, its gutter and its lights.
-    let shell = use_context::<ShellController>()
-        .expect("the page provides the shell controller");
+    let shell = use_context::<ShellController>().expect("the page provides the shell controller");
     let pinned = shell.titlebar_pinned;
     let on_pin_change = Callback::new(move |p: bool| shell.set_titlebar_pinned(p));
     // The open floating search holds the bar (like an open popover).

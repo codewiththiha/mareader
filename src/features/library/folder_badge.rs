@@ -17,11 +17,7 @@ use crate::state::AppState;
 /// `"folder-mode ml-2"` on the row); everything else about the badge is the
 /// same on both, which is the point of there being one of them.
 #[component]
-pub(crate) fn FolderBadge(
-    state: AppState,
-    shelf_id: String,
-    class: &'static str,
-) -> impl IntoView {
+pub(crate) fn FolderBadge(state: AppState, shelf_id: String, class: &'static str) -> impl IntoView {
     let content_id = shelf_id.clone();
     let content = Signal::derive(move || state.library.shelf_content_kind(&content_id));
     let mode = Signal::derive(move || state.library.shelf_mode(&shelf_id));

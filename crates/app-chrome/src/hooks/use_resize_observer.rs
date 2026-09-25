@@ -13,8 +13,8 @@ use std::rc::Rc;
 
 use leptos::html;
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 use web_sys::ResizeObserverEntry;
 
 use super::dom::by_id;
@@ -124,10 +124,14 @@ pub fn observe_content_size(
 
 /// Observe a `NodeRef` element and forward each resize entry to `on_resize`.
 /// Re-arms when the node identity changes (remounts create a fresh element).
-pub fn use_resize_observer(target: NodeRef<html::Div>, on_resize: impl Fn(ResizeObserverEntry) + 'static) {
+pub fn use_resize_observer(
+    target: NodeRef<html::Div>,
+    on_resize: impl Fn(ResizeObserverEntry) + 'static,
+) {
     let on_resize = Rc::new(on_resize);
     let observer_handle = StoredValue::new_local(None::<web_sys::ResizeObserver>);
-    let callback_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
+    let callback_handle =
+        StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
     let observed = StoredValue::new_local(None::<web_sys::Element>);
 
     Effect::new(move |_| {

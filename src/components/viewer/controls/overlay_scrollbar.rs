@@ -1,8 +1,8 @@
 //! Thin floating scrollbar that takes no layout space.
 
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
 use app_chrome::hooks::dom::by_id;
 use app_chrome::hooks::use_timeout::use_timeout_slot;

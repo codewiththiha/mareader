@@ -73,7 +73,11 @@ pub(crate) fn clamped_origin(e: GlossBox, x: f64, y: f64, vw: f64, vh: f64) -> G
         Size::new(vw, vh),
         CARD_MARGIN,
     );
-    GlossBox { x: p.x, y: p.y, ..e }
+    GlossBox {
+        x: p.x,
+        y: p.y,
+        ..e
+    }
 }
 
 /// Expanded box is always f(live_anchor) + stored_offset, so a dragged card
@@ -129,7 +133,10 @@ mod tests {
         let e = card();
         // Fully off the right/bottom: pinned to (vw - w - margin, vh - h - margin).
         let far = clamped_origin(e, 5000.0, 5000.0, 1440.0, 900.0);
-        assert_eq!((far.x, far.y), (1440.0 - e.w - CARD_MARGIN, 900.0 - e.h - CARD_MARGIN));
+        assert_eq!(
+            (far.x, far.y),
+            (1440.0 - e.w - CARD_MARGIN, 900.0 - e.h - CARD_MARGIN)
+        );
         // Fully off the left/top: pinned to the margin itself.
         let near = clamped_origin(e, -5000.0, -5000.0, 1440.0, 900.0);
         assert_eq!((near.x, near.y), (CARD_MARGIN, CARD_MARGIN));

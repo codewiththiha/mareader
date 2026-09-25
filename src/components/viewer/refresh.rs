@@ -69,13 +69,26 @@ pub fn reflow_invalidation(state: ReaderState) -> Signal<u64> {
         // `ViewMode` is `Eq` but not `Hash`, and its discriminant is all a
         // fingerprint needs.
         (state.viewer.mode.get() as u8).hash(hasher);
-        state.document.content.reflow.cut_generation.get().hash(hasher);
+        state
+            .document
+            .content
+            .reflow
+            .cut_generation
+            .get()
+            .hash(hasher);
         let geo = state.document.content.reflow.geometry.get();
         geo.content_width.to_bits().hash(hasher);
         geo.content_height.to_bits().hash(hasher);
         // The stream re-lays its blocks when the reading column's width moves
         // (a window resize, a page-margin change) without the page cut moving.
-        state.document.content.reflow.stream_total.get().to_bits().hash(hasher);
+        state
+            .document
+            .content
+            .reflow
+            .stream_total
+            .get()
+            .to_bits()
+            .hash(hasher);
         state.viewer.container_size.get().0.to_bits().hash(hasher);
     })
 }

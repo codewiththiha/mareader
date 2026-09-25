@@ -4,7 +4,7 @@
 //! duplicate-inside-read-at-place bug — a duplicated folder's books are stored
 //! even though its parent seat still says "On disk".
 
-use crate::book::{find_row, Book, Row};
+use crate::book::{Book, Row, find_row};
 
 use super::Shelf;
 
@@ -38,12 +38,12 @@ impl ContentKind {
             ContentKind::OnDisk => Some(
                 "These books stay in their folder on disk; the library only remembers where they are.",
             ),
-            ContentKind::Stored => Some(
-                "Every book here is a copy the library keeps — the folder on disk can go.",
-            ),
-            ContentKind::Mixed => Some(
-                "Some books are on disk and some are copies the library keeps.",
-            ),
+            ContentKind::Stored => {
+                Some("Every book here is a copy the library keeps — the folder on disk can go.")
+            }
+            ContentKind::Mixed => {
+                Some("Some books are on disk and some are copies the library keeps.")
+            }
         }
     }
 
@@ -178,11 +178,17 @@ mod tests {
     fn linked(id: &str, path: &str) -> Row {
         Row::Book(Book {
             id: id.to_string(),
-            fp: Fingerprint { size: 1, mtime_ms: 1, head_hash: 1 },
+            fp: Fingerprint {
+                size: 1,
+                mtime_ms: 1,
+                head_hash: 1,
+            },
             title: None,
             author: None,
             format: reader_core::format::Format::Pdf,
-            origin: Origin::Linked { src: path.to_string() },
+            origin: Origin::Linked {
+                src: path.to_string(),
+            },
             added_ms: 1,
             last_read_ms: 1,
             page: 1,
@@ -198,7 +204,11 @@ mod tests {
     fn stored(id: &str, src: &str) -> Row {
         Row::Book(Book {
             id: id.to_string(),
-            fp: Fingerprint { size: 1, mtime_ms: 1, head_hash: 1 },
+            fp: Fingerprint {
+                size: 1,
+                mtime_ms: 1,
+                head_hash: 1,
+            },
             title: None,
             author: None,
             format: reader_core::format::Format::Pdf,

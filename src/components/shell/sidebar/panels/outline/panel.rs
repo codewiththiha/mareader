@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use reader_core::outline::{active_entry, OutlineNode};
+use crate::state::ReaderState;
+use crate::state::app::SidebarMode;
 use app_chrome::hooks::dom::reveal_in_scroll_parent;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
 use app_chrome::hooks::use_window_event::use_window_event;
-use crate::state::ReaderState;
-use crate::state::app::SidebarMode;
+use reader_core::outline::{OutlineNode, active_entry};
 
 fn outline_key(index: usize, node: &OutlineNode) -> String {
     // Index is unique; page + depth keep the key readable when the list
@@ -72,7 +72,10 @@ fn reveal_attempt(
         return;
     }
     // A row with no height is not laid out yet; keep waiting.
-    let row = parent.query_selector(&outline_row_selector(idx)).ok().flatten();
+    let row = parent
+        .query_selector(&outline_row_selector(idx))
+        .ok()
+        .flatten();
     if let Some(row) = row
         && row.get_bounding_client_rect().height() > 0.0
     {
@@ -113,7 +116,10 @@ mod tests {
         assert_eq!(indent_px(1000), indent_px(10), "indent must be capped");
         for depth in 0..64 {
             let text_w = PANEL_W - indent_px(depth) - PADDING_RIGHT;
-            assert!(text_w >= MIN_TEXT_W, "depth {depth}: only {text_w}px left for the title");
+            assert!(
+                text_w >= MIN_TEXT_W,
+                "depth {depth}: only {text_w}px left for the title"
+            );
         }
     }
 }
@@ -185,7 +191,16 @@ pub fn OutlinePanel(
         let parent: web_sys::Element = parent.into();
         let attempts = Rc::new(Cell::new(0u8));
         let handle = set_timeout_with_handle(
-            move || reveal_attempt(reveal_run, my_run, reveal_slot, attempts, parent.clone(), idx),
+            move || {
+                reveal_attempt(
+                    reveal_run,
+                    my_run,
+                    reveal_slot,
+                    attempts,
+                    parent.clone(),
+                    idx,
+                )
+            },
             Duration::from_millis(REVEAL_RETRY_MS),
         )
         .ok();
@@ -197,17 +212,26 @@ pub fn OutlinePanel(
     // — the reader explicitly asked to be moved, so doing nothing because the
     // row is technically one pixel on screen would feel broken.
     Effect::new(move |_| {
-        use_window_event(crate::events::REVEAL_ACTIVE_EVENT, move |_: web_sys::Event| {
-            if sidebar.get_untracked() != SidebarMode::Outline {
-                return;
-            }
-            let Some(idx) = active.get() else { return };
-            let Some(parent) = scroller.get_untracked() else { return };
-            let parent: web_sys::Element = parent.into();
-            if let Some(row) = parent.query_selector(&outline_row_selector(idx)).ok().flatten() {
-                app_chrome::hooks::dom::center_in_scroll_parent(&row, &parent);
-            }
-        });
+        use_window_event(
+            crate::events::REVEAL_ACTIVE_EVENT,
+            move |_: web_sys::Event| {
+                if sidebar.get_untracked() != SidebarMode::Outline {
+                    return;
+                }
+                let Some(idx) = active.get() else { return };
+                let Some(parent) = scroller.get_untracked() else {
+                    return;
+                };
+                let parent: web_sys::Element = parent.into();
+                if let Some(row) = parent
+                    .query_selector(&outline_row_selector(idx))
+                    .ok()
+                    .flatten()
+                {
+                    app_chrome::hooks::dom::center_in_scroll_parent(&row, &parent);
+                }
+            },
+        );
     });
 
     view! {

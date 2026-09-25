@@ -26,6 +26,12 @@ pub(crate) mod fixture {
 
     /// A mounted origin: 40 wide, `h` tall, at (100, `y`).
     pub(crate) fn origin(y: f64, h: f64) -> Option<GlossBox> {
-        Some(GlossBox { x: 100.0, y, w: 40.0, h, r: 6.0 })
+        Some(GlossBox {
+            x: 100.0,
+            y,
+            w: 40.0,
+            h,
+            r: 6.0,
+        })
     }
 }

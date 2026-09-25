@@ -26,8 +26,7 @@ pub fn MenuItem(
     /// Danger rows read in the destructive colour.
     #[prop(default = MenuItemTone::Default)]
     tone: MenuItemTone,
-    #[prop(default = false)]
-    disabled: bool,
+    #[prop(default = false)] disabled: bool,
     /// Selected/pressed state (checked rows, active options).
     #[prop(optional)]
     selected: Option<Signal<bool>>,
@@ -54,8 +53,7 @@ pub fn MenuItem(
     /// menu-row look (`rounded-md px-2 py-1.5`).
     #[prop(optional)]
     row_class: Option<&'static str>,
-    #[prop(optional)]
-    children: Option<Children>,
+    #[prop(optional)] children: Option<Children>,
 ) -> impl IntoView {
     let selected_sig = selected.unwrap_or_else(|| Signal::derive(|| false));
     let danger = tone == MenuItemTone::Danger;

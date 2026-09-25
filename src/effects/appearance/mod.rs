@@ -20,9 +20,9 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
+use crate::storage::save_settings;
 use reader_core::appearance::Appearance;
 use reader_core::settings::Settings;
-use crate::storage::save_settings;
 
 use crate::effects::app::theme::paint_appearance_now;
 

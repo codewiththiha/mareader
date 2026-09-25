@@ -98,8 +98,7 @@ impl Receipt {
     pub(super) fn subtitle(&self) -> String {
         if self.books.is_empty() {
             if !self.links.is_empty() {
-                return "A link is a pointer: the book it goes to stays in the library"
-                    .to_string();
+                return "A link is a pointer: the book it goes to stays in the library".to_string();
             }
             let kept: usize = self.shelves.iter().map(|s| s.books).sum();
             return if kept == 0 {
@@ -179,9 +178,10 @@ pub(super) fn receipt(
     };
     let inside_ids: Vec<String> = {
         let mut acc: Vec<String> = Vec::new();
-        for shelf in all.iter().filter(|s| {
-            shelf_ids.contains(&s.id) || descendants.iter().any(|each| each.id == s.id)
-        }) {
+        for shelf in all
+            .iter()
+            .filter(|s| shelf_ids.contains(&s.id) || descendants.iter().any(|each| each.id == s.id))
+        {
             for book in &shelf.books {
                 if !acc.contains(book) {
                     acc.push(book.clone());
@@ -203,18 +203,20 @@ pub(super) fn receipt(
             }
         }
     }
-    let (books, links): (Vec<Book>, Vec<String>) =
-        state.library.books.with_untracked(|all| {
-            let mut books = Vec::new();
-            let mut links = Vec::new();
-            for row in all.iter().filter(|r| effective.iter().any(|id| id == r.id())) {
-                match row {
-                    Row::Book(b) => books.push(b.clone()),
-                    Row::Link { name, .. } => links.push(name.clone()),
-                }
+    let (books, links): (Vec<Book>, Vec<String>) = state.library.books.with_untracked(|all| {
+        let mut books = Vec::new();
+        let mut links = Vec::new();
+        for row in all
+            .iter()
+            .filter(|r| effective.iter().any(|id| id == r.id()))
+        {
+            match row {
+                Row::Book(b) => books.push(b.clone()),
+                Row::Link { name, .. } => links.push(name.clone()),
             }
-            (books, links)
-        });
+        }
+        (books, links)
+    });
     if books.is_empty() && links.is_empty() && asked.is_empty() {
         return None;
     }
@@ -328,7 +330,11 @@ mod tests {
         let tree = tree();
         let mut under_a = ids(&subtree(&tree, &["a".to_string()]));
         under_a.sort();
-        assert_eq!(under_a, ["b", "c", "d"], "the root is asked about, not inside");
+        assert_eq!(
+            under_a,
+            ["b", "c", "d"],
+            "the root is asked about, not inside"
+        );
 
         let under_b = ids(&subtree(&tree, &["b".to_string()]));
         assert_eq!(under_b, ["c"]);
@@ -346,7 +352,13 @@ mod tests {
         // actually went.
         let tree = tree();
         let under_both = ids(&subtree(&tree, &["a".to_string(), "b".to_string()]));
-        assert_eq!(under_both.len(), under_both.iter().collect::<std::collections::HashSet<_>>().len());
+        assert_eq!(
+            under_both.len(),
+            under_both
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+        );
         assert!(under_both.iter().any(|id| id == "c"));
         assert!(
             !under_both.iter().any(|id| id == "b"),
@@ -359,10 +371,7 @@ mod tests {
         // `sanitize` cuts cycles out of a loaded blob, but the receipt reads a
         // signal that can be caught between two writes, and a walk that spun here
         // would hang the sheet rather than answer it.
-        let looped = vec![
-            shelf("x", Some("y"), &[]),
-            shelf("y", Some("x"), &[]),
-        ];
+        let looped = vec![shelf("x", Some("y"), &[]), shelf("y", Some("x"), &[])];
         let mut found = ids(&subtree(&looped, &["x".to_string()]));
         found.sort();
         assert_eq!(found, ["y"]);
@@ -389,5 +398,4 @@ mod tests {
             "a book the reader never opened is a book with nothing of theirs to keep"
         );
     }
-
 }

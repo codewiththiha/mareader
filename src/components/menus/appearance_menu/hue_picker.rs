@@ -29,10 +29,7 @@ const HUE_SWATCHES: [(u16, &str); 7] = [
 ];
 
 #[component]
-pub fn HuePicker(
-    hue: ReadSignal<f64>,
-    on_change: impl Fn(f64) + 'static + Clone,
-) -> impl IntoView {
+pub fn HuePicker(hue: ReadSignal<f64>, on_change: impl Fn(f64) + 'static + Clone) -> impl IntoView {
     let on_change_strip = on_change.clone();
     view! {
         <div class="flex w-full flex-col gap-2">

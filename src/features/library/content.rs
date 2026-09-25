@@ -11,11 +11,11 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use app_chrome::hooks::dom::by_id;
-use pdf_engine::types::DocStatus;
+use library_core::book::Row;
 use library_core::query;
 use library_core::shelf::{ALL_SHELF, Shelf, children_of, find, members_of};
 use library_core::sort::{self, SortKey};
-use library_core::book::Row;
+use pdf_engine::types::DocStatus;
 
 use crate::components::primitives::feedback::CenteredLoader;
 use crate::components::primitives::motion::reduced_motion::prefers_reduced_motion;
@@ -27,8 +27,8 @@ use crate::features::library::grid::GridView;
 use crate::features::library::list::ListView;
 use crate::features::library::selection::{LibrarySelectBar, use_select_mode};
 use crate::services::library::backfill_missing;
-use crate::state::library::Reveal;
 use crate::state::AppState;
+use crate::state::library::Reveal;
 
 const LEVEL_DOM_ID: &str = "library-level";
 
@@ -128,10 +128,11 @@ pub(crate) fn level_rows(state: AppState) -> Vec<Row> {
                 .collect()
         }
     } else {
-        let members = state
-            .library
-            .shelves
-            .with(|shelves| find(shelves, &shelf_id).map(|s| s.books.clone()).unwrap_or_default());
+        let members = state.library.shelves.with(|shelves| {
+            find(shelves, &shelf_id)
+                .map(|s| s.books.clone())
+                .unwrap_or_default()
+        });
         sort::ordered(&rows, &members, SortKey::Manual, true)
     };
     sort::sort_rows(&mut list, view.sort, view.sort_asc);
@@ -312,7 +313,11 @@ mod tests {
     #[test]
     fn the_root_shows_the_rows_no_shelf_holds() {
         let (_owner, state) = library(
-            vec![book("a", "Dune"), book("b", "Neuromancer"), book("c", "Hyperion")],
+            vec![
+                book("a", "Dune"),
+                book("b", "Neuromancer"),
+                book("c", "Hyperion"),
+            ],
             vec![shelf("s", "Fiction", &["b"], None)],
         );
         assert_eq!(ids(&level_rows(state)), vec!["a", "c"]);
@@ -321,7 +326,11 @@ mod tests {
     #[test]
     fn a_shelf_shows_its_own_members_in_its_own_order() {
         let (_owner, state) = library(
-            vec![book("a", "Dune"), book("b", "Neuromancer"), book("c", "Hyperion")],
+            vec![
+                book("a", "Dune"),
+                book("b", "Neuromancer"),
+                book("c", "Hyperion"),
+            ],
             vec![shelf("s", "Fiction", &["c", "a"], None)],
         );
         state.library.shelf.set("s".to_string());
@@ -356,7 +365,11 @@ mod tests {
     #[test]
     fn the_sort_runs_before_the_filter_so_a_query_never_reorders() {
         let (_owner, state) = library(
-            vec![book("c", "Hyperion"), book("a", "Dune"), book("b", "Endymion")],
+            vec![
+                book("c", "Hyperion"),
+                book("a", "Dune"),
+                book("b", "Endymion"),
+            ],
             vec![],
         );
         state.library.view.update(|v| {
@@ -365,7 +378,11 @@ mod tests {
         });
         assert_eq!(ids(&level_rows(state)), vec!["a", "b", "c"]);
         state.library.query.set("dy".to_string());
-        assert_eq!(ids(&level_rows(state)), vec!["b"], "fuzzy, and still in order");
+        assert_eq!(
+            ids(&level_rows(state)),
+            vec!["b"],
+            "fuzzy, and still in order"
+        );
         state.library.query.set(String::new());
         assert_eq!(ids(&level_rows(state)), vec!["a", "b", "c"]);
     }
@@ -408,7 +425,10 @@ mod tests {
             ],
         );
         assert_eq!(
-            level_folders(state, None).iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            level_folders(state, None)
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["top", "other"],
             "a nested shelf is its parent's door, not the root's"
         );
@@ -430,7 +450,10 @@ mod tests {
         );
         state.library.query.set("sci".to_string());
         assert_eq!(
-            level_folders(state, None).iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            level_folders(state, None)
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["a"],
             "one text box is not two searches wearing one field"
         );

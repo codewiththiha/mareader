@@ -2,8 +2,8 @@
 //! and the drop guard that releases it however a run ends.
 
 use std::cell::RefCell;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use crate::services::library::{folder_label, toast};
 use crate::state::AppState;
@@ -46,8 +46,7 @@ fn holder(root: &str) -> Option<Asked> {
 }
 
 pub(super) fn root_is_claimed(root: &str) -> bool {
-    holder(root).is_some()
-        || WAITING.with(|waiting| waiting.borrow().contains_key(root))
+    holder(root).is_some() || WAITING.with(|waiting| waiting.borrow().contains_key(root))
 }
 
 /// Two concurrent walks of one folder are two snapshots of the same ledger
@@ -55,7 +54,10 @@ pub(super) fn root_is_claimed(root: &str) -> bool {
 /// Hence the check-and-claim is one write.
 pub(super) fn claim_root(root: &str, asked: Asked) -> Option<RootClaim> {
     let free = RUNNING.with(|running| {
-        running.borrow_mut().insert(root.to_string(), asked).is_none()
+        running
+            .borrow_mut()
+            .insert(root.to_string(), asked)
+            .is_none()
     });
     free.then(|| RootClaim(root.to_string()))
 }
@@ -72,15 +74,17 @@ where
             start();
             true
         }
-        Some(Asked::OnFocus) => WAITING.with(|waiting| {
-            match waiting.borrow_mut().entry(root.to_string()) {
-                Entry::Occupied(_) => false,
-                Entry::Vacant(slot) => {
-                    slot.insert(Box::new(start));
-                    true
-                }
-            }
-        }),
+        Some(Asked::OnFocus) => {
+            WAITING.with(
+                |waiting| match waiting.borrow_mut().entry(root.to_string()) {
+                    Entry::Occupied(_) => false,
+                    Entry::Vacant(slot) => {
+                        slot.insert(Box::new(start));
+                        true
+                    }
+                },
+            )
+        }
         Some(Asked::Explicitly) => false,
     }
 }
@@ -105,7 +109,10 @@ pub(super) fn start_guarded(
         already_importing(state, root);
         return;
     }
-    super::tasks::push_task(state, crate::state::library::ImportTask::new(card, folder_label(root)));
+    super::tasks::push_task(
+        state,
+        crate::state::library::ImportTask::new(card, folder_label(root)),
+    );
 }
 
 /// The claim gate without a card, for doors whose run and card come from

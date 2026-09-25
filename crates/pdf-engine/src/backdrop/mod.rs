@@ -109,7 +109,9 @@ pub(super) fn with<R>(f: impl FnOnce(&mut Session) -> R) -> R {
 /// Host `cargo test` has no JS runtime, so tasks that would talk to it
 /// simply never start — the state-machine logic they drive is tested
 /// directly instead.
-pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: impl FnOnce() -> F + 'static) {
+pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(
+    f: impl FnOnce() -> F + 'static,
+) {
     if bridge::has_pdf_reader() {
         spawn_local(async move {
             f().await;
@@ -323,7 +325,12 @@ mod tests {
             data[i + 1] = colour[1];
             data[i + 2] = colour[2];
         }
-        api::PaperFrame { page, width: w, height: h, data }
+        api::PaperFrame {
+            page,
+            width: w,
+            height: h,
+            data,
+        }
     }
 
     const CREAM: [u8; 3] = [0xfa, 0xf4, 0xe8];
@@ -405,7 +412,9 @@ mod tests {
         }
         feed_frame(&art);
         assert_eq!(published().as_deref(), Some("#faf4e8"));
-        assert!(!with(|s| s.palettes[0].contains(2) || s.palettes[1].contains(2)));
+        assert!(!with(
+            |s| s.palettes[0].contains(2) || s.palettes[1].contains(2)
+        ));
     }
 
     #[test]
@@ -452,7 +461,12 @@ mod tests {
                 }
             }
         }
-        api::PaperFrame { page, width: w as u32, height: h as u32, data }
+        api::PaperFrame {
+            page,
+            width: w as u32,
+            height: h as u32,
+            data,
+        }
     }
 
     #[test]
@@ -544,7 +558,9 @@ mod tests {
         feed_frame(&uniform(1, 32, 32, CREAM));
         document_close();
         assert_eq!(published(), None);
-        assert!(with(|s| s.palettes[0].is_empty() && s.palettes[1].is_empty()));
+        assert!(with(
+            |s| s.palettes[0].is_empty() && s.palettes[1].is_empty()
+        ));
         assert!(with(|s| s.doc_path.is_none()));
     }
 

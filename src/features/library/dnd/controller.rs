@@ -149,9 +149,7 @@ impl DragController {
             };
             let sinkable = target.0 == DropTargetKind::Shelf
                 && this.effect.get_untracked().as_ref() != Some(&DropEffect::Refused);
-            if sinkable
-                && let Some(rect) = this.registry.rect_of(&target)
-            {
+            if sinkable && let Some(rect) = this.registry.rect_of(&target) {
                 let spot = SinkSpot {
                     x: rect.left() + rect.width() / 2.0,
                     y: rect.top() + rect.height() / 2.0,
@@ -306,7 +304,9 @@ impl DragController {
             for id in &held.folders {
                 tiles.push(GhostTile {
                     cover: None,
-                    label: find(&shelves, id).map(|each| each.name.clone()).unwrap_or_default(),
+                    label: find(&shelves, id)
+                        .map(|each| each.name.clone())
+                        .unwrap_or_default(),
                     folder: true,
                 });
             }

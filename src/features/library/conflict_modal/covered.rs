@@ -26,10 +26,12 @@ pub(super) fn describe_covered(state: AppState, ask: &ConflictAsk) -> SheetSpec 
     let incoming = ask.arrival.name.clone();
     // Which fact the library noticed decides the sentence: same two answers,
     // different reason.
-    let folder_name = ask
-        .kind
-        .folder_id()
-        .and_then(|folder_id| state.library.folder(folder_id).map(|f| folder_label(&f.root)));
+    let folder_name = ask.kind.folder_id().and_then(|folder_id| {
+        state
+            .library
+            .folder(folder_id)
+            .map(|f| folder_label(&f.root))
+    });
     let book_name = ask.existing_name.clone();
     let subtitle = more_waiting(
         match &folder_name {

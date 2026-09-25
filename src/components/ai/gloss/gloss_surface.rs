@@ -22,9 +22,9 @@ use std::sync::Arc;
 
 use ai_core::gloss::GlossBox;
 use ai_core::types::{AiError, WordInfo};
-use reader_core::settings::GlossDensity;
 use leptos::html;
 use leptos::prelude::*;
+use reader_core::settings::GlossDensity;
 use reader_core::zoom_math::smoothstep;
 
 use crate::components::ai::gloss::phase::{AiPhase, GlossPhase};
@@ -157,8 +157,18 @@ pub fn GlossSurface(
 /// the card renders.
 fn body_classes(density: GlossDensity) -> (&'static str, &'static str, &'static str, &'static str) {
     match density {
-        GlossDensity::Compact => ("px-4 pb-3 pt-4", "mb-2", "text-base font-semibold leading-snug", "mb-3"),
-        GlossDensity::Comfortable => ("px-5 pb-4 pt-6", "mb-4", "text-lg font-semibold leading-tight", "mb-4"),
+        GlossDensity::Compact => (
+            "px-4 pb-3 pt-4",
+            "mb-2",
+            "text-base font-semibold leading-snug",
+            "mb-3",
+        ),
+        GlossDensity::Comfortable => (
+            "px-5 pb-4 pt-6",
+            "mb-4",
+            "text-lg font-semibold leading-tight",
+            "mb-4",
+        ),
     }
 }
 
@@ -260,7 +270,8 @@ pub fn GlossSurfaceContent(
     /// Retry the current mark after a retryable failure.
     retry: Callback<()>,
 ) -> impl IntoView {
-    let has_info = Signal::derive(move || matches!(phase.get(), AiPhase::Streaming | AiPhase::Done));
+    let has_info =
+        Signal::derive(move || matches!(phase.get(), AiPhase::Streaming | AiPhase::Done));
     view! {
         <Show when=move || has_info.get()>
             <WordInfoSections info=word_info density=density />
@@ -280,8 +291,13 @@ fn GlossErrorCard(
     /// Retry the current mark after a retryable failure.
     retry: Callback<()>,
 ) -> impl IntoView {
-    let message =
-        Signal::derive(move || error.get().unwrap_or_else(AiError::unknown).friendly().into_owned());
+    let message = Signal::derive(move || {
+        error
+            .get()
+            .unwrap_or_else(AiError::unknown)
+            .friendly()
+            .into_owned()
+    });
     let retryable = Signal::derive(move || error.get().is_some_and(|e| e.retryable));
     view! {
         <div class="ai-text-reveal flex flex-col gap-2.5">

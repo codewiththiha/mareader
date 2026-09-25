@@ -23,7 +23,7 @@ mod verify;
 mod tests;
 
 pub use files::{import_files, land_file};
-pub use gate::{ground_tracking, import_folder, GroundWatch};
+pub use gate::{GroundWatch, ground_tracking, import_folder};
 pub use migrate::migrate_store_layout;
 pub use replace::replace_rows_of_tree;
 pub use restore::restore_deleted_book;
@@ -40,9 +40,9 @@ pub(crate) use tasks::{begin_task, fail_task, finish_task};
 /// the store refused.
 pub(crate) use copy::partition_store_results;
 
-pub(crate) use copies::{copies_beside_tree, copies_over_standing_tree, CopiesDest};
+pub(crate) use copies::{CopiesDest, copies_beside_tree, copies_over_standing_tree};
 pub(crate) use files::{land_stored_copy, land_stored_copy_settling, settle_ledger};
-pub(crate) use gate::{proceed_folder, reclaim_rung, RootPlan};
+pub(crate) use gate::{RootPlan, proceed_folder, reclaim_rung};
 pub(crate) use replace::{replace_folder_with_copies, replace_shelf_with_folder};
 
 use library_core::shelf::Shelf;

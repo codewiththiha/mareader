@@ -17,9 +17,9 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
 use crate::state::AppState;
 use crate::storage::save_library;
+use pdf_engine::types::DocStatus;
 
 /// Debounce for the library save: reading position settles this fast, and a
 /// continuous scroll writes once instead of once per row boundary.
@@ -51,7 +51,11 @@ pub fn reading_progress(state: AppState) {
         } else {
             0.0
         };
-        let fraction = if streaming { state.reader.stream_fraction() } else { None };
+        let fraction = if streaming {
+            state.reader.stream_fraction()
+        } else {
+            None
+        };
         // Stand down for the whole of a zoom transaction (see the module doc):
         // the read is TRACKED, so the effect re-runs — with the settled page —
         // on the frame the transaction closes, and nothing is lost by waiting.
@@ -89,7 +93,9 @@ pub fn reading_progress(state: AppState) {
         state.library.books.update(|books| {
             let at = library_core::book::rows_for_read(books, book_id.as_deref(), &path);
             for i in at {
-                let Some(b) = books.get_mut(i).and_then(library_core::book::Row::as_book_mut)
+                let Some(b) = books
+                    .get_mut(i)
+                    .and_then(library_core::book::Row::as_book_mut)
                 else {
                     continue;
                 };

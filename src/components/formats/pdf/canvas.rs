@@ -27,14 +27,14 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use super::canvas_host::{remove_snapshots, stretch_host, LastGeo};
+use super::canvas_host::{LastGeo, remove_snapshots, stretch_host};
 use crate::dom_contract::{HOST_PDF, TEXT_LAYER_CLASS};
-use pdf_core::pixel_grid::snap_px;
 use leptos::task::spawn_local;
+use pdf_core::pixel_grid::snap_px;
 
+use leptos::prelude::Signal;
 use pdf_engine::api as engine;
 use reader_core::appearance::TextureMode;
-use leptos::prelude::Signal;
 
 /// The gloss overlay inputs a page host renders when the document carries
 /// highlights: the reader's state (which the host turns into the stroke
@@ -254,7 +254,11 @@ pub fn PdfPageCanvas(
         stretch_host(
             &hid_stretch,
             &cid_stretch,
-            LastGeo { w: lw, h: lh, scale: ls },
+            LastGeo {
+                w: lw,
+                h: lh,
+                scale: ls,
+            },
             s,
             false,
             false,
@@ -335,7 +339,11 @@ pub fn PdfPageCanvas(
         }
         // Use the display scale for the cold-cache first paint during an
         // animation; otherwise use the render scale (the crisp target).
-        let s = if anim { scale.get_untracked() } else { s_render };
+        let s = if anim {
+            scale.get_untracked()
+        } else {
+            s_render
+        };
         if s <= 0.0 {
             return;
         }
@@ -394,7 +402,18 @@ pub fn PdfPageCanvas(
         // frames from now (canvas_host::stretch_host).
         let (lw, lh, ls) = geo.get_value();
         if lw > 0.0 && lh > 0.0 && ls > 0.0 && (ls - s).abs() > 1e-9 {
-            stretch_host(&hid, &cid, LastGeo { w: lw, h: lh, scale: ls }, s, true, true);
+            stretch_host(
+                &hid,
+                &cid,
+                LastGeo {
+                    w: lw,
+                    h: lh,
+                    scale: ls,
+                },
+                s,
+                true,
+                true,
+            );
         }
 
         // First paint for this host: drop in the sidebar's cached thumbnail,

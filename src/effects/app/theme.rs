@@ -35,11 +35,11 @@
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
-use reader_core::appearance::shared::{noise, texture};
+use crate::state::{AppState, AppearanceSignal};
 use reader_core::appearance::Appearance;
+use reader_core::appearance::shared::{noise, texture};
 use reader_core::format::Format;
 use reader_core::settings::GlossColor;
-use crate::state::{AppState, AppearanceSignal};
 
 use crate::effects::appearance::{is_scrubbing, raster, reflow, schedule_save};
 
@@ -157,7 +157,9 @@ pub fn paint_appearance_now(a: Appearance, ink_contrast: f64) {
     };
     let mut buf = String::with_capacity(512);
     for decl in style.css_text().split(';') {
-        let Some((name, _)) = decl.split_once(':') else { continue };
+        let Some((name, _)) = decl.split_once(':') else {
+            continue;
+        };
         let name = name.trim();
         if name.is_empty() || owned(name) {
             continue;
@@ -245,9 +247,9 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
     // Same narrowing for the gloss tokens: three fields out of the blob, so a
     // slider tick elsewhere in settings cannot rewrite them.
     let gloss: Memo<(GlossColor, String, f64)> = Memo::new(move |_| {
-        state.settings.with(|st| {
-            (st.gloss_color, st.gloss_custom.clone(), st.gloss_opacity)
-        })
+        state
+            .settings
+            .with(|st| (st.gloss_color, st.gloss_custom.clone(), st.gloss_opacity))
     });
 
     Effect::new(move || {

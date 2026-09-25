@@ -52,45 +52,70 @@ pub fn builtin_presets() -> Vec<Preset> {
     vec![
         // Sepia was `sepia(0.35) contrast(0.95) saturate(0.9)` on light paper:
         // a warm brown at sepia()'s own hue, so no rotation and a mid strength.
-        preset("sepia", "Sepia", "Classic", Appearance {
-            base: BaseMode::Light,
-            tint_hue: 34,
-            tint_strength: 23,
-            ..Default::default()
-        }),
+        preset(
+            "sepia",
+            "Sepia",
+            "Classic",
+            Appearance {
+                base: BaseMode::Light,
+                tint_hue: 34,
+                tint_strength: 23,
+                ..Default::default()
+            },
+        ),
         // Green was sepia+hue-rotate(70deg) => 34 + 70 ≈ 104, a soft leaf green.
-        preset("green", "Green", "Classic", Appearance {
-            base: BaseMode::Light,
-            tint_hue: 104,
-            tint_strength: 20,
-            ..Default::default()
-        }),
+        preset(
+            "green",
+            "Green",
+            "Classic",
+            Appearance {
+                base: BaseMode::Light,
+                tint_hue: 104,
+                tint_strength: 20,
+                ..Default::default()
+            },
+        ),
         // Night was the dark invert with a green cast layered over it.
-        preset("night", "Night", "Classic", Appearance {
-            base: BaseMode::Dark,
-            tint_hue: 110,
-            tint_strength: 18,
-            ..Default::default()
-        }),
-        preset("parchment", "Parchment", "Classic", Appearance {
-            base: BaseMode::Light,
-            tint_hue: 40,
-            tint_strength: 28,
-            texture: TextureMode::Paper,
-            texture_opacity: 85,
-            texture_scale: 110,
-            noise: NoiseMode::Static,
-            noise_intensity: 18,
-        }),
-        preset("cinema", "Cinema", "Classic", Appearance {
-            base: BaseMode::Dim,
-            tint_hue: 220,
-            tint_strength: 15,
-            texture: TextureMode::None,
-            noise: NoiseMode::Animated,
-            noise_intensity: 30,
-            ..Default::default()
-        }),
+        preset(
+            "night",
+            "Night",
+            "Classic",
+            Appearance {
+                base: BaseMode::Dark,
+                tint_hue: 110,
+                tint_strength: 18,
+                ..Default::default()
+            },
+        ),
+        preset(
+            "parchment",
+            "Parchment",
+            "Classic",
+            Appearance {
+                base: BaseMode::Light,
+                tint_hue: 40,
+                tint_strength: 28,
+                texture: TextureMode::Paper,
+                texture_opacity: 85,
+                texture_scale: 110,
+                noise: NoiseMode::Static,
+                noise_intensity: 18,
+            },
+        ),
+        preset(
+            "cinema",
+            "Cinema",
+            "Classic",
+            Appearance {
+                base: BaseMode::Dim,
+                tint_hue: 220,
+                tint_strength: 15,
+                texture: TextureMode::None,
+                noise: NoiseMode::Animated,
+                noise_intensity: 30,
+                ..Default::default()
+            },
+        ),
     ]
 }
 
@@ -115,7 +140,10 @@ pub fn group_presets(presets: &[Preset]) -> Vec<PresetGroup> {
             Some(i) => out[i].presets.push(p.clone()),
             None => {
                 order.push(name.clone());
-                out.push(PresetGroup { name, presets: vec![p.clone()] });
+                out.push(PresetGroup {
+                    name,
+                    presets: vec![p.clone()],
+                });
             }
         }
     }
@@ -137,7 +165,11 @@ pub fn make_preset_id(name: &str, existing: &[Preset]) -> String {
         }
     }
     let slug = slug.trim_matches('-').to_string();
-    let base = if slug.is_empty() { "preset".to_string() } else { slug };
+    let base = if slug.is_empty() {
+        "preset".to_string()
+    } else {
+        slug
+    };
     let taken = |id: &str| existing.iter().any(|p| p.id == id) || is_builtin(id);
     if !taken(&base) {
         return base;
@@ -169,7 +201,10 @@ mod tests {
     use super::*;
 
     fn find(id: &str) -> Preset {
-        builtin_presets().into_iter().find(|p| p.id == id).expect(id)
+        builtin_presets()
+            .into_iter()
+            .find(|p| p.id == id)
+            .expect(id)
     }
 
     #[test]
@@ -208,7 +243,10 @@ mod tests {
 
         let night = find("night");
         assert_eq!(night.appearance.base, BaseMode::Dark);
-        assert!(night.appearance.has_tint(), "Night is dark WITH a green cast");
+        assert!(
+            night.appearance.has_tint(),
+            "Night is dark WITH a green cast"
+        );
         assert_eq!(night.appearance.tint_strength, 18);
         assert!(night.appearance.canvas_filter().contains("invert"));
     }

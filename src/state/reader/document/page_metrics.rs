@@ -50,7 +50,11 @@ impl PageMetrics {
     /// struct already holds; `Self::default()` would allocate a fresh arena node
     /// per field on every close and leak them.
     pub fn reset(&self) {
-        let Self { page1_size, intrinsic, css_heights } = *self;
+        let Self {
+            page1_size,
+            intrinsic,
+            css_heights,
+        } = *self;
         page1_size.set(None);
         intrinsic.set(Vec::new());
         css_heights.set(Vec::new());
@@ -63,7 +67,10 @@ impl PageMetrics {
     pub fn heights_agree(&self, sizes: &[f64]) -> bool {
         self.css_heights.with_untracked(|store| {
             store.len() == sizes.len()
-                && store.iter().zip(sizes).all(|(a, b)| (a - b).abs() < HEIGHT_EPSILON)
+                && store
+                    .iter()
+                    .zip(sizes)
+                    .all(|(a, b)| (a - b).abs() < HEIGHT_EPSILON)
         })
     }
 

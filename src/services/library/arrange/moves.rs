@@ -128,12 +128,8 @@ fn moved_arrivals(
             .iter()
             .filter_map(|row_id| {
                 let row = find_row(rows, row_id)?;
-                let arrival = Arrival::moved(
-                    row_id.clone(),
-                    row.display_name(),
-                    to.to_string(),
-                    index,
-                );
+                let arrival =
+                    Arrival::moved(row_id.clone(), row.display_name(), to.to_string(), index);
                 Some(match from {
                     Some(from) => arrival.leaving(from),
                     None => arrival,
@@ -171,14 +167,9 @@ pub(super) enum RowMove {
         index: Option<usize>,
     },
     /// One row's own move, the form the conflict sheet rides as well as a drag of a single book.
-    Row {
-        to: String,
-        index: Option<usize>,
-    },
+    Row { to: String, index: Option<usize> },
     /// Out of every shelf the row was on, to the library's own top level.
-    Unfile {
-        shelf: String,
-    },
+    Unfile { shelf: String },
 }
 
 impl RowMove {
@@ -294,10 +285,8 @@ pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
     }
-    let (clean, conflicts) = conflict::screen(
-        state,
-        moved_arrivals(state, book_ids, shelf_id, None, None),
-    );
+    let (clean, conflicts) =
+        conflict::screen(state, moved_arrivals(state, book_ids, shelf_id, None, None));
     let book_ids = clean_move_ids(clean);
     if !book_ids.is_empty() {
         state.library.shelves.update(|shelves| {
@@ -342,9 +331,7 @@ pub(super) fn reorder_root(rows: &mut Vec<Row>, row_ids: &[String], index: Optio
     for was in positions {
         rows.remove(was);
     }
-    let shift = index.map_or(0, |at| {
-        lifted.iter().filter(|(was, _)| *was < at).count()
-    });
+    let shift = index.map_or(0, |at| lifted.iter().filter(|(was, _)| *was < at).count());
     lifted.sort_by_key(|(_, row)| {
         row_ids
             .iter()
@@ -376,7 +363,12 @@ pub(super) fn place_many(members: &mut Vec<String>, book_ids: &[String], index: 
 }
 
 /// Each one after the last rather than each one at the same place, which would put them back reversed.
-pub(super) fn insert_many<T>(list: &mut Vec<T>, items: impl Iterator<Item = T>, index: Option<usize>, shift: usize) {
+pub(super) fn insert_many<T>(
+    list: &mut Vec<T>,
+    items: impl Iterator<Item = T>,
+    index: Option<usize>,
+    shift: usize,
+) {
     let mut at = index.map_or(list.len(), |at| at.saturating_sub(shift));
     for item in items {
         at = at.min(list.len());

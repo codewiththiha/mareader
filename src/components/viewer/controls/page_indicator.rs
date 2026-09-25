@@ -16,12 +16,9 @@ use reader_core::settings::PageIndicatorStyle;
 
 #[component]
 pub fn PageIndicator(
-    #[prop(into)]
-    current: Signal<u32>,
-    #[prop(into)]
-    total: Signal<u32>,
-    #[prop(into)]
-    style: Signal<PageIndicatorStyle>,
+    #[prop(into)] current: Signal<u32>,
+    #[prop(into)] total: Signal<u32>,
+    #[prop(into)] style: Signal<PageIndicatorStyle>,
     /// Fade out while a bottom overlay (gloss selection bar) is up, so the
     /// two never stack over each other.
     #[prop(into, default = Signal::derive(|| false))]

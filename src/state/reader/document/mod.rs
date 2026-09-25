@@ -200,7 +200,8 @@ impl DocumentState {
     /// `page_count` clamp stops an outline authored against a re-saved file
     /// from jumping past the last sheet.
     pub fn set_pdf_outline(&self, entries: Vec<OutlineEntry>, page_count: u32) {
-        self.outline.set(Arc::new(pdf_core::outline::to_nodes(entries, page_count)));
+        self.outline
+            .set(Arc::new(pdf_core::outline::to_nodes(entries, page_count)));
     }
 
     /// Publish a reflowable cut to the shared page machinery: the page count
@@ -246,18 +247,40 @@ mod tests {
     fn page_aspect_passes_through_measured_sizes() {
         // US Letter at scale 1: 792/612 ≈ 1.294.
         assert!(
-            (page_aspect(Some(PageSize { width: 612.0, height: 792.0 })) - 792.0 / 612.0).abs() < 1e-12
+            (page_aspect(Some(PageSize {
+                width: 612.0,
+                height: 792.0
+            })) - 792.0 / 612.0)
+                .abs()
+                < 1e-12
         );
         // A landscape sheet inverts below 1.
-        assert!(page_aspect(Some(PageSize { width: 1000.0, height: 500.0 })) < 1.0);
+        assert!(
+            page_aspect(Some(PageSize {
+                width: 1000.0,
+                height: 500.0
+            })) < 1.0
+        );
     }
 
     #[test]
     fn page_aspect_falls_back_to_portrait_when_unmeasured_or_degenerate() {
         assert_eq!(page_aspect(None), DEFAULT_PAGE_ASPECT);
-        assert_eq!(page_aspect(Some(PageSize { width: 0.0, height: 792.0 })), DEFAULT_PAGE_ASPECT);
+        assert_eq!(
+            page_aspect(Some(PageSize {
+                width: 0.0,
+                height: 792.0
+            })),
+            DEFAULT_PAGE_ASPECT
+        );
         // A negative width is just as degenerate: never divide by it.
-        assert_eq!(page_aspect(Some(PageSize { width: -612.0, height: 792.0 })), DEFAULT_PAGE_ASPECT);
+        assert_eq!(
+            page_aspect(Some(PageSize {
+                width: -612.0,
+                height: 792.0
+            })),
+            DEFAULT_PAGE_ASPECT
+        );
     }
 
     #[test]

@@ -207,7 +207,9 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
                 return;
             }
             reset();
-            let Some(target) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            let Some(target) = ev
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
             else {
                 return;
             };
@@ -306,9 +308,7 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
                 // fast drag
                 // ends with the pointer somewhere no move was reported for, and
                 // where the reader let go is the answer they meant.
-                Mode::Drag => {
-                    on_drag_end.run((ev.client_x() as f64, ev.client_y() as f64))
-                }
+                Mode::Drag => on_drag_end.run((ev.client_x() as f64, ev.client_y() as f64)),
                 Mode::Tap | Mode::Hold | Mode::Abandoned => {}
             }
             reset();
@@ -365,7 +365,10 @@ mod tests {
     fn the_threshold_is_a_radius_around_the_origin() {
         let at = (100.0, 100.0);
         assert!(!travelled(100.0, 100.0, at, 6.0));
-        assert!(!travelled(106.0, 100.0, at, 6.0), "on the boundary is still a press");
+        assert!(
+            !travelled(106.0, 100.0, at, 6.0),
+            "on the boundary is still a press"
+        );
         assert!(travelled(106.1, 100.0, at, 6.0));
         // Diagonal drift counts its Euclidean length, not per-axis: 5px each way
         // is 7.07px of travel and a drag, which a per-axis test would miss.
@@ -390,9 +393,15 @@ mod tests {
         // Both refusals answer the same question the pointer's position cannot:
         // a drag needs a caller that allows one AND a pointer that is not a
         // finger, because the movement a finger makes across a shelf is a scroll.
-        assert!(may_drag(true, false), "a mouse is the drag the wrapper is for");
+        assert!(
+            may_drag(true, false),
+            "a mouse is the drag the wrapper is for"
+        );
         assert!(!may_drag(true, true), "a finger's movement is the page's");
-        assert!(!may_drag(false, false), "a card that is not draggable stays put");
+        assert!(
+            !may_drag(false, false),
+            "a card that is not draggable stays put"
+        );
         assert!(!may_drag(false, true));
     }
 

@@ -12,7 +12,7 @@ use leptos::prelude::*;
 
 use library_core::book::index_by_id;
 use library_core::folder::{
-    self as folder_ops, dir_of_rung, key_in_zone, rel_under, FolderOpts, WatchedFolder,
+    self as folder_ops, FolderOpts, WatchedFolder, dir_of_rung, key_in_zone, rel_under,
 };
 use library_core::scan::subfolder_of;
 use library_core::shelf::{self as shelves_ops, Shelf};

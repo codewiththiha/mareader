@@ -12,15 +12,15 @@ use leptos::prelude::*;
 
 use reader_core::settings::{GlossColor, GlossDensity};
 
-use app_chrome::icon::IconName;
-use app_chrome::icon_button::IconButton;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
+use crate::components::primitives::form::row::Row;
 use crate::components::primitives::form::slider::Slider;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
-use crate::components::primitives::form::row::Row;
 use crate::components::settings::common::StyleSelect;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::state::AppState;
+use app_chrome::icon::IconName;
+use app_chrome::icon_button::IconButton;
 
 #[component]
 pub(crate) fn AiAppearanceSection(state: AppState) -> impl IntoView {
@@ -287,7 +287,11 @@ mod tests {
         // opens the custom swatch.
         for hex in ["#2563eb", "#e56b64", "#6fd58c", "#a58af0", "#0f172a"] {
             let (h, s, l) = hex_to_hsl(hex);
-            assert_eq!(hsl_to_hex(h, s, l), hex, "{hex} did not survive the round trip");
+            assert_eq!(
+                hsl_to_hex(h, s, l),
+                hex,
+                "{hex} did not survive the round trip"
+            );
         }
     }
 
@@ -297,6 +301,9 @@ mod tests {
         // dividing by a zero saturation denominator.
         let (h, sat, l) = hex_to_hsl("#808080");
         assert_eq!((h, sat), (0.0, 0.0));
-        assert!((l - 50.196).abs() < 0.01, "mid grey should read as ~50% light, got {l}");
+        assert!(
+            (l - 50.196).abs() < 0.01,
+            "mid grey should read as ~50% light, got {l}"
+        );
     }
 }

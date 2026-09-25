@@ -127,7 +127,11 @@ pub(crate) fn clamp_span(start: usize, end: usize, chars: usize) -> (usize, usiz
 
 /// A DOM `Range` over `[start, end)` of `el`'s text, clamped to what is
 /// actually there. `None` when the block holds no text at all.
-pub(crate) fn range_for_span(el: &web_sys::Element, start: usize, end: usize) -> Option<web_sys::Range> {
+pub(crate) fn range_for_span(
+    el: &web_sys::Element,
+    start: usize,
+    end: usize,
+) -> Option<web_sys::Range> {
     let document = web_sys::window()?.document()?;
     let nodes = text_nodes_of(el);
     let texts: Vec<web_sys::Text> = nodes

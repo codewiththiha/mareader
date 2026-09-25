@@ -46,8 +46,7 @@ pub(super) fn describe_folder_merge(state: AppState, ask: &ConflictAsk) -> Sheet
         )
     };
     let merge_note = format!("One book — “{existing}” stays, and takes this file's measurement");
-    const REPLACE_NOTE: &str =
-        "The row on the shelf leaves the library; this file takes its slot";
+    const REPLACE_NOTE: &str = "The row on the shelf leaves the library; this file takes its slot";
     let new_name = {
         let (rows, shelves) = state.library.snapshot_rows();
         next_name(&rows, &shelves, &ask.arrival.shelf_id, &incoming)

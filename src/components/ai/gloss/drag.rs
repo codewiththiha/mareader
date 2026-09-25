@@ -8,8 +8,8 @@ use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::placement::clamped_origin;
-use app_chrome::hooks::use_viewport::viewport_size;
 use crate::components::primitives::interactions::drag::use_pointer_drag;
+use app_chrome::hooks::use_viewport::viewport_size;
 
 pub struct CardDrag {
     /// Hand to the surface's drag handle: `(client_x, client_y, box_now)`.
@@ -18,7 +18,9 @@ pub struct CardDrag {
 
 pub fn use_card_drag(ctrl: GlossController, expanded: Memo<Option<GlossBox>>) -> CardDrag {
     let on_drag_start = Callback::new(move |(cx, cy, origin): (f64, f64, GlossBox)| {
-        ctrl.drag.grab.set_value(Some((cx - origin.x, cy - origin.y)));
+        ctrl.drag
+            .grab
+            .set_value(Some((cx - origin.x, cy - origin.y)));
         ctrl.drag.active.set(true);
     });
 

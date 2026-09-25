@@ -23,14 +23,14 @@ mod gloss;
 mod highlight;
 mod page;
 pub(crate) mod spot;
-mod strip;
 mod stream;
+mod strip;
 
 pub use gloss::ReflowGlossLayer;
 pub use highlight::BlockSearchHits;
 pub use page::ReflowPage;
-pub use strip::ReflowPageStrip;
 pub use stream::ReflowStreamLayout;
+pub use strip::ReflowPageStrip;
 
 use super::block_render::BlockRender;
 use crate::state::ReaderState;

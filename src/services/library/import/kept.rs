@@ -102,7 +102,9 @@ mod tests {
         };
         apply(&mut rows, "b2", KeptBook::of(&gone, Vec::new()));
         assert_eq!(
-            find_by_id(&rows, "b2").expect("the row the import made").title,
+            find_by_id(&rows, "b2")
+                .expect("the row the import made")
+                .title,
             None,
             "the title the app captured is captured again — this one is not the reader's"
         );

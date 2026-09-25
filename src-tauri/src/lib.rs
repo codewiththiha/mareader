@@ -53,9 +53,10 @@ fn queue_pending(app: &tauri::AppHandle, path: String) {
         return;
     }
     if let Some(state) = app.try_state::<PendingFile>()
-        && let Ok(mut guard) = state.0.lock() {
-            *guard = Some(path.clone());
-        }
+        && let Ok(mut guard) = state.0.lock()
+    {
+        *guard = Some(path.clone());
+    }
     let _ = app.emit("document-open-file", path);
 }
 

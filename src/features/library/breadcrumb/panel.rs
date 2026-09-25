@@ -123,9 +123,7 @@ pub(super) fn EllipsisCrumb(
             return;
         }
         let counts = pack_rows(&widths, budget);
-        let wide = row_widths(&widths, &counts)
-            .into_iter()
-            .fold(0.0, f64::max);
+        let wide = row_widths(&widths, &counts).into_iter().fold(0.0, f64::max);
         if (panel_width.get_untracked() - wide).abs() > 0.5 {
             panel_width.set(wide);
         }

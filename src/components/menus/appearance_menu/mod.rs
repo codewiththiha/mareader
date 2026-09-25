@@ -35,13 +35,13 @@ use leptos::html;
 use leptos::prelude::*;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::shell::controller::ChromeSurface;
-use app_chrome::icon::{Icon, IconName};
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
+use crate::components::shell::controller::ChromeSurface;
 use crate::effects::appearance::{flush_appearance_commit, set_appearance_menu_open};
 use crate::state::AppState;
+use app_chrome::icon::{Icon, IconName};
 use reader_core::settings::Settings;
 
 /// A structural appearance change (base mode, texture mode, grain mode):
@@ -76,7 +76,8 @@ pub fn AppearanceMenu(
     /// Which route's bar mounted the menu. The reader's is the default; the
     /// shelf names itself, and the texture section stands down there — and on
     /// the reader too, while a reflowable document is the one open.
-    #[prop(optional)] surface: ChromeSurface,
+    #[prop(optional)]
+    surface: ChromeSurface,
 ) -> impl IntoView {
     let open = open.unwrap_or_else(|| RwSignal::new(false));
     let root_ref: NodeRef<html::Div> = NodeRef::new();
@@ -96,9 +97,8 @@ pub fn AppearanceMenu(
     // to texture, and the document open on it is a raster one. Tracked, so a
     // text document swapping in takes the section out (and a PDF swaps it
     // back) without the menu being remounted.
-    let texture_applies = Signal::derive(move || {
-        surface == ChromeSurface::Reader && !state.reader.reflowable()
-    });
+    let texture_applies =
+        Signal::derive(move || surface == ChromeSurface::Reader && !state.reader.reflowable());
 
     view! {
         <div node_ref=root_ref class="relative inline-flex">
@@ -138,4 +138,3 @@ pub fn AppearanceMenu(
         </div>
     }
 }
-

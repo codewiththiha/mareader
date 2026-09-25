@@ -16,11 +16,11 @@ use app_chrome::icon::{Icon, IconName};
 use library_core::shelf::{ALL_SHELF, Shelf, can_nest};
 
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
 use crate::components::primitives::overlay::action_bar::ActionBar;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::features::library::content::{FolderOrder, ShelfOrder, level_rows};
 use crate::features::library::dnd::controller::DragPayload;
 use crate::features::library::remove_modal::RemoveSheet;
@@ -103,11 +103,7 @@ fn selected_folders(state: AppState) -> Vec<String> {
 
 /// Lifting a held book lifts the whole set; lifting an unselected book lifts
 /// that book and leaves the set alone.
-pub(crate) fn payload_for(
-    state: AppState,
-    item_id: &str,
-    source: Option<String>,
-) -> DragPayload {
+pub(crate) fn payload_for(state: AppState, item_id: &str, source: Option<String>) -> DragPayload {
     if state
         .library
         .selected
@@ -238,11 +234,7 @@ fn shelf_choices(state: AppState) -> Signal<Vec<Shelf>> {
             shelves
                 .iter()
                 .filter(|s| s.id != ALL_SHELF)
-                .filter(|s| {
-                    selected
-                        .iter()
-                        .all(|id| can_nest(shelves, id, &s.id))
-                })
+                .filter(|s| selected.iter().all(|id| can_nest(shelves, id, &s.id)))
                 .cloned()
                 .collect()
         })

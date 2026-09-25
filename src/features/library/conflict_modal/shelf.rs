@@ -28,9 +28,10 @@ pub(super) fn describe_shelf(state: AppState, ask: &ShelfConflictAsk) -> SheetSp
     });
     // The row promises the counter rather than asking the reader to take
     // "the next free name" on faith.
-    let new_name = state.library.shelves.with_untracked(|shelves| {
-        next_shelf_name(shelves, None, &ask.incoming_name)
-    });
+    let new_name = state
+        .library
+        .shelves
+        .with_untracked(|shelves| next_shelf_name(shelves, None, &ask.incoming_name));
     let replace_rows = if own && reads_in_place {
         replace_rows_of_tree(state, &ask.root).len()
     } else {

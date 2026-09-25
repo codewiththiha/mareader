@@ -31,7 +31,12 @@ impl GlossState {
     /// holds; `Self::default()` would allocate a fresh arena node per field on
     /// every close and leak them.
     pub fn reset(&self) {
-        let Self { marks, selection_active, selected_marks, processing_id } = *self;
+        let Self {
+            marks,
+            selection_active,
+            selected_marks,
+            processing_id,
+        } = *self;
         marks.set(Vec::new());
         selection_active.set(false);
         selected_marks.set(std::collections::HashSet::new());

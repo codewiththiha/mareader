@@ -37,15 +37,20 @@ fn parse_selection(detail: &JsValue) -> Option<(u32, u32)> {
 }
 
 pub fn page_selection(state: AppState) {
-    use_raw_event(crate::events::SELECTION_PAGES_EVENT, move |detail| {
-        match parse_selection(detail) {
+    use_raw_event(
+        crate::events::SELECTION_PAGES_EVENT,
+        move |detail| match parse_selection(detail) {
             Some((first, last)) => {
                 let total = state.reader.document.num_pages.get_untracked().max(1);
                 let f = first.clamp(1, total);
                 let l = last.clamp(1, total);
-                state.reader.viewer.selected_pages.set(Some((f.min(l), f.max(l))));
+                state
+                    .reader
+                    .viewer
+                    .selected_pages
+                    .set(Some((f.min(l), f.max(l))));
             }
             None => state.reader.viewer.selected_pages.set(None),
-        }
-    });
+        },
+    );
 }

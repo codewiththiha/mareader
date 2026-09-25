@@ -16,16 +16,16 @@ use std::collections::{HashMap, HashSet};
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{find_row, Book, Fingerprint, Origin, Row};
+use library_core::book::{Book, Fingerprint, Origin, Row, find_row};
 use library_core::conflict::{next_name, next_shelf_name};
 use library_core::id;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 use library_core::wire::BookFileRequest;
 
+use crate::services::library as ipc;
 use crate::services::library::covers;
 use crate::services::library::import;
 use crate::services::library::toast;
-use crate::services::library as ipc;
 use crate::state::AppState;
 use crate::time::now_ms;
 
@@ -406,7 +406,11 @@ fn land_the_tree(
     let mut rows: Vec<Row> = Vec::with_capacity(members.len());
     for (old, what) in &members {
         match what {
-            Member::Copy { new_id, book, shown } => {
+            Member::Copy {
+                new_id,
+                book,
+                shown,
+            } => {
                 let Some((store, measured)) = landed.get(new_id) else {
                     continue;
                 };
@@ -533,7 +537,10 @@ mod tests {
         assert_eq!(name, "Dune_1", "the level's counter, not a collision");
         let rows = state.library.books.get_untracked();
         assert_eq!(rows.len(), 3);
-        let dup = rows.iter().find(|r| r.id() != "b1" && r.id() != "l1").unwrap();
+        let dup = rows
+            .iter()
+            .find(|r| r.id() != "b1" && r.id() != "l1")
+            .unwrap();
         match dup {
             Row::Link { target, name, .. } => {
                 assert_eq!(target, "s1", "the pointer points where the pointer pointed");
@@ -574,7 +581,10 @@ mod tests {
             matches!(link_at(&rows, "b2"), LinkAt::Dead),
             "a target whose address died"
         );
-        assert!(matches!(link_at(&rows, "l1"), LinkAt::Dead), "a link at a link");
+        assert!(
+            matches!(link_at(&rows, "l1"), LinkAt::Dead),
+            "a link at a link"
+        );
     }
 
     fn nested_state() -> (AppState, Owner) {
@@ -705,7 +715,11 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(targets.len(), 2, "both links came along, each as its own row");
+        assert_eq!(
+            targets.len(),
+            2,
+            "both links came along, each as its own row"
+        );
         assert_eq!(
             targets[0],
             ("l2".to_string(), fresh_inside),
@@ -730,9 +744,16 @@ mod tests {
         let shelves = state.library.shelves.get_untracked();
         assert_eq!(shelves.len(), 5, "the shelf and the one inside it, copied");
         let root = copy_of(&shelves, "Shelf_1");
-        assert_eq!(root.books.len(), 1, "one member, and it is not the original's");
+        assert_eq!(
+            root.books.len(),
+            1,
+            "one member, and it is not the original's"
+        );
         let fresh_id = root.books[0].clone();
-        assert_ne!(fresh_id, "b1", "the tree holds its own copy, not the row itself");
+        assert_ne!(
+            fresh_id, "b1",
+            "the tree holds its own copy, not the row itself"
+        );
 
         let rows = state.library.books.get_untracked();
         let dup = library_core::book::find_by_id(&rows, &fresh_id).expect("the copy's row");
@@ -751,10 +772,24 @@ mod tests {
             }
             other => panic!("the duplicate is stored, whatever the original was: {other:?}"),
         }
-        assert_eq!(dup.title.as_deref(), Some("b1"), "the name the original showed");
-        assert!(dup.title_locked, "a name the reader asked for is not debris");
-        assert_eq!(dup.fp, library_core::testkit::fp_n(7), "known by its own measurement");
-        assert!(!dup.fp_pending, "the measurement the copy rode home with landed");
+        assert_eq!(
+            dup.title.as_deref(),
+            Some("b1"),
+            "the name the original showed"
+        );
+        assert!(
+            dup.title_locked,
+            "a name the reader asked for is not debris"
+        );
+        assert_eq!(
+            dup.fp,
+            library_core::testkit::fp_n(7),
+            "known by its own measurement"
+        );
+        assert!(
+            !dup.fp_pending,
+            "the measurement the copy rode home with landed"
+        );
 
         let inside = copy_of(&shelves, "Inside");
         assert_eq!(inside.books.len(), 1);
@@ -768,7 +803,11 @@ mod tests {
             .iter()
             .map(|s| s.name.as_str())
             .collect();
-        assert_eq!(level, vec!["Shelf", "Shelf_1", "Other"], "spliced in behind the original");
+        assert_eq!(
+            level,
+            vec!["Shelf", "Shelf_1", "Other"],
+            "spliced in behind the original"
+        );
     }
 
     #[test]
@@ -802,14 +841,8 @@ mod tests {
         // books.
         let (state, _owner) = nested_state();
         state.library.shelves.update(|shelves| {
-            shelves[0] = library_core::testkit::folder_shelf(
-                "s1",
-                "Books",
-                "f1",
-                None,
-                &["b1"],
-                None,
-            );
+            shelves[0] =
+                library_core::testkit::folder_shelf("s1", "Books", "f1", None, &["b1"], None);
         });
         let plan = plan_the_tree(state, "s1").expect("the shelf is there");
         assert_eq!(plan.name, "Books_1");
@@ -822,7 +855,10 @@ mod tests {
 
         let shelves = state.library.shelves.get_untracked();
         let root = copy_of(&shelves, "Books_1");
-        assert_ne!(root.books[0], "b1", "the folder's copy holds a copy, not the row");
+        assert_ne!(
+            root.books[0], "b1",
+            "the folder's copy holds a copy, not the row"
+        );
         // The original is untouched: the copy is not a rung of the folder, so a
         // walk that mints the tree again mints the tree it already had.
         let original = library_core::shelf::find(&shelves, "s1").expect("the original stands");

@@ -41,8 +41,8 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use app_chrome::hooks::use_timeout::use_debounce_for;
 use crate::state::{AppState, SidebarMode};
+use app_chrome::hooks::use_timeout::use_debounce_for;
 use reader_core::settings::Settings;
 
 mod rules;
@@ -189,8 +189,7 @@ impl ShellController {
                 SidebarLayout::Push
             }
         });
-        let no_slide =
-            Signal::derive(move || !state.reader.viewer.motion.get().sidebar_slide);
+        let no_slide = Signal::derive(move || !state.reader.viewer.motion.get().sidebar_slide);
 
         // The close machine, verbatim from the old `sidebar_paint` apart from
         // the hold's duration: see the module docs for what each direction

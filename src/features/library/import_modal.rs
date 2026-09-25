@@ -19,7 +19,7 @@ use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
-use crate::services::library::{ground_tracking, import_folder, pick_folder, GroundWatch};
+use crate::services::library::{GroundWatch, ground_tracking, import_folder, pick_folder};
 use crate::state::AppState;
 
 /// A context rather than props: three surfaces can open it — the `+` card,
@@ -112,11 +112,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
     let grouped = Signal::derive(move || opts.with(|o| o.groups));
     // The structure answer stands for the picked ground and the rungs below
     // it — the promise the note under the buttons makes.
-    let in_tree = Signal::derive(move || {
-        ground
-            .get()
-            .is_some_and(|watch| !watch.rung.is_empty())
-    });
+    let in_tree = Signal::derive(move || ground.get().is_some_and(|watch| !watch.rung.is_empty()));
     let min_size = Signal::derive(move || opts.with(|o| o.min_size));
     let label = Signal::derive(move || opts.with(|o| o.min_size_label()));
     let at_floor = Signal::derive(move || min_size.get() == MIN_SIZE_FLOOR);

@@ -61,7 +61,11 @@ impl ViewMode {
 /// reads as 0 rather than as a division by a non-positive number.
 pub fn scroll_fraction(offset: f64, total: f64, viewport: f64) -> f64 {
     let travel = total - viewport;
-    if travel > 0.0 { (offset / travel).clamp(0.0, 1.0) } else { 0.0 }
+    if travel > 0.0 {
+        (offset / travel).clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 /// The inverse of [`scroll_fraction`]: the offset a reading fraction names on a
@@ -98,11 +102,12 @@ pub fn anchored_position(
     // remainder: the gap is fixed chrome and never scales.
     let above = height_sum * factor + index as f64 * gap;
     let offset_inside = centre_y_doc - above_with_gap;
-    above + if offset_inside <= height {
-        offset_inside * factor
-    } else {
-        height * factor + (offset_inside - height)
-    }
+    above
+        + if offset_inside <= height {
+            offset_inside * factor
+        } else {
+            height * factor + (offset_inside - height)
+        }
 }
 
 /// First 1-based page of the two-up spread containing `page`.
@@ -159,7 +164,10 @@ mod tests {
     fn an_anchor_in_a_gap_keeps_the_gap_unscaled() {
         // Page 0 ends at 100, the gap spans 100..120; 110 is 10 into the gap,
         // so after doubling, page 0 ends at 200 and the gap is still 20.
-        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 110.0, 2.0, 0), 210.0);
+        assert_eq!(
+            anchored_position(100.0, 0.0, 0.0, 20.0, 110.0, 2.0, 0),
+            210.0
+        );
     }
 
     /// Every gap above the reader counts, not just the one it is standing in:
@@ -168,10 +176,16 @@ mod tests {
     fn gaps_above_the_anchor_hold_the_page_still() {
         // Page 5 starts at 5 * (100 + 20) = 600; +30 into it is 630, which
         // scales to 5 * 200 + 5 * 20 + 60 = 1160.
-        assert_eq!(anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5), 1160.0);
+        assert_eq!(
+            anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5),
+            1160.0
+        );
         // Zooming back out by the same factor returns to the exact start.
         let forward = anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5);
-        assert_eq!(anchored_position(200.0, 1100.0, 1000.0, 20.0, forward, 0.5, 5), 630.0);
+        assert_eq!(
+            anchored_position(200.0, 1100.0, 1000.0, 20.0, forward, 0.5, 5),
+            630.0
+        );
     }
 
     /// A centre past the end of a short document still lands at the scaled end,
@@ -180,7 +194,10 @@ mod tests {
     fn a_centre_past_the_end_keeps_the_overflow_unscaled() {
         // 900 is far past the single page: the page scales to 200 and the 800
         // of overflow beyond it stays exactly as long as it was.
-        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 900.0, 2.0, 0), 1000.0);
+        assert_eq!(
+            anchored_position(100.0, 0.0, 0.0, 20.0, 900.0, 2.0, 0),
+            1000.0
+        );
     }
 
     #[test]

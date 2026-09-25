@@ -225,8 +225,7 @@ impl Placement {
 
     /// Offered for a read-at-place folder arrival under a different folder's
     /// name.
-    pub const SHELF_READ_IN_PLACE: &'static [Placement] =
-        &[Placement::LinkOnly, Placement::Merge];
+    pub const SHELF_READ_IN_PLACE: &'static [Placement] = &[Placement::LinkOnly, Placement::Merge];
 
     pub const ALL: &'static [Placement] = &[
         Placement::Open,
@@ -386,8 +385,12 @@ mod tests {
 
     #[test]
     fn an_ask_answers_for_the_thing_it_met_and_refuses_an_answer_it_did_not_offer() {
-        let book =
-            PlacementAsk::book(import("dune", "s1"), "b1".into(), "Dune".into(), Placement::FILE);
+        let book = PlacementAsk::book(
+            import("dune", "s1"),
+            "b1".into(),
+            "Dune".into(),
+            Placement::FILE,
+        );
         assert_eq!(book.existing.id(), "b1");
         assert!(!book.existing.is_shelf());
         assert!(book.offers_placement(Placement::KeepBoth));
@@ -425,7 +428,9 @@ mod tests {
                 head_hash: 9,
             },
             added_ms: 10,
-            origin: Origin::Linked { src: path.to_string() },
+            origin: Origin::Linked {
+                src: path.to_string(),
+            },
             ..crate::testkit::book(id)
         })
     }
@@ -457,7 +462,11 @@ mod tests {
             path: format!("/books/{name}"),
             ext: "pdf".to_string(),
             size: 10,
-            fp: Fingerprint { size: 10, mtime_ms: 5, head_hash: 9 },
+            fp: Fingerprint {
+                size: 10,
+                mtime_ms: 5,
+                head_hash: 9,
+            },
         }
     }
 
@@ -506,24 +515,27 @@ mod tests {
         let shelves = vec![shelf("s", &["b1"])];
         assert_eq!(collide(&rows, &shelves, &import("1_1", "s")), None);
         assert_eq!(collide(&rows, &shelves, &drag("b2", "1_1", "s")), None);
-        assert_eq!(collide(&rows, &shelves, &import("1", "s")).as_deref(), Some("b1"));
+        assert_eq!(
+            collide(&rows, &shelves, &import("1", "s")).as_deref(),
+            Some("b1")
+        );
     }
 
     #[test]
     fn a_link_neither_asks_nor_blocks() {
         // A link carries its target's name but is never what a collision is
         // found against.
-        let rows = vec![
-            titled("b1", "/books/1.pdf", "1"),
-            link("l1", "1", "b1"),
-        ];
+        let rows = vec![titled("b1", "/books/1.pdf", "1"), link("l1", "1", "b1")];
         let shelves = vec![shelf("s", &["l1"]), shelf("t", &["b1"])];
         assert_eq!(
             collide(&rows, &shelves, &import("1", "s")),
             None,
             "the only row on this shelf is a pointer"
         );
-        assert_eq!(collide(&rows, &shelves, &drag("l1", "1", "t")).as_deref(), Some("b1"));
+        assert_eq!(
+            collide(&rows, &shelves, &drag("l1", "1", "t")).as_deref(),
+            Some("b1")
+        );
         assert_eq!(collide(&rows, &shelves, &drag("l1", "1", "s")), None);
     }
 
@@ -581,11 +593,17 @@ mod tests {
     #[test]
     fn an_arrival_carries_its_own_name_and_its_file() {
         let at = Arrival::import(file("1.pdf"), "s", Some(2));
-        assert_eq!(at.name, "1", "the name is the stem: a title is not a file name");
+        assert_eq!(
+            at.name, "1",
+            "the name is the stem: a title is not a file name"
+        );
         assert!(at.is_import());
         assert_eq!(at.moving, None);
         assert_eq!(at.index, Some(2));
-        assert_eq!(at.file.as_ref().map(|f| f.path.as_str()), Some("/books/1.pdf"));
+        assert_eq!(
+            at.file.as_ref().map(|f| f.path.as_str()),
+            Some("/books/1.pdf")
+        );
         let moved = Arrival::moved("b1", "Dune", ALL_SHELF, None);
         assert!(!moved.is_import());
         assert_eq!(moved.moving.as_deref(), Some("b1"));
@@ -608,7 +626,10 @@ mod tests {
             None,
             "and an import leaves no level at all"
         );
-        let rows = vec![titled("b1", "/books/1.pdf", "1"), titled("b2", "/books/2.pdf", "2")];
+        let rows = vec![
+            titled("b1", "/books/1.pdf", "1"),
+            titled("b2", "/books/2.pdf", "2"),
+        ];
         let shelves = vec![shelf("s", &["b1"]), shelf("t", &["b2"])];
         assert_eq!(
             collide(&rows, &shelves, &drag("b2", "1", "s").leaving("t")).as_deref(),
@@ -619,8 +640,14 @@ mod tests {
     #[test]
     fn a_shelf_name_the_level_already_holds_asks() {
         let shelves = vec![plain_shelf("s1", "Books")];
-        assert_eq!(collide_shelf(&shelves, None, "Books").as_deref(), Some("s1"));
-        assert_eq!(collide_shelf(&shelves, None, "books").as_deref(), Some("s1"));
+        assert_eq!(
+            collide_shelf(&shelves, None, "Books").as_deref(),
+            Some("s1")
+        );
+        assert_eq!(
+            collide_shelf(&shelves, None, "books").as_deref(),
+            Some("s1")
+        );
         assert_eq!(collide_shelf(&shelves, None, "Comics"), None);
         assert_eq!(collide_shelf(&shelves, None, "Books_1"), None);
     }
@@ -629,11 +656,20 @@ mod tests {
     fn a_shelf_collision_is_the_level_it_lands_on() {
         let shelves = vec![
             plain_shelf("s1", "Fiction"),
-            Shelf { parent: Some("s1".to_string()), ..plain_shelf("s2", "Deep") },
+            Shelf {
+                parent: Some("s1".to_string()),
+                ..plain_shelf("s2", "Deep")
+            },
         ];
-        assert_eq!(collide_shelf(&shelves, None, "Fiction").as_deref(), Some("s1"));
+        assert_eq!(
+            collide_shelf(&shelves, None, "Fiction").as_deref(),
+            Some("s1")
+        );
         assert_eq!(collide_shelf(&shelves, Some("s1"), "Fiction"), None);
-        assert_eq!(collide_shelf(&shelves, Some("s1"), "Deep").as_deref(), Some("s2"));
+        assert_eq!(
+            collide_shelf(&shelves, Some("s1"), "Deep").as_deref(),
+            Some("s2")
+        );
     }
 
     #[test]
@@ -641,7 +677,10 @@ mod tests {
         let shelves = vec![
             plain_shelf("s1", "Books"),
             plain_shelf("s2", "Books_1"),
-            Shelf { parent: Some("s1".to_string()), ..plain_shelf("s3", "Books") },
+            Shelf {
+                parent: Some("s1".to_string()),
+                ..plain_shelf("s3", "Books")
+            },
         ];
         assert_eq!(next_shelf_name(&shelves, None, "Books"), "Books_2");
         assert_eq!(next_shelf_name(&shelves, Some("s1"), "Books"), "Books_1");

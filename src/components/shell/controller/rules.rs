@@ -28,7 +28,12 @@ pub(super) fn sidebar_is_present(mode: SidebarMode, collapsing: bool) -> bool {
 
 /// Whether `panel` should stay painted this frame (see
 /// [`super::ShellController::panel_shown`]).
-pub(super) fn panel_is_shown(panel: SidebarMode, mode: SidebarMode, collapsing: bool, last: SidebarMode) -> bool {
+pub(super) fn panel_is_shown(
+    panel: SidebarMode,
+    mode: SidebarMode,
+    collapsing: bool,
+    last: SidebarMode,
+) -> bool {
     mode == panel || (mode == SidebarMode::None && collapsing && last == panel)
 }
 

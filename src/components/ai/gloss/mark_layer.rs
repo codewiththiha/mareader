@@ -55,7 +55,7 @@ use ai_core::gloss::{GlossBox, GlossMark};
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::selection_mode::{
-    dispatch_gloss_context, toggle_selected, LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
+    LONG_PRESS_MS, LONG_PRESS_SLOP_PX, dispatch_gloss_context, toggle_selected,
 };
 use crate::components::primitives::interactions::long_press::{LongPressOptions, use_long_press};
 

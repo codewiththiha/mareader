@@ -12,8 +12,8 @@ use library_core::folder::dir_of_rung;
 use library_core::shelf::{ALL_SHELF, ShelfKind, containing, find};
 
 use super::toast;
-use crate::state::library::Reveal;
 use crate::state::AppState;
+use crate::state::library::Reveal;
 
 static NONCE: AtomicU64 = AtomicU64::new(1);
 
@@ -50,11 +50,7 @@ fn navigate_to_shelf_of(state: AppState, book_id: &str) {
     let target = state
         .library
         .shelves
-        .with_untracked(|shelves| {
-            containing(shelves, book_id)
-                .first()
-                .map(|s| s.id.clone())
-        })
+        .with_untracked(|shelves| containing(shelves, book_id).first().map(|s| s.id.clone()))
         .unwrap_or_else(|| ALL_SHELF.to_string());
     goto_level(state, target);
 }

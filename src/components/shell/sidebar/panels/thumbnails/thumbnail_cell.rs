@@ -11,7 +11,7 @@
 // single-threaded UI code, but the owner's cleanup contract demands
 // thread-safe handles; `Rc` would not compile here.
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,9 +20,9 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
 
-use pdf_engine::api as engine;
-use app_chrome::hooks::use_timeout::use_timeout_slot;
 use crate::state::ReaderState;
+use app_chrome::hooks::use_timeout::use_timeout_slot;
+use pdf_engine::api as engine;
 
 use super::geometry::{CELL_W, THUMB_SCALE};
 
@@ -442,13 +442,31 @@ mod tests {
 
     #[test]
     fn a_paint_is_final_a_failure_retries_and_unmount_is_terminal() {
-        assert_eq!(ThumbRenderState::Pending.start(), ThumbRenderState::Rendering);
-        assert_eq!(ThumbRenderState::Rendering.paint(), ThumbRenderState::Settled);
-        assert_eq!(ThumbRenderState::Rendering.fail(), ThumbRenderState::Pending);
+        assert_eq!(
+            ThumbRenderState::Pending.start(),
+            ThumbRenderState::Rendering
+        );
+        assert_eq!(
+            ThumbRenderState::Rendering.paint(),
+            ThumbRenderState::Settled
+        );
+        assert_eq!(
+            ThumbRenderState::Rendering.fail(),
+            ThumbRenderState::Pending
+        );
         // Unmounting wins over every state and is terminal.
-        assert_eq!(ThumbRenderState::Pending.unmount(), ThumbRenderState::Unmounted);
-        assert_eq!(ThumbRenderState::Rendering.unmount(), ThumbRenderState::Unmounted);
-        assert_eq!(ThumbRenderState::Unmounted.unmount(), ThumbRenderState::Unmounted);
+        assert_eq!(
+            ThumbRenderState::Pending.unmount(),
+            ThumbRenderState::Unmounted
+        );
+        assert_eq!(
+            ThumbRenderState::Rendering.unmount(),
+            ThumbRenderState::Unmounted
+        );
+        assert_eq!(
+            ThumbRenderState::Unmounted.unmount(),
+            ThumbRenderState::Unmounted
+        );
     }
 
     #[test]

@@ -45,7 +45,11 @@ pub fn texture_class(state: ReaderState) -> Memo<String> {
 pub fn zoom_style(state: ReaderState) -> Signal<String> {
     let display = state.viewer.zoom.display;
     Signal::derive(move || {
-        let zoom = if state.reflowable() { display.get() } else { 1.0 };
+        let zoom = if state.reflowable() {
+            display.get()
+        } else {
+            1.0
+        };
         format!("--tx-zoom:{zoom};")
     })
 }

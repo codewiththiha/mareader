@@ -6,8 +6,8 @@
 //! `--color-muted`), so it follows the active base mode and tint with no extra
 //! wiring.
 
-use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
+use leptos::prelude::*;
 
 #[component]
 pub fn DragOverlay() -> impl IntoView {

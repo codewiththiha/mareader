@@ -25,8 +25,8 @@ use reader_core::view::{PAGE_GAP, ViewMode};
 use reader_core::zoom_math::FitMode;
 
 use crate::effects::app::theme::html_style;
-use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
+use crate::state::reader::ZoomCommand;
 
 /// Install the gap and margin effects, in the order documented above.
 ///
@@ -40,9 +40,10 @@ pub fn layout_prefs(state: AppState, vertical: Virtualizer, horizontal: Virtuali
     // the seed honours the same mode rule as the sync effect below.
     {
         let m = state.settings.with_untracked(|st| st.layout.page_margin);
-        let on_horizontal_strip =
-            vs.viewer.mode.get_untracked() == ViewMode::ScrollHorizontal;
-        vs.viewer.page_margin.set(if on_horizontal_strip { 0.0 } else { m });
+        let on_horizontal_strip = vs.viewer.mode.get_untracked() == ViewMode::ScrollHorizontal;
+        vs.viewer
+            .page_margin
+            .set(if on_horizontal_strip { 0.0 } else { m });
     }
 
     // No-gap pref → runtime gap + rescale. The continuous text stream is not
@@ -95,14 +96,17 @@ pub fn layout_prefs(state: AppState, vertical: Virtualizer, horizontal: Virtuali
             let gap = vs.viewer.page_gap.get_untracked();
             let widths = vs
                 .document
-                .content.metrics
+                .content
+                .metrics
                 .intrinsic
                 .with_untracked(|w| w.iter().map(|s| s.width).collect::<Vec<f64>>());
             // Vertical: margin is cross-axis; sizes unchanged aside from gap.
             v.rescale(1.0, vs.document.content.metrics.strip_sizes(gap));
             // Horizontal: margin is main-axis — which the exempt mode simply
             // never has (m resolves to 0 there).
-            hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m);
+            hv.rescale(1.0, move |i| {
+                widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m
+            });
             // A margin change must re-fit the page under the reader: the fit
             // target derives from the usable width (`cw - 2*margin`), so the
             // page only visibly gains side space once that scale is

@@ -74,7 +74,10 @@ mod tests {
         // container must fit the plate at half the letter's scale.
         let letter = fit_scale(FitMode::Width, 600.0, 800.0, 612.0, 792.0, 1.0);
         let plate = fit_scale(FitMode::Width, 600.0, 800.0, 1224.0, 792.0, 1.0);
-        assert!((letter - 2.0 * plate).abs() < 1e-9, "letter {letter} plate {plate}");
+        assert!(
+            (letter - 2.0 * plate).abs() < 1e-9,
+            "letter {letter} plate {plate}"
+        );
     }
 
     /// Fit modes: width uses the container width, page takes the smaller of the
@@ -108,7 +111,10 @@ mod tests {
             (1.2, 1, 1.5),
             (1.2, -1, 1.0),
         ] {
-            assert!((nearest_zoom(from, dir) - want).abs() < 1e-9, "{from} dir {dir}");
+            assert!(
+                (nearest_zoom(from, dir) - want).abs() < 1e-9,
+                "{from} dir {dir}"
+            );
         }
     }
 

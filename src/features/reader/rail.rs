@@ -38,9 +38,7 @@ pub(crate) fn ReaderRail(
     // the Outline panel (which degrades gracefully to its empty state) so
     // the reader never faces a panel that cannot show anything.
     Effect::new(move |_| {
-        if state.reader.reflowable()
-            && sidebar.get_untracked() == SidebarMode::Thumbs
-        {
+        if state.reader.reflowable() && sidebar.get_untracked() == SidebarMode::Thumbs {
             sidebar.set(SidebarMode::Outline);
         }
     });

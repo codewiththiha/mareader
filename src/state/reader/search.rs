@@ -37,7 +37,16 @@ impl SearchState {
     /// struct already holds; `Self::default()` would allocate a fresh arena node
     /// per field on every close and leak them.
     pub fn reset(&self) {
-        let Self { query, total, matches, active, index_built, building, visible, dismissed } = *self;
+        let Self {
+            query,
+            total,
+            matches,
+            active,
+            index_built,
+            building,
+            visible,
+            dismissed,
+        } = *self;
         query.set(String::new());
         total.set(0);
         matches.set(Vec::new());

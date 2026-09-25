@@ -9,11 +9,17 @@ use crate::zoom_math::FitMode;
 
 use super::on_true;
 
-fn default_page_margin() -> f64 { 0.0 }
-fn default_label_max_pct() -> f64 { 100.0 }
+fn default_page_margin() -> f64 {
+    0.0
+}
+fn default_label_max_pct() -> f64 {
+    100.0
+}
 /// The fit mode a document opens with. `FitMode::None` is not a startup mode,
 /// which is why [`super::sanitize`] retries it.
-pub(super) fn default_startup_fit() -> FitMode { FitMode::Page }
+pub(super) fn default_startup_fit() -> FitMode {
+    FitMode::Page
+}
 /// The column-width dial's resting point: the natural column.
 pub const DEFAULT_COLUMN_WIDTH_PCT: f64 = 100.0;
 /// The column-width dial's floor. Kept beside the setting (rather than in
@@ -46,7 +52,9 @@ pub enum FloatingLabelStyle {
 use pdf_paper::PaperArea;
 
 /// The persisted knob's default: the natural column.
-fn default_column_width_pct() -> f64 { DEFAULT_COLUMN_WIDTH_PCT }
+fn default_column_width_pct() -> f64 {
+    DEFAULT_COLUMN_WIDTH_PCT
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LayoutSettings {

@@ -9,16 +9,16 @@ use leptos::html;
 use leptos::prelude::*;
 use reader_core::view::Axis;
 use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
-use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::Closure;
 
+use crate::components::viewer::UniversalStripHost;
 use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::layouts::layout_chrome;
-use crate::components::viewer::UniversalStripHost;
+use crate::state::ReaderState;
 use app_chrome::hooks::dom::{H_PAGE_LIST_ID, PAGE_LIST_ID};
 use app_chrome::hooks::use_resize_observer::observe_content_size;
-use crate::state::ReaderState;
 
 #[component]
 pub fn ScrollShell(
@@ -225,9 +225,7 @@ fn install_wheel_to_hscroll(
     }
     STRIP_WHEEL_OPTS.with(|opts| {
         let _ = el.add_event_listener_with_callback_and_add_event_listener_options(
-            "wheel",
-            &handler,
-            opts,
+            "wheel", &handler, opts,
         );
     });
     wheel_guard.set_value(Some((el.clone(), handler)));

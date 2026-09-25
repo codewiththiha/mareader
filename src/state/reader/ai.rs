@@ -83,7 +83,11 @@ impl AiSelectionState {
     /// struct already holds; `Self::default()` would allocate a fresh arena node
     /// per field on every close and leak them.
     pub fn reset(&self) {
-        let Self { detail, anchor, popover_open } = *self;
+        let Self {
+            detail,
+            anchor,
+            popover_open,
+        } = *self;
         detail.set(None);
         anchor.set(None);
         popover_open.set(false);

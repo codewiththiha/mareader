@@ -18,13 +18,13 @@ pub use folder_merge::answer_folder_merge;
 pub use name::answer_placement;
 pub use note::{close_already_imported, raise_note};
 pub use shelf::{
-    answer_shelf, cancel_shelf, offers as shelf_offers, raise_shelf, ShelfConflictAsk,
+    ShelfConflictAsk, answer_shelf, cancel_shelf, offers as shelf_offers, raise_shelf,
 };
 
 use leptos::prelude::*;
 
-use library_core::book::{find_row, Row};
-use library_core::conflict::{collide, next_name, Arrival, Placement, PlacementAsk, Scope};
+use library_core::book::{Row, find_row};
+use library_core::conflict::{Arrival, Placement, PlacementAsk, Scope, collide, next_name};
 use library_core::folder::FolderMode;
 
 use crate::state::AppState;

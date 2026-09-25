@@ -153,7 +153,9 @@ impl OverlayBoard {
         on_cleanup(move || {
             // `try_update`: cleanup can run while the root is being torn down,
             // and a stale member is harmless either way — its signal goes with it.
-            let _ = self.members.try_update(|ms| ms.retain(|m| m.token != token));
+            let _ = self
+                .members
+                .try_update(|ms| ms.retain(|m| m.token != token));
         });
     }
 
@@ -236,9 +238,7 @@ mod tests {
         };
         assert_eq!(coexist, OverlayPolicy::IN_DIALOG);
         assert!(!coexist.occupies.intersects(OverlayPolicy::MENU.occupies));
-        assert!(!coexist
-            .displaces
-            .intersects(OverlayPolicy::MODAL.occupies));
+        assert!(!coexist.displaces.intersects(OverlayPolicy::MODAL.occupies));
         assert!(!OverlayPolicy::MENU.displaces.intersects(coexist.occupies));
     }
 
@@ -247,14 +247,26 @@ mod tests {
         // The settings modal's dropdowns and pickers: opening one must not
         // close the modal it lives in, and must not close anything else
         // either — dismissal there is outside-press hit-testing, not lanes.
-        assert!(!OverlayPolicy::IN_DIALOG
-            .displaces
-            .intersects(OverlayPolicy::MODAL.occupies));
-        assert!(!OverlayPolicy::IN_DIALOG
-            .displaces
-            .intersects(OverlayPolicy::MENU.occupies));
-        assert!(!OverlayPolicy::MENU.displaces.intersects(OverlayPolicy::IN_DIALOG.occupies));
-        assert!(!OverlayPolicy::MODAL.displaces.intersects(OverlayPolicy::IN_DIALOG.occupies));
+        assert!(
+            !OverlayPolicy::IN_DIALOG
+                .displaces
+                .intersects(OverlayPolicy::MODAL.occupies)
+        );
+        assert!(
+            !OverlayPolicy::IN_DIALOG
+                .displaces
+                .intersects(OverlayPolicy::MENU.occupies)
+        );
+        assert!(
+            !OverlayPolicy::MENU
+                .displaces
+                .intersects(OverlayPolicy::IN_DIALOG.occupies)
+        );
+        assert!(
+            !OverlayPolicy::MODAL
+                .displaces
+                .intersects(OverlayPolicy::IN_DIALOG.occupies)
+        );
     }
 
     #[test]

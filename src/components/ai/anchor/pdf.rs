@@ -10,13 +10,13 @@
 use ai_core::gloss::{GlossBox, GlossMark, PageAnchor};
 use reader_core::view::ViewMode;
 
-use app_chrome::hooks::dom::{by_id, range_rects};
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
 use crate::components::ai::reflow_anchor::union_box;
 use crate::components::viewer::page_host::host_id_for_mode;
 use crate::dom_contract::{HOST_ATTR, HOST_PDF};
+use app_chrome::hooks::dom::{by_id, range_rects};
 
-use super::{captured_mark, selection_start, FormatAnchorBridge};
+use super::{FormatAnchorBridge, captured_mark, selection_start};
 
 /// The PDF's bridge: a page host's rect plus the mark's page-space rect, times
 /// the display scale.
@@ -108,10 +108,7 @@ pub fn capture_selection(scale: f64) -> Option<PageAnchor> {
         return None;
     }
     let (range, el) = selection_start()?;
-    let host = el
-        .closest(&format!("[{HOST_ATTR}]"))
-        .ok()
-        .flatten()?;
+    let host = el.closest(&format!("[{HOST_ATTR}]")).ok().flatten()?;
     if host.get_attribute(HOST_ATTR).as_deref() != Some(HOST_PDF) {
         // Another format's host: its anchor is not a page-space rect, and
         // guessing one here would persist a mark that cannot be projected.

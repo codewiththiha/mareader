@@ -47,12 +47,12 @@ use leptos::prelude::*;
 
 use reader_core::zoom_math::FitMode;
 
-use app_chrome::hooks::use_timeout::use_debounce;
-use app_chrome::hooks::use_viewport::use_viewport;
 use crate::state::reader::ZoomCommand;
 use crate::state::{AppState, SidebarMode};
-use crate::zoom::config::FOLLOW_SETTLE_MS;
 use crate::zoom::command::{Gate, posting_gate};
+use crate::zoom::config::FOLLOW_SETTLE_MS;
+use app_chrome::hooks::use_timeout::use_debounce;
+use app_chrome::hooks::use_viewport::use_viewport;
 
 /// Trailing debounce for a discrete refit: the same window of quiet a held
 /// follow waits for before it commits, so a page turn and the end of a resize
@@ -92,9 +92,7 @@ pub fn fit_watcher(state: AppState) {
             // burst. A follow resolves the same question — the fit when a fit
             // owns the scale, the ceiling otherwise — so nothing is lost.
             Gate::Follow => ZoomCommand::Follow,
-            Gate::Now if vs.fit.get_untracked() == FitMode::None => {
-                ZoomCommand::Constrain
-            }
+            Gate::Now if vs.fit.get_untracked() == FitMode::None => ZoomCommand::Constrain,
             Gate::Now => ZoomCommand::Refit,
         };
         // Untweened: a fit tracks the window, so it must land in the frame it

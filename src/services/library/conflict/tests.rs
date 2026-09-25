@@ -16,7 +16,9 @@ fn row(id: &str, title: &str, path: &str, n: u32) -> Row {
         title: Some(title.to_string()),
         fp: fp(n),
         format: Format::Markdown,
-        origin: Origin::Linked { src: path.to_string() },
+        origin: Origin::Linked {
+            src: path.to_string(),
+        },
         ..library_core::testkit::book(id)
     })
 }
@@ -47,11 +49,7 @@ fn stored_row(id: &str, title: &str, src_path: &str, store: &str, n: u32) -> Row
     Row::Book(book)
 }
 
-fn folder_in_place(
-    id: &str,
-    root: &str,
-    placed: &[u32],
-) -> library_core::folder::WatchedFolder {
+fn folder_in_place(id: &str, root: &str, placed: &[u32]) -> library_core::folder::WatchedFolder {
     library_core::folder::WatchedFolder {
         placed: placed.iter().copied().map(fp).collect(),
         ..library_core::testkit::watched_folder(id, root)
@@ -132,7 +130,12 @@ fn a_batch_lands_its_clean_half_and_queues_its_questions() {
 
     raise(state, asks);
     assert!(state.library.conflict.open.get_untracked());
-    let on_screen = state.library.conflict.ask.get_untracked().expect("a question");
+    let on_screen = state
+        .library
+        .conflict
+        .ask
+        .get_untracked()
+        .expect("a question");
     assert_eq!(on_screen.existing_id, "b1", "one question at a time");
     assert_eq!(
         state.library.conflict_waiting.get_untracked().len(),
@@ -140,13 +143,16 @@ fn a_batch_lands_its_clean_half_and_queues_its_questions() {
         "and the rest wait rather than being dropped"
     );
 
-    let (_clean, more) = screen(
-        state,
-        vec![Arrival::import(file("dune", 6), "s", None)],
-    );
+    let (_clean, more) = screen(state, vec![Arrival::import(file("dune", 6), "s", None)]);
     raise(state, more);
     assert_eq!(
-        state.library.conflict.ask.get_untracked().map(|a| a.existing_id).as_deref(),
+        state
+            .library
+            .conflict
+            .ask
+            .get_untracked()
+            .map(|a| a.existing_id)
+            .as_deref(),
         Some("b1"),
         "the question on screen is still the one that was asked first"
     );
@@ -183,7 +189,11 @@ fn already_imported_places_nothing_and_lights_the_row_it_names() {
     let ask = the_ask(state, Arrival::import(file("dune", 2), "s", None));
     raise(state, vec![ask]);
     answer_placement(state, Placement::Open);
-    let second = state.library.reveal.get_untracked().expect("a second reveal");
+    let second = state
+        .library
+        .reveal
+        .get_untracked()
+        .expect("a second reveal");
     assert_ne!(first.nonce, second.nonce);
 }
 
@@ -205,7 +215,10 @@ fn make_link_puts_a_pointer_on_the_level_and_no_second_book() {
     assert_eq!(link.target(), Some("b1"));
     assert_eq!(link.fp(), None, "and has no content identity at all");
     let shelves = state.library.shelves.get_untracked();
-    let on_s = shelves.iter().find(|s| s.id == "s").map(|s| s.books.clone());
+    let on_s = shelves
+        .iter()
+        .find(|s| s.id == "s")
+        .map(|s| s.books.clone());
     assert_eq!(
         on_s,
         Some(vec!["b1".to_string(), link.id().to_string()]),
@@ -248,7 +261,11 @@ fn merge_keeps_the_row_that_was_here_and_folds_the_other_into_it() {
 
     let rows = state.library.books.get_untracked();
     assert_eq!(rows.len(), 1, "two books became one");
-    assert_eq!(rows[0].id(), "b1", "and the one that was here is the one that stayed");
+    assert_eq!(
+        rows[0].id(),
+        "b1",
+        "and the one that was here is the one that stayed"
+    );
     assert_eq!(
         rows[0].book().map(|b| b.page),
         Some(240),
@@ -262,7 +279,11 @@ fn merge_keeps_the_row_that_was_here_and_folds_the_other_into_it() {
             .map(|s| s.books.clone())
             .unwrap_or_default()
     };
-    assert_eq!(on("s"), vec!["b1".to_string()], "still on the level it was asked about");
+    assert_eq!(
+        on("s"),
+        vec!["b1".to_string()],
+        "still on the level it was asked about"
+    );
     assert_eq!(
         on("t"),
         vec!["b1".to_string()],
@@ -279,7 +300,11 @@ fn a_merge_after_a_move_leaves_the_level_the_book_departed() {
             row_at("b1", "Dune", "/one/dune.md", 1, 12),
             row_at("b2", "Dune", "/two/dune.md", 2, 240),
         ],
-        vec![shelf("s", &["b1"]), shelf("t", &["b2"]), shelf("u", &["b2"])],
+        vec![
+            shelf("s", &["b1"]),
+            shelf("t", &["b2"]),
+            shelf("u", &["b2"]),
+        ],
     );
     let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None).leaving("t"));
     raise(state, vec![ask]);
@@ -362,7 +387,10 @@ fn the_show_answer_imports_nothing_and_lights_the_shelf_that_is_here() {
         "no row was written"
     );
     let reveal = state.library.reveal.get_untracked().expect("a reveal");
-    assert_eq!(reveal.id, "s1", "and the light lands on the shelf that is here");
+    assert_eq!(
+        reveal.id, "s1",
+        "and the light lands on the shelf that is here"
+    );
     assert!(
         !state.library.shelf_conflict.open.get_untracked(),
         "the answer closed the sheet"
@@ -376,7 +404,11 @@ fn replace_sends_the_row_that_was_here_out_and_seats_the_arrival_in_its_place() 
             row_at("b1", "Dune", "/one/dune.md", 1, 12),
             row_at("b2", "Dune", "/two/dune.md", 2, 240),
         ],
-        vec![shelf("s", &["b1"]), shelf("t", &["b2"]), shelf("u", &["b1"])],
+        vec![
+            shelf("s", &["b1"]),
+            shelf("t", &["b2"]),
+            shelf("u", &["b1"]),
+        ],
     );
     let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None));
     raise(state, vec![ask]);
@@ -394,13 +426,21 @@ fn replace_sends_the_row_that_was_here_out_and_seats_the_arrival_in_its_place() 
             .map(|s| s.books.clone())
             .unwrap_or_default()
     };
-    assert_eq!(on("s"), vec!["b2".to_string()], "in the displaced row's slot");
+    assert_eq!(
+        on("s"),
+        vec!["b2".to_string()],
+        "in the displaced row's slot"
+    );
     assert_eq!(
         on("u"),
         vec!["b2".to_string()],
         "and on the other shelves it was filed on — a replace is not a quiet removal"
     );
-    assert_eq!(on("t"), Vec::<String>::new(), "having left the one it was lifted from");
+    assert_eq!(
+        on("t"),
+        Vec::<String>::new(),
+        "having left the one it was lifted from"
+    );
 }
 
 #[test]
@@ -446,12 +486,18 @@ fn add_as_new_renames_a_moved_row_and_then_moves_it() {
     assert_eq!(renamed, "Dune_1", "the counter is the answer, not a dialog");
     let shelves = state.library.shelves.get_untracked();
     assert_eq!(
-        shelves.iter().find(|s| s.id == "s").map(|s| s.books.clone()),
+        shelves
+            .iter()
+            .find(|s| s.id == "s")
+            .map(|s| s.books.clone()),
         Some(vec!["b1".to_string(), "b2".to_string()]),
         "and it landed on the shelf it was dropped on"
     );
     assert_eq!(
-        shelves.iter().find(|s| s.id == "t").map(|s| s.books.clone()),
+        shelves
+            .iter()
+            .find(|s| s.id == "t")
+            .map(|s| s.books.clone()),
         Some(Vec::new()),
         "having left the one it was lifted from"
     );

@@ -18,12 +18,9 @@ pub fn use_content_measure(
     word_info: RwSignal<Option<Arc<WordInfo>>>,
 ) -> (NodeRef<html::Div>, RwSignal<f64>) {
     let measure_ref: NodeRef<html::Div> = NodeRef::new();
-    let content_height = use_content_size(
-        measure_ref,
-        move || {
-            let _ = word_info.get();
-            let _ = word.get(); // title wrap can change height independently of body
-        },
-    );
+    let content_height = use_content_size(measure_ref, move || {
+        let _ = word_info.get();
+        let _ = word.get(); // title wrap can change height independently of body
+    });
     (measure_ref, content_height)
 }

@@ -1,7 +1,6 @@
 //! Waiting-state feedback: the centered loader and the shimmer that stands
 //! in for content that has not arrived yet.
 
-
 use leptos::prelude::*;
 
 /// Default edge of the mark in CSS px. Big enough to read from across the
@@ -40,7 +39,6 @@ pub fn CenteredLoader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoVie
         </div>
     }
 }
-
 
 /// Placeholder shimmer lines shown while content is loading.
 #[component]

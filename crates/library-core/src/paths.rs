@@ -20,7 +20,11 @@ pub fn file_name(path: &str) -> String {
     if bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
         return String::new();
     }
-    trimmed.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
+    trimmed
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(path)
+        .to_string()
 }
 
 /// Lower case, no dot: the key the format registry answers by. Empty for a

@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use library_core::conflict::{next_shelf_name, Arrival, Placement, PlacementAsk};
+use library_core::conflict::{Arrival, Placement, PlacementAsk, next_shelf_name};
 use library_core::folder::FolderOpts;
 use library_core::shelf;
 
@@ -44,7 +44,11 @@ pub fn offers(ask: &ShelfConflictAsk) -> &'static [Placement] {
 /// anything, because the three that import take the interrupted run's root and
 /// options off it and the sheet comes down only after the write.
 fn pending(state: AppState) -> Option<ShelfConflictAsk> {
-    state.library.shelf_conflict.ask.with_untracked(|a| a.clone())
+    state
+        .library
+        .shelf_conflict
+        .ask
+        .with_untracked(|a| a.clone())
 }
 
 pub fn raise_shelf(state: AppState, ask: ShelfConflictAsk) {
@@ -81,9 +85,10 @@ pub(super) fn as_new_shelf(state: AppState, _ask: &PlacementAsk) {
     let Some(pending) = pending(state) else {
         return;
     };
-    let name = state.library.shelves.with_untracked(|shelves| {
-        next_shelf_name(shelves, None, &pending.incoming_name)
-    });
+    let name = state
+        .library
+        .shelves
+        .with_untracked(|shelves| next_shelf_name(shelves, None, &pending.incoming_name));
     if crate::services::library::import::copies_over_standing_tree(
         state,
         &pending.root,

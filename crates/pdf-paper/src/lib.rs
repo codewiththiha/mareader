@@ -21,7 +21,7 @@ mod config;
 mod detect;
 mod palette;
 
-pub use color::{lerp, Rgb};
-pub use config::{PaperArea, PaperConfig, DEFAULT_EDGE_WIDTH};
-pub use detect::{PaperDetector, PAPER_SHARE};
+pub use color::{Rgb, lerp};
+pub use config::{DEFAULT_EDGE_WIDTH, PaperArea, PaperConfig};
+pub use detect::{PAPER_SHARE, PaperDetector};
 pub use palette::PagePalette;

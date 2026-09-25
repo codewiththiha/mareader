@@ -25,12 +25,12 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
-use app_chrome::hooks::dom::{h_page_list, page_list};
-use app_chrome::TITLE_BAR_H;
 use crate::state::ReaderState;
-use reader_core::view::ViewMode;
-use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
+use app_chrome::TITLE_BAR_H;
+use app_chrome::hooks::dom::{h_page_list, page_list};
 use pdf_engine::api as engine;
+use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
+use reader_core::view::ViewMode;
 
 /// Height of the floating search bar plus its gap, in CSS px. The bar hangs
 /// over the top-right of the viewer, so a match revealed underneath it would be
@@ -195,13 +195,18 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
             return;
         };
         let scale = state.viewer.zoom.visual_scale();
-        let before: f64 = state.document.content.metrics.intrinsic.with_untracked(|sizes| {
-            sizes
-                .iter()
-                .take((m.page - 1) as usize)
-                .map(|s| s.width)
-                .sum::<f64>()
-        });
+        let before: f64 = state
+            .document
+            .content
+            .metrics
+            .intrinsic
+            .with_untracked(|sizes| {
+                sizes
+                    .iter()
+                    .take((m.page - 1) as usize)
+                    .map(|s| s.width)
+                    .sum::<f64>()
+            });
         let left = TITLE_BAR_H + before * scale + m.x * scale;
         let right = left + (m.w * scale).max(1.0);
         if let Some(next) = scroll_to_reveal(
@@ -233,14 +238,15 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
         let Some(stream) = state.document.content.reflow.stream_handle() else {
             return;
         };
-        let block = m.block_hit.map_or_else(
-            || {
-                state.document.content.reflow.cuts.with_untracked(|cuts| {
-                    reflow_core::pager::first_block_of_page(cuts, m.page)
-                })
-            },
-            |hit| hit.block as usize,
-        );
+        let block =
+            m.block_hit.map_or_else(
+                || {
+                    state.document.content.reflow.cuts.with_untracked(|cuts| {
+                        reflow_core::pager::first_block_of_page(cuts, m.page)
+                    })
+                },
+                |hit| hit.block as usize,
+            );
         stream.scroll_to_index(block, Align::Start, ScrollMode::Auto);
         return;
     }

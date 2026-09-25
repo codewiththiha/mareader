@@ -18,8 +18,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
 /// Wrap `f` so any number of calls before the next animation frame schedule
 /// exactly one call, on that frame. The returned closure is cheap to clone, so
@@ -122,7 +122,11 @@ impl FrameLoop {
                 cancel(&raf);
             }
         });
-        Self { slot: Rc::new(RefCell::new(None)), alive, raf }
+        Self {
+            slot: Rc::new(RefCell::new(None)),
+            alive,
+            raf,
+        }
     }
 
     /// Run `step` once per frame until it returns `false`.

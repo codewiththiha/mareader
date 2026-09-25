@@ -17,8 +17,8 @@ use crate::features::library::selection::{
 };
 use crate::services::document;
 use crate::services::library::{
-    ask_shelf_apart, create_shelf_and_enter, duplicate_entries, duplicate_row, duplicate_shelf,
-    ask_relink, path_of_row, path_of_shelf, reveal_in_folder, set_shelf_watch, shelf_watch,
+    ask_relink, ask_shelf_apart, create_shelf_and_enter, duplicate_entries, duplicate_row,
+    duplicate_shelf, path_of_row, path_of_shelf, reveal_in_folder, set_shelf_watch, shelf_watch,
 };
 use crate::state::AppState;
 
@@ -29,8 +29,13 @@ pub enum MenuTarget {
     /// The id is all an open needs — it says which row the reader meant when
     /// the library holds two of one name — so the address beside it would be a
     /// second answer.
-    Book { id: String, missing: bool },
-    Folder { id: String },
+    Book {
+        id: String,
+        missing: bool,
+    },
+    Folder {
+        id: String,
+    },
     Selection,
     Level,
 }
@@ -193,8 +198,7 @@ impl MenuItemSpec {
 /// left here is the rule above a row.
 #[component]
 fn EntryMenu(
-    #[prop(optional, into)]
-    heading: Option<String>,
+    #[prop(optional, into)] heading: Option<String>,
     items: Vec<MenuItemSpec>,
 ) -> impl IntoView {
     view! {
@@ -340,7 +344,9 @@ fn base_entry_items(
             }),
         )
         .off_when(dead)
-        .title("A second copy of this book, the library's own — highlights and all — filed beside it"),
+        .title(
+            "A second copy of this book, the library's own — highlights and all — filed beside it",
+        ),
         EntryKind::Shelf => MenuItemSpec::new(
             IconName::Copy,
             "Duplicate",

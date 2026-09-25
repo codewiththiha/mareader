@@ -23,12 +23,7 @@ pub(super) fn describe_name(state: AppState, ask: &ConflictAsk) -> SheetSpec {
     let offers = conflict::offers_for(state, ask);
     let existing_name = ask.existing_name.clone();
     let (rows, shelves) = state.library.snapshot_rows();
-    let new_name = next_name(
-        &rows,
-        &shelves,
-        &ask.arrival.shelf_id,
-        &ask.arrival.name,
-    );
+    let new_name = next_name(&rows, &shelves, &ask.arrival.shelf_id, &ask.arrival.name);
     // A count from the address would promise a loss the merge cannot make: a
     // twin still reading that address keeps its own marks.
     let marks = crate::storage::load_gloss()

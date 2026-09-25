@@ -12,8 +12,7 @@ use crate::state::ReaderState;
 pub fn ScrollHorizontalLayout(
     state: ReaderState,
     virtualizer: Virtualizer,
-    #[prop(into)]
-    progress_visible: Signal<bool>,
+    #[prop(into)] progress_visible: Signal<bool>,
 ) -> impl IntoView {
     view! {
         <ScrollShell

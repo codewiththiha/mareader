@@ -63,7 +63,10 @@ mod tests {
             (c, v) = spring_axis(c, v, 300.0, 0.032);
             assert!(c.is_finite() && v.is_finite(), "blew up: {c} @ {v}");
         }
-        assert!((c - 300.0).abs() < 0.5, "did not settle on long frames: {c}");
+        assert!(
+            (c - 300.0).abs() < 0.5,
+            "did not settle on long frames: {c}"
+        );
     }
 
     #[test]

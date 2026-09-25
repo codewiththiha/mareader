@@ -29,14 +29,26 @@ mod tests {
 
     #[test]
     fn the_class_pair_tracks_the_mode() {
-        assert_eq!(body_class_state(NoiseMode::Off), [("noise-enabled", false), ("noise-animated", false)]);
-        assert_eq!(body_class_state(NoiseMode::Static), [("noise-enabled", true), ("noise-animated", false)]);
-        assert_eq!(body_class_state(NoiseMode::Animated), [("noise-enabled", true), ("noise-animated", true)]);
+        assert_eq!(
+            body_class_state(NoiseMode::Off),
+            [("noise-enabled", false), ("noise-animated", false)]
+        );
+        assert_eq!(
+            body_class_state(NoiseMode::Static),
+            [("noise-enabled", true), ("noise-animated", false)]
+        );
+        assert_eq!(
+            body_class_state(NoiseMode::Animated),
+            [("noise-enabled", true), ("noise-animated", true)]
+        );
     }
 
     #[test]
     fn the_opacity_var_is_a_unit_fraction() {
-        let a = Appearance { noise_intensity: 65, ..Default::default() };
+        let a = Appearance {
+            noise_intensity: 65,
+            ..Default::default()
+        };
         let vars = css_vars(&a);
         assert_eq!(vars[0].0, "--noise-opacity");
         assert_eq!(vars[0].1, "0.65");

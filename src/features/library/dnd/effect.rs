@@ -35,10 +35,19 @@ pub enum DropEffect {
         shelf: Option<String>,
         after: bool,
     },
-    ShelfSibling { anchor_id: String, after: bool },
-    FileToShelf { shelf_id: String },
-    NestInto { folder_id: String },
-    CreateFolder { with_book_id: String },
+    ShelfSibling {
+        anchor_id: String,
+        after: bool,
+    },
+    FileToShelf {
+        shelf_id: String,
+    },
+    NestInto {
+        folder_id: String,
+    },
+    CreateFolder {
+        with_book_id: String,
+    },
     /// Distinct from "nothing under the pointer" (a `None` effect), so a card
     /// can tell "not a target" from "a target that says no".
     Refused,
@@ -47,9 +56,7 @@ pub enum DropEffect {
 impl DropEffect {
     pub fn insert_at(&self) -> Option<(&str, bool)> {
         match self {
-            DropEffect::InsertBefore {
-                book_id, after, ..
-            } => Some((book_id.as_str(), *after)),
+            DropEffect::InsertBefore { book_id, after, .. } => Some((book_id.as_str(), *after)),
             _ => None,
         }
     }
@@ -310,7 +317,10 @@ mod tests {
             target_is_held: true,
             ..query(DropTargetKind::Book, "b2", 3, 0)
         };
-        assert!(matches!(drop_effect(unrested), DropEffect::InsertBefore { .. }));
+        assert!(matches!(
+            drop_effect(unrested),
+            DropEffect::InsertBefore { .. }
+        ));
     }
 
     #[test]
@@ -424,7 +434,10 @@ mod tests {
             can_nest: false,
             ..query(DropTargetKind::Folder, "f1", 3, 0)
         };
-        assert!(matches!(drop_effect(books_only), DropEffect::NestInto { .. }));
+        assert!(matches!(
+            drop_effect(books_only),
+            DropEffect::NestInto { .. }
+        ));
     }
 
     #[test]

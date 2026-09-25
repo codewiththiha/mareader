@@ -5,8 +5,8 @@ use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::layouts::layout_chrome;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
-use app_chrome::hooks::use_resize_observer::observe_content_size;
 use crate::state::ReaderState;
+use app_chrome::hooks::use_resize_observer::observe_content_size;
 
 /// Shared shell for Single & Spread. The child is centered with `margin:auto`
 /// in the true viewport, which degrades to start-alignment on overflow —
@@ -21,8 +21,7 @@ use crate::state::ReaderState;
 pub fn PageShell(
     state: ReaderState,
     scroller_id: &'static str,
-    #[prop(into)]
-    progress_visible: Signal<bool>,
+    #[prop(into)] progress_visible: Signal<bool>,
     children: ChildrenFn,
 ) -> impl IntoView {
     // The container observation dies with this shell, explicitly: an

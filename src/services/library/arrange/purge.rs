@@ -13,8 +13,8 @@ use library_core::folder::Tombstone;
 use library_core::ledger::tombstone;
 use library_core::shelf;
 
-use crate::services::library::covers::prune_now;
 use crate::services::library as ipc;
+use crate::services::library::covers::prune_now;
 use crate::state::AppState;
 use crate::time::now_ms;
 
@@ -121,9 +121,10 @@ fn settle_reading_data(book: &Book, data: ReadingData) {
 /// not by the caller remembering.
 fn sweep_book(state: AppState, book: &Book) {
     let path = book.path();
-    let path_in_use = state.library.books.with_untracked(|rows| {
-        book_rows(rows).any(|each| each.path() == path)
-    });
+    let path_in_use = state
+        .library
+        .books
+        .with_untracked(|rows| book_rows(rows).any(|each| each.path() == path));
     if path_in_use {
         return;
     }

@@ -5,16 +5,16 @@ use std::rc::Rc;
 use super::claim::{claim_root, root_is_claimed, when_root_is_free};
 use super::files::{land_file, screen_content};
 use super::folder::{
-    mint_walked_row, resolve_folder, returned_memberships, Landing, Minted, Snapshot,
+    Landing, Minted, Snapshot, mint_walked_row, resolve_folder, returned_memberships,
 };
-use super::reshape::{reshape_row, reshape_the_tree, shape_moved, write_shape};
 use super::gate::{
-    covered_shelf, displaced_member, ground_tracking, reclaim_rung, run_fold, seed_member_rungs,
-    write_rung_tracking, Continuation, Fold, GroundWatch, RootPlan,
+    Continuation, Fold, GroundWatch, RootPlan, covered_shelf, displaced_member, ground_tracking,
+    reclaim_rung, run_fold, seed_member_rungs, write_rung_tracking,
 };
 use super::replace::{purge_folder_linked_books, replace_rows_of_tree};
-use super::restore::{covered_fate, restore_covered_file, CoveredFate};
-use super::{rel_of, rung_label, Asked};
+use super::reshape::{reshape_row, reshape_the_tree, shape_moved, write_shape};
+use super::restore::{CoveredFate, covered_fate, restore_covered_file};
+use super::{Asked, rel_of, rung_label};
 use crate::state::AppState;
 use leptos::prelude::*;
 use library_core::book::{Book, Fingerprint, Origin, Row};
@@ -48,7 +48,10 @@ fn a_loose_file_whose_content_the_library_holds_asks_instead_of_landing() {
     let mut found = vec![found("/downloads/DUNE.pdf", 1)];
     let asks = screen_content(state, &mut found, "all");
 
-    assert!(found.is_empty(), "the file did not stay in the walk to land");
+    assert!(
+        found.is_empty(),
+        "the file did not stay in the walk to land"
+    );
     assert_eq!(asks.len(), 1);
     let ask = &asks[0];
     assert!(
@@ -75,7 +78,10 @@ fn a_loose_file_the_library_does_not_hold_stays_in_the_walk() {
     let owner = Owner::new();
     owner.set();
     let state = AppState::default();
-    state.library.books.set(vec![library_core::testkit::row("b1")]);
+    state
+        .library
+        .books
+        .set(vec![library_core::testkit::row("b1")]);
     let mut found = vec![found("/downloads/other.pdf", 2)];
     let asks = screen_content(state, &mut found, "all");
     assert!(asks.is_empty());
@@ -255,7 +261,10 @@ fn a_continuation_run_keeps_the_tree_s_own_root_decision() {
         "/books",
         FolderOpts::default(),
         &RootPlan {
-            continuation: Some(Continuation { shelf_id: "s1".into(), name: "Books".into() }),
+            continuation: Some(Continuation {
+                shelf_id: "s1".into(),
+                name: "Books".into(),
+            }),
             ..RootPlan::default()
         },
     );
@@ -275,12 +284,21 @@ fn a_continuation_run_keeps_the_tree_s_own_root_decision() {
             ..FolderOpts::default()
         },
         &RootPlan {
-            continuation: Some(Continuation { shelf_id: "s2".into(), name: "Music".into() }),
+            continuation: Some(Continuation {
+                shelf_id: "s2".into(),
+                name: "Music".into(),
+            }),
             ..RootPlan::default()
         },
     );
-    assert!(!rung.tracked(), "the switch answered for the rung, not the root");
-    assert!(!rung.opts.watch, "and the flag mirrors the tree it did not rewrite");
+    assert!(
+        !rung.tracked(),
+        "the switch answered for the rung, not the root"
+    );
+    assert!(
+        !rung.opts.watch,
+        "and the flag mirrors the tree it did not rewrite"
+    );
 }
 
 #[test]
@@ -293,7 +311,10 @@ fn a_watched_folder_no_shelf_of_stands_takes_the_sheets_answer() {
         FolderOpts::default(),
         &RootPlan::default(),
     );
-    assert_eq!(resolved.id, "f1", "the ledger row is still the one standing");
+    assert_eq!(
+        resolved.id, "f1",
+        "the ledger row is still the one standing"
+    );
     assert!(
         !resolved.opts.watch,
         "the sheet's answer lands on a folder nothing can see"
@@ -323,8 +344,14 @@ fn the_sheet_s_watch_answer_lands_in_the_tree_and_not_only_on_the_flag() {
         },
         &RootPlan::default(),
     );
-    assert!(asked.tracked(), "the switch became the root rung's decision");
-    assert!(asked.tracks_rung("Fiction/SciFi"), "and the tree below inherits it");
+    assert!(
+        asked.tracked(),
+        "the switch became the root rung's decision"
+    );
+    assert!(
+        asked.tracks_rung("Fiction/SciFi"),
+        "and the tree below inherits it"
+    );
     assert!(asked.opts.watch, "with the flag left agreed");
 
     let off = resolve_folder(
@@ -352,7 +379,10 @@ fn the_sheet_s_watch_answer_lands_in_the_tree_and_not_only_on_the_flag() {
         &RootPlan::default(),
     );
     assert!(!copies.tracked(), "no rung decision was written");
-    assert!(copies.opts.watch, "and the flag stays the sheet's, as it always did");
+    assert!(
+        copies.opts.watch,
+        "and the flag stays the sheet's, as it always did"
+    );
 }
 
 #[test]
@@ -415,7 +445,10 @@ fn the_watch_on_ground_nothing_watches_is_the_sheets_to_set() {
         },
         &RootPlan::default(),
     );
-    assert!(asked.opts.watch, "a first import is watched because the sheet said so");
+    assert!(
+        asked.opts.watch,
+        "a first import is watched because the sheet said so"
+    );
     let standing_folder = vec![folder_in_mode("f1", "/books", true, false)];
     let again = resolve_folder(
         &standing_folder,
@@ -454,7 +487,10 @@ fn the_watch_on_ground_nothing_watches_is_the_sheets_to_set() {
         },
         &RootPlan::default(),
     );
-    assert!(!copies.opts.watch, "a copies run is a different mode, not this folder watched harder");
+    assert!(
+        !copies.opts.watch,
+        "a copies run is a different mode, not this folder watched harder"
+    );
     assert!(!copies.opts.in_place);
 }
 
@@ -515,7 +551,10 @@ fn a_file_an_in_place_folder_holds_is_a_question_not_a_second_link() {
 
     match covered_fate(state, &file) {
         CoveredFate::Ask { folder_id, row_id } => {
-            assert_eq!(folder_id, "f1", "the folder that placed the file is the one asked about");
+            assert_eq!(
+                folder_id, "f1",
+                "the folder that placed the file is the one asked about"
+            );
             assert_eq!(row_id, landed, "and the question names the book it holds");
         }
         other => panic!("expected the folder's question, got {other:?}"),
@@ -536,8 +575,16 @@ fn a_file_a_folder_log_remembers_comes_back_to_the_folders_place() {
     owner.set();
     let state = AppState::default();
     let file = found_under("/books", "/books/scifi/dune.md", 7);
-    state.library.shelves.set(vec![plain("fs"), plain("sub"), plain("s")]);
-    let mut one = folder("f1", "/books", &[7], vec![stone(7, "/books/scifi/dune.md", false, Some("fs"))]);
+    state
+        .library
+        .shelves
+        .set(vec![plain("fs"), plain("sub"), plain("s")]);
+    let mut one = folder(
+        "f1",
+        "/books",
+        &[7],
+        vec![stone(7, "/books/scifi/dune.md", false, Some("fs"))],
+    );
     one.shelf_map.insert(String::new(), "fs".to_string());
     one.shelf_map.insert("scifi".to_string(), "sub".to_string());
     state.library.folders.set(vec![one]);
@@ -554,12 +601,24 @@ fn a_file_a_folder_log_remembers_comes_back_to_the_folders_place() {
     let id = restore_covered_file(state, &file, &folder_id, &stone);
 
     let rows = state.library.books.get_untracked();
-    assert_eq!(rows.len(), 1, "the folder's book is back, and it is the only book");
+    assert_eq!(
+        rows.len(),
+        1,
+        "the folder's book is back, and it is the only book"
+    );
     let book = rows[0].book().expect("a book row");
     assert_eq!(book.id, id);
-    assert_eq!(book.path(), "/books/scifi/dune.md", "linked — it is the folder's file again");
+    assert_eq!(
+        book.path(),
+        "/books/scifi/dune.md",
+        "linked — it is the folder's file again"
+    );
     assert!(matches!(book.origin, Origin::Linked { .. }));
-    assert_eq!(book.title.as_deref(), Some("Dune"), "wearing the name the shelf showed");
+    assert_eq!(
+        book.title.as_deref(),
+        Some("Dune"),
+        "wearing the name the shelf showed"
+    );
     let shelves = state.library.shelves.get_untracked();
     let on = |sid: &str| {
         shelves
@@ -575,7 +634,10 @@ fn a_file_a_folder_log_remembers_comes_back_to_the_folders_place() {
     );
     assert!(on("sub").is_empty() && on("s").is_empty());
     let folders = state.library.folders.get_untracked();
-    assert!(folders[0].ignored.is_empty(), "the log is spent by the landing");
+    assert!(
+        folders[0].ignored.is_empty(),
+        "the log is spent by the landing"
+    );
     assert!(
         folders[0].placed.contains(&file.fp),
         "and the folder still answers for the file, so no rescan doubles it"
@@ -589,7 +651,12 @@ fn a_moved_out_log_with_no_copy_behind_it_brings_the_linked_book_back() {
     let state = AppState::default();
     let file = found_under("/books", "/books/dune.md", 7);
     state.library.shelves.set(vec![plain("fs")]);
-    let mut one = folder("f1", "/books", &[7], vec![stone(7, "/books/dune.md", true, Some("fs"))]);
+    let mut one = folder(
+        "f1",
+        "/books",
+        &[7],
+        vec![stone(7, "/books/dune.md", true, Some("fs"))],
+    );
     one.shelf_map.insert(String::new(), "fs".to_string());
     state.library.folders.set(vec![one]);
 
@@ -610,8 +677,16 @@ fn a_living_row_outvotes_a_stale_log_beside_it() {
     let state = AppState::default();
     let file = found_under("/books", "/books/dune.md", 7);
     state.library.shelves.set(vec![plain("fs")]);
-    state.library.books.set(vec![linked("b1", "/books/dune.md", 7)]);
-    let mut one = folder("f1", "/books", &[7], vec![stone(7, "/books/dune.md", false, Some("fs"))]);
+    state
+        .library
+        .books
+        .set(vec![linked("b1", "/books/dune.md", 7)]);
+    let mut one = folder(
+        "f1",
+        "/books",
+        &[7],
+        vec![stone(7, "/books/dune.md", false, Some("fs"))],
+    );
     one.shelf_map.insert(String::new(), "fs".to_string());
     state.library.folders.set(vec![one]);
 
@@ -634,11 +709,20 @@ fn a_file_no_in_place_tree_answers_for_is_an_ordinary_import() {
     let fresh = found("/books/new.md", 9);
     assert!(matches!(covered_fate(state, &fresh), CoveredFate::Ordinary));
     let outside = found("/elsewhere/notes.md", 8);
-    assert!(matches!(covered_fate(state, &outside), CoveredFate::Ordinary));
+    assert!(matches!(
+        covered_fate(state, &outside),
+        CoveredFate::Ordinary
+    ));
     // "/books2" is not inside "/books", however much the prefix looks like it.
     let neighbour = found("/books2/dune.md", 7);
-    assert!(matches!(covered_fate(state, &neighbour), CoveredFate::Ordinary));
-    state.library.books.set(vec![stored("b9", "/books/new.md", "/store/b9.md", 9)]);
+    assert!(matches!(
+        covered_fate(state, &neighbour),
+        CoveredFate::Ordinary
+    ));
+    state
+        .library
+        .books
+        .set(vec![stored("b9", "/books/new.md", "/store/b9.md", 9)]);
     assert!(
         matches!(covered_fate(state, &fresh), CoveredFate::Ordinary),
         "a copy of a file the folder never placed makes it no less ordinary"
@@ -654,7 +738,10 @@ fn a_departure_whose_log_is_gone_still_brings_the_linked_book_back() {
     owner.set();
     let state = AppState::default();
     let file = found_under("/books", "/books/scifi/dune.md", 7);
-    state.library.shelves.set(vec![plain("fs"), plain("mid"), plain("sub")]);
+    state
+        .library
+        .shelves
+        .set(vec![plain("fs"), plain("mid"), plain("sub")]);
     let mut copy = stored("b1", "/books/scifi/dune.md", "/store/b1.md", 7);
     copy.as_book_mut().expect("a book").title = Some("Dune".to_string());
     state.library.books.set(vec![copy]);
@@ -683,27 +770,48 @@ fn a_departure_whose_log_is_gone_still_brings_the_linked_book_back() {
         Some("Dune"),
         "named by the copy that carries the name"
     );
-    assert_eq!(stone.shelf_id, None, "with no shelf to remember, the folder's rung answers");
+    assert_eq!(
+        stone.shelf_id, None,
+        "with no shelf to remember, the folder's rung answers"
+    );
 
     let id = restore_covered_file(state, &file, &folder_id, &stone);
 
     let rows = state.library.books.get_untracked();
-    assert_eq!(rows.len(), 2, "the link is back beside the copy, and not instead of it");
+    assert_eq!(
+        rows.len(),
+        2,
+        "the link is back beside the copy, and not instead of it"
+    );
     let back = rows
         .iter()
         .find(|r| r.id() == id)
         .and_then(|r| r.book())
         .expect("a book row");
     assert!(matches!(back.origin, Origin::Linked { .. }));
-    assert_eq!(back.path(), "/books/scifi/dune.md", "reading the folder's file again");
-    assert_eq!(back.title.as_deref(), Some("Dune"), "wearing the name the shelf showed");
-    assert!(!back.independent, "it is the folder's book, not a private one");
+    assert_eq!(
+        back.path(),
+        "/books/scifi/dune.md",
+        "reading the folder's file again"
+    );
+    assert_eq!(
+        back.title.as_deref(),
+        Some("Dune"),
+        "wearing the name the shelf showed"
+    );
+    assert!(
+        !back.independent,
+        "it is the folder's book, not a private one"
+    );
     let copy = rows
         .iter()
         .find(|r| r.id() == "b1")
         .and_then(|r| r.book())
         .expect("the copy");
-    assert!(copy.origin.is_stored(), "and the copy the reader moved out is untouched");
+    assert!(
+        copy.origin.is_stored(),
+        "and the copy the reader moved out is untouched"
+    );
     let shelves = state.library.shelves.get_untracked();
     let on = |sid: &str| {
         shelves
@@ -776,7 +884,10 @@ fn a_walk_mints_the_link_beside_the_copy_that_holds_its_fingerprint() {
     assert!(matches!(back.origin, Origin::Linked { .. }));
     assert_eq!(back.path(), "/books/dune.md");
     assert!(!back.independent, "the folder's book is a shared row");
-    assert!(folder.placed.contains(&file.fp), "and the folder still answers for the file");
+    assert!(
+        folder.placed.contains(&file.fp),
+        "and the folder still answers for the file"
+    );
 }
 
 #[test]
@@ -785,7 +896,10 @@ fn a_copying_folder_never_mints_a_second_copy_of_its_own_file() {
     owner.set();
     let state = AppState::default();
     let file = found_under("/books", "/books/dune.md", 7);
-    state.library.books.set(vec![stored("b1", "/books/dune.md", "/store/b1.md", 7)]);
+    state
+        .library
+        .books
+        .set(vec![stored("b1", "/books/dune.md", "/store/b1.md", 7)]);
     let mut one = folder("f1", "/books", &[7], Vec::new());
     one.opts.in_place = false;
     one.shelf_map.insert(String::new(), "fs".to_string());
@@ -796,10 +910,7 @@ fn a_copying_folder_never_mints_a_second_copy_of_its_own_file() {
     let mut folder = state.library.folders.get_untracked().remove(0);
     let mut copies: std::collections::HashMap<String, (String, Option<Fingerprint>)> =
         std::collections::HashMap::new();
-    copies.insert(
-        "b2".to_string(),
-        ("/store/b2.md".to_string(), None),
-    );
+    copies.insert("b2".to_string(), ("/store/b2.md".to_string(), None));
     let planned_name: Option<String> = None;
     let landing = Landing {
         copies: &copies,
@@ -822,17 +933,14 @@ fn a_copying_folder_never_mints_a_second_copy_of_its_own_file() {
     let Minted::Placed { id, .. } = minted else {
         panic!("the copy folder owes a placement");
     };
-    assert_eq!(id, "b1", "the copy that is there is the row the import names");
+    assert_eq!(
+        id, "b1",
+        "the copy that is there is the row the import names"
+    );
     assert_eq!(books.len(), 1, "and no second copy of one file is made");
 }
 
-fn rung(
-    id: &str,
-    name: &str,
-    folder_id: &str,
-    rel: Option<&str>,
-    parent: Option<&str>,
-) -> Shelf {
+fn rung(id: &str, name: &str, folder_id: &str, rel: Option<&str>, parent: Option<&str>) -> Shelf {
     Shelf {
         id: id.to_string(),
         name: name.to_string(),
@@ -864,7 +972,10 @@ fn displaced_state() -> (AppState, Owner) {
         rung("s2", "mid", "f1", Some("mid"), Some("s1")),
         rung("s3", "deep", "f2", None, None),
     ]);
-    state.library.books.set(vec![linked("b1", "/root/mid/deep/dune.md", 7)]);
+    state
+        .library
+        .books
+        .set(vec![linked("b1", "/root/mid/deep/dune.md", 7)]);
     state.library.shelves.update(|shelves| {
         if let Some(shelf) = shelves.iter_mut().find(|s| s.id == "s3") {
             shelf.books.push("b1".to_string());
@@ -883,9 +994,18 @@ fn a_subfolder_imported_on_its_own_is_a_member_standing_outside_the_tree() {
     ];
 
     let member = displaced_member(state, &outer, &walk).expect("a member outside the tree");
-    assert_eq!(member.folder_id, "f2", "the folder that reads the subfolder on its own");
-    assert_eq!(member.rel, "mid/deep", "on the rung its directory names in the tree");
-    assert_eq!(member.shelf_id, "s3", "and the shelf the note names is that folder's own");
+    assert_eq!(
+        member.folder_id, "f2",
+        "the folder that reads the subfolder on its own"
+    );
+    assert_eq!(
+        member.rel, "mid/deep",
+        "on the rung its directory names in the tree"
+    );
+    assert_eq!(
+        member.shelf_id, "s3",
+        "and the shelf the note names is that folder's own"
+    );
 }
 
 #[test]
@@ -953,9 +1073,13 @@ fn putting_a_member_back_gives_the_tree_its_rung_and_retires_the_folder() {
     });
     state.library.folders.update(|folders| {
         if let Some(inner) = folders.iter_mut().find(|f| f.id == "f2") {
-            inner.shelf_map.insert("deeper".to_string(), "s5".to_string());
+            inner
+                .shelf_map
+                .insert("deeper".to_string(), "s5".to_string());
             inner.placed.insert(fp(9));
-            inner.ignored.push(stone(9, "/root/mid/deep/deeper/gone.md", false, Some("s5")));
+            inner
+                .ignored
+                .push(stone(9, "/root/mid/deep/deeper/gone.md", false, Some("s5")));
         }
     });
 
@@ -965,8 +1089,15 @@ fn putting_a_member_back_gives_the_tree_its_rung_and_retires_the_folder() {
     );
 
     let shelves = state.library.shelves.get_untracked();
-    let back = shelves.iter().find(|s| s.id == "s3").expect("the returning shelf");
-    assert_eq!(back.parent.as_deref(), Some("s2"), "hung on the rung its directory names");
+    let back = shelves
+        .iter()
+        .find(|s| s.id == "s3")
+        .expect("the returning shelf");
+    assert_eq!(
+        back.parent.as_deref(),
+        Some("s2"),
+        "hung on the rung its directory names"
+    );
     assert!(!back.manual_parent, "and the disk owns that place again");
     assert_eq!(
         back.kind,
@@ -981,7 +1112,10 @@ fn putting_a_member_back_gives_the_tree_its_rung_and_retires_the_folder() {
         vec!["b1".to_string()],
         "its books came with it — a shelf is a list of ids and the ids did not move"
     );
-    let deeper = shelves.iter().find(|s| s.id == "s5").expect("its own subfolder");
+    let deeper = shelves
+        .iter()
+        .find(|s| s.id == "s5")
+        .expect("its own subfolder");
     assert_eq!(
         deeper.kind,
         library_core::shelf::ShelfKind::Folder {
@@ -990,20 +1124,32 @@ fn putting_a_member_back_gives_the_tree_its_rung_and_retires_the_folder() {
         },
         "and the shelf below it took the key below the returning one"
     );
-    assert_eq!(deeper.parent.as_deref(), Some("s3"), "still hanging under it");
+    assert_eq!(
+        deeper.parent.as_deref(),
+        Some("s3"),
+        "still hanging under it"
+    );
 
     let folders = state.library.folders.get_untracked();
     assert_eq!(folders.len(), 1, "one ground, one folder");
     let tree = &folders[0];
     assert_eq!(tree.id, "f1");
-    assert_eq!(tree.shelf_map.get("mid/deep").map(String::as_str), Some("s3"));
-    assert_eq!(tree.shelf_map.get("mid/deep/deeper").map(String::as_str), Some("s5"));
+    assert_eq!(
+        tree.shelf_map.get("mid/deep").map(String::as_str),
+        Some("s3")
+    );
+    assert_eq!(
+        tree.shelf_map.get("mid/deep/deeper").map(String::as_str),
+        Some("s5")
+    );
     assert!(
         tree.placed.contains(&fp(7)) && tree.placed.contains(&fp(9)),
         "the ledger followed the ground, so the tree's next scan adds nothing back"
     );
     assert!(
-        tree.ignored.iter().any(|entry| entry.fp == fp(9) && !entry.moved),
+        tree.ignored
+            .iter()
+            .any(|entry| entry.fp == fp(9) && !entry.moved),
         "and the removal the nested folder held is the tree's now"
     );
 }
@@ -1011,7 +1157,10 @@ fn putting_a_member_back_gives_the_tree_its_rung_and_retires_the_folder() {
 #[test]
 fn putting_a_member_back_mints_the_rungs_the_tree_lost() {
     let (state, _owner) = displaced_state();
-    state.library.shelves.update(|shelves| shelves.retain(|s| s.id != "s2"));
+    state
+        .library
+        .shelves
+        .update(|shelves| shelves.retain(|s| s.id != "s2"));
     state.library.folders.update(|folders| {
         if let Some(outer) = folders.iter_mut().find(|f| f.id == "f1") {
             outer.shelf_map.remove("mid");
@@ -1026,18 +1175,35 @@ fn putting_a_member_back_mints_the_rungs_the_tree_lost() {
     let shelves = state.library.shelves.get_untracked();
     let folders = state.library.folders.get_untracked();
     let tree = &folders[0];
-    let mid = tree.shelf_map.get("mid").expect("the rung above was minted");
+    let mid = tree
+        .shelf_map
+        .get("mid")
+        .expect("the rung above was minted");
     let mid = shelves.iter().find(|s| &s.id == mid).expect("and stands");
     assert_eq!(mid.name, "mid", "named by its directory");
-    assert_eq!(mid.parent.as_deref(), Some("s1"), "hanging on the tree's root shelf");
-    let back = shelves.iter().find(|s| s.id == "s3").expect("the returning shelf");
-    assert_eq!(back.parent.as_deref(), Some(mid.id.as_str()), "with the member under it");
+    assert_eq!(
+        mid.parent.as_deref(),
+        Some("s1"),
+        "hanging on the tree's root shelf"
+    );
+    let back = shelves
+        .iter()
+        .find(|s| s.id == "s3")
+        .expect("the returning shelf");
+    assert_eq!(
+        back.parent.as_deref(),
+        Some(mid.id.as_str()),
+        "with the member under it"
+    );
 }
 
 #[test]
 fn an_answer_about_a_shelf_that_went_does_nothing_at_all() {
     let (state, _owner) = displaced_state();
-    state.library.shelves.update(|shelves| shelves.retain(|s| s.id != "s3"));
+    state
+        .library
+        .shelves
+        .update(|shelves| shelves.retain(|s| s.id != "s3"));
 
     assert!(
         reclaim_rung(state, "f1", "f2", "mid/deep", "s3", None).is_none(),
@@ -1045,7 +1211,11 @@ fn an_answer_about_a_shelf_that_went_does_nothing_at_all() {
     );
 
     let folders = state.library.folders.get_untracked();
-    assert_eq!(folders.len(), 2, "the nested folder is still the nested folder");
+    assert_eq!(
+        folders.len(),
+        2,
+        "the nested folder is still the nested folder"
+    );
     assert!(folders.iter().any(|f| f.id == "f2"));
     let tree = folders.iter().find(|f| f.id == "f1").expect("the tree");
     assert_eq!(
@@ -1077,10 +1247,7 @@ fn the_fold_puts_the_member_back_and_names_the_shelf_it_seated() {
         Some("s2"),
         "back on the rung its directory names"
     );
-    assert!(
-        !back.manual_parent,
-        "and the disk owns that place again"
-    );
+    assert!(!back.manual_parent, "and the disk owns that place again");
     assert_eq!(
         state.library.folders.get_untracked().len(),
         1,
@@ -1134,7 +1301,10 @@ fn a_tree_another_run_is_walking_is_not_folded_into() {
     let (state, _owner) = displaced_state();
     let inner = state.library.folder("f2").expect("the picked folder");
     let plan = RootPlan {
-        fold: Some(Fold { tree_id: "f1".to_string(), rel: "mid/deep".to_string() }),
+        fold: Some(Fold {
+            tree_id: "f1".to_string(),
+            rel: "mid/deep".to_string(),
+        }),
         ..Default::default()
     };
     let _theirs = claim_root("/root", Asked::OnFocus).expect("the tree's own run");
@@ -1153,7 +1323,8 @@ fn a_tree_the_reader_took_out_answers_nothing_for_the_ground_under_it() {
     owner.set();
     let state = AppState::default();
     let mut tree = folder_in_mode("f1", "/books", true, true);
-    tree.shelf_map.insert("scifi".to_string(), "sub".to_string());
+    tree.shelf_map
+        .insert("scifi".to_string(), "sub".to_string());
     state.library.folders.set(vec![tree]);
     state.library.shelves.set(Vec::new());
 
@@ -1184,13 +1355,23 @@ fn the_sheet_opens_on_the_answers_the_folder_already_has() {
 #[test]
 fn the_shape_answer_stands_for_the_rung_the_pick_named() {
     let folded = RootPlan {
-        fold: Some(Fold { tree_id: "f1".to_string(), rel: "Fiction".to_string() }),
+        fold: Some(Fold {
+            tree_id: "f1".to_string(),
+            rel: "Fiction".to_string(),
+        }),
         rung: String::new(),
         ..Default::default()
     };
-    assert_eq!(folded.answered_rung(), "Fiction", "a fold gives the answer its rung");
+    assert_eq!(
+        folded.answered_rung(),
+        "Fiction",
+        "a fold gives the answer its rung"
+    );
     let covered = RootPlan {
-        continuation: Some(Continuation { shelf_id: "s1".to_string(), name: "Books".to_string() }),
+        continuation: Some(Continuation {
+            shelf_id: "s1".to_string(),
+            name: "Books".to_string(),
+        }),
         rung: "Fiction".to_string(),
         ..Default::default()
     };
@@ -1287,14 +1468,17 @@ fn a_shelf_for_each_folder_re_files_the_books_under_their_own_directories() {
         linked("b1", "/root/scifi/dune.md", 7),
         linked("b2", "/root/notes.md", 8),
     ]);
-    state.library.shelves.set(vec![library_core::testkit::folder_shelf(
-        "s1",
-        "root",
-        "f1",
-        None,
-        &["b1", "b2"],
-        None,
-    )]);
+    state
+        .library
+        .shelves
+        .set(vec![library_core::testkit::folder_shelf(
+            "s1",
+            "root",
+            "f1",
+            None,
+            &["b1", "b2"],
+            None,
+        )]);
 
     let seat = reshape_the_tree(state, &mut folder, "", true, 5).expect("the books move");
 
@@ -1312,7 +1496,10 @@ fn a_shelf_for_each_folder_re_files_the_books_under_their_own_directories() {
         Some(rung.id.as_str())
     );
     assert_eq!(
-        shelves.iter().find(|s| s.id == "s1").map(|s| s.books.clone()),
+        shelves
+            .iter()
+            .find(|s| s.id == "s1")
+            .map(|s| s.books.clone()),
         Some(vec!["b2".to_string()]),
         "and the book of the root level stays on the root rung"
     );
@@ -1336,7 +1523,9 @@ fn one_shelf_for_everything_brings_the_tree_back_to_its_root_rung() {
     let mut folder = folder_in_mode("f1", "/root", true, true);
     folder.opts.groups = false;
     folder.shelf_map.insert(String::new(), "s1".to_string());
-    folder.shelf_map.insert("scifi".to_string(), "s2".to_string());
+    folder
+        .shelf_map
+        .insert("scifi".to_string(), "s2".to_string());
     state.library.folders.set(vec![folder.clone()]);
     state.library.books.set(vec![
         linked("b1", "/root/scifi/dune.md", 7),
@@ -1367,7 +1556,10 @@ fn one_shelf_for_everything_brings_the_tree_back_to_its_root_rung() {
         "the rung the one-shelf answer has no place for went"
     );
     assert_eq!(
-        shelves.iter().find(|s| s.id == "s1").map(|s| s.books.clone()),
+        shelves
+            .iter()
+            .find(|s| s.id == "s1")
+            .map(|s| s.books.clone()),
         Some(vec!["b2".to_string(), "b1".to_string()]),
         "every book of the tree comes onto the root rung"
     );
@@ -1381,7 +1573,11 @@ fn one_shelf_for_everything_brings_the_tree_back_to_its_root_rung() {
         "it comes up to the root rung rather than going with the rung it stood in"
     );
     assert_eq!(reader.books, vec!["b3".to_string()], "with its own book");
-    assert_eq!(folder.shelf_map.len(), 1, "and the map names the root rung alone");
+    assert_eq!(
+        folder.shelf_map.len(),
+        1,
+        "and the map names the root rung alone"
+    );
 }
 
 #[test]
@@ -1398,14 +1594,17 @@ fn a_nested_answer_nests_that_ground_alone() {
         linked("b2", "/root/Fiction/SciFi/other.md", 8),
         linked("b3", "/root/Reference/atlas.md", 9),
     ]);
-    state.library.shelves.set(vec![library_core::testkit::folder_shelf(
-        "s1",
-        "root",
-        "f1",
-        None,
-        &["b1", "b2", "b3"],
-        None,
-    )]);
+    state
+        .library
+        .shelves
+        .set(vec![library_core::testkit::folder_shelf(
+            "s1",
+            "root",
+            "f1",
+            None,
+            &["b1", "b2", "b3"],
+            None,
+        )]);
 
     let seat =
         reshape_the_tree(state, &mut tree, "Fiction", true, 5).expect("the ground's books move");
@@ -1449,8 +1648,15 @@ fn a_nested_answer_nests_that_ground_alone() {
         .iter()
         .find(|shelf| shelf.name == "Fiction")
         .expect("the shelf the ground answers for");
-    assert_eq!(seat, rung.id, "the light lands on the rung the ground answers for");
-    assert_eq!(rung.parent.as_deref(), Some("s1"), "hung on the tree's own one shelf");
+    assert_eq!(
+        seat, rung.id,
+        "the light lands on the rung the ground answers for"
+    );
+    assert_eq!(
+        rung.parent.as_deref(),
+        Some("s1"),
+        "hung on the tree's own one shelf"
+    );
     assert_eq!(
         shelves
             .iter()
@@ -1459,8 +1665,14 @@ fn a_nested_answer_nests_that_ground_alone() {
         Some(rung.id.clone()),
         "and the folder below it on that rung"
     );
-    assert!(tree.shape_at("Fiction"), "the rung answers for a shelf per folder");
-    assert!(!tree.opts.groups, "while the tree's own root keeps one shelf");
+    assert!(
+        tree.shape_at("Fiction"),
+        "the rung answers for a shelf per folder"
+    );
+    assert!(
+        !tree.opts.groups,
+        "while the tree's own root keeps one shelf"
+    );
 }
 
 #[test]
@@ -1487,7 +1699,10 @@ fn the_books_a_fold_into_a_nested_ground_come_home_to_its_rungs() {
     ]);
     let walk = vec![found_under("/root", "/root/main/dune.md", 7)];
     let plan = RootPlan {
-        fold: Some(Fold { tree_id: "f1".to_string(), rel: "main".to_string() }),
+        fold: Some(Fold {
+            tree_id: "f1".to_string(),
+            rel: "main".to_string(),
+        }),
         ..Default::default()
     };
     let pick = state.library.folder("f2").expect("the picked folder");
@@ -1496,17 +1711,33 @@ fn the_books_a_fold_into_a_nested_ground_come_home_to_its_rungs() {
     let seat = reshape_row(state, "f1", "main", true, 9).expect("the ground's books come home");
 
     let shelves = state.library.shelves.get_untracked();
-    let rung = shelves.iter().find(|shelf| shelf.id == "s2").expect("the rung");
+    let rung = shelves
+        .iter()
+        .find(|shelf| shelf.id == "s2")
+        .expect("the rung");
     assert_eq!(rung.books, vec!["b1".to_string()]);
-    assert_eq!(rung.parent.as_deref(), Some("s1"), "nested under the tree's one shelf");
-    assert_eq!(seat, "s2", "the light lands on the shelf the ground answers for");
     assert_eq!(
-        shelves.iter().find(|s| s.id == "s1").map(|s| s.books.clone()),
+        rung.parent.as_deref(),
+        Some("s1"),
+        "nested under the tree's one shelf"
+    );
+    assert_eq!(
+        seat, "s2",
+        "the light lands on the shelf the ground answers for"
+    );
+    assert_eq!(
+        shelves
+            .iter()
+            .find(|s| s.id == "s1")
+            .map(|s| s.books.clone()),
         Some(vec!["b2".to_string()]),
         "the tree's own root level stays where it was"
     );
     let tree = state.library.folder("f1").expect("the tree");
-    assert!(tree.shape_at("main"), "the row keeps the answer the reader gave the rung");
+    assert!(
+        tree.shape_at("main"),
+        "the row keeps the answer the reader gave the rung"
+    );
     assert!(!tree.opts.groups, "and its own root keeps one shelf");
     assert!(
         state.library.folder("f2").is_none(),
@@ -1523,15 +1754,21 @@ fn a_re_shape_leaves_a_tree_alone_while_its_root_rung_is_out_of_the_library() {
     folder.opts.groups = false;
     folder.shelf_map.insert(String::new(), "gone".to_string());
     state.library.folders.set(vec![folder.clone()]);
-    state.library.books.set(vec![linked("b1", "/root/main/dune.md", 7)]);
-    state.library.shelves.set(vec![library_core::testkit::folder_shelf(
-        "s2",
-        "main",
-        "f1",
-        Some("main"),
-        &["b1"],
-        None,
-    )]);
+    state
+        .library
+        .books
+        .set(vec![linked("b1", "/root/main/dune.md", 7)]);
+    state
+        .library
+        .shelves
+        .set(vec![library_core::testkit::folder_shelf(
+            "s2",
+            "main",
+            "f1",
+            Some("main"),
+            &["b1"],
+            None,
+        )]);
 
     assert_eq!(
         reshape_the_tree(state, &mut folder, "", true, 8),
@@ -1555,7 +1792,8 @@ fn the_shape_answer_is_written_on_the_ground_it_was_given_on() {
     let state = AppState::default();
     let mut tree = folder_in_mode("f1", "/root", true, true);
     tree.shelf_map.insert(String::new(), "s1".to_string());
-    tree.shelf_map.insert("Fiction".to_string(), "s2".to_string());
+    tree.shelf_map
+        .insert("Fiction".to_string(), "s2".to_string());
     state.library.folders.set(vec![tree]);
     state.library.shelves.set(vec![
         standing("s1", "f1"),
@@ -1565,9 +1803,18 @@ fn the_shape_answer_is_written_on_the_ground_it_was_given_on() {
     write_shape(state, "f1", "Fiction", false);
 
     let row = state.library.folder("f1").expect("the tree");
-    assert!(!row.shape_at("Fiction"), "the answered ground keeps one shelf");
-    assert!(row.shape_at("Reference"), "and a folder nobody answered for keeps its own");
-    assert!(row.opts.groups, "the tree's own root answer stands untouched");
+    assert!(
+        !row.shape_at("Fiction"),
+        "the answered ground keeps one shelf"
+    );
+    assert!(
+        row.shape_at("Reference"),
+        "and a folder nobody answered for keeps its own"
+    );
+    assert!(
+        row.opts.groups,
+        "the tree's own root answer stands untouched"
+    );
 }
 
 #[test]
@@ -1581,7 +1828,10 @@ fn a_one_shelf_tree_takes_a_member_in_without_cutting_a_rung() {
     let mut inner = folder_in_mode("f2", "/root/scifi", true, true);
     inner.shelf_map.insert(String::new(), "s2".to_string());
     state.library.folders.set(vec![tree, inner]);
-    state.library.books.set(vec![linked("b1", "/root/scifi/dune.md", 7)]);
+    state
+        .library
+        .books
+        .set(vec![linked("b1", "/root/scifi/dune.md", 7)]);
     state.library.shelves.set(vec![
         library_core::testkit::folder_shelf("s1", "root", "f1", None, &[], None),
         library_core::testkit::folder_shelf("s2", "scifi", "f2", None, &["b1"], None),
@@ -1599,9 +1849,15 @@ fn a_one_shelf_tree_takes_a_member_in_without_cutting_a_rung() {
         "the books of the member come onto the one shelf the ground is kept on"
     );
     let shelves = state.library.shelves.get_untracked();
-    assert!(shelves.iter().all(|s| s.id != "s2"), "and its own shelf goes");
+    assert!(
+        shelves.iter().all(|s| s.id != "s2"),
+        "and its own shelf goes"
+    );
     assert_eq!(
-        shelves.iter().find(|s| s.id == "s1").map(|s| s.books.clone()),
+        shelves
+            .iter()
+            .find(|s| s.id == "s1")
+            .map(|s| s.books.clone()),
         Some(vec!["b1".to_string()])
     );
     assert_eq!(
@@ -1616,7 +1872,10 @@ fn the_planned_fold_seats_the_run_s_own_shelf() {
     let (state, _owner) = displaced_state();
     let inner = state.library.folder("f2").expect("the picked folder");
     let plan = RootPlan {
-        fold: Some(Fold { tree_id: "f1".to_string(), rel: "mid/deep".to_string() }),
+        fold: Some(Fold {
+            tree_id: "f1".to_string(),
+            rel: "mid/deep".to_string(),
+        }),
         ..Default::default()
     };
     let folded = run_fold(state, &plan, &inner, Some("s3"), &[])
@@ -1681,8 +1940,14 @@ fn the_gate_answers_by_the_rung_the_pick_names() {
     let mut copying = folder("f2", "/comics", &[], Vec::new());
     copying.opts.in_place = false;
     copying.shelf_map.insert(String::new(), "cs".to_string());
-    state.library.folders.update(|folders| folders.push(copying));
-    state.library.shelves.update(|shelves| shelves.push(plain("cs")));
+    state
+        .library
+        .folders
+        .update(|folders| folders.push(copying));
+    state
+        .library
+        .shelves
+        .update(|shelves| shelves.push(plain("cs")));
     assert!(covered_shelf(state, "/comics").is_none());
     state
         .library
@@ -1704,7 +1969,10 @@ fn covered_ground_names_the_tree_by_its_row_and_the_walk_by_its_root() {
 
     let covered = covered_shelf(state, "/books/scifi").expect("covered");
     assert_eq!(covered.tree_id, "f1", "the row a tracking write goes to");
-    assert_eq!(covered.tree_root, "/books", "the directory a run reconciles");
+    assert_eq!(
+        covered.tree_root, "/books",
+        "the directory a run reconciles"
+    );
     assert_eq!(covered.rel, "scifi");
     assert_eq!(covered.shelf_id, "sub");
 }
@@ -1759,10 +2027,7 @@ fn ground_a_tree_will_take_in_answers_for_the_rung_it_becomes() {
     let mut folders = state.library.folders.get_untracked();
     assert!(write_rung_tracking(
         &mut folders,
-        &GroundWatch {
-            on: false,
-            ..watch
-        }
+        &GroundWatch { on: false, ..watch }
     ));
     assert!(!folders[0].tracks_rung("scifi"), "the rung the pick names");
     assert!(
@@ -1820,7 +2085,10 @@ fn a_folded_row_s_watch_becomes_the_rung_it_becomes() {
         folders[0].tracks_rung("scifi"),
         "carrying the watch the folded row answered for its own root"
     );
-    assert!(!folders[0].tracked(), "while the tree's root keeps its own answer");
+    assert!(
+        !folders[0].tracked(),
+        "while the tree's root keeps its own answer"
+    );
 }
 
 #[test]
@@ -1832,7 +2100,9 @@ fn a_folder_own_tree_answers_for_it_before_a_tree_it_stands_inside() {
     inner.shelf_map.insert(String::new(), "sub".to_string());
     let mut outer = folder("f2", "/books", &[8], Vec::new());
     outer.shelf_map.insert(String::new(), "fs".to_string());
-    outer.shelf_map.insert("scifi".to_string(), "outersub".to_string());
+    outer
+        .shelf_map
+        .insert("scifi".to_string(), "outersub".to_string());
     state.library.folders.set(vec![outer, inner]);
     state
         .library
@@ -1844,7 +2114,10 @@ fn a_folder_own_tree_answers_for_it_before_a_tree_it_stands_inside() {
         covered.tree_root, "/books/scifi",
         "the folder's own tree answers for it"
     );
-    assert_eq!(covered.shelf_id, "sub", "and its own root shelf is the light");
+    assert_eq!(
+        covered.shelf_id, "sub",
+        "and its own root shelf is the light"
+    );
 }
 
 #[test]

@@ -38,13 +38,13 @@ use reflow_core::geometry::{PageGeometry, SpineSide};
 
 use app_chrome::hooks::dom::by_id;
 
+use super::block_render;
+use crate::components::formats::block_render::BlockView;
 use crate::components::viewer::page_host::block_row_id;
 use crate::dom_contract::HOST_REFLOW;
-use crate::components::formats::block_render::BlockView;
-use super::block_render;
-use crate::state::reader::TypographySignal;
-use crate::state::reader::ReflowContent;
 use crate::state::ReaderState;
+use crate::state::reader::ReflowContent;
+use crate::state::reader::TypographySignal;
 
 /// The page's inline style at the live scale: the page box and its
 /// book-layout (or symmetric) paddings, both taken from the geometry the
@@ -59,8 +59,7 @@ fn page_style(
     spine: SpineSide,
     geo: PageGeometry,
 ) -> String {
-    let (pad_left, pad_right) =
-        geo.pads(book_layout, page.saturating_sub(1) as usize, spine);
+    let (pad_left, pad_right) = geo.pads(book_layout, page.saturating_sub(1) as usize, spine);
     format!(
         "width:{}px;height:{}px;padding:{}px {}px {}px {}px;",
         geo.width * scale,
@@ -105,13 +104,18 @@ pub fn ReflowPage(
     #[prop(default = SpineSide::Auto)]
     spine: SpineSide,
 ) -> impl IntoView {
-    let typography =
-        use_context::<TypographySignal>().expect("TypographySignal must be provided by app bootstrap");
+    let typography = use_context::<TypographySignal>()
+        .expect("TypographySignal must be provided by app bootstrap");
     let book_layout = Memo::new(move |_| typography.get().book_layout);
     // One class, always: the host is a transparent frame, never a textured
     // card — the texture lives on the scroller (see `viewer::texture_surface`).
-    let host_class =
-        move || if class.is_empty() { "tx-page".to_string() } else { format!("tx-page {class}") };
+    let host_class = move || {
+        if class.is_empty() {
+            "tx-page".to_string()
+        } else {
+            format!("tx-page {class}")
+        }
+    };
 
     let reflow = state.document.content.reflow;
     // The cut's own geometry, read tracked: the measurement pipeline

@@ -27,14 +27,15 @@ pub fn ToggleButton(
     /// to this component, so every call site renders the same pressed state.
     #[prop(optional)]
     variant_class: &'static str,
-    #[prop(default = ToggleVariant::Outlined)]
-    variant: ToggleVariant,
+    #[prop(default = ToggleVariant::Outlined)] variant: ToggleVariant,
     children: Children,
 ) -> impl IntoView {
     let class = move || match variant {
         ToggleVariant::Outlined => {
             if active.get() {
-                format!("rounded-md border border-accent bg-accent-soft font-medium {variant_class} text-accent")
+                format!(
+                    "rounded-md border border-accent bg-accent-soft font-medium {variant_class} text-accent"
+                )
             } else {
                 format!("rounded-md border border-line {variant_class} text-ink hover:bg-line")
             }

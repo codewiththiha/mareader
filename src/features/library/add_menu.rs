@@ -15,10 +15,10 @@ use library_core::shelf::{ALL_SHELF, find};
 use library_core::text::{human_age, human_size};
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::features::library::import_modal::ImportSheet;
 use crate::services::library::{
     folder_label, import_files, pick_documents, pick_documents_in, restore_deleted_book,
@@ -243,9 +243,10 @@ pub(crate) fn AddMenu(
         if id == ALL_SHELF {
             return None;
         }
-        state.library.shelves.with(|shelves| {
-            find(shelves, &id).and_then(|s| s.kind.folder_id().map(str::to_string))
-        })
+        state
+            .library
+            .shelves
+            .with(|shelves| find(shelves, &id).and_then(|s| s.kind.folder_id().map(str::to_string)))
     });
 
     let rows = RwSignal::new(Vec::<RestoreRow>::new());
@@ -509,9 +510,9 @@ fn Confirm(
 #[cfg(test)]
 mod tests {
     use super::RestoreRow;
+    use library_core::book::Fingerprint;
     use library_core::folder::Tombstone;
     use library_core::ledger::Recovered;
-    use library_core::book::Fingerprint;
     use reader_core::format::Format;
 
     const MINUTE: u64 = 60_000;
@@ -543,7 +544,10 @@ mod tests {
 
     #[test]
     fn a_removed_book_is_named_by_its_title_or_by_its_file() {
-        assert_eq!(removed(Some("Dune"), "/books/dune.pdf", 1, 0).label(), "Dune");
+        assert_eq!(
+            removed(Some("Dune"), "/books/dune.pdf", 1, 0).label(),
+            "Dune"
+        );
         assert_eq!(
             removed(None, "/books/rust-book.pdf", 1, 0).label(),
             "rust-book"
@@ -552,7 +556,12 @@ mod tests {
 
     #[test]
     fn a_removed_book_says_how_long_ago_and_how_big() {
-        let row = removed(Some("Dune"), "/books/dune.pdf", 12 * 1024 * 1024, 3 * MINUTE);
+        let row = removed(
+            Some("Dune"),
+            "/books/dune.pdf",
+            12 * 1024 * 1024,
+            3 * MINUTE,
+        );
         assert_eq!(row.sublabel(NOW), "removed 3 minutes ago · 12 MB");
     }
 
@@ -617,5 +626,4 @@ mod tests {
         let row = removed(Some("Dune"), "/books/dune.pdf", 1, 0);
         assert!(row.hint().contains("filters"));
     }
-
 }

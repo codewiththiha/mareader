@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{book_rows, find_book_mut, Book, Fingerprint, Origin, Row};
+use library_core::book::{Book, Fingerprint, Origin, Row, book_rows, find_book_mut};
 use library_core::conflict::Arrival;
 use library_core::folder::{self as folder_ops};
 use library_core::id;
@@ -19,16 +19,18 @@ use reader_core::format::is_supported_path;
 
 use super::copy::copy_batch;
 use super::kept;
-use super::restore::{covered_fate, lift_stone_for, restore_covered_file, take_represented, CoveredFate};
-use super::tasks::{begin_task, fail, finish_task, push_task, run_total, task_id, FailMode};
+use super::restore::{
+    CoveredFate, covered_fate, lift_stone_for, restore_covered_file, take_represented,
+};
+use super::tasks::{FailMode, begin_task, fail, finish_task, push_task, run_total, task_id};
 use super::verify::apply_checks;
+use crate::services::library as ipc;
 use crate::services::library::conflict::{self, ConflictAsk};
 use crate::services::library::covers;
-use crate::services::library::reveal;
 use crate::services::library::file_name;
-use crate::services::library as ipc;
-use crate::state::library::ImportTask;
+use crate::services::library::reveal;
 use crate::state::AppState;
+use crate::state::library::ImportTask;
 use crate::time::now_ms;
 
 /// Loose files land as the library's own copies: no folder rescans them and
@@ -397,8 +399,7 @@ pub(crate) fn land_stored_copy_settling(
     spawn_local(async move {
         match ipc::copy_one(&task, &file.path, &book_id).await {
             Ok((store, measured)) => {
-                let placed =
-                    mint_stored_row(state, book_id, &file, store, name, &shelf_id, index);
+                let placed = mint_stored_row(state, book_id, &file, store, name, &shelf_id, index);
                 adopt_copy_measurement(state, &placed, measured);
                 if let Some((folder_id, fp)) = settle {
                     settle_ledger(state, Some(&folder_id), fp);

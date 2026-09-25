@@ -39,13 +39,7 @@ pub(super) fn ensure(state: AppState, path: String, stamp: u64) {
         // Filed through the same door the import queue uses, so the cache's
         // quota cap is enforced by whoever crosses it rather than by whoever
         // happens to prune next.
-        crate::services::library::covers::file_cover(
-            state,
-            path,
-            c.data_url,
-            c.width,
-            c.height,
-        );
+        crate::services::library::covers::file_cover(state, path, c.data_url, c.width, c.height);
         crate::storage::persist_covers(state.library);
     });
 }

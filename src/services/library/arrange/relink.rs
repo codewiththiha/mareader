@@ -6,19 +6,19 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{find_book_mut, find_row, stem_of, Origin};
+use library_core::book::{Origin, find_book_mut, find_row, stem_of};
 use library_core::folder::FolderOpts;
 use library_core::scan::selectable_formats;
 use pdf_engine::api::dialog::CANCELLED;
 use pdf_engine::types::DocStatus;
 
 use super::super::{file_name, pick_folder};
+use crate::services::library as ipc;
 use crate::services::library::covers::{self, prune_now};
 use crate::services::library::import;
 use crate::services::library::toast;
-use crate::services::library as ipc;
-use crate::state::library::RelinkAsk;
 use crate::state::AppState;
+use crate::state::library::RelinkAsk;
 
 /// A linked book takes the new address. A stored book does NOT become linked — that would
 /// quietly turn "the app keeps its own copy" back into "the app reads your folder again" —
@@ -63,12 +63,10 @@ fn relink_book_on(state: AppState, book_id: String, path: String, on_task: Optio
 
         let stored = match origin {
             Origin::Linked { .. } => None,
-            Origin::Stored { .. } => {
-                match ipc::copy_one(&task, &path, &book_id).await {
-                    Ok((store, measured)) => Some((store, measured)),
-                    Err(message) => return import::fail_task(state, &task, message),
-                }
-            }
+            Origin::Stored { .. } => match ipc::copy_one(&task, &path, &book_id).await {
+                Ok((store, measured)) => Some((store, measured)),
+                Err(message) => return import::fail_task(state, &task, message),
+            },
         };
 
         state.library.books.update(|rows| {
@@ -215,13 +213,21 @@ mod tests {
 
     #[test]
     fn the_file_name_finds_the_book_extension_and_all() {
-        assert!(is_the_book("/found/notes.md", "nothing alike", "/old/notes.md"));
+        assert!(is_the_book(
+            "/found/notes.md",
+            "nothing alike",
+            "/old/notes.md"
+        ));
         assert!(is_the_book("/found/report.pdf", "x", "/old/report.docx"));
     }
 
     #[test]
     fn a_neighbour_of_another_name_is_not_the_book() {
-        assert!(!is_the_book("/found/dune-messiah.pdf", "Dune", "/old/dune.pdf"));
+        assert!(!is_the_book(
+            "/found/dune-messiah.pdf",
+            "Dune",
+            "/old/dune.pdf"
+        ));
         assert!(!is_the_book("/found/other.pdf", "Dune", "/old/gone.pdf"));
     }
 }

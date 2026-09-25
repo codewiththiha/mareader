@@ -12,8 +12,8 @@
 use leptos::prelude::*;
 
 use crate::components::primitives::overlay::toast::{ToastData, ToastTone};
-use crate::components::primitives::overlay::toast_host::use_toast_slot;
 use crate::components::primitives::overlay::toast_host::ToastHost as PrimitiveToastHost;
+use crate::components::primitives::overlay::toast_host::use_toast_slot;
 use crate::state::AppState;
 
 #[component]
@@ -32,7 +32,12 @@ pub fn ToastHost(state: AppState) -> impl IntoView {
     // if the same toast is still current.
     use_toast_slot(
         source,
-        move |id| state.ui.toast.with_untracked(|t| t.as_ref().is_some_and(|t| t.id == id)),
+        move |id| {
+            state
+                .ui
+                .toast
+                .with_untracked(|t| t.as_ref().is_some_and(|t| t.id == id))
+        },
         move |id| {
             state.ui.toast.update(|t| {
                 if t.as_ref().is_some_and(|t| t.id == id) {

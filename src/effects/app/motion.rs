@@ -6,8 +6,8 @@
 
 use leptos::prelude::*;
 
-use crate::state::reader::Motion;
 use crate::state::AppState;
+use crate::state::reader::Motion;
 
 /// The `<html>` class that freezes every CSS animation and transition. Its
 /// rule sits next to the `prefers-reduced-motion` safety net it mirrors, in

@@ -11,10 +11,10 @@ use wasm_bindgen::JsCast;
 
 use crate::components::ai::anchor::{AnchorWatch, origin_outside_band};
 use crate::components::ai::gloss::controller::GlossController;
-use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
-use app_chrome::hooks::use_viewport::viewport_size;
 use crate::components::ai::gloss::phase::GlossPhase;
 use crate::state::AppState;
+use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
+use app_chrome::hooks::use_viewport::viewport_size;
 
 /// Escape collapses the expanded card; a second Escape on the bare chip gives
 /// up on the gloss entirely. Outside presses collapse too (only while
@@ -80,7 +80,9 @@ fn origin_gone(origin: Option<GlossBox>, vh: f64) -> bool {
 /// edge cannot flicker.
 pub fn use_origin_exit_collapse(watch: AnchorWatch, ctrl: GlossController) {
     Effect::new(move |_| {
-        if !ctrl.geometry.surface_visible.get() || ctrl.geometry.gphase.get() != GlossPhase::Expanded {
+        if !ctrl.geometry.surface_visible.get()
+            || ctrl.geometry.gphase.get() != GlossPhase::Expanded
+        {
             return;
         }
         let (_, vh) = viewport_size();
@@ -100,7 +102,8 @@ pub fn use_settle_unmount(
     sprung: Signal<Option<GlossBox>>,
 ) {
     Effect::new(move |_| {
-        if !ctrl.geometry.surface_visible.get() || ctrl.geometry.gphase.get() != GlossPhase::Compact {
+        if !ctrl.geometry.surface_visible.get() || ctrl.geometry.gphase.get() != GlossPhase::Compact
+        {
             return;
         }
         let Some(a) = anchor.get() else {

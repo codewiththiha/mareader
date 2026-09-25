@@ -12,9 +12,9 @@ use crate::features::library::add_menu::{AddFace, AddMenuButton};
 use library_core::book::Row;
 
 use crate::features::library::book_card::BookCard;
-use crate::features::library::link_card::LinkCard;
 use crate::features::library::content::{FolderOrder, ShelfOrder};
 use crate::features::library::folder_card::FolderCard;
+use crate::features::library::link_card::LinkCard;
 use crate::state::AppState;
 
 #[component]

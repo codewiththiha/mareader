@@ -8,12 +8,12 @@
 
 use leptos::prelude::*;
 
-use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::form::slider::Slider;
-use reader_core::appearance::TextureMode;
 use crate::components::primitives::controls::toggle_button::ToggleButton;
-use crate::state::AppState;
+use crate::components::primitives::form::slider::Slider;
 use crate::effects::appearance::{AppearanceScrub, preview_appearance};
+use crate::state::AppState;
+use app_chrome::icon::{Icon, IconName};
+use reader_core::appearance::TextureMode;
 
 #[component]
 pub fn TextureSection(state: AppState) -> impl IntoView {

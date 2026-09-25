@@ -75,10 +75,21 @@ mod tests {
         owner.set();
         let state = AppState::default();
 
-        record(state, "/books/dune.md", Some("Dune".to_string()), ReadPoint::fresh());
+        record(
+            state,
+            "/books/dune.md",
+            Some("Dune".to_string()),
+            ReadPoint::fresh(),
+        );
 
-        let id = state.library.books.with_untracked(|rows| rows[0].id().to_string());
-        assert_eq!(state.reader.document.book_id.get_untracked().as_deref(), Some(id.as_str()));
+        let id = state
+            .library
+            .books
+            .with_untracked(|rows| rows[0].id().to_string());
+        assert_eq!(
+            state.reader.document.book_id.get_untracked().as_deref(),
+            Some(id.as_str())
+        );
         assert_eq!(crate::services::document::gloss_key(state), id);
     }
 }

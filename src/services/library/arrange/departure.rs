@@ -10,10 +10,10 @@ use library_core::folder::{self as folder_ops, Tombstone, WatchedFolder};
 use library_core::ledger::tombstone;
 use library_core::shelf::ALL_SHELF;
 
+use crate::services::library as ipc;
+use crate::services::library::covers::{self, prune_now};
 use crate::services::library::import;
 use crate::services::library::toast;
-use crate::services::library::covers::{self, prune_now};
-use crate::services::library as ipc;
 use crate::state::AppState;
 use crate::time::now_ms;
 
@@ -97,11 +97,11 @@ pub(crate) async fn convert_to_stored(
     row_id: &str,
     task: &str,
 ) -> Result<(), String> {
-    let Some(book) = state.library.books.with_untracked(|rows| {
-        find_row(rows, row_id)
-            .and_then(|row| row.book())
-            .cloned()
-    }) else {
+    let Some(book) = state
+        .library
+        .books
+        .with_untracked(|rows| find_row(rows, row_id).and_then(|row| row.book()).cloned())
+    else {
         return Err("That book is no longer in the library.".to_string());
     };
     if book.origin.is_stored() {

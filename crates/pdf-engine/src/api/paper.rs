@@ -5,8 +5,8 @@
 use wasm_bindgen::JsValue;
 
 use super::{
-    guard_pdf_reader, reflect_get, resolve, EngineError, KEY_DATA, KEY_HEIGHT, KEY_OK, KEY_PAGE,
-    KEY_WIDTH,
+    EngineError, KEY_DATA, KEY_HEIGHT, KEY_OK, KEY_PAGE, KEY_WIDTH, guard_pdf_reader, reflect_get,
+    resolve,
 };
 use crate::bridge;
 

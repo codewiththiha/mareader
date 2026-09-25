@@ -76,9 +76,15 @@ pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
     };
     document.title.set(title);
     document.author.set(doc.author);
-    document.outline.set(doc.outline.clone().unwrap_or_else(|| Arc::new(Vec::new())));
+    document
+        .outline
+        .set(doc.outline.clone().unwrap_or_else(|| Arc::new(Vec::new())));
     document.outline_pending.set(doc.outline.is_none());
-    document.content.metrics.page1_size.set(Some(doc.page1_size));
+    document
+        .content
+        .metrics
+        .page1_size
+        .set(Some(doc.page1_size));
 }
 
 /// This document's gloss highlights, into a freshly reset gloss state. Loaded

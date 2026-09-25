@@ -42,10 +42,7 @@ fn is_chrome_scroll_target(ev: &leptos::ev::KeyboardEvent) -> bool {
     // One selector list, one ancestor walk. This runs on EVERY keydown, and
     // asking `closest` four times walked the tree to the root four times over
     // before concluding that a key pressed over the document is the document's.
-    el.closest(CHROME_SCROLL_SELECTOR)
-        .ok()
-        .flatten()
-        .is_some()
+    el.closest(CHROME_SCROLL_SELECTOR).ok().flatten().is_some()
 }
 
 /// Chrome surfaces that own their own arrow keys.
@@ -65,37 +62,38 @@ pub fn shortcuts(
     // the listener — an owner that went away would leave a keydown handler
     // behind, still holding its signals and driving the scroll-hold
     // engine.
-    let keydown = window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
-        let key = ev.key();
+    let keydown =
+        window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
+            let key = ev.key();
 
-        // Escape is a dismiss action, never text input, so it must work even
-        // with a search input focused — handle it before the form-target
-        // guard. Closes the floating search overlay first, then the
-        // sidebar.
-        if key == "Escape" {
-            if state.search.visible.get() {
-                // Closes the bar but leaves the muted highlights behind; the
-                // next interaction with the document clears them.
-                crate::effects::reader::search::dismiss_search(state);
-            } else if sidebar.get() != SidebarMode::None {
-                sidebar.set(SidebarMode::None);
+            // Escape is a dismiss action, never text input, so it must work even
+            // with a search input focused — handle it before the form-target
+            // guard. Closes the floating search overlay first, then the
+            // sidebar.
+            if key == "Escape" {
+                if state.search.visible.get() {
+                    // Closes the bar but leaves the muted highlights behind; the
+                    // next interaction with the document clears them.
+                    crate::effects::reader::search::dismiss_search(state);
+                } else if sidebar.get() != SidebarMode::None {
+                    sidebar.set(SidebarMode::None);
+                }
+                return;
             }
-            return;
-        }
 
-        if is_form_target(&ev) {
-            return;
-        }
+            if is_form_target(&ev) {
+                return;
+            }
 
-        if ev.meta_key() || ev.ctrl_key() {
-            handle_modifier_shortcut(state, &on_open, &ev);
-            return;
-        }
+            if ev.meta_key() || ev.ctrl_key() {
+                handle_modifier_shortcut(state, &on_open, &ev);
+                return;
+            }
 
-        handle_auto_scroll_shortcut(state, &ev);
-        handle_zoom_shortcut(state, &ev);
-        handle_navigation_shortcut(state, &ev);
-    });
+            handle_auto_scroll_shortcut(state, &ev);
+            handle_zoom_shortcut(state, &ev);
+            handle_navigation_shortcut(state, &ev);
+        });
 
     // Release ends the rAF glide. Without this a held arrow would keep
     // scrolling after the key came up (or after the window lost focus).

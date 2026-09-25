@@ -54,13 +54,13 @@ use leptos::html;
 use leptos::portal::Portal;
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
 use crate::components::ai::anchor::host_id_for_mode;
 use crate::components::shell::controller::ShellController;
-use app_chrome::titlebar::root::TitleBarCtx;
 use crate::state::AppState;
 use app_chrome::hooks::dom::{VIEWER_SLOT_ID, by_id};
 use app_chrome::hooks::use_window_event::use_window_event;
+use app_chrome::titlebar::root::TitleBarCtx;
+use pdf_engine::types::DocStatus;
 
 /// Fraction of the canvas width the label may cover.
 const MAX_CANVAS_OVERLAP: f64 = 0.25;
@@ -72,8 +72,7 @@ const MIN_LABEL_W: f64 = 40.0;
 #[component]
 pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
-    let shell = use_context::<ShellController>()
-        .expect("the page provides the shell controller");
+    let shell = use_context::<ShellController>().expect("the page provides the shell controller");
     // The blending node is the positioned <div> (see the view's CRITICAL
     // note); scroll_width() there is the natural text width, as before.
     let label_ref: NodeRef<html::Div> = NodeRef::new();
@@ -86,7 +85,9 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         request_animation_frame(move || {
             // Mid-zoom relayout: geometry is moving; the effect re-runs when
             // the zoom transition ends, so skipping here loses nothing.
-            if state.reader.viewer.zooming_now() { return; }
+            if state.reader.viewer.zooming_now() {
+                return;
+            }
 
             // THE page under the eyes, by id — never an arbitrary mounted
             // page. The id format is the anchor module's; duplicating it here
@@ -96,13 +97,19 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
             // A missing host is the ordinary virtualization gap (the page
             // under the eyes is between mounts), so this stays a silent
             // `by_id` — but the viewer slot itself is chrome.
-            let Some(doc_el) = by_id(&host_id_for_mode(mode, page)) else { return };
-            let Some(viewer) = by_id(VIEWER_SLOT_ID) else { return };
+            let Some(doc_el) = by_id(&host_id_for_mode(mode, page)) else {
+                return;
+            };
+            let Some(viewer) = by_id(VIEWER_SLOT_ID) else {
+                return;
+            };
 
             let pr = doc_el.get_bounding_client_rect();
             let vr = viewer.get_bounding_client_rect();
             let canvas_w = pr.width();
-            if canvas_w <= 0.0 { return; } // not laid out yet: keep last budget
+            if canvas_w <= 0.0 {
+                return;
+            } // not laid out yet: keep last budget
 
             let gap = (pr.left() - vr.left()).max(0.0);
             // Overlap allowance only when there is a real blank margin. When

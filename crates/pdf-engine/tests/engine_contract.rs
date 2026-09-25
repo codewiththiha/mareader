@@ -98,7 +98,10 @@ fn engine_facade_exposes_every_pdfreader_binding() {
         return;
     };
     let names = bridge_pdfreader_names();
-    assert!(!names.is_empty(), "no PDFReader externs parsed from bridge.rs");
+    assert!(
+        !names.is_empty(),
+        "no PDFReader externs parsed from bridge.rs"
+    );
     let missing: Vec<&str> = names
         .iter()
         .map(String::as_str)

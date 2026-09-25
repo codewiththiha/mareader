@@ -6,7 +6,7 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
-use library_core::shelf::{children_of, find, Shelf};
+use library_core::shelf::{Shelf, children_of, find};
 use library_core::text::plural;
 
 use crate::features::library::entry::{EntryDescriptor, EntryShell};
@@ -33,10 +33,11 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
 
     let count_id = id.clone();
     let counts = Signal::derive(move || {
-        let books = state
-            .library
-            .shelves
-            .with(|shelves| find(shelves, &count_id).map(|s| s.books.len()).unwrap_or_default());
+        let books = state.library.shelves.with(|shelves| {
+            find(shelves, &count_id)
+                .map(|s| s.books.len())
+                .unwrap_or_default()
+        });
         let inside = state
             .library
             .shelves
@@ -102,16 +103,17 @@ enum PlateItem {
 /// folder's contents would preview something else. Books and folders share
 /// the four cells rather than each getting their own.
 fn plate_items(state: AppState, shelf_id: &str) -> Vec<PlateItem> {
-    let (folders, members): (Vec<String>, Vec<String>) =
-        state.library.shelves.with(|shelves| {
-            (
-                children_of(shelves, Some(shelf_id))
-                    .iter()
-                    .map(|s| s.id.clone())
-                    .collect(),
-                find(shelves, shelf_id).map(|s| s.books.clone()).unwrap_or_default(),
-            )
-        });
+    let (folders, members): (Vec<String>, Vec<String>) = state.library.shelves.with(|shelves| {
+        (
+            children_of(shelves, Some(shelf_id))
+                .iter()
+                .map(|s| s.id.clone())
+                .collect(),
+            find(shelves, shelf_id)
+                .map(|s| s.books.clone())
+                .unwrap_or_default(),
+        )
+    });
     let books: Vec<Book> = state.library.books.with(|rows| {
         members
             .iter()

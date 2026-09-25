@@ -13,21 +13,21 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::{Book, Row};
 use library_core::query;
-use library_core::shelf::{children_of, find, Shelf};
+use library_core::shelf::{Shelf, children_of, find};
 use library_core::sort;
 use library_core::view::CoverFit;
 use reader_core::format::Format;
 
 use crate::features::library::add_menu::{AddFace, AddMenuButton};
-use crate::features::library::cover_thumb::CoverThumb;
 use crate::features::library::content::{ShelfOrder, level_folders};
+use crate::features::library::cover_thumb::CoverThumb;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::entry::{EntryDescriptor, EntryShell};
+use crate::features::library::facts::book_facts;
 use crate::features::library::folder_badge::FolderBadge;
 use crate::features::library::folder_card::summary;
 use crate::features::library::gestures::{book_policy, folder_policy};
 use crate::features::library::link_card::LinkRow;
-use crate::features::library::facts::book_facts;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::SeamVocab;
@@ -116,7 +116,9 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     let members_id = id.clone();
     let members = Signal::derive(move || {
         state.library.shelves.with(|shelves| {
-            find(shelves, &members_id).map(|s| s.books.clone()).unwrap_or_default()
+            find(shelves, &members_id)
+                .map(|s| s.books.clone())
+                .unwrap_or_default()
         })
     });
     let name = state.library.shelf_name_signal(&id);
@@ -269,7 +271,7 @@ fn row_view(
         Row::Book(book) => view! {
             <ListRow state=state book=book crop=crop depth=depth parent=parent />
         }
-            .into_any(),
+        .into_any(),
         Row::Link { id, target, .. } => {
             let to_shelf = library_core::id::is_shelf(&target);
             // Read back by id, for the same reason the grid's card does.
@@ -324,9 +326,8 @@ fn ListRow(
         policy: book_policy(state, &id, facts, parent.clone()),
     };
 
-    let missing_class = Signal::derive(move || {
-        facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
-    });
+    let missing_class =
+        Signal::derive(move || facts.with(|f| f.as_ref().is_some_and(|x| x.missing)));
     let remove_id = id;
     let indent = row_indent(depth);
 

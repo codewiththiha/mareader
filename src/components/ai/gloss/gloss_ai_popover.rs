@@ -35,21 +35,23 @@
 
 use leptos::prelude::*;
 
+use crate::components::ai::gloss::context_menu::GlossContextMenu;
 use crate::components::ai::gloss::controller::{
     use_gloss_controller, use_open_effect, use_open_listener,
 };
 use crate::components::ai::gloss::drag::use_card_drag;
-use crate::components::ai::gloss::gloss_surface::{GlossMeasureTwin, GlossSurface, GlossSurfaceContent};
+use crate::components::ai::gloss::gloss_surface::{
+    GlossMeasureTwin, GlossSurface, GlossSurfaceContent,
+};
 use crate::components::ai::gloss::hooks::use_ai_chunks::use_ai_chunks;
 use crate::components::ai::gloss::interactions::{
     use_dismiss_interactions, use_origin_exit_collapse, use_settle_unmount, use_zoom_reset,
 };
+use crate::components::ai::gloss::phase::AiPhase;
 use crate::components::ai::gloss::selection_bar::GlossSelectBar;
 use crate::components::ai::gloss::selection_mode::use_select_mode;
 use crate::components::ai::gloss::targeting::use_card_targeting;
-use crate::components::ai::gloss::context_menu::GlossContextMenu;
 use crate::components::ai::gloss::undo_toast::GlossUndoToast;
-use crate::components::ai::gloss::phase::AiPhase;
 use crate::state::AppState;
 
 #[component]
@@ -88,7 +90,11 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     // through, so a snapshot that fills the POS lands in both places in one
     // frame.
     let pos_sig = Signal::derive(move || {
-        ctrl.content.word_info.get().map(|i| i.pos.clone()).unwrap_or_default()
+        ctrl.content
+            .word_info
+            .get()
+            .map(|i| i.pos.clone())
+            .unwrap_or_default()
     });
     let density_sig = Signal::derive(move || state.settings.with(|s| s.gloss_density));
 
@@ -129,4 +135,3 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         <GlossUndoToast state ctrl undo=sm.undo />
     }
 }
-

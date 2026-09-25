@@ -137,7 +137,11 @@ mod tests {
         assert!(tree.resolve("Fiction"), "a rung inherits it");
         assert!(tree.resolve("Fiction/SciFi/deep"), "however deep");
         assert_eq!(tree.track_at(""), Track::On);
-        assert_eq!(tree.track_at("Fiction"), Track::Inherit, "inherited, not set");
+        assert_eq!(
+            tree.track_at("Fiction"),
+            Track::Inherit,
+            "inherited, not set"
+        );
     }
 
     #[test]
@@ -147,7 +151,10 @@ mod tests {
         assert!(tree.resolve(""), "the root still tracks");
         assert!(tree.resolve("Poetry"), "a sibling rung is untouched");
         assert!(!tree.resolve("Fiction"), "the rung turned off is off");
-        assert!(!tree.resolve("Fiction/SciFi"), "and so is everything below it");
+        assert!(
+            !tree.resolve("Fiction/SciFi"),
+            "and so is everything below it"
+        );
         assert_eq!(tree.track_at("Fiction"), Track::Off);
     }
 
@@ -157,9 +164,15 @@ mod tests {
         tree.set("Fiction", Track::Off);
         tree.set("Fiction/SciFi", Track::On);
         assert!(!tree.resolve("Fiction"), "the rung stays off");
-        assert!(!tree.resolve("Fiction/Crime"), "an un-set sibling stays off");
+        assert!(
+            !tree.resolve("Fiction/Crime"),
+            "an un-set sibling stays off"
+        );
         assert!(tree.resolve("Fiction/SciFi"), "the deeper override wins");
-        assert!(tree.resolve("Fiction/SciFi/Hard"), "and its subtree follows");
+        assert!(
+            tree.resolve("Fiction/SciFi/Hard"),
+            "and its subtree follows"
+        );
     }
 
     #[test]
@@ -171,7 +184,10 @@ mod tests {
         tree.set("a", Track::On);
         tree.set("a/b", Track::Off);
         assert!(!tree.resolve(""));
-        assert!(!tree.resolve("z"), "a sibling of `a` inherits the root's Off");
+        assert!(
+            !tree.resolve("z"),
+            "a sibling of `a` inherits the root's Off"
+        );
         assert!(tree.resolve("a"));
         assert!(tree.resolve("a/x"), "below `a`, above `a/b`");
         assert!(!tree.resolve("a/b"));
@@ -210,7 +226,11 @@ mod tests {
         tree.prune_zone("Fiction");
         assert_eq!(tree.track_at("Fiction"), Track::Inherit);
         assert_eq!(tree.track_at("Fiction/SciFi"), Track::Inherit);
-        assert_eq!(tree.track_at("Poetry"), Track::Off, "a sibling is untouched");
+        assert_eq!(
+            tree.track_at("Poetry"),
+            Track::Off,
+            "a sibling is untouched"
+        );
         assert!(tree.tracked(), "and the root still tracks");
         tree.prune_zone("");
         assert!(tree.is_empty());
@@ -253,7 +273,10 @@ mod tests {
             off_root.any_on(),
             "one rung kept on is a folder the rescan still owes a walk"
         );
-        assert!(!off_root.tracked(), "and the root's own answer is still Off");
+        assert!(
+            !off_root.tracked(),
+            "and the root's own answer is still Off"
+        );
     }
 
     #[test]

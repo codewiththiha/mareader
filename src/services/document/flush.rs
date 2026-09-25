@@ -39,7 +39,12 @@ pub(crate) fn flush_read_point(state: AppState) {
     // escaped the syncs, and writing it would be the next open's starting
     // point.
     let num_pages = state.reader.document.num_pages.get_untracked();
-    let page = state.reader.viewer.page.get_untracked().clamp(1, num_pages.max(1));
+    let page = state
+        .reader
+        .viewer
+        .page
+        .get_untracked()
+        .clamp(1, num_pages.max(1));
     // The stream's fractional position rides along with the page: a paged
     // mode's resume point is a page, and the continuous stream's is the same
     // place at full precision. The split is the progress effect's own, so a
@@ -47,7 +52,11 @@ pub(crate) fn flush_read_point(state: AppState) {
     // means — including that a book read in pages carries no fraction.
     let streaming = state.reader.reflowable_now()
         && state.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
-    let fraction = if streaming { state.reader.stream_fraction() } else { None };
+    let fraction = if streaming {
+        state.reader.stream_fraction()
+    } else {
+        None
+    };
     // The rows this read belongs to, by the same rule the progress debounce
     // writes and the open records: the book the reader named when it is a
     // book of its own, every shared row at the address otherwise. Read before

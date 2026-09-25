@@ -6,11 +6,11 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::form::slider::Slider;
-use reader_core::appearance::NoiseMode;
 use crate::components::primitives::controls::toggle_button::ToggleButton;
-use crate::state::AppState;
+use crate::components::primitives::form::slider::Slider;
 use crate::effects::appearance::{AppearanceScrub, preview_appearance};
+use crate::state::AppState;
+use reader_core::appearance::NoiseMode;
 
 #[component]
 pub fn NoiseSection(state: AppState) -> impl IntoView {

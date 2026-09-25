@@ -247,7 +247,11 @@ mod tests {
             (1, None, -1, Some(0)),
         ];
         for &(len, active, dir, want) in cases {
-            assert_eq!(next_search_index(len, active, dir), want, "len={len} active={active:?} dir={dir}");
+            assert_eq!(
+                next_search_index(len, active, dir),
+                want,
+                "len={len} active={active:?} dir={dir}"
+            );
         }
     }
 
@@ -269,10 +273,19 @@ mod tests {
     fn visible_match_does_not_scroll() {
         // scroll 600, viewport 800, top inset 48, bottom inset 56, margin 24
         // => readable band spans 672..1320 in scroll coordinates.
-        assert_eq!(scroll_to_reveal(700.0, 720.0, 600.0, 800.0, 48.0, 56.0, 24.0), None);
+        assert_eq!(
+            scroll_to_reveal(700.0, 720.0, 600.0, 800.0, 48.0, 56.0, 24.0),
+            None
+        );
         // Flush against each edge of the band is still "visible".
-        assert_eq!(scroll_to_reveal(672.0, 700.0, 600.0, 800.0, 48.0, 56.0, 24.0), None);
-        assert_eq!(scroll_to_reveal(1290.0, 1320.0, 600.0, 800.0, 48.0, 56.0, 24.0), None);
+        assert_eq!(
+            scroll_to_reveal(672.0, 700.0, 600.0, 800.0, 48.0, 56.0, 24.0),
+            None
+        );
+        assert_eq!(
+            scroll_to_reveal(1290.0, 1320.0, 600.0, 800.0, 48.0, 56.0, 24.0),
+            None
+        );
     }
 
     /// A match under the fold, or hidden behind the top chrome, is brought to
@@ -320,7 +333,10 @@ mod tests {
         assert_eq!(response.matches[0].block_hit, None);
 
         // And a reflowable match round-trips the half a PDF never sends.
-        let hit = BlockHit { block: 17, occurrence: 2 };
+        let hit = BlockHit {
+            block: 17,
+            occurrence: 2,
+        };
         let json = serde_json::to_string(&hit).unwrap();
         assert_eq!(serde_json::from_str::<BlockHit>(&json).unwrap(), hit);
     }
@@ -382,7 +398,10 @@ mod tests {
         let folded_newlines = "alpha\nbeta GAMMA delta";
         let (start, end) =
             occurrence_spans(folded_newlines, &folded_newlines.to_lowercase(), "gamma")[0];
-        assert_eq!(snippet(folded_newlines, start, end), "alpha beta GAMMA delta");
+        assert_eq!(
+            snippet(folded_newlines, start, end),
+            "alpha beta GAMMA delta"
+        );
     }
 
     /// Degenerate geometry must still produce a usable offset rather than

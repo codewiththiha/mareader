@@ -2,7 +2,7 @@
 
 use wasm_bindgen::JsValue;
 
-use super::{reflect_set, KEY_DOCUMENTS, KEY_EXTENSIONS, KEY_FILTERS, KEY_MULTIPLE, KEY_NAME};
+use super::{KEY_DOCUMENTS, KEY_EXTENSIONS, KEY_FILTERS, KEY_MULTIPLE, KEY_NAME, reflect_set};
 
 /// The sentence a cancelled pick answers with. A constant rather than a string matched
 /// in place at each caller: the two sides of the comparison are in different crates, and

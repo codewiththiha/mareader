@@ -15,11 +15,11 @@ use library_core::sort::SortKey;
 use library_core::view::{CoverFit, LibraryLayout, LibraryView};
 
 use crate::components::primitives::controls::toggle_button::ToggleButton;
-use crate::services::library::create_shelf_and_enter;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
-use crate::components::primitives::floating::menu_popover::MenuPopover;
+use crate::services::library::create_shelf_and_enter;
 use crate::state::AppState;
 
 const SORTS: [SortKey; 5] = [
@@ -44,9 +44,8 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
     // The pinned count when there is one, else the count Auto's flow is
     // producing, which the grid reports on every resize (see
     // `crate::features::library::grid`).
-    let columns = Signal::derive(move || {
-        state.library.view.with(|v| v.columns.or(Some(v.auto_fit)))
-    });
+    let columns =
+        Signal::derive(move || state.library.view.with(|v| v.columns.or(Some(v.auto_fit))));
     let auto = Signal::derive(move || state.library.view.with(|v| v.columns.is_none()));
     let stepper_live = Signal::derive(move || state.library.view.with(|v| v.columns_enabled()));
     let at_min = Signal::derive(move || {

@@ -205,7 +205,10 @@ mod tests {
     use library_core::testkit::{book, fp_n};
 
     fn found(path: &str, fp: Fingerprint) -> FoundFile {
-        let ext = path.rsplit_once('.').map(|(_, ext)| ext).unwrap_or_default();
+        let ext = path
+            .rsplit_once('.')
+            .map(|(_, ext)| ext)
+            .unwrap_or_default();
         FoundFile {
             path: path.to_string(),
             rel: String::new(),
@@ -270,7 +273,10 @@ mod tests {
             ..book("b1")
         };
         let kept = KeptBook::of(&orphan, Vec::new());
-        assert!(kept.name.is_none(), "the store's own name is not the file's");
+        assert!(
+            kept.name.is_none(),
+            "the store's own name is not the file's"
+        );
         assert_eq!(
             kept.confidence(&found("/downloads/source.pdf", fp_n(9)), "source"),
             None,
@@ -352,7 +358,10 @@ mod tests {
             None,
             "a different kind is a different book however it is named"
         );
-        assert_eq!(kept.confidence(&found("/elsewhere/b2.pdf", fp_n(9)), "b2"), None);
+        assert_eq!(
+            kept.confidence(&found("/elsewhere/b2.pdf", fp_n(9)), "b2"),
+            None
+        );
     }
 
     #[test]
@@ -408,6 +417,9 @@ mod tests {
             Some("1"),
             "the oldest removal is the one that goes"
         );
-        assert_eq!(all[KEPT_CAP - 1].name.as_deref(), Some(KEPT_CAP.to_string().as_str()));
+        assert_eq!(
+            all[KEPT_CAP - 1].name.as_deref(),
+            Some(KEPT_CAP.to_string().as_str())
+        );
     }
 }

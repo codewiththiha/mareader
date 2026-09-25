@@ -16,15 +16,15 @@
 
 use leptos::prelude::*;
 
+use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::settings::animations::AnimationsTab;
 use crate::components::settings::common::{Tab, TabButton};
 use crate::components::settings::fonts::FontsTab;
 use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
+use crate::state::AppState;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::overlay::modal_shell::ModalShell;
-use crate::state::AppState;
 
 #[component]
 pub fn SettingsModal(

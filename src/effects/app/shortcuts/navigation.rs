@@ -12,13 +12,13 @@ use wasm_bindgen::JsCast;
 
 use std::cell::Cell;
 
-use reader_core::view::{ViewMode, spread_step_next, spread_step_prev};
-use app_chrome::hooks::dom::{h_page_list, page_list};
 use crate::components::primitives::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
 use crate::state::ReaderState;
+use app_chrome::hooks::dom::{h_page_list, page_list};
+use reader_core::view::{ViewMode, spread_step_next, spread_step_prev};
 
 use super::is_chrome_scroll_target;
-use super::keymap::{NavAction, self};
+use super::keymap::{self, NavAction};
 
 /// One Arrow Up/Down tap is a reading nudge, not a page jump. The first
 /// owner-scroll used 15% of the viewport (48–140px); native browser
@@ -82,7 +82,11 @@ fn page_next(state: ReaderState) {
 /// span the virtualizer is about to unmount. `preventScroll` so focusing does
 /// not fight the scroll we are about to apply.
 fn focus_scroll_list(horizontal: bool) {
-    let Some(list) = (if horizontal { h_page_list() } else { page_list() }) else {
+    let Some(list) = (if horizontal {
+        h_page_list()
+    } else {
+        page_list()
+    }) else {
         return;
     };
     let Some(html) = list.dyn_ref::<web_sys::HtmlElement>() else {
@@ -98,7 +102,11 @@ fn focus_scroll_list(horizontal: bool) {
 /// (a boundary hold must not fight the elastic edge). The y/x twins differ
 /// only in element and axis properties, so one helper serves both.
 fn scroll_reader_axis(horizontal: bool, delta: f64, smooth: bool) {
-    let Some(list) = (if horizontal { h_page_list() } else { page_list() }) else {
+    let Some(list) = (if horizontal {
+        h_page_list()
+    } else {
+        page_list()
+    }) else {
         return;
     };
     let (current, extent, client) = if horizontal {
@@ -252,9 +260,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
     match action {
         NavAction::PagePrev => page_prev(state),
         NavAction::PageNext => page_next(state),
-        NavAction::HoldLine { dir, horizontal } => {
-            begin_line_hold(dir as f64, horizontal, glide)
-        }
+        NavAction::HoldLine { dir, horizontal } => begin_line_hold(dir as f64, horizontal, glide),
         NavAction::PageStep { dir, horizontal } => {
             focus_scroll_list(horizontal);
             // A repeat is the browser hammering the key; easing each one

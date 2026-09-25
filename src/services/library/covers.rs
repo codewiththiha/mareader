@@ -14,8 +14,8 @@ use wasm_bindgen_futures::spawn_local;
 use pdf_engine::api as engine;
 use reader_core::format::Format;
 
-use crate::state::library::{CoverImage, CoverMap};
 use crate::state::AppState;
+use crate::state::library::{CoverImage, CoverMap};
 use library_core::book::{Book, Row, book_rows};
 
 /// One width for both renders of the same art — the import queue's and the
@@ -64,7 +64,10 @@ fn wanted(rows: &[Row], covers: &CoverMap) -> Vec<String> {
 pub fn backfill_missing(state: AppState) {
     RETRIES.with(|retries| retries.borrow_mut().clear());
     let wanted = state.library.books.with_untracked(|rows| {
-        state.library.covers.with_untracked(|covers| wanted(rows, covers))
+        state
+            .library
+            .covers
+            .with_untracked(|covers| wanted(rows, covers))
     });
     if wanted.is_empty() {
         return;
@@ -144,7 +147,8 @@ fn drain(state: AppState) {
                     file_cover(state, path, cover.data_url, cover.width, cover.height);
                 }
                 Err(_) => {
-                    let first_failure = RETRIES.with(|retries| retries.borrow_mut().insert(path.clone()));
+                    let first_failure =
+                        RETRIES.with(|retries| retries.borrow_mut().insert(path.clone()));
                     if first_failure {
                         QUEUE.with(|queue| queue.borrow_mut().push(path.clone()));
                     }
@@ -197,9 +201,17 @@ mod tests {
             book("/d/second.pdf", Format::Pdf),
         ];
         let asked = wanted(&books, &CoverMap::default());
-        assert_eq!(asked, vec!["/a/dune.pdf".to_string(), "/d/second.pdf".to_string()]);
+        assert_eq!(
+            asked,
+            vec!["/a/dune.pdf".to_string(), "/d/second.pdf".to_string()]
+        );
         let mut with_link = books;
-        with_link.push(Row::link("l1".into(), "Dune".into(), "/a/dune.pdf".into(), 5));
+        with_link.push(Row::link(
+            "l1".into(),
+            "Dune".into(),
+            "/a/dune.pdf".into(),
+            5,
+        ));
         assert_eq!(
             wanted(&with_link, &CoverMap::default()),
             vec!["/a/dune.pdf".to_string(), "/d/second.pdf".to_string()]
@@ -211,7 +223,10 @@ mod tests {
         let books = vec![book("/a/dune.pdf", Format::Pdf)];
         let mut covers = CoverMap::default();
         covers.insert("/a/dune.pdf".to_string(), cover());
-        assert!(wanted(&books, &covers).is_empty(), "an open already filed this one");
+        assert!(
+            wanted(&books, &covers).is_empty(),
+            "an open already filed this one"
+        );
     }
 
     fn book_read(path: &str, last_read: u64) -> Row {

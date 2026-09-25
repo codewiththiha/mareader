@@ -1,14 +1,14 @@
-use ai_core::gloss::{is_glossable, is_hintable, GlossMark};
+use ai_core::gloss::{GlossMark, is_glossable, is_hintable};
 use leptos::prelude::*;
 
 use crate::components::ai::anchor::{
-    anchor_resolver, captured_mark, capture_selection_mark, no_invalidation, reflow_invalidation,
-    watch_page_anchor, FormatAnchorBridge, ReflowAnchorBridge,
+    FormatAnchorBridge, ReflowAnchorBridge, anchor_resolver, capture_selection_mark, captured_mark,
+    no_invalidation, reflow_invalidation, watch_page_anchor,
 };
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
 use crate::components::ai::reflow_anchor::spot_envelope;
-use app_chrome::icon::{Icon, IconName};
 use crate::state::AppState;
+use app_chrome::icon::{Icon, IconName};
 
 /// A small floating pill that appears near the user's text selection.
 /// Contains the "Explain" button that opens the AI popover.
@@ -43,14 +43,7 @@ pub fn SelectionPill(state: AppState) -> impl IntoView {
     // the selection is in — and, for a reflowable one, through the spot the
     // tracker walked out of the range, which is the only identity that survives
     // a re-pagination.
-    let spot = Signal::derive(move || {
-        state
-            .reader
-            .ai_selection
-            .detail
-            .get()
-            .and_then(|d| d.spot)
-    });
+    let spot = Signal::derive(move || state.reader.ai_selection.detail.get().and_then(|d| d.spot));
     let resolve = anchor_resolver(state.reader, spot);
     // A reflowable document re-cuts its pages when the typography or the column
     // width moves, which relocates a selection without anything scrolling.

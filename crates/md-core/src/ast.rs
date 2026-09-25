@@ -116,7 +116,9 @@ fn indent_columns(line: &str) -> usize {
 /// between them.
 fn is_rule(trimmed: &str) -> bool {
     let mut chars = trimmed.chars().filter(|c| !c.is_whitespace());
-    let Some(first) = chars.next() else { return false };
+    let Some(first) = chars.next() else {
+        return false;
+    };
     if !matches!(first, '-' | '*' | '_') {
         return false;
     }
@@ -182,7 +184,10 @@ mod tests {
         assert_eq!(classify(&md("- a\n- b")), MarkdownConstruct::List);
         assert_eq!(classify(&md("1. one\n2. two")), MarkdownConstruct::List);
         assert_eq!(classify(&md("- [x] done")), MarkdownConstruct::List);
-        assert_eq!(classify(&md("| a | b |\n|---|---|")), MarkdownConstruct::Table);
+        assert_eq!(
+            classify(&md("| a | b |\n|---|---|")),
+            MarkdownConstruct::Table
+        );
         assert_eq!(classify(&md("> quoted")), MarkdownConstruct::Quote);
         assert_eq!(classify(&md("---")), MarkdownConstruct::Rule);
         assert_eq!(classify(&md("Just a sentence.")), MarkdownConstruct::Prose);
@@ -195,14 +200,23 @@ mod tests {
     fn the_marker_sniff_is_coarser_than_commonmark_on_purpose() {
         // Seven hashes is not a heading, but it is still not prose either: the
         // only question asked here is whether the block may be cut.
-        assert_eq!(classify(&md("####### too deep")), MarkdownConstruct::Heading);
+        assert_eq!(
+            classify(&md("####### too deep")),
+            MarkdownConstruct::Heading
+        );
         // A setext underline makes the whole block the heading it ends, and a
         // raw HTML block is refused on the first line of its tag.
         assert_eq!(classify(&md("Title\n=====")), MarkdownConstruct::Heading);
-        assert_eq!(classify(&md("<details>\n<summary>more</summary>\n</details>")), MarkdownConstruct::Html);
+        assert_eq!(
+            classify(&md("<details>\n<summary>more</summary>\n</details>")),
+            MarkdownConstruct::Html
+        );
         assert_eq!(heading_of_line("####### too deep"), None);
         assert_eq!(heading_of_line("#  Spaced  #"), Some((1, "Spaced".into())));
-        assert_eq!(heading_of_line("## **Bold title**"), Some((2, "Bold title".into())));
+        assert_eq!(
+            heading_of_line("## **Bold title**"),
+            Some((2, "Bold title".into()))
+        );
         assert_eq!(heading_of_line("###"), None);
         assert_eq!(heading_of_line("not a heading"), None);
     }

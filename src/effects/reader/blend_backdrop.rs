@@ -29,9 +29,9 @@
 
 use leptos::prelude::*;
 
-use reader_core::view::ViewMode;
-use reader_core::settings::LayoutSettings;
 use pdf_paper::{DEFAULT_EDGE_WIDTH, PaperConfig};
+use reader_core::settings::LayoutSettings;
+use reader_core::view::ViewMode;
 
 use crate::state::AppState;
 
@@ -209,7 +209,10 @@ mod tests {
         // page 3 shows 100px, page 4 shows 40px → (20×2 + 100×3 + 40×4)/160.
         let heights = [100.0; 5];
         let pos = paper_position(&heights, 20.0, 200.0, 200.0);
-        assert!((pos - (20.0 * 2.0 + 100.0 * 3.0 + 40.0 * 4.0) / 160.0).abs() < 1e-9, "{pos}");
+        assert!(
+            (pos - (20.0 * 2.0 + 100.0 * 3.0 + 40.0 * 4.0) / 160.0).abs() < 1e-9,
+            "{pos}"
+        );
     }
 
     /// A window past the last page (over-scroll into the strip's padding)

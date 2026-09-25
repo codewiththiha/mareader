@@ -169,7 +169,10 @@ mod tests {
             ]
         );
         let rejoined: String = cut.iter().map(|(s, _)| s.as_str()).collect();
-        assert_eq!(rejoined, "Mathematical Proofs", "nothing is lost or doubled");
+        assert_eq!(
+            rejoined, "Mathematical Proofs",
+            "nothing is lost or doubled"
+        );
     }
 
     #[test]
@@ -179,7 +182,10 @@ mod tests {
             cut,
             vec![("Du".to_string(), false), ("ne".to_string(), true)]
         );
-        assert_eq!(pieces("Dune", &[(9, 12)]), vec![("Dune".to_string(), false)]);
+        assert_eq!(
+            pieces("Dune", &[(9, 12)]),
+            vec![("Dune".to_string(), false)]
+        );
         let joined: String = pieces("ab", &[(0, 1), (0, 2)])
             .iter()
             .map(|(s, _)| s.as_str())

@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, HashSet};
 use crate::book::{Book, Fingerprint, Origin, Row};
 use crate::folder::{FolderOpts, WatchedFolder};
 use crate::scan::FoundFile;
-use crate::shelf::{Shelf, ShelfKind};
 use crate::shape::ShapeTree;
+use crate::shelf::{Shelf, ShelfKind};
 use crate::tracking::TrackingTree;
 use reader_core::format::Format;
 

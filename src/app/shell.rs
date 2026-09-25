@@ -4,12 +4,12 @@
 use leptos::prelude::*;
 use leptos_router::components::{Route, Routes};
 
+use super::routes::{RedirectHome, RouteSync};
 use crate::components::app_overlays::drag_overlay::DragOverlay;
 use crate::effects::app::drag_drop::drag_drop;
 use crate::features::library::LibraryPage;
 use crate::features::reader::ReaderPage;
 use crate::state::AppState;
-use super::routes::{RedirectHome, RouteSync};
 
 #[component]
 pub(crate) fn AppShell(state: AppState) -> impl IntoView {

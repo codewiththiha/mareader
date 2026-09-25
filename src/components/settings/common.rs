@@ -19,10 +19,10 @@ use leptos::prelude::*;
 
 use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::components::primitives::form::row::Row;
-use app_chrome::icon::{Icon, IconName};
-use app_chrome::icon_button::IconButton;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tab {
@@ -74,10 +74,8 @@ pub(crate) fn StepperRow(
     label: &'static str,
     /// The formatted current value ("17 px", "1.7×", …).
     display: Signal<String>,
-    #[prop(into)]
-    minus_disabled: Signal<bool>,
-    #[prop(into)]
-    plus_disabled: Signal<bool>,
+    #[prop(into)] minus_disabled: Signal<bool>,
+    #[prop(into)] plus_disabled: Signal<bool>,
     on_minus: Callback<()>,
     on_plus: Callback<()>,
     /// What the steppers adjust; each button's tooltip derives from it
@@ -144,8 +142,8 @@ where
                 prop:disabled=move || disabled.get()
                 on:click=move |_| open.set(!open.get())
                 class="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-ink \
-hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
-disabled:cursor-not-allowed disabled:opacity-45"
+    hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
+    disabled:cursor-not-allowed disabled:opacity-45"
             >
                 <span>{move || label_of(&value.get())}</span>
                 <Icon name=IconName::ChevronDown size=12 class="text-muted" />

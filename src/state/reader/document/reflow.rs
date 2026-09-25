@@ -26,8 +26,8 @@ use leptos::prelude::*;
 
 use md_core::MarkdownHeading;
 use reflow_core::block::TextBlock;
-use reflow_core::geometry::{PageGeometry, PAGE_HEIGHT};
-use reflow_core::pager::{block_page_index, first_block_of_page, paginate, BlockMetrics, PageCut};
+use reflow_core::geometry::{PAGE_HEIGHT, PageGeometry};
+use reflow_core::pager::{BlockMetrics, PageCut, block_page_index, first_block_of_page, paginate};
 use reflow_core::typography::TextSettings;
 use virtual_list_leptos::Virtualizer;
 
@@ -158,7 +158,8 @@ impl ReflowContent {
     /// One block by index, read untracked (the render paths read it tracked
     /// through their own `For`, which owns the key).
     pub fn block_at(&self, index: usize) -> Option<TextBlock> {
-        self.blocks.with_untracked(|blocks| blocks.get(index).cloned())
+        self.blocks
+            .with_untracked(|blocks| blocks.get(index).cloned())
     }
 
     /// The open document's identity as a `<For>` key: the block list's `Arc`
@@ -210,7 +211,9 @@ impl ReflowContent {
     ) -> Option<super::ReflowCut> {
         let heights = self.heights.get_untracked();
         let cuts = paginate(&heights, geo.content_height);
-        let unchanged = self.cuts.with_untracked(|old| old.as_slice() == cuts.as_slice())
+        let unchanged = self
+            .cuts
+            .with_untracked(|old| old.as_slice() == cuts.as_slice())
             && self.geometry.with_untracked(|old| *old == geo);
         if unchanged {
             return None;
@@ -251,7 +254,10 @@ impl ReflowContent {
         // at.
         super::ReflowCut {
             num_pages: n,
-            page_size: pdf_engine::types::PageSize { width: geo.width, height: PAGE_HEIGHT },
+            page_size: pdf_engine::types::PageSize {
+                width: geo.width,
+                height: PAGE_HEIGHT,
+            },
             css_height: PAGE_HEIGHT * state.reader.viewer.zoom.visual_scale(),
             page: new_page.clamp(1, n.max(1)),
         }

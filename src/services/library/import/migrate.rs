@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{book_rows, book_rows_mut, Origin};
+use library_core::book::{Origin, book_rows, book_rows_mut};
 use library_core::wire::{BookFileRequest, RelocateResult};
 
 use crate::services::library as ipc;
@@ -51,7 +51,9 @@ async fn run(state: AppState, candidates: Vec<(String, String)>) {
     let answer: RelocateResult = match ipc::relocate_stored(&requests).await {
         Ok(answer) => answer,
         Err(message) => {
-            web_sys::console::warn_1(&format!("[library] store migration failed: {message}").into());
+            web_sys::console::warn_1(
+                &format!("[library] store migration failed: {message}").into(),
+            );
             return;
         }
     };
@@ -72,8 +74,7 @@ async fn run(state: AppState, candidates: Vec<(String, String)>) {
         .into_iter()
         .filter_map(|(id, from)| {
             let result = by_id.get(&id)?;
-            (result.is_ok() && result.store != from)
-                .then(|| (id, (from, result.store.clone())))
+            (result.is_ok() && result.store != from).then(|| (id, (from, result.store.clone())))
         })
         .collect();
     if moved.is_empty() {

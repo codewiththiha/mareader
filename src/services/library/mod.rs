@@ -19,12 +19,11 @@ pub use arrange::{
 };
 pub use covers::backfill_missing;
 pub use duplicate::{duplicate_entries, duplicate_row, duplicate_shelf};
-pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 pub use import::{
-    dismiss_task, ground_tracking, import_files, import_folder, migrate_store_layout,
+    GroundWatch, dismiss_task, ground_tracking, import_files, import_folder, migrate_store_layout,
     rescan_watched, restore_deleted_book, set_shelf_watch, shelf_watch, verify_one,
-    GroundWatch,
 };
+pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 
 pub(crate) use library_core::paths::{dir_label as folder_label, file_name};
 
@@ -72,9 +71,10 @@ async fn call<A: Serialize, T: DeserializeOwned>(cmd: &str, args: &A) -> Result<
     }
     let args = serde_wasm_bindgen::to_value(args)
         .map_err(|e| format!("{cmd}: could not encode the request ({e})"))?;
-    let value = tauri_bridge::invoke(cmd, args)
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{cmd} failed: {e:?}")))?;
+    let value = tauri_bridge::invoke(cmd, args).await.map_err(|e| {
+        e.as_string()
+            .unwrap_or_else(|| format!("{cmd} failed: {e:?}"))
+    })?;
     serde_wasm_bindgen::from_value(value)
         .map_err(|e| format!("{cmd}: the shell answered something unparseable ({e})"))
 }
@@ -150,9 +150,7 @@ pub(crate) async fn copy_one(
     }
 }
 
-pub async fn relocate_stored(
-    requests: &[BookFileRequest],
-) -> Result<RelocateResult, String> {
+pub async fn relocate_stored(requests: &[BookFileRequest]) -> Result<RelocateResult, String> {
     call(CMD_RELOCATE, &RelocateArgs { requests }).await
 }
 
@@ -180,7 +178,9 @@ pub fn delete_stored(path: &str) {
     wasm_bindgen_futures::spawn_local(async move {
         if let Err(e) = tauri_bridge::invoke(CMD_DELETE, args).await {
             let detail = describe(e);
-            web_sys::console::warn_1(&format!("[library] could not delete {path}: {detail}").into());
+            web_sys::console::warn_1(
+                &format!("[library] could not delete {path}: {detail}").into(),
+            );
         }
     });
 }
@@ -293,7 +293,5 @@ fn set(target: &JsValue, key: &str, value: &JsValue) {
 }
 
 fn describe(error: JsValue) -> String {
-    error
-        .as_string()
-        .unwrap_or_else(|| format!("{error:?}"))
+    error.as_string().unwrap_or_else(|| format!("{error:?}"))
 }

@@ -3,16 +3,13 @@
 
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
-use app_chrome::icon::{Icon, IconName};
 use crate::state::library::CoverMap;
 use crate::state::{NO_DOCUMENT, ReaderState};
+use app_chrome::icon::{Icon, IconName};
+use pdf_engine::types::DocStatus;
 
 #[component]
-pub(crate) fn BookInfo(
-    reader: ReaderState,
-    covers: RwSignal<CoverMap>,
-) -> impl IntoView {
+pub(crate) fn BookInfo(reader: ReaderState, covers: RwSignal<CoverMap>) -> impl IntoView {
     view! {
         <Show when=move || reader.document.status.get() == DocStatus::Ready>
             <div

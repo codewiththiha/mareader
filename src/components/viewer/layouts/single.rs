@@ -9,18 +9,17 @@
 //! which reads the format tracked, so opening a document of the other kind swaps
 //! the page inside this same slot. Nothing here names a raster, type, or engine.
 
-use leptos::prelude::*;
 use app_chrome::hooks::dom::SINGLE_PAGE_CONTAINER_ID;
+use leptos::prelude::*;
 
-use crate::components::viewer::{PageSlot, UniversalPageHost};
 use crate::components::viewer::shells::page_shell::PageShell;
+use crate::components::viewer::{PageSlot, UniversalPageHost};
 use crate::state::ReaderState;
 
 #[component]
 pub fn SingleLayout(
     state: ReaderState,
-    #[prop(into)]
-    progress_visible: Signal<bool>,
+    #[prop(into)] progress_visible: Signal<bool>,
 ) -> impl IntoView {
     view! {
         <PageShell

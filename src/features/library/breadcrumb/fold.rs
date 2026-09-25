@@ -65,11 +65,7 @@ pub(super) fn split_by_counts<T>(chain: Vec<T>, counts: &[usize]) -> Vec<Vec<T>>
 /// width as showing it, so the ellipsis earns its slot from two levels up.
 fn elide_at(len: usize) -> usize {
     let split = len.saturating_sub(CRUMB_KEEP);
-    if split == 1 {
-        0
-    } else {
-        split
-    }
+    if split == 1 { 0 } else { split }
 }
 
 /// Beyond the depth gate, the smallest split (never exactly one — the rule
@@ -120,7 +116,12 @@ mod tests {
     fn past_the_first_fold_the_bar_stays_the_same_width() {
         for len in (CRUMB_KEEP + 2)..=(CRUMB_KEEP * 4) {
             let split = elide_at(len);
-            assert_eq!(len - split, CRUMB_KEEP, "a chain of {len} shows only {kept}", kept = CRUMB_KEEP);
+            assert_eq!(
+                len - split,
+                CRUMB_KEEP,
+                "a chain of {len} shows only {kept}",
+                kept = CRUMB_KEEP
+            );
             assert!(split >= 2, "and never hides just one");
         }
     }
@@ -176,7 +177,11 @@ mod tests {
     #[test]
     fn nothing_fits_but_the_newest_level_and_the_fold_stops_there() {
         let widths = measured(4, 22.0, 200.0);
-        assert_eq!(choose_split(&widths, 100.0, 4), 3, "len - 1, never past the chain");
+        assert_eq!(
+            choose_split(&widths, 100.0, 4),
+            3,
+            "len - 1, never past the chain"
+        );
     }
 
     #[test]

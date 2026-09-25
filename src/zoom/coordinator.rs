@@ -36,9 +36,9 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use app_chrome::hooks::use_timeout::use_debounce;
 use crate::state::reader::{ReaderState, ZoomTransition};
 use crate::zoom::actuator::ZoomActuator;
+use app_chrome::hooks::use_timeout::use_debounce;
 
 use super::animation::{Tween, land};
 use super::command::holds_commit;

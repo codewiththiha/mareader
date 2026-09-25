@@ -4,9 +4,9 @@
 
 use leptos::prelude::*;
 
+use reader_core::settings::AnimationSettings;
 use reader_core::view::{PAGE_GAP, ViewMode};
 use reader_core::zoom_math::FitMode;
-use reader_core::settings::AnimationSettings;
 
 use super::zoom::ZoomState;
 
@@ -221,8 +221,7 @@ impl ViewerSignals {
         let transition = self.zoom.transition;
         let fit = self.fit;
         Signal::derive(move || {
-            fit.get_untracked() == FitMode::None
-                && transition.get().is_some_and(|t| !t.following)
+            fit.get_untracked() == FitMode::None && transition.get().is_some_and(|t| !t.following)
         })
     }
 }

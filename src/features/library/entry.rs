@@ -24,14 +24,10 @@ pub(crate) struct EntryDescriptor {
 pub(crate) fn EntryShell(
     state: AppState,
     entry: EntryDescriptor,
-    #[prop(optional)]
-    extra_classes: Vec<(String, Signal<bool>)>,
-    #[prop(optional)]
-    style: String,
-    #[prop(optional)]
-    aria_expanded: Option<Signal<bool>>,
-    #[prop(optional)]
-    on_keydown_first: Option<Callback<leptos::ev::KeyboardEvent, bool>>,
+    #[prop(optional)] extra_classes: Vec<(String, Signal<bool>)>,
+    #[prop(optional)] style: String,
+    #[prop(optional)] aria_expanded: Option<Signal<bool>>,
+    #[prop(optional)] on_keydown_first: Option<Callback<leptos::ev::KeyboardEvent, bool>>,
     children: Children,
 ) -> impl IntoView {
     let EntryDescriptor {

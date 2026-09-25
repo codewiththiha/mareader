@@ -10,7 +10,9 @@ use wasm_bindgen::JsValue;
 use library_core::id::Cooldown;
 use library_core::wire::ImportProgress;
 
-use crate::services::library::{backfill_missing, migrate_store_layout, rescan_watched, PROGRESS_CHANNEL};
+use crate::services::library::{
+    PROGRESS_CHANNEL, backfill_missing, migrate_store_layout, rescan_watched,
+};
 use crate::state::AppState;
 
 /// Focus events are not rare: alt-tabbing back and forth would otherwise

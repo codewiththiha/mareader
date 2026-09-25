@@ -8,13 +8,13 @@ use leptos::prelude::*;
 use library_core::book::Row;
 use library_core::folder as folder_ops;
 use library_core::id;
-use library_core::shelf::{self as shelf, Shelf, ALL_SHELF};
+use library_core::shelf::{self as shelf, ALL_SHELF, Shelf};
 
 use crate::state::AppState;
 use crate::time::now_ms;
 
 use super::asking::ask_move_shelf;
-use super::shelf_departure::{screen_shelf_moves, SeamSide, ShelfSeam};
+use super::shelf_departure::{SeamSide, ShelfSeam, screen_shelf_moves};
 
 /// `parent` is where the shelf hangs: `None` is the level the page is on, and `Some` is a
 /// shelf the reader named — a shelf made from inside a folder is that folder being subdivided,
@@ -117,9 +117,10 @@ pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, 
     if ids.is_empty() {
         return;
     }
-    let parent = state.library.shelves.with_untracked(|shelves| {
-        shelf::find(shelves, anchor).and_then(|s| s.parent.clone())
-    });
+    let parent = state
+        .library
+        .shelves
+        .with_untracked(|shelves| shelf::find(shelves, anchor).and_then(|s| s.parent.clone()));
     let clean = screened(
         state,
         ids,
@@ -204,7 +205,12 @@ pub fn add_link(state: AppState, name: &str, target: &str, shelf_id: &str) -> St
     let link_id = id::next_id(now);
     let made = link_id.clone();
     state.library.books.update(|rows| {
-        rows.push(Row::link(link_id, name.to_string(), target.to_string(), now));
+        rows.push(Row::link(
+            link_id,
+            name.to_string(),
+            target.to_string(),
+            now,
+        ));
     });
     if shelf_id != ALL_SHELF {
         state.library.shelves.update(|shelves| {
@@ -230,9 +236,7 @@ pub fn delete_shelf(state: AppState, shelf_id: &str) {
             (ALL_SHELF.to_string(), None, None, Vec::new()),
             |gone| {
                 (
-                    gone.parent
-                        .clone()
-                        .unwrap_or_else(|| ALL_SHELF.to_string()),
+                    gone.parent.clone().unwrap_or_else(|| ALL_SHELF.to_string()),
                     gone.kind.folder_id().map(str::to_string),
                     gone.is_folder().then(|| gone.kind.rung().to_string()),
                     gone.books.clone(),
@@ -263,9 +267,10 @@ pub fn delete_shelf(state: AppState, shelf_id: &str) {
     }
     // Read after the removal, so the rung that went cannot answer for itself.
     let home = match (&detached, &rung) {
-        (Some(folder_id), Some(rung)) => state.library.shelves.with_untracked(|shelves| {
-            shelf::rung_above(shelves, folder_id, rung)
-        }),
+        (Some(folder_id), Some(rung)) => state
+            .library
+            .shelves
+            .with_untracked(|shelves| shelf::rung_above(shelves, folder_id, rung)),
         _ => None,
     };
     if let Some(home) = home {

@@ -33,7 +33,7 @@ use reader_core::filename::document_title;
 use reader_core::format::Format;
 use reader_core::view::ViewMode;
 use reflow_core::block::TextBlock;
-use reflow_core::geometry::{geometry, PAGE_HEIGHT};
+use reflow_core::geometry::{PAGE_HEIGHT, geometry};
 use reflow_core::pager::estimate_heights;
 
 use crate::state::AppState;
@@ -169,7 +169,12 @@ fn ready(
         .with_extra_inline(state.reader.viewer.page_margin.get_untracked())
         .with_column_pct(state.reader.viewer.column_width_pct.get_untracked());
     let name = document_title(parsed.title.as_deref());
-    let Parsed { blocks, title, author, headings } = parsed;
+    let Parsed {
+        blocks,
+        title,
+        author,
+        headings,
+    } = parsed;
 
     // Document identity, through the shared handshake. A text page is the
     // sheet `reflow_core::geometry` cuts into, and the outline starts SEEDED
@@ -182,7 +187,10 @@ fn ready(
             path: path.clone(),
             title,
             author,
-            page1_size: PageSize { width: geo.width, height: PAGE_HEIGHT },
+            page1_size: PageSize {
+                width: geo.width,
+                height: PAGE_HEIGHT,
+            },
             outline: Some(Arc::new(Vec::new())),
         },
     );
@@ -212,8 +220,20 @@ fn ready(
     // correction arrives through the measurement pipeline's `recut`.
     let metrics = estimate_metrics(&settings.text, &geo);
     let heights = estimate_heights(&blocks, &metrics);
-    state.reader.document.content.reflow.blocks.set(Arc::new(blocks));
-    state.reader.document.content.reflow.headings.set(Arc::new(headings));
+    state
+        .reader
+        .document
+        .content
+        .reflow
+        .blocks
+        .set(Arc::new(blocks));
+    state
+        .reader
+        .document
+        .content
+        .reflow
+        .headings
+        .set(Arc::new(headings));
 
     // The seed scale, from the same shared step the PDF seed uses.
     let (startup_fit, scale) = super::enter::startup_scale(state, (geo.width, PAGE_HEIGHT));
@@ -227,7 +247,13 @@ fn ready(
     // the mode. Read the mode, not the fit it produced: `FitMode::None` would
     // also be the answer for a persisted default that resolved to no fit.
     let streaming = state.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
-    state.reader.document.content.reflow.resume_fraction.set(if streaming { saved_fraction } else { None });
+    state
+        .reader
+        .document
+        .content
+        .reflow
+        .resume_fraction
+        .set(if streaming { saved_fraction } else { None });
     state.reader.viewer.awaiting_anchor.set(true);
     state.reader.viewer.fit.set(startup_fit);
     state.reader.viewer.zoom.initialize(scale);
@@ -235,7 +261,12 @@ fn ready(
 
     // The estimate's cut, published before the resume page is chosen: the
     // clamp inside `resume_page` is against the page count this cut produced.
-    let cut = state.reader.document.content.reflow.set_initial_heights(state, heights, geo);
+    let cut = state
+        .reader
+        .document
+        .content
+        .reflow
+        .set_initial_heights(state, heights, geo);
     state.reader.document.publish_cut(&cut);
     let resume = super::enter::resume_page(saved_page, cut.num_pages);
     state.reader.viewer.page.set(resume);

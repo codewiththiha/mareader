@@ -53,7 +53,10 @@ pub struct ZoomActuator {
 
 impl ZoomActuator {
     pub fn new(vertical: Virtualizer, horizontal: Virtualizer) -> Self {
-        Self { vertical, horizontal }
+        Self {
+            vertical,
+            horizontal,
+        }
     }
 
     /// Rescale both strips by `factor` — the ratio between the new and the
@@ -82,9 +85,12 @@ impl ZoomActuator {
         // an array read beats a signal read per page. The virtualizer's own
         // rescale anchor holds the cross-axis position.
         let margin = state.viewer.page_margin.get_untracked();
-        let widths = state.document.content.metrics.intrinsic.with_untracked(|sizes| {
-            sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
-        });
+        let widths = state
+            .document
+            .content
+            .metrics
+            .intrinsic
+            .with_untracked(|sizes| sizes.iter().map(|s| s.width).collect::<Vec<f64>>());
         let new_scale = state.viewer.zoom.visual_scale() * factor;
         if !widths.is_empty() {
             self.horizontal.rescale(factor, move |index| {
@@ -127,24 +133,29 @@ impl ZoomActuator {
         // `gap` is 0), so `offset_of(index)` is the extent of the pages above
         // WITH their gaps; subtracting `index * gap` recovers their heights
         // alone — the part that scales.
-        let anchored = state.document.content.metrics.css_heights.with_untracked(|heights| {
-            if heights.is_empty() {
-                return None;
-            }
-            let index = self.vertical.index_at(centre_y_doc).min(heights.len() - 1);
-            let height = heights[index];
-            let above_with_gap = self.vertical.offset_of(index);
-            let height_sum = above_with_gap - index as f64 * gap;
-            Some(anchored_position(
-                height,
-                above_with_gap,
-                height_sum,
-                gap,
-                centre_y_doc,
-                factor,
-                index,
-            ))
-        });
+        let anchored = state
+            .document
+            .content
+            .metrics
+            .css_heights
+            .with_untracked(|heights| {
+                if heights.is_empty() {
+                    return None;
+                }
+                let index = self.vertical.index_at(centre_y_doc).min(heights.len() - 1);
+                let height = heights[index];
+                let above_with_gap = self.vertical.offset_of(index);
+                let height_sum = above_with_gap - index as f64 * gap;
+                Some(anchored_position(
+                    height,
+                    above_with_gap,
+                    height_sum,
+                    gap,
+                    centre_y_doc,
+                    factor,
+                    index,
+                ))
+            });
         let Some(new_centre_y_doc) = anchored else {
             return; // nothing measured yet; no layout to hold still
         };
@@ -157,7 +168,8 @@ impl ZoomActuator {
                 *height *= factor;
             }
         });
-        self.vertical.rescale(factor, state.document.content.metrics.strip_sizes(gap));
+        self.vertical
+            .rescale(factor, state.document.content.metrics.strip_sizes(gap));
 
         // Scroll so the anchored point is back under the middle of the window.
         // The ceiling is the virtualizer's own (`total − viewport`):
@@ -190,4 +202,3 @@ impl ZoomActuator {
         }
     }
 }
-

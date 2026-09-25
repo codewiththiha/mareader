@@ -70,7 +70,10 @@ fn measure(el: &web_sys::HtmlDivElement, content_height: RwSignal<f64>) {
 /// `read` is invoked inside the tracking effect, so callers express which
 /// signals should trigger a re-measure by simply reading them there (e.g.
 /// `move || { let _ = info.get(); let _ = word.get(); }`).
-pub fn use_content_size(measure_ref: NodeRef<html::Div>, read: impl Fn() + 'static) -> RwSignal<f64> {
+pub fn use_content_size(
+    measure_ref: NodeRef<html::Div>,
+    read: impl Fn() + 'static,
+) -> RwSignal<f64> {
     let content_height = RwSignal::new(0.0_f64);
 
     // Reactive trigger: any tracked signal that drives the twin's content.

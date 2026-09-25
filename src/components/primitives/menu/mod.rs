@@ -3,9 +3,9 @@
 //! one group because menus, popovers, settings sections and the library's
 //! question sheets reach for them together.
 
+pub mod choice_row;
 pub mod kbd;
 pub mod menu_item;
-pub mod choice_row;
 pub mod section_label;
 pub mod separator;
 pub mod shortcut_row;

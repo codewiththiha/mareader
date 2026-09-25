@@ -71,5 +71,8 @@ pub fn is_linux() -> bool {
 /// renders (styling stays testable under `trunk serve`) and every call it can
 /// make is a no-op there, like every other Tauri surface.
 pub fn uses_frameless_controls() -> bool {
-    matches!(platform(), DesktopPlatform::Windows | DesktopPlatform::Linux)
+    matches!(
+        platform(),
+        DesktopPlatform::Windows | DesktopPlatform::Linux
+    )
 }

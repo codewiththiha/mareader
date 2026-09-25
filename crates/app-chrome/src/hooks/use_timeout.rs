@@ -72,7 +72,10 @@ pub fn use_timeout_slot() -> StoredValue<Option<TimeoutHandle>, LocalStorage> {
 /// rail's layout). The getter runs synchronously inside whatever calls
 /// `trigger` — read signals UNTRACKED in it if the caller must not gain a
 /// dependency.
-pub fn use_debounce_for(duration: impl Fn() -> Duration + 'static, on_fire: impl Fn() + 'static) -> Debouncer {
+pub fn use_debounce_for(
+    duration: impl Fn() -> Duration + 'static,
+    on_fire: impl Fn() + 'static,
+) -> Debouncer {
     let on_fire = Rc::new(on_fire);
     let handle = StoredValue::new_local(None::<TimeoutHandle>);
     let alive = StoredValue::new_local(true);
@@ -84,11 +87,14 @@ pub fn use_debounce_for(duration: impl Fn() -> Duration + 'static, on_fire: impl
                 h.clear();
             }
             let f = Rc::clone(&on_fire);
-            let h = set_timeout_with_handle(move || {
-                if alive.get_value() {
-                    f();
-                }
-            }, duration())
+            let h = set_timeout_with_handle(
+                move || {
+                    if alive.get_value() {
+                        f();
+                    }
+                },
+                duration(),
+            )
             .ok();
             handle.set_value(h);
         }

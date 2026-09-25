@@ -12,8 +12,8 @@ use app_chrome::icon::{Icon, IconName};
 use app_chrome::layers::TOAST;
 
 use crate::services::library::dismiss_task;
-use crate::state::library::TaskPhase;
 use crate::state::AppState;
+use crate::state::library::TaskPhase;
 
 const HOLD_MS: u64 = 1600;
 

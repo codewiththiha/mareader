@@ -41,10 +41,10 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::hooks::verified_switch::use_verified_switch;
 use crate::hooks::use_resize_observer::observe_elements;
-use crate::titlebar::root::TitleBarCtx;
+use crate::hooks::verified_switch::use_verified_switch;
 use crate::titlebar::TITLE_BAR_H;
+use crate::titlebar::root::TitleBarCtx;
 use crate::window::api::set_traffic_lights;
 
 #[component]

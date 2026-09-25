@@ -131,7 +131,11 @@ impl ReflowSpot {
     /// The spot covering `text` at the start of `block` — the shape a capture
     /// builds before it knows any better, and the one the tests use.
     pub fn new(block: usize, start: usize, end: usize) -> Self {
-        Self { block, start, end: end.max(start) }
+        Self {
+            block,
+            start,
+            end: end.max(start),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -166,7 +170,13 @@ mod tests {
             context: String::new(),
             anchor: PageAnchor {
                 page: 1,
-                rect: GlossBox { x: 100.0, y: 40.0, w: 60.0, h: 12.0, r: 0.0 },
+                rect: GlossBox {
+                    x: 100.0,
+                    y: 40.0,
+                    w: 60.0,
+                    h: 12.0,
+                    r: 0.0,
+                },
             },
         };
 
@@ -192,7 +202,13 @@ mod tests {
     fn a_page_anchor_is_the_same_spot_across_sub_pixel_drift() {
         let a = PageAnchor {
             page: 2,
-            rect: GlossBox { x: 10.0, y: 20.0, w: 5.0, h: 5.0, r: 0.0 },
+            rect: GlossBox {
+                x: 10.0,
+                y: 20.0,
+                w: 5.0,
+                h: 5.0,
+                r: 0.0,
+            },
         };
         let mut b = a;
         b.rect.x += 0.9;
@@ -217,7 +233,13 @@ mod tests {
             context: "a manuscript page, a palimpsest, scraped clean".to_string(),
             anchor: PageAnchor {
                 page: 3,
-                rect: GlossBox { x: 120.5, y: 44.25, w: 62.0, h: 13.5, r: 0.0 },
+                rect: GlossBox {
+                    x: 120.5,
+                    y: 44.25,
+                    w: 62.0,
+                    h: 13.5,
+                    r: 0.0,
+                },
             },
         };
         let json = serde_json::to_string(&mark).expect("serialize");
@@ -251,7 +273,10 @@ mod tests {
         // PDF-era mark is simply a mark with no spot.
         let spot = ReflowSpot::new(11, 2, 8);
         let json = serde_json::to_string(&spot).expect("serialize");
-        assert_eq!(serde_json::from_str::<ReflowSpot>(&json).expect("round trip"), spot);
+        assert_eq!(
+            serde_json::from_str::<ReflowSpot>(&json).expect("round trip"),
+            spot
+        );
 
         #[derive(Deserialize)]
         struct Holder {

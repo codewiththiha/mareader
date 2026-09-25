@@ -23,7 +23,7 @@
 
 use std::cell::RefCell;
 
-use futures::stream::{StreamExt, self};
+use futures::stream::{self, StreamExt};
 use serde::Deserialize;
 
 use pdf_core::search::{PageText, SearchIndex, SearchItem};
@@ -171,7 +171,12 @@ pub async fn build_search_index(num_pages: u32) -> Result<u32, EngineError> {
                 .into_iter()
                 .map(|it| SearchItem::new(it.text, it.x, it.y, it.w, it.h))
                 .collect();
-            with(|i| i.add_page(PageText { page: p.page, items }));
+            with(|i| {
+                i.add_page(PageText {
+                    page: p.page,
+                    items,
+                })
+            });
             indexed += 1;
         }
         cursor = end + 1;
@@ -227,7 +232,12 @@ mod tests {
     /// scope, extract, record — the three steps `build_search_index` runs.
     fn simulate_built(fingerprint: Option<&str>, path: &str, num_pages: u32) {
         scope_to_document(fingerprint, path, num_pages);
-        with(|i| i.add_page(PageText { page: 1, items: vec![item("moby")] }));
+        with(|i| {
+            i.add_page(PageText {
+                page: 1,
+                items: vec![item("moby")],
+            })
+        });
         record_build(num_pages, 1);
     }
 

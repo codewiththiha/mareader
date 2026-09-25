@@ -9,9 +9,9 @@
 
 use leptos::prelude::*;
 
-use app_chrome::icon::{Icon, IconName};
 use crate::effects::appearance::cancel_appearance_commit;
 use crate::state::AppState;
+use app_chrome::icon::{Icon, IconName};
 use reader_core::appearance::presets::{Preset, is_builtin};
 
 #[component]
@@ -22,7 +22,11 @@ pub(super) fn PresetSwatch(preset: Preset, state: AppState) -> impl IntoView {
     let appearance = preset.appearance;
     let active = {
         let id = id.clone();
-        move || state.settings.with(|s| s.active_preset.as_deref() == Some(id.as_str()))
+        move || {
+            state
+                .settings
+                .with(|s| s.active_preset.as_deref() == Some(id.as_str()))
+        }
     };
     let active_btn = active.clone();
     let name_title = name.clone();
@@ -121,4 +125,3 @@ pub(super) fn PresetSwatch(preset: Preset, state: AppState) -> impl IntoView {
         </div>
     }
 }
-

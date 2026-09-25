@@ -8,8 +8,8 @@
 //! live in the shared kernel — the text palette reuses both, so the two
 //! formats tint to the same hue at the same strength.
 
-use crate::appearance::shared::tint::{chroma_ceiling, tinted_token, ui_hue_oklch};
 use crate::appearance::Appearance;
+use crate::appearance::shared::tint::{chroma_ceiling, tinted_token, ui_hue_oklch};
 
 impl Appearance {
     /// Just the accent token, without building the seven-entry override list.
@@ -41,18 +41,30 @@ impl Appearance {
 
         let tokens: [(&'static str, &'static str, f64); 7] = [
             ("--color-paper", "--base-paper", chroma_ceiling("paper")),
-            ("--color-surface", "--base-surface", chroma_ceiling("surface")),
+            (
+                "--color-surface",
+                "--base-surface",
+                chroma_ceiling("surface"),
+            ),
             ("--color-line", "--base-line", chroma_ceiling("line")),
             ("--color-ink", "--base-ink", chroma_ceiling("ink")),
             ("--color-muted", "--base-muted", chroma_ceiling("muted")),
             ("--color-accent", "--base-accent", chroma_ceiling("accent")),
-            ("--color-accent-soft", "--base-accent-soft", chroma_ceiling("accent-soft")),
+            (
+                "--color-accent-soft",
+                "--base-accent-soft",
+                chroma_ceiling("accent-soft"),
+            ),
         ];
 
         let palette = self.base_palette();
         let mut out = Vec::with_capacity(tokens.len());
         for (name, base_var, max_c) in tokens {
-            let Some(hex) = palette.iter().find(|(k, _)| *k == base_var).map(|(_, v)| *v) else {
+            let Some(hex) = palette
+                .iter()
+                .find(|(k, _)| *k == base_var)
+                .map(|(_, v)| *v)
+            else {
                 continue;
             };
             let Some(value) = tinted_token(hex, target_h, t, max_c) else {
@@ -66,10 +78,10 @@ impl Appearance {
 
 #[cfg(test)]
 mod tests {
+    use crate::appearance::BaseMode;
     use crate::appearance::fixture::{lch, tinted};
     use crate::appearance::shared::oklch::hex_to_oklch;
     use crate::appearance::shared::tint::ui_hue_oklch;
-    use crate::appearance::BaseMode;
 
     /// (L, C, H) of one token in an override set.
     fn token_lch(o: &[(&'static str, String)], name: &str) -> (f64, f64, f64) {
@@ -131,7 +143,12 @@ mod tests {
         // full strength every token must land ON the requested hue.
         let o = tinted(BaseMode::Light, 104, 100).ui_overrides();
         let want = ui_hue_oklch(104.0);
-        for token in ["--color-paper", "--color-accent", "--color-accent-soft", "--color-line"] {
+        for token in [
+            "--color-paper",
+            "--color-accent",
+            "--color-accent-soft",
+            "--color-line",
+        ] {
             let h = token_lch(&o, token).2;
             let d = (h - want).abs().min(360.0 - (h - want).abs());
             assert!(d < 1.0, "{token} hue {h} should be ~{want}");
@@ -170,6 +187,9 @@ mod tests {
         // sRGB 34deg (a warm tan) sits near 60deg on the OKLCH circle, NOT 34.
         let want = ui_hue_oklch(34.0);
         assert!((h - want).abs() < 1.0, "paper hue {h} should be {want}");
-        assert!(h > 40.0, "a warm tan must not be emitted as OKLCH 34 (pink)");
+        assert!(
+            h > 40.0,
+            "a warm tan must not be emitted as OKLCH 34 (pink)"
+        );
     }
 }

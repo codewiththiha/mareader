@@ -4,11 +4,11 @@
 
 use leptos::prelude::*;
 
-use library_core::book::{find_book_mut, find_by_id, Fingerprint};
+use library_core::book::{Fingerprint, find_book_mut, find_by_id};
 use library_core::conflict::Placement;
 use library_core::scan::FoundFile;
 
-use super::{answer_batch, member_slot, minted_name, AskKind, ConflictAsk};
+use super::{AskKind, ConflictAsk, answer_batch, member_slot, minted_name};
 use crate::services::library::arrange::{ReadingData, purge_books};
 use crate::services::library::covers;
 use crate::state::AppState;
@@ -94,9 +94,10 @@ fn withhold_keep_both_from_a_twin(
 }
 
 fn is_the_same_file(state: AppState, existing_id: &str, path: &str) -> bool {
-    state.library.books.with_untracked(|rows| {
-        find_by_id(rows, existing_id).is_some_and(|b| b.path() == path)
-    })
+    state
+        .library
+        .books
+        .with_untracked(|rows| find_by_id(rows, existing_id).is_some_and(|b| b.path() == path))
 }
 
 /// One spelling, so a placement cannot be recorded anywhere without the removal being spent beside it.

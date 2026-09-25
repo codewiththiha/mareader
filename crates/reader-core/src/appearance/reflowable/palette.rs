@@ -185,8 +185,14 @@ mod tests {
             assert!(d < 1.0, "paper hue {ph} vs {want_h}");
 
             let (il, ic, ih) = lch(&p.ink);
-            assert!((il - 0.15).abs() < 1e-9, "ink must stay mostly black, got L={il}");
-            assert!((ic - 0.03 * t).abs() < 1e-3, "ink C {ic} — a whisper, not a paint job");
+            assert!(
+                (il - 0.15).abs() < 1e-9,
+                "ink must stay mostly black, got L={il}"
+            );
+            assert!(
+                (ic - 0.03 * t).abs() < 1e-3,
+                "ink C {ic} — a whisper, not a paint job"
+            );
             assert_eq!(ih, ph, "the ink must take the paper's hue");
         }
     }
@@ -199,7 +205,10 @@ mod tests {
         assert!(pl > 0.2, "dark paper must stay a grey, not pure black");
         assert!((pc - 0.10).abs() < 1e-3, "paper C {pc}");
         let (il, ic, _) = lch(&p.ink);
-        assert!((il - 0.92).abs() < 1e-9, "ink must stay mostly white, got L={il}");
+        assert!(
+            (il - 0.92).abs() < 1e-9,
+            "ink must stay mostly white, got L={il}"
+        );
         assert!((ic - 0.04).abs() < 1e-3, "ink C {ic}");
     }
 
@@ -210,14 +219,23 @@ mod tests {
         assert!((pl - 0.22).abs() < 1e-9, "paper L {pl}");
         assert_eq!(pc, 0.0, "untinted dim paper is neutral");
         let (il, _, _) = lch(&p.ink);
-        assert!((il - 0.12).abs() < 1e-9, "dim ink stays dark/black, got L={il}");
+        assert!(
+            (il - 0.12).abs() < 1e-9,
+            "dim ink stays dark/black, got L={il}"
+        );
         assert!(il < pl, "the ink must be darker than the dim paper");
         // Same depth family as the dim chrome (#1a1c1f), darker than the
         // Dark page's paper, never the old middle grey.
         let chrome_l = hex_to_oklch(base_tokens(BaseMode::Dim).paper).unwrap().0;
         let dark_paper_l = hex_to_oklch(base_tokens(BaseMode::Dark).paper).unwrap().0;
-        assert!((pl - chrome_l).abs() < 0.15, "paper {pl} should sit near the dim chrome {chrome_l}");
-        assert!(pl > dark_paper_l, "paper {pl} must stay above the dark paper {dark_paper_l}");
+        assert!(
+            (pl - chrome_l).abs() < 0.15,
+            "paper {pl} should sit near the dim chrome {chrome_l}"
+        );
+        assert!(
+            pl > dark_paper_l,
+            "paper {pl} must stay above the dark paper {dark_paper_l}"
+        );
         assert!(pl < 0.3, "dim paper must not re-light the page, got {pl}");
         assert_eq!(p.accent, base_tokens(BaseMode::Dim).accent);
     }
@@ -262,10 +280,16 @@ mod tests {
         let (mline, _, _) = lch(&m.line);
         let (mmuted, _, _) = lch(&m.muted);
         let (mink, _, _) = lch(&m.ink);
-        assert!(mpaper < msurface, "dim paper {mpaper} vs surface {msurface}");
+        assert!(
+            mpaper < msurface,
+            "dim paper {mpaper} vs surface {msurface}"
+        );
         assert!(msurface < mline, "dim surface {msurface} vs line {mline}");
         assert!(mline < mmuted, "dim line {mline} vs muted {mmuted}");
-        assert!(mink < mpaper, "dim ink {mink} must stay darker than the paper {mpaper}");
+        assert!(
+            mink < mpaper,
+            "dim ink {mink} must stay darker than the paper {mpaper}"
+        );
 
         // Dark inverts: the paper is the darkest, the ink the brightest.
         let d = TextPalette::compute(&tinted(BaseMode::Dark, 104, 100));
@@ -274,7 +298,10 @@ mod tests {
         let (dline, _, _) = lch(&d.line);
         let (dmuted, _, _) = lch(&d.muted);
         let (dink, _, _) = lch(&d.ink);
-        assert!(dpaper < dsurface, "dark paper {dpaper} vs surface {dsurface}");
+        assert!(
+            dpaper < dsurface,
+            "dark paper {dpaper} vs surface {dsurface}"
+        );
         assert!(dsurface < dline, "dark surface {dsurface} vs line {dline}");
         assert!(dline < dmuted, "dark line {dline} vs muted {dmuted}");
         assert!(dmuted < dink, "dark muted {dmuted} vs ink {dink}");

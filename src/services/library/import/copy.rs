@@ -9,8 +9,8 @@ use library_core::book::Fingerprint;
 use library_core::scan::FoundFile;
 use library_core::wire::{BookFileRequest, StoreResult};
 
-use crate::services::library::{file_name, toast};
 use crate::services::library as ipc;
+use crate::services::library::{file_name, toast};
 use crate::state::AppState;
 
 /// What a landed copy comes home as: where it stands, and its own measurement (the row

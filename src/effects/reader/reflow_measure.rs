@@ -31,14 +31,14 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use app_chrome::hooks::use_timeout::{use_debounce, Debouncer};
-use reflow_core::geometry::{geometry, PageGeometry};
+use app_chrome::hooks::use_timeout::{Debouncer, use_debounce};
+use reflow_core::geometry::{PageGeometry, geometry};
 use reflow_core::pager::estimate_heights;
 use reflow_core::typography::TextSettings;
 
-use crate::state::reader::document::reflow::estimate_metrics;
-use crate::state::reader::TypographySignal;
 use crate::state::AppState;
+use crate::state::reader::TypographySignal;
+use crate::state::reader::document::reflow::estimate_metrics;
 
 /// A measured height within two pixels of the store's number is jitter, not
 /// news: subpixel rounding and font-hinting noise must not bump the stream's
@@ -175,7 +175,9 @@ fn flush(state: AppState) {
     let reflow = state.reader.document.content.reflow;
     // The document may have closed or been swapped out between the report
     // and the debounce firing; either way the batch belongs to nobody now.
-    let current_doc = reflow.blocks.with_untracked(|blocks| Arc::as_ptr(blocks) as usize);
+    let current_doc = reflow
+        .blocks
+        .with_untracked(|blocks| Arc::as_ptr(blocks) as usize);
     if reflow.block_count() == 0 || current_doc != doc_id {
         return;
     }

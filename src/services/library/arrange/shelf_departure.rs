@@ -125,7 +125,10 @@ pub(super) fn departing_sets(
     shelves: &[Shelf],
     folder_id: &str,
     top_id: &str,
-) -> (std::collections::HashSet<String>, std::collections::HashSet<String>) {
+) -> (
+    std::collections::HashSet<String>,
+    std::collections::HashSet<String>,
+) {
     let root = [top_id.to_string()];
     let subtree: std::collections::HashSet<String> = std::iter::once(top_id.to_string())
         .chain(shelf::subtree_ids(shelves, &root))

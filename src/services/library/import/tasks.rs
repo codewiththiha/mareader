@@ -6,8 +6,8 @@
 use leptos::prelude::*;
 
 use crate::services::library::toast;
-use crate::state::library::ImportTask;
 use crate::state::AppState;
+use crate::state::library::ImportTask;
 use crate::time::now_ms;
 
 /// Minted by [`library_core::id`]'s own counter, like every other library id:
@@ -30,7 +30,11 @@ pub(crate) fn begin_task(state: AppState, label: impl Into<String>) -> String {
     task
 }
 
-pub(super) fn update_task(state: AppState, id: &str, change: impl FnOnce(&mut ImportTask) + 'static) {
+pub(super) fn update_task(
+    state: AppState,
+    id: &str,
+    change: impl FnOnce(&mut ImportTask) + 'static,
+) {
     let id = id.to_string();
     state.library.tasks.update(|tasks| {
         if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {

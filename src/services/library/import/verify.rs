@@ -12,13 +12,13 @@ use library_core::folder::{self as folder_ops, FolderOpts};
 use library_core::governance::Governance;
 use library_core::wire::PathCheck;
 
+use super::Asked;
 use super::claim::claim_root;
 use super::folder::run_folder;
 use super::gate::RootPlan;
 use super::tasks::task_id;
-use super::Asked;
-use crate::services::library::{folder_label, picker_focus, toast};
 use crate::services::library as ipc;
+use crate::services::library::{folder_label, picker_focus, toast};
 use crate::state::AppState;
 
 /// Called on startup and whenever the window regains focus; both moments owe

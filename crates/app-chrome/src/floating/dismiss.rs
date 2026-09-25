@@ -169,7 +169,8 @@ pub fn use_dismiss(
             let is_inside = std::rc::Rc::clone(&is_inside);
             let handler = move |ev: web_sys::Event| {
                 // No target: nothing to test, ignore.
-                let Some(node) = ev.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else {
+                let Some(node) = ev.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                else {
                     return;
                 };
                 // Inside the surface: the surface's own interaction.

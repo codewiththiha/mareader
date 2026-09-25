@@ -21,9 +21,11 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::components::ai::gloss::controller::GlossController;
-use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
-use crate::components::primitives::hooks::use_custom_event::{dispatch_typed_event, use_typed_event};
+use crate::components::primitives::hooks::use_custom_event::{
+    dispatch_typed_event, use_typed_event,
+};
 use crate::state::AppState;
+use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 
 pub use crate::events::GLOSS_CONTEXT_EVENT;
 
@@ -88,16 +90,16 @@ pub fn exit_selection(state: AppState) {
 }
 
 /// Park a removed batch for undo; an empty batch parks nothing.
-pub fn park_undo(
-    undo: RwSignal<Option<UndoBatch>>,
-    marks: Vec<GlossMark>,
-    path: Option<String>,
-) {
+pub fn park_undo(undo: RwSignal<Option<UndoBatch>>, marks: Vec<GlossMark>, path: Option<String>) {
     if marks.is_empty() {
         return;
     }
     let generation = UNDO_GEN.fetch_add(1, Ordering::Relaxed);
-    undo.set(Some(UndoBatch { generation, path, marks }));
+    undo.set(Some(UndoBatch {
+        generation,
+        path,
+        marks,
+    }));
 }
 
 /// Handles owned by [`use_select_mode`].

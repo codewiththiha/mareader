@@ -8,8 +8,8 @@
 //! a reference, and the next emitted event would call into freed memory. This
 //! helper owns that ritual once.
 
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
 /// Subscribe to a Tauri event for the lifetime of the surrounding reactive

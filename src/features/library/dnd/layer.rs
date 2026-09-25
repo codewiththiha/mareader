@@ -28,13 +28,11 @@ pub(crate) fn DragLayer() -> impl IntoView {
     // because they are one fact: a separate "is animating" flag could
     // disagree on exactly the frame that matters.
     let is_sunk = Signal::derive(move || sunk.get().is_some());
-    let style = Signal::derive(move || {
-        match sunk.get() {
-            Some(spot) => format!("left:{:.2}px;top:{:.2}px", spot.x, spot.y),
-            None => {
-                let (x, y) = at.get();
-                format!("left:{x:.2}px;top:{y:.2}px")
-            }
+    let style = Signal::derive(move || match sunk.get() {
+        Some(spot) => format!("left:{:.2}px;top:{:.2}px", spot.x, spot.y),
+        None => {
+            let (x, y) = at.get();
+            format!("left:{x:.2}px;top:{y:.2}px")
         }
     });
 
@@ -76,11 +74,16 @@ pub(crate) fn DragLayer() -> impl IntoView {
 
 #[component]
 fn GhostCard(fan: usize, tile: GhostTile) -> impl IntoView {
-    let GhostTile { cover, label, folder } = tile;
+    let GhostTile {
+        cover,
+        label,
+        folder,
+    } = tile;
     let letter = initial(&label);
     let face = match cover {
-        Some(cover) => view! { <img class="lib-drag-img" src=cover alt="" loading="lazy" /> }
-            .into_any(),
+        Some(cover) => {
+            view! { <img class="lib-drag-img" src=cover alt="" loading="lazy" /> }.into_any()
+        }
         None if folder => {
             view! { <span class="lib-drag-folder"><Icon name=IconName::Open size=16 /></span> }
                 .into_any()

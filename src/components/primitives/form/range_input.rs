@@ -26,8 +26,7 @@ pub fn RangeInput(
     /// when missing.
     #[prop(optional, into)]
     aria_label: Option<String>,
-    #[prop(default = false)]
-    disabled: bool,
+    #[prop(default = false)] disabled: bool,
 ) -> impl IntoView {
     let class = class.unwrap_or_else(|| {
         "h-2 w-full cursor-pointer appearance-none rounded-full bg-line accent-accent".to_string()

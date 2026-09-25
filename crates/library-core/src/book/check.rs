@@ -69,8 +69,7 @@ pub fn remove_row(rows: &mut Vec<Row>, id: &str) -> Option<Row> {
 /// on every load via [`sanitize`].
 pub fn drop_dangling_links(rows: &mut Vec<Row>) {
     // Owned ids: the set must not borrow the list `retain` walks mutably.
-    let books: std::collections::HashSet<String> =
-        book_rows(rows).map(|b| b.id.clone()).collect();
+    let books: std::collections::HashSet<String> = book_rows(rows).map(|b| b.id.clone()).collect();
     rows.retain(|r| {
         !matches!(r, Row::Link { target, .. }
             if !books.contains(target) && !crate::id::is_shelf(target))

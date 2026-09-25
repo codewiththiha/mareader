@@ -6,18 +6,17 @@
 //! so the spine falls exactly where the two hosts meet — for a document of rasters
 //! and a document of type alike.
 
-use leptos::prelude::*;
 use app_chrome::hooks::dom::DUAL_PAGE_CONTAINER_ID;
+use leptos::prelude::*;
 
-use crate::components::viewer::{PageSlot, UniversalPageHost};
 use crate::components::viewer::shells::page_shell::PageShell;
+use crate::components::viewer::{PageSlot, UniversalPageHost};
 use crate::state::ReaderState;
 
 #[component]
 pub fn SpreadLayout(
     state: ReaderState,
-    #[prop(into)]
-    progress_visible: Signal<bool>,
+    #[prop(into)] progress_visible: Signal<bool>,
 ) -> impl IntoView {
     view! {
         <PageShell

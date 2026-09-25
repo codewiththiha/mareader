@@ -23,9 +23,9 @@ use crate::state::library::{CoverImage, CoverMap, LibraryState};
 // The library's key names, its persisted shape and the migration from the shape
 // it replaced all live in `library_core::blob`, so the schema and the rules that
 // keep it valid are one crate's business rather than two.
-use library_core::blob::{LIBRARY_KEY, RETIRED_LIBRARY_KEY, LibraryBlob};
 use library_core::blob::migrate::{BlobV2, LEGACY_KEY, RecentBook, V2_KEY, migrate_v1, migrate_v2};
 use library_core::blob::sanitize as sanitize_library;
+use library_core::blob::{LIBRARY_KEY, LibraryBlob, RETIRED_LIBRARY_KEY};
 use reader_core::settings::{RETIRED_SETTINGS_KEY, SETTINGS_KEY, Settings, sanitize};
 
 const COVERS_KEY: &str = "mareader.covers.v1";
@@ -141,7 +141,10 @@ pub fn set(key: &str, value: &str) -> Result<(), StorageError> {
 
 /// Serialize for storage, naming the operation a failure is reported against.
 /// The four savers were four copies of this one `map_err`.
-fn encode<T: serde::Serialize + ?Sized>(op: &'static str, value: &T) -> Result<String, StorageError> {
+fn encode<T: serde::Serialize + ?Sized>(
+    op: &'static str,
+    value: &T,
+) -> Result<String, StorageError> {
     serde_json::to_string(value).map_err(|e| StorageError {
         op,
         detail: format!("serialize failed: {e}"),
@@ -230,8 +233,7 @@ pub fn save_library(blob: &LibraryBlob) -> Result<(), StorageError> {
 
 /// Load the cover-art map (path -> page-1 JPEG data URL).
 pub fn load_covers() -> CoverMap {
-    let stored: HashMap<String, CoverImage> =
-        load_keyed("covers", COVERS_KEY, RETIRED_COVERS_KEY);
+    let stored: HashMap<String, CoverImage> = load_keyed("covers", COVERS_KEY, RETIRED_COVERS_KEY);
     stored
         .into_iter()
         .map(|(path, cover)| (path, Arc::new(cover)))
@@ -290,7 +292,10 @@ pub fn persist_covers(library: LibraryState) {
 /// later load that finds the row again picks it up, and a removal that never
 /// comes costs one localStorage entry rather than a reader's highlights.
 pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
-    if get(GLOSS_V2_MIGRATED_KEY).or_else(|| get(RETIRED_GLOSS_V2_MIGRATED_KEY)).is_some() {
+    if get(GLOSS_V2_MIGRATED_KEY)
+        .or_else(|| get(RETIRED_GLOSS_V2_MIGRATED_KEY))
+        .is_some()
+    {
         return;
     }
     let Some(raw) = get(GLOSS_V1_KEY) else {
@@ -438,7 +443,13 @@ mod tests {
             context: "the sentence it stood in".to_string(),
             anchor: PageAnchor {
                 page,
-                rect: GlossBox { x: 10.0, y: 20.0, w: 30.0, h: 8.0, r: 0.0 },
+                rect: GlossBox {
+                    x: 10.0,
+                    y: 20.0,
+                    w: 30.0,
+                    h: 8.0,
+                    r: 0.0,
+                },
             },
         }
     }

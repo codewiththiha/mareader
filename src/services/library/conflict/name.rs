@@ -4,14 +4,14 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{find_book_mut, find_by_id, fold_books, Book};
+use library_core::book::{Book, find_book_mut, find_by_id, fold_books};
 use library_core::conflict::{Placement, PlacementAsk};
 use library_core::shelf;
 
-use super::{advance, apply_placement, member_slot, minted_name, ConflictAsk};
+use super::{ConflictAsk, advance, apply_placement, member_slot, minted_name};
 use crate::services::library::arrange::{
-    ReadingData, converts_on_move_to, convert_to_stored, drop_row, memberships, move_row,
-    purge_books, unlist_row, write_moved_stones, Departed,
+    Departed, ReadingData, convert_to_stored, converts_on_move_to, drop_row, memberships, move_row,
+    purge_books, unlist_row, write_moved_stones,
 };
 use crate::services::library::covers;
 use crate::services::library::import;
@@ -103,12 +103,9 @@ fn file_on_all(state: AppState, row_id: &str, shelves_named: &[String]) {
 }
 
 fn survivor_is_the_copy_of(state: AppState, survivor: &str, gone: &Book) -> bool {
-    state
-        .library
-        .books
-        .with_untracked(|rows| find_by_id(rows, survivor).is_some_and(|keep| {
-            keep.origin.is_store_copy_of(gone.path())
-        }))
+    state.library.books.with_untracked(|rows| {
+        find_by_id(rows, survivor).is_some_and(|keep| keep.origin.is_store_copy_of(gone.path()))
+    })
 }
 
 /// The survivor is the row the reader can already see here, and its id is what every

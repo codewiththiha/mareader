@@ -40,8 +40,8 @@ use virtual_list_leptos::{VirtualItem, VirtualItemState, Virtualizer};
 
 use super::canvas::{GlossOverlayProps, PdfPageCanvas};
 use crate::components::viewer::page_host::{canvas_id_for_axis, host_id_for_axis};
-use pdf_core::pixel_grid::{one_device_px, snap_px};
 use crate::state::{ReaderState, TextureSignal};
+use pdf_core::pixel_grid::{one_device_px, snap_px};
 
 #[component]
 pub fn PdfPageStrip(
@@ -79,7 +79,8 @@ pub fn PdfPageStrip(
         let scale = state.viewer.zoom.display.get();
         let tallest = state
             .document
-            .content.metrics
+            .content
+            .metrics
             .intrinsic
             .with(|pages| pages.iter().map(|p| p.height).fold(0.0, f64::max));
         tallest * scale
@@ -112,12 +113,17 @@ pub fn PdfPageStrip(
                     return;
                 }
                 let index = page.saturating_sub(1) as usize;
-                state.document.content.metrics.css_heights.update(|heights| {
-                    while heights.len() <= index {
-                        heights.push(0.0);
-                    }
-                    heights[index] = height;
-                });
+                state
+                    .document
+                    .content
+                    .metrics
+                    .css_heights
+                    .update(|heights| {
+                        while heights.len() <= index {
+                            heights.push(0.0);
+                        }
+                        heights[index] = height;
+                    });
                 let gap = state.viewer.page_gap.get_untracked();
                 handle.with_value(|v| v.report_size(index, height + gap));
                 // The first-paint gate lifts HERE: a geometry report only
@@ -139,8 +145,9 @@ pub fn PdfPageStrip(
                 }
                 if w > 0.0 {
                     let m = state.viewer.page_margin.get_untracked();
-                    handle
-                        .with_value(|v| v.report_size(page.saturating_sub(1) as usize, w + 2.0 * m));
+                    handle.with_value(|v| {
+                        v.report_size(page.saturating_sub(1) as usize, w + 2.0 * m)
+                    });
                     // Same gate as the vertical arm, same reason: the report
                     // is a completed render, and the window is the resume
                     // page's.
@@ -298,7 +305,10 @@ fn wrapper_id(axis: Axis, index: usize, page: u32) -> String {
 /// from the window and bridged by the virtualizer's retention grace. A
 /// zombie page keeps its DOM and its last bitmap; it must not start new
 /// expensive work (a crisp re-render) for the few frames it has left.
-fn dormant_signal(items: Signal<Vec<VirtualItem>, LocalStorage>, index: usize) -> Signal<bool, LocalStorage> {
+fn dormant_signal(
+    items: Signal<Vec<VirtualItem>, LocalStorage>,
+    index: usize,
+) -> Signal<bool, LocalStorage> {
     Signal::derive_local(move || {
         items
             .get()

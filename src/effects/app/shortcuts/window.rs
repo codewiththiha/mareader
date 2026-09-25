@@ -2,10 +2,10 @@
 
 use leptos::prelude::*;
 
+use crate::state::ReaderState;
 use pdf_engine::types::DocStatus;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
-use crate::state::ReaderState;
 
 /// One Cmd/Ctrl combo. `on_open` is the app's open-file action, injected so
 /// the shortcuts never depend on app chrome.

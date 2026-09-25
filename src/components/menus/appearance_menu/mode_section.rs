@@ -10,13 +10,13 @@
 use leptos::prelude::*;
 
 use crate::components::menus::appearance_menu::hue_picker::HuePicker;
-use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::form::slider::Slider;
-use reader_core::appearance::BaseMode;
 use crate::components::primitives::controls::toggle_button::ToggleButton;
+use crate::components::primitives::form::slider::Slider;
 use crate::components::settings::fonts::update_text;
-use crate::state::AppState;
 use crate::effects::appearance::{AppearanceScrub, preview_appearance};
+use crate::state::AppState;
+use app_chrome::icon::{Icon, IconName};
+use reader_core::appearance::BaseMode;
 
 fn base_icon(b: BaseMode) -> IconName {
     match b {

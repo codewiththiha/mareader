@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::folder::{key_chain, FolderOpts};
+use library_core::folder::{FolderOpts, key_chain};
 use library_core::id;
 use library_core::ledger;
 use library_core::scan::FoundFile;
@@ -19,13 +19,13 @@ use library_core::shelf::Shelf;
 
 use super::claim::{claim_root, start_guarded};
 use super::copy::copy_batch;
-use super::files::{land_stored_batch, PendingCopy};
+use super::files::{PendingCopy, land_stored_batch};
 use super::folder::heal_by_address;
-use super::tasks::{fail, finish_task, run_total, update_task, FailMode};
-use super::{rung_label, Asked};
+use super::tasks::{FailMode, fail, finish_task, run_total, update_task};
+use super::{Asked, rung_label};
+use crate::services::library as ipc;
 use crate::services::library::covers;
 use crate::services::library::reveal;
-use crate::services::library as ipc;
 use crate::state::AppState;
 use crate::time::now_ms;
 
@@ -34,10 +34,7 @@ pub(crate) enum CopiesDest {
     /// Spliced right behind the shelf whose name the arrival collided with:
     /// a copy appended to the end of the level is a shelf the reader has to go
     /// and find.
-    NewShelf {
-        name: String,
-        after: Option<String>,
-    },
+    NewShelf { name: String, after: Option<String> },
     /// The *replace*'s target, whose books the sweep has just taken out.
     Into { shelf_id: String },
 }
@@ -47,7 +44,9 @@ pub(crate) enum CopiesDest {
 pub(crate) fn copies_over_standing_tree(state: AppState, root: &str, opts: &FolderOpts) -> bool {
     opts.mode().copies_files()
         && state.library.folders.with_untracked(|folders| {
-            folders.iter().any(|f| f.root == root && f.mode().reads_in_place())
+            folders
+                .iter()
+                .any(|f| f.root == root && f.mode().reads_in_place())
         })
 }
 
@@ -108,10 +107,8 @@ async fn run_copies(
     }
 
     let now = now_ms();
-    let pending: Vec<(String, &FoundFile)> = adds
-        .iter()
-        .map(|file| (id::next_id(now), file))
-        .collect();
+    let pending: Vec<(String, &FoundFile)> =
+        adds.iter().map(|file| (id::next_id(now), file)).collect();
     let expected = run_total(pending.len() as u32, healed.len(), 0);
     update_task(state, &task, move |t| t.total = expected);
     let copies = match copy_batch(state, &task, &pending).await {
@@ -148,7 +145,14 @@ async fn run_copies(
                 .get_or_insert_with(|| dest_shelf(state, &dest, now))
                 .clone();
             if opts.groups {
-                rung_shelf(state, &root, &on_shelf, &mut rungs, each.file.subfolder(), now)
+                rung_shelf(
+                    state,
+                    &root,
+                    &on_shelf,
+                    &mut rungs,
+                    each.file.subfolder(),
+                    now,
+                )
             } else {
                 on_shelf
             }
@@ -213,9 +217,10 @@ fn rung_shelf(
         let made = id.clone();
         let name = rung_label(rung, root);
         let hung = parent.clone();
-        state.library.shelves.update(|shelves| {
-            shelves.push(Shelf::virtual_shelf(made, name, Some(hung)))
-        });
+        state
+            .library
+            .shelves
+            .update(|shelves| shelves.push(Shelf::virtual_shelf(made, name, Some(hung))));
         rungs.insert(rung.to_string(), id.clone());
         parent = id;
     }

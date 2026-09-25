@@ -7,12 +7,12 @@ use leptos::prelude::*;
 use crate::components::ai::gloss::phase::GlossPhase;
 use crate::state::AppState;
 
+use super::MARK_CAP;
 use super::cache::GlossCache;
 use super::content::GlossContent;
 use super::drag::GlossDrag;
 use super::geometry::GlossGeometry;
 use super::open::GlossOpen;
-use super::MARK_CAP;
 
 #[derive(Clone, Copy)]
 pub struct GlossCommands {
@@ -113,9 +113,8 @@ pub(super) fn build_commands(
     // and the answer cache, so the caller must not go on holding the
     // discarded duplicate.
     let add_mark = Callback::new(move |m: GlossMark| -> GlossMark {
-        let existing = marks.with_untracked(|v| {
-            v.iter().find(|o| same_glossed_spot(o, &m)).cloned()
-        });
+        let existing =
+            marks.with_untracked(|v| v.iter().find(|o| same_glossed_spot(o, &m)).cloned());
         if let Some(existing) = existing {
             return existing;
         }
@@ -227,23 +226,54 @@ mod tests {
     fn anchor(page: u32, x: f64, y: f64) -> PageAnchor {
         PageAnchor {
             page,
-            rect: GlossBox { x, y, w: 40.0, h: 12.0, r: 0.0 },
+            rect: GlossBox {
+                x,
+                y,
+                w: 40.0,
+                h: 12.0,
+                r: 0.0,
+            },
         }
     }
 
     fn mark(id: &str, word: &str, context: &str, anchor: PageAnchor) -> GlossMark {
-        GlossMark { id: id.to_string(), word: word.to_string(), context: context.to_string(), anchor }
+        GlossMark {
+            id: id.to_string(),
+            word: word.to_string(),
+            context: context.to_string(),
+            anchor,
+        }
     }
 
     #[test]
     fn a_pdf_mark_is_the_same_spot_within_the_anchor_tolerance() {
-        let a = mark("g1", "palimpsest", "a scraped manuscript page", anchor(3, 100.0, 40.0));
-        let drifted = mark("g2", "palimpsest", "a scraped manuscript page", anchor(3, 100.4, 40.2));
+        let a = mark(
+            "g1",
+            "palimpsest",
+            "a scraped manuscript page",
+            anchor(3, 100.0, 40.0),
+        );
+        let drifted = mark(
+            "g2",
+            "palimpsest",
+            "a scraped manuscript page",
+            anchor(3, 100.4, 40.2),
+        );
         assert!(same_glossed_spot(&a, &drifted));
 
-        let moved = mark("g3", "palimpsest", "a scraped manuscript page", anchor(3, 100.0, 90.0));
+        let moved = mark(
+            "g3",
+            "palimpsest",
+            "a scraped manuscript page",
+            anchor(3, 100.0, 90.0),
+        );
         assert!(!same_glossed_spot(&a, &moved));
-        let other = mark("g4", "palimpsests", "a scraped manuscript page", anchor(3, 100.0, 40.0));
+        let other = mark(
+            "g4",
+            "palimpsests",
+            "a scraped manuscript page",
+            anchor(3, 100.0, 40.0),
+        );
         assert!(!same_glossed_spot(&a, &other));
     }
 
@@ -275,9 +305,22 @@ mod tests {
         // decide, exactly as they did before there were two.
         let spot = spot_envelope(&ReflowSpot::new(1, 0, 4), "the word in a sentence");
         let a = mark("g1", "word", &spot, anchor(1, 10.0, 10.0));
-        let b = mark("g2", "word", "the word in a sentence", anchor(1, 10.0, 10.0));
-        assert!(same_glossed_spot(&a, &b), "same anchor, so the anchors decide");
-        let c = mark("g3", "word", "the word in a sentence", anchor(2, 10.0, 10.0));
+        let b = mark(
+            "g2",
+            "word",
+            "the word in a sentence",
+            anchor(1, 10.0, 10.0),
+        );
+        assert!(
+            same_glossed_spot(&a, &b),
+            "same anchor, so the anchors decide"
+        );
+        let c = mark(
+            "g3",
+            "word",
+            "the word in a sentence",
+            anchor(2, 10.0, 10.0),
+        );
         assert!(!same_glossed_spot(&a, &c));
     }
 }

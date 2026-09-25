@@ -64,19 +64,28 @@ mod tests {
     /// first frame moves nothing.
     #[test]
     fn the_first_frame_passes_no_time() {
-        assert!(close(frame_delta(f64::NAN, 1_000.0, MAX_SCROLL_FRAME_S), 0.0));
+        assert!(close(
+            frame_delta(f64::NAN, 1_000.0, MAX_SCROLL_FRAME_S),
+            0.0
+        ));
     }
 
     #[test]
     fn an_ordinary_frame_is_its_own_gap() {
-        assert!(close(frame_delta(1_000.0, 1_016.0, MAX_SCROLL_FRAME_S), 0.016));
+        assert!(close(
+            frame_delta(1_000.0, 1_016.0, MAX_SCROLL_FRAME_S),
+            0.016
+        ));
     }
 
     /// The regression the clamp exists for: a backgrounded tab's first frame
     /// back reports eight seconds and must not scroll eight seconds' worth.
     #[test]
     fn a_stalled_tab_does_not_jump_the_reader() {
-        assert!(close(frame_delta(1_000.0, 9_000.0, MAX_SCROLL_FRAME_S), MAX_SCROLL_FRAME_S));
+        assert!(close(
+            frame_delta(1_000.0, 9_000.0, MAX_SCROLL_FRAME_S),
+            MAX_SCROLL_FRAME_S
+        ));
     }
 
     /// A clock that went backwards is treated as no time at all rather than as
@@ -84,7 +93,10 @@ mod tests {
     /// in reverse.
     #[test]
     fn a_backwards_clock_passes_no_time() {
-        assert!(close(frame_delta(2_000.0, 1_000.0, MAX_SCROLL_FRAME_S), 0.0));
+        assert!(close(
+            frame_delta(2_000.0, 1_000.0, MAX_SCROLL_FRAME_S),
+            0.0
+        ));
     }
 
     /// The bound belongs to the consumer: the spring clamps tighter than a

@@ -82,7 +82,6 @@ pub(crate) fn reveal_dom_id(target_is_shelf: bool, list_layout: bool, id: &str) 
 }
 
 impl SeamVocab {
-
     fn kind(self) -> DropTargetKind {
         match self {
             SeamVocab::FolderCard | SeamVocab::FolderRow => DropTargetKind::Folder,
@@ -169,18 +168,15 @@ pub(crate) fn ShelfItemShell(
     vocab: SeamVocab,
     base_class: &'static str,
     policy: ShelfItemPolicy,
-    #[prop(optional)]
-    extra_classes: Vec<(String, Signal<bool>)>,
-    #[prop(optional)]
-    style: String,
+    #[prop(optional)] extra_classes: Vec<(String, Signal<bool>)>,
+    #[prop(optional)] style: String,
     /// `Option` in the field type and `into` rather than `optional` on
     /// purpose: [`crate::features::library::entry::EntryShell`] already holds
     /// the disclosure's facts as an `Option`, and an `optional` prop's setter
     /// takes the value inside the option.
     #[prop(into)]
     aria_expanded: Option<Signal<bool>>,
-    #[prop(into)]
-    on_keydown_first: Option<Callback<leptos::ev::KeyboardEvent, bool>>,
+    #[prop(into)] on_keydown_first: Option<Callback<leptos::ev::KeyboardEvent, bool>>,
     children: Children,
 ) -> impl IntoView {
     let drag = use_context::<DragController>();

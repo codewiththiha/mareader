@@ -21,8 +21,8 @@
 
 use leptos::prelude::*;
 
-use app_chrome::platform::uses_frameless_controls;
 use crate::state::AppState;
+use app_chrome::platform::uses_frameless_controls;
 
 #[derive(Default)]
 struct ProbeState {
@@ -68,7 +68,8 @@ pub fn install_window_state_bridge(state: AppState) {
         let st = state;
         wasm_bindgen_futures::spawn_local(async move {
             loop {
-                st.ui.window_maximized
+                st.ui
+                    .window_maximized
                     .set(app_chrome::window::api::is_window_maximized().await);
                 let mut should_probe = false;
                 probes.update_value(|state| should_probe = state.complete());

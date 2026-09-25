@@ -99,7 +99,9 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     // one with the paths it carries; both go through the same admission.
     let admit = {
         let internal = internal.clone();
-        move |ev: &Event| !internal.get() && drop_paths(ev).iter().any(|p| format::is_supported_path(p))
+        move |ev: &Event| {
+            !internal.get() && drop_paths(ev).iter().any(|p| format::is_supported_path(p))
+        }
     };
     let enter_admit = admit.clone();
     crate::services::tauri_listen("tauri://drag-enter", move |ev: Event| {
@@ -107,7 +109,9 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
             drag_active.set(true);
         }
     });
-    crate::services::tauri_listen("tauri://drag-leave", move |_ev: Event| drag_active.set(false));
+    crate::services::tauri_listen("tauri://drag-leave", move |_ev: Event| {
+        drag_active.set(false)
+    });
     crate::services::tauri_listen("tauri://drag-drop", move |ev: Event| {
         drag_active.set(false);
         if internal.get() {

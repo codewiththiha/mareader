@@ -287,6 +287,9 @@ mod tests {
 
     #[test]
     fn an_unmapped_key_is_left_alone() {
-        assert_eq!(resolve(key("q", ViewMode::ScrollVertical)), NavOutcome::passed());
+        assert_eq!(
+            resolve(key("q", ViewMode::ScrollVertical)),
+            NavOutcome::passed()
+        );
     }
 }

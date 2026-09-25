@@ -11,8 +11,8 @@ use library_core::shelf::{ALL_SHELF, find};
 use super::controller::DragPayload;
 use super::effect::DropEffect;
 use crate::services::library::{
-    create_shelf_here, move_many_to_shelf, nest_many, nest_shelf, reorder_shelves_to_anchor,
-    unfile_books, SeamSide,
+    SeamSide, create_shelf_here, move_many_to_shelf, nest_many, nest_shelf,
+    reorder_shelves_to_anchor, unfile_books,
 };
 use crate::state::AppState;
 
@@ -101,7 +101,10 @@ fn insert_anchor(
     shelf: Option<&str>,
     after: bool,
 ) -> (String, Option<usize>) {
-    let reorder = state.library.view.with_untracked(|view| view.drag_reorders());
+    let reorder = state
+        .library
+        .view
+        .with_untracked(|view| view.drag_reorders());
     let open = state.library.shelf.get_untracked();
     let container: Option<String> = match shelf {
         Some(named) => (named != ALL_SHELF).then(|| named.to_string()),

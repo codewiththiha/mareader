@@ -4,7 +4,7 @@
 
 use library_core::conflict::Placement;
 
-use super::{answer_batch, apply_placement, AskKind, ConflictAsk};
+use super::{AskKind, ConflictAsk, answer_batch, apply_placement};
 use crate::state::AppState;
 
 /// `apply_all` is the switch beside the buttons, with the compact
@@ -12,13 +12,7 @@ use crate::state::AppState;
 /// question of this shape in the queue. A question that is not a two-answer
 /// one stops the drain.
 pub fn answer_covered(state: AppState, answer: Placement, apply_all: bool) {
-    answer_batch(
-        state,
-        answer,
-        apply_all,
-        AskKind::is_two_answer,
-        apply_one,
-    );
+    answer_batch(state, answer, apply_all, AskKind::is_two_answer, apply_one);
 }
 
 fn apply_one(state: AppState, ask: &ConflictAsk, answer: Placement) {

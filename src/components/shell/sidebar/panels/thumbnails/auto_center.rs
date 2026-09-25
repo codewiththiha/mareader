@@ -117,10 +117,7 @@ fn glide_verdict(
     current: f64,
     since_drive_ms: f64,
 ) -> GlideVerdict {
-    if !in_thumbs
-        || page_now != armed_page
-        || target.is_none_or(|t| (t - current).abs() <= 1.0)
-    {
+    if !in_thumbs || page_now != armed_page || target.is_none_or(|t| (t - current).abs() <= 1.0) {
         return GlideVerdict::Cancel;
     }
     if since_drive_ms < GRACE_MS {
@@ -128,8 +125,6 @@ fn glide_verdict(
     }
     GlideVerdict::Fire(target.unwrap())
 }
-
-
 
 /// Warm the thumbnail cache around the page the glide just centered on: the
 /// two before and eight after cover the next flick of scrolling.
@@ -215,11 +210,7 @@ fn arm_glide(g: Glide) {
                 // it) and re-arm under a fresh timer.
                 let next = step_slot.get_value();
                 let handle = next.and_then(|next| {
-                    set_timeout_with_handle(
-                        move || next(),
-                        Duration::from_millis(wait_ms),
-                    )
-                    .ok()
+                    set_timeout_with_handle(move || next(), Duration::from_millis(wait_ms)).ok()
                 });
                 timer.set_value(handle);
             }
@@ -255,11 +246,7 @@ fn arm_glide(g: Glide) {
 /// The "take me to where I am" gesture: a `mareader:reveal-active`
 /// event (re-clicking the active sidebar tab) smooth-scrolls onto the
 /// current page and hands the panel back to the reader.
-fn install_reveal_listener(
-    auto: &AutoCenter,
-    state: ReaderState,
-    sidebar: RwSignal<SidebarMode>,
-) {
+fn install_reveal_listener(auto: &AutoCenter, state: ReaderState, sidebar: RwSignal<SidebarMode>) {
     let reveal_drive = auto.last_user_drive.clone();
     let v = auto.virtualizer.clone();
     Effect::new(move |_| {
@@ -294,11 +281,7 @@ fn install_reveal_listener(
 
 /// The open/page-follow effect: snap on a fresh open, then glide after
 /// the page signal moves (debounced, grace-aware).
-fn install_center_effect(
-    auto: &AutoCenter,
-    state: ReaderState,
-    sidebar: RwSignal<SidebarMode>,
-) {
+fn install_center_effect(auto: &AutoCenter, state: ReaderState, sidebar: RwSignal<SidebarMode>) {
     let virtualizer = auto.virtualizer.clone();
     let centered = auto.centered;
     let last_user_drive = auto.last_user_drive.clone();

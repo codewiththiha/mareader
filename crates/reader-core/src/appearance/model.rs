@@ -54,13 +54,11 @@ impl BaseMode {
         matches!(self, Self::Dark | Self::Dim)
     }
 
-
     pub const ALL: &'static [BaseMode] = &[Self::Light, Self::Dark, Self::Dim];
 
     pub fn all() -> &'static [BaseMode] {
         Self::ALL
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -131,7 +129,6 @@ pub enum NoiseMode {
 }
 
 impl NoiseMode {
-
     pub fn label(&self) -> &'static str {
         match self {
             Self::Off => "Off",
@@ -260,7 +257,10 @@ mod tests {
         assert_eq!(a.texture_scale, 400);
         assert_eq!(a.noise_intensity, 100);
 
-        let mut small = Appearance { texture_scale: 1, ..Default::default() };
+        let mut small = Appearance {
+            texture_scale: 1,
+            ..Default::default()
+        };
         small.sanitize();
         assert_eq!(small.texture_scale, 25, "texture must stay legible");
     }

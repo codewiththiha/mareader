@@ -50,8 +50,8 @@ pub struct FolderOpts {
     #[serde(default = "default_true")]
     pub in_place: bool,
     /// Legacy mirror of the root rung's tracking answer (see
-     /// [`WatchedFolder::set_tracking`]); the sheet only offers it alongside
-     /// [`FolderOpts::in_place`].
+    /// [`WatchedFolder::set_tracking`]); the sheet only offers it alongside
+    /// [`FolderOpts::in_place`].
     #[serde(default)]
     pub watch: bool,
     /// Cut a shelf per subfolder (`true`) or keep the whole tree on one shelf.
@@ -89,9 +89,7 @@ impl FolderOpts {
     pub fn step_min_size(&mut self, delta: i32) {
         let steps = delta as i64;
         let next = self.min_size as i64 + steps * MIN_SIZE_STEP as i64;
-        self.min_size = next
-            .clamp(MIN_SIZE_FLOOR as i64, MIN_SIZE_CEIL as i64)
-            as u64;
+        self.min_size = next.clamp(MIN_SIZE_FLOOR as i64, MIN_SIZE_CEIL as i64) as u64;
     }
 
     pub fn min_size_label(&self) -> String {
@@ -444,7 +442,8 @@ impl WatchedFolder {
     /// tree. The flag is the legacy half of one decision, not a second source
     /// of truth.
     pub fn set_tracking(&mut self, key: &str, on: bool) {
-        self.tracking.set(key, if on { Track::On } else { Track::Off });
+        self.tracking
+            .set(key, if on { Track::On } else { Track::Off });
         self.opts.watch = self.tracking.tracked();
     }
 
@@ -557,10 +556,7 @@ pub fn sanitize(folders: &mut Vec<WatchedFolder>) {
         !f.id.trim().is_empty() && !f.root.trim().is_empty() && seen.insert(f.root.clone())
     });
     for f in folders.iter_mut() {
-        f.opts.min_size = f
-            .opts
-            .min_size
-            .clamp(MIN_SIZE_FLOOR, MIN_SIZE_CEIL);
+        f.opts.min_size = f.opts.min_size.clamp(MIN_SIZE_FLOOR, MIN_SIZE_CEIL);
         if f.opts.formats.is_empty() {
             f.opts.formats = default_formats();
         }
@@ -572,13 +568,16 @@ pub fn sanitize(folders: &mut Vec<WatchedFolder>) {
             f.tracking.set("", Track::On);
         }
         f.opts.watch = f.tracking.tracked();
-        f.shelf_map.retain(|k, v| !v.trim().is_empty() && !k.contains('\\'));
+        f.shelf_map
+            .retain(|k, v| !v.trim().is_empty() && !k.contains('\\'));
         // One tombstone per fingerprint: a book removed twice must not offer
         // the same file back from two rows.
         let mut stones = HashSet::new();
-        f.ignored.retain(|t| !t.last_path.trim().is_empty() && stones.insert(t.fp));
+        f.ignored
+            .retain(|t| !t.last_path.trim().is_empty() && stones.insert(t.fp));
         let mut seen = HashSet::new();
-        f.last_seen.retain(|(fp, path)| !path.trim().is_empty() && seen.insert(*fp));
+        f.last_seen
+            .retain(|(fp, path)| !path.trim().is_empty() && seen.insert(*fp));
     }
 }
 
@@ -598,15 +597,24 @@ mod tests {
 
     #[test]
     fn inside_a_folder_starts_on_a_directory_edge() {
-        assert_eq!(rel_under("/books/a/b.pdf", "/books").as_deref(), Some("a/b.pdf"));
-        assert_eq!(rel_under("/books/b.pdf", "/books").as_deref(), Some("b.pdf"));
+        assert_eq!(
+            rel_under("/books/a/b.pdf", "/books").as_deref(),
+            Some("a/b.pdf")
+        );
+        assert_eq!(
+            rel_under("/books/b.pdf", "/books").as_deref(),
+            Some("b.pdf")
+        );
         assert_eq!(rel_under("/books", "/books").as_deref(), Some(""));
         assert_eq!(rel_under("/books/", "/books/").as_deref(), Some(""));
         assert_eq!(rel_under("/bookshelf/a.pdf", "/book"), None);
         assert_eq!(rel_under("/other/a.pdf", "/books"), None);
         // Windows paths answer in `/` like every other path in the ledger: a
         // key holding a `\` would never match a found file again.
-        assert_eq!(rel_under("C:\\books\\a\\b.pdf", "C:\\books").as_deref(), Some("a/b.pdf"));
+        assert_eq!(
+            rel_under("C:\\books\\a\\b.pdf", "C:\\books").as_deref(),
+            Some("a/b.pdf")
+        );
     }
 
     #[test]
@@ -651,7 +659,10 @@ mod tests {
             f.rungs_for("/books/Fiction/other.pdf"),
             (Some("shelf2"), Some("shelf1"))
         );
-        assert_eq!(f.rungs_for("/books/top.pdf"), (Some("shelf1"), Some("shelf1")));
+        assert_eq!(
+            f.rungs_for("/books/top.pdf"),
+            (Some("shelf1"), Some("shelf1"))
+        );
         assert_eq!(f.rungs_for("/books/Unmapped/x.pdf"), (None, Some("shelf1")));
         assert_eq!(f.rungs_for("/other/x.pdf"), (None, None));
     }
@@ -680,7 +691,11 @@ mod tests {
         f.set_shape("Fiction", true);
         assert_eq!(f.rung_for("Fiction"), "Fiction");
         assert_eq!(f.rung_for("Fiction/SciFi"), "Fiction/SciFi");
-        assert_eq!(f.rung_for("Reference"), "", "the rest of the tree is where it was");
+        assert_eq!(
+            f.rung_for("Reference"),
+            "",
+            "the rest of the tree is where it was"
+        );
         assert_eq!(
             f.rungs_for("/books/Fiction/SciFi/dune.pdf").0,
             None,
@@ -702,7 +717,10 @@ mod tests {
         assert_eq!(f.rung_for("Fiction/SciFi"), "Fiction/SciFi");
         f.set_shape("", true);
         assert!(f.opts.groups, "the root's answer IS the folder's own shape");
-        assert!(f.shapes.is_empty(), "and it takes every deeper answer with it");
+        assert!(
+            f.shapes.is_empty(),
+            "and it takes every deeper answer with it"
+        );
         assert_eq!(f.rung_for("Fiction/SciFi"), "Fiction/SciFi");
         f.set_shape("", false);
         assert_eq!(
@@ -725,7 +743,10 @@ mod tests {
             ]),
             ..folder("/books")
         };
-        assert_eq!(f.rungs_for("/books/Fiction/SciFi/dune.pdf"), (Some("root"), Some("root")));
+        assert_eq!(
+            f.rungs_for("/books/Fiction/SciFi/dune.pdf"),
+            (Some("root"), Some("root"))
+        );
         assert_eq!(f.rungs_for("/books/top.pdf"), (Some("root"), Some("root")));
     }
 
@@ -798,8 +819,7 @@ mod tests {
 
     #[test]
     fn a_blob_from_before_the_folder_options_existed_loads_them() {
-        let f: WatchedFolder =
-            serde_json::from_str(r#"{"id":"f1","root":"/books"}"#).unwrap();
+        let f: WatchedFolder = serde_json::from_str(r#"{"id":"f1","root":"/books"}"#).unwrap();
         assert_eq!(f.opts, FolderOpts::default());
         assert!(f.placed.is_empty() && f.ignored.is_empty());
         assert!(f.shelf_map.is_empty());
@@ -826,7 +846,10 @@ mod tests {
 
     #[test]
     fn a_sub_thousand_byte_threshold_still_prints_honestly() {
-        let o = FolderOpts { min_size: 512, ..Default::default() };
+        let o = FolderOpts {
+            min_size: 512,
+            ..Default::default()
+        };
         assert_eq!(o.min_size_label(), "0.5 KB");
     }
 
@@ -855,7 +878,10 @@ mod tests {
         f.opts.groups = false;
         assert_eq!(f.shelf_key(&found), "", "one flat shelf for the whole tree");
         f.opts.groups = true;
-        let at_root = FoundFile { rel: "dune.pdf".into(), ..found };
+        let at_root = FoundFile {
+            rel: "dune.pdf".into(),
+            ..found
+        };
         assert_eq!(f.shelf_key(&at_root), "");
     }
 
@@ -874,11 +900,16 @@ mod tests {
             |rung, id, name, parent| made.push((rung.to_string(), id.to_string(), name, parent)),
         );
         assert_eq!(
-            made.iter().map(|(rung, _, _, _)| rung.as_str()).collect::<Vec<_>>(),
+            made.iter()
+                .map(|(rung, _, _, _)| rung.as_str())
+                .collect::<Vec<_>>(),
             vec!["", "scifi", "scifi/deep"]
         );
         assert_eq!(made[2].2, "deep", "the leaf is named by its own subfolder");
-        assert_eq!(made[0].3, None, "the folder's own shelf hangs at the level it was on");
+        assert_eq!(
+            made[0].3, None,
+            "the folder's own shelf hangs at the level it was on"
+        );
         assert_eq!(made[1].3.as_deref(), Some(made[0].1.as_str()));
         assert_eq!(made[2].3.as_deref(), Some(made[1].1.as_str()));
         assert_eq!(leaf, made[2].1);
@@ -921,22 +952,36 @@ mod tests {
         assert!(folders[0].tracking.is_empty(), "the old blob has no tree");
         assert!(folders[0].opts.watch, "and the flag it did have");
         sanitize(&mut folders);
-        assert!(folders[0].tracked(), "the flag became the root rung's decision");
-        assert!(folders[0].tracks_rung("Fiction"), "and the tree below it inherits");
-        assert!(folders[0].opts.watch, "the flag is left agreed with the tree");
+        assert!(
+            folders[0].tracked(),
+            "the flag became the root rung's decision"
+        );
+        assert!(
+            folders[0].tracks_rung("Fiction"),
+            "and the tree below it inherits"
+        );
+        assert!(
+            folders[0].opts.watch,
+            "the flag is left agreed with the tree"
+        );
         let raw_off = r#"{"id":"f2","root":"/dvds","opts":{"inPlace":true,"watch":false}}"#;
-        let mut off: Vec<WatchedFolder> =
-            serde_json::from_str(&format!("[{raw_off}]")).unwrap();
+        let mut off: Vec<WatchedFolder> = serde_json::from_str(&format!("[{raw_off}]")).unwrap();
         sanitize(&mut off);
         assert!(!off[0].tracked());
         // The tree is the answer from here on; a stale flag yields to it.
         let mut written = vec![mode("f3", "/books", true, false)];
         written[0].set_tracking("", true);
-        assert!(written[0].opts.watch, "set_tracking mirrors the root onto the flag");
+        assert!(
+            written[0].opts.watch,
+            "set_tracking mirrors the root onto the flag"
+        );
         written[0].opts.watch = false;
         sanitize(&mut written);
         assert!(written[0].tracked(), "the tree wins");
-        assert!(written[0].opts.watch, "and the flag is brought back into agreement");
+        assert!(
+            written[0].opts.watch,
+            "and the flag is brought back into agreement"
+        );
     }
 
     #[test]
@@ -950,7 +995,10 @@ mod tests {
         assert!(f.tracked(), "the tree is still watched");
         assert!(f.opts.watch, "and the flag still says so");
         assert!(!f.tracks_rung("Fiction"), "the rung turned off is off");
-        assert!(!f.tracks_rung("Fiction/SciFi"), "and so is everything below it");
+        assert!(
+            !f.tracks_rung("Fiction/SciFi"),
+            "and so is everything below it"
+        );
         assert!(f.tracks_rung("Poetry"), "a sibling is untouched");
         f.tracking.set("Fiction", crate::tracking::Track::Inherit);
         assert!(f.tracks_rung("Fiction/SciFi"));
@@ -1013,7 +1061,14 @@ mod tests {
     fn a_map_pointer_at_a_shelf_that_went_is_cut() {
         // A dead pointer is a rung the walk reuses instead of minting; every
         // placement that rides it lands on no shelf at all.
-        let standing = [crate::testkit::folder_shelf("s1", "Books", "f1", None, &[], None)];
+        let standing = [crate::testkit::folder_shelf(
+            "s1",
+            "Books",
+            "f1",
+            None,
+            &[],
+            None,
+        )];
         let mut f = folder("/books");
         f.shelf_map = BTreeMap::from([
             (String::new(), "s1".to_string()),
@@ -1069,7 +1124,10 @@ mod tests {
         let mut folder = folder("/books");
         folder.opts.in_place = true;
         folder.set_tracking("", true);
-        assert!(folder.opts.watch, "the root's answer is mirrored onto the flag");
+        assert!(
+            folder.opts.watch,
+            "the root's answer is mirrored onto the flag"
+        );
         assert_eq!(folder.mode(), FolderMode::LinkInPlaceWatched);
         assert_eq!(folder.opts.mode(), folder.mode());
     }
@@ -1080,7 +1138,11 @@ mod tests {
         // `Copy`: a tree left standing on a copying folder is chrome, not a
         // second opinion.
         let copying = mode("f1", "/books", false, true);
-        assert_eq!(copying.mode(), FolderMode::Copy, "a watching copy is a copy");
+        assert_eq!(
+            copying.mode(),
+            FolderMode::Copy,
+            "a watching copy is a copy"
+        );
         assert!(copying.tracks_anything(), "and its tree is still standing");
         assert!(!copying.owes_walk(), "so nothing walks it");
 

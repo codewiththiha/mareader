@@ -50,7 +50,11 @@ pub fn headings_of_blocks(blocks: &[TextBlock]) -> Vec<MarkdownHeading> {
         .filter(|(_, block)| !block.continuation)
         .filter_map(|(index, block)| {
             let (level, title) = heading_of_line(block.first_line())?;
-            Some(MarkdownHeading { title, level, block_index: index })
+            Some(MarkdownHeading {
+                title,
+                level,
+                block_index: index,
+            })
         })
         .collect()
 }
@@ -97,7 +101,10 @@ mod tests {
         let md = "# Dune\n\nSome prose.\n\n## Part One\n\nMore prose.\n\n###### Deep\n";
         let headings = headings_of(md);
         assert_eq!(
-            headings.iter().map(|h| (h.title.as_str(), h.level, h.block_index)).collect::<Vec<_>>(),
+            headings
+                .iter()
+                .map(|h| (h.title.as_str(), h.level, h.block_index))
+                .collect::<Vec<_>>(),
             vec![("Dune", 1, 0), ("Part One", 2, 2), ("Deep", 6, 4)]
         );
         // Every recorded block index really is the heading's block.
@@ -116,7 +123,13 @@ mod tests {
     fn a_hash_inside_a_code_sample_is_not_a_chapter() {
         let md = "# Real\n\n```sh\n$ cargo run\n# a comment, not a heading\n```\n\n## Second\n";
         let headings = headings_of(md);
-        assert_eq!(headings.iter().map(|h| h.title.as_str()).collect::<Vec<_>>(), ["Real", "Second"]);
+        assert_eq!(
+            headings
+                .iter()
+                .map(|h| h.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Real", "Second"]
+        );
     }
 
     #[test]
@@ -173,9 +186,21 @@ mod tests {
     #[test]
     fn pages_come_from_the_cut_and_depths_from_the_level() {
         let headings = [
-            MarkdownHeading { title: "One".into(), level: 1, block_index: 0 },
-            MarkdownHeading { title: "Two".into(), level: 3, block_index: 2 },
-            MarkdownHeading { title: "Gone".into(), level: 2, block_index: 99 },
+            MarkdownHeading {
+                title: "One".into(),
+                level: 1,
+                block_index: 0,
+            },
+            MarkdownHeading {
+                title: "Two".into(),
+                level: 3,
+                block_index: 2,
+            },
+            MarkdownHeading {
+                title: "Gone".into(),
+                level: 2,
+                block_index: 99,
+            },
         ];
         // Blocks 0-1 on page 0, blocks 2+ on page 1.
         let nodes = headings_to_nodes(&headings, &[0, 0, 1, 1]);

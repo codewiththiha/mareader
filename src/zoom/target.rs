@@ -27,7 +27,11 @@ use super::config::{SETTLED_EPSILON, ZoomProfile, zoom_profile};
 /// chain from it so a fast `+ +` advances two presets rather than resolving
 /// the same one twice. Every read here is untracked — the caller's effect
 /// subscribes to the command signal and nothing else.
-pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f64>) -> Option<f64> {
+pub(crate) fn resolve(
+    state: &ReaderState,
+    cmd: ZoomCommand,
+    in_flight: Option<f64>,
+) -> Option<f64> {
     let zoom = state.viewer.zoom;
     let profile = zoom_profile();
     match cmd {
@@ -131,12 +135,15 @@ impl FitDims {
 
         // The page under the reader's eyes, not page 1: a landscape plate in
         // an otherwise-portrait book must fit on its own terms.
-        let (pw, ph) = state.document.content.metrics.intrinsic.with_untracked(|sizes| {
-            match sizes.get((page - 1) as usize) {
+        let (pw, ph) = state
+            .document
+            .content
+            .metrics
+            .intrinsic
+            .with_untracked(|sizes| match sizes.get((page - 1) as usize) {
                 Some(s) if s.width > 0.0 && s.height > 0.0 => (s.width, s.height),
                 _ => (p1.width, p1.height),
-            }
-        });
+            });
         // The column-width dial is a reflowable-only setting: a reflowable
         // column already lives inside `PageGeometry`, and a PDF page IS the
         // column. Scaling the fit budget here made "fit width" land at
@@ -169,7 +176,11 @@ impl FitDims {
         let ch_eff = ch.max(1.0);
         // Only the spread renders a true two-page spread; the horizontal
         // strip lays out one page per virtual item.
-        let pw_eff = if mode == ViewMode::Spread { pw * 2.0 } else { pw };
+        let pw_eff = if mode == ViewMode::Spread {
+            pw * 2.0
+        } else {
+            pw
+        };
         Some(Self {
             cw_eff,
             ch_eff,
@@ -187,7 +198,14 @@ impl FitDims {
         if self.horizontal && fit == FitMode::Page {
             return clamp_scale(self.ch_eff / self.ph_eff.max(1.0));
         }
-        fit_scale(fit, self.cw_eff, self.ch_eff, self.pw_eff, self.ph_eff, current)
+        fit_scale(
+            fit,
+            self.cw_eff,
+            self.ch_eff,
+            self.pw_eff,
+            self.ph_eff,
+            current,
+        )
     }
 }
 
@@ -213,7 +231,9 @@ mod tests {
     fn a_spread_fits_two_pages_across() {
         let single = dims(ViewMode::Single, 1024.0, 768.0, 612.0, 792.0);
         let spread = dims(ViewMode::Spread, 1024.0, 768.0, 612.0, 792.0);
-        assert!((spread.fit(FitMode::Width, 1.0) - single.fit(FitMode::Width, 1.0) / 2.0).abs() < 1e-9);
+        assert!(
+            (spread.fit(FitMode::Width, 1.0) - single.fit(FitMode::Width, 1.0) / 2.0).abs() < 1e-9
+        );
     }
 
     #[test]
@@ -229,10 +249,17 @@ mod tests {
 
     #[test]
     fn the_reader_margin_comes_off_the_width_only() {
-        let d = FitDims::from_geometry(ViewMode::ScrollVertical, (1000.0, 800.0), 20.0, (500.0, 700.0))
-            .unwrap();
+        let d = FitDims::from_geometry(
+            ViewMode::ScrollVertical,
+            (1000.0, 800.0),
+            20.0,
+            (500.0, 700.0),
+        )
+        .unwrap();
         assert!((d.fit(FitMode::Width, 1.0) - 960.0 / 500.0).abs() < 1e-9);
-        assert!(FitDims::from_geometry(ViewMode::Single, (0.0, 800.0), 0.0, (500.0, 700.0)).is_none());
+        assert!(
+            FitDims::from_geometry(ViewMode::Single, (0.0, 800.0), 0.0, (500.0, 700.0)).is_none()
+        );
     }
 
     #[test]
@@ -243,7 +270,10 @@ mod tests {
         let d = dims(ViewMode::ScrollVertical, 1000.0, 800.0, 500.0, 700.0);
         let scale = d.fit(FitMode::Width, 1.0);
         assert!((scale - 2.0).abs() < 1e-9);
-        assert!((500.0 * scale - 1000.0).abs() < 1e-9, "page must exactly fill the row");
+        assert!(
+            (500.0 * scale - 1000.0).abs() < 1e-9,
+            "page must exactly fill the row"
+        );
     }
 
     #[test]
@@ -258,5 +288,4 @@ mod tests {
         assert_eq!(d.cw_eff, 1.0);
         assert_eq!(d.ch_eff, 800.0);
     }
-
 }

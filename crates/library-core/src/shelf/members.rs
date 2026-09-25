@@ -1,7 +1,7 @@
 //! Shelf membership: the ids a shelf holds, the level query that answers
 //! for the root, and the edits a placement, a filing and a removal make.
 
-use super::{Shelf, ALL_SHELF};
+use super::{ALL_SHELF, Shelf};
 
 /// Put `id` on a member list at `index`, or move it there when it is already a
 /// member; `None` appends. Moving within a list removes first and then inserts,

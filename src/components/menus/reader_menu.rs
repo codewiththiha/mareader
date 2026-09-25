@@ -7,14 +7,14 @@ use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 
 use crate::components::primitives::floating::menu_popover::MenuPopover;
-use app_chrome::icon::{Icon, IconName};
-use app_chrome::icon_button::IconButton;
 use crate::components::primitives::menu::kbd::Kbd;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::separator::Separator;
 use crate::components::primitives::menu::shortcut_row::ShortcutRow;
-use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
+use crate::state::reader::ZoomCommand;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
 
 #[component]
 fn ModeButton(state: AppState, m: ViewMode, icon: IconName, title: &'static str) -> impl IntoView {

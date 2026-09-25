@@ -64,7 +64,10 @@ mod tests {
     fn an_unreadable_stamp_is_zero_not_a_wrap() {
         assert_eq!(mtime_ms(None), 0);
         assert_eq!(mtime_ms(Some(UNIX_EPOCH)), 0);
-        assert_eq!(mtime_ms(Some(UNIX_EPOCH - std::time::Duration::from_secs(5))), 0);
+        assert_eq!(
+            mtime_ms(Some(UNIX_EPOCH - std::time::Duration::from_secs(5))),
+            0
+        );
         assert_eq!(
             mtime_ms(Some(UNIX_EPOCH + std::time::Duration::from_millis(1500))),
             1500

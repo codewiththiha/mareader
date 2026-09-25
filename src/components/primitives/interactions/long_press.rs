@@ -104,7 +104,9 @@ pub fn use_long_press(options: LongPressOptions) -> LongPressHandlers {
         // Keep receiving move/up even when the pointer drifts off a small
         // target.
         if capture_pointer
-            && let Some(el) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            && let Some(el) = ev
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
         {
             let _ = el.set_pointer_capture(ev.pointer_id());
         }

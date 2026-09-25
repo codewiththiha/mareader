@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::folder::{self as folder_ops, rel_under, FolderOpts, WatchedFolder};
+use library_core::folder::{self as folder_ops, FolderOpts, WatchedFolder, rel_under};
 use library_core::governance::Governance;
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
@@ -14,7 +14,7 @@ use super::claim::{claim_root, root_is_claimed, start_guarded};
 use super::folder::{chain_for, page_into, page_shelves, run_folder};
 use super::reshape::flatten_rungs;
 use super::tasks::finish_task;
-use super::{rel_of, root_shelf_of, Asked};
+use super::{Asked, rel_of, root_shelf_of};
 use crate::services::library::conflict;
 use crate::services::library::folder_label;
 use crate::state::AppState;
@@ -66,12 +66,7 @@ impl RootPlan {
 /// level already holds is a question before it is an import — two shelves of
 /// one name are two doors a reader cannot tell apart — and a read-at-place
 /// pick answers the family questions first.
-pub fn import_folder(
-    state: AppState,
-    root: String,
-    opts: FolderOpts,
-    watch: Option<GroundWatch>,
-) {
+pub fn import_folder(state: AppState, root: String, opts: FolderOpts, watch: Option<GroundWatch>) {
     if let Some(watch) = watch {
         set_rung_tracking(state, &watch);
     }
@@ -524,12 +519,7 @@ pub(crate) fn reclaim_rung(
 
 /// The half of [`import_folder`] that is the same whatever the folder sheet
 /// decided, and the half its answers call directly.
-pub(crate) fn proceed_folder(
-    state: AppState,
-    root: String,
-    opts: FolderOpts,
-    plan: RootPlan,
-) {
+pub(crate) fn proceed_folder(state: AppState, root: String, opts: FolderOpts, plan: RootPlan) {
     // A folder already being imported is an import already answering this ask: racing it would
     // clobber its ledger write. A RESCAN of the same tree is not refused — an ask outranks it.
     start_guarded(state, &root, move |state, task, root| {
@@ -538,13 +528,7 @@ pub(crate) fn proceed_folder(
 }
 
 /// One shape for the two starts an import has, because the two owe the same run and the same card.
-fn start_folder_run(
-    state: AppState,
-    root: String,
-    opts: FolderOpts,
-    plan: RootPlan,
-    task: String,
-) {
+fn start_folder_run(state: AppState, root: String, opts: FolderOpts, plan: RootPlan, task: String) {
     let Some(claim) = claim_root(&root, Asked::Explicitly) else {
         // The single thread leaves no room for the race, but the card is already up, so it is closed rather than left counting a walk that never started.
         finish_task(state, &task, 0, 0);

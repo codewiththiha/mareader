@@ -81,7 +81,11 @@ mod tests {
         assert_eq!(tree.at("Fiction"), Some(true));
         assert_eq!(tree.at("Fiction/SciFi"), Some(true), "a rung inherits it");
         assert_eq!(tree.at("Fiction/SciFi/deep"), Some(true), "however deep");
-        assert_eq!(tree.at("Reference"), None, "and a sibling keeps its own answer");
+        assert_eq!(
+            tree.at("Reference"),
+            None,
+            "and a sibling keeps its own answer"
+        );
     }
 
     #[test]

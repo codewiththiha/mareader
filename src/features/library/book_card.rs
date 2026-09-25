@@ -12,8 +12,8 @@ use library_core::book::Book;
 
 use crate::features::library::cover_thumb::CoverThumb;
 use crate::features::library::entry::{EntryDescriptor, EntryShell};
-use crate::features::library::gestures::book_policy;
 use crate::features::library::facts::book_facts;
+use crate::features::library::gestures::book_policy;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::SeamVocab;
@@ -48,9 +48,8 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         })
     };
 
-    let missing_class = Signal::derive(move || {
-        facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
-    });
+    let missing_class =
+        Signal::derive(move || facts.with(|f| f.as_ref().is_some_and(|x| x.missing)));
     let book_title = Signal::derive(move || {
         facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
     });

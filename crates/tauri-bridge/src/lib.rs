@@ -16,8 +16,8 @@
 //!
 //! CONTRACT: do not change these signatures.
 
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::*;
 
 // Every async extern carries `catch`: a rejected JS promise cannot be
 // represented in a wasm future (it unwinds as a panic), so rejections must

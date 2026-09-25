@@ -10,9 +10,7 @@
 //! The schema types are re-exported so a component that reads a knob and
 //! paints it imports from one crate.
 
-pub use reader_core::settings::typography::{
-    TextFamily, TextSettings, builtin_fonts, FontChoice,
-};
+pub use reader_core::settings::typography::{FontChoice, TextFamily, TextSettings, builtin_fonts};
 
 pub use reader_core::settings::typography::{
     BuiltInFont, DEFAULT_FONT_SIZE, DEFAULT_INK_CONTRAST, DEFAULT_LINE_HEIGHT,
@@ -23,8 +21,7 @@ pub use reader_core::settings::typography::{
 /// the classic book-reading faces, in availability order.
 const SERIF_STACK: &str =
     "Charter, \"Bitstream Charter\", \"Iowan Old Style\", Georgia, \"Times New Roman\", serif";
-const SANS_STACK: &str =
-    "ui-sans, -apple-system, \"Segoe UI\", Helvetica, Arial, sans-serif";
+const SANS_STACK: &str = "ui-sans, -apple-system, \"Segoe UI\", Helvetica, Arial, sans-serif";
 const MONO_STACK: &str =
     "ui-mono, Menlo, Consolas, \"Liberation Mono\", \"Courier New\", monospace";
 
@@ -46,7 +43,11 @@ fn family_default_stack(family: TextFamily) -> &'static str {
 /// * A bundled font resolves to its own stack; a bundled id the build does
 ///   not (yet) ship falls back the same way as `Default`, so a saved choice
 ///   never renders nothing.
-fn resolve_stack(settings: &TextSettings, choice: &FontChoice, family: Option<TextFamily>) -> String {
+fn resolve_stack(
+    settings: &TextSettings,
+    choice: &FontChoice,
+    family: Option<TextFamily>,
+) -> String {
     match choice {
         FontChoice::Default => match family {
             Some(family) => family_default_stack(family).to_string(),
@@ -116,12 +117,27 @@ pub fn body_char_width(settings: &TextSettings) -> f64 {
 /// rule of the type itself resolves through.
 pub fn css_variables(settings: &TextSettings) -> Vec<(&'static str, String)> {
     vec![
-        ("--tx-font-size", format!("{}px", format_px(settings.font_size))),
+        (
+            "--tx-font-size",
+            format!("{}px", format_px(settings.font_size)),
+        ),
         ("--tx-line-height", format!("{:.3}", settings.line_height)),
-        ("--tx-para-margin", format!("{}em", format_em(settings.paragraph_margin))),
-        ("--tx-word-spacing", format!("{}px", format_px(settings.word_spacing))),
-        ("--tx-letter-spacing", format!("{}em", format_em(settings.letter_spacing))),
-        ("--tx-text-indent", format!("{}em", format_em(settings.text_indent))),
+        (
+            "--tx-para-margin",
+            format!("{}em", format_em(settings.paragraph_margin)),
+        ),
+        (
+            "--tx-word-spacing",
+            format!("{}px", format_px(settings.word_spacing)),
+        ),
+        (
+            "--tx-letter-spacing",
+            format!("{}em", format_em(settings.letter_spacing)),
+        ),
+        (
+            "--tx-text-indent",
+            format!("{}em", format_em(settings.text_indent)),
+        ),
         (
             "--tx-text-align",
             if settings.justify { "justify" } else { "start" }.to_string(),
@@ -132,8 +148,14 @@ pub fn css_variables(settings: &TextSettings) -> Vec<(&'static str, String)> {
         ),
         ("--tx-font-weight", settings.font_weight.to_string()),
         ("--tx-font-body", body_stack(settings)),
-        ("--tx-font-sans", family_stack(settings, TextFamily::SansSerif)),
-        ("--tx-font-mono", family_stack(settings, TextFamily::Monospace)),
+        (
+            "--tx-font-sans",
+            family_stack(settings, TextFamily::SansSerif),
+        ),
+        (
+            "--tx-font-mono",
+            family_stack(settings, TextFamily::Monospace),
+        ),
     ]
 }
 
@@ -179,7 +201,10 @@ mod tests {
         assert_eq!(family_stack(&s, TextFamily::Monospace), MONO_STACK);
         // ...an override replaces it.
         s.mono_font = FontChoice::System(SystemFont::Consolas);
-        assert_eq!(family_stack(&s, TextFamily::Monospace), "Consolas, monospace");
+        assert_eq!(
+            family_stack(&s, TextFamily::Monospace),
+            "Consolas, monospace"
+        );
         // An unshipped bundled font falls back to the natural stack.
         s.serif_font = FontChoice::BuiltIn("not-shipped-yet".into());
         assert_eq!(family_stack(&s, TextFamily::Serif), SERIF_STACK);
@@ -193,7 +218,10 @@ mod tests {
             font_size: 18.0,
             ..Default::default()
         };
-        let vars: Vec<String> = css_variables(&s).into_iter().map(|(k, v)| format!("{k}:{v}")).collect();
+        let vars: Vec<String> = css_variables(&s)
+            .into_iter()
+            .map(|(k, v)| format!("{k}:{v}"))
+            .collect();
         let joined = vars.join(";");
         assert!(joined.contains("--tx-font-size:18px"), "{joined}");
         assert!(joined.contains("--tx-text-align:justify"), "{joined}");
@@ -215,5 +243,4 @@ mod tests {
         assert_eq!(format_px(-0.5), "-0.5");
         assert_eq!(format_em(1.0), "1");
     }
-
 }

@@ -24,10 +24,10 @@ use leptos::children::ChildrenFn;
 use leptos::html;
 use leptos::prelude::*;
 
-use app_chrome::titlebar::root::TitleBarCtx;
 use crate::components::primitives::floating::popover::Popover;
-use app_chrome::floating::types::PlacementSide;
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use app_chrome::floating::types::PlacementSide;
+use app_chrome::titlebar::root::TitleBarCtx;
 
 #[component]
 pub fn MenuPopover(
@@ -38,17 +38,14 @@ pub fn MenuPopover(
     /// number.
     #[prop(into, default = Signal::stored(256u32))]
     width: Signal<u32>,
-    #[prop(default = 8)]
-    margin: u32,
-    #[prop(optional, into)]
-    class: String,
+    #[prop(default = 8)] margin: u32,
+    #[prop(optional, into)] class: String,
     /// Whether opening this popover holds the reader titlebar open.
     /// Defaults to true; anchored popovers that sit clear of the bar (for
     /// example the settings rows' dropdowns) set this to false.
     #[prop(default = true)]
     hold_titlebar: bool,
-    #[prop(default = PlacementSide::Auto)]
-    placement: PlacementSide,
+    #[prop(default = PlacementSide::Auto)] placement: PlacementSide,
     /// Id of an element whose viewport offset must be subtracted (WebKit's
     /// `backdrop-filter` containing block) — pass `"toolbar-row"` when the
     /// anchor sits inside the glass toolbar row.

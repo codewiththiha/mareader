@@ -96,7 +96,9 @@ impl Tween {
     /// Build from the reader's owner — this is called in a component body, next
     /// to `drive`, and the loop's cleanup is registered here.
     pub(crate) fn new() -> Self {
-        Self { frames: FrameLoop::new() }
+        Self {
+            frames: FrameLoop::new(),
+        }
     }
 
     /// Ensure a loop is running for the current transition.

@@ -83,7 +83,10 @@ mod tests {
 
     #[test]
     fn the_boundary_counts_as_inside() {
-        assert!(!outside_radius(3.0, 4.0, 5.0), "exactly on the radius is inside");
+        assert!(
+            !outside_radius(3.0, 4.0, 5.0),
+            "exactly on the radius is inside"
+        );
         assert!(outside_radius(3.0, 4.0001, 5.0));
         assert!(!outside_radius(0.0, 0.0, 5.0));
     }

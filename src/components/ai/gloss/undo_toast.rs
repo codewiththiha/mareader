@@ -17,7 +17,9 @@ use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::selection_mode::{UNDO_WINDOW_MS, UndoBatch};
-use crate::components::primitives::overlay::toast::{ToastAction, ToastData, ToastPanel, ToastTone};
+use crate::components::primitives::overlay::toast::{
+    ToastAction, ToastData, ToastPanel, ToastTone,
+};
 use crate::components::primitives::overlay::toast_host::use_toast_slot;
 use crate::state::AppState;
 
@@ -61,12 +63,7 @@ pub fn GlossUndoToast(
 
     use_toast_slot(
         Signal::derive(move || toast.get()),
-        move |id| {
-            undo.with_untracked(|u| {
-                u.as_ref()
-                    .is_some_and(|batch| batch.generation == id)
-            })
-        },
+        move |id| undo.with_untracked(|u| u.as_ref().is_some_and(|batch| batch.generation == id)),
         move |id| {
             undo.update(|u| {
                 if u.as_ref().is_some_and(|batch| batch.generation == id) {

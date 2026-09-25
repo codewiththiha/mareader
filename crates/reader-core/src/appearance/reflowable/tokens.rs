@@ -13,8 +13,8 @@
 //! re-evaluating a chain of live `color-mix()` rules across every mounted
 //! block per tick.
 
-use crate::appearance::Appearance;
 use super::palette::{TextPalette, mix_toward_paper};
+use crate::appearance::Appearance;
 
 /// The ink dial as a fraction of the palette ink retained (0..=1).
 fn ink_keep(ink_contrast: f64) -> f64 {
@@ -65,7 +65,11 @@ mod tests {
         let vars = css_variables(&a, 100.0);
         assert_eq!(vars.len(), 12);
         assert_eq!(vars[0], ("--tx-paper", p.paper.clone()));
-        assert_eq!(vars[1], ("--tx-ink", p.ink.clone()), "full contrast = the palette ink");
+        assert_eq!(
+            vars[1],
+            ("--tx-ink", p.ink.clone()),
+            "full contrast = the palette ink"
+        );
         assert_eq!(vars[2], ("--tx-muted", p.muted.clone()));
         assert_eq!(vars[3], ("--tx-accent", p.accent.clone()));
         for name in [
@@ -88,7 +92,13 @@ mod tests {
         let p = TextPalette::compute(&a);
         let full = css_variables(&a, 100.0);
         let half = css_variables(&a, 50.0);
-        let ink = |vars: &Vec<(&'static str, String)>| vars.iter().find(|(k, _)| *k == "--tx-ink").unwrap().1.clone();
+        let ink = |vars: &Vec<(&'static str, String)>| {
+            vars.iter()
+                .find(|(k, _)| *k == "--tx-ink")
+                .unwrap()
+                .1
+                .clone()
+        };
         // Half contrast sits between the full ink and the paper (both are
         // literals; parse lightness out of the oklch() forms and the hex).
         let full_ink = ink(&full);
@@ -128,7 +138,12 @@ mod tests {
 
     /// (L, C, H) out of an `oklch(...)` literal.
     fn parse_oklch(value: &str) -> Result<(f64, f64, f64), ()> {
-        let inner = value.trim().strip_prefix("oklch(").ok_or(())?.strip_suffix(')').ok_or(())?;
+        let inner = value
+            .trim()
+            .strip_prefix("oklch(")
+            .ok_or(())?
+            .strip_suffix(')')
+            .ok_or(())?;
         let mut it = inner.split_whitespace().map(|x| x.parse::<f64>());
         Ok((
             it.next().ok_or(())?.map_err(|_| ())?,

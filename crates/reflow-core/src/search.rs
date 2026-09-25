@@ -74,7 +74,11 @@ mod tests {
 
     #[test]
     fn matching_is_case_insensitive_and_ordered() {
-        let blocks = [block("The Dune of Dune"), block("no match here"), block("dune again")];
+        let blocks = [
+            block("The Dune of Dune"),
+            block("no match here"),
+            block("dune again"),
+        ];
         let hits = find_matches(&blocks, "dune");
         assert_eq!(hits.len(), 3);
         assert_eq!(hits[0].block, 0);

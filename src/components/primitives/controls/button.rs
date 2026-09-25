@@ -29,8 +29,7 @@ pub enum ButtonTone {
 pub fn Button(
     on_click: impl Fn(MouseEvent) + 'static,
     children: Children,
-    #[prop(default = ButtonVariant::Ghost)]
-    variant: ButtonVariant,
+    #[prop(default = ButtonVariant::Ghost)] variant: ButtonVariant,
     /// Reactive so a dynamic title (e.g. the zoom readout's held-back
     /// note) tracks state; static strings work unchanged.
     #[prop(into, optional)]
@@ -43,8 +42,7 @@ pub fn Button(
     /// defaults to always-enabled.
     #[prop(into, default = Signal::derive(|| false))]
     disabled: Signal<bool>,
-    #[prop(default = ButtonTone::Neutral)]
-    tone: ButtonTone,
+    #[prop(default = ButtonTone::Neutral)] tone: ButtonTone,
     /// Compact sizing (h-8, tighter padding, smaller text) for dense rows.
     #[prop(default = false)]
     compact: bool,
@@ -68,12 +66,20 @@ pub fn Button(
     };
     let variant_class = match variant {
         ButtonVariant::Toolbar => format!("border-line bg-surface {text_color} hover:bg-line"),
-        ButtonVariant::Ghost => format!("border-transparent bg-transparent {text_color} hover:bg-line"),
-        ButtonVariant::Primary => "border-transparent bg-accent text-white hover:brightness-110".to_string(),
+        ButtonVariant::Ghost => {
+            format!("border-transparent bg-transparent {text_color} hover:bg-line")
+        }
+        ButtonVariant::Primary => {
+            "border-transparent bg-accent text-white hover:brightness-110".to_string()
+        }
     };
     let class_extra = class;
     let class = move || {
-        let state_class = if active.get() { "border-accent text-accent" } else { "" };
+        let state_class = if active.get() {
+            "border-accent text-accent"
+        } else {
+            ""
+        };
         let extra = class_extra.as_deref().unwrap_or("");
         [base, size_class, variant_class.as_str(), state_class, extra]
             .join(" ")

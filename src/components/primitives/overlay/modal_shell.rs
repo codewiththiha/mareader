@@ -76,11 +76,19 @@ fn trap_tab(dialog: &web_sys::HtmlElement, event: &web_sys::KeyboardEvent) {
         return;
     };
     let active = active_element();
-    let outside = active.as_ref().is_none_or(|active| !contains(dialog, active));
+    let outside = active
+        .as_ref()
+        .is_none_or(|active| !contains(dialog, active));
     let wraps_backward = event.shift_key()
-        && (outside || active.as_ref().is_some_and(|active| same_node(active, first)));
+        && (outside
+            || active
+                .as_ref()
+                .is_some_and(|active| same_node(active, first)));
     let wraps_forward = !event.shift_key()
-        && (outside || active.as_ref().is_some_and(|active| same_node(active, last)));
+        && (outside
+            || active
+                .as_ref()
+                .is_some_and(|active| same_node(active, last)));
     if wraps_backward || wraps_forward {
         event.prevent_default();
         let target = if wraps_backward { last } else { first };

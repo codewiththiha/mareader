@@ -27,8 +27,8 @@ use wasm_bindgen::JsValue;
 use ai_core::gloss::PageAnchor;
 
 use crate::components::ai::anchor::{FormatAnchorBridge, PdfAnchorBridge, ReflowAnchorBridge};
-use crate::components::primitives::hooks::use_custom_event::use_raw_event;
 use crate::components::ai::reflow_anchor;
+use crate::components::primitives::hooks::use_custom_event::use_raw_event;
 use crate::state::AppState;
 use crate::state::reader::SelectionDetail;
 
@@ -65,7 +65,11 @@ fn anchor_for(detail: &SelectionDetail, state: AppState) -> Option<PageAnchor> {
     // document text, or one already collapsed): do the same walk app-side —
     // the bridge's own capture path.
     if reflow {
-        let bridge = ReflowAnchorBridge { state: reader, spot: None, mode };
+        let bridge = ReflowAnchorBridge {
+            state: reader,
+            spot: None,
+            mode,
+        };
         return bridge.capture(scale);
     }
     // A PDF's anchor is a page-space rect read off the live selection.

@@ -18,8 +18,7 @@ use crate::state::ReaderState;
 pub fn ScrollVerticalLayout(
     state: ReaderState,
     virtualizer: Virtualizer,
-    #[prop(into)]
-    progress_visible: Signal<bool>,
+    #[prop(into)] progress_visible: Signal<bool>,
 ) -> impl IntoView {
     view! {
         <UniversalStreamHost

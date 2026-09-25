@@ -9,21 +9,18 @@
 use leptos::prelude::*;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use crate::state::{ReaderState, SidebarMode};
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;
-use crate::state::{ReaderState, SidebarMode};
 
 #[component]
-pub(crate) fn SidebarHeader(
-    reader: ReaderState,
-    sidebar: RwSignal<SidebarMode>,
-) -> impl IntoView {
+pub(crate) fn SidebarHeader(reader: ReaderState, sidebar: RwSignal<SidebarMode>) -> impl IntoView {
     // The settings modal's open signal lives at the reader page and is shared
     // through context (see `reader/page.rs`), so this header can open the same
     // modal the 3-dash menu does.
-    let settings_open = use_context::<RwSignal<bool>>()
-        .expect("the reader page provides the settings-open signal");
+    let settings_open =
+        use_context::<RwSignal<bool>>().expect("the reader page provides the settings-open signal");
     // The chrome row's lead: the traffic-light gutter on macOS, the resting
     // 12px everywhere else. Fixed per process, like the split it comes from
     // — no reason for it to be reactive. The gutter is the shell

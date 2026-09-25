@@ -81,7 +81,10 @@ mod tests {
         // is rotated — sRGB 34 (warm tan) sits near OKLCH 60, not 34. Feeding
         // the raw number in made the page tan while the chrome went pink.
         let h = ui_hue_oklch(34.0);
-        assert!(h > 40.0, "a warm tan must not be emitted as OKLCH 34 (pink)");
+        assert!(
+            h > 40.0,
+            "a warm tan must not be emitted as OKLCH 34 (pink)"
+        );
         assert!(h < 90.0, "sanity: tan should sit below the green corner");
     }
 
@@ -90,14 +93,15 @@ mod tests {
         for strength in [10.0, 50.0, 90.0, 100.0] {
             let t = strength / 100.0;
             let target = ui_hue_oklch(104.0);
-            for (hex, ceiling) in [
-                ("#ffffff", 0.055),
-                ("#f3f4f6", 0.070),
-                ("#1f2937", 0.020),
-            ] {
+            for (hex, ceiling) in [("#ffffff", 0.055), ("#f3f4f6", 0.070), ("#1f2937", 0.020)] {
                 let want = hex_to_oklch(hex).unwrap().0;
-                let got = tinted_token(hex, target, t, ceiling).map(|v| lch(&v).0).unwrap();
-                assert!((got - want).abs() < 0.001, "{hex} at {strength}%: L moved {want} -> {got}");
+                let got = tinted_token(hex, target, t, ceiling)
+                    .map(|v| lch(&v).0)
+                    .unwrap();
+                assert!(
+                    (got - want).abs() < 0.001,
+                    "{hex} at {strength}%: L moved {want} -> {got}"
+                );
             }
         }
     }
@@ -108,7 +112,9 @@ mod tests {
         // token must land ON the requested hue rather than near it.
         let target = ui_hue_oklch(104.0);
         for hex in ["#ffffff", "#2563eb", "#e5e7eb"] {
-            let h = tinted_token(hex, target, 1.0, 0.150).map(|v| lch(&v).2).unwrap();
+            let h = tinted_token(hex, target, 1.0, 0.150)
+                .map(|v| lch(&v).2)
+                .unwrap();
             let d = (h - target).abs().min(360.0 - (h - target).abs());
             assert!(d < 1.0, "{hex} hue {h} should be ~{target}");
         }

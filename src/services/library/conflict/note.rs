@@ -1,8 +1,8 @@
 //! Not a question — an answer: a folder the library already reads in place is named,
 //! and closing the note lights its shelf up.
 
-use crate::state::library::{AlreadyNote, NoteKind};
 use crate::state::AppState;
+use crate::state::library::{AlreadyNote, NoteKind};
 
 /// Not a question: a folder the library reads in place cannot be imported twice — the
 /// second import would either duplicate every book in it or silently do nothing. The

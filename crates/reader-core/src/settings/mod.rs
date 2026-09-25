@@ -12,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::appearance::Appearance;
-use crate::appearance::presets::{builtin_presets, Preset};
+use crate::appearance::presets::{Preset, builtin_presets};
 
 mod animation;
 mod gloss;
@@ -38,7 +38,7 @@ pub use typography::TextSettings;
 /// The AI word card's knobs are part of the persisted schema, so the types
 /// live here rather than in `ai-core`, which stays free of anything the
 /// settings model owns.
-pub use gloss::{default_custom_gloss, default_gloss_opacity, is_hex6, GlossColor, GlossDensity};
+pub use gloss::{GlossColor, GlossDensity, default_custom_gloss, default_gloss_opacity, is_hex6};
 
 /// Which pixels of a page carry the paper colour. Owned by `pdf-paper`;
 /// re-exported here because the settings model is the one place a reader's
@@ -53,7 +53,9 @@ pub const SETTINGS_KEY: &str = "mareader.settings.v1";
 pub const RETIRED_SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
 /// `serde(default)` for the flags that were on before they were a switch.
-pub(crate) fn on_true() -> bool { true }
+pub(crate) fn on_true() -> bool {
+    true
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -275,7 +277,10 @@ mod tests {
         s.apply_preset("sepia");
         s.appearance.tint_hue = 210;
         s.touch_appearance();
-        assert_eq!(s.active_preset, None, "an edited preset is no longer that preset");
+        assert_eq!(
+            s.active_preset, None,
+            "an edited preset is no longer that preset"
+        );
     }
 
     #[test]
@@ -284,7 +289,11 @@ mod tests {
         // Green — anything else is a lying UI.
         let mut s = Settings::default();
         s.apply_preset("sepia");
-        s.appearance = builtin_presets().into_iter().find(|p| p.id == "green").unwrap().appearance;
+        s.appearance = builtin_presets()
+            .into_iter()
+            .find(|p| p.id == "green")
+            .unwrap()
+            .appearance;
         s.touch_appearance();
         assert_eq!(s.active_preset.as_deref(), Some("green"));
     }
@@ -293,9 +302,24 @@ mod tests {
     fn user_presets_cannot_shadow_builtins_or_be_nameless() {
         let mut s = Settings {
             user_presets: vec![
-                Preset { id: "sepia".into(), name: "Mine".into(), group: String::new(), appearance: Appearance::default() },
-                Preset { id: "ok".into(), name: "  ".into(), group: String::new(), appearance: Appearance::default() },
-                Preset { id: "good".into(), name: "Good".into(), group: "G".into(), appearance: Appearance::default() },
+                Preset {
+                    id: "sepia".into(),
+                    name: "Mine".into(),
+                    group: String::new(),
+                    appearance: Appearance::default(),
+                },
+                Preset {
+                    id: "ok".into(),
+                    name: "  ".into(),
+                    group: String::new(),
+                    appearance: Appearance::default(),
+                },
+                Preset {
+                    id: "good".into(),
+                    name: "Good".into(),
+                    group: "G".into(),
+                    appearance: Appearance::default(),
+                },
             ],
             ..Settings::default()
         };
@@ -347,7 +371,10 @@ mod tests {
                 ]}"#,
         )
         .unwrap();
-        assert!(!s.tint_strength_halved, "a blob without the gate loads un-migrated");
+        assert!(
+            !s.tint_strength_halved,
+            "a blob without the gate loads un-migrated"
+        );
         sanitize(&mut s);
         assert_eq!(
             s.appearance.tint_strength, 23,
@@ -370,7 +397,10 @@ mod tests {
         let mut s = Settings::default();
         s.appearance.tint_strength = 45;
         sanitize(&mut s);
-        assert_eq!(s.appearance.tint_strength, 45, "nothing to migrate on a fresh blob");
+        assert_eq!(
+            s.appearance.tint_strength, 45,
+            "nothing to migrate on a fresh blob"
+        );
         assert!(s.tint_strength_halved);
     }
 

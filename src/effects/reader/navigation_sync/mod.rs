@@ -58,11 +58,7 @@ pub(super) struct Arms {
 }
 
 /// Must be called once from the app root (ReaderPage), alongside the zoom sources.
-pub fn navigation_sync(
-    state: ReaderState,
-    virtualizer: Virtualizer,
-    h_virtualizer: Virtualizer,
-) {
+pub fn navigation_sync(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: Virtualizer) {
     let arms = Arms {
         state,
         suppress: Rc::new(Cell::new(false)),

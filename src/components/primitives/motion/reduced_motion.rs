@@ -1,8 +1,8 @@
 //! `prefers-reduced-motion` helpers: a non-reactive snapshot and a reactive
 //! signal kept in sync by the underlying `MediaQueryList`.
 
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
 use leptos::prelude::*;
 

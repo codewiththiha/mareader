@@ -42,13 +42,13 @@ use serde::{Deserialize, Serialize};
 
 use super::anchor::host_id_for_mode;
 use super::gloss::mark_layer::MARK_RADIUS;
-use app_chrome::hooks::dom::range_rects;
 use crate::components::formats::reflow::spot::{clamp_span, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
 use crate::dom_contract::BLOCK_INDEX_ATTR;
 use crate::effects::app::theme::document_element;
-use crate::state::reader::ReflowContent;
 use crate::state::ReaderState;
+use crate::state::reader::ReflowContent;
+use app_chrome::hooks::dom::range_rects;
 
 /// Version tag on the envelope in [`GlossMark::context`]. Bump it if the
 /// payload's meaning changes; an old mark then simply reads as having no spot
@@ -77,8 +77,14 @@ pub struct SpotEnvelope {
 /// this is a serialization format with a version tag, and reading it as text
 /// would make the tag look decorative.
 pub fn spot_envelope(spot: &ReflowSpot, sentence: &str) -> String {
-    let payload = SpotEnvelope { spot: *spot, text: sentence.trim().to_string() };
-    format!("{SPOT_TAG}{}", serde_json::to_string(&payload).unwrap_or_default())
+    let payload = SpotEnvelope {
+        spot: *spot,
+        text: sentence.trim().to_string(),
+    };
+    format!(
+        "{SPOT_TAG}{}",
+        serde_json::to_string(&payload).unwrap_or_default()
+    )
 }
 
 /// The whole envelope a mark carries, if it carries one.
@@ -202,9 +208,7 @@ fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sy
     // somewhere unexpected (a page mid-remount) from answering for a block the
     // reader is not looking at.
     let hostless = mode == ViewMode::ScrollVertical && state.reflowable_now();
-    if !hostless
-        && let Some(page) = page_of_block(state.document.content.reflow, block)
-    {
+    if !hostless && let Some(page) = page_of_block(state.document.content.reflow, block) {
         // One lookup, not two: ask the row whether the host it is mounted
         // under is the one this mode puts its page in. A row that is mounted
         // somewhere else — a page mid-remount, a stale twin — answers `None`
@@ -312,7 +316,10 @@ pub fn spot_screen_box_in(
 /// event to hand.
 pub fn capture_selection(state: ReaderState) -> Option<(ReflowSpot, PageAnchor)> {
     let (range, el) = super::anchor::selection_start()?;
-    let row = el.closest(&format!("[{BLOCK_INDEX_ATTR}]")).ok().flatten()?;
+    let row = el
+        .closest(&format!("[{BLOCK_INDEX_ATTR}]"))
+        .ok()
+        .flatten()?;
     let block = row
         .get_attribute(BLOCK_INDEX_ATTR)
         .and_then(|value| value.parse::<usize>().ok())?;
@@ -326,7 +333,11 @@ pub fn capture_selection(state: ReaderState) -> Option<(ReflowSpot, PageAnchor)>
 /// Both are measured in the row's own rendered text (`textContent`), which is
 /// the same coordinate system [`range_for_span`] walks later — and the reason
 /// a Markdown mark stays put even though its source syntax is not rendered.
-fn spot_of_range(range: &web_sys::Range, row: &web_sys::Element, block: usize) -> Option<ReflowSpot> {
+fn spot_of_range(
+    range: &web_sys::Range,
+    row: &web_sys::Element,
+    block: usize,
+) -> Option<ReflowSpot> {
     let total = row.text_content().unwrap_or_default().chars().count();
     if total == 0 {
         return None;
@@ -397,7 +408,13 @@ pub fn stroke_box(
     let local = |b: GlossBox| match host {
         Some(host) => {
             let hr = host.get_bounding_client_rect();
-            GlossBox { x: b.x - hr.left(), y: b.y - hr.top(), w: b.w, h: b.h, r: b.r }
+            GlossBox {
+                x: b.x - hr.left(),
+                y: b.y - hr.top(),
+                w: b.w,
+                h: b.h,
+                r: b.r,
+            }
         }
         None => b,
     };
@@ -439,12 +456,18 @@ mod tests {
             id: "g1".to_string(),
             word: "palimpsest".to_string(),
             context: context.to_string(),
-            anchor: PageAnchor { page: 1, rect: GlossBox::default() },
+            anchor: PageAnchor {
+                page: 1,
+                rect: GlossBox::default(),
+            },
         };
 
         // Trimmed on the way in, so the envelope never stores the ragged edges
         // a double-clicked selection brings with it.
-        let reflow = mark(&spot_envelope(&ReflowSpot::new(1, 0, 10), " scraped clean "));
+        let reflow = mark(&spot_envelope(
+            &ReflowSpot::new(1, 0, 10),
+            " scraped clean ",
+        ));
         assert_eq!(explain_context(&reflow), "scraped clean");
 
         // A PDF's mark keeps its bare sentence.

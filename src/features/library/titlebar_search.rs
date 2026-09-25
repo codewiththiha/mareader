@@ -11,7 +11,7 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 
-use library_core::query::{self, Suggestion, SUGGEST_LIMIT};
+use library_core::query::{self, SUGGEST_LIMIT, Suggestion};
 use library_core::text::plural;
 
 use crate::components::primitives::floating::menu_popover::MenuPopover;
@@ -63,9 +63,7 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
             Vec::new()
         };
         let opening = !rows.is_empty() && !open.get_untracked();
-        if opening
-            && let Some(node) = anchor.get_untracked()
-        {
+        if opening && let Some(node) = anchor.get_untracked() {
             let wide = node.get_bounding_client_rect().width();
             if wide > 0.0 {
                 panel_width.set(wide as u32);
@@ -84,8 +82,7 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
         if let Some(handle) = pending_show.get_untracked() {
             handle.clear();
         }
-        let handle =
-            set_timeout_with_handle(show, Duration::from_millis(SUGGEST_DEBOUNCE_MS)).ok();
+        let handle = set_timeout_with_handle(show, Duration::from_millis(SUGGEST_DEBOUNCE_MS)).ok();
         pending_show.set(handle);
     };
     on_cleanup(move || {
@@ -101,16 +98,15 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
 
     // The shortcut layer dispatches and forgets: it has no business knowing
     // the library's bar owns an input node.
-    let focus_handle =
-        window_event_listener(
-            leptos::ev::Custom::new(FOCUS_LIBRARY_SEARCH_EVENT),
-            move |_: web_sys::CustomEvent| {
-                if let Some(node) = input_ref.get_untracked() {
-                    _ = node.focus();
-                    node.select();
-                }
-            },
-        );
+    let focus_handle = window_event_listener(
+        leptos::ev::Custom::new(FOCUS_LIBRARY_SEARCH_EVENT),
+        move |_: web_sys::CustomEvent| {
+            if let Some(node) = input_ref.get_untracked() {
+                _ = node.focus();
+                node.select();
+            }
+        },
+    );
     on_cleanup(move || focus_handle.remove());
 
     view! {

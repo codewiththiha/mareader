@@ -16,10 +16,10 @@ mod shelves;
 #[cfg(test)]
 mod tests;
 
-pub use moves::{also_show, file_many, move_many_to_shelf, move_row, unfile_books};
-pub use purge::{purge_books, ReadingData};
-pub use relink::{ask_relink, cancel_relink, relink_dialog, relink_search_folder};
 pub use asking::{CopyAnswer, CopyAsk, answer_copy, cancel_copy, remove_entries};
+pub use moves::{also_show, file_many, move_many_to_shelf, move_row, unfile_books};
+pub use purge::{ReadingData, purge_books};
+pub use relink::{ask_relink, cancel_relink, relink_dialog, relink_search_folder};
 pub use shelf_apart::ask_shelf_apart;
 pub use shelf_departure::SeamSide;
 pub use shelves::{

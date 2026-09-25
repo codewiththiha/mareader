@@ -68,7 +68,9 @@ pub fn Popover(
         // not mounted has nothing to be placed against.
         let Some(a) = anchor.get() else { return };
         let panel = panel_size(
-            panel_ref.get().map(|p| p.unchecked_into::<web_sys::Element>()),
+            panel_ref
+                .get()
+                .map(|p| p.unchecked_into::<web_sys::Element>()),
             (width.get() as f64, 200.0),
         );
         let opts = PlacementOptions {
@@ -128,11 +130,7 @@ pub fn Popover(
             enabled: None,
             topmost_only: true,
         },
-        {
-            move |target| {
-                node_within_any(target, &[anchor, panel_ref])
-            }
-        },
+        move |target| node_within_any(target, &[anchor, panel_ref]),
     );
 
     // Static for the popover's lifetime, parked in a StoredValue — a Copy
