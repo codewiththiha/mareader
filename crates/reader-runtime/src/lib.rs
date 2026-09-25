@@ -56,7 +56,6 @@ use app_ui::components::primitives::overlay::lanes::OverlayBoard;
 use leptos::prelude::*;
 use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ShellApi};
 use wasm_bindgen::JsCast;
-#[cfg(target_arch = "wasm32")]
 
 pub use context::ReaderContext;
 
@@ -439,5 +438,3 @@ pub fn web_launch() -> LaunchDocument {
     }
     launch
 }
-
-

@@ -36,7 +36,6 @@ use app_ui::components::primitives::overlay::lanes::OverlayBoard;
 use leptos::prelude::*;
 use reader_core::settings::Settings;
 use wasm_bindgen::JsCast;
-#[cfg(target_arch = "wasm32")]
 
 pub use context::LibraryContext;
 
@@ -169,5 +168,3 @@ pub fn run_standalone() {
 pub fn standalone_settings() -> Settings {
     storage::load_settings()
 }
-
-
