@@ -52,6 +52,19 @@ const THUMB_LANE_SLOTS = 3;
 // thumb warmup needs a book of this size to be meaningful.
 const MIN_FIXTURE_PAGES = 40;
 
+process.on("unhandledRejection", async (err) => {
+  console.error("=== UNHANDLED REJECTION ===");
+  console.error(err?.stack ?? String(err));
+  try { dumpDiagnosis(lastSnap); } catch (_) {}
+  process.exit(1);
+});
+process.on("uncaughtException", async (err) => {
+  console.error("=== UNCAUGHT EXCEPTION ===");
+  console.error(err?.stack ?? String(err));
+  try { dumpDiagnosis(lastSnap); } catch (_) {}
+  process.exit(1);
+});
+
 const pageErrors = [];
 const consoleLog = [];
 const badResponses = [];
@@ -121,8 +134,9 @@ page.on("requestfailed", (req) => {
  *    jsHeapBytes     — the browser-reported JS heap (Chromium's
  *                      performance.memory), best-effort: null wherever the
  *                      environment does not provide it. */
+let lastSnap = null;
 async function snap() {
-  return page.evaluate(() => {
+  const value = await page.evaluate(() => {
     const raw = window.__mareaderDiagnostics?.();
     if (!raw) return null;
     const s = JSON.parse(raw);
@@ -142,6 +156,8 @@ async function snap() {
     s.jsHeapBytes = performance.memory?.usedJSHeapSize ?? null;
     return s;
   });
+  if (value) lastSnap = value;
+  return value;
 }
 
 // --- Peak sampling ---------------------------------------------------------

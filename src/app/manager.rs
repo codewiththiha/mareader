@@ -32,6 +32,7 @@ use crate::state::{ActiveRuntime, ShellState};
 /// context, which demands `Send + Sync`), and the generation is all the
 /// security property needs anyway — the whole frame security model IS the
 /// generation (§8).
+#[derive(Debug)]
 pub enum Slot {
     None,
     Starting,
@@ -76,7 +77,7 @@ pub struct RuntimeManager {
     /// The frame generations ever seen sending a message for a generation
     /// that is not the frame they belong to (§35): a ledger, not a gate —
     /// the generation check is the gate.
-    stale_frames_seen: std::sync::atomic::AtomicU64,
+    pub stale_frames_seen: std::sync::atomic::AtomicU64,
 }
 
 thread_local! {
@@ -197,9 +198,15 @@ impl RuntimeManager {
             .starting
             .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
+            web_sys::console::log_1(&JsValue::from_str(&format!(
+                "[shell] {runtime:?} start queued behind a running start"
+            )));
             *self.pending.lock().unwrap() = Some((runtime, launch));
             return;
         }
+        web_sys::console::log_1(&JsValue::from_str(&format!(
+            "[shell] {runtime:?} start begins"
+        )));
         self.start(runtime, launch).await;
         loop {
             let queued = self.pending.lock().unwrap().take();
@@ -393,14 +400,30 @@ impl RuntimeManager {
         let runtime = match self.active() {
             Some(ActiveRuntime::Library) => RuntimeName::Library,
             Some(ActiveRuntime::Reader) => RuntimeName::Reader,
-            None => return,
+            None => {
+                web_sys::console::log_1(&JsValue::from_str(
+                    "[shell] dispose-skip: no active runtime",
+                ));
+                return;
+            }
         };
         let Some(driver) = self.live_driver() else {
+            web_sys::console::log_1(&JsValue::from_str(&format!(
+                "[shell] dispose-skip: {runtime:?} has no live driver"
+            )));
             *self.slot.lock().unwrap() = Slot::None;
             return;
         };
+        web_sys::console::log_1(&JsValue::from_str(&format!(
+            "[shell] dispose {runtime:?} gen {}",
+            driver.generation()
+        )));
         let promise = driver.grace_dispose();
         let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+        web_sys::console::log_1(&JsValue::from_str(&format!(
+            "[shell] dispose {runtime:?} settled: {:?}",
+            driver.take_dispose_outcome_peek()
+        )));
         match driver.take_dispose_outcome() {
             Some(Ok(())) | None => {
                 driver.teardown();
@@ -450,6 +473,10 @@ impl RuntimeManager {
 
     /// A reader handback: dispose the reader, then the library is active.
     pub fn navigate_library(&self, state: &ShellState) {
+        web_sys::console::log_1(&JsValue::from_str(&format!(
+            "[shell] navigate-library (slot {:?})",
+            *self.slot.lock().unwrap()
+        )));
         navigate("/");
         self.start_library(state);
     }

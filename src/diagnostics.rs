@@ -54,13 +54,21 @@ fn install_web(state: ShellState) {
             "librarySessionsCreated": state.manager.library_sessions_created.load(std::sync::atomic::Ordering::Relaxed),
             "libraryDisposesCompleted": state.manager.library_disposes_completed.load(std::sync::atomic::Ordering::Relaxed),
             "readerRuntimeLive": state.manager.active() == Some(ActiveRuntime::Reader),
+            "staleFramesSeen": state.manager.stale_frames_seen.load(std::sync::atomic::Ordering::Relaxed),
             "docStatus": state.manager.doc_status.lock().unwrap().clone(),
             "docError": state.manager.doc_error.lock().unwrap().clone(),
         });
         if let Some(digest) = state.manager.last_digest.lock().unwrap().clone() {
             if let (Some(obj), Some(d)) = (value.as_object_mut(), digest.as_object()) {
                 for (k, v) in d {
-                    obj.insert(k.clone(), v.clone());
+                    // The manager's own keys are shell-authored and win: a
+                    // runtime's digest may carry same-named facts about ITS
+                    // frame (its own per-iframe lifecycle counters), and a
+                    // merged overwrite would erase the sessions accounting
+                    // the shell is the authority for (§21).
+                    if !obj.contains_key(k) {
+                        obj.insert(k.clone(), v.clone());
+                    }
                 }
             }
         }
