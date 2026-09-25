@@ -31,8 +31,8 @@ own Trunk config files (`reader.Trunk.toml`, `library.Trunk.toml`, each with
 ## Entry modules
 
 - Shell: `src/main.rs` (`mareader` bin) — mounts the shell: route state, the
-  runtime manager, the persistent overlays, the diagnostics surface, the
-  bridge the runtimes call into.
+  runtime manager and its frames, the persistent overlays, the diagnostics
+  surface, the frame channel the runtimes answer on.
 - Reader: `crates/reader-runtime/src/main.rs` — reads its launch descriptor
   and mounts the reader session (see below); `run_standalone` boots without a
   shell.
@@ -40,32 +40,37 @@ own Trunk config files (`reader.Trunk.toml`, `library.Trunk.toml`, each with
 
 ## Loader mechanism
 
-The shell loads a runtime artifact on demand with a dynamic `import()` of the
-artifact's glue JS (`/reader.js`, `/library.js` — wasm-bindgen `--target web`
-glue). The import is issued through one inline helper (`dyn_import`) so the
-Rust side owns a `Promise` of the module namespace, whose exports are the
-runtime's session API.
+The shell never imports a runtime artifact. It loads one by pointing an
+iframe at the artifact's page (`/library.html`, `/reader.html`) with a boot
+descriptor in the URL (`?hosted=1&g=<generation>&n=<nonce>` — §6): the frame
+resolves its own module the ordinary way, and the WASM instance is created
+in the frame's own realm. The frame IS the boundary — a replacement runtime
+gets a fresh browsing context with fresh statics, so the
+instance-per-session claim below survives the split.
 
 Module evaluation does NOT start a runtime. The sequence the manager runs, in
 order, is:
 
-1. `await import("/library.js")` → the module namespace.
-2. `await namespace.default()` — the wasm-bindgen init. It instantiates the
-   artifact's WASM module once per import; the `*Start` exports below only
-   exist after it resolves, which is why it is awaited rather than assumed.
-3. `namespace.mareaderLibraryStart(host)` / `mareaderReaderStart(host, json)`
-   → the session id.
+1. Create the iframe at the artifact page with its descriptor; a frame that
+   does not fully claim the descriptor is torn down (§8).
+2. The frame's own entry fetches the page, loads the glue, instantiates the
+   wasm-bindgen module inside the frame, and pairs with the shell over the
+   channel (`crates/frame-transport`).
+3. The entry starts the session in that realm — the launch descriptor is
+   answered over the channel (`resolve_launch`) — and reports the boot
+   stages until `Ready` paints.
 
-Every step is a stage with its own failure surface (`module load`, `init`,
-`start`; src/app/boot.rs), because each one can fail on its own: a missing
-artifact fails at 1, a wasm that will not instantiate at 2, a missing export
-or a throwing start at 3.
+Every step can fail on its own, and each failure is named on the error card
+(`module load`, `init`, `start`; src/app/boot.rs plus the frame's protocol
+`Failed` event): a missing artifact page or glue fails during load, a wasm
+that will not instantiate fails at init, a missing export or a throwing
+start fails at start.
 
-A loaded module stays in the realm's module map — that is compiled-code
-caching, which the phase explicitly allows. The live runtime is NOT the
-module: it is the session the `*Start` export creates, one per call. The
-module's WASM instance is initialized once per artifact; sessions come and go
-above it, which is exactly the isolation boundary this split is built on.
+A frame that dies — replaced session, crashed boot, a message stamped with
+another generation — never passes its traffic on: every message carries the
+generation that issued it, and stale traffic is counted, never applied
+(§35). Compiled code still caches in the browser's cache, but no module
+instance is SHARED: each frame builds its own.
 
 ## The boot contract
 
@@ -78,7 +83,8 @@ placeholder). Tauri's `beforeBuildCommand` calls that script through
 fails the build if either side starts building the frontend by another path.
 
 `trunk build` alone is NOT the app's build: it emits the shell page, leaving
-the shell's dynamic imports to 404. The two runtime builds each emit their own
+the runtime pages the frames load to 404. The two runtime builds each emit
+their own
 page, whose name the merge takes as it finds it (a custom `dist` dir makes
 Trunk normalize it to `index.html`); a build that produced no page at all fails
 there instead of shipping a `dist/` without one. — which is precisely how the packaged app
@@ -127,9 +133,10 @@ The shell owns one mount target:
 </body>
 ```
 
-The manager replaces the host's content deliberately: the outgoing runtime's
-DOM is removed before the incoming runtime mounts. A runtime never reaches
-outside its mount root; `document.body`-level chrome belongs to the shell.
+The manager replaces the host's content deliberately: the outgoing frame is
+torn down before the incoming one mounts, and the host holds exactly one
+runtime's iframe at a time. A runtime never reaches outside its mount root;
+`document.body`-level chrome belongs to the shell.
 
 ## Instance creation
 
@@ -137,71 +144,74 @@ outside its mount root; `document.body`-level chrome belongs to the shell.
 `start_library(state)`:
 
 1. Dispose the active runtime first (below) and await its completion.
-2. `dyn_import("/reader.js")` (cached after the first start — compiled code).
-3. Read the exported `mareader_reader_start(host, launch_json)` function from
-   the module namespace.
-4. Call it: inside the reader artifact this creates a NEW session — a fresh
-   reactive ownership root (`mount_to` into the host), a fresh `ReaderState`
-   + `ReaderRuntime` (the Phase 1 owner, begin_mount → mark_ready inside the
-   session scope), fresh effects/listeners, the engine session — all owned by
-   that session's scope.
-5. The call returns a session id; the shell records
-   `Slot::Reader { id, module }` (§5 enum identity — `None`/`Starting`/
-   `Library`/`Reader`, no stringly state).
-
-The launch data crossing the boundary is a serialized
-`LaunchDocument` (`book_id`, `path`, `resume_page`, `saved_fraction`,
-`blend_override`) — stable, minimal, serializable (§13/§14). The reader
-obtains everything else through its own services.
+2. Create the frame: an iframe at the artifact page carrying the boot
+   descriptor (`?hosted=1&g=<generation>&n=<nonce>`), so a stale frame can
+   never pass as the session that replaced it (§6/§35).
+3. The frame's entry instantiates the artifact in its own realm and pairs
+   with the shell over the channel; the session mounts inside the frame —
+   a fresh reactive ownership root, a fresh `ReaderState` + `ReaderRuntime`
+   (the Phase 1 owner, begin_mount → mark_ready inside the session scope),
+   fresh effects/listeners, the engine session — all owned by that
+   session's scope.
+4. The runtime reports `Ready`; the manager records the slot as
+   `Slot::Reader { generation }` with the frame's generation. The launch
+   data crossing the boundary is a serialized `LaunchDocument` (`book_id`,
+   `path`, `resume_page`, `saved_fraction`, `blend_override`) — stable,
+   minimal, serializable (§13/§14) — answered over the channel; the reader
+   obtains everything else through its own services.
 
 ## Instance disposal
 
-`ReaderRuntimeHandle::dispose()` → the module's exported
-`mareader_reader_dispose(session_id)`:
+Disposal is a frame round-trip (`dispose_active`, `src/app/manager.rs`):
 
-1. The session's ownership root is unmounted — Leptos runs the scope
-   cleanups, whose FIRST-registered cleanup is the Phase 1
-   `ReaderRuntime::dispose` chain (flush → registry take →
-   engine destroy awaited → sweeps → virtualizer disposal →
-   finish_dispose(generation)).
-2. The exported function awaits that tail's completion (the dispose-complete
-   diagnostics beat) before resolving its `Promise`.
-3. The shell drops the session handle and clears the host. The library
-   runtime (if being replaced) disposes the same way; its live state dies
-   with the session and the next `start_library()` seeds a fresh one from
-   storage.
+1. The manager issues the dispose over the frame's channel; the session
+   tears down INSIDE the frame — Leptos runs the scope cleanups, whose
+   FIRST-registered cleanup is the Phase 1 `ReaderRuntime::dispose` chain
+   (flush → registry take → engine destroy awaited → sweeps → virtualizer
+   disposal → finish_dispose(generation)).
+2. The frame answers `DisposeComplete`; only then does the manager remove
+   the iframe (§12: phase 1 acknowledged, phase 2 removal — a strict
+   timeout forces the removal either way).
+3. The slot returns to idle; the next start builds a NEW frame, so no
+   static, listener, or heap survives on the shell side either.
+
+Nothing of the runtime instance outlives its frame — the realm is disposed
+with it. What does survive is origin-level (localStorage entries, served
+assets), which is what Phase 0 measured as application scope.
 
 The manager never starts a new runtime until the previous runtime's dispose
-promise resolved (§5). A module's linear memory stays reserved after its
-session ends — that is the compiled-code cache, and it is the same semantics
-Phase 0 measured (`log_heap`): what must not survive is live state, and it
-does not (the browser suite's `at_baseline` gates it).
+completed (§5). What must not survive is live state, and it does not (the
+browser suite's `at_baseline` gates it).
 
 ## Cross-runtime communication
 
-One narrow channel, JSON-serialized both ways (§14):
+One narrow channel, JSON-serialized both ways (§14): a MessagePort per frame
+boot, every message stamped with the frame's generation (§35), so traffic
+from a replaced frame is counted as stale and never applied.
 
-- runtime → shell: `window.__mareaderShell` — installed by the shell before
-  any runtime loads; typed methods taking JSON strings
-  (`openDocument`, `navigateLibrary`, `readPoint`, `saveSettings`,
-  `saveLibrary`, `saveCovers`, `saveCover`, `docStatus`, `publishDigest`,
-  `reload`, `resolveLaunch`).
-- shell → runtime: the module's exported functions (`…_start`,
-  `…_dispose`, `…_command` for in-session commands such as an
-  OS drop while the reader is active).
+- runtime → shell: the `ShellApi` trait (`crates/runtime-contract/src/
+  boundary.rs`) — typed calls (`open_document`, `navigate_library`,
+  `read_point`, the save/publish family, `resolve_launch`) — implemented
+  for a hosted frame by the transport's port handle (`PortShellApi` in
+  `crates/frame-transport/src/lib.rs`).
+- shell → runtime: the `ShellFrame` protocol vocabulary
+  (`crates/runtime-contract/src/protocol.rs`) for commands such as a cover
+  bake, and the frame's own boot events answering back (`FrameEvent`:
+  contact, stage, painted, failed-with-stage, `DisposeComplete`).
 
 Standalone pages install a storage-backed shell substitute so the same
-entry code runs unhosted; the bridge is a trait (`ShellApi`) in `app-state`
-with exactly these two implementations.
+entry code runs unhosted; the trait keeps exactly these two implementations
+(plus the recorder the host tests use).
 
 ## Asset loading
 
 `styles.css`, `public/vendor` (pdf.js), `pdfEngine.js`, `readerEngine.js`,
 `bake.worker.js` are referenced by all three HTML entries, so each build
-emits them; the merged `dist/` holds one copy. All three runtimes live in
-the same JS realm and same origin: DOM, CSS custom properties (the shell
-paints the durable theme on `<html>`), `localStorage` (one browser store;
-each runtime touches only its own keys), Tauri APIs and window DOM events
-are shared by the platform, while reactive state, WASM linear memory and
-statics are per-artifact. That split — platform-shared, state-isolated — is
+emits them; the merged `dist/` holds one copy. All three runtimes are
+served from the same origin but live in separate frame realms — own
+document, own window, own WASM instance. What stays shared is
+origin-level: `localStorage` (one browser store; each runtime touches only
+its own keys), the served assets, and the platform APIs each frame's
+document can reach — while DOM, reactive state, WASM linear memory and
+statics are per-frame. That split — origin-shared, instance-isolated — is
 the boundary the rest of this migration keeps honest.
