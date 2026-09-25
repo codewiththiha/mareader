@@ -162,6 +162,16 @@ pub fn open_path(state: AppState, path: String) {
 /// [`open_book`] for what the id buys and [`open_path`] for the opens that
 /// have nothing but an address.
 fn open_at(state: AppState, book_id: Option<String>, path: String) {
+    // An open that arrives with no live runtime — the library click after the
+    // reader left, a drop onto the shell — is the open that BRINGS the runtime
+    // up: the route flip to /reader lands at the END of this flow, so waiting
+    // for the route's own begin_mount would refuse the very work that leads
+    // there. Beginning the mount here asks the ONE owner for its transition;
+    // the route's later begin_mount is idempotent in `Mounting` — one
+    // generation, one owner, no second lifecycle.
+    if !state.runtime.lifecycle().admits_work() {
+        state.runtime.begin_mount();
+    }
     // Claim the document state for THIS attempt. Pick a second book while the
     // first is still resolving and the loser's tail would otherwise still run:
     // writing the old book's page count, geometry and scale over the new one's
@@ -225,8 +235,14 @@ fn open_at(state: AppState, book_id: Option<String>, path: String) {
 /// The PDF tail of the open flow: hand the path to the engine and seed from
 /// its answer.
 fn open_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
+    // The open is a WORK op: refused once the runtime entered Disposing (a
+    // route leave cancels a still-queued open before it reaches the engine).
+    let pdf = state.runtime.pdf();
+    if !pdf.work_admitted() {
+        return;
+    }
     spawn_local(async move {
-        let opened = engine::open(&path).await;
+        let opened = pdf.open(&path).await;
         // The engine answered — but a second open (or a close) may have taken
         // the document state over while it was working. Standing down here is
         // what keeps the winner's `Ready` from being followed by the loser's.

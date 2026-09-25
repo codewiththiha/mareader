@@ -40,11 +40,33 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // and effects (all field paths match the app-level state).
     let vs = state.reader;
 
+    // THE ROUTE IS THE LIFECYCLE BOUNDARY: entering /reader mounts the
+    // runtime (a fresh generation on every entry — a disposed runtime is
+    // never revived), leaving it disposes the runtime, which owns the
+    // document session, the virtualizers and the reader effects' lifetime.
+    // The cleanup is registered FIRST so it runs LAST among this scope's
+    // cleanups, after the effects' own teardowns.
+    let runtime = state.runtime;
+    runtime.begin_mount();
+    provide_context(runtime);
+    on_cleanup(move || {
+        runtime.dispose(state);
+    });
+
     // The reader pane mounted: the diagnostics surface's pane hook. Today
     // this is the one reader surface; the workspace pane tree of the later
     // runtime phases reports through the same pair.
     crate::diagnostics::note_pane_create();
     on_cleanup(crate::diagnostics::note_pane_dispose);
+
+    // Reader-only event arms that used to live at the app root: they act on
+    // reader state only (page navigation, page selection, the AI selection
+    // anchor), so they are installed INSIDE the runtime's scope and die with
+    // it — a library session never carries reader listeners (each arm's
+    // window listener unregisters with this scope).
+    crate::effects::reader::link_navigation::link_navigation(state);
+    crate::effects::reader::page_selection::page_selection(state);
+    crate::effects::reader::selection_tracking::selection_tracking(state);
 
     // The shell's layout brain: one controller for the whole page, provided as
     // context for the title bar, the traffic lights, the floating label and
@@ -53,7 +75,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let shell = ShellController::reader(state);
     provide_context(shell);
 
-    let rv = use_reader_virtualizers(vs);
+    let rv = use_reader_virtualizers(vs, runtime);
 
     // The layout prefs (page gap, page margin) resolve their settings into the
     // strips' size models. Installed BEFORE the reflow layout effect below,
@@ -118,6 +140,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     crate::effects::reader::blend_backdrop::blend_backdrop(state);
 
     crate::effects::reader::first_paint::first_paint_gate(state);
+
+    // Every reader effect and resource is installed: the runtime is live.
+    runtime.mark_ready();
 
     let status = state.reader.document.status;
     let is_ready = move || status.get() == DocStatus::Ready;

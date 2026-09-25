@@ -102,7 +102,10 @@ fn geometry_epoch(state: ReaderState) -> Signal<u64> {
     })
 }
 
-pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers {
+pub(crate) fn use_reader_virtualizers(
+    state: ReaderState,
+    runtime: crate::runtime::ReaderRuntime,
+) -> ReaderVirtualizers {
     seed_css_heights(state);
 
     let count = Signal::derive(move || state.document.num_pages.get() as usize);
@@ -215,11 +218,18 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     // Send + Sync, which the Rc inside a Virtualizer is not.
     crate::diagnostics::track_virtualizer(&virtualizer);
     crate::diagnostics::track_virtualizer(&h_virtualizer);
+    // The RUNTIME owns these instances (Phase 1 §9): its dispose sequence
+    // disposes them explicitly — the component cleanups below and inside the
+    // virtualizer crate are the inner safety net, not the owner.
+    runtime.track_virtualizer(&virtualizer);
+    runtime.track_virtualizer(&h_virtualizer);
     let tracked_v = StoredValue::new_local(virtualizer.clone());
     let tracked_h = StoredValue::new_local(h_virtualizer.clone());
     on_cleanup(move || {
         tracked_v.with_value(crate::diagnostics::untrack_virtualizer);
         tracked_h.with_value(crate::diagnostics::untrack_virtualizer);
+        runtime.untrack_virtualizer(&tracked_v.get_value());
+        runtime.untrack_virtualizer(&tracked_h.get_value());
     });
 
     {

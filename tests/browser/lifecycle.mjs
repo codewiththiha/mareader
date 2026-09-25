@@ -220,9 +220,12 @@ async function waitFor(label, predicate, timeoutMs = 120_000) {
 
 async function openBook(url) {
   await page.goto(url, { waitUntil: "domcontentloaded" });
-  // Reader live AND the document actually open AND the first page rendered.
+  // Reader live AND the document actually open AND the first page rendered
+  // AND the runtime itself reporting Ready (it publishes its own lifecycle).
   return waitFor("the reader to open and first-render", (s) =>
     s.readerRuntimeLive === true &&
+    s.runtime?.state === "ready" &&
+    (s.runtime?.generation ?? 0) >= 1 &&
     s.engine?.hasDocument === true &&
     s.engine.sessionsOpened >= 1 &&
     s.engine.rendersCompleted >= 1 &&
@@ -259,8 +262,14 @@ async function clickCloseNow() {
  *  claims epoch 2 — exactly one advance per cycle. */
 async function closeAndWaitBaseline(label, settledWork, expectedEpoch = 2) {
   if (!settledWork) await clickCloseNow();
-  const s = await waitFor(`the disposal baseline (${label})`, (x) => x.atBaseline === true, 45_000);
+  const s = await waitFor(`the disposal baseline (${label})`, (x) =>
+    x.atBaseline === true && x.runtime?.state === "disposed", 45_000);
   assertDrained(s, label, expectedEpoch);
+  // The runtime itself reports disposal completion (Phase 1 §12): state
+  // Disposed with a generation stamp — disposal is owned, not inferred.
+  if (s.runtime?.state !== "disposed" || (s.runtime?.generation ?? 0) < 1) {
+    throw new Error(`[${label}] runtime did not report disposal (state ${s.runtime?.state}, generation ${s.runtime?.generation})`);
+  }
   return s;
 }
 
@@ -808,11 +817,18 @@ async function openFromLibrary(cycle) {
 // open and per close in the LIVE page, so the same-page cycles assert the
 // DELTA — exactly one claim each — never an absolute "back to 1".
 const epochBase = (await snap()).disposalEpoch;
-console.log("same-page stage: epoch base", epochBase, "(carried from the reload matrix)");
+// The runtime generation base: every same-page open must be a NEW runtime
+// generation (a disposed runtime is never revived in place), so generation
+// advances exactly once per cycle on top of wherever the matrix left it.
+const generationBase = (await snap()).runtime?.generation ?? 1;
+console.log("same-page stage: epoch base", epochBase, "| runtime generation base", generationBase);
 for (let cycle = 1; cycle <= 10; cycle += 1) {
   const o = await openFromLibrary(cycle);
   if (o.disposalEpoch !== epochBase + 2 * cycle - 1) {
     throw new Error(`same-page open ${cycle}: epoch ${o.disposalEpoch}, expected ${epochBase + 2 * cycle - 1} (base ${epochBase} + one open claim)`);
+  }
+  if (o.runtime?.generation !== generationBase + cycle) {
+    throw new Error(`same-page open ${cycle}: runtime generation ${o.runtime?.generation}, expected a NEW runtime (${generationBase + cycle}) — the disposed runtime was revived`);
   }
   if (((o.engine ?? {}).documentPages ?? 0) < MIN_FIXTURE_PAGES) {
     throw new Error(`same-page cycle ${cycle}: fixture has ${o.engine.documentPages} pages`);
@@ -827,6 +843,9 @@ for (let cycle = 1; cycle <= 10; cycle += 1) {
   const c = await waitFor(`the disposal baseline (same-page cycle ${cycle})`,
     (x) => x.atBaseline === true, 45_000);
   assertDrained(c, `same-page cycle ${cycle}`, epochBase + 2 * cycle);
+  if (c.runtime?.state !== "disposed" || c.runtime?.generation !== generationBase + cycle) {
+    throw new Error(`same-page cycle ${cycle}: runtime ${c.runtime?.state} gen ${c.runtime?.generation}, expected disposed at generation ${generationBase + cycle}`);
+  }
   // The raster recycler is module-bounded, not document-owned: it may hold
   // its placeholders across cycles, but a close must not make it GROW.
   summary.samePagePooledBytes.push(c.engine.pooledIntermediateBytesEst ?? 0);
@@ -890,6 +909,7 @@ for (const [stage, s] of Object.entries(stages)) {
     disposalEpoch: s.disposalEpoch,
     readerPage: s.readerPage,
     readerRuntimeLive: s.readerRuntimeLive,
+    runtime: s.runtime,
     paneLive: s.paneLive,
     virtualizerLive: s.virtualizerLive,
     virtualizerListeners: s.virtualizerListeners,

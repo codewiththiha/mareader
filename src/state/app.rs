@@ -70,6 +70,12 @@ pub struct UiState {
 pub struct AppState {
     pub settings: RwSignal<Settings>,
     pub reader: ReaderState,
+    /// The reader runtime: the explicit lifecycle owner for everything
+    /// reader-scoped that must die with the reader (the document session,
+    /// the virtualizers, the pdf engine session boundary). The shell holds
+    /// this Copy handle for coordination only — reader resources are owned
+    /// and disposed by the runtime, never by the shell.
+    pub runtime: crate::runtime::ReaderRuntime,
     pub library: LibraryState,
     pub ui: UiState,
 }
@@ -79,6 +85,7 @@ impl Default for AppState {
         Self {
             settings: RwSignal::new(Settings::default()),
             reader: ReaderState::default(),
+            runtime: crate::runtime::ReaderRuntime::new(),
             library: LibraryState::default(),
             ui: UiState {
                 sidebar: RwSignal::new(SidebarMode::None),

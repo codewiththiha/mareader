@@ -48,6 +48,29 @@ thread_local! {
     /// it never extends a lifetime past disposal.
     static LIVE_VIRTUALIZERS: RefCell<Vec<virtual_list_leptos::Virtualizer>> =
         const { RefCell::new(Vec::new()) };
+    /// The reader runtime's self-reported lifecycle view (Phase 1 §12): the
+    /// runtime itself publishes every state transition with its generation
+    /// and its live resource count, and the snapshot relays it. `None` off
+    /// the app (host tests) — reported, not guessed.
+    static RUNTIME_VIEW: RefCell<Option<crate::runtime::RuntimeView>> =
+        const { RefCell::new(None) };
+}
+
+/// The runtime publishes its lifecycle here on every transition; this is
+/// what makes disposal completion observable BY the runtime, not inferred
+/// from its surroundings.
+pub fn publish_runtime_view(
+    lifecycle: crate::runtime::RuntimeLifecycle,
+    generation: u64,
+    virtualizer_count: usize,
+) {
+    RUNTIME_VIEW.with(|cell| {
+        *cell.borrow_mut() = Some(crate::runtime::RuntimeView {
+            lifecycle,
+            generation,
+            virtualizer_count,
+        });
+    });
 }
 
 /// Narrate one lifecycle event when the dev surface opted in. Counters tick
@@ -178,6 +201,26 @@ pub(crate) fn untrack_virtualizer(v: &virtual_list_leptos::Virtualizer) {
     }
 }
 
+/// The runtime's self-reported ownership view (Phase 1 §12), folded into
+/// every snapshot: the lifecycle state, the generation stamp, and the
+/// resource counts the runtime itself owns or reads from the engine. The
+/// important field is `state` — the runtime REPORTS its own disposal
+/// completion instead of the surroundings inferring it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeSnapshot {
+    state: crate::runtime::RuntimeLifecycle,
+    generation: u64,
+    active_document: bool,
+    active_render_tasks: u32,
+    active_prefetch: u32,
+    registered_pages: u32,
+    virtualizer_count: usize,
+    listener_count: usize,
+    timer_count: usize,
+    worker_count: u64,
+}
+
 /// One point-in-time reading of every resource the reader owns, plus the
 /// engine's half where an engine is attached.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -235,6 +278,11 @@ pub(crate) struct Snapshot {
     /// The engine's half (PDF session, worker, render lane, thumbnails).
     /// `None` without an engine — reported, not guessed.
     engine: Option<pdf_engine::api::EngineStats>,
+    /// The runtime's self-reported view, when one has published (the app
+    /// runtime publishes from birth; host tests without a runtime report
+    /// `None` rather than inventing a state).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtime: Option<RuntimeSnapshot>,
     wasm_heap_bytes: Option<u64>,
     heap_high_water_bytes: u64,
 }
@@ -268,8 +316,13 @@ impl Snapshot {
 
 /// Take a snapshot. `reader_runtime_live` comes from the caller because the
 /// authoritative bit (document status) is reactive state, not a global.
+// The host build has no engine, so the literal `None` fallback that keeps
+// `engine_stats` uniform across targets trips clippy's literal-unwrap lint;
+// the fallback is deliberate, not a forgotten probe.
+#[allow(clippy::unnecessary_literal_unwrap)]
 pub(crate) fn snapshot(reader_runtime_live: bool, reader_page: u32) -> Snapshot {
     observe_heap();
+    let runtime_view = RUNTIME_VIEW.with(|cell| *cell.borrow());
     // The engine talks only on wasm; a host test has no engine and the probe
     // must not run into the wasm-bindgen stubs.
     #[cfg(target_arch = "wasm32")]
@@ -327,6 +380,23 @@ pub(crate) fn snapshot(reader_runtime_live: bool, reader_page: u32) -> Snapshot 
         virtualizer_observers,
         virtualizer_timers,
         render_budget_max_items: reader_core::view::RENDER_BUDGET.max_items as u32,
+        runtime: runtime_view.map(|view| {
+            let engine_stats: pdf_engine::api::EngineStats = engine.unwrap_or_default();
+            RuntimeSnapshot {
+                state: view.lifecycle,
+                generation: view.generation,
+                active_document: engine_stats.has_document,
+                active_render_tasks: engine_stats.active_renders,
+                active_prefetch: engine_stats.active_prefetches,
+                registered_pages: engine_stats.pages,
+                virtualizer_count: view.virtualizer_count,
+                listener_count: virtualizer_listeners,
+                timer_count: virtualizer_timers,
+                worker_count: engine_stats
+                    .workers_created
+                    .saturating_sub(engine_stats.workers_terminated),
+            }
+        }),
         engine,
         wasm_heap_bytes: wasm_heap_bytes(),
         heap_high_water_bytes: HEAP_HIGH_WATER.load(Ordering::Relaxed),
@@ -436,6 +506,33 @@ mod tests {
     }
 
     #[test]
+    fn the_runtime_reports_its_own_lifecycle_in_the_snapshot() {
+        publish_runtime_view(crate::runtime::RuntimeLifecycle::Ready, 3, 2);
+        let value: serde_json::Value =
+            serde_json::from_str(&snapshot_json(false, 0)).expect("snapshot is JSON");
+        let runtime = value
+            .get("runtime")
+            .expect("the runtime view rides the snapshot");
+        assert_eq!(runtime["state"], "ready");
+        assert_eq!(runtime["generation"], 3);
+        assert_eq!(runtime["virtualizerCount"], 2);
+        // The snapshot's runtime half reports the resource counts the
+        // baseline gates on (Phase 1 §12) — present even with no engine.
+        for field in [
+            "activeDocument",
+            "activeRenderTasks",
+            "activePrefetch",
+            "registeredPages",
+            "listenerCount",
+            "timerCount",
+            "workerCount",
+        ] {
+            assert!(runtime.get(field).is_some(), "runtime view lacks {field}");
+        }
+        RUNTIME_VIEW.with(|cell| *cell.borrow_mut() = None);
+    }
+
+    #[test]
     fn snapshot_serializes_with_the_documented_shape() {
         let json = snapshot_json(false, 0);
         let value: serde_json::Value = serde_json::from_str(&json).expect("snapshot is JSON");
@@ -490,6 +587,7 @@ mod tests {
             virtualizer_timers: 0,
             render_budget_max_items: 3,
             lookahead_samples_active: 0,
+            runtime: None,
             engine: Some(drained_engine()),
             wasm_heap_bytes: None,
             heap_high_water_bytes: 0,

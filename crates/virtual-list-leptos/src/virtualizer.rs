@@ -351,6 +351,9 @@ impl VirtualizerInner {
         }
     }
 
+    /// Teardown, callable by the handle's dispose (the reader runtime's
+    /// sequence) and by the owning component's cleanup. Idempotent:
+    /// bindings, timers and observers tear down once.
     pub(crate) fn dispose(&self) {
         self.teardown_bindings();
         if let Some(handle) = self.scroll_end_timer.borrow_mut().take() {
@@ -452,6 +455,15 @@ fn dom_scroll_offset(el: &web_sys::HtmlElement, axis: crate::options::Axis) -> f
 }
 
 impl Virtualizer {
+    /// Explicit teardown by the resource OWNER (the reader runtime's
+    /// dispose sequence, Phase 1): bindings, observers, timers and the
+    /// surface detach, and a late event frame finds nothing attached.
+    /// Idempotent — a virtualizer already disposed by its component's
+    /// cleanup tears down again as a no-op.
+    pub fn dispose(&self) {
+        self.inner.dispose();
+    }
+
     /// Bind the scroll container.
     pub fn bind_container(&self, el: web_sys::Element) {
         let inner = &self.inner;

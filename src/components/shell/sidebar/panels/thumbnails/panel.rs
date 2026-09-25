@@ -70,8 +70,15 @@ pub fn ThumbnailsPanel(
     // a StoredValue because a cleanup closure must be Send + Sync, which
     // the Rc inside a Virtualizer is not.
     crate::diagnostics::track_virtualizer(&v);
+    // The runtime owns the instance (Phase 1 §9); the cleanup pairs.
+    let panel_runtime = use_context::<crate::runtime::ReaderRuntime>()
+        .expect("ReaderRuntime must be provided by the reader route");
+    panel_runtime.track_virtualizer(&v);
     let tracked = StoredValue::new_local(v.clone());
-    on_cleanup(move || tracked.with_value(crate::diagnostics::untrack_virtualizer));
+    on_cleanup(move || {
+        tracked.with_value(crate::diagnostics::untrack_virtualizer);
+        panel_runtime.untrack_virtualizer(&tracked.get_value());
+    });
     let rows = v.rows();
     let total_size = v.total_size();
 

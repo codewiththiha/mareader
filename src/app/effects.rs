@@ -41,9 +41,6 @@ use crate::effects::app::motion::publish_motion;
 use crate::effects::app::theme::apply_theme;
 use crate::effects::app::typography::apply_typography;
 use crate::effects::reader::blend_backdrop::paper_settings;
-use crate::effects::reader::link_navigation::link_navigation;
-use crate::effects::reader::page_selection::page_selection;
-use crate::effects::reader::selection_tracking::selection_tracking;
 use crate::state::reader::TypographySignal;
 use crate::state::{AppState, AppearanceSignal};
 
@@ -67,9 +64,10 @@ pub(crate) fn install_app_effects(
     paper_settings(state);
     publish_motion(state);
     shortcuts(state);
-    link_navigation(state);
-    page_selection(state);
-    selection_tracking(state);
+    // NOTE: link_navigation, page_selection and selection_tracking moved
+    // into the reader runtime's mount scope (features/reader/page.rs) — they
+    // act on reader state only, so they die with the /reader route instead
+    // of living at the app root forever (Phase 1 §10).
     crate::services::ai::install_ai_chunk_bridge();
     crate::services::window::install_window_state_bridge(state);
     crate::effects::app::library::library_effects(state);

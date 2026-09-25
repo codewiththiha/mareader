@@ -223,3 +223,54 @@ the dispose rather than what it measures:
   not exist yet. The names describe the shape Phase 1 wants to measure;
   until then they are claim counters and must not be read as an ownership
   boundary that already exists.
+
+## What Phase 1 adds: the reader runtime as the lifecycle owner
+
+Phase 1 turns the route boundary into the runtime boundary (`src/runtime.rs`,
+`crate::runtime::ReaderRuntime`):
+
+- **Lifecycle states** (`RuntimeLifecycle`): `New → Mounting → Ready →
+  Disposing → Disposed`, one state machine (`RuntimeCore`) with the
+  transitions and their guards unit-tested. Work-ops (opens, renders, page
+  registrations, document close) are refused from `Disposing` on; teardown
+  ops (destroy, sweeps) stay admitted until `Disposed`. A disposed runtime
+  is never revived: the next `/reader` entry runs `begin_mount`, which
+  starts a NEW generation — and a mount landing while a disposal tail is
+  still awaiting the engine takes the stale resources away from that tail
+  and orphans its completion via a generation guard (the fast close →
+  reopen path, exercised by the same-page workload).
+- **Route = runtime boundary**: `/reader` mounts the runtime
+  (`begin_mount` → effects → `mark_ready`); leaving it runs
+  `ReaderRuntime::dispose`. The close button is `document_close`: the
+  document session tears down and the reader returns to the shelf, but the
+  runtime stays `Ready`. The two operations are distinct by design.
+- **Disposal order** (adapted to the dependency graph Phase 0 mapped):
+  enter `Disposing` (work refused) → claim the session stamp and flush the
+  read point if a document is open → reset the reader slices (the route
+  flip follows the status immediately) → tail: close the document session
+  (destroy awaited, sweeps) → dispose every registered virtualizer → mark
+  `Disposed` (generation-guarded) → report disposal completion. The engine
+  destroy is the long pole; everything after it is local and synchronous.
+- **Resources owned by the runtime** (`ReaderResources`): the virtualizer
+  registry — strips register where `use_virtualizer` returns and the
+  runtime's dispose disposes them explicitly; component cleanup stays as
+  the inner safety net. Engine document-level operations route through
+  `ReaderRuntime::pdf()` (`PdfSessionHandle`), whose guards snapshot the
+  lifecycle at capture: work ops no-op from `Disposing`, teardown ops until
+  `Disposed`. The three reader-only event arms (link navigation, page
+  selection, selection tracking) left the app-root bootstrap and are
+  installed inside the runtime's scope.
+- **Observable disposal** (§12): the runtime publishes every transition to
+  the diagnostics surface (`runtime` in every snapshot: state, generation,
+  activeDocument, activeRenderTasks, activePrefetch, registeredPages,
+  virtualizerCount, listenerCount, timerCount, workerCount). The browser
+  baseline asserts `runtime.state == "ready"` while reading and
+  `== "disposed"` with an advancing generation after every close, plus one
+  NEW runtime generation per same-page open.
+
+Deliberately unchanged: the disposal-completion assertion and the epoch
+stamping (`services::document::session`) are reused, not replaced; the
+Phase 0 drain gates, counters and fail-closed accounting all still gate
+every close; look-ahead, virtualization and retention behavior are
+untouched. `AppState.reader` remains the signals bag (domain models stay in
+`ReaderState`); the shell's `AppState.runtime` handle is coordination-only.
