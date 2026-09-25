@@ -38,8 +38,8 @@ use ai_core::gloss::{GlossBox, GlossMark, ReflowSpot, mark_id};
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
+use crate::state::ReaderState;
 use app_chrome::hooks::dom::by_id;
-use app_state::state::ReaderState;
 
 pub mod pdf;
 pub mod reflow;

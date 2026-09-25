@@ -42,7 +42,7 @@ use library_core::wire::{BookFileRequest, PathCheck, RelocateResult, StoreResult
 use leptos::prelude::*;
 
 use app_state::state::Toast;
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 pub(crate) fn toast(state: crate::context::LibraryContext, message: String) {
     state.ui.toast.set(Some(Toast::new(message)));

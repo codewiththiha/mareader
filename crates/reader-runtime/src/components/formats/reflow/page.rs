@@ -41,10 +41,10 @@ use app_chrome::hooks::dom::by_id;
 use super::block_render;
 use crate::components::formats::block_render::BlockView;
 use crate::components::viewer::page_host::block_row_id;
+use crate::state::ReaderState;
+use crate::state::ReflowContent;
+use crate::state::TypographySignal;
 use app_state::dom_contract::HOST_REFLOW;
-use app_state::state::ReaderState;
-use app_state::state::reader::ReflowContent;
-use app_state::state::reader::TypographySignal;
 
 /// The page's inline style at the live scale: the page box and its
 /// book-layout (or symmetric) paddings, both taken from the geometry the

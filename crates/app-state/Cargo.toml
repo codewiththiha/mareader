@@ -4,17 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ai-core = { path = "../ai-core" }
 leptos = { version = "0.8", features = ["csr"] }
-library-core = { path = "../library-core" }
-md-core = { path = "../md-core" }
-pdf-core = { path = "../pdf-core" }
-pdf-engine = { path = "../pdf-engine" }
 reader-core = { path = "../reader-core" }
-reflow-core = { path = "../reflow-core" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-virtual-list-leptos = { path = "../virtual-list-leptos" }
 tauri-bridge = { path = "../tauri-bridge" }
 # Not target-gated: the host lanes (clippy/test) compile `tauri_listen` and
 # `memory` too, and leptos csr already pulls this stack on every target — the

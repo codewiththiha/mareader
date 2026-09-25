@@ -8,10 +8,11 @@
 
 use leptos::prelude::*;
 
+use crate::state::ReaderState;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;
-use app_state::state::{ReaderState, SidebarMode};
+use app_state::state::SidebarMode;
 use app_ui::components::primitives::controls::button::{Button, ButtonVariant};
 
 #[component]

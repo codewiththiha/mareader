@@ -4,8 +4,8 @@
 use leptos::prelude::*;
 
 use super::OutlinePanel;
+use crate::state::ReaderState;
 use app_state::SidebarMode;
-use app_state::state::ReaderState;
 
 #[component]
 pub(crate) fn SidebarOutline(

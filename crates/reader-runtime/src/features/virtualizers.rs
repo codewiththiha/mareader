@@ -5,14 +5,20 @@
 use std::hash::Hash;
 
 use leptos::prelude::*;
-use virtual_list::Viewport;
+use virtual_list::{Budget, Viewport};
 use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 
-use reader_core::view::RENDER_BUDGET;
-
+use crate::state::ReaderState;
 use crate::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
-use app_state::state::ReaderState;
 use app_ui::epoch::epoch_signal;
+
+/// Comfortable read-ahead: half a screenful each way, up to 3 mounted pages
+/// total (visible + ~1 above + ~1 below). Each mounted page at 2× DPR plus
+/// its raw is ~64MB worst case, so the ceiling is what keeps idle RAM sane.
+/// The reader budget is the READER runtime's policy: the core view model
+/// carries the maths a strip needs while only this crate may name the
+/// virtualizer crates that enforce it.
+pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
 /// The handles `ReaderPage` hands to the viewer components and effects. Both
 /// virtualizers always exist (they are hooks); a view binds only the one for

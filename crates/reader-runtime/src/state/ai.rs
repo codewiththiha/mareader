@@ -44,7 +44,7 @@ impl SelectionDetail {
     /// document's format, so a selection that outlives a document switch cannot
     /// be anchored through the wrong pipeline.
     pub fn is_reflow(&self) -> bool {
-        self.host.as_deref() == Some(crate::dom_contract::HOST_REFLOW)
+        self.host.as_deref() == Some(app_state::dom_contract::HOST_REFLOW)
     }
 }
 

@@ -76,6 +76,12 @@ jobs:
       - name: Check app-chrome standalone
         run: cargo check -p app-chrome --target wasm32-unknown-unknown --locked
 
+      # The runtime boundary as a graph rule, not a grep rule: an engine or a
+      # paginator arriving transitively in a graph that must not own it is a
+      # failure grep cannot see. Ubuntu images carry node; this lane has cargo.
+      - name: Dependency gate
+        run: node tools/check-dependency-gate.mjs
+
   test:
     name: Rust / test
     runs-on: ubuntu-24.04

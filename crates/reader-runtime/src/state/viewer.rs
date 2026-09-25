@@ -1,71 +1,16 @@
 //! The viewer signals: which page, which mode, how big the container is —
-//! and the motion projection that says which of the reader's movements are
-//! allowed to animate.
+//! and the live copy of the shared [`Motion`] projection that says which of
+//! the reader's movements are allowed to animate (the type itself is chrome
+//! state, `app_state::state`, because the shell and both runtimes hand it
+//! around; the SIGNAL is this session's).
 
 use leptos::prelude::*;
 
-use reader_core::settings::AnimationSettings;
+use app_state::state::Motion;
 use reader_core::view::{PAGE_GAP, ViewMode};
 use reader_core::zoom_math::FitMode;
 
 use super::zoom::ZoomState;
-
-/// Which of the reader's motions animate. Projected from the persisted
-/// [`AnimationSettings`] by the app root
-/// (`effects::app::motion::publish_motion`) and read by everything that moves
-/// a page, so no consumer has to know a master switch exists — the projection
-/// already applied it.
-///
-/// Read TRACKED by views (the rail's transition class must change when the
-/// reader flips a switch) and UNTRACKED by effects and scroll calls: a flag
-/// that stops something animating must not be what triggers the animation.
-///
-/// Nothing here skips a change: off renders the end frame in the frame the
-/// change arrives, which is why freezing the reader loses no fit, no follow
-/// and no scroll target.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Motion {
-    /// The rail animates its open/close: the docked rail tweens its width
-    /// (`SIDEBAR_SLIDE_MS`), the floating rail fades (`SIDEBAR_FADE_MS`).
-    pub sidebar_slide: bool,
-    /// The page rides a window drag: the canvas flexes on every frame of it.
-    /// Riding the RAIL is not in here on purpose — a measured container is
-    /// answered in the same frame, animation or not, and deferring it cropped
-    /// the page for a visible instant.
-    pub canvas_resize: bool,
-    /// A zoom eases to its target over the profile's duration.
-    pub zoom: bool,
-    /// A jump to a page glides the column (or the thumbnail rail) over it.
-    pub scroll_glide: bool,
-}
-
-impl Motion {
-    /// The one place the master switch is honoured. Off, no detail can bring
-    /// an animation back on; the Animations tab hides itself for the same
-    /// reason, so the detail switches are never shown lying.
-    pub const fn from_prefs(p: &AnimationSettings) -> Self {
-        Self {
-            sidebar_slide: p.enabled && p.sidebar_slide,
-            canvas_resize: p.enabled && p.canvas_resize,
-            zoom: p.enabled && p.zoom,
-            scroll_glide: p.enabled && p.scroll_jumps,
-        }
-    }
-}
-
-impl Default for Motion {
-    /// Everything moves. The shell publishes the reader's prefs before
-    /// anything can act on them, and a reader that has not been published to
-    /// yet (a document opening, a test) must not look broken.
-    fn default() -> Self {
-        Self {
-            sidebar_slide: true,
-            canvas_resize: true,
-            zoom: true,
-            scroll_glide: true,
-        }
-    }
-}
 
 /// The zoom pipeline signals (see `reader_runtime::effects`).
 #[derive(Clone, Copy)]

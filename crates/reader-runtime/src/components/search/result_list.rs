@@ -8,7 +8,7 @@ use leptos::prelude::*;
 use virtual_list_leptos::Virtualizer;
 
 use crate::effects::reader::search::activate_match;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 use reader_core::search::SearchMatch;
 
 /// Page + snippet for one list row. Built when `matches` changes, not

@@ -1,0 +1,19 @@
+[package]
+name = "runtime-contract"
+version = "0.1.0"
+edition = "2024"
+description = "The serialized Shell <-> runtime boundary: the launch/read-point/status payloads, the cover-store types that ride them, the ShellApi command trait, and the app's one clock. Every runtime and the Shell can import this without pulling any other runtime."
+license = "MIT"
+
+[dependencies]
+js-sys = "0.3"
+library-core = { path = "../library-core" }
+reader-core = { path = "../reader-core" }
+serde = { version = "1", features = ["derive"] }
+
+[lints.rust]
+# Warnings are denied, not printed: a gate that only shows up in the log is a
+# gate that gets read past. The priority applies the group first, so the
+# individual levels below it remain deliberate overrides.
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "forbid"

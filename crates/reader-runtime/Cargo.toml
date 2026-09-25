@@ -25,6 +25,7 @@ pdf-core = { path = "../pdf-core" }
 pdf-engine = { path = "../pdf-engine" }
 pdf-paper = { path = "../pdf-paper" }
 reader-core = { path = "../reader-core" }
+runtime-contract = { path = "../runtime-contract" }
 reflow-core = { path = "../reflow-core" }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"

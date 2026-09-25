@@ -4,7 +4,7 @@
 //! (`crate::runtime::ReaderRuntime::dispose`), so there is exactly one
 //! teardown path.
 
-use app_state::boundary::ShellApi;
+use runtime_contract::boundary::ShellApi;
 
 /// Close the current document and return to the library shelf.
 ///

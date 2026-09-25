@@ -15,7 +15,7 @@ use library_core::shelf;
 
 use crate::services as ipc;
 use crate::services::covers::prune_now;
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 use super::folder_shelf_of;
 

@@ -10,7 +10,7 @@ use std::hash::Hash;
 
 use leptos::prelude::*;
 
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 use app_ui::epoch::epoch_signal;
 
 /// What a layer painted over a page re-derives on.

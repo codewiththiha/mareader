@@ -17,8 +17,8 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use app_state::boundary::ShellApi;
 use pdf_engine::types::DocStatus;
+use runtime_contract::boundary::ShellApi;
 
 /// Debounce for the library save: reading position settles this fast, and a
 /// continuous scroll writes once instead of once per row boundary.

@@ -18,7 +18,7 @@ use super::tasks::{FailMode, fail, finish_task, push_task, task_id};
 use crate::services as ipc;
 use crate::services::covers;
 use crate::state::library::ImportTask;
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 /// A file whose log binds itself to a living row is an import that succeeds
 /// by lighting that row up, not by landing a linked neighbour beside it.

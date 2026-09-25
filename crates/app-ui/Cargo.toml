@@ -12,7 +12,6 @@ app-state = { path = "../app-state" }
 leptos = { version = "0.8", features = ["csr"] }
 leptos-md = "0.1"
 library-core = { path = "../library-core" }
-pdf-engine = { path = "../pdf-engine" }
 reader-core = { path = "../reader-core" }
 reflow-core = { path = "../reflow-core" }
 serde = { version = "1", features = ["derive"] }

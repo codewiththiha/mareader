@@ -6,7 +6,6 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
-leptos_router = "0.8"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
@@ -81,36 +80,18 @@ serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 serde_json = "1"
 console_error_panic_hook = "0.1.7"
-# Markdown rendering for the reflowable formats: parses each block and
-# emits Leptos views directly (GFM on, raw HTML off, no theme classes —
-# the reader's own stylesheet owns the look).
-leptos-md = "0.1"
-ai-core = { path = "crates/ai-core" }
-virtual-list = { path = "crates/virtual-list" }
-virtual-list-leptos = { path = "crates/virtual-list-leptos" }
-pdf-engine = { path = "crates/pdf-engine" }
-pdf-paper = { path = "crates/pdf-paper" }
 tauri-bridge = { path = "crates/tauri-bridge" }
 app-chrome = { path = "crates/app-chrome" }
 app-state = { path = "crates/app-state" }
+runtime-contract = { path = "crates/runtime-contract" }
 app-ui = { path = "crates/app-ui" }
 storage = { path = "crates/storage" }
-# The geometry primitives. The motion spring rides `ui_geom::spring`'s
-# integrator, so it clamps to that crate's frame ceiling rather than
-# restating the number.
-ui-geom = { path = "crates/ui-geom" }
-# The format cores. `reader-core` is everything a reader needs that no format
-# owns (the format list, the view modes, the settings, the colour pipeline);
-# `pdf-core` is the PDF's geometry and text index; `reflow-core` is the shared
-# maths of laying text out, with `txt-core` and `md-core` one parser each on
-# top of it. Nothing here knows about the next format; adding one is a new
-# crate that depends on `reflow-core`, plus one directory in
-# `src/components/formats`.
+# The shell hosts runtimes; it owns none of what a runtime owns. Its only
+# domain reads are the persisted settings schema (`reader-core`), the
+# shelf's launch metadata (`library-core`), and the runtime boundary
+# itself (`runtime-contract`). A format engine, a paginator, a parser or a
+# virtualiser appearing in this manifest is a regression.
 reader-core = { path = "crates/reader-core" }
-pdf-core = { path = "crates/pdf-core" }
-reflow-core = { path = "crates/reflow-core" }
-txt-core = { path = "crates/txt-core" }
-md-core = { path = "crates/md-core" }
 # The library's domain: the book and its fingerprint, shelves and watched
 # folders, the scan predicate, the rescan ledger, the sort and the persisted
 # blob. Shared with the Tauri shell, which does the IO and measures with the
@@ -128,6 +109,7 @@ members = [
   "src-tauri",
   "crates/ai-core",
   "crates/app-state",
+  "crates/runtime-contract",
   "crates/app-ui",
   "crates/storage",
   "crates/library-runtime",

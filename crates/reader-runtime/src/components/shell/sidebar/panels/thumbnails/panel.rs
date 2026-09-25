@@ -20,10 +20,10 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
+use crate::state::ReaderState;
 use app_chrome::hooks::use_resize_observer::use_resize_observer;
 use app_chrome::hooks::use_timeout::use_debounce;
 use app_state::SidebarMode;
-use app_state::state::ReaderState;
 
 use super::auto_center::AutoCenter;
 use super::geometry::{CELL_W, GAP_CROSS, MIN_VIEWPORT_H, PAD, ROW_BUFFER, row_height};

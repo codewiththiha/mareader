@@ -28,7 +28,7 @@ use ai_core::gloss::PageAnchor;
 
 use crate::components::ai::anchor::{FormatAnchorBridge, PdfAnchorBridge, ReflowAnchorBridge};
 use crate::components::ai::reflow_anchor;
-use app_state::state::reader::SelectionDetail;
+use crate::state::SelectionDetail;
 use app_ui::components::primitives::hooks::use_custom_event::use_raw_event;
 
 /// The JS protocol of the event detail: `null` (clear) or a full

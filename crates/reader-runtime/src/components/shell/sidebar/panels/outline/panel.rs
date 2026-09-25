@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
+use crate::state::ReaderState;
 use app_chrome::hooks::dom::reveal_in_scroll_parent;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
 use app_chrome::hooks::use_window_event::use_window_event;
 use app_state::SidebarMode;
-use app_state::state::ReaderState;
 use reader_core::outline::{OutlineNode, active_entry};
 
 fn outline_key(index: usize, node: &OutlineNode) -> String {

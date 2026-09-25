@@ -94,10 +94,10 @@ pub trait ShellApi {
     /// Library → Shell: persist the library blob (the Shell owns the key).
     fn save_library(&self, blob: &library_core::blob::LibraryBlob);
     /// Library → Shell: persist the cover cache (the Shell owns the key).
-    fn save_covers(&self, covers: &crate::state::covers::CoverMap);
+    fn save_covers(&self, covers: &crate::covers::CoverMap);
     /// Reader → Shell: one generated cover (the reader owns the engine that
     /// bakes it; the Shell owns the persisted map it lands in).
-    fn save_cover(&self, path: &str, image: &crate::state::covers::CoverImage);
+    fn save_cover(&self, path: &str, image: &crate::covers::CoverImage);
     /// Reader → Shell: the document status changed (URL policy + probe).
     fn doc_status(&self, report: &DocStatusReport);
     /// Reader → Shell: the diagnostics digest (the Shell's probe merges it).
@@ -136,8 +136,8 @@ impl ShellApi for RecordApi {
     fn save_library(&self, _blob: &library_core::blob::LibraryBlob) {
         *self.library_calls.borrow_mut() += 1;
     }
-    fn save_covers(&self, _covers: &crate::state::covers::CoverMap) {}
-    fn save_cover(&self, _path: &str, _image: &crate::state::covers::CoverImage) {}
+    fn save_covers(&self, _covers: &crate::covers::CoverMap) {}
+    fn save_cover(&self, _path: &str, _image: &crate::covers::CoverImage) {}
     fn doc_status(&self, _report: &DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
     fn reload(&self) {}

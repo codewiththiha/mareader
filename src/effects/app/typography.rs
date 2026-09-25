@@ -1,7 +1,7 @@
 //! Paints the reflowable formats' typography onto `<html>` whenever it
 //! changes — the text counterpart of `apply_theme`.
 //!
-//! The contract is `reflow_core::typography::css_variables`: every knob the
+//! The contract is `reader_core::settings::typography::css_variables`: every knob the
 //! settings own is written as a SCALE-1 custom property (`--tx-font-size`,
 //! `--tx-line-height`, ...). Page hosts never read the settings for type —
 //! they set their own `--ts` multiplier and let the stylesheet resolve
@@ -26,7 +26,7 @@ pub fn apply_typography(settings: RwSignal<reader_core::settings::Settings>) {
         let Some(style) = html_style() else {
             return;
         };
-        for (name, value) in reflow_core::typography::css_variables(&t) {
+        for (name, value) in reader_core::settings::typography::css_variables(&t) {
             let _ = style.set_property(name, &value);
         }
     });

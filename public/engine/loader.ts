@@ -541,16 +541,3 @@ export async function coverDataUrl(path: string, maxWidth = 240): Promise<CoverR
   }
 }
 
-export async function takePendingFile(): Promise<string | null> {
-  const tauri = globalThis.__TAURI__;
-  if (!tauri || !tauri.core || typeof tauri.core.invoke !== "function") {
-    return null;
-  }
-  try {
-    const path = await tauri.core.invoke("take_pending_file");
-    return typeof path === "string" && path ? path : null;
-  } catch (_) {
-    return null;
-  }
-}
-

@@ -71,8 +71,8 @@ use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::page_host::block_row_id;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
-use app_state::state::ReaderState;
-use app_state::state::reader::TypographySignal;
+use crate::state::ReaderState;
+use crate::state::TypographySignal;
 use app_ui::epoch::epoch_signal;
 
 /// How many frames the mount anchor re-asserts the resume position before it

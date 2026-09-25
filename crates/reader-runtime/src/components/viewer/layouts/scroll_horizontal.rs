@@ -6,7 +6,7 @@ use reader_core::view::Axis;
 use virtual_list_leptos::Virtualizer;
 
 use crate::components::viewer::shells::scroll_shell::ScrollShell;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 #[component]
 pub fn ScrollHorizontalLayout(

@@ -1,23 +1,22 @@
-//! The state types both runtime surfaces are built from, the UI chrome
-//! slice, the shared time/heap/DOM-contract utilities, and the serialized
-//! boundary contract the Shell and the runtimes speak (`boundary`).
+//! The UI chrome slice the runtime surfaces share, plus the heap/DOM-contract
+//! utilities both sides name. The serialized Shell ⇄ runtime boundary, the
+//! cover-store types and the clock moved to the `runtime-contract` crate —
+//! the one crate cheap enough for every runtime to import, which is exactly
+//! why the boundary lives there and not here.
 //!
-//! Phase 2 split the one `AppState` by lifetime: `state::reader` stays here
-//! while the library's live state moved to the `library-runtime` crate —
-//! deliberately blind to each other: a library context cannot name a
-//! `ReaderState` and vice versa, which is the compile-level kill switch the
-//! phase asks for. The runtime-scoped context structs that
-//! bundle these types with their own services live in the runtime crates
-//! (`reader_runtime::context`, `library_runtime::context`); the shell's
-//! narrow state lives in the root package.
+//! Phase 2 split the one `AppState` by lifetime: the reader's state tree
+//! lives beside its runtime in the `reader-runtime` crate, the library's
+//! live state in the `library-runtime` crate — deliberately blind to each
+//! other: a library context cannot name reader state and vice versa, which is
+//! the compile-level kill switch the phase asks for. What stays here is only
+//! what both lifetimes legitimately share (chrome state, UI signals) and
+//! nothing that knows a document engine exists.
 
-pub mod boundary;
 pub mod chrome;
 pub mod dom_contract;
 pub mod memory;
 pub mod state;
 pub mod tauri_listen;
-pub mod time;
 
 pub use chrome::{ChromeState, ReaderSurface};
-pub use state::{AppearanceSignal, CoverImage, CoverMap, ReaderState, SidebarMode, Toast, UiState};
+pub use state::{AppearanceSignal, Motion, SidebarMode, Toast, UiState};

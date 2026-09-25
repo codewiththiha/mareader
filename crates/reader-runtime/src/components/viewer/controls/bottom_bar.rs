@@ -28,10 +28,10 @@ use leptos::html;
 use leptos::prelude::*;
 
 use super::page_navigation::{PageNavigation, StreamPageNav};
+use crate::state::ReaderState;
 use app_chrome::hooks::dom::page_list;
 use app_chrome::hooks::{DEFAULT_HOVER_DELAY, use_drag_hold, use_hover_reveal_with};
 use app_chrome::layers::BAR;
-use app_state::state::ReaderState;
 use app_ui::components::primitives::form::range_input::RangeInput;
 
 #[component]

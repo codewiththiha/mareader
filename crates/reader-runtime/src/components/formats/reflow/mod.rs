@@ -33,7 +33,7 @@ pub use stream::ReflowStreamLayout;
 pub use strip::ReflowPageStrip;
 
 use super::block_render::BlockRender;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 /// Which block renderer the open document's blocks get.
 ///

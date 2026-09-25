@@ -2,7 +2,7 @@
 //!
 //! A command is an INTENT — "step in", "re-fit", "the container moved" — and
 //! it is deliberately not a scale. It travels on a signal
-//! ([`app_state::state::reader::ZoomCommand`], which lives with the rest of the
+//! ([`crate::state::ZoomCommand`], which lives with the rest of the
 //! reactive shape) and the coordinator is its only consumer, so a zoom can
 //! never be executed by writing the scale signals from the side.
 //!
@@ -17,7 +17,7 @@
 //!   watchers differ on, and it is what keeps a sidebar slide from snapping a
 //!   reader's in-flight pinch.
 
-use app_state::state::reader::{ZoomCommand, ZoomTransition};
+use crate::state::{ZoomCommand, ZoomTransition};
 
 /// Does this command hold its crisp commit until the container settles?
 ///

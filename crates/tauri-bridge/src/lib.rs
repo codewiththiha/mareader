@@ -38,6 +38,21 @@ extern "C" {
     pub async fn open(options: JsValue) -> Result<JsValue, JsValue>;
 }
 
+/// The path an OS-level open handed to the app, taken once.
+///
+/// The native host queues the path a document was launched with — a
+/// file-manager double-click, an "open with", a launch argument — and every
+/// `take_pending_file` invocation DEQUEUES it. Which runtime consumes the
+/// path is not this crate's call: it only reaches the host. On the web, with
+/// nothing queued, or on a rejected IPC, this is `None`.
+pub async fn take_pending_file() -> Option<String> {
+    if !has_tauri() {
+        return None;
+    }
+    let value = invoke("take_pending_file", JsValue::UNDEFINED).await.ok()?;
+    value.as_string().filter(|s| !s.is_empty())
+}
+
 /// True when the app runs inside Tauri (`window.__TAURI__` is present). Off
 /// wasm there is no window to ask and `false` is also the truthful answer,
 /// which keeps the probe callable from host `cargo test`.

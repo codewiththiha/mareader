@@ -16,6 +16,8 @@
 //!   - [`floating`] — placement glue + dismissal mechanics
 //!   - [`layers`] — z-index layer tokens (re-exported by the app)
 
+pub mod appearance_hooks;
+pub mod dialog;
 pub mod floating;
 pub mod hooks;
 pub mod icon;

@@ -27,7 +27,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 use virtual_list_leptos::Virtualizer;
 
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 /// Aim a freshly mounted strip at the reader's position, re-asserting for up to
 /// `frames` frames until the DOM agrees.

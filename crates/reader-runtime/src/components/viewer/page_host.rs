@@ -43,7 +43,7 @@ use reflow_core::geometry::SpineSide;
 use crate::components::formats::pdf::{GlossOverlayProps, PdfPageCanvas, PdfPageStrip};
 use crate::components::formats::reflow::{ReflowPage, ReflowPageStrip, ReflowStreamLayout};
 use crate::components::viewer::shells::scroll_shell::ScrollShell;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 /// Where a page sits in the current layout — the only thing a layout has to say
 /// about itself that its pages cannot derive.
@@ -153,7 +153,7 @@ pub fn UniversalPageHost(
     // neither layout has to know that a page of type needs one and a page of
     // pixels needs both.
     let page_scale = state.viewer.zoom.display.read_only();
-    let texture = use_context::<app_state::state::TextureSignal>()
+    let texture = use_context::<crate::state::TextureSignal>()
         .expect("TextureSignal must be provided by app bootstrap");
     let host_id = host_id_for_mode(page_slot.mode(), page);
 

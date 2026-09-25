@@ -11,7 +11,7 @@ use leptos::prelude::*;
 
 use crate::components::viewer::shells::page_shell::PageShell;
 use crate::components::viewer::{PageSlot, UniversalPageHost};
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 #[component]
 pub fn SpreadLayout(

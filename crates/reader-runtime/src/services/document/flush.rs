@@ -13,7 +13,7 @@ use leptos::prelude::*;
 use pdf_engine::types::DocStatus;
 use reader_core::view::ViewMode;
 
-use app_state::boundary::ShellApi;
+use runtime_contract::boundary::ShellApi;
 
 /// Carry the open book's position into the library and save it.
 ///
@@ -64,7 +64,7 @@ pub(crate) fn flush_read_point(ctx: &crate::context::ReaderContext) {
     // to the persisted rows by the same `rows_for_read` rule. The session
     // holds no library signals to diff against — the send IS the write, and
     // the unconditional save is exactly what this function existed for.
-    ctx.api.read_point(&app_state::boundary::ReadPoint {
+    ctx.api.read_point(&runtime_contract::boundary::ReadPoint {
         book_id: ctx.reader.document.book_id.get_untracked(),
         path,
         page,

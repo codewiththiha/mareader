@@ -23,7 +23,7 @@ use reflow_core::block::TextBlock;
 use super::md::MdBlockView;
 use super::reflow::BlockSearchHits;
 use super::txt::TxtBlockView;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 /// Which format's renderer a block gets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

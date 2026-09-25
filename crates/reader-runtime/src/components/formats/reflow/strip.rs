@@ -29,7 +29,7 @@ use reflow_core::geometry::PAGE_HEIGHT;
 use super::page::ReflowPage;
 use crate::components::viewer::page_host::host_id_for_axis;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 #[component]
 pub fn ReflowPageStrip(

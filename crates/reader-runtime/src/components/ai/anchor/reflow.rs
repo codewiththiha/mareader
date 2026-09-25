@@ -11,7 +11,7 @@ use ai_core::gloss::{GlossBox, PageAnchor, ReflowSpot};
 use reader_core::view::ViewMode;
 
 use crate::components::ai::reflow_anchor;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 use super::FormatAnchorBridge;
 

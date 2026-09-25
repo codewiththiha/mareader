@@ -380,7 +380,7 @@ pub(crate) fn AddMenu(
                                         <Separator spacing="my-1" />
                                         <SectionLabel text="Restore" />
                                         {move || {
-                                            let now = app_state::time::now_ms();
+                                            let now = runtime_contract::time::now_ms();
                                             rows.get()
                                                 .into_iter()
                                                 .map(|row| {

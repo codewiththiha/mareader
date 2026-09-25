@@ -6,21 +6,15 @@
 //! reflowable document is laid out through exactly the same model as a PDF,
 //! so none of this may name a format.
 //!
-//! The windowing arithmetic lives in `virtual-list` / `virtual-list-leptos`;
-//! this module carries the reader's policy and re-exports [`Budget`] so a
-//! caller sizes a strip without naming two crates. The PDF page frame's own
-//! constant (the toolbar band the search reveal must clear) stays at
-//! `pdf_core`'s root.
-
-pub use virtual_list::Budget;
+//! The windowing arithmetic lives in `virtual-list` / `virtual-list-leptos`,
+//! and the reader runtime names those crates itself: nothing here may import
+//! them, or every consumer of a view constant would pull a virtualizer into
+//! its own graph (the library runtime's boundary is exactly that consumer).
+//! The PDF page frame's own constant (the toolbar band the search reveal
+//! must clear) stays at `pdf_core`'s root.
 
 /// Gap between pages in the continuous reader, in CSS px.
 pub const PAGE_GAP: f64 = 24.0;
-
-/// Comfortable read-ahead: half a screenful each way, up to 3 mounted pages
-/// total (visible + ~1 above + ~1 below). Each mounted page at 2× DPR plus
-/// its raw is ~64MB worst case, so the ceiling is what keeps idle RAM sane.
-pub const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {

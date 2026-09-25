@@ -17,7 +17,7 @@ use super::tasks::finish_task;
 use super::{Asked, rel_of, root_shelf_of};
 use crate::services::conflict;
 use crate::services::folder_label;
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 /// The shelf a run continues onto when the gate already knows it: a re-pick
 /// of ground a tree covers lights the shelf the pick landed on. The default

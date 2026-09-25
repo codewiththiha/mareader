@@ -14,7 +14,7 @@ use crate::services as ipc;
 use crate::services::covers::{self, prune_now};
 use crate::services::import;
 use crate::services::toast;
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 use super::folder_shelf_of;
 

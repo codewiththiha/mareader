@@ -2,7 +2,7 @@
 //! exact contract, now owned by the shell) and the OS-open plumbing (Tauri's
 //! pending-file handoff), forwarded into whichever runtime is live.
 
-use app_state::boundary::LaunchDocument;
+use runtime_contract::boundary::LaunchDocument;
 
 /// The URL launch for a reader boot. Samples-only guard included: the hook
 /// opens exactly the fixtures the repository ships.
@@ -60,7 +60,7 @@ pub fn install_os_open_handling(state: crate::state::ShellState) {
         use wasm_bindgen_futures::spawn_local;
         let st = state.clone();
         spawn_local(async move {
-            if let Some(path) = pdf_engine::api::take_pending_file().await {
+            if let Some(path) = tauri_bridge::take_pending_file().await {
                 let launch = crate::services::resolve_launch(&path).unwrap_or(LaunchDocument {
                     book_id: None,
                     path,
@@ -77,7 +77,7 @@ pub fn install_os_open_handling(state: crate::state::ShellState) {
         app_state::tauri_listen::tauri_listen("document-open-file", move |_ev: web_sys::Event| {
             let st = st.clone();
             spawn_local(async move {
-                if let Some(path) = pdf_engine::api::take_pending_file().await {
+                if let Some(path) = tauri_bridge::take_pending_file().await {
                     let launch = crate::services::resolve_launch(&path).unwrap_or(LaunchDocument {
                         book_id: None,
                         path,

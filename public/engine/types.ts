@@ -301,6 +301,5 @@ export type PDFReaderApi = {
    *  never landed would otherwise keep a full-page raster alive until the
    *  host unmounts. */
   sweepSnapshots: () => void;
-  takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;
 };

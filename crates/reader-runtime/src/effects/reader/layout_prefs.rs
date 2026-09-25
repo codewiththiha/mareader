@@ -24,7 +24,7 @@ use virtual_list_leptos::Virtualizer;
 use reader_core::view::{PAGE_GAP, ViewMode};
 use reader_core::zoom_math::FitMode;
 
-use app_state::state::reader::ZoomCommand;
+use crate::state::ZoomCommand;
 use app_ui::theme_paint::html_style;
 
 /// Install the gap and margin effects, in the order documented above.

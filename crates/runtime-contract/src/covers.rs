@@ -23,5 +23,11 @@ pub type CoverMap = std::collections::HashMap<String, Arc<CoverImage>>;
 /// art, so the cache the open files into is the cache the queue filled.
 pub const COVER_WIDTH: f64 = 240.0;
 
+/// The page aspect (height/width) a tile assumes before a real cover or a
+/// page size arrives: the shelf's placeholder art and the reader's missing-
+/// size fallback must draw the SAME box or the grid would jump when the real
+/// cover lands. Both runtimes name that one number.
+pub const DEFAULT_PAGE_ASPECT: f64 = 0.75;
+
 /// The persisted map's entry cap (`library-core`'s blob budget rule).
 pub const COVER_CAP: usize = 400;

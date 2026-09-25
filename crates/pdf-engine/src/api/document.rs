@@ -1,4 +1,4 @@
-//! Document lifecycle: open, outline, teardown, covers, OS-file handoff.
+//! Document lifecycle: open, outline, teardown, covers.
 
 use crate::bridge;
 use crate::types::{CoverResult, OpenResult, OutlineEntry};
@@ -62,16 +62,4 @@ pub async fn cover_data_url(path: &str, max_width: f64) -> Result<CoverResult, E
     require_pdf_reader()?;
     let value = bridge::cover_data_url(path, max_width).await;
     resolve::<CoverResult>(value, "cover")
-}
-
-/// Collect the pending OS-opened PDF path from the backend (double-click,
-/// "Open with", default-app launch), if any. Consumes it, so a stray double
-/// wake-up can never open the same file twice. Resolves None (never errors)
-/// outside Tauri and whenever the backend has nothing queued.
-pub async fn take_pending_file() -> Option<String> {
-    if !tauri_bridge::has_tauri() || !bridge::has_pdf_reader() {
-        return None;
-    }
-    let value = bridge::take_pending_file().await;
-    value.as_string().filter(|s| !s.is_empty())
 }

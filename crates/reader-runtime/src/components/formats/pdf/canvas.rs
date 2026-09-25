@@ -46,7 +46,7 @@ pub struct GlossOverlayProps {
     /// The reader's state: what the stroke layer's resolver and refresh
     /// fingerprint are built from, here rather than at the call site because
     /// the resolver needs this host's page number and element id.
-    pub state: app_state::state::ReaderState,
+    pub state: crate::state::ReaderState,
     /// The document's persisted gloss marks.
     pub marks: Signal<Vec<ai_core::gloss::GlossMark>>,
     /// Id of the gloss mark currently waiting on the model.
@@ -60,7 +60,7 @@ pub struct GlossOverlayProps {
 impl GlossOverlayProps {
     /// The reader's shared gloss state as a page host's overlay inputs —
     /// the only construction the reader's page views need.
-    pub fn from_gloss(state: app_state::state::ReaderState) -> Self {
+    pub fn from_gloss(state: crate::state::ReaderState) -> Self {
         Self {
             state,
             marks: state.gloss.marks.read_only().into(),

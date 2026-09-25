@@ -3,8 +3,8 @@
 
 use leptos::prelude::*;
 
+use crate::state::{NO_DOCUMENT, ReaderState};
 use app_chrome::icon::{Icon, IconName};
-use app_state::state::reader::{NO_DOCUMENT, ReaderState};
 use pdf_engine::types::DocStatus;
 
 #[component]

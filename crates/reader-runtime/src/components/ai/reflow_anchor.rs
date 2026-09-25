@@ -44,10 +44,10 @@ use super::anchor::host_id_for_mode;
 use super::gloss::mark_layer::MARK_RADIUS;
 use crate::components::formats::reflow::spot::{clamp_span, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
+use crate::state::ReaderState;
+use crate::state::ReflowContent;
 use app_chrome::hooks::dom::range_rects;
 use app_state::dom_contract::BLOCK_INDEX_ATTR;
-use app_state::state::ReaderState;
-use app_state::state::reader::ReflowContent;
 use app_ui::theme_paint::document_element;
 
 /// Version tag on the envelope in [`GlossMark::context`]. Bump it if the

@@ -290,7 +290,7 @@ pub(crate) struct Snapshot {
     virtualizer_listeners: usize,
     virtualizer_observers: usize,
     virtualizer_timers: usize,
-    /// The reader's mounted-window ceiling (`reader_core::view::RENDER_BUDGET`
+    /// The reader's mounted-window ceiling ([`crate::features::virtualizers::RENDER_BUDGET`]
     /// max items). The browser baseline asserts its observed peaks against
     /// this number, so the test enforces the live policy rather than a
     /// copy of it.
@@ -405,7 +405,7 @@ pub(crate) fn snapshot() -> Snapshot {
         virtualizer_listeners,
         virtualizer_observers,
         virtualizer_timers,
-        render_budget_max_items: reader_core::view::RENDER_BUDGET.max_items as u32,
+        render_budget_max_items: crate::features::virtualizers::RENDER_BUDGET.max_items as u32,
         runtime: runtime_view.map(|view| {
             let engine_stats: pdf_engine::api::EngineStats = engine.unwrap_or_default();
             RuntimeSnapshot {
@@ -465,7 +465,7 @@ pub(crate) fn snapshot_json() -> String {
 /// consumer waits on: lifecycle transitions, document status changes, page
 /// turns, virtualizer registration, and the dispose beats. Bookkeeping, not
 /// logging: no output unless someone is listening.
-pub fn publish_digest(api: &dyn app_state::boundary::ShellApi) {
+pub fn publish_digest(api: &dyn runtime_contract::boundary::ShellApi) {
     api.publish_digest(snapshot_json());
 }
 

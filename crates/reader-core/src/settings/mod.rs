@@ -19,10 +19,10 @@ mod gloss;
 mod layout;
 
 // The reflowable formats' typography SCHEMA lives with the rest of the
-// persisted settings, because the field names are the storage contract. The
-// CSS it resolves into is `reflow_core::typography`, which re-exports these
-// names so a component reads a knob and paints it from one import — hence
-// `pub`.
+// persisted settings, because the field names are the storage contract, and
+// the CSS it resolves into lives beside it. `reflow_core::typography`
+// re-exports these names so a component reads a knob and paints it from one
+// import — hence `pub`.
 pub mod typography;
 
 /// The layout tab's and animations tab's schemas live in their own files;

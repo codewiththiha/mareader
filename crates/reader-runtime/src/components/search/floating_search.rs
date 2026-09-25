@@ -15,12 +15,12 @@ use super::result_list::ResultList;
 use crate::effects::reader::search::{
     activate_match, clear_search, dismiss_search, run_search, search_navigate,
 };
+use crate::state::ReaderState;
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::hooks::use_timeout::use_debounce;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use app_chrome::layers::{BAR, POPOVER};
-use app_state::state::ReaderState;
 
 const SEARCH_DEBOUNCE_MS: u64 = 180;
 

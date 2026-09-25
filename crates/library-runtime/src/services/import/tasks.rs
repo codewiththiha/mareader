@@ -7,7 +7,7 @@ use leptos::prelude::*;
 
 use crate::services::toast;
 use crate::state::library::ImportTask;
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 /// Minted by [`library_core::id`]'s own counter, like every other library id:
 /// two runs minted in one millisecond never share a card.

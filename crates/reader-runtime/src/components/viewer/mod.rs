@@ -46,7 +46,7 @@ use crate::components::viewer::layouts::scroll_horizontal::ScrollHorizontalLayou
 use crate::components::viewer::layouts::scroll_vertical::ScrollVerticalLayout;
 use crate::components::viewer::layouts::single::SingleLayout;
 use crate::components::viewer::layouts::spread::SpreadLayout;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 #[component]
 pub fn Viewer(

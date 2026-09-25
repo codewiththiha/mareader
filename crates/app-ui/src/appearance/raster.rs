@@ -1,7 +1,9 @@
-//! The raster pipeline's appearance hooks: the token set it paints and the
-//! engine bridge it needs. A reflowable page never touches these — its
-//! variables live in `reflow.rs` and it repaints from CSS alone, with no
-//! engine call.
+//! The raster pipeline's appearance tokens, plus the dispatch points toward
+//! the raster engine a host runtime installed (`app_chrome::appearance_hooks`).
+//! A reflowable page never touches these — its variables live in `reflow.rs`
+//! and it repaints from CSS alone, with no engine call. This crate must NOT
+//! name the engine: the same appearance chrome runs inside the library
+//! runtime, whose graph has no raster engine in it.
 
 use reader_core::appearance::Appearance;
 
@@ -30,11 +32,11 @@ pub fn token_vars(a: &Appearance) -> Vec<(&'static str, String)> {
     vars
 }
 
-/// Re-bake the theme into every raster the engine already holds (mounted
-/// pages + cached thumbnails). A no-op while no PDF reader is mounted —
-/// the guard lives in the engine api.
+/// Re-bake the theme into every raster the host runtime's engine holds
+/// (mounted pages + cached thumbnails). A no-op while no runtime owns a
+/// raster engine — the library answers the same menu with CSS alone.
 pub fn refresh_theme() {
-    pdf_engine::api::refresh_theme();
+    app_chrome::appearance_hooks::refresh_theme();
 }
 
 /// Enter/leave the scrub window's REAL-TIME COMPOSITING: while a slider drag
@@ -42,12 +44,12 @@ pub fn refresh_theme() {
 /// the live CSS filter/blend so the page re-colours per frame; leaving
 /// re-renders the pre-themed (baked) rasters from the raws.
 pub fn set_scrub_mode(on: bool) {
-    pdf_engine::api::set_scrub_mode(on);
+    app_chrome::appearance_hooks::set_scrub_mode(on);
 }
 
 /// Whether the appearance popover is open: the engine retains rendered
 /// pages' unbaked raws while it is, so the session's first tint drag blits
 /// instead of re-rendering every page (public/engine/state.ts).
 pub fn set_appearance_menu_open(on: bool) {
-    pdf_engine::api::set_appearance_menu_open(on);
+    app_chrome::appearance_hooks::set_appearance_menu_open(on);
 }

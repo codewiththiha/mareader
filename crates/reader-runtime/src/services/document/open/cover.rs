@@ -1,13 +1,13 @@
 //! The shelf cover: page 1 of the book, as a small JPEG.
 
-use app_state::boundary::ShellApi;
 use leptos::prelude::*;
+use runtime_contract::boundary::ShellApi;
 use wasm_bindgen_futures::spawn_local;
 
 use pdf_engine::api as engine;
 
 use crate::services::document::session;
-use app_state::state::covers::COVER_WIDTH;
+use runtime_contract::covers::COVER_WIDTH;
 
 /// Render and hand this book's cover to the Shell, unless the launch already
 /// carried one (the library had it). Regenerating on every open re-rendered
@@ -33,7 +33,7 @@ pub(super) fn ensure(ctx: &crate::context::ReaderContext, path: String, stamp: u
         };
         ctx.api.save_cover(
             &path,
-            &app_state::state::covers::CoverImage {
+            &runtime_contract::covers::CoverImage {
                 data_url: c.data_url,
                 width: c.width,
                 height: c.height,

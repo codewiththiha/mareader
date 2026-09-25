@@ -7,12 +7,12 @@ license = "MIT"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-# The only two workspace crates reader-core names, both leaves of the graph:
-# the persisted blend config references the paper model `pdf-paper` defines, and
-# the render budget is `virtual-list`'s type. Neither may depend back on this
-# crate, and no format crate may be named here.
+# The one workspace crate reader-core names, a pure types leaf: the persisted
+# blend config references the paper model `pdf-paper` defines. It may not
+# depend back on this crate, and no format crate — and no virtualizer crate —
+# may be named here (a settings read must never pull a renderer into the
+# reader-neutral graph).
 pdf-paper = { path = "../pdf-paper" }
-virtual-list = { path = "../virtual-list" }
 
 [dev-dependencies]
 serde_json = "1"

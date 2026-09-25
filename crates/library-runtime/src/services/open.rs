@@ -6,9 +6,9 @@
 use leptos::prelude::WithUntracked;
 
 use crate::context::LibraryContext;
-use app_state::boundary::LaunchDocument;
-use app_state::boundary::ShellApi;
 use library_core::book::resume_point;
+use runtime_contract::boundary::LaunchDocument;
+use runtime_contract::boundary::ShellApi;
 
 /// Open a library row — what every shelf surface calls (a card, a list row,
 /// the context menu's Open). A shelf target reveals; a book (or an unknown

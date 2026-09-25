@@ -30,7 +30,7 @@ use crate::services::covers;
 use crate::services::folder_label;
 use crate::services::reveal;
 use crate::state::library::{ImportTask, NoteKind};
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 /// One spelling for the two loops a folder run mints through — the books it
 /// adds and the books the library already held — so a rung cannot be minted

@@ -4,11 +4,12 @@
 //! place they live — typed, so a mount/render call allocates no payload
 //! objects), `types` mirrors the engine's return shapes, `api` provides typed
 //! `Result`-returning wrappers for the rest of the app (one focused module per
-//! surface: document, render, search, paper, dialog, theme), and `backdrop` is
+//! surface: document, render, search, paper, theme), and `backdrop` is
 //! the paper session state machine — the `pdf-paper` crate's brain, wired to
-//! the engine's eyes. The `window.__TAURI__` externs this crate still touches
-//! (the file dialog) come from the `tauri-bridge` crate, which owns that
-//! surface so no format crate does.
+//! the engine's eyes. The `window.__TAURI__` externs this crate touches come
+//! from the `tauri-bridge` crate, which owns that surface so no format crate
+//! does — and the native open-file dialog is not an engine surface at all
+//! anymore (it lives in `app-chrome`).
 //!
 //! `bridge` is private: callers go through `api`, except for the raw engine
 //! probes (engine version, `window.PDFReader` presence) re-exported at the

@@ -5,7 +5,7 @@
 //! The rules are not here — they are `library_core`, pure and host-tested.
 //! This module is the reactive half: the signals those rules are applied to.
 
-use app_state::state::covers::CoverMap;
+use runtime_contract::covers::CoverMap;
 
 use std::collections::HashSet;
 

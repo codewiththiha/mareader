@@ -10,7 +10,7 @@
 //! tail owns its own content seeding and calls [`enter`] for everything a
 //! reader expects to behave the same whatever the file extension was.
 
-use app_state::boundary::ShellApi;
+use runtime_contract::boundary::ShellApi;
 
 mod cover;
 mod enter;
@@ -39,8 +39,8 @@ use super::session;
 /// launch) into the shared open flow. Called once from the app root.
 ///
 /// Two paths, one handoff point:
-///   * PULL — `take_pending_file` collects whatever the OS handed the
-///     backend before the webview finished mounting (initial-launch argv on
+///   * PULL — `tauri_bridge::take_pending_file` collects whatever the OS
+///     handed the backend before the webview finished mounting (initial-launch argv on
 ///     Windows/Linux, the macos open-file event at launch). An event emitted
 ///     before mount would be lost, so the command is the source of truth.
 ///   * PUSH — the backend emits `document-open-file` while the app runs
@@ -60,7 +60,7 @@ pub fn init_open_file_handling(ctx: crate::context::ReaderContext) {
     }
     let st = ctx;
     spawn_local(async move {
-        if let Some(path) = engine::take_pending_file().await {
+        if let Some(path) = tauri_bridge::take_pending_file().await {
             open_path(st, path);
         }
     });
@@ -68,13 +68,13 @@ pub fn init_open_file_handling(ctx: crate::context::ReaderContext) {
 
 /// Native open-dialog flow: pick a file, then run the shared open-flow.
 ///
-/// Cancel (the engine's own [`CANCELLED`](pdf_engine::api::dialog::CANCELLED) sentence) is a
+/// Cancel (the chrome's own [`CANCELLED`](app_chrome::dialog::CANCELLED) sentence) is a
 /// silent no-op; any other error surfaces on the doc status / status bar.
 pub fn open_dialog(ctx: crate::context::ReaderContext) {
     spawn_local(async move {
-        match engine::pick_document().await {
+        match app_chrome::dialog::pick_document().await {
             Ok(path) => open_path(ctx, path),
-            Err(msg) if msg != pdf_engine::api::dialog::CANCELLED => fail(ctx, msg),
+            Err(msg) if msg != app_chrome::dialog::CANCELLED => fail(ctx, msg),
             Err(_) => {}
         }
     });
@@ -102,8 +102,8 @@ pub fn open_path(ctx: crate::context::ReaderContext, path: String) {
 
 /// A descriptor for a path nothing in the store answers for: the open
 /// proceeds unnamed, and the read record mints the row.
-pub fn bare_launch(path: &str) -> app_state::boundary::LaunchDocument {
-    app_state::boundary::LaunchDocument {
+pub fn bare_launch(path: &str) -> runtime_contract::boundary::LaunchDocument {
+    runtime_contract::boundary::LaunchDocument {
         book_id: None,
         path: path.to_string(),
         resume_page: 1,
@@ -119,7 +119,7 @@ pub fn bare_launch(path: &str) -> app_state::boundary::LaunchDocument {
 /// this runtime; an in-session open reuses the live slot.
 pub(crate) fn open_with_launch(
     ctx: crate::context::ReaderContext,
-    launch: app_state::boundary::LaunchDocument,
+    launch: runtime_contract::boundary::LaunchDocument,
 ) {
     let path = launch.path.clone();
     // WORK gate: refused once the runtime entered Disposing (a session end
@@ -198,7 +198,7 @@ fn ready(
     // The read record rides the boundary: the Shell's recorder writes the
     // rows (and mints the row for a file the library never knew) — the
     // session itself holds no library ctx.
-    ctx.api.read_point(&app_state::boundary::ReadPoint {
+    ctx.api.read_point(&runtime_contract::boundary::ReadPoint {
         book_id: ctx.reader.document.book_id.get_untracked(),
         path: path.clone(),
         page: seeded.resume,

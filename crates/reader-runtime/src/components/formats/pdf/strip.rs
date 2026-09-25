@@ -40,7 +40,7 @@ use virtual_list_leptos::{VirtualItem, VirtualItemState, Virtualizer};
 
 use super::canvas::{GlossOverlayProps, PdfPageCanvas};
 use crate::components::viewer::page_host::{canvas_id_for_axis, host_id_for_axis};
-use app_state::state::{ReaderState, TextureSignal};
+use crate::state::{ReaderState, TextureSignal};
 use pdf_core::pixel_grid::{one_device_px, snap_px};
 
 #[component]

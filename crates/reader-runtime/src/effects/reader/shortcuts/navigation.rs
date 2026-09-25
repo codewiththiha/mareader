@@ -12,8 +12,8 @@ use wasm_bindgen::JsCast;
 
 use std::cell::Cell;
 
+use crate::state::ReaderState;
 use app_chrome::hooks::dom::{h_page_list, page_list};
-use app_state::state::ReaderState;
 use app_ui::components::primitives::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
 use reader_core::view::{ViewMode, spread_step_next, spread_step_prev};
 

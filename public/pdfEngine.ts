@@ -11,7 +11,7 @@ import {
   pooledIntermediateBytesEstimate,
   releaseCanvas,
 } from "./engine/canvas";
-import { coverDataUrl, destroyTask, open, resolveOutline, takePendingFile } from "./engine/loader";
+import { coverDataUrl, destroyTask, open, resolveOutline } from "./engine/loader";
 import {
   beginRenderGeneration,
   cancelPage,
@@ -374,7 +374,6 @@ globalThis.PDFReader = {
   sweepSnapshots: () => {
     session.sweepSnapshots();
   },
-  takePendingFile,
   prefetchThumb,
 } satisfies PDFReaderApi;
 

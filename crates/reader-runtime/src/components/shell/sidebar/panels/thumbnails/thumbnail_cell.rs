@@ -20,8 +20,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
 
+use crate::state::ReaderState;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
-use app_state::state::ReaderState;
 use pdf_engine::api as engine;
 
 use super::geometry::{CELL_W, THUMB_SCALE};

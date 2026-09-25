@@ -33,8 +33,8 @@ use leptos::prelude::*;
 
 use app_chrome::hooks::use_raf::FrameLoop;
 
+use crate::state::{ReaderState, ZoomTransition};
 use crate::zoom::actuator::ZoomActuator;
-use app_state::state::reader::{ReaderState, ZoomTransition};
 use app_ui::components::primitives::motion::reduced_motion::prefers_reduced_motion;
 
 use super::config;

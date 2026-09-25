@@ -1,7 +1,10 @@
 //! Reader-level reactive state, one file per domain: the document, the viewer
 //! signals, the zoom pipeline's shape, search, the AI text selection and the
-//! gloss marks. Pure UI chrome (sidebar, toast) lives in `state::ui`; pure
-//! domain logic in `reader-core` and the format crates.
+//! gloss marks. Pure UI chrome (sidebar, toast) lives in `app_state::state`;
+//! pure domain logic in `reader-core` and the format crates. This tree is the
+//! reader runtime's own — no other runtime's dependency graph can reach it,
+//! which is the compile-level kill switch for "reader state is not exported
+//! through the library dependency graph".
 //!
 //! This module is the barrel. The domains have nothing to say to each other
 //! beyond the struct at the bottom that owns one of each — with the single
@@ -26,10 +29,10 @@ use reflow_core::typography::TextSettings;
 // the rest are reached through their own module, which is the point of the
 // split.
 pub use ai::{AiSelectionState, SelectionDetail};
-pub use document::{DEFAULT_PAGE_ASPECT, DocumentState, NO_DOCUMENT, ReflowContent};
+pub use document::{DocumentState, NO_DOCUMENT, ReflowContent};
 pub use gloss::GlossState;
 pub use search::SearchState;
-pub use viewer::{Motion, ViewerSignals};
+pub use viewer::ViewerSignals;
 pub use zoom::{ZoomCommand, ZoomTransition};
 
 /// Page-host texture, provided via Leptos context by the app shell (derived

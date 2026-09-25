@@ -18,7 +18,7 @@ use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::SeamVocab;
 use crate::services::ask_relink;
-use app_state::state::reader::document::DEFAULT_PAGE_ASPECT;
+use runtime_contract::covers::DEFAULT_PAGE_ASPECT;
 
 #[component]
 pub(crate) fn BookCard(

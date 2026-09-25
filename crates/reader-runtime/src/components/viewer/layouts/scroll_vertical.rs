@@ -12,7 +12,7 @@ use leptos::prelude::*;
 use virtual_list_leptos::Virtualizer;
 
 use crate::components::viewer::UniversalStreamHost;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 #[component]
 pub fn ScrollVerticalLayout(

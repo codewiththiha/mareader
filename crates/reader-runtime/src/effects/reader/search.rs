@@ -25,9 +25,9 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
+use crate::state::ReaderState;
 use app_chrome::TITLE_BAR_H;
 use app_chrome::hooks::dom::{h_page_list, page_list};
-use app_state::state::ReaderState;
 use pdf_engine::api as engine;
 use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
 use reader_core::view::ViewMode;

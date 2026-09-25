@@ -15,12 +15,12 @@ use library_core::sort::SortKey;
 use library_core::view::{CoverFit, LibraryLayout, LibraryView};
 
 use crate::services::create_shelf_and_enter;
-use app_state::boundary::ShellApi;
 use app_ui::components::primitives::controls::toggle_button::ToggleButton;
 use app_ui::components::primitives::floating::menu_popover::MenuPopover;
 use app_ui::components::primitives::menu::menu_item::MenuItem;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 use app_ui::components::primitives::menu::separator::Separator;
+use runtime_contract::boundary::ShellApi;
 
 const SORTS: [SortKey; 5] = [
     SortKey::Manual,

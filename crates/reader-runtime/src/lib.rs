@@ -5,13 +5,14 @@
 //! A session is an explicit instance: [`start_session`] creates the reactive
 //! ownership root, the [`ReaderContext`] (reader state + the Phase 1
 //! `ReaderRuntime` lifecycle owner + the session's settings/UI slices + the
-//! [`ShellApi`](app_state::boundary::ShellApi) boundary), installs the
+//! [`ShellApi`](runtime_contract::boundary::ShellApi) boundary), installs the
 //! reader effects INSIDE that scope, and mounts the reader host. [`dispose`]
 //! unmounts the root — whose first-registered cleanup is the Phase 1
 //! disposal chain — and resolves only when the runtime reports its own
 //! disposal complete. The compiled module stays cached between sessions;
 //! nothing live does.
 
+pub mod appearance_hooks;
 pub mod components;
 pub mod context;
 pub mod diagnostics;
@@ -19,14 +20,16 @@ pub mod effects;
 pub mod features;
 pub mod runtime;
 pub mod services;
+pub mod state;
 pub mod zoom;
 
 use std::cell::{Cell, RefCell};
 
-use app_state::boundary::{DocStatusReport, LaunchDocument, ShellApi};
-use app_state::state::{ReaderState, UiState};
+use crate::state::ReaderState;
+use app_state::state::UiState;
 use app_ui::components::primitives::overlay::lanes::OverlayBoard;
 use leptos::prelude::*;
+use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ShellApi};
 use wasm_bindgen::JsCast;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -135,9 +138,8 @@ pub fn start_session(
             // re-run their `texture-*` class.
             let appearance: app_state::AppearanceSignal =
                 Memo::new(move |_| settings.with(|s| s.appearance));
-            let texture: app_state::state::TextureSignal =
-                Memo::new(move |_| appearance.get().texture);
-            let typography: app_state::state::reader::TypographySignal =
+            let texture: crate::state::TextureSignal = Memo::new(move |_| appearance.get().texture);
+            let typography: crate::state::TypographySignal =
                 Memo::new(move |_| settings.with(|s| s.text.clone()));
             provide_context(texture);
             provide_context(typography);
@@ -154,6 +156,14 @@ pub fn start_session(
             on_cleanup(move || {
                 ctx.runtime.dispose(ctx);
             });
+
+            // The shared appearance chrome's raster hooks are THIS session's
+            // engine to answer: while the reader is live the menu's
+            // re-bake/scrub/retain-raws calls reach the PDF engine, and the
+            // guard's cleanup at unmount takes the answerer away with the
+            // session (the library runtime installs none of these).
+            let appearance_hooks_guard = appearance_hooks::install();
+            on_cleanup(move || drop(appearance_hooks_guard));
 
             LIVE_CTX.with(|c| *c.borrow_mut() = Some(ctx));
 
@@ -245,7 +255,7 @@ pub fn dispose(id: u32) -> js_sys::Promise {
 
 /// An in-session command from the Shell (only drops arrive this way today):
 /// open another document inside the live session.
-pub fn command(id: u32, cmd: app_state::boundary::LaunchDocument) {
+pub fn command(id: u32, cmd: runtime_contract::boundary::LaunchDocument) {
     let live = SESSION.with(|s| s.borrow().as_ref().filter(|x| x.id == id).map(|_| ()));
     if live.is_some() {
         let ctx = LIVE_CTX.with(|c| *c.borrow());
@@ -439,7 +449,7 @@ pub fn web_launch() -> LaunchDocument {
 pub fn mareader_reader_start(host: wasm_bindgen::JsValue, launch_json: String) -> u32 {
     console_error_panic_hook::set_once();
     let host: web_sys::Element = host.unchecked_into();
-    let launch: app_state::boundary::LaunchDocument =
+    let launch: runtime_contract::boundary::LaunchDocument =
         serde_json::from_str(&launch_json).expect("launch descriptor");
     // Session-scoped bridge wiring happens inside start_session's scope.
     let id = start_session(&host, launch, context::ApiHandle::Js);
@@ -460,7 +470,7 @@ pub fn mareader_reader_dispose(id: u32) -> js_sys::Promise {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = mareaderReaderCommand)]
 pub fn mareader_reader_command(id: u32, cmd_json: String) {
-    if let Ok(cmd) = serde_json::from_str::<app_state::boundary::LaunchDocument>(&cmd_json) {
+    if let Ok(cmd) = serde_json::from_str::<runtime_contract::boundary::LaunchDocument>(&cmd_json) {
         command(id, cmd);
     }
 }

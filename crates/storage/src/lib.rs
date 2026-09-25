@@ -18,7 +18,7 @@ use ai_core::gloss::GlossMark;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
 
-use app_state::state::covers::{CoverImage, CoverMap};
+use runtime_contract::covers::{CoverImage, CoverMap};
 // The library's key names, its persisted shape and the migration from the shape
 // it replaced all live in `library_core::blob`, so the schema and the rules that
 // keep it valid are one crate's business rather than two.
@@ -221,7 +221,7 @@ pub fn load_library() -> LibraryBlob {
     if legacy.is_empty() {
         return LibraryBlob::default();
     }
-    let mut blob = migrate_v1(legacy, app_state::time::now_ms());
+    let mut blob = migrate_v1(legacy, runtime_contract::time::now_ms());
     sanitize_library(&mut blob);
     blob
 }
@@ -268,7 +268,7 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
 /// rows the read belongs to (the shared row set the resume rules name) take
 /// the page and fraction. This is the Shell's recorder body AND the
 /// standalone substitute's — one implementation, two deployment callers.
-pub fn apply_read_point(point: &app_state::boundary::ReadPoint) {
+pub fn apply_read_point(point: &runtime_contract::boundary::ReadPoint) {
     let mut blob = load_library();
     // The same recorder the reader's own tail used when the tree was unified
     // (`library_core::book::record_read`): it writes every row the read
@@ -285,7 +285,7 @@ pub fn apply_read_point(point: &app_state::boundary::ReadPoint) {
         point.title.clone(),
         point.author.clone(),
         lib_point,
-        app_state::time::now_ms(),
+        runtime_contract::time::now_ms(),
     );
     let _ = save_library(&blob);
 }
@@ -415,7 +415,10 @@ pub fn copy_gloss(from_id: &str, to_id: &str) {
     if marks.is_empty() {
         return;
     }
-    all.insert(to_id.to_string(), re_ided(marks, app_state::time::now_ms()));
+    all.insert(
+        to_id.to_string(),
+        re_ided(marks, runtime_contract::time::now_ms()),
+    );
     if let Err(e) = save_gloss(&all) {
         e.report();
     }
@@ -446,7 +449,7 @@ fn re_ided(marks: &[GlossMark], now_ms: u64) -> Vec<GlossMark> {
 /// resume point, the display name and the cover. `None` for a path the store
 /// does not know — the reader then opens it unnamed, and the read record
 /// mints the row.
-pub fn resolve_launch(path: &str) -> Option<app_state::boundary::LaunchDocument> {
+pub fn resolve_launch(path: &str) -> Option<runtime_contract::boundary::LaunchDocument> {
     use library_core::book::resume_point;
     let blob = load_library();
     let book_id = library_core::book::book_rows(&blob.books)
@@ -457,7 +460,7 @@ pub fn resolve_launch(path: &str) -> Option<app_state::boundary::LaunchDocument>
         .as_deref()
         .and_then(|id| library_core::book::find_by_id(&blob.books, id))
         .map(|b| b.title());
-    Some(app_state::boundary::LaunchDocument {
+    Some(runtime_contract::boundary::LaunchDocument {
         book_id,
         path: path.to_string(),
         resume_page,

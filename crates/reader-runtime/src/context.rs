@@ -4,10 +4,11 @@
 //! cannot name library state, which is the compile-level kill switch the
 //! phase asks for.
 
-use app_state::boundary::{DocStatusReport, LaunchDocument, ReadPoint, ShellApi};
-use app_state::state::{ReaderState, UiState};
+use crate::state::ReaderState;
+use app_state::state::UiState;
 use leptos::prelude::*;
 use reader_core::settings::Settings;
+use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ReadPoint, ShellApi};
 
 /// The reader session's own state bundle. Field names match the old
 /// `ReaderContext`'s reader-reachable paths (`ctx.reader.*`, `ctx.settings`,
@@ -76,13 +77,13 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi.save_library(blob),
         }
     }
-    fn save_covers(&self, covers: &app_state::state::covers::CoverMap) {
+    fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
         match self {
             ApiHandle::Js => JsShellApi.save_covers(covers),
             ApiHandle::Standalone => StandaloneApi.save_covers(covers),
         }
     }
-    fn save_cover(&self, path: &str, image: &app_state::state::covers::CoverImage) {
+    fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         match self {
             ApiHandle::Js => JsShellApi.save_cover(path, image),
             ApiHandle::Standalone => StandaloneApi.save_cover(path, image),
@@ -225,25 +226,25 @@ impl ShellApi for JsShellApi {
             Some(serde_json::to_string(blob).unwrap_or_default()),
         );
     }
-    fn save_covers(&self, covers: &app_state::state::covers::CoverMap) {
+    fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
         self.call(
             "saveCovers",
             Some(serde_json::to_string(covers).unwrap_or_default()),
         );
     }
-    fn save_cover(&self, path: &str, image: &app_state::state::covers::CoverImage) {
+    fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         #[derive(serde::Serialize)]
         #[serde(rename_all = "camelCase")]
         struct One<'a> {
             path: &'a str,
-            image: &'a app_state::state::covers::CoverImage,
+            image: &'a runtime_contract::covers::CoverImage,
         }
         self.call(
             "saveCover",
             Some(serde_json::to_string(&One { path, image }).unwrap_or_default()),
         );
     }
-    fn doc_status(&self, report: &app_state::boundary::DocStatusReport) {
+    fn doc_status(&self, report: &runtime_contract::boundary::DocStatusReport) {
         self.call(
             "docStatus",
             Some(serde_json::to_string(report).unwrap_or_default()),
@@ -313,15 +314,15 @@ impl ShellApi for StandaloneApi {
     fn save_library(&self, blob: &library_core::blob::LibraryBlob) {
         let _ = storage::save_library(blob);
     }
-    fn save_covers(&self, covers: &app_state::state::covers::CoverMap) {
+    fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
         let _ = storage::save_covers(covers);
     }
-    fn save_cover(&self, path: &str, image: &app_state::state::covers::CoverImage) {
+    fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         let mut map = storage::load_covers();
         map.insert(path.to_string(), std::sync::Arc::new(image.clone()));
         let _ = storage::save_covers(&map);
     }
-    fn doc_status(&self, _report: &app_state::boundary::DocStatusReport) {}
+    fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
     fn reload(&self) {
         app_chrome::window::api::reload_window();

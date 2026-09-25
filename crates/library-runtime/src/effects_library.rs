@@ -70,7 +70,7 @@ fn install_progress_sink(state: crate::context::LibraryContext) {
 }
 
 fn rescan_once(state: crate::context::LibraryContext) {
-    let now = app_state::time::now_ms();
+    let now = runtime_contract::time::now_ms();
     if !RESCAN.with(|gate| gate.borrow_mut().due(now)) {
         return;
     }

@@ -16,9 +16,9 @@ use crate::components::viewer::UniversalStripHost;
 use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::layouts::layout_chrome;
+use crate::state::ReaderState;
 use app_chrome::hooks::dom::{H_PAGE_LIST_ID, PAGE_LIST_ID};
 use app_chrome::hooks::use_resize_observer::observe_content_size;
-use app_state::state::ReaderState;
 
 #[component]
 pub fn ScrollShell(

@@ -22,18 +22,21 @@ export async function run(): Promise<void> {
   }
   console.log("resolveOutline ok");
 
-  // The OS file handoff wrapper.
-  const none = await PDFReader.takePendingFile();
-  if (none !== null) throw new Error("takePendingFile should resolve null, got " + none);
+  // The OS file handoff: not an engine surface anymore — the shell and the
+  // reached-for runtimes invoke the queued-path command straight through
+  // __TAURI__. The smoke still proves the command's queue/dequeue contract.
+  const invoke = (cmd: string): Promise<unknown> => fakeWindow.__TAURI__!.core.invoke(cmd);
+  const none = await invoke("take_pending_file");
+  if (none !== null) throw new Error("take_pending_file should resolve null, got " + none);
   let queuedPath: string | null = null;
   const realInvoke = fakeWindow.__TAURI__!.core.invoke;
   fakeWindow.__TAURI__!.core.invoke = async (cmd: string): Promise<unknown> =>
     cmd === "take_pending_file" ? queuedPath : realInvoke(cmd);
   queuedPath = "C:/Users/reader/Documents/book.pdf";
-  const taken = await PDFReader.takePendingFile();
-  if (taken !== queuedPath) throw new Error("takePendingFile did not return the path: " + taken);
+  const taken = await invoke("take_pending_file");
+  if (taken !== queuedPath) throw new Error("take_pending_file did not return the path: " + taken);
   queuedPath = null;
   fakeWindow.__TAURI__!.core.invoke = realInvoke;
-  console.log("takePendingFile ok");
+  console.log("take_pending_file ok");
 
 }

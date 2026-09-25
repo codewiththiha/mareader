@@ -6,10 +6,10 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
+use app_chrome::dialog::CANCELLED;
 use library_core::book::{Origin, find_book_mut, find_row, stem_of};
 use library_core::folder::FolderOpts;
 use library_core::scan::selectable_formats;
-use pdf_engine::api::dialog::CANCELLED;
 
 use super::super::{file_name, pick_folder};
 use crate::services as ipc;
@@ -102,13 +102,13 @@ fn relink_book_on(
     });
 }
 
-/// The engine's own picker rather than a second dialog implementation: the
-/// same question with the same filter. Cancel is compared against the
-/// engine's constant, so a wording change on either side is a compile error
+/// The platform's picker rather than a second dialog implementation: the
+/// same question with the same filter. Cancel is compared against
+/// chrome's constant, so a wording change on either side is a compile error
 /// rather than a cancel that quietly turns into an error toast.
 pub fn relink_dialog(state: crate::context::LibraryContext, book_id: String) {
     spawn_local(async move {
-        match pdf_engine::api::pick_document().await {
+        match app_chrome::dialog::pick_document().await {
             Ok(path) => relink_book(state, book_id, path),
             Err(message) if message == CANCELLED => {}
             Err(message) => toast(state, message),

@@ -1,7 +1,7 @@
 //! The `+`/`-` zoom steps.
 
-use app_state::state::ReaderState;
-use app_state::state::reader::ZoomCommand;
+use crate::state::ReaderState;
+use crate::state::ZoomCommand;
 
 /// Applies a manual zoom step — a plain command post: the controller resolves
 /// the step (chaining from an in-flight transition's target so a fast `+ +`

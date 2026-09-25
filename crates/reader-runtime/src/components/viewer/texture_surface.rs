@@ -19,7 +19,7 @@
 
 use leptos::prelude::*;
 
-use app_state::state::{ReaderState, TextureSignal};
+use crate::state::{ReaderState, TextureSignal};
 
 /// The `texture-*` class for a reflowable document's scroller, or `""` for a
 /// PDF document (whose pages own their texture; the class must not land on

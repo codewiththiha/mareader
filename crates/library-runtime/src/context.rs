@@ -2,10 +2,11 @@
 //! copy, its UI chrome slice, and the boundary to the Shell. No field on
 //! this type can name reader state — the reader is another artifact.
 
-use app_state::boundary::ShellApi;
-use app_state::state::{CoverMap, UiState};
+use app_state::state::UiState;
 use leptos::prelude::*;
 use reader_core::settings::Settings;
+use runtime_contract::boundary::ShellApi;
+use runtime_contract::covers::CoverMap;
 
 /// Which ShellApi implementation backs this session: the hosted bridge or
 /// the standalone storage API (`library.html` without a Shell). A Copy handle
@@ -17,7 +18,7 @@ pub enum ApiHandle {
 }
 
 impl ShellApi for ApiHandle {
-    fn open_document(&self, launch: &app_state::boundary::LaunchDocument) {
+    fn open_document(&self, launch: &runtime_contract::boundary::LaunchDocument) {
         match self {
             ApiHandle::Js => JsShellApi.open_document(launch),
             ApiHandle::Standalone => StandaloneApi::new().open_document(launch),
@@ -29,7 +30,7 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi::new().navigate_library(),
         }
     }
-    fn read_point(&self, point: &app_state::boundary::ReadPoint) {
+    fn read_point(&self, point: &runtime_contract::boundary::ReadPoint) {
         match self {
             ApiHandle::Js => JsShellApi.read_point(point),
             ApiHandle::Standalone => StandaloneApi::new().read_point(point),
@@ -47,19 +48,19 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi::new().save_library(blob),
         }
     }
-    fn save_covers(&self, covers: &app_state::state::covers::CoverMap) {
+    fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
         match self {
             ApiHandle::Js => JsShellApi.save_covers(covers),
             ApiHandle::Standalone => StandaloneApi::new().save_covers(covers),
         }
     }
-    fn save_cover(&self, path: &str, image: &app_state::state::covers::CoverImage) {
+    fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         match self {
             ApiHandle::Js => JsShellApi.save_cover(path, image),
             ApiHandle::Standalone => StandaloneApi::new().save_cover(path, image),
         }
     }
-    fn doc_status(&self, report: &app_state::boundary::DocStatusReport) {
+    fn doc_status(&self, report: &runtime_contract::boundary::DocStatusReport) {
         match self {
             ApiHandle::Js => JsShellApi.doc_status(report),
             ApiHandle::Standalone => StandaloneApi::new().doc_status(report),
@@ -77,7 +78,7 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi::new().reload(),
         }
     }
-    fn resolve_launch(&self, path: &str) -> Option<app_state::boundary::LaunchDocument> {
+    fn resolve_launch(&self, path: &str) -> Option<runtime_contract::boundary::LaunchDocument> {
         match self {
             ApiHandle::Js => JsShellApi.resolve_launch(path),
             ApiHandle::Standalone => StandaloneApi::new().resolve_launch(path),
@@ -112,7 +113,7 @@ impl LibraryContext {
             window_maximized,
         };
         let search_visible = RwSignal::new(false);
-        let sidebar_slide = RwSignal::new(app_state::state::reader::viewer::Motion::default());
+        let sidebar_slide = RwSignal::new(app_state::state::Motion::default());
         Self {
             library: crate::state::LibraryState {
                 books: RwSignal::new(library_blob.books),
@@ -190,14 +191,14 @@ impl JsShellApi {
 }
 
 impl ShellApi for JsShellApi {
-    fn open_document(&self, launch: &app_state::boundary::LaunchDocument) {
+    fn open_document(&self, launch: &runtime_contract::boundary::LaunchDocument) {
         self.call(
             "openDocument",
             Some(serde_json::to_string(launch).unwrap_or_default()),
         );
     }
     fn navigate_library(&self) {}
-    fn read_point(&self, point: &app_state::boundary::ReadPoint) {
+    fn read_point(&self, point: &runtime_contract::boundary::ReadPoint) {
         self.call(
             "readPoint",
             Some(serde_json::to_string(point).unwrap_or_default()),
@@ -215,25 +216,25 @@ impl ShellApi for JsShellApi {
             Some(serde_json::to_string(blob).unwrap_or_default()),
         );
     }
-    fn save_covers(&self, covers: &app_state::state::covers::CoverMap) {
+    fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
         self.call(
             "saveCovers",
             Some(serde_json::to_string(covers).unwrap_or_default()),
         );
     }
-    fn save_cover(&self, path: &str, image: &app_state::state::covers::CoverImage) {
+    fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         #[derive(serde::Serialize)]
         #[serde(rename_all = "camelCase")]
         struct One<'a> {
             path: &'a str,
-            image: &'a app_state::state::covers::CoverImage,
+            image: &'a runtime_contract::covers::CoverImage,
         }
         self.call(
             "saveCover",
             Some(serde_json::to_string(&One { path, image }).unwrap_or_default()),
         );
     }
-    fn doc_status(&self, report: &app_state::boundary::DocStatusReport) {
+    fn doc_status(&self, report: &runtime_contract::boundary::DocStatusReport) {
         self.call(
             "docStatus",
             Some(serde_json::to_string(report).unwrap_or_default()),
@@ -245,7 +246,7 @@ impl ShellApi for JsShellApi {
     fn reload(&self) {
         self.call("reload", None);
     }
-    fn resolve_launch(&self, path: &str) -> Option<app_state::boundary::LaunchDocument> {
+    fn resolve_launch(&self, path: &str) -> Option<runtime_contract::boundary::LaunchDocument> {
         storage::resolve_launch(path)
     }
 }
@@ -267,9 +268,9 @@ impl Default for StandaloneApi {
 }
 
 impl ShellApi for StandaloneApi {
-    fn open_document(&self, _launch: &app_state::boundary::LaunchDocument) {}
+    fn open_document(&self, _launch: &runtime_contract::boundary::LaunchDocument) {}
     fn navigate_library(&self) {}
-    fn read_point(&self, point: &app_state::boundary::ReadPoint) {
+    fn read_point(&self, point: &runtime_contract::boundary::ReadPoint) {
         storage::apply_read_point(point);
     }
     fn save_settings(&self, settings: &Settings) {
@@ -281,17 +282,17 @@ impl ShellApi for StandaloneApi {
     fn save_covers(&self, covers: &CoverMap) {
         let _ = storage::save_covers(covers);
     }
-    fn save_cover(&self, path: &str, image: &app_state::state::covers::CoverImage) {
+    fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         let mut map = storage::load_covers();
         map.insert(path.to_string(), std::sync::Arc::new(image.clone()));
         let _ = storage::save_covers(&map);
     }
-    fn doc_status(&self, _report: &app_state::boundary::DocStatusReport) {}
+    fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}
     fn reload(&self) {
         app_chrome::window::api::reload_window();
     }
-    fn resolve_launch(&self, path: &str) -> Option<app_state::boundary::LaunchDocument> {
+    fn resolve_launch(&self, path: &str) -> Option<runtime_contract::boundary::LaunchDocument> {
         storage::resolve_launch(path)
     }
 }

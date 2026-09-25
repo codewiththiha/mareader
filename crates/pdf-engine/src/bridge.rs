@@ -95,14 +95,6 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "clearHighlights")]
     pub fn clear_highlights();
 
-    // Collect the pending OS-opened PDF path (double-click / "Open with" /
-    // default-app launch) from the backend. Lives in the engine's JS layer
-    // because it wraps `__TAURI__.core.invoke` in a catch: a rejected JS
-    // promise cannot be represented in a wasm future (it unwinds as a panic),
-    // so the engine resolves null instead of ever rejecting.
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "takePendingFile")]
-    pub async fn take_pending_file() -> JsValue;
-
     // The engine bakes the theme (filter + paper blend) into every page and
     // thumbnail raster so canvases are plain opaque textures; on an appearance
     // change it must re-bake the rasters it holds, and the theme applier calls

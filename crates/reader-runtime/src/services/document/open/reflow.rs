@@ -36,8 +36,8 @@ use reflow_core::block::TextBlock;
 use reflow_core::geometry::{PAGE_HEIGHT, geometry};
 use reflow_core::pager::estimate_heights;
 
-use app_state::boundary::ShellApi;
-use app_state::state::reader::document::reflow::estimate_metrics;
+use crate::state::document::reflow::estimate_metrics;
+use runtime_contract::boundary::ShellApi;
 
 use super::session;
 
@@ -282,13 +282,15 @@ fn ready(
     // than dropped — this session's first scroll overwrites it, but a
     // document closed before that first scroll must not lose the last read's
     // position.
-    state.api.read_point(&app_state::boundary::ReadPoint {
-        book_id: state.reader.document.book_id.get_untracked(),
-        path: path.clone(),
-        page: resume,
-        num_pages: cut.num_pages,
-        fraction: saved_fraction,
-        title: name,
-        author: None,
-    });
+    state
+        .api
+        .read_point(&runtime_contract::boundary::ReadPoint {
+            book_id: state.reader.document.book_id.get_untracked(),
+            path: path.clone(),
+            page: resume,
+            num_pages: cut.num_pages,
+            fraction: saved_fraction,
+            title: name,
+            author: None,
+        });
 }

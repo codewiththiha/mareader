@@ -39,7 +39,7 @@ use leptos::prelude::*;
 use reader_core::view::{ViewMode, anchored_position};
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use app_state::state::reader::ReaderState;
+use crate::state::ReaderState;
 
 /// Wraps the reader's two strip virtualizers and centralises the reader's one
 /// relayout path. The vertical (continuous) and horizontal strips stay as

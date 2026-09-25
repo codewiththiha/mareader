@@ -30,7 +30,7 @@ use crate::services::covers;
 use crate::services::file_name;
 use crate::services::reveal;
 use crate::state::library::ImportTask;
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 /// Loose files land as the library's own copies: no folder rescans them and
 /// no structure is preserved, and a linked row no ledger answers for is a row

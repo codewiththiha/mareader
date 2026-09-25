@@ -11,7 +11,7 @@ pub mod spread;
 
 use leptos::prelude::*;
 
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 /// Shared chrome the four layouts used to copy: page inset, inter-page gap,
 /// and whether the reading-progress strip is on. The shells consume this so

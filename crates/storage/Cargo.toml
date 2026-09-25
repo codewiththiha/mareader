@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 ai-core = { path = "../ai-core" }
-app-state = { path = "../app-state" }
+runtime-contract = { path = "../runtime-contract" }
 leptos = { version = "0.8", features = ["csr"] }
 library-core = { path = "../library-core" }
 reader-core = { path = "../reader-core" }

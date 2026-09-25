@@ -23,9 +23,9 @@ const outlineUrl = `${BASE}?blend=1&open=${encodeURIComponent(DEEP_OUTLINE)}`;
 
 // The bounded-surface policy the workloads assert against, with its source —
 // the test enforces the implementation's live numbers, not invented ones:
-//   window ceiling    reader_core::view::RENDER_BUDGET = screenfuls(0.5, 3):
-//                     at most 3 pages mounted per strip. Read LIVE from every
-//                     snapshot as `renderBudgetMaxItems`.
+//   window ceiling    reader_runtime::features::virtualizers::RENDER_BUDGET =
+//                     screenfuls(0.5, 3): at most 3 pages mounted per strip. Read
+//                     LIVE from every snapshot as `renderBudgetMaxItems`.
 //   zombie retention  src/zoom/config.rs MAX_ZOMBIES = 12, grace 120 ms —
 //                     items evicted mid-fling stay mounted briefly; a
 //                     transient allowance that must expire by settle time.

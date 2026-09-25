@@ -16,7 +16,7 @@ use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::{FitMode, clamp_scale, fit_scale, nearest_zoom};
 
-use app_state::state::reader::{ReaderState, ZoomCommand};
+use crate::state::{ReaderState, ZoomCommand};
 
 use super::config::{SETTLED_EPSILON, ZoomProfile, zoom_profile};
 

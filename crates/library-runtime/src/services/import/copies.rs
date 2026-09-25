@@ -26,7 +26,7 @@ use super::{Asked, rung_label};
 use crate::services as ipc;
 use crate::services::covers;
 use crate::services::reveal;
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CopiesDest {

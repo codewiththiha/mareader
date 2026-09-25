@@ -28,8 +28,8 @@ const GLIDE_DEBOUNCE_MS: u64 = 80;
 /// User-drive grace window: while the user has interacted with the thumb grid
 /// within this many ms, auto-center defers instead of yanking the panel away.
 const GRACE_MS: f64 = 1500.0;
+use crate::state::ReaderState;
 use app_state::SidebarMode;
-use app_state::state::ReaderState;
 
 /// The armed glide step, parked where a re-arm can replace it mid-flight.
 type GlideStep = Rc<dyn Fn()>;

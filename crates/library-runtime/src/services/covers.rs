@@ -14,8 +14,8 @@ use wasm_bindgen_futures::spawn_local;
 use pdf_engine::api as engine;
 use reader_core::format::Format;
 
-use app_state::state::covers::{CoverImage, CoverMap};
 use library_core::book::{Book, Row, book_rows};
+use runtime_contract::covers::{CoverImage, CoverMap};
 
 /// One width for both renders of the same art — the import queue's and the
 /// open pipeline's: two widths would be two renders and a cache that misses

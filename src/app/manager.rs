@@ -15,7 +15,7 @@
 use std::cell::RefCell;
 use std::sync::Mutex;
 
-use app_state::boundary::LaunchDocument;
+use runtime_contract::boundary::LaunchDocument;
 use wasm_bindgen::{JsCast, JsValue};
 
 use crate::app::boot::{self, BootError, BootPhase, BootStage, RuntimeName};

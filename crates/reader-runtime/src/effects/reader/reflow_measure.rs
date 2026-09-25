@@ -14,7 +14,7 @@
 //!   must never cost one rebuild per frame;
 //! * the flush applies whatever moved more than [`INGEST_EPSILON`], re-cuts
 //!   through
-//!   [`app_state::state::reader::document::reflow::ReflowContent::recut`] and
+//!   [`crate::state::document::reflow::ReflowContent::recut`] and
 //!   publishes, holding the reader on the block they were reading.
 //!
 //! Beside the pipe sits the RE-ESTIMATE: typography and width-dial changes
@@ -36,8 +36,8 @@ use reflow_core::geometry::{PageGeometry, geometry};
 use reflow_core::pager::estimate_heights;
 use reflow_core::typography::TextSettings;
 
-use app_state::state::reader::TypographySignal;
-use app_state::state::reader::document::reflow::estimate_metrics;
+use crate::state::TypographySignal;
+use crate::state::document::reflow::estimate_metrics;
 
 /// A measured height within two pixels of the store's number is jitter, not
 /// news: subpixel rounding and font-hinting noise must not bump the stream's
@@ -74,7 +74,7 @@ thread_local! {
 /// into it would poison every layout that reads it.
 ///
 /// `doc_id` is the block list's `Arc` pointer (see
-/// `app_state::state::reader::document::reflow::ReflowContent::document_id`): the
+/// `crate::state::document::reflow::ReflowContent::document_id`): the
 /// flush drops a batch whose document has since been swapped out.
 pub fn ingest(doc_id: usize, scale: f64, batch: &[(usize, f64)]) {
     if batch.is_empty() {
@@ -202,7 +202,7 @@ fn flush(state: crate::context::ReaderContext) {
 /// reader on a page the new cut no longer has.
 fn recut_and_publish(
     state: &crate::context::ReaderContext,
-    reflow: app_state::state::reader::document::ReflowContent,
+    reflow: crate::state::document::ReflowContent,
     geo: PageGeometry,
 ) {
     if let Some(cut) = reflow.recut(state.reader, geo) {

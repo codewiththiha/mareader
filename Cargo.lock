@@ -77,6 +77,7 @@ version = "0.1.0"
 dependencies = [
  "js-sys",
  "leptos",
+ "reader-core",
  "tauri-bridge",
  "ui-geom",
  "wasm-bindgen",
@@ -88,19 +89,10 @@ dependencies = [
 name = "app-state"
 version = "0.1.0"
 dependencies = [
- "ai-core",
  "js-sys",
  "leptos",
- "library-core",
- "md-core",
- "pdf-core",
- "pdf-engine",
  "reader-core",
- "reflow-core",
- "serde",
- "serde_json",
  "tauri-bridge",
- "virtual-list-leptos",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -117,7 +109,6 @@ dependencies = [
  "leptos",
  "leptos-md",
  "library-core",
- "pdf-engine",
  "reader-core",
  "reflow-core",
  "serde",
@@ -2494,6 +2485,7 @@ dependencies = [
  "library-core",
  "pdf-engine",
  "reader-core",
+ "runtime-contract",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -2573,31 +2565,20 @@ dependencies = [
 name = "mareader"
 version = "0.1.1"
 dependencies = [
- "ai-core",
  "app-chrome",
  "app-state",
  "app-ui",
  "console_error_panic_hook",
  "js-sys",
  "leptos",
- "leptos-md",
- "leptos_router",
  "library-core",
- "md-core",
- "pdf-core",
- "pdf-engine",
- "pdf-paper",
  "reader-core",
- "reflow-core",
+ "runtime-contract",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
  "storage",
  "tauri-bridge",
- "txt-core",
- "ui-geom",
- "virtual-list",
- "virtual-list-leptos",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -3547,7 +3528,6 @@ dependencies = [
  "pdf-paper",
  "serde",
  "serde_json",
- "virtual-list",
 ]
 
 [[package]]
@@ -3569,6 +3549,7 @@ dependencies = [
  "pdf-paper",
  "reader-core",
  "reflow-core",
+ "runtime-contract",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -3732,6 +3713,16 @@ dependencies = [
  "syn 2.0.119",
  "syn_derive",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "runtime-contract"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "library-core",
+ "reader-core",
+ "serde",
 ]
 
 [[package]]
@@ -4238,10 +4229,10 @@ name = "storage"
 version = "0.1.0"
 dependencies = [
  "ai-core",
- "app-state",
  "leptos",
  "library-core",
  "reader-core",
+ "runtime-contract",
  "serde",
  "serde_json",
  "wasm-bindgen",

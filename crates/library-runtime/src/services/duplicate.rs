@@ -26,7 +26,7 @@ use crate::services as ipc;
 use crate::services::covers;
 use crate::services::import;
 use crate::services::toast;
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 pub fn duplicate_row(state: crate::context::LibraryContext, row_id: &str) {
     duplicate_entries(state, std::slice::from_ref(&row_id.to_string()));

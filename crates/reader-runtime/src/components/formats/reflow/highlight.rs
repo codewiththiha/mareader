@@ -46,7 +46,7 @@ use std::sync::Arc;
 
 use super::spot::{match_spans, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 use app_ui::epoch::epoch_signal;
 
 /// Boxes one row will paint, mirroring the engine's cap on the boxes it paints

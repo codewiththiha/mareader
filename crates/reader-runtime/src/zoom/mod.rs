@@ -3,7 +3,7 @@
 //! Zoom has exactly one owner. Surfaces that want it changed post a
 //! `ZoomCommand` through `viewer.zoom.post(...)`; the [`ZoomController`]
 //! resolves it against the current window, mode and page and drives a single
-//! [`ZoomTransition`](app_state::state::reader::ZoomTransition):
+//! [`ZoomTransition`](crate::state::ZoomTransition):
 //!
 //! ```text
 //! resolve the target (manual / fit / window constraint)

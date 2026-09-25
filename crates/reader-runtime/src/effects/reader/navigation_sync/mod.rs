@@ -36,7 +36,7 @@ use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use virtual_list_leptos::{Align, Virtualizer};
 
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 use jump_gate::JumpGate;
 

@@ -226,9 +226,11 @@ impl DocumentState {
     }
 }
 
-/// Aspect used while page 1 is unmeasured or degenerate: a 3:4 portrait, the
-/// default every fixed-geometry surface historically fell back to.
-pub const DEFAULT_PAGE_ASPECT: f64 = 0.75;
+// The 3:4 portrait aspect the fixed-geometry surfaces fall back to lives in
+// `runtime-contract`: the shelf's placeholder tiles must draw the same box
+// the reader's unmeasured pages do, and neither runtime may import the
+// other to share it.
+pub use runtime_contract::covers::DEFAULT_PAGE_ASPECT;
 
 /// Name shown when a document has neither a usable title nor a path (the
 /// reader shell with nothing open).

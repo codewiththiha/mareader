@@ -17,7 +17,9 @@ pub fn install(state: ShellState) {
     let bridge = js_sys::Object::new();
     let st = state.clone();
     register(&bridge, "openDocument", move |json: String| {
-        if let Ok(launch) = serde_json::from_str::<app_state::boundary::LaunchDocument>(&json) {
+        if let Ok(launch) =
+            serde_json::from_str::<runtime_contract::boundary::LaunchDocument>(&json)
+        {
             st.manager.open_document(&st, launch);
         }
     });
@@ -26,7 +28,7 @@ pub fn install(state: ShellState) {
         st.manager.navigate_library(&st);
     });
     register(&bridge, "readPoint", move |json: String| {
-        if let Ok(point) = serde_json::from_str::<app_state::boundary::ReadPoint>(&json) {
+        if let Ok(point) = serde_json::from_str::<runtime_contract::boundary::ReadPoint>(&json) {
             crate::services::apply_read_point(&point);
         }
     });
@@ -41,7 +43,7 @@ pub fn install(state: ShellState) {
         }
     });
     register(&bridge, "saveCovers", move |json: String| {
-        if let Ok(covers) = serde_json::from_str::<app_state::state::covers::CoverMap>(&json) {
+        if let Ok(covers) = serde_json::from_str::<runtime_contract::covers::CoverMap>(&json) {
             let _ = storage::save_covers(&covers);
         }
     });
@@ -50,7 +52,7 @@ pub fn install(state: ShellState) {
         #[serde(rename_all = "camelCase")]
         struct One {
             path: String,
-            image: app_state::state::covers::CoverImage,
+            image: runtime_contract::covers::CoverImage,
         }
         if let Ok(one) = serde_json::from_str::<One>(&json) {
             crate::services::save_cover(&one.path, one.image);
@@ -58,7 +60,9 @@ pub fn install(state: ShellState) {
     });
     let st = state.clone();
     register(&bridge, "docStatus", move |json: String| {
-        if let Ok(report) = serde_json::from_str::<app_state::boundary::DocStatusReport>(&json) {
+        if let Ok(report) =
+            serde_json::from_str::<runtime_contract::boundary::DocStatusReport>(&json)
+        {
             if report.status != "Ready" && st.manager.active().is_some() {
                 let live = st.manager.active() == Some(crate::state::ActiveRuntime::Reader);
                 if live && report.status == "Idle" {

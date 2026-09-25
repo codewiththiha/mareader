@@ -7,12 +7,12 @@
 //! `Result<T, EngineError>`.
 //!
 //! One focused module per surface: [`document`] (open / outline / destroy /
-//! covers / pending OS files), [`render`] (page registration, live renders,
+//! covers), [`render`] (page registration, live renders,
 //! thumbnails), [`search`] (the Rust-owned full-text index + engine-side
-//! painting), [`paper`] (the paper session's pixel plumbing), [`dialog`] (the
-//! native open-file dialog), [`theme`] (re-bake / scrub mode / advisory
-//! sweeps). Window chrome and the AI kickoff are not engine surfaces — they
-//! live in the `app-chrome` and `ai-core` crates.
+//! painting), [`paper`] (the paper session's pixel plumbing), [`theme`]
+//! (re-bake / scrub mode / advisory sweeps). Window chrome, the native
+//! open-file dialog and the AI kickoff are not engine surfaces — they live
+//! in the `app-chrome` and `ai-core` crates.
 //!
 //! [`resolve`] and the hoisted property keys live here: the one parser for the
 //! `{ok,...}` envelope and the hottest allocations in the crate, shared rather
@@ -23,7 +23,6 @@ use std::thread::LocalKey;
 use wasm_bindgen::JsValue;
 
 pub mod diagnostics;
-pub mod dialog;
 pub mod document;
 pub mod paper;
 pub mod render;
@@ -31,8 +30,7 @@ pub mod search;
 pub mod theme;
 
 pub use diagnostics::{EngineStats, engine_stats, set_lifecycle_log};
-pub use dialog::pick_document;
-pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
+pub use document::{cover_data_url, destroy, open, outline};
 pub use paper::{PaperFrame, sample_paper_page, set_paper, set_paper_active, take_paper_frame};
 pub use render::{
     blit_thumb, cancel_thumb, has_thumb, prefetch_thumb, register_page, render_page, render_thumb,
@@ -96,12 +94,6 @@ js_keys! {
     KEY_WIDTH => "width",
     KEY_HEIGHT => "height",
     KEY_DATA => "data",
-    // Native dialog options (built once per dialog open — still hoisted so
-    // the pattern is uniform and the picker never allocates a key twice).
-    KEY_MULTIPLE => "multiple",
-    KEY_FILTERS => "filters",
-    KEY_EXTENSIONS => "extensions",
-    KEY_DOCUMENTS => "Documents",
 }
 
 /// `obj[key]` using one of the hoisted keys.
@@ -110,12 +102,6 @@ pub(crate) fn reflect_get(
     key: &'static LocalKey<JsValue>,
 ) -> Result<JsValue, JsValue> {
     key.with(|k| js_sys::Reflect::get(obj, k))
-}
-
-/// `obj[key] = value` using one of the hoisted keys.
-pub(crate) fn reflect_set(obj: &JsValue, key: &'static LocalKey<JsValue>, value: &JsValue) -> bool {
-    key.with(|k| js_sys::Reflect::set(obj, k, value))
-        .unwrap_or(false)
 }
 
 /// True when `window.PDFReader` is attached; must be checked before any

@@ -26,7 +26,7 @@ use leptos::prelude::*;
 
 use crate::components::ai::anchor::{layer_refresh, stroke_resolver};
 use crate::components::ai::gloss::mark_layer::GlossMarkLayer;
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 #[component]
 pub fn ReflowGlossLayer(

@@ -1,12 +1,9 @@
-//! The state slices, split by lifetime: the reader's reactive tree, the
-//! library's reactive tree, and the UI chrome. No module here can name a
-//! slice from another lifetime's context — that impossibility is the point
-//! of the Phase 2 split.
+//! The UI chrome slice the runtimes share: toasts, the sidebar mode, the
+//! motion projection, the appearance signal alias. Reader state lives in
+//! `reader-runtime`, library state in `library-runtime`, and the
+//! boundary/cover types in `runtime-contract` — no module here can name a
+//! document engine.
 
-pub mod covers;
-pub mod reader;
 pub mod ui;
 
-pub use covers::{CoverImage, CoverMap};
-pub use reader::{ReaderState, TextureSignal};
-pub use ui::{AppearanceSignal, SidebarMode, Toast, UiState};
+pub use ui::{AppearanceSignal, Motion, SidebarMode, Toast, UiState};

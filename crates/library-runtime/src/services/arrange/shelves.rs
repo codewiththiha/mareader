@@ -10,7 +10,7 @@ use library_core::folder as folder_ops;
 use library_core::id;
 use library_core::shelf::{self as shelf, ALL_SHELF, Shelf};
 
-use app_state::time::now_ms;
+use runtime_contract::time::now_ms;
 
 use super::asking::ask_move_shelf;
 use super::shelf_departure::{SeamSide, ShelfSeam, screen_shelf_moves};

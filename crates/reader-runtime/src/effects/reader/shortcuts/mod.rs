@@ -15,7 +15,8 @@ mod zoom;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use app_state::state::{ReaderState, SidebarMode};
+use crate::state::ReaderState;
+use app_state::state::SidebarMode;
 use auto_scroll::handle_auto_scroll_shortcut;
 use navigation::{end_hold_for, handle_navigation_shortcut, stop_hold};
 use window::handle_modifier_shortcut;

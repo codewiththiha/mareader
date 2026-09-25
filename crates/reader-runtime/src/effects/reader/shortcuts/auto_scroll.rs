@@ -2,7 +2,7 @@
 
 use leptos::prelude::*;
 
-use app_state::state::ReaderState;
+use crate::state::ReaderState;
 
 /// Shift+A arms or disarms the continuous drift, and only where a drift can
 /// run: the paginated modes have no scrollport to move.

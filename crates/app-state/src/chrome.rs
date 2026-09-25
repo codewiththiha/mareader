@@ -8,8 +8,7 @@
 
 use leptos::prelude::{RwSignal, Signal};
 
-use crate::state::reader::viewer::Motion;
-use crate::state::ui::UiState;
+use crate::state::ui::{Motion, UiState};
 use reader_core::settings::Settings;
 
 /// What chrome reads about the ACTIVE reader surface: reflow gating for the
