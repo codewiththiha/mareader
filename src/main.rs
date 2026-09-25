@@ -1,5 +1,6 @@
 mod app;
 mod components;
+mod diagnostics;
 mod dom_contract;
 mod effects;
 mod epoch;

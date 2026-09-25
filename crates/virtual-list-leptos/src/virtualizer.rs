@@ -155,17 +155,12 @@ impl VirtualizerInner {
         let grace = self.retention_grace.get();
         if grace > 0 && self.options.retention_max > 0 {
             let now = now_ms();
-            let evicted =
-                retain_evicted(old, new, now, grace, self.options.retention_max);
+            let evicted = retain_evicted(old, new, now, grace, self.options.retention_max);
             if !evicted.is_empty() {
                 let mut retained = self.retained.borrow_mut();
                 // Merge: an index already retained keeps its original expiry
                 // only if it is still outside the new window; re-entry drops it.
-                *retained = prune_retained(
-                    std::mem::take(&mut *retained),
-                    new,
-                    now,
-                );
+                *retained = prune_retained(std::mem::take(&mut *retained), new, now);
                 for item in evicted {
                     if !retained.iter().any(|r| r.index == item.index) {
                         retained.push(item);
@@ -253,9 +248,7 @@ impl VirtualizerInner {
         // rewindow anyway, so skip the signal write, the range publish and
         // the idle-timer re-arm entirely — dominant-page tracking and
         // navigation sync stay quiet during sub-pixel movement.
-        if (content - self.core.borrow().scroll_top()).abs()
-            <= self.options.measure_epsilon
-        {
+        if (content - self.core.borrow().scroll_top()).abs() <= self.options.measure_epsilon {
             return;
         }
         let step = self.core.borrow_mut().on_scroll(content);
@@ -361,6 +354,16 @@ pub struct Virtualizer {
 impl Virtualizer {
     pub(crate) fn from_inner(inner: Rc<VirtualizerInner>) -> Self {
         Self { inner }
+    }
+}
+
+/// Handle identity: two handles are equal when they wrap the same inner
+/// virtualizer. The app's diagnostics registry uses this to remove exactly
+/// the handle that was disposed, so a registry entry can never outlive its
+/// owner's cleanup.
+impl PartialEq for Virtualizer {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
@@ -495,7 +498,9 @@ impl Virtualizer {
                     .filter(|r| r.expires_at > now)
                     .map(|r| r.index)
                     .filter(|index| {
-                        window.map(|w| *index < w.first || *index > w.last).unwrap_or(false)
+                        window
+                            .map(|w| *index < w.first || *index > w.last)
+                            .unwrap_or(false)
                     })
                     .collect();
                 if retained.is_empty() {
@@ -718,11 +723,11 @@ impl Virtualizer {
 
     /// Scroll to an item with an alignment.
     pub fn scroll_to_index(&self, index: usize, align: Align, mode: ScrollMode) {
-        let step = self
-            .inner
-            .core
-            .borrow_mut()
-            .scroll_to_index(index, align, mode, &self.inner.surface);
+        let step =
+            self.inner
+                .core
+                .borrow_mut()
+                .scroll_to_index(index, align, mode, &self.inner.surface);
         if let Some(step) = step {
             self.inner.apply_local(step);
         }
@@ -810,5 +815,26 @@ impl Virtualizer {
     /// Called when scrolling settles.
     pub fn on_scroll_idle(&self, cb: impl Fn() + 'static) {
         self.inner.idle_cbs.borrow_mut().push(Rc::new(cb));
+    }
+
+    /// How many items the live window currently mounts (diagnostics).
+    ///
+    /// The virtualizer keeps `budget`-worth of rows mounted; this is that
+    /// window's size right now, read untracked so a diagnostics snapshot can
+    /// take it without subscribing. Zero while nothing is bound or the list
+    /// is empty.
+    pub fn live_window_items(&self) -> usize {
+        match self.inner.core.borrow().range() {
+            Some(window) => window.last.saturating_sub(window.first) + 1,
+            None => 0,
+        }
+    }
+
+    /// How many evicted items are still kept rendered by the retention grace
+    /// (diagnostics). Zombies are bounded by `max_retained`, so this is the
+    /// reader's standing extra-DOM count, not a leak signal by itself — but
+    /// it must return to zero once the reader is gone.
+    pub fn retained_items(&self) -> usize {
+        self.inner.retained.borrow().len()
     }
 }

@@ -112,6 +112,22 @@ class EngineSession {
    *  caches so memory drops during long reading sessions. */
   renderCount = 0;
 
+  // Lifecycle counters (Phase 0 diagnostics). Monotonic; read via stats().
+  // The pairing rules the teardown baseline asserts:
+  //   sessionsOpened   == sessionsDestroyed   (every open document dies once)
+  //   workersCreated   == workersTerminated   (every LoadingTask destroyed once)
+  //   rendersStarted   == rendersCompleted + rendersCancelled + rendersFailed
+  sessionsOpened = 0;
+  sessionsDestroyed = 0;
+  workersCreated = 0;
+  workersTerminated = 0;
+  rendersStarted = 0;
+  rendersCompleted = 0;
+  rendersCancelled = 0;
+  rendersFailed = 0;
+  rendersQueued = 0;
+  rendersDropped = 0;
+
   themeScrubActive = false;
 
   /** The last scrub-mode transition (Date.now()), recorded by the theme
@@ -301,5 +317,41 @@ class EngineSession {
 
 /** The app's one engine session. */
 export const session = new EngineSession();
+
+// ---------------------------------------------------------------------------
+// Lifecycle diagnostics (Phase 0 baseline).
+//
+// Counters over the resources THIS module owns: the document session, the
+// pdf.js worker behind its loading task, and the page render lane. They are
+// the production signal — cheap, always on, read through `stats()` — and the
+// open/teardown paths bump them where the resource is actually created or
+// released, so a teardown that misses a resource is visible as an unbalanced
+// pair rather than as a claim.
+//
+// `lifecycleEvent` is the narration half: silent unless a development
+// surface opts in (`setLifecycleLog`), because create/dispose events are
+// rare but render events are not, and per-render logs are noise in normal
+// operation.
+
+let lifecycleLog = false;
+
+/** Turn the lifecycle event narration on/off (dev-only surface; the
+ *  counters are always live regardless). */
+export function setLifecycleLog(on: boolean): void {
+  lifecycleLog = on;
+}
+
+/** Narrate one lifecycle event when logging is on. */
+export function lifecycleEvent(name: string): void {
+  if (lifecycleLog && typeof console !== "undefined") {
+    console.info(`[lifecycle] ${name}`);
+  }
+}
+
+/** Count one pdf.js worker coming into existence (a fresh LoadingTask). */
+export function noteWorkerCreated(): void {
+  session.workersCreated += 1;
+  lifecycleEvent("pdf_worker:create");
+}
 
 export const CLEANUP_EVERY = 5;

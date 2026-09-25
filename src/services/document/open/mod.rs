@@ -13,9 +13,9 @@
 mod cover;
 mod enter;
 mod outline;
+mod reflow;
 mod seed;
 mod shelf;
-mod reflow;
 mod warmup;
 
 use leptos::prelude::*;
@@ -26,12 +26,12 @@ use leptos::prelude::*;
 // disposing its owner — leaving the app stuck on "Opening..." forever.
 use wasm_bindgen_futures::spawn_local;
 
-use reader_core::format::{Format, format_of};
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
+use reader_core::format::{Format, format_of};
 
-use library_core::book::{ReadPoint, resume_point};
 use crate::state::{AppState, Toast};
+use library_core::book::{ReadPoint, resume_point};
 
 use super::session;
 
@@ -121,9 +121,11 @@ pub fn open_row(state: AppState, row_id: String) {
 /// no address to read, and an error toast for a book the library no longer has
 /// would be a sentence about nothing.
 pub fn open_book(state: AppState, book_id: String) {
-    let Some(book) = state.library.books.with_untracked(|books| {
-        library_core::book::find_by_id(books, &book_id).cloned()
-    }) else {
+    let Some(book) = state
+        .library
+        .books
+        .with_untracked(|books| library_core::book::find_by_id(books, &book_id).cloned())
+    else {
         return;
     };
     // A row the library KNOWS is dead — a path check found its address gone —
@@ -163,6 +165,9 @@ fn open_at(state: AppState, book_id: Option<String>, path: String) {
     // and flipping `status` to Ready a second time, resuming the winner at the
     // loser's page. Every hop below re-checks the stamp.
     let stamp = session::claim();
+    // A reader runtime began: the claim is the ownership handover, and the
+    // diagnostics surface counts its lifecycle from this exact point.
+    crate::diagnostics::note_reader_runtime_create();
     state.reader.document.status.set(DocStatus::Opening);
     state.reader.document.error.set(None);
     // Named BEFORE the resume point is read and before any tail seeds the
@@ -203,9 +208,10 @@ fn open_at(state: AppState, book_id: Option<String>, path: String) {
     // last session left one. Which ROW answers is the id's business: a book of
     // its own resumes where its own reader left off, not where the twin at
     // the address did.
-    let (saved_page, saved_fraction) = state.library.books.with_untracked(|books| {
-        resume_point(books, book_id.as_deref(), &path)
-    });
+    let (saved_page, saved_fraction) = state
+        .library
+        .books
+        .with_untracked(|books| resume_point(books, book_id.as_deref(), &path));
 
     match format_of(&path) {
         Format::Pdf => open_pdf(state, path, saved_page, stamp),
@@ -286,11 +292,8 @@ fn ready(
 fn fail(state: AppState, message: String) {
     state.reader.document.error.set(Some(message.clone()));
     state.reader.document.status.set(DocStatus::Error);
-    state
-        .ui
-        .toast
-        .set(Some(Toast::new(format!(
-            "Could not open document: {}",
-            message
-        ))));
+    state.ui.toast.set(Some(Toast::new(format!(
+        "Could not open document: {}",
+        message
+    ))));
 }

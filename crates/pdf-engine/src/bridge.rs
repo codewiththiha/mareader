@@ -10,8 +10,8 @@
 //!
 //! CONTRACT: do not change these signatures.
 
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
@@ -163,6 +163,17 @@ extern "C" {
     /// alone.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweepSnapshots")]
     pub fn sweep_snapshots();
+
+    /// The engine's live resource gauges and lifecycle counters (the
+    /// diagnostics snapshot's engine half). Returns the plain `Stats` object
+    /// — no `{ok,...}` envelope — so the caller parses it directly.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
+    pub fn stats() -> JsValue;
+
+    /// Turn the engine's lifecycle event narration on/off (the diagnostics
+    /// surface's opt-in; the counters behind `stats` are always live).
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setLifecycleLog")]
+    pub fn set_lifecycle_log(on: bool);
 }
 
 /// True when `window.PDFReader` exists. Must be checked before any engine

@@ -32,6 +32,13 @@ pub(crate) fn owns(stamp: u64) -> bool {
     SESSION.load(Ordering::Relaxed) == stamp
 }
 
+/// The current stamp, as a diagnostics epoch: it moves on every open and
+/// close, so a snapshot can be attributed to a moment in the lifecycle, and
+/// two snapshots taken either side of a close can never be confused.
+pub(crate) fn current_epoch() -> u64 {
+    SESSION.load(Ordering::Relaxed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

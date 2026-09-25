@@ -22,6 +22,7 @@ use serde::de::DeserializeOwned;
 use std::thread::LocalKey;
 use wasm_bindgen::JsValue;
 
+pub mod diagnostics;
 pub mod dialog;
 pub mod document;
 pub mod paper;
@@ -29,14 +30,17 @@ pub mod render;
 pub mod search;
 pub mod theme;
 
+pub use diagnostics::{EngineStats, engine_stats, set_lifecycle_log};
 pub use dialog::pick_document;
 pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
-pub use paper::{sample_paper_page, set_paper, set_paper_active, take_paper_frame, PaperFrame};
+pub use paper::{PaperFrame, sample_paper_page, set_paper, set_paper_active, take_paper_frame};
 pub use render::{
     blit_thumb, cancel_thumb, has_thumb, prefetch_thumb, register_page, render_page, render_thumb,
     unregister_page,
 };
-pub use search::{build_search_index, clear_highlights, scope_to_document, search, set_active_match};
+pub use search::{
+    build_search_index, clear_highlights, scope_to_document, search, set_active_match,
+};
 pub use theme::{refresh_theme, set_appearance_menu_open, set_scrub_mode, sweep, sweep_snapshots};
 
 /// Error returned by any engine call: the engine-side error `name` and
@@ -101,13 +105,17 @@ js_keys! {
 }
 
 /// `obj[key]` using one of the hoisted keys.
-pub(crate) fn reflect_get(obj: &JsValue, key: &'static LocalKey<JsValue>) -> Result<JsValue, JsValue> {
+pub(crate) fn reflect_get(
+    obj: &JsValue,
+    key: &'static LocalKey<JsValue>,
+) -> Result<JsValue, JsValue> {
     key.with(|k| js_sys::Reflect::get(obj, k))
 }
 
 /// `obj[key] = value` using one of the hoisted keys.
 pub(crate) fn reflect_set(obj: &JsValue, key: &'static LocalKey<JsValue>, value: &JsValue) -> bool {
-    key.with(|k| js_sys::Reflect::set(obj, k, value)).unwrap_or(false)
+    key.with(|k| js_sys::Reflect::set(obj, k, value))
+        .unwrap_or(false)
 }
 
 /// True when `window.PDFReader` is attached; must be checked before any

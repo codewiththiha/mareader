@@ -411,7 +411,12 @@ const fakePdf = {
   fingerprints: ["smoke-permanent", "smoke-temporary"],
   cleanup: async () => {},
 };
-const fakeLoadingTask = { promise: Promise.resolve(fakePdf), destroy: async () => {} };
+// A FRESH LoadingTask per getDocument call — pdf.js hands back a new task
+// (with its own worker lifetime) every time, and the engine's worker
+// counters are balanced per task. One shared object here would collapse
+// distinct opens into one identity and hide exactly the imbalance the
+// teardown baseline exists to catch.
+const fakeLoadingTask = () => ({ promise: Promise.resolve(fakePdf), destroy: async () => {} });
 
 const sandbox: Record<string, unknown> = {
   console,
@@ -450,7 +455,7 @@ const sandbox: Record<string, unknown> = {
     };
   },
   pdfjsLib: {
-    getDocument: () => fakeLoadingTask,
+    getDocument: () => fakeLoadingTask(),
     GlobalWorkerOptions: {},
     TextLayer: class {
       constructor() {}
@@ -479,11 +484,31 @@ interface OpenPayload {
 }
 interface RenderPayload { width: number; height: number; scale: number }
 interface ThumbPayload { width: number; height: number; scale: number }
-interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thumbTasks: number }
+interface StatsPayload {
+  pages: number;
+  thumbs: number;
+  thumbLimit: number;
+  thumbTasks: number;
+  activeRenders: number;
+  hasDocument: boolean;
+  hasLoadingTask: boolean;
+  sessionsOpened: number;
+  sessionsDestroyed: number;
+  workersCreated: number;
+  workersTerminated: number;
+  rendersStarted: number;
+  rendersCompleted: number;
+  rendersCancelled: number;
+  rendersFailed: number;
+  rendersQueued: number;
+  rendersDropped: number;
+}
 
 interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;
   resolveOutline(): Promise<EngineResult<{ outline: unknown[] }>>;
+  destroy(): Promise<void>;
+  setLifecycleLog(on: boolean): void;
   registerPage(page: number, canvasId: string, hostId?: string): void;
   renderPage(canvasId: string, scale: number, renderText: boolean): Promise<EngineResult<RenderPayload>>;
   renderThumb(canvasId: string, page: number, scale: number): Promise<EngineResult<ThumbPayload>>;
@@ -509,7 +534,6 @@ interface PDFReaderHandle {
     data?: Uint8ClampedArray;
   }>;
   unregisterPage(canvasId: string): void;
-  destroy(): Promise<void>;
   stats(): StatsPayload;
   sweep(): void;
   sweepSnapshots(): void;

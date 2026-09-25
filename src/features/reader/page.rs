@@ -10,35 +10,41 @@
 
 use leptos::prelude::*;
 
+use crate::components::menus::appearance_menu::AppearanceMenu;
+use crate::components::menus::reader_menu::ReaderMenu;
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use crate::components::settings::modal::SettingsModal;
 use crate::components::shell::controller::ShellController;
 use crate::components::shell::sidebar::overlay::OverlayRail;
 use crate::components::shell::sidebar::push::PushRail;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::components::shell::titlebar::document_title::CenteredDocTitle;
 use crate::components::shell::titlebar::floating_document_title::FloatingDocumentTitle;
-use crate::components::menus::appearance_menu::AppearanceMenu;
-use crate::components::menus::reader_menu::ReaderMenu;
-use crate::components::settings::modal::SettingsModal;
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use app_chrome::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
-use app_chrome::icon::{Icon, IconName};
-use app_chrome::tooltip::Tooltip;
-use crate::features::reader::rail::ReaderRail;
 use crate::components::viewer::controls::bottom_bar::ReaderBottomBar;
 use crate::components::viewer::controls::page_indicator::PageIndicator;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
+use crate::features::reader::rail::ReaderRail;
 use crate::features::reader::use_reader_virtualizers;
 use crate::services::document::close_document;
 use crate::state::AppState;
-use reader_core::settings::PageIndicatorStyle;
+use app_chrome::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::tooltip::Tooltip;
 use pdf_engine::types::DocStatus;
+use reader_core::settings::PageIndicatorStyle;
 
 #[component]
 pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
     let vs = state.reader;
+
+    // The reader pane mounted: the diagnostics surface's pane hook. Today
+    // this is the one reader surface; the workspace pane tree of the later
+    // runtime phases reports through the same pair.
+    crate::diagnostics::note_pane_create();
+    on_cleanup(crate::diagnostics::note_pane_dispose);
 
     // The shell's layout brain: one controller for the whole page, provided as
     // context for the title bar, the traffic lights, the floating label and
@@ -78,7 +84,8 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // outgoing view's rasters, and the fit the next mode owns.
     crate::effects::reader::mode_change::mode_change(state);
 
-    let actuator = crate::zoom::actuator::ZoomActuator::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
+    let actuator =
+        crate::zoom::actuator::ZoomActuator::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
     // Driven once at setup. The controller itself is dropped when setup
     // returns; what outlives it are the effects `drive` installs, which live as
     // long as this page's reactive owner. Everything downstream only posts
@@ -122,7 +129,8 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // threaded as a prop through the rail composition.
     provide_context(settings_open);
     let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
-    let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
+    let indicator_style =
+        Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
     // Continuous text reading has no meaningful page number: while the stream
     // is live the badge is a percentage of the document whatever the indicator

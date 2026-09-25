@@ -20,10 +20,10 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
-use app_chrome::hooks::use_resize_observer::use_resize_observer;
-use app_chrome::hooks::use_timeout::use_debounce;
 use crate::state::ReaderState;
 use crate::state::app::SidebarMode;
+use app_chrome::hooks::use_resize_observer::use_resize_observer;
+use app_chrome::hooks::use_timeout::use_debounce;
 
 use super::auto_center::AutoCenter;
 use super::geometry::{CELL_W, GAP_CROSS, MIN_VIEWPORT_H, PAD, ROW_BUFFER, row_height};
@@ -65,6 +65,13 @@ pub fn ThumbnailsPanel(
             .initial(Viewport::new(MIN_VIEWPORT_H, 2.0 * CELL_W + GAP_CROSS), 0.0)
             .epoch(layout_epoch.into()),
     );
+    // The thumbnail grid's virtualizer joins the diagnostics registry for
+    // its lifetime, like every other reader-surface strip. The handle rides
+    // a StoredValue because a cleanup closure must be Send + Sync, which
+    // the Rc inside a Virtualizer is not.
+    crate::diagnostics::track_virtualizer(&v);
+    let tracked = StoredValue::new_local(v.clone());
+    on_cleanup(move || tracked.with_value(crate::diagnostics::untrack_virtualizer));
     let rows = v.rows();
     let total_size = v.total_size();
 
@@ -154,7 +161,8 @@ pub fn ThumbnailsPanel(
             // A failed bind means the drive listeners silently never fire;
             // say so in debug instead of swallowing the Result.
             debug_assert!(
-                el.add_event_listener_with_callback(event, &drive_fn).is_ok(),
+                el.add_event_listener_with_callback(event, &drive_fn)
+                    .is_ok(),
                 "drive listener bind failed for {event} on #thumb-scroll"
             );
         }

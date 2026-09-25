@@ -149,17 +149,48 @@ type OutlineResult = Result<{
 export type RenderResult = Result<{ width: number; height: number; scale: number }>;
 export type ThumbResult = Result<{ width: number; height: number; scale: number }>;
 export type CoverResult = Result<{ dataUrl: string; width: number; height: number }>;
+/** The engine's live resource picture, read by the app's diagnostics surface
+ *  and asserted by the smoke teardown: the four session gauges plus the
+ *  lifecycle counters whose pairing rules (every session/worker dies once,
+ *  every started render resolves) are the teardown baseline. */
 export type Stats = {
+  /** Registered page hosts (live page surfaces). */
   pages: number;
+  /** Cached thumbnail rasters. */
   thumbs: number;
   thumbLimit: number;
+  /** In-flight thumbnail renders. */
   thumbTasks: number;
+  /** Live page render tasks (started, not yet resolved). */
+  activeRenders: number;
+  /** A document proxy is open. */
+  hasDocument: boolean;
+  /** A worker LoadingTask is registered on the session. */
+  hasLoadingTask: boolean;
+  /** Monotonic lifecycle counters. Pairing rules: sessionsOpened ==
+   *  sessionsDestroyed; workersCreated == workersTerminated; rendersStarted
+   *  == rendersCompleted + rendersCancelled + rendersFailed. */
+  sessionsOpened: number;
+  sessionsDestroyed: number;
+  workersCreated: number;
+  workersTerminated: number;
+  rendersStarted: number;
+  rendersCompleted: number;
+  rendersCancelled: number;
+  rendersFailed: number;
+  /** Jobs that entered the bounded render lane, and queue-level drops
+   *  (superseded/unmounted before their turn). */
+  rendersQueued: number;
+  rendersDropped: number;
 };
 export type PDFReaderApi = {
   version: () => string;
   open: (path: string) => Promise<OpenResult>;
   resolveOutline: () => Promise<OutlineResult>;
   destroy: () => Promise<void>;
+  /** Turn the engine's lifecycle event narration on/off (dev diagnostics;
+   *  the counters in stats() are always live). */
+  setLifecycleLog: (on: boolean) => void;
   registerPage: (page: number, canvasId: string, hostId?: string) => void;
   unregisterPage: (canvasId: string) => void;
   cancelPage: (canvasId: string) => void;

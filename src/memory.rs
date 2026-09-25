@@ -48,9 +48,11 @@ pub(crate) fn wasm_heap_bytes() -> Option<u64> {
 
 /// Log the heap's size under a tag: `[mem] open: wasm heap 64.0 MB`. Called
 /// at the points that move the heap — or that must visibly NOT move it,
-/// which is what makes the ratchet chartable.
+/// which is what makes the ratchet chartable. Every sample also folds into
+/// the diagnostics surface's high-water mark.
 pub(crate) fn log_heap(tag: &str) {
     if let Some(bytes) = wasm_heap_bytes() {
+        crate::diagnostics::note_heap_sample(bytes);
         let mb = bytes as f64 / (1024.0 * 1024.0);
         web_sys::console::log_1(&format!("[mem] {tag}: wasm heap {mb:.1} MB").into());
     }

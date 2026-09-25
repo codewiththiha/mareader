@@ -6,8 +6,8 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use pdf_engine::api as engine;
 use crate::state::{AppState, SidebarMode};
+use pdf_engine::api as engine;
 
 /// Close the current document and return to the library shelf.
 ///
@@ -20,7 +20,11 @@ pub fn close_document(state: AppState) {
     // an open's tail (its `Ready` flip, its cover, its outline) lands frames
     // after the engine answers, and without this claim a close arriving in
     // that window would be undone by the book it just closed.
-    let _ = super::session::claim();
+    let stamp = super::session::claim();
+    // The dispose has begun: the diagnostics surface narrates and the
+    // baseline workloads time their post-close reads from here. The stamp
+    // tells the completion assertion whether it is still the latest owner.
+    crate::diagnostics::note_reader_runtime_dispose_begin(stamp);
 
     // Flush the current reading position NOW, before the signals are reset:
     // the reading-progress effect writes the library signal synchronously but
@@ -44,6 +48,9 @@ pub fn close_document(state: AppState) {
         // re-registers hosts before this future wakes).
         engine::sweep();
         engine::sweep_snapshots();
+        // The dispose is COMPLETE only here, after the sweeps: this is the
+        // moment the baseline asserts against, not the route flip above it.
+        crate::diagnostics::note_reader_runtime_dispose_complete(stamp);
         // The heap probe's other half: what the session left behind on the
         // wasm side once the shelf is as empty as it gets — the retained
         // index (kept for a reopen's adoption), the covers, the library.

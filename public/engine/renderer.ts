@@ -9,7 +9,7 @@ import { fail, failFrom } from "./errors";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
-import { CLEANUP_EVERY, PAGE_MAX_PIXELS, session } from "./state";
+import { CLEANUP_EVERY, lifecycleEvent, PAGE_MAX_PIXELS, session } from "./state";
 import {
   hostIdFromCanvasId,
   pageFromCanvasId,
@@ -161,6 +161,31 @@ export async function renderPageInternal(
   scale: number,
   renderText: boolean
 ): Promise<RenderResult> {
+  // Counting wrapper: every started render resolves exactly one of
+  // completed / cancelled / failed, so the teardown baseline can assert the
+  // lane is fully drained. The superseded-bake retry below recurses into
+  // `renderPageNow` directly — the retry is the SAME started render, not a
+  // second one.
+  session.rendersStarted += 1;
+  lifecycleEvent("render:start");
+  const result = await renderPageNow(canvasId, scale, renderText);
+  if (result.ok) {
+    session.rendersCompleted += 1;
+    lifecycleEvent("render:complete");
+  } else if (result.error.name === "cancelled") {
+    session.rendersCancelled += 1;
+    lifecycleEvent("render:cancel");
+  } else {
+    session.rendersFailed += 1;
+  }
+  return result;
+}
+
+async function renderPageNow(
+  canvasId: string,
+  scale: number,
+  renderText: boolean
+): Promise<RenderResult> {
   const st = ensurePage(canvasId);
   if (!st || !st.canvas) return fail("no_canvas", "Canvas element not found in DOM: " + canvasId);
   if (!session.pdf) return fail("no_document", "No document open");
@@ -254,7 +279,7 @@ export async function renderPageInternal(
       releaseBaked(baked, target);
       if (target !== st.canvas) releaseCanvas(target);
       try { page.cleanup(); } catch (_) { /* ignore */ }
-      return renderPageInternal(canvasId, scale, renderText);
+      return renderPageNow(canvasId, scale, renderText);
     }
     if (baked !== st.canvas) {
       showBaked(st.canvas, baked, "canvas-raw");
@@ -411,9 +436,12 @@ export async function renderPage(
     st.queueHandle = requestAnimationFrame(() => {
       st.queueHandle = 0;
       if (st.dead || st.queueGen !== gen) {
+        session.rendersDropped += 1;
+        lifecycleEvent("render:cancel");
         resolve(fail("cancelled", "Render cancelled"));
         return;
       }
+      session.rendersQueued += 1;
       pageQueue.push(() => {
         const finish = () => {
           pageActive -= 1;
@@ -422,6 +450,8 @@ export async function renderPage(
         // The page unmounted, or a newer scale superseded this job, while it
         // waited for a lane slot. Drop it without touching pdf.js.
         if (st.dead || st.queueGen !== gen) {
+          session.rendersDropped += 1;
+          lifecycleEvent("render:cancel");
           resolve(fail("cancelled", "Render cancelled"));
           finish();
           return;

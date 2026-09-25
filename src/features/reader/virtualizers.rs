@@ -29,7 +29,9 @@ pub(crate) struct ReaderVirtualizers {
 fn fallback_height(state: ReaderState) -> f64 {
     state
         .document
-        .content.metrics.page1_size
+        .content
+        .metrics
+        .page1_size
         .get_untracked()
         .map_or(0.0, |size| size.height)
 }
@@ -46,7 +48,12 @@ fn fallback_height(state: ReaderState) -> f64 {
 fn seed_css_heights(state: ReaderState) {
     Effect::new(move || {
         let count = state.document.num_pages.get() as usize;
-        let filled = state.document.content.metrics.css_heights.with(|heights| !heights.is_empty());
+        let filled = state
+            .document
+            .content
+            .metrics
+            .css_heights
+            .with(|heights| !heights.is_empty());
         let scale = state.viewer.zoom.display.get();
         if filled || count == 0 || scale <= 0.0 {
             return;
@@ -102,7 +109,8 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
         let gap = state.viewer.page_gap.get_untracked();
         let measured = state
             .document
-            .content.metrics
+            .content
+            .metrics
             .css_heights
             .with_untracked(|heights| heights.get(index).copied())
             .filter(|height| *height > 0.0);
@@ -111,7 +119,8 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
         }
         let intrinsic = state
             .document
-            .content.metrics
+            .content
+            .metrics
             .intrinsic
             .with_untracked(|sizes| sizes.get(index).map(|size| size.height))
             .filter(|height| *height > 0.0);
@@ -121,20 +130,20 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     // layout is relaid out to as a zoom runs — so the two axes can never
     // disagree about how big a page is.
     let h_estimate = move |index: usize| {
-        state.document.content.metrics.intrinsic.with_untracked(|sizes| {
-            sizes.get(index).map(|s| s.width).unwrap_or(0.0)
-        }) * state.viewer.zoom.visual_scale()
+        state
+            .document
+            .content
+            .metrics
+            .intrinsic
+            .with_untracked(|sizes| sizes.get(index).map(|s| s.width).unwrap_or(0.0))
+            * state.viewer.zoom.visual_scale()
             + 2.0 * state.viewer.page_margin.get_untracked()
     };
     let epoch = geometry_epoch(state);
     let pinned_sig: RwSignal<Option<(usize, usize)>> = RwSignal::new(None);
     let initial_vh = {
         let (_, height) = state.viewer.container_size.get_untracked();
-        if height > 1.0 {
-            height
-        } else {
-            800.0
-        }
+        if height > 1.0 { height } else { 800.0 }
     };
     // Start the window on the RESUME page rather than at the top: page 1 is
     // never in a fresh open's first window, so it is never mounted, never
@@ -188,6 +197,20 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     virtualizer.on_scroll_idle(pdf_engine::api::sweep);
     h_virtualizer.on_scroll_idle(pdf_engine::api::sweep);
 
+    // The strips join the diagnostics registry while they live: a snapshot
+    // reads its window and zombie counts from here, and the reader's own
+    // cleanup drops the entries — the registry never outlives an owner.
+    // The handles ride StoredValues because a cleanup closure must be
+    // Send + Sync, which the Rc inside a Virtualizer is not.
+    crate::diagnostics::track_virtualizer(&virtualizer);
+    crate::diagnostics::track_virtualizer(&h_virtualizer);
+    let tracked_v = StoredValue::new_local(virtualizer.clone());
+    let tracked_h = StoredValue::new_local(h_virtualizer.clone());
+    on_cleanup(move || {
+        tracked_v.with_value(crate::diagnostics::untrack_virtualizer);
+        tracked_h.with_value(crate::diagnostics::untrack_virtualizer);
+    });
+
     {
         let v = virtualizer.clone();
         Effect::new(move |_| {
@@ -197,7 +220,10 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
                 pin = Some((dominant, dominant));
             }
             if let Some((first, last)) = state.viewer.selected_pages.get() {
-                let selected = (first.saturating_sub(1) as usize, last.saturating_sub(1) as usize);
+                let selected = (
+                    first.saturating_sub(1) as usize,
+                    last.saturating_sub(1) as usize,
+                );
                 pin = Some(match pin {
                     Some((a, b)) => (a.min(selected.0), b.max(selected.1)),
                     None => selected,

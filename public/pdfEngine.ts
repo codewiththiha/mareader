@@ -42,7 +42,9 @@ import {
 } from "./engine/paper";
 import {
   ENGINE_VERSION,
+  lifecycleEvent,
   session,
+  setLifecycleLog,
   THUMB_CACHE_MAX,
 } from "./engine/state";
 
@@ -82,6 +84,13 @@ function cancelAndReleasePages(): void {
 }
 
 async function destroy(): Promise<void> {
+  // A dispose is only a session dispose when a session is actually here:
+  // open() runs destroy() as its first act, and that call disposes nothing.
+  const hadSession = session.pdf !== null;
+  if (hadSession) {
+    session.sessionsDestroyed += 1;
+    lifecycleEvent("pdf_session:dispose_begin");
+  }
   try {
     // The advisory worker cleanup, run while the document is still alive:
     // pdf.cleanup() drops the resolved-page and font caches pdf.js holds for
@@ -125,6 +134,7 @@ async function destroy(): Promise<void> {
     // book it was themed for.
     publishBakedPaper();
     disposeScratch();
+    if (hadSession) lifecycleEvent("pdf_session:dispose_complete");
   }
 }
 
@@ -199,11 +209,28 @@ function setAppearanceMenuOpen(on: boolean): void {
 }
 
 function stats(): Stats {
+  let activeRenders = 0;
+  for (const st of session.stateByCanvasId.values()) {
+    if (st.renderTask) activeRenders += 1;
+  }
   return {
     pages: session.stateByCanvasId.size,
     thumbs: session.thumbCache.size,
     thumbLimit: THUMB_CACHE_MAX,
     thumbTasks: session.thumbTasks.size,
+    activeRenders,
+    hasDocument: session.pdf !== null,
+    hasLoadingTask: session.loadingTask !== null,
+    sessionsOpened: session.sessionsOpened,
+    sessionsDestroyed: session.sessionsDestroyed,
+    workersCreated: session.workersCreated,
+    workersTerminated: session.workersTerminated,
+    rendersStarted: session.rendersStarted,
+    rendersCompleted: session.rendersCompleted,
+    rendersCancelled: session.rendersCancelled,
+    rendersFailed: session.rendersFailed,
+    rendersQueued: session.rendersQueued,
+    rendersDropped: session.rendersDropped,
   };
 }
 
@@ -250,6 +277,7 @@ globalThis.PDFReader = {
   open,
   resolveOutline,
   destroy,
+  setLifecycleLog,
   registerPage,
   unregisterPage,
   cancelPage,

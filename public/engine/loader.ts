@@ -14,7 +14,7 @@ import type {
 import { offscreenFor, releaseCanvas } from "./canvas";
 import { errorInfo, fail, failFrom } from "./errors";
 import { resetPaperForDocument } from "./paper";
-import { session } from "./state";
+import { lifecycleEvent, noteWorkerCreated, session } from "./state";
 
 type PdfjsLib = {
   getDocument: (params: Record<string, unknown>) => {
@@ -111,7 +111,15 @@ export async function destroyTask(task: LoadingTask | null | undefined): Promise
   if (!task) return;
   if (destroyedTasks.has(task)) return;
   destroyedTasks.add(task);
-  session.setLoadingTask(null);
+  // Only THE task registered on the session is taken off it. A background
+  // cover render destroys its own task; that must not detach the OPEN
+  // document's task from its teardown path — the open task's reference here
+  // is the only thing destroy() can later follow to kill its worker.
+  if (session.loadingTask === task) {
+    session.setLoadingTask(null);
+  }
+  session.workersTerminated += 1;
+  lifecycleEvent("pdf_worker:terminate");
   try {
     await task.destroy();
   } catch (_) {
@@ -150,6 +158,7 @@ const OPEN_TIMEOUT_MSG = "Timed out opening this PDF (pdf.js worker failed to in
  *  the ceiling wins. Only the source differs between callers. */
 async function openTask(source: Record<string, unknown>): Promise<PDFDocumentProxy> {
   const task = getDocument({ ...BASE_PARAMS, ...source });
+  noteWorkerCreated();
   session.setLoadingTask(task);
   return await withTimeout(task.promise, OPEN_TIMEOUT_MS, OPEN_TIMEOUT_MSG, () => {
     void destroyTask(task);
@@ -274,6 +283,11 @@ export async function open(path: string): Promise<OpenResult> {
     session.setPdf(doc);
     session.setNumPages(doc.numPages);
     session.setCurrentPath(path);
+    // One session per open document: counted only once the document proxy is
+    // in place, so a failed or timed-out open never counts a session that
+    // never existed (its worker is still counted, because it existed).
+    session.sessionsOpened += 1;
+    lifecycleEvent("pdf_session:create");
     // A new document means a fresh paper-detection budget and palette
     // (engine/paper.ts) — plus, when the cache remembers this book, its
     // colours published right away. Runs after setCurrentPath so the cache
@@ -502,11 +516,15 @@ export async function coverDataUrl(path: string, maxWidth = 240): Promise<CoverR
       result = await renderCoverFromPdf(session.pdf, maxWidth);
     } else {
       const task = getDocument({ ...BASE_PARAMS, data: await fetchBytes(path) });
+      noteWorkerCreated();
       try {
         const doc = await task.promise;
         result = await renderCoverFromPdf(doc, maxWidth);
       } finally {
-        try { await task.destroy(); } catch (_) { /* ignore */ }
+        // The cover's own task goes through the shared choke point so the
+        // worker counters stay balanced and the session's open task (if a
+        // document opened meanwhile) is never mistaken for this one.
+        await destroyTask(task);
       }
     }
     return { ok: true, dataUrl: result.dataUrl, width: result.width, height: result.height };

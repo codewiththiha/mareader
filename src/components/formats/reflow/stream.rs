@@ -54,8 +54,8 @@ use leptos::html;
 use leptos::prelude::*;
 use virtual_list::{Budget, Viewport};
 use virtual_list_leptos::{
-    use_virtualizer, Align, ScrollMode, VirtualItem, VirtualItemState, Virtualizer,
-    VirtualizerOptions,
+    Align, ScrollMode, VirtualItem, VirtualItemState, Virtualizer, VirtualizerOptions,
+    use_virtualizer,
 };
 use wasm_bindgen::JsCast;
 
@@ -63,17 +63,17 @@ use app_chrome::hooks::dom::PAGE_LIST_ID;
 use app_chrome::hooks::use_resize_observer::observe_content_size;
 use reflow_core::pager::first_block_of_page;
 
+use super::block_render;
+use super::page::content_style;
 use crate::components::formats::block_render::BlockView;
 use crate::components::formats::reflow::BlockSearchHits;
-use super::block_render;
 use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::page_host::block_row_id;
-use crate::epoch::epoch_signal;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
-use super::page::content_style;
-use crate::state::reader::TypographySignal;
+use crate::epoch::epoch_signal;
 use crate::state::ReaderState;
+use crate::state::reader::TypographySignal;
 
 /// How many frames the mount anchor re-asserts the resume position before it
 /// trusts the layout. More than the page strip's budget, and for a reason that
@@ -104,8 +104,8 @@ pub fn ReflowStreamLayout(
     state: ReaderState,
     #[prop(into)] progress_visible: Signal<bool>,
 ) -> impl IntoView {
-    let typography =
-        use_context::<TypographySignal>().expect("TypographySignal must be provided by app bootstrap");
+    let typography = use_context::<TypographySignal>()
+        .expect("TypographySignal must be provided by app bootstrap");
     let texture_class = texture_class(state);
     let tx_zoom = zoom_style(state);
     // The container observation dies with this layout, explicitly: an
@@ -169,7 +169,13 @@ pub fn ReflowStreamLayout(
             .with_untracked(|heights| heights.iter().sum::<f64>())
             * scale
             + STREAM_TAIL_PADDING;
-        match state.document.content.reflow.resume_fraction.get_untracked() {
+        match state
+            .document
+            .content
+            .reflow
+            .resume_fraction
+            .get_untracked()
+        {
             Some(fraction) if total > initial_vh => {
                 (fraction * (total - initial_vh)).clamp(0.0, total)
             }
@@ -198,10 +204,22 @@ pub fn ReflowStreamLayout(
             .initial(Viewport::main_only(initial_vh), initial_offset)
             .epoch(epoch),
     );
+    // The stream's virtualizer joins the diagnostics registry for its
+    // lifetime, the same way the page strips do. The handle rides a
+    // StoredValue because a cleanup closure must be Send + Sync, which the
+    // Rc inside a Virtualizer is not.
+    crate::diagnostics::track_virtualizer(&v);
+    let tracked = StoredValue::new_local(v.clone());
+    on_cleanup(move || tracked.with_value(crate::diagnostics::untrack_virtualizer));
 
     // Publish the handle: search reveal and the bottom bar's scrubber aim
     // the stream through `state.document.content.reflow.stream` rather than a second wiring.
-    state.document.content.reflow.stream.set_value(Some(v.clone()));
+    state
+        .document
+        .content
+        .reflow
+        .stream
+        .set_value(Some(v.clone()));
     {
         on_cleanup(move || state.document.content.reflow.stream.set_value(None));
     }
@@ -272,7 +290,9 @@ pub fn ReflowStreamLayout(
             }
             applied.set_value(scale);
             let factor = (scale / prev).max(0.01);
-            v.rescale(factor, move |i| heights.get(i).copied().unwrap_or(0.0) * scale);
+            v.rescale(factor, move |i| {
+                heights.get(i).copied().unwrap_or(0.0) * scale
+            });
         });
     }
 
@@ -419,8 +439,8 @@ pub fn ReflowStreamLayout(
     let column_style = move || {
         let s = scale.get();
         let pct = column_pct.get();
-        let geo = reflow_core::geometry::geometry(typography.get().book_layout)
-            .with_column_pct(pct);
+        let geo =
+            reflow_core::geometry::geometry(typography.get().book_layout).with_column_pct(pct);
         let m = margin.get().round();
         // The width is the reading column alone; the page margin is an
         // INSET (--tx-col-inset, consumed by the .tx-align-* classes),
@@ -609,7 +629,13 @@ fn anchor_stream(state: ReaderState, v: &Virtualizer) {
         ANCHOR_SETTLE_FRAMES,
         move || {
             aim.remeasure_viewport();
-            if let Some(fraction) = state.document.content.reflow.resume_fraction.get_untracked() {
+            if let Some(fraction) = state
+                .document
+                .content
+                .reflow
+                .resume_fraction
+                .get_untracked()
+            {
                 // Consume the fraction: a later remount (a mode flip and back)
                 // anchors on the page — the fraction described a layout the
                 // reader has since left.
