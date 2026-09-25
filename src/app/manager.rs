@@ -198,15 +198,9 @@ impl RuntimeManager {
             .starting
             .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
-            web_sys::console::log_1(&JsValue::from_str(&format!(
-                "[shell] {runtime:?} start queued behind a running start"
-            )));
             *self.pending.lock().unwrap() = Some((runtime, launch));
             return;
         }
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "[shell] {runtime:?} start begins"
-        )));
         self.start(runtime, launch).await;
         loop {
             let queued = self.pending.lock().unwrap().take();
@@ -400,30 +394,14 @@ impl RuntimeManager {
         let runtime = match self.active() {
             Some(ActiveRuntime::Library) => RuntimeName::Library,
             Some(ActiveRuntime::Reader) => RuntimeName::Reader,
-            None => {
-                web_sys::console::log_1(&JsValue::from_str(
-                    "[shell] dispose-skip: no active runtime",
-                ));
-                return;
-            }
+            None => return,
         };
         let Some(driver) = self.live_driver() else {
-            web_sys::console::log_1(&JsValue::from_str(&format!(
-                "[shell] dispose-skip: {runtime:?} has no live driver"
-            )));
             *self.slot.lock().unwrap() = Slot::None;
             return;
         };
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "[shell] dispose {runtime:?} gen {}",
-            driver.generation()
-        )));
         let promise = driver.grace_dispose();
         let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "[shell] dispose {runtime:?} settled: {:?}",
-            driver.take_dispose_outcome_peek()
-        )));
         match driver.take_dispose_outcome() {
             Some(Ok(())) | None => {
                 driver.teardown();
@@ -460,10 +438,6 @@ impl RuntimeManager {
 
     /// A reader handback: dispose the reader, then the library is active.
     pub fn navigate_library(&self, state: &ShellState) {
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "[shell] navigate-library (slot {:?})",
-            *self.slot.lock().unwrap()
-        )));
         navigate("/");
         self.start_library(state);
     }

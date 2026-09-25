@@ -838,12 +838,6 @@ impl Driver {
         self.dispose_pending.borrow_mut().take()
     }
 
-    /// The same verdict, without consuming it — disposal-path telemetry
-    /// peeks at it while the verdict itself still belongs to the counter.
-    pub fn take_dispose_outcome_peek(&self) -> Option<Result<(), FrameFatalStage>> {
-        *self.dispose_pending.borrow()
-    }
-
     fn resolve_dispose(&self, outcome: Result<(), FrameFatalStage>) {
         if outcome.is_ok()
             && let (Some(id), Some(window)) = (self.dispose_timer.take(), window())
