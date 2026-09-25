@@ -13,6 +13,24 @@
 // blocks inline scripts. Copied to the dist root by index.html's
 // `data-trunk rel="copy-file"` and required by tools/check-runtime-artifacts.mjs.
 (function () {
+  // A document opened straight from the filesystem can never start: wasm
+  // modules and the root-absolute URLs this page is built from need a real
+  // origin. Say so at once instead of spinning through the 20 s deadline.
+  if (window.location.protocol === "file:") {
+    var early = document.getElementById("shell-boot");
+    if (early) {
+      early.setAttribute("data-shell-boot", "file-protocol");
+      var earlyHint = early.querySelector(".shell-boot__hint");
+      if (earlyHint) {
+        earlyHint.textContent =
+          "This page must be served over HTTP — run npm run dev:frontend; a file:// window cannot start WebAssembly.";
+      }
+    }
+    console.error(
+      "[mareader] opened via file:// — serve the app over HTTP instead (npm run dev:frontend)"
+    );
+    return;
+  }
   var DEADLINE_MS = 20000;
 
   window.setTimeout(function () {

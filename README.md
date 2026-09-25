@@ -1077,13 +1077,16 @@ cargo tauri dev
 ```
 
 This generates the TypeScript bundles, starts Trunk on port 1420 and opens the native window. Tailwind is compiled by a Trunk pre-build hook, so stylesheet changes rebuild
-automatically. To run the interface in a plain browser instead, without the native shell,
-generate the engine bundle once and serve:
+automatically. To run the interface in a plain browser instead, without the native shell, use the dev orchestrator — the shell page alone is not the app: the library
+and reader runtimes come from their own builds, merged into the same output, and a bare `trunk serve` builds only the shell (the library frame would wait on a page
+that does not exist):
 
 ```bash
-npm run build:ts
-trunk serve
+npm run dev:frontend
 ```
+
+It builds all three artifacts, merges them, starts Trunk on port 1420, and only reports the boot as safe once the dev server actually serves every artifact the shell
+loads.
 
 Note that the file dialog and drag-and-drop rely on Tauri and are unavailable in a browser.
 

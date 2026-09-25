@@ -349,6 +349,11 @@ impl RuntimeManager {
                     let label = protocol_stage_label(stage);
                     let message = format!("{cause} (protocol stage {label})");
                     let error = BootError::new(runtime, protocol_boot_stage(stage), message);
+                    // The page placeholder still covers the window until the
+                    // first paint: a failure before that paint must step it
+                    // aside too, or the error card lands behind the one thing
+                    // the user is still looking at.
+                    boot::uncover_page();
                     if let Some(host) = manager.host() {
                         clear_host(&host);
                         boot::paint_error(&host, &error);
