@@ -11,6 +11,8 @@ This repository is being migrated from a unified reader application toward expli
 
 The goal is real lifecycle isolation and lower retained memory, not merely new files or parallel abstractions.
 
+Before planning or editing, read `docs/branch-state.md`: it records the current phase state, the architecture as actually built, and the invariants the test suites enforce. When memory of this branch disagrees with that file, the file wins.
+
 ## Non-negotiable rules
 
 ### 1. Do not preserve the unified architecture as the production path
