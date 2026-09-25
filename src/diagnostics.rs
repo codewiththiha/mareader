@@ -60,16 +60,7 @@ fn install_web(state: ShellState) {
         });
         if let Some(digest) = state.manager.last_digest.lock().unwrap().clone() {
             if let (Some(obj), Some(d)) = (value.as_object_mut(), digest.as_object()) {
-                for (k, v) in d {
-                    // The manager's own keys are shell-authored and win: a
-                    // runtime's digest may carry same-named facts about ITS
-                    // frame (its own per-iframe lifecycle counters), and a
-                    // merged overwrite would erase the sessions accounting
-                    // the shell is the authority for (§21).
-                    if !obj.contains_key(k) {
-                        obj.insert(k.clone(), v.clone());
-                    }
-                }
+                merge_runtime_digest(obj, d);
             }
         }
         // The phase's gate, decided by the SHELL from its own manager facts:
@@ -92,4 +83,72 @@ fn install_web(state: ShellState) {
     let name = wasm_bindgen::JsValue::from_str("__mareaderDiagnostics");
     let target: js_sys::Object = window.unchecked_into();
     _ = js_sys::Reflect::set(&target, &name, &probe);
+}
+
+/// Fold a runtime's last digest into the shell's own diagnostics object.
+///
+/// Shell-authored keys win the merge, unconditionally: a digest reports its
+/// frame's local counters, and one of them shares `readerDisposesCompleted`
+/// with the shell's cross-runtime session accounting. The invariant this
+/// function exists to hold is that a runtime digest may never overwrite a
+/// Shell-owned diagnostic field — the digest keeps its own local value on
+/// its side of the boundary, the shell keeps its authority on its side.
+#[cfg(any(test, target_arch = "wasm32"))]
+fn merge_runtime_digest(
+    shell: &mut serde_json::Map<String, serde_json::Value>,
+    digest: &serde_json::Map<String, serde_json::Value>,
+) {
+    for (key, value) in digest {
+        if shell.contains_key(key) {
+            continue;
+        }
+        shell.insert(key.clone(), value.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_runtime_digest;
+
+    /// The regression behind the rapid-transition CI failure: a reader
+    /// digest reporting its frame-local `readerDisposesCompleted = 1`
+    /// merged over the shell's authoritative `2` and the browser suite
+    /// then read "a session outlived its close". Shell-owned fields must
+    /// survive any digest, and the digest's own counters must stay intact
+    /// on its side of the merge.
+    #[test]
+    fn runtime_digest_never_overwrites_shell_owned_fields() {
+        let mut shell: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
+            r#"{
+                "activeRuntime": "library",
+                "readerSessionsCreated": 2,
+                "readerDisposesCompleted": 2,
+                "librarySessionsCreated": 3,
+                "libraryDisposesCompleted": 2
+            }"#,
+        )
+        .expect("shell fixture parses");
+        let digest: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
+            r#"{
+                "readerRuntimesCreated": 1,
+                "readerDisposesCompleted": 1,
+                "virtualizerLive": 0
+            }"#,
+        )
+        .expect("digest fixture parses");
+
+        merge_runtime_digest(&mut shell, &digest);
+
+        // The shell's cross-runtime accounting stays authoritative.
+        assert_eq!(shell["readerSessionsCreated"], 2);
+        assert_eq!(shell["readerDisposesCompleted"], 2);
+        assert_eq!(shell["librarySessionsCreated"], 3);
+        assert_eq!(shell["libraryDisposesCompleted"], 2);
+        assert_eq!(shell["activeRuntime"], "library");
+        // Digest-only keys still flow through the presentation boundary.
+        assert_eq!(shell["readerRuntimesCreated"], 1);
+        assert_eq!(shell["virtualizerLive"], 0);
+        // And the digest still reports its own local counter as-is.
+        assert_eq!(digest["readerDisposesCompleted"], 1);
+    }
 }
