@@ -1,0 +1,38 @@
+name: Format
+
+# Maintenance tool, NOT a PR gate: dispatch it and this writes the tree's
+# rustfmt output and pushes it as one normalization commit — the intentional
+# formatting change a new rustfmt version calls for. The format lane in
+# ci.yml is the actual gate; this only produces the commit it needs to exist.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: format-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply rustfmt
+        run: cargo fmt --all
+      - name: Commit the normalized formatting
+        run: |
+          git config user.name "kt007441"
+          git config user.email "kt007441@gmail.com"
+          if git diff --quiet; then
+            echo "tree already formatted"
+            exit 0
+          fi
+          git add -A
+          git commit -m "Normalize formatting with rustfmt"
+          git push

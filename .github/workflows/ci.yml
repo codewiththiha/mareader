@@ -1,15 +1,10 @@
 name: CI
 
+# Every branch, because that is where the work happens. Tags belong to the
+# release workflow.
 on:
   push:
-    # Every branch, because that is where the work happens: this repo's history
-    # is a thousand runs on long-lived feature branches and almost none on main,
-    # so `branches: [main, master]` here would silence CI on exactly the commits
-    # that need it. `"**"` is spelled out rather than left implicit so that the
-    # tag filter below cannot be read as narrowing the branch one.
     branches: ["**"]
-    # Tags are the release workflow's business — it builds all four platforms
-    # off `v*` — so they are kept out of this one instead of being built twice.
     tags-ignore: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -19,348 +14,142 @@ on:
 permissions:
   contents: read
 
-# Every name in this block starts with CARGO or RUST, and rust-cache folds both
-# prefixes into its cache key. That is the point of the first two — they have to
-# be identical on every run or nothing is ever a hit — and it is also the trap:
-# editing a value here, or adding a variable, silently throws away every warm
-# cache in the repo on the next run. Step-scoped env (the RUSTDOCFLAGS below)
-# is safe, because the cache action has already computed its key by then.
+# Incremental artifacts are useless across runners; debug info stays out of
+# the dev profile (Cargo.toml asks for the same), which is what keeps the
+# caches ~360MB rather than multiple GB.
 env:
   CARGO_TERM_COLOR: always
-
-  # rust-cache sets this itself; saying it here means the build behaves the same
-  # whether or not that action is in the job. Incremental artifacts are written
-  # into target/incremental, are useless across runners, and checkout refreshes
-  # every mtime on the way in — so all they would do is inflate the cache and
-  # invalidate themselves.
   CARGO_INCREMENTAL: "0"
-
-  # Debug info stays out of the build. Cargo.toml already asks for this
-  # (`debug = false` and `strip = "debuginfo"` on [profile.dev], and the same on
-  # [profile.dev.package."*"]), which is why the cache is ~360MB rather than
-  # multiple GB; this pins it from the CI side too, so a profile edit in the
-  # manifest cannot quietly start shipping symbols through the cache.
   CARGO_PROFILE_DEV_DEBUG: "0"
-
-  # A crates.io hiccup should cost a retry, not a red run.
   CARGO_NET_RETRY: "10"
   RUSTUP_DOWNLOAD_TIMEOUT: "600"
 
-# Same-branch pushes cancel the previous run; release tags keep their runs.
-#
-# The group spells a pull request out by number rather than leaning on
-# github.ref alone: on a pull_request event that ref is refs/pull/N/merge, which
-# is unique per PR but reads as an opaque path in the UI and collides with
-# nothing, while on a push it is the branch. Naming the PR explicitly keeps the
-# two event kinds in groups that are obviously distinct, so a force-push cannot
-# be seen as contending with an open PR off the same branch.
+# Same-branch pushes cancel the previous run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Four lanes that used to be one serial job. The split is worth more than the
-# tidiness: the app crate's test harness is a ~90s compile that clippy, the wasm
-# check and the TypeScript build never had to wait behind, and a clippy failure
-# stopped the run before anyone learned whether the tests passed. One push now
-# reports every lane, and the wall clock is the slowest of them rather than the
-# lot of them added up.
-#
-# Each cargo lane owns its cache key. Two lanes sharing one key is two lanes
-# racing to write it: GitHub refuses the second save outright, so whichever job
-# finishes first decides what the other one restores next time, and neither
-# carries the artifacts the other actually built. Separate keys cost one cold
-# build each and then stay put.
-#
-# The timeouts are sized against the cold numbers those first builds actually
-# came in at — lint 3m15s, test 5m29s, macOS 6m47s, web 50s — with room for a
-# stable-Rust bump to throw every cache key away at once, which is the only
-# routine event that makes a lane rebuild from nothing.
+# Five independent lanes; the wall clock is the slowest of them, not the sum.
+# Each Cargo lane owns its cache key. Rationale: docs/ci-architecture.md.
 jobs:
+  format:
+    name: Rust / format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
   lint:
-    name: Lint (clippy, wasm)
-    runs-on: ubuntu-22.04
+    name: Rust / lint
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      # No system packages are installed here on purpose: nothing in this lane
-      # compiles the `mareader-shell` Tauri shell (clippy and rustdoc exclude it, the wasm
-      # check targets the pure-Rust frontend), so webkit2gtk & co. would be dead
-      # weight. The shell is linted natively by the macOS lane below and fully
-      # built by the release pipeline.
-      #
-      # rustfmt is deliberately not installed: see the note on the clippy step.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
           targets: wasm32-unknown-unknown
+          cache-key: lint-cache
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: lint-cache
+      # Cheap early failure: --locked everywhere below rejects a lockfile
+      # that no longer matches the manifests; this names it first.
+      - name: Lockfile resolves without updates
+        run: cargo metadata --format-version 1 --locked --no-deps > /dev/null
 
-      # `--locked` fails with "cannot update the lock file" and nothing else,
-      # which is a poor thing to be handed at two in the morning — and this repo
-      # has now tripped it twice for two different reasons: a member whose
-      # version in the lock had not followed its manifest, and three crates left
-      # sitting in the lock after the dependencies that pulled them in went away
-      # (cargo prunes unreachable entries, and pruning is an update). Resolve
-      # once without the flag, print what cargo actually wanted to change, then
-      # put the committed file back so every gate below still sees the lock
-      # exactly as it is in git.
-      - name: Show what --locked would reject (advisory)
-        run: |
-          cp Cargo.lock /tmp/Cargo.lock.committed
-          cargo metadata --format-version 1 > /dev/null || true
-          if ! git diff --quiet -- Cargo.lock; then
-            echo "::error::Cargo.lock does not match the manifests; cargo wants:"
-            git --no-pager diff -- Cargo.lock
-          fi
-          cp /tmp/Cargo.lock.committed Cargo.lock
-
-      # Clippy is gated with `-D warnings` and NO allow-list: the six lints that
-      # used to be exempted here were fixed at their sites instead, so a warning
-      # anywhere in the workspace is a red run. A lint that is genuinely wrong
-      # for one site gets a reasoned `#[allow]` there — where a reader meets the
-      # code and the reason — rather than a blanket exemption that silences the
-      # whole workspace forever.
-      #
-      # No `cargo fmt --check` here, deliberately: the tree is hand-formatted in
-      # a style rustfmt would rewrite across ~40 files, so the gate would be red
-      # on the day it landed. Mareader.md, "Known gaps".
-      #
-      # `--workspace`, like the test lane: a bare `cargo clippy` selects only the
-      # root package, which would silently leave pdf-core (the zoom ladder and
-      # fit maths), pdf-engine, pdf-paper, and both virtual-list crates out of
-      # the lint. `mareader-shell` is excluded here and linted natively on the macOS lane,
-      # which is also where its tests run.
-      #
-      # `--locked` is what caught Cargo.lock still calling the shell crate 0.7.0
-      # a whole release after it became 0.8.0: cargo re-resolved on every run and
-      # threw the answer away, so the drift was invisible until something refused
-      # to resolve quietly. check-versions now reads the lock as well and names
-      # the file, which is a better error than this one.
+      # No allow-list: a warning anywhere in the workspace is a red run. The
+      # shell crate is linted natively by the macOS lane.
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets --exclude mareader-shell --locked -- -D warnings
 
-      # The frontend is Rust compiled to wasm; verify it compiles for the wasm
-      # target without a full `trunk build` (that lives in the release pipeline).
-      #
-      # Warnings are fatal here too — this is the only lane that compiles the
-      # `cfg(target_arch = "wasm32")` sites the host lanes never see. The deny
-      # rides in every crate's own `[lints.rust] warnings = "deny"` rather than
-      # in RUSTFLAGS: the table applies to this workspace's crates and nothing
-      # else, so dependency artifacts keep the warm cache keys a RUSTFLAGS edit
-      # would throw away.
-      - name: Check wasm frontend
+      # The only lane that compiles the wasm32-only sites the host builds
+      # never see. Denies ride each crate's own lints table.
+      - name: Check the wasm frontend
         run: cargo check --target wasm32-unknown-unknown --locked
 
-      # Feature unification hides under-declared dependencies: inside the
-      # workspace another crate turns on the web-sys features this one uses,
-      # so a missing feature only surfaces for whoever reuses the crate on
-      # its own. app-chrome is the crate meant to be reused (it is the
-      # format-agnostic chrome), so check it alone.
+      # Workspace feature unification hides under-declared dependencies;
+      # app-chrome is the crate meant to be reused, so check it alone.
       - name: Check app-chrome standalone
         run: cargo check -p app-chrome --target wasm32-unknown-unknown --locked
 
-      # No rustdoc link gate, deliberately: it finds 33 unresolved intra-doc
-      # links across three crates today, and repairing them is a dedicated
-      # commit. Mareader.md, "Known gaps".
-
   test:
-    name: Test (workspace)
-    runs-on: ubuntu-22.04
+    name: Rust / test
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      # No clippy, no rustfmt and no wasm target here: this lane only builds and
-      # runs the host test harnesses, and every component it does not install is
-      # a second off the setup and a few MB out of the cache.
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust
         with:
-          shared-key: test-cache
-
-      # --workspace, not a bare `cargo test`: the manifest root is also the
-      # `mareader` package, so a bare run tests only the app and silently
-      # skips every member crate — pdf-core (the zoom ladder and fit maths),
-      # virtual-list and virtual-list-leptos (the geometry kernel and its
-      # anchor arithmetic). Those hold the invariants the reader depends on.
-      #
-      # `mareader-shell` (the Tauri shell) is excluded: `tauri::generate_context!`
-      # resolves `frontendDist` at compile time and panics when `../dist`
-      # does not exist, and the frontend is only built by the release
-      # pipeline. Its tests run on the macOS lane, which compiles it natively.
+          cache-key: test-cache
+      # --workspace, not a bare run: the root package would silently skip
+      # every member crate. The shell is tested on the macOS lane (its
+      # tauri context needs a frontend dist to compile against).
       - name: Tests
-        run: |
-          set -o pipefail
-          # tee opens its file the moment the pipeline starts, which on a cold
-          # cache is before cargo has created target/. It cannot open the log,
-          # forwards the output anyway, and exits 1 once cargo is done — and
-          # pipefail hands that 1 to the step: 1,021 passing tests reported red.
-          # A warm cache hides it by restoring target/ ahead of the step.
-          mkdir -p target
-          cargo test --workspace --exclude mareader-shell --locked 2>&1 | tee target/test-output.txt
-
-      # The README states how many tests the workspace has, in two places, and
-      # the count had drifted to less than half the real figure without anyone
-      # noticing: no compiler reads prose, and a test count is a number that
-      # only goes up. Nothing but this lane has both halves — the test output
-      # and a place to read the document — so the comparison lives here rather
-      # than in the web lane's check scripts, which have no Rust to count with.
-      - name: Verify the README's test count
-        run: |
-          set -euo pipefail
-          actual=$(grep -oE '^test result: ok\. [0-9]+ passed' target/test-output.txt \
-            | grep -oE '[0-9]+' | awk '{s+=$1} END{print s}')
-          echo "workspace ran $actual tests"
-          bad=0
-          while read -r claimed; do
-            if [ "$claimed" != "$actual" ]; then
-              echo "::error::README.md claims $claimed tests, but the workspace ran $actual"
-              bad=1
-            fi
-          done < <(grep -oE '^[[:space:]]*(- )?[0-9][0-9,]* (Rust )?tests?\b' README.md \
-                     | grep -oE '[0-9][0-9,]*' | tr -d ',')
-          [ "$bad" -eq 0 ]
+        run: cargo test --workspace --exclude mareader-shell --locked
 
   web:
-    name: Web (TypeScript, CSS, engine, contracts)
-    runs-on: ubuntu-22.04
+    name: Web / contracts
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-
-      # No Rust in this lane at all: everything here reads the tree or runs the
-      # emitted JavaScript, which is why it can start the moment the checkout
-      # lands rather than behind a toolchain install — and why it is the lane
-      # that reports a version or a contract drift first.
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-
-      - name: Install Node dependencies
+      - name: Install dependencies
         run: npm ci
-
-      # Type-checks tsconfig.json with --noEmit and then emits the tools, so a
-      # separate type-check step would put the same compiler over the same files
-      # twice for the same answer. What the steps below consume is the emission:
-      # scripts/*.js and the three engine bundles.
-      - name: Build TypeScript
+      # One type-check + emission; the steps below consume the artifacts
+      # (contract scripts, engine bundle) built from current source here.
+      - name: Build TypeScript and the engine bundle
         run: npm run build:ts
-
-      # The stylesheet is compiled by a Trunk pre_build hook, which meant nothing
-      # but a release build ever ran it: a broken @apply or a token that stopped
-      # existing arrived as a bad bundle on a tag rather than as a red check on
-      # the commit that caused it.
       - name: Build CSS
         run: npm run build:css
-
-      # The consistency checks run before the engine smoke on purpose. They read
-      # the tree and finish in under a second between them, so a drift is
-      # reported in the first moments of the lane instead of after the smoke
-      # test has spent its half a minute.
-
-      - name: Verify versions are in sync
+      - name: Versions in sync
         run: node scripts/check-versions.js
-
-      # The formats the reader opens are declared three times (the reader-core
-      # registry, the Tauri shell's filesystem gate and the bundle's file
-      # associations) in two languages that cannot see each other. Same family
-      # of check as the versions one above.
-      - name: Verify supported formats are in sync
+      - name: Supported formats in sync
         run: node scripts/check-formats.js
-
-      # Module docs in this repo name the modules they work with, and a rename
-      # leaves the prose pointing at nothing. Rustdoc only checks `///` links it
-      # can resolve as links; most of these are backticked prose. The same claim
-      # is made in the stylesheets' comments, which no Rust tool reads at all.
-      - name: Verify comment paths resolve
+      - name: Comment paths resolve
         run: node scripts/check-doc-paths.js
-
-      # Dead code is deleted, not annotated. An `allow(dead_code)` or
-      # `allow(unused…)` outlives the code it excuses, and no compile lane can
-      # see a suppression sitting on wasm-only or platform-gated code — so this
-      # one reads the tree instead, and holds on every target at once.
-      - name: Verify no dead-code suppressions
+      - name: No dead-code suppressions
         run: |
           if grep -rn --include='*.rs' -E '#!?\[(allow|expect)\((dead_code|unused)' src crates src-tauri tests; then
             echo "::error::dead-code suppressions are not allowed — delete the code or use it"
             exit 1
           fi
-
-      # The engine and the app agree on three window-event names, declared once
-      # in Rust and once in TypeScript. A disagreement is silent at build time.
-      - name: Verify the window-event tables agree
+      - name: Window-event tables agree
         run: node scripts/check-events.js
-
-      # The app builds the page hosts and the engine paints into them; the only
-      # thing they share is names in the DOM, and a `closest` that finds nothing
-      # is not an error.
-      - name: Verify the DOM contract agrees
+      - name: DOM contract agrees
         run: node scripts/check-dom-contract.js
-
-      # Numbers declared on both sides of a boundary no compiler spans: the
-      # import progress channel, the title-bar height and traffic-light inset,
-      # the z-index scale, the sidebar's motion and gutter, and the import
-      # dock's progress ring. Each used to carry only a comment asking the
-      # reader to keep it in sync. A drift in any of them is silent: a progress
-      # ring that never moves, traffic lights sitting off-centre, a popover
-      # painting under the page, a rail that releases its canvases a frame late.
-      - name: Verify the chrome contracts agree
+      - name: Chrome contracts agree
         run: node scripts/check-chrome-contracts.js
-
-      # The imperative engine (public/pdfEngine.ts) is browser code; run its
-      # stub-based smoke test (compiled to scripts/test-engine-smoke.js by the
-      # TypeScript build step above) to catch regressions in open /
-      # render / theme-bake / scrub / destroy.
+      # Runs the bundle built above, not a stale artifact.
       - name: Engine smoke test
         run: node scripts/test-engine-smoke.js
 
-  # The Linux lanes cannot see `set_traffic_lights`: it is
-  # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
-  # feature set that feeds it) would otherwise first surface when a release
-  # tag builds the macOS legs. Check the shell crate natively on an Apple
-  # runner to keep that gap closed.
-  #
-  # Apple runners are the scarcest of the four labels and the slowest to be
-  # handed one, so this lane carries the widest timeout of the four: it builds
-  # tauri and the objc2 bindings, and a job that hangs on a runner should cost
-  # twenty-five minutes and a red square rather than sit there for the
-  # six-hour default.
-  macos-check:
-    name: Check (macOS-only shell code)
+  macos-shell:
+    name: macOS / shell
     runs-on: macos-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
-
-      # Its own key, like the Linux lanes: this is the only job that builds the
-      # shell crate, so there is nothing for it to share with and a key borrowed
-      # from a Linux lane would only ever miss.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: macos-cache
-
-      # `tauri::generate_context!` resolves `frontendDist` (../dist) at compile
-      # time and panics when it is missing; the frontend itself is built by the
-      # release pipeline, so a stub is enough to get past it here.
+          cache-key: macos-cache
+      # generate_context! resolves frontendDist at compile time; the frontend
+      # itself is built by the release pipeline, so a stub is enough here.
       - name: Stub the frontend dist
         run: |
           mkdir -p dist
           printf '<!doctype html><title>Mareader</title>' > dist/index.html
-
       - name: Clippy (deny warnings)
         run: cargo clippy -p mareader-shell --all-targets --locked -- -D warnings
-
-      # The AiChunk wire-contract tests live in this crate; without this step
-      # they compile nowhere and run nowhere.
+      # The AiChunk wire-contract tests live in this crate; without this
+      # step they compile nowhere.
       - name: Tests (shell crate)
         run: cargo test -p mareader-shell --locked
