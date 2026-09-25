@@ -520,6 +520,7 @@ interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;
   resolveOutline(): Promise<EngineResult<{ outline: unknown[] }>>;
   destroy(): Promise<void>;
+  quiesce(): void;
   setLifecycleLog(on: boolean): void;
   registerPage(page: number, canvasId: string, hostId?: string): void;
   prefetchThumb(page: number, scale: number): Promise<void>;

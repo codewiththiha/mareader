@@ -256,6 +256,13 @@ export type PDFReaderApi = {
   /** Cancel every in-flight page render — the close path's first act, so
    *  leaving interrupts raster work instead of racing the frame channel. */
   cancelPageRenders: () => void;
+  /** The work-stop half of a close intent: every in-flight and queued job
+   *  for the current document — page renders, thumbnail rasters, prefetch
+   *  awaits — stops in the click's own task, the cancel a boundary-crossing
+   *  teardown cannot make in time. The session survives; the one teardown
+   *  stays destroy's and shares the same idempotent sweep. Repeating it is
+   *  a no-op, and with no document it counts nothing. */
+  quiesce: () => void;
   renderPage: (
     canvasId: string,
     scale: number,

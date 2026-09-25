@@ -85,8 +85,40 @@ export async function run(): Promise<void> {
   await PDFReader.destroy();
   assertDrained(PDFReader.stats(), "rapid reopen + prefetch + close");
 
+  // quiesce is the work-stop half of a close intent: the cancel a
+  // boundary-crossing teardown cannot make in time, run in the click's own
+  // task. An unawaited render is in flight when it lands; it must resolve
+  // cancelled/dropped AND be counted, while the session survives — the one
+  // teardown stays destroy's, and destroy after quiesce must still drain
+  // with every counter pair balanced (the shared sweep counts nothing
+  // twice). A facade member missing from the bundle throws HERE rather than
+  // silently skipping in the reader.
+  const quiesceOpen = await PDFReader.open("/fake/book.pdf");
+  if (!quiesceOpen.ok) throw new Error(`quiesce open failed: ${quiesceOpen.error.message}`);
+  PDFReader.registerPage(1, "quiesce-0-cv", "quiesce-0");
+  const beforeQuiesce = PDFReader.stats();
+  const inFlight = PDFReader.renderPage("quiesce-0-cv", 1.0, false);
+  PDFReader.quiesce();
+  const settled = await inFlight;
+  if (settled.ok || settled.error.name !== "cancelled") {
+    throw new Error("quiesce did not stop the in-flight render");
+  }
+  const afterQuiesce = PDFReader.stats();
+  const stopped =
+    afterQuiesce.rendersCancelled +
+    afterQuiesce.rendersDropped -
+    (beforeQuiesce.rendersCancelled + beforeQuiesce.rendersDropped);
+  if (stopped < 1) throw new Error("quiesce stopped a render without counting it");
+  if (!afterQuiesce.hasDocument) throw new Error("quiesce tore the session down");
+  PDFReader.quiesce(); // a repeated close intent is a no-op, not a second sweep
+  PDFReader.unregisterPage("quiesce-0-cv");
+  await PDFReader.destroy();
+  assertDrained(PDFReader.stats(), "quiesce + close");
+
   // destroy() with nothing open (the open flow runs it as its first act):
-  // a no-op dispose must not count a session that never existed.
+  // a no-op dispose must not count a session that never existed. quiesce
+  // guards the same way: without a document it is nothing, counts nothing.
+  PDFReader.quiesce();
   await PDFReader.destroy();
   assertDrained(PDFReader.stats(), "destroy on an empty session");
 }

@@ -94,6 +94,37 @@ function cancelAndReleasePages(): void {
   }
 }
 
+/** The close intent's work-stop half: every in-flight and queued job for
+ *  the current document stops in the CALLER's own task, counted exactly as
+ *  a teardown counts it — while the session itself survives. Document,
+ *  worker, caches and page states stay owned by the one teardown path
+ *  (destroy), which the disposal runs later; every step here is idempotent,
+ *  so a destroy that follows a quiesce cancels nothing twice and counts
+ *  nothing twice. Repeating a quiesce is a no-op sweep, and with no
+ *  document open it counts nothing at all. */
+function quiesce(): void {
+  if (session.pdf === null) return;
+  lifecycleEvent("pdf_session:quiesce");
+  // Wake every in-flight prefetch await now (the same first act of dying
+  // `destroy` runs): none of them may step onto the worker after the
+  // close intent, and their active slots must drain as drops.
+  session.noteDocumentGone();
+  // The idle sweeper's timer would outlive the close intent; the teardown
+  // clears it again, idempotently.
+  session.clearIdleTimer();
+  cancelAndReleasePages();
+  // Every state is dead now: the drain cascade resolves each queued job
+  // as a drop instead of letting it start a fresh render after the intent.
+  drainPageLane();
+  for (const task of session.thumbTasks.values()) {
+    try { task.cancel(); } catch (_) { /* ignore */ }
+  }
+  session.thumbTasks.clear();
+  // The epoch invalidates the queued thumb jobs and wakes the epoch's
+  // waiters as drops; destroy resets the lane again, idempotently.
+  resetThumbLane();
+}
+
 async function destroy(): Promise<void> {
   // A dispose is only a session dispose when a session is actually here:
   // open() runs destroy() as its first act, and that call disposes nothing.
@@ -352,6 +383,7 @@ globalThis.PDFReader = {
   unregisterPage,
   cancelPage,
   cancelPageRenders,
+  quiesce,
   renderPage,
   renderThumb,
   cancelThumb,

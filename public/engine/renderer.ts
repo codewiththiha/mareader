@@ -132,9 +132,13 @@ export function cancelPage(canvasId: string): void {
  * the Shell: the dispose returns over the frame channel, and a raster that
  * finished inside those hops would make the close look like it interrupted
  * nothing. Work observed in flight when the user leaves is cancelled here,
- * not raced; the session destroy during disposal still owns the teardown. */
+ * not raced; the session destroy during disposal still owns the teardown.
+ * Superseding the per-canvas generation also stops work still queued behind
+ * the canvas's rAF or the lane — those guards settle it as a drop — and the
+ * rAF itself must fire to deliver that settle, so it is never cancelled. */
 export function cancelPageRenders(): void {
   for (const st of session.stateByCanvasId.values()) {
+    st.queueGen = (st.queueGen || 0) + 1;
     if (st.renderTask) {
       try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
       st.renderTask = null;
