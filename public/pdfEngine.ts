@@ -6,12 +6,18 @@
 export {};
 
 import type { PDFReaderApi, Stats } from "./engine/types";
-import { disposeScratch, releaseCanvas } from "./engine/canvas";
+import {
+  disposeScratch,
+  pooledIntermediateBytesEstimate,
+  releaseCanvas,
+} from "./engine/canvas";
 import { coverDataUrl, destroyTask, open, resolveOutline, takePendingFile } from "./engine/loader";
 import {
+  beginRenderGeneration,
   cancelPage,
   drainPageLane,
   pageLaneGauge,
+  readRenderTrace,
   registerPage,
   renderPage,
   rerenderLivePages,
@@ -233,8 +239,23 @@ function setAppearanceMenuOpen(on: boolean): void {
 
 function stats(): Stats {
   let activeRenders = 0;
+  let pageCanvasBytes = 0;
+  let rawRetentionBytes = 0;
   for (const st of session.stateByCanvasId.values()) {
     if (st.renderTask) activeRenders += 1;
+    // Engine-owned raster estimates: w*h*4 RGBA, by convention. These are
+    // correlation numbers for the baseline (what the engine holds), never a
+    // physical allocation query and never a share of a "total RAM".
+    if (st.canvas) pageCanvasBytes += st.canvas.width * st.canvas.height * 4;
+    if (st.rawCanvas && st.rawCanvas !== st.canvas) {
+      rawRetentionBytes += st.rawCanvas.width * st.rawCanvas.height * 4;
+    }
+  }
+  let thumbnailRasterBytes = 0;
+  for (const t of session.thumbCache.values()) {
+    for (const c of [t.raw, t.display]) {
+      if (c) thumbnailRasterBytes += c.width * c.height * 4;
+    }
   }
   const pageLane = pageLaneGauge();
   const thumbLane = thumbLaneGauge();
@@ -268,6 +289,10 @@ function stats(): Stats {
     thumbGenerationSize: thumbGenerationSize(),
     rawRetentionTimers: session.rawRetentionTimers(),
     sweepTimerArmed: session.sweepTimerArmed(),
+    pageCanvasBytesEst: pageCanvasBytes,
+    thumbnailRasterBytesEst: thumbnailRasterBytes,
+    rawRetentionBytesEst: rawRetentionBytes,
+    pooledIntermediateBytesEst: pooledIntermediateBytesEstimate(),
   };
 }
 
@@ -311,6 +336,8 @@ watchPaperTokens();
 
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
+  beginRenderGeneration,
+  renderTrace: readRenderTrace,
   open,
   resolveOutline,
   destroy,

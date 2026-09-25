@@ -107,6 +107,17 @@ export function isSharedScratch(c: HTMLCanvasElement | null | undefined): boolea
   return !!c && c === scratch;
 }
 
+/** Estimated bytes the recycler holds RIGHT NOW: pooled canvases (parked
+ *  at 1x1 placeholders) plus the scratch at its last bake size. Width x
+ *  height x 4 RGBA — an estimate for the baseline, never a physical
+ *  allocation query. */
+export function pooledIntermediateBytesEstimate(): number {
+  let bytes = 0;
+  for (const c of canvasPool) bytes += c.width * c.height * 4;
+  if (scratch) bytes += scratch.width * scratch.height * 4;
+  return bytes;
+}
+
 /** Drop the scratch backing store entirely (document teardown). */
 export function disposeScratch(): void {
   if (scratch && !scratchInUse) {

@@ -172,6 +172,152 @@ with blend (look-ahead) enabled. The numbers below are pasted verbatim from
 the `=== PHASE0 BROWSER BASELINE ===` tables the workflow prints; rerun the
 lane to reproduce or to compare a change against it.
 
+Recorded from Deep CI run **35983608664** (branch `split-wasm-modules-t10`,
+commit `2b58f11`, 2026-09-24) — the full matrix with all three raced closes,
+the fast-jump page-identity proof, the same-page reopen workload, and
+fail-closed accounting, zero wasm traps::
+
+```text
+sessionsOpened    == sessionsDestroyed
+workersCreated    == workersTerminated
+rendersStarted    == rendersCompleted + rendersCancelled + rendersFailed
+prefetchesStarted == prefetchesCompleted + prefetchesDropped
+```
+
+`workersTerminated` is counted only after pdf.js's worker shutdown round
+trip resolves, and `destroy()` awaits it — so a balanced worker pair means
+the worker is actually dead, not that death was scheduled. Thumbnail
+prefetch (the warmup and the idle cache fills) is lane work: bounded by the
+thumbnail lane, registered in `thumbTasks` under `prefetch-<page>` ids so
+teardown cancels it, epoch-guarded at every await so a stale prefetch never
+lands in the next document, and fully counted.
+
+The narration (`pdf_session:*`, `pdf_worker:*`, `render:*`,
+`thumb_prefetch:*` events) is opt-in and silent in normal operation; the
+counters are always on.
+
+The look-ahead's active work is visible from the Rust side:
+`pdf_engine::backdrop::pending_samples()` feeds the snapshot's
+`lookaheadSamplesActive` — pages whose offscreen colour sample is in
+flight — and it must read zero after a dispose.
+
+### The dev probe
+
+In the app webview console:
+
+```js
+__mareaderDiagnostics()   // prints + returns the full JSON snapshot,
+                          // with an `atBaseline` verdict, and turns
+                          // lifecycle narration on
+```
+
+Off the webview (host tests) the surface is inert; the counters and the
+`at_baseline()` check are still unit-tested on the host.
+
+A note on the reader-side counters' semantics: `readerRuntimesCreated`
+counts OPEN ATTEMPTS that claimed the document state — the boundary hook
+today's architecture has for "a runtime began". A failed open is a create
+whose dispose never needs to run, so the pairing these counters prove is
+the close path's completion, not liveness; the liveness truth is
+`readerRuntimeLive` plus the engine's `hasDocument`. Phase 1's explicit
+runtime object replaces this hook with a real lifetime.
+
+### CI enforcement
+
+Two automated layers:
+
+1. **Engine smoke suite** (`tools/engine-smoke/teardown.ts`, the web lane,
+   every PR): against the bundle built from current source, after
+   `destroy()`, after a rapid reopen + prefetch + close, and after a no-op
+   destroy — every live gauge empty, every counter pair balanced,
+   prefetches included.
+2. **Browser lifecycle baseline** (`tests/browser/`, the Deep CI lane):
+   the REAL built app in a REAL Chromium — real wasm, real pdf.js worker,
+   real renders — driven through opening a shipped sample book with blend
+   (look-ahead) enabled, the warmup prefetch, fast navigation with the
+   look-ahead observed ACTIVE, zoom pressure, a close during active work,
+   waiting for `atBaseline`, asserting every reader/engine counter drained
+   and balanced, and a reopen that repeats the cycle. The workload the
+   guide demands, automated against the production build; its per-stage
+   measurement table is the recorded baseline below.
+
+## The benchmark procedures
+
+### Automated (Deep CI, every run)
+
+The browser lane runs the documented workload matrix end to end and prints
+the per-stage measurement table (`=== PHASE0 BROWSER BASELINE ===`): after
+open, after the warmup, during scroll, after zoom, during fast jumps, after
+each raced close (render / prefetch / search), and the final state after
+the normal x10, large x5 and rapid-reopen x10 cycles, plus a summary line
+with the fast-jump render deltas and the reopen heap steps. Those tables
+are the recorded baseline — same command, same environment, every run,
+comparable across commits.
+
+### Manual (Tauri/WKWebView, per significant change)
+
+Run against a dev build (`trunk serve`, or `cargo tauri dev`); record a
+`__mareaderDiagnostics()` snapshot at every marked point, plus the process
+RSS from the OS (Task Manager / `ps` / Activity Monitor) as the second,
+non-interchangeable signal. Look-ahead stays ENABLED in every workload.
+
+Measure, per snapshot: `wasmHeapBytes`, `heapHighWaterBytes`,
+`engine.pages`, `engine.activeRenders`, `engine.thumbs`, `engine.thumbTasks`,
+`engine.hasDocument`, `engine.hasLoadingTask`, `paneLive`, `virtualizerLive`,
+`retainedVirtualItems`, `disposalEpoch`, and process RSS. Browser/WebView
+APIs and OS measurements do not return memory to the OS immediately — read
+them as different signals, and compare only like with like on the same build.
+
+### Workloads
+
+**A. Normal PDF lifecycle (x10)** — Library -> open a medium PDF -> read a
+few pages -> close -> Library. Record: before open, after open settles,
+after close settles. Expectation: every counter except the wasm heap and the
+monotonic counters returns to its pre-open value; `disposalEpoch` advances
+by exactly 1 per cycle.
+
+**B. Large PDF lifecycle (x5)** — same, scrolling through the document.
+Watch `retainedVirtualItems` during scroll (zombies are bounded and
+transient — they must drain within the grace period after scrolling
+settles).
+
+**C. Fast-scroll pressure** — open a large PDF, fast-scroll between distant
+ranges, pause, repeat, close. Record during (peaks are the point), after the
+pause, and after close. `engine.pages` stays at the RENDER_BUDGET ceiling
+during; returns to 0 after close.
+
+**D. Zoom pressure** — rapid zoom changes, scroll, return near original
+zoom, close. The zoom transients (scratch, bake output, snapshot masks) are
+the peak to watch: `heapHighWaterBytes` records the latch; `pages` and
+`activeRenders` must drain after close.
+
+**E. Look-ahead pressure** — move steadily so look-ahead is active, close
+DURING active prefetch. The close tail must complete (`disposalEpoch`
+advances, `dispose_complete` fires) and the engine must drain despite the
+in-flight work.
+
+**F. Close during active work** — close while a page renders, a thumbnail
+loads, search builds, look-ahead samples. Each variant: the counters must
+balance (a cancelled render counts as `rendersCancelled`), and nothing
+reader-owned survives.
+
+**G. Rapid reopen (x10)** — open -> close -> reopen the same PDF. The
+monotonic counters advance in lockstep; the interesting number is the wasm
+heap: it ratchets by allocation (the platform never shrinks it), so judge
+LEAK versus LATCH by whether the per-cycle step GROWS, not by whether the
+level rises.
+
+## Baseline results
+
+### Recorded: browser lifecycle baseline (automated)
+
+Environment: GitHub Actions `ubuntu-24.04`, headless Chromium (Playwright),
+the production `trunk build --release` output served statically, sample
+book *Programming Pearls (2nd Edition)* opened through the web test hook
+with blend (look-ahead) enabled. The numbers below are pasted verbatim from
+the `=== PHASE0 BROWSER BASELINE ===` tables the workflow prints; rerun the
+lane to reproduce or to compare a change against it.
+
 Recorded from Deep CI run **35977320462** (branch `split-wasm-modules-t10`,
 commit `7db2d91`, 2026-09-24) — the full matrix with all three raced closes,
 zero wasm traps, verified stable across a repeat run of the same commit:
@@ -180,26 +326,28 @@ zero wasm traps, verified stable across a repeat run of the same commit:
 === PHASE0 BROWSER BASELINE (chromium, release wasm build) ===
 policy: window ceiling 3 | zombie cap 12 | page lane 2 | thumb lane 3 | min fixture pages 40
 --- afterOpen ---
-{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":0,"liveWindowItems":19,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":2,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":2,"rendersDropped":0,"rendersFailed":0,"rendersQueued":2,"rendersStarted":2,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":3877632,"jsHeapBytes":10000000,"atBaseline":false}
+{"disposalEpoch":1,"readerPage":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":0,"liveWindowItems":19,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageCanvasBytesEst":3877632,"pageQueue":0,"pages":2,"pooledIntermediateBytesEst":4,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":2,"rendersDropped":0,"rendersFailed":0,"rendersQueued":2,"rendersStarted":2,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":0,"thumbs":0,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":3877632,"jsHeapBytes":10000000,"atBaseline":false}
 --- afterWarmup ---
-{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":0,"liveWindowItems":19,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":2,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":2,"rendersDropped":0,"rendersFailed":0,"rendersQueued":2,"rendersStarted":2,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":3877632,"jsHeapBytes":10000000,"atBaseline":false}
+{"disposalEpoch":1,"readerPage":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":0,"liveWindowItems":19,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageCanvasBytesEst":3877632,"pageQueue":0,"pages":2,"pooledIntermediateBytesEst":4,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":2,"rendersDropped":0,"rendersFailed":0,"rendersQueued":2,"rendersStarted":2,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":3877632,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":3877632,"jsHeapBytes":10000000,"atBaseline":false}
 --- duringScroll ---
-{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":1,"liveWindowItems":20,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":3,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":14,"rendersDropped":0,"rendersFailed":0,"rendersQueued":14,"rendersStarted":14,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":2298816,"jsHeapBytes":10000000,"atBaseline":false}
+{"disposalEpoch":1,"readerPage":18,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":2,"liveWindowItems":20,"retainedVirtualItems":1,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageCanvasBytesEst":2478816,"pageQueue":0,"pages":4,"pooledIntermediateBytesEst":4,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":14,"rendersDropped":0,"rendersFailed":0,"rendersQueued":14,"rendersStarted":14,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":3877632,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":2478816,"jsHeapBytes":10000000,"atBaseline":false}
 --- afterZoom ---
-{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":1,"liveWindowItems":20,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":3,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":29,"rendersDropped":0,"rendersFailed":0,"rendersQueued":29,"rendersStarted":29,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":5816448,"jsHeapBytes":10000000,"atBaseline":false}
+{"disposalEpoch":1,"readerPage":18,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":2,"liveWindowItems":20,"retainedVirtualItems":1,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageCanvasBytesEst":7852944,"pageQueue":0,"pages":4,"pooledIntermediateBytesEst":4,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":28,"rendersDropped":0,"rendersFailed":0,"rendersQueued":28,"rendersStarted":28,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":3877632,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":7852944,"jsHeapBytes":10000000,"atBaseline":false}
 --- duringFastJump ---
-{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":1,"liveWindowItems":20,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":3,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":36,"rendersDropped":0,"rendersFailed":0,"rendersQueued":36,"rendersStarted":36,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":5816448,"jsHeapBytes":10000000,"atBaseline":false}
+{"disposalEpoch":1,"readerPage":11,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":1,"liveWindowItems":20,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageCanvasBytesEst":5816448,"pageQueue":0,"pages":3,"pooledIntermediateBytesEst":4,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":35,"rendersDropped":0,"rendersFailed":0,"rendersQueued":35,"rendersStarted":35,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":3877632,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":5816448,"jsHeapBytes":10000000,"atBaseline":false}
 --- afterCloseDuringRender ---
-{"disposalEpoch":2,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageQueue":0,"pages":0,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":2,"rendersCompleted":36,"rendersDropped":1,"rendersFailed":0,"rendersQueued":39,"rendersStarted":38,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
+{"disposalEpoch":2,"readerPage":1,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageCanvasBytesEst":0,"pageQueue":0,"pages":0,"pooledIntermediateBytesEst":0,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":2,"rendersCompleted":35,"rendersDropped":1,"rendersFailed":0,"rendersQueued":38,"rendersStarted":37,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
 --- afterCloseDuringPrefetch ---
-{"disposalEpoch":2,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageQueue":0,"pages":0,"prefetchesCompleted":1,"prefetchesDropped":1,"prefetchesStarted":2,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":3,"rendersDropped":0,"rendersFailed":0,"rendersQueued":3,"rendersStarted":3,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
+{"disposalEpoch":2,"readerPage":1,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageCanvasBytesEst":0,"pageQueue":0,"pages":0,"pooledIntermediateBytesEst":0,"prefetchesCompleted":0,"prefetchesDropped":1,"prefetchesStarted":1,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":3,"rendersDropped":0,"rendersFailed":0,"rendersQueued":3,"rendersStarted":3,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
 --- afterCloseDuringSearch ---
-{"disposalEpoch":2,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageQueue":0,"pages":0,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":3,"rendersDropped":0,"rendersFailed":0,"rendersQueued":3,"rendersStarted":3,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
+{"disposalEpoch":2,"readerPage":1,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageCanvasBytesEst":0,"pageQueue":0,"pages":0,"pooledIntermediateBytesEst":0,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":3,"rendersDropped":0,"rendersFailed":0,"rendersQueued":3,"rendersStarted":3,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
 --- afterRapidReopen ---
-{"disposalEpoch":2,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageQueue":0,"pages":0,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":3,"rendersDropped":0,"rendersFailed":0,"rendersQueued":3,"rendersStarted":3,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
+{"disposalEpoch":2,"readerPage":1,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageCanvasBytesEst":0,"pageQueue":0,"pages":0,"pooledIntermediateBytesEst":0,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":3,"rendersDropped":0,"rendersFailed":0,"rendersQueued":3,"rendersStarted":3,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
+--- afterSamePage ---
+{"disposalEpoch":22,"readerPage":1,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageCanvasBytesEst":0,"pageQueue":0,"pages":0,"pooledIntermediateBytesEst":0,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionBytesEst":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":32,"rendersDropped":0,"rendersFailed":0,"rendersQueued":32,"rendersStarted":32,"searchActive":0,"sessionsDestroyed":11,"sessionsOpened":11,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbnailRasterBytesEst":0,"thumbs":0,"workersCreated":11,"workersTerminated":11},"wasmHeapBytes":2097152,"heapHighWaterBytes":2097152,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
 --- summary ---
-{"fixturePages":{"pearls":40,"deepOutline":40},"fastJumpRenderDeltas":[2,2,3],"scrollPeaks":{"enginePages":4,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":1,"liveCanvasBytes":5996448,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"zoomPeaks":{"enginePages":3,"activeRenders":1,"pageActive":2,"pageQueue":0,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":11875248,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"fastJumpPeaks":{"enginePages":5,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":9694080,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"largeScrollPeaks":{"enginePages":6,"activeRenders":1,"pageActive":1,"pageQueue":0,"thumbActive":1,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":3,"liveCanvasBytes":6356448,"wasmHeapBytes":2031616,"jsHeapBytes":10000000},"closeDuringRenderRaced":true,"closeDuringPrefetchDrops":1,"closeDuringSearchRaced":true,"rapidReopenHeaps":[1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008],"rapidReopenSlopeBytesPerCycle":0,"rapidReopenDriftBytes":0,"normalCycles":10,"largeCycles":5,"rapidCycles":10}
-PHASE0_BASELINE_JSON {"fixturePages":{"pearls":40,"deepOutline":40},"fastJumpRenderDeltas":[2,2,3],"scrollPeaks":{"enginePages":4,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":1,"liveCanvasBytes":5996448,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"zoomPeaks":{"enginePages":3,"activeRenders":1,"pageActive":2,"pageQueue":0,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":11875248,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"fastJumpPeaks":{"enginePages":5,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":9694080,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"largeScrollPeaks":{"enginePages":6,"activeRenders":1,"pageActive":1,"pageQueue":0,"thumbActive":1,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":3,"liveCanvasBytes":6356448,"wasmHeapBytes":2031616,"jsHeapBytes":10000000},"closeDuringRenderRaced":true,"closeDuringPrefetchDrops":1,"closeDuringSearchRaced":true,"rapidReopenHeaps":[1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008],"rapidReopenSlopeBytesPerCycle":0,"rapidReopenDriftBytes":0,"normalCycles":10,"largeCycles":5,"rapidCycles":10}
+{"fixturePages":{"pearls":40,"deepOutline":40},"fastJumpRenderDeltas":[2,2,3],"scrollPeaks":{"enginePages":4,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":1,"liveCanvasBytes":5996448,"wasmHeapBytes":1835008,"jsHeapBytes":10000000,"pageCanvasBytesEst":5996448,"thumbnailRasterBytesEst":3877632,"rawRetentionBytesEst":0,"pooledIntermediateBytesEst":4},"zoomPeaks":{"enginePages":4,"activeRenders":2,"pageActive":2,"pageQueue":0,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":2,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":11875248,"wasmHeapBytes":1835008,"jsHeapBytes":10000000,"pageCanvasBytesEst":11875248,"thumbnailRasterBytesEst":3877632,"rawRetentionBytesEst":0,"pooledIntermediateBytesEst":4},"fastJumpPeaks":{"enginePages":5,"activeRenders":1,"pageActive":1,"pageQueue":0,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":9694080,"wasmHeapBytes":1835008,"jsHeapBytes":10000000,"pageCanvasBytesEst":9694080,"thumbnailRasterBytesEst":3877632,"rawRetentionBytesEst":0,"pooledIntermediateBytesEst":4},"largeScrollPeaks":{"enginePages":6,"activeRenders":1,"pageActive":1,"pageQueue":0,"thumbActive":1,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":3,"liveCanvasBytes":6356448,"wasmHeapBytes":2031616,"jsHeapBytes":10000000,"pageCanvasBytesEst":6356448,"thumbnailRasterBytesEst":3877632,"rawRetentionBytesEst":0,"pooledIntermediateBytesEst":4},"closeDuringRenderRaced":true,"closeDuringPrefetchDrops":1,"closeDuringSearchRaced":true,"rapidReopenHeaps":[1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008],"rapidReopenSlopeBytesPerCycle":0,"rapidReopenDriftBytes":0,"normalCycles":10,"largeCycles":5,"rapidCycles":10,"samePageOpenHeaps":[1900544,1900544,1900544,1966080,1966080,1966080,2031616,2031616,2031616,2097152],"samePagePooledBytes":[0,0,0,0,0,0,0,0,0,0],"samePageSlopeBytesPerCycle":21448,"samePageDriftBytes":196608,"samePageCycles":10}
+PHASE0_BASELINE_JSON {"fixturePages":{"pearls":40,"deepOutline":40},"fastJumpRenderDeltas":[2,2,3],"scrollPeaks":{"enginePages":4,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":1,"liveCanvasBytes":5996448,"wasmHeapBytes":1835008,"jsHeapBytes":10000000,"pageCanvasBytesEst":5996448,"thumbnailRasterBytesEst":3877632,"rawRetentionBytesEst":0,"pooledIntermediateBytesEst":4},"zoomPeaks":{"enginePages":4,"activeRenders":2,"pageActive":2,"pageQueue":0,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":2,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":11875248,"wasmHeapBytes":1835008,"jsHeapBytes":10000000,"pageCanvasBytesEst":11875248,"thumbnailRasterBytesEst":3877632,"rawRetentionBytesEst":0,"pooledIntermediateBytesEst":4},"fastJumpPeaks":{"enginePages":5,"activeRenders":1,"pageActive":1,"pageQueue":0,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":9694080,"wasmHeapBytes":1835008,"jsHeapBytes":10000000,"pageCanvasBytesEst":9694080,"thumbnailRasterBytesEst":3877632,"rawRetentionBytesEst":0,"pooledIntermediateBytesEst":4},"largeScrollPeaks":{"enginePages":6,"activeRenders":1,"pageActive":1,"pageQueue":0,"thumbActive":1,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":3,"liveCanvasBytes":6356448,"wasmHeapBytes":2031616,"jsHeapBytes":10000000,"pageCanvasBytesEst":6356448,"thumbnailRasterBytesEst":3877632,"rawRetentionBytesEst":0,"pooledIntermediateBytesEst":4},"closeDuringRenderRaced":true,"closeDuringPrefetchDrops":1,"closeDuringSearchRaced":true,"rapidReopenHeaps":[1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008],"rapidReopenSlopeBytesPerCycle":0,"rapidReopenDriftBytes":0,"normalCycles":10,"largeCycles":5,"rapidCycles":10,"samePageOpenHeaps":[1900544,1900544,1900544,1966080,1966080,1966080,2031616,2031616,2031616,2097152],"samePagePooledBytes":[0,0,0,0,0,0,0,0,0,0],"samePageSlopeBytesPerCycle":21448,"samePageDriftBytes":196608,"samePageCycles":10}
 === END PHASE0 BROWSER BASELINE ===
 ```
 
@@ -221,6 +369,29 @@ full baseline with the lanes empty (`pageQueue`/`thumbQueue` 0,
 `searchActive` 0) and every counter pairing intact. The rapid-reopen gate
 is the headline: ten open/close cycles hold 1,835,008 bytes flat —
 least-squares slope 0 B/cycle, drift 0 B, no ratchet, no per-cycle growth.
+
+Four proofs ride the same run. PAGE IDENTITY: the fast jumps carry a
+bounded engine render trace (generation, page, terminal phase) and each
+jump asserted every rasterized page inside the destination window the
+policy allows (window ceiling + zombie cap each side) — `18 -> 40` traced
+`[39, 40]` inside 25..40, `40 -> 1` traced `[1, 2]` inside 1..16, `1 -> 11`
+traced `[10, 11, 12]` inside 1..26 — render counts cannot name a stray
+page; the trace does. SAME-PAGE LIFECYCLE: ten open/close cycles through
+the real library row and toolbar close WITHOUT reloading the page — the
+scope where the wasm module, the library caches and the recycler live —
+each close returned everything to baseline and the disposal epoch advanced
+exactly one claim per open and per close (base 2, closes at 4, 6, ... 22);
+the heap climbed 21,448 B/cycle on average with 192 KiB total drift (an
+allocator ratchet, far under the 256 KiB/cycle leak bound) and the raster
+recycler drifted 0 B. FAIL-CLOSED ACCOUNTING: every post-close assertion
+requires the cumulative pane/virtualizer create/dispose pairs to balance,
+the live counts to equal created-minus-disposed, and the snapshot's
+`accountingConsistent` to hold — a double dispose now fails the baseline
+instead of reading as a quiet zero. RASTER BYTES: the engine exposes
+estimated raster categories (page surfaces, thumbnail cache, retained
+raws, bake recycler; w*h*4, labeled estimates, never a share of
+wasmHeap/jsHeap/RSS) and the per-document categories must drain to ZERO
+BYTES after every close, not merely to zero counts.
 
 The zero-trap record held through the whole matrix and was re-verified by
 a repeat run of the same commit after the last teardown class was closed:
@@ -246,6 +417,10 @@ virtualizer_live = 0               retained_virtual_items = 0
 engine.hasDocument = false         engine.hasLoadingTask = false
 engine.pages = 0                   engine.activeRenders = 0
 engine.thumbs = 0                  engine.thumbTasks = 0
+panesCreated == panesDisposed      virtualizersCreated == virtualizersDisposed
+paneLive == panesCreated - panesDisposed   accountingConsistent = true
+engine.pageCanvasBytesEst = 0      engine.thumbnailRasterBytesEst = 0
+engine.rawRetentionBytesEst = 0    (recycler: recorded, drift-gated)
 sessionsOpened == sessionsDestroyed
 workersCreated == workersTerminated
 rendersStarted == rendersCompleted + rendersCancelled + rendersFailed

@@ -128,14 +128,14 @@ fn assert_dispose_baseline() {
     // The reader slice was reset synchronously before the dispose tail ran,
     // so the runtime is no longer live by construction; the snapshot's
     // engine half and the live gauges are what the assertion really reads.
-    let snap = snapshot(false);
+    let snap = snapshot(false, 0);
     if snap.at_baseline() {
         if EVENT_LOG.load(Ordering::Relaxed) {
-            narrate("reader_runtime:baseline_ok ", &snapshot_json(false));
+            narrate("reader_runtime:baseline_ok ", &snapshot_json(false, 0));
         }
         return;
     }
-    let json = snapshot_json(false);
+    let json = snapshot_json(false, 0);
     #[cfg(target_arch = "wasm32")]
     web_sys::console::error_1(
         &format!("[lifecycle] reader dispose left resources behind:\n{json}").into(),
@@ -194,6 +194,16 @@ pub(crate) struct Snapshot {
     /// The document session's claim stamp: it moves on every open and close,
     /// so a snapshot can be attributed to a moment in the lifecycle.
     disposal_epoch: u64,
+    /// The reader's current page (the viewer's own counter). The fast-jump
+    /// workload reads it to name the destination window it asserts the
+    /// render trace against — the destination comes from the app, not from
+    /// a scroll-position guess.
+    reader_page: u32,
+    /// False when a create/dispose pair went impossible (disposed > created:
+    /// a double dispose). `pane_live` derives from saturating subtraction,
+    /// so accounting corruption would otherwise read as a quiet zero — the
+    /// baseline must fail on it instead.
+    accounting_consistent: bool,
     /// Live panes, and the panes that ever mounted/disposed.
     pane_live: u64,
     panes_created: u64,
@@ -244,6 +254,9 @@ impl Snapshot {
             && self.virtualizer_live == 0
             && self.retained_virtual_items == 0
             && self.lookahead_samples_active == 0
+            // FAIL CLOSED: a create/dispose pair that went impossible is
+            // bookkeeping corruption, not a drained reader.
+            && self.accounting_consistent
             // FAIL CLOSED: an engine the diagnostics bridge cannot read is
             // not a drained engine. A missing/broken engine surface must
             // never launder itself into "at baseline" — unverifiable is its
@@ -255,7 +268,7 @@ impl Snapshot {
 
 /// Take a snapshot. `reader_runtime_live` comes from the caller because the
 /// authoritative bit (document status) is reactive state, not a global.
-pub(crate) fn snapshot(reader_runtime_live: bool) -> Snapshot {
+pub(crate) fn snapshot(reader_runtime_live: bool, reader_page: u32) -> Snapshot {
     observe_heap();
     // The engine talks only on wasm; a host test has no engine and the probe
     // must not run into the wasm-bindgen stubs.
@@ -294,11 +307,16 @@ pub(crate) fn snapshot(reader_runtime_live: bool) -> Snapshot {
         reader_disposes_completed: READER_DISPOSES_COMPLETED.load(Ordering::Relaxed),
         reader_runtime_live,
         disposal_epoch: crate::services::document::session::current_epoch(),
+        reader_page,
         pane_live: PANES_CREATED
             .load(Ordering::Relaxed)
             .saturating_sub(PANES_DISPOSED.load(Ordering::Relaxed)),
         panes_created: PANES_CREATED.load(Ordering::Relaxed),
         panes_disposed: PANES_DISPOSED.load(Ordering::Relaxed),
+        accounting_consistent: PANES_DISPOSED.load(Ordering::Relaxed)
+            <= PANES_CREATED.load(Ordering::Relaxed)
+            && VIRTUALIZERS_DISPOSED.load(Ordering::Relaxed)
+                <= VIRTUALIZERS_CREATED.load(Ordering::Relaxed),
         virtualizer_live: LIVE_VIRTUALIZERS.with(|live| live.borrow().len()),
         lookahead_samples_active: pdf_engine::backdrop::pending_samples(),
         virtualizers_created: VIRTUALIZERS_CREATED.load(Ordering::Relaxed),
@@ -317,8 +335,8 @@ pub(crate) fn snapshot(reader_runtime_live: bool) -> Snapshot {
 
 /// The snapshot as the dev surface hands it over: JSON, one line per field
 /// group, printable from the console.
-pub(crate) fn snapshot_json(reader_runtime_live: bool) -> String {
-    let snap = snapshot(reader_runtime_live);
+pub(crate) fn snapshot_json(reader_runtime_live: bool, reader_page: u32) -> String {
+    let snap = snapshot(reader_runtime_live, reader_page);
     let mut value = match serde_json::to_value(&snap) {
         Ok(value) => value,
         Err(_) => return "{}".to_string(),
@@ -335,18 +353,20 @@ pub(crate) fn snapshot_json(reader_runtime_live: bool) -> String {
 /// window to hang it on and no reader to measure).
 pub fn install(
     reader_runtime_live: impl Fn() -> bool + 'static,
+    reader_page: impl Fn() -> u32 + 'static,
     doc_status: impl Fn() -> String + 'static,
     doc_error: impl Fn() -> Option<String> + 'static,
 ) {
     #[cfg(target_arch = "wasm32")]
-    install_web(reader_runtime_live, doc_status, doc_error);
+    install_web(reader_runtime_live, reader_page, doc_status, doc_error);
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = (reader_runtime_live, doc_status, doc_error);
+    let _ = (reader_runtime_live, reader_page, doc_status, doc_error);
 }
 
 #[cfg(target_arch = "wasm32")]
 fn install_web(
     reader_runtime_live: impl Fn() -> bool + 'static,
+    reader_page: impl Fn() -> u32 + 'static,
     doc_status: impl Fn() -> String + 'static,
     doc_error: impl Fn() -> Option<String> + 'static,
 ) {
@@ -362,7 +382,7 @@ fn install_web(
     // builder.
     let probe = Closure::wrap(Box::new(move || {
         pdf_engine::api::set_lifecycle_log(true);
-        let mut json = snapshot_json(reader_runtime_live());
+        let mut json = snapshot_json(reader_runtime_live(), reader_page());
         // The document's own account of an open that went wrong, so a
         // browser-side failure dump can say WHY the reader never settled
         // (the engine's stats alone cannot).
@@ -417,13 +437,19 @@ mod tests {
 
     #[test]
     fn snapshot_serializes_with_the_documented_shape() {
-        let json = snapshot_json(false);
+        let json = snapshot_json(false, 0);
         let value: serde_json::Value = serde_json::from_str(&json).expect("snapshot is JSON");
         for field in [
             "readerRuntimesCreated",
             "readerDisposesCompleted",
             "readerRuntimeLive",
             "disposalEpoch",
+            "readerPage",
+            "accountingConsistent",
+            "panesCreated",
+            "panesDisposed",
+            "virtualizersCreated",
+            "virtualizersDisposed",
             "paneLive",
             "virtualizerLive",
             "retainedVirtualItems",
@@ -449,6 +475,8 @@ mod tests {
             reader_disposes_completed: 7,
             reader_runtime_live: false,
             disposal_epoch: 9,
+            reader_page: 0,
+            accounting_consistent: true,
             pane_live: 0,
             panes_created: 7,
             panes_disposed: 7,

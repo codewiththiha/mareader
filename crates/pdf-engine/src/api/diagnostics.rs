@@ -97,6 +97,30 @@ pub struct EngineStats {
     /// cancels it, so it must read 0 after a close.
     #[serde(default)]
     pub sweep_timer_armed: u32,
+    /// Estimated bytes of engine-owned raster categories — width x height x
+    /// 4 RGBA by convention, an ESTIMATE for correlation (what the engine
+    /// holds), never a physical allocation query and never a share of
+    /// `wasmHeapBytes`/`jsHeapBytes`/process RSS. The page category overlaps
+    /// the browser test's DOM-scanned `liveCanvasBytes` by construction:
+    /// same surfaces, different ledger (engine registry vs DOM walk).
+    #[serde(default)]
+    pub page_canvas_bytes_est: u64,
+    /// The thumbnail cache's rasters (raw + display), estimated the same
+    /// way. Per-document cache: teardown empties it, so the baseline
+    /// requires 0 after a close (alongside `thumbs == 0`).
+    #[serde(default)]
+    pub thumbnail_raster_bytes_est: u64,
+    /// Retained unbaked raws (the appearance/scrub retention window), the
+    /// byte half of `raw_retention_timers`. Teardown releases every page
+    /// surface, so the baseline requires 0 after a close.
+    #[serde(default)]
+    pub raw_retention_bytes_est: u64,
+    /// The bake-intermediates recycler (pooled canvases + shared scratch).
+    /// Module-bounded, NOT document-owned: it may hold placeholders across
+    /// closes, so the baseline records it and gates per-cycle drift instead
+    /// of requiring zero.
+    #[serde(default)]
+    pub pooled_intermediate_bytes_est: u64,
 }
 
 impl EngineStats {
@@ -115,6 +139,7 @@ impl EngineStats {
             && self.thumb_active == 0
             && self.search_active == 0
             && self.raw_retention_timers == 0
+            && self.raw_retention_bytes_est == 0
             && self.sweep_timer_armed == 0
             && self.thumb_generation_size == 0
             && !self.has_document

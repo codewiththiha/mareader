@@ -208,9 +208,42 @@ export type Stats = {
   rawRetentionTimers: number;
   /** The document-scoped idle sweeper timer, 0/1. Destroy cancels it. */
   sweepTimerArmed: number;
+  /** Estimated bytes of the registered page render surfaces (the page
+   *  states' bake targets). Width x height x 4 RGBA — an ESTIMATE for the
+   *  baseline, not a physical allocation query, and a different ledger from
+   *  the DOM-scanned liveCanvasBytes (same surfaces, engine registry vs DOM
+   *  walk). Never part of a "total RAM" number. */
+  pageCanvasBytesEst: number;
+  /** Estimated bytes of the thumbnail cache's rasters (raw + display). */
+  thumbnailRasterBytesEst: number;
+  /** Estimated bytes of retained unbaked raws (the appearance/scrub
+   *  retention window). Teardown releases every page surface, so the
+   *  baseline requires 0 after a close. */
+  rawRetentionBytesEst: number;
+  /** Estimated bytes in the bake-intermediates recycler (pooled canvases +
+   *  the shared scratch). Module-bounded, not document-owned: it may hold
+   *  placeholders across closes but must not grow per cycle. */
+  pooledIntermediateBytesEst: number;
 };
+export type RenderTracePhase = "start" | "complete" | "cancel" | "fail";
+
+export type RenderTraceEntry = {
+  /** The measurement generation the raster belongs to. */
+  gen: number;
+  /** The page number the engine started rasterizing. */
+  page: number;
+  phase: RenderTracePhase;
+  t: number;
+};
+
 export type PDFReaderApi = {
   version: () => string;
+  /** Begin a render-trace measurement generation (the Phase 0 fast-jump
+   *  page-identity proof): every raster started from now carries the
+   *  returned id. */
+  beginRenderGeneration: () => number;
+  /** A bounded copy of the engine's render trace, oldest first. */
+  renderTrace: () => RenderTraceEntry[];
   open: (path: string) => Promise<OpenResult>;
   resolveOutline: () => Promise<OutlineResult>;
   destroy: () => Promise<void>;

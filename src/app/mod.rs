@@ -26,6 +26,7 @@ pub fn App() -> impl IntoView {
     // the document status, the one authoritative bit.
     crate::diagnostics::install(
         move || state.reader.document.status.get_untracked() != pdf_engine::types::DocStatus::Idle,
+        move || state.reader.viewer.page.get_untracked(),
         move || format!("{:?}", state.reader.document.status.get_untracked()),
         move || state.reader.document.error.get_untracked(),
     );

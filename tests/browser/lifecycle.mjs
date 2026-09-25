@@ -130,6 +130,8 @@ const PEAK_KEYS = [
   "enginePages", "activeRenders", "pageActive", "pageQueue",
   "thumbActive", "thumbQueue", "retainedVirtualItems", "liveWindowItems",
   "lookaheadSamplesActive", "liveCanvasBytes", "wasmHeapBytes", "jsHeapBytes",
+  "pageCanvasBytesEst", "thumbnailRasterBytesEst", "rawRetentionBytesEst",
+  "pooledIntermediateBytesEst",
 ];
 
 function newPeaks() {
@@ -152,6 +154,10 @@ function samplePeaks(peaks, s) {
     liveCanvasBytes: s.liveCanvasBytes ?? 0,
     wasmHeapBytes: s.wasmHeapBytes ?? 0,
     jsHeapBytes: s.jsHeapBytes ?? 0,
+    pageCanvasBytesEst: s.engine?.pageCanvasBytesEst ?? 0,
+    thumbnailRasterBytesEst: s.engine?.thumbnailRasterBytesEst ?? 0,
+    rawRetentionBytesEst: s.engine?.rawRetentionBytesEst ?? 0,
+    pooledIntermediateBytesEst: s.engine?.pooledIntermediateBytesEst ?? 0,
   };
   for (const k of PEAK_KEYS) peaks[k] = Math.max(peaks[k], values[k]);
 }
@@ -251,19 +257,52 @@ async function clickCloseNow() {
 /** The disposal baseline after a close, with every pairing asserted.
  *  Every cycle here boots fresh, so the open claims epoch 1 and the close
  *  claims epoch 2 — exactly one advance per cycle. */
-async function closeAndWaitBaseline(label, settledWork) {
+async function closeAndWaitBaseline(label, settledWork, expectedEpoch = 2) {
   if (!settledWork) await clickCloseNow();
   const s = await waitFor(`the disposal baseline (${label})`, (x) => x.atBaseline === true, 45_000);
-  assertDrained(s, label);
+  assertDrained(s, label, expectedEpoch);
   return s;
 }
 
-function assertDrained(s, label) {
+function assertDrained(s, label, expectedEpoch = 2) {
   if (!s.atBaseline) throw new Error(`[${label}] baseline not reached`);
   if (s.readerRuntimeLive !== false) throw new Error(`[${label}] reader runtime still live`);
   if (s.engine.hasDocument !== false) throw new Error(`[${label}] engine still holds a document`);
-  if (s.disposalEpoch !== 2) {
-    throw new Error(`[${label}] disposal epoch ${s.disposalEpoch}, expected exactly one open+close claim (2)`);
+  // FAIL CLOSED on accounting: `paneLive` derives from saturating
+  // subtraction, so a double dispose would read as a quiet zero. The
+  // cumulative pairs must balance exactly and the live counts must equal
+  // created-minus-disposed — "actually zero" and "accounting broke" are
+  // different answers and only the first may pass.
+  if (s.accountingConsistent === false) {
+    throw new Error(`[${label}] create/dispose accounting inconsistent (a dispose exceeded its create)`);
+  }
+  if (s.panesCreated !== s.panesDisposed) {
+    throw new Error(`[${label}] panes created ${s.panesCreated} != disposed ${s.panesDisposed}`);
+  }
+  if (s.virtualizersCreated !== s.virtualizersDisposed) {
+    throw new Error(`[${label}] virtualizers created ${s.virtualizersCreated} != disposed ${s.virtualizersDisposed}`);
+  }
+  if (s.paneLive !== s.panesCreated - s.panesDisposed) {
+    throw new Error(`[${label}] live panes ${s.paneLive} != created - disposed (${s.panesCreated - s.panesDisposed})`);
+  }
+  if (s.virtualizerLive !== s.virtualizersCreated - s.virtualizersDisposed) {
+    throw new Error(`[${label}] live virtualizers ${s.virtualizerLive} != created - disposed (${s.virtualizersCreated - s.virtualizersDisposed})`);
+  }
+  if (s.disposalEpoch !== expectedEpoch) {
+    throw new Error(`[${label}] disposal epoch ${s.disposalEpoch}, expected ${expectedEpoch} (one claim per open and per close)`);
+  }
+  // The engine's per-document raster categories must be EMPTY in bytes, not
+  // just in counts — the byte estimate is what a released-but-unshrunk
+  // surface would hide. (The recycler is module-bounded, not per-document;
+  // the same-page workload gates its per-cycle drift instead.)
+  if (s.engine.pageCanvasBytesEst !== 0) {
+    throw new Error(`[${label}] page render surfaces still hold ${s.engine.pageCanvasBytesEst} bytes`);
+  }
+  if (s.engine.thumbnailRasterBytesEst !== 0) {
+    throw new Error(`[${label}] thumbnail rasters still hold ${s.engine.thumbnailRasterBytesEst} bytes`);
+  }
+  if (s.engine.rawRetentionBytesEst !== 0) {
+    throw new Error(`[${label}] retained raws still hold ${s.engine.rawRetentionBytesEst} bytes`);
   }
   if (s.engine.sessionsOpened !== s.engine.sessionsDestroyed) {
     throw new Error(`[${label}] session counters unbalanced`);
@@ -342,6 +381,11 @@ const summary = {
   normalCycles: 0,
   largeCycles: 0,
   rapidCycles: 0,
+  samePageOpenHeaps: [],
+  samePagePooledBytes: [],
+  samePageSlopeBytesPerCycle: null,
+  samePageDriftBytes: null,
+  samePageCycles: 0,
 };
 
 // --- Stage 1: boot + open a real book -------------------------------------
@@ -446,8 +490,14 @@ currentStage = "stage4-fast-jump";
 await page.mouse.click(700, 450);
 const jumpTargets = ["end", "top", "quarter"];
 const jumpPeaks = newPeaks();
+const DOC_PAGES = summary.fixturePages.pearls;
 for (const where of jumpTargets) {
-  const before = (await snap()).engine.rendersStarted;
+  const beforeSnap = await snap();
+  const before = beforeSnap.engine.rendersStarted;
+  const fromPage = beforeSnap.readerPage;
+  // A new measurement generation: every raster the engine starts from now
+  // carries this id, so the trace assertion reads exactly this jump.
+  const gen = await page.evaluate(() => window.PDFReader.beginRenderGeneration());
   await page.evaluate((w) => {
     const list = document.querySelector("#page-list");
     list.scrollTop = w === "end" ? list.scrollHeight
@@ -482,6 +532,27 @@ for (const where of jumpTargets) {
   if (after.retainedVirtualItems !== 0) {
     throw new Error(`fast jump to ${where} left ${after.retainedVirtualItems} retained virtual items after settle`);
   }
+  // PAGE-IDENTITY PROOF: every page the engine actually rasterized during
+  // this jump generation must sit inside the destination window the policy
+  // allows. The allowed range comes from the same policy constants the host
+  // bound uses — mounted window ceiling on each side plus the zombie
+  // retention cap — not from an invented page count. Render COUNTS cannot
+  // catch a skipped page being rasterized (a small burst looks identical);
+  // the trace names the pages.
+  const trace = await page.evaluate((g) =>
+    window.PDFReader.renderTrace().filter((e) => e.gen === g), gen);
+  if (trace.length === 0) {
+    throw new Error(`fast jump to ${where} produced no traced raster (trace dead?)`);
+  }
+  const dest = after.readerPage || fromPage;
+  const half = WINDOW_CEILING + MAX_ZOMBIES;
+  const lo = Math.max(1, dest - half);
+  const hi = Math.min(DOC_PAGES, dest + half);
+  const strays = [...new Set(trace.filter((e) => e.page < lo || e.page > hi).map((e) => e.page))];
+  if (strays.length > 0) {
+    throw new Error(`fast jump ${fromPage} -> ${dest} (${where}): unexpected rasterized skipped page: ${strays.join(", ")} (allowed ${lo}..${hi}); render trace: [${trace.map((e) => e.page).join(", ")}]`);
+  }
+  console.log(`fast jump ${fromPage} -> ${dest} (${where}): traced pages [${[...new Set(trace.map((e) => e.page))].join(", ")}] all inside ${lo}..${hi}`);
 }
 assertSurfacePolicy("fast jump", jumpPeaks, WINDOW_CEILING);
 summary.fastJumpPeaks = jumpPeaks;
@@ -700,6 +771,98 @@ console.log("rapid reopen heaps:", heaps.join(", "));
 console.log(`rapid reopen trend: slope ${Math.round(slope)} B/cycle, drift ${drift} B`);
 stages.afterRapidReopen = await snap();
 
+// --- Stage 11: workload H — SAME-PAGE lifecycle x10 (no reload) ------------
+currentStage = "stage11-same-page-x10";
+// Stages 8-10 proved the RELOAD matrix: every cycle began with page.goto,
+// which discards the whole JS/wasm world. The resources that live at
+// APPLICATION scope — the wasm module and its heap ratchet, the engine's
+// raster recycler, the library's caches, the disposal epoch — never felt a
+// cycle. This workload rides the real application path instead: click the
+// book open from the library (the row the reader recorded on open), work
+// the pages, click the toolbar close, and repeat in the SAME live page.
+// Every close must still return every reader-owned resource to baseline,
+// and the epoch must advance exactly one claim per open and one per close
+// (2k-1 after open k, 2k after close k) — "every cycle starts from epoch 1"
+// is a reload artifact this stage exists to stop assuming.
+async function openFromLibrary(cycle) {
+  const card = page.locator('.book-title[title*="Programming Pearls"]').first();
+  try {
+    await card.click({ timeout: 5_000 });
+  } catch {
+    // The grid's gesture layer can swallow a synthetic hit; dispatching on
+    // the row is the same app open path either way.
+    await page.evaluate(() => {
+      const t = [...document.querySelectorAll(".book-title")]
+        .find((el) => (el.textContent ?? "").includes("Programming Pearls"));
+      if (!t) throw new Error("book row not found in the library");
+      t.click();
+    });
+  }
+  const o = await waitFor(`same-page open ${cycle}`, (x) =>
+    x.readerRuntimeLive === true &&
+    x.engine?.hasDocument === true &&
+    x.engine.activeRenders === 0, 45_000);
+  return o;
+}
+// The base is whatever the reload matrix left: the epoch is claimed per
+// open and per close in the LIVE page, so the same-page cycles assert the
+// DELTA — exactly one claim each — never an absolute "back to 1".
+const epochBase = (await snap()).disposalEpoch;
+console.log("same-page stage: epoch base", epochBase, "(carried from the reload matrix)");
+for (let cycle = 1; cycle <= 10; cycle += 1) {
+  const o = await openFromLibrary(cycle);
+  if (o.disposalEpoch !== epochBase + 2 * cycle - 1) {
+    throw new Error(`same-page open ${cycle}: epoch ${o.disposalEpoch}, expected ${epochBase + 2 * cycle - 1} (base ${epochBase} + one open claim)`);
+  }
+  if (((o.engine ?? {}).documentPages ?? 0) < MIN_FIXTURE_PAGES) {
+    throw new Error(`same-page cycle ${cycle}: fixture has ${o.engine.documentPages} pages`);
+  }
+  summary.samePageOpenHeaps.push(o.wasmHeapBytes);
+  await page.mouse.click(700, 450);
+  for (let p = 0; p < 2; p += 1) {
+    await page.keyboard.press("PageDown");
+    await page.waitForTimeout(150);
+  }
+  await clickCloseNow();
+  const c = await waitFor(`the disposal baseline (same-page cycle ${cycle})`,
+    (x) => x.atBaseline === true, 45_000);
+  assertDrained(c, `same-page cycle ${cycle}`, epochBase + 2 * cycle);
+  // The raster recycler is module-bounded, not document-owned: it may hold
+  // its placeholders across cycles, but a close must not make it GROW.
+  summary.samePagePooledBytes.push(c.engine.pooledIntermediateBytesEst ?? 0);
+  summary.samePageCycles = cycle;
+}
+stages.afterSamePage = await snap();
+{
+  const heaps = summary.samePageOpenHeaps;
+  const n = heaps.length;
+  const meanY = heaps.reduce((a, b) => a + b, 0) / n;
+  const meanX = (n - 1) / 2;
+  let cov = 0;
+  let varX = 0;
+  heaps.forEach((y, x) => {
+    cov += (x - meanX) * (y - meanY);
+    varX += (x - meanX) ** 2;
+  });
+  const slope = cov / varX;
+  const drift = Math.max(...heaps) - Math.min(...heaps);
+  summary.samePageSlopeBytesPerCycle = Math.round(slope);
+  summary.samePageDriftBytes = drift;
+  if (slope > 262_144) {
+    throw new Error(`same-page reopen climbs ~${Math.round(slope)} bytes/cycle — app-scope accumulation, not a one-time ratchet`);
+  }
+  if (drift > 4_194_304) {
+    throw new Error(`same-page reopen drifted ${drift} bytes across ${n} cycles (4 MB ceiling)`);
+  }
+  const pooledDrift = Math.max(...summary.samePagePooledBytes)
+    - Math.min(...summary.samePagePooledBytes);
+  if (pooledDrift > 1_048_576) {
+    throw new Error(`the engine raster recycler drifted ${pooledDrift} bytes across ${n} same-page closes — per-cycle growth`);
+  }
+  console.log("same-page lifecycle x10 drained (no reload); heaps:", heaps.join(", "));
+  console.log(`same-page trend: slope ${Math.round(slope)} B/cycle, drift ${drift} B | recycler drift ${pooledDrift} B`);
+}
+
 // --- Guards ----------------------------------------------------------------
 if (pageErrors.length > 0) {
   dumpDiagnosis(await snap().catch(() => null));
@@ -725,6 +888,7 @@ for (const [stage, s] of Object.entries(stages)) {
   console.log(`--- ${stage} ---`);
   console.log(JSON.stringify({
     disposalEpoch: s.disposalEpoch,
+    readerPage: s.readerPage,
     readerRuntimeLive: s.readerRuntimeLive,
     paneLive: s.paneLive,
     virtualizerLive: s.virtualizerLive,

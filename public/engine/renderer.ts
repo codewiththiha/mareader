@@ -156,6 +156,43 @@ function releaseBaked(baked: HTMLCanvasElement, target: HTMLCanvasElement): void
   }
 }
 
+// --- Render trace (the fast-jump page-identity proof) ----------------------
+// A bounded ring of ACTUAL raster events: the page number recorded when the
+// engine starts a real page render, and that render's terminal
+// classification. Render COUNTS alone cannot prove a jump skipped the pages
+// it flew over — a burst over intermediate pages produces a small count just
+// the same; this names the pages. Bounded: the oldest entry falls off at
+// RENDER_TRACE_CAP, and nothing here touches the console in normal
+// operation (the lifecycle counters stay the cheap primary signal).
+export type RenderTracePhase = "start" | "complete" | "cancel" | "fail";
+export type RenderTraceEntry = {
+  gen: number;
+  page: number;
+  phase: RenderTracePhase;
+  t: number;
+};
+
+const RENDER_TRACE_CAP = 128;
+const renderTrace: RenderTraceEntry[] = [];
+let renderGeneration = 0;
+
+/** Mark the beginning of a measurement generation: every raster the engine
+ *  starts from now carries the returned id in the trace. */
+export function beginRenderGeneration(): number {
+  renderGeneration += 1;
+  return renderGeneration;
+}
+
+function traceRender(page: number, phase: RenderTracePhase): void {
+  renderTrace.push({ gen: renderGeneration, page, phase, t: Date.now() });
+  if (renderTrace.length > RENDER_TRACE_CAP) renderTrace.shift();
+}
+
+/** A bounded copy of the ring, oldest first. */
+export function readRenderTrace(): RenderTraceEntry[] {
+  return renderTrace.slice();
+}
+
 export async function renderPageInternal(
   canvasId: string,
   scale: number,
@@ -167,17 +204,24 @@ export async function renderPageInternal(
   // `renderPageNow` directly — the retry is the SAME started render, not a
   // second one.
   session.rendersStarted += 1;
+  // The trace records the page at the moment the raster STARTS; the
+  // terminal classification below pairs with it in the same generation.
+  const tracePage = ensurePage(canvasId)?.page ?? -1;
+  traceRender(tracePage, "start");
   lifecycleEvent("render:start");
   try {
     const result = await renderPageNow(canvasId, scale, renderText);
     if (result.ok) {
       session.rendersCompleted += 1;
+      traceRender(tracePage, "complete");
       lifecycleEvent("render:complete");
     } else if (result.error.name === "cancelled") {
       session.rendersCancelled += 1;
+      traceRender(tracePage, "cancel");
       lifecycleEvent("render:cancel");
     } else {
       session.rendersFailed += 1;
+      traceRender(tracePage, "fail");
     }
     return result;
   } catch (e) {
@@ -186,6 +230,7 @@ export async function renderPageInternal(
     // instead of returning a result — otherwise the pairing rule the
     // baseline asserts breaks on an exception path, not a real leak.
     session.rendersFailed += 1;
+    traceRender(tracePage, "fail");
     throw e;
   }
 }
