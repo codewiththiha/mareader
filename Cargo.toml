@@ -115,6 +115,7 @@ members = [
   "crates/ai-core",
   "crates/app-state",
   "crates/runtime-contract",
+  "crates/frame-transport",
   "crates/app-ui",
   "crates/storage",
   "crates/library-runtime",

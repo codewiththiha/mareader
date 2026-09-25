@@ -1312,6 +1312,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "frame-transport"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "library-core",
+ "reader-core",
+ "runtime-contract",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3687,6 +3701,7 @@ dependencies = [
  "library-core",
  "reader-core",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
