@@ -125,6 +125,11 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
     root.set_attribute("data-mareader-runtime", "reader").ok();
     root.set_attribute("data-mareader-generation", &generation.to_string())
         .ok();
+    // `h-full w-full` is load-bearing (same rule as the Shell's one target):
+    // every runtime root is `h-full`, and a mount target with `height: auto`
+    // hands the reader's scroll area an indefinite height — the virtualizer
+    // then measures the whole column as visible and mounts every page.
+    root.set_attribute("class", "h-full w-full").ok();
     let _ = body.append_child(&root);
 
     // An init without a descriptor is a reader with nothing open — the same

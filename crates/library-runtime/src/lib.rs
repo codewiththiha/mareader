@@ -153,32 +153,6 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     promise
 }
 
-/// Whether a Shell hosts this artifact. The Shell installs its bridge before
-/// it loads any runtime, and the artifact's own page has no such bridge:
-/// this is the gate that keeps a dynamically imported artifact from booting
-/// a second, invisible session beside the Shell's (§12 — the runtime mounts
-/// only inside the Shell's target, and only when the Shell says so).
-pub fn shell_hosted() -> bool {
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::JsCast;
-        let Some(window) = web_sys::window() else {
-            return false;
-        };
-        let target: js_sys::Object = window.unchecked_into();
-        let Ok(bridge) =
-            js_sys::Reflect::get(&target, &wasm_bindgen::JsValue::from_str("__mareaderShell"))
-        else {
-            return false;
-        };
-        !bridge.is_undefined()
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        false
-    }
-}
-
 /// Standalone boot (`library.html`): no Shell — a storage-backed API.
 pub fn run_standalone() {
     console_error_panic_hook::set_once();

@@ -93,6 +93,10 @@ fn start_frame(wire: PortWire, generation: u64) {
     root.set_attribute("data-mareader-runtime", "library").ok();
     root.set_attribute("data-mareader-generation", &generation.to_string())
         .ok();
+    // `h-full w-full` is load-bearing: the same rule the Shell's target obeys
+    // — a mount point with `height: auto` hands every full-height child an
+    // indefinite measure instead of the frame's real one.
+    root.set_attribute("class", "h-full w-full").ok();
     let _ = body.append_child(&root);
 
     let id = crate::start_session(&root, ApiHandle::Frame);

@@ -1,6 +1,6 @@
-//! The library artifact's entry: standalone boot (library.html). Hosted
-//! boots come through the wasm exports in the lib, which the Shell's runtime
-//! manager calls.
+//! The library artifact's entry: standalone boot (library.html). A hosted
+//! boot never reaches `run_standalone`: the URL's frame marker routes it into
+//! the frame handshake instead (`crate::frame`, §6).
 //!
 //! The standalone page deploys no engine scripts (the page is shared with
 //! the hosted frame, which must be engine-free), but the standalone bake
@@ -43,11 +43,11 @@ fn deploy_standalone_engine() {
 fn deploy_standalone_engine() {}
 
 fn main() {
-    // A wasm-bindgen bin runs `main` when its instance initializes, so a
-    // hosted import reaches here too. Boot standalone only when nothing
-    // hosts this artifact: hosted, the Shell calls `mareaderLibraryStart`
-    // with its own mount target (§12).
-    if !library_runtime::shell_hosted() && !library_runtime::frame::boot_if_hosted() {
+    // A wasm-bindgen bin runs `main` when its instance initializes. Standalone
+    // means NO frame marker in the URL (§6 — the marker is the whole hosted
+    // boot descriptor, never a window-object sniff): hosted, the frame boot
+    // answers the Shell's channel offer and `run_standalone` never runs.
+    if !library_runtime::frame::boot_if_hosted() {
         deploy_standalone_engine();
         library_runtime::run_standalone();
     }
