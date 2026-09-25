@@ -38,5 +38,26 @@
     <script type="module" src="/pdfEngine.js"></script>
     <link data-trunk rel="rust" data-wasm-opt="z" />
   </head>
-  <body></body>
+  <body>
+    <!-- The shell's boot placeholder (§5): it lives in the PAGE, never in a
+         runtime, because the runtime is exactly what may fail to load. It is
+         what the user sees while the shell wasm downloads, instantiates and
+         loads its first runtime — the difference between "starting" and a
+         blank window. The shell removes it once its own view is mounted
+         (src/app/mod.rs) and the runtime host owns the area from then on.
+         The id and the copy are a CONTRACT: tools/check-runtime-artifacts.mjs
+         fails the build if either disappears from the built page. -->
+    <div id="shell-boot" class="shell-boot" role="status" aria-live="polite">
+      <p class="shell-boot__title">Loading MAReader…</p>
+      <p class="shell-boot__hint">Starting the shell</p>
+    </div>
+    <!-- The "never waits forever" half of §3: if the shell wasm has not taken
+         over within 20s — a failed download, a panic before the first mount —
+         the placeholder says so instead of spinning silently. The healthy path
+         removes the element long before the deadline (src/app/mod.rs).
+         An external file, not an inline script: the packaged app's CSP
+         (`script-src 'self'` in src-tauri/tauri.conf.json) blocks inline. -->
+    <link data-trunk rel="copy-file" href="public/shellBoot.js" />
+    <script src="/shellBoot.js" defer></script>
+  </body>
 </html>

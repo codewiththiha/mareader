@@ -8,7 +8,9 @@
     "build:css": "tailwindcss -i styles/input.css -o styles.css --minify",
     "watch:css": "tailwindcss -i styles/input.css -o styles.css --watch",
     "build:ts": "tsc --noEmit --project tsconfig.json && tsc --project tsconfig.tools.json && node ./tools/bundle-engine.mjs",
-    "build": "npm run build:ts && npm run build:css && trunk build --release"
+    "dev:frontend": "node tools/dev.mjs",
+    "build:dist": "sh tools/build-dist.sh --release",
+    "build": "npm run build:dist"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",

@@ -4,9 +4,9 @@
   "version": "0.1.1",
   "identifier": "com.codewiththiha.mareader",
   "build": {
-    "beforeDevCommand": "npm run build:ts && trunk serve",
+    "beforeDevCommand": "npm run dev:frontend",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "trunk build --release",
+    "beforeBuildCommand": "npm run build:dist",
     "frontendDist": "../dist"
   },
   "app": {

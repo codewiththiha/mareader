@@ -2,13 +2,24 @@
 //! "which runtime is active". Its type makes two primary runtimes
 //! unspeakable, and it never starts a runtime before the previous one's
 //! dispose promise resolved (§5).
+//!
+//! Every step of a start can fail — the artifact is missing, its wasm rejects,
+//! the start export is gone — and a failed start is a VISIBLE state, never a
+//! panic. A panic inside the shell wasm takes the whole shell with it, leaving
+//! the window on its last painted frame: that is how a missing `/library.js`
+//! became a blank window with a silent terminal. So the loader, the init and
+//! the start export each report the stage they failed in (§6), the host paints
+//! a loading state before the first await and an error state after a failure
+//! (§11), and the page's own placeholder steps aside once the host paints.
 
 use std::cell::RefCell;
 use std::sync::Mutex;
 
 use app_state::boundary::LaunchDocument;
-use wasm_bindgen::JsCast;
+use leptos::prelude::*;
+use wasm_bindgen::{JsCast, JsValue};
 
+use crate::app::boot::{self, BootError, BootPhase, BootStage, RuntimeName};
 use crate::state::{ActiveRuntime, ShellState};
 
 /// The active-runtime slot. `Starting` holds the in-flight disposal/load so a
@@ -22,12 +33,32 @@ pub enum Slot {
 
 pub struct RuntimeManager {
     slot: Mutex<Slot>,
+    /// What the runtime host is showing (§6, §11). A signal because the shell's
+    /// page placeholder steps aside when the host paints its first state.
+    pub boot_phase: RwSignal<BootPhase>,
+    /// The same phase in the plain form the diagnostics probe reads (the probe
+    /// runs from JS, outside any reactive context) — the same shape as
+    /// `doc_status`/`doc_error` beside it.
+    pub boot_state: Mutex<String>,
+    pub boot_error: Mutex<Option<serde_json::Value>>,
     /// Create/dispose counts for the diagnostics identity (§21): a reader →
     /// library transition must leave active reader = none, library = one.
     pub reader_sessions_created: std::sync::atomic::AtomicU64,
     pub reader_disposes_completed: std::sync::atomic::AtomicU64,
     pub library_sessions_created: std::sync::atomic::AtomicU64,
+    /// Library disposals that COMPLETED (the dispose promise resolved). The
+    /// pair with `reader_disposes_completed` is what proves the handoff order
+    /// in either direction: a replacement becomes active only after the
+    /// outgoing runtime's count has moved.
+    pub library_disposes_completed: std::sync::atomic::AtomicU64,
     host: Mutex<Option<web_sys::Element>>,
+    /// Starts are serialized. A navigation that lands while a start is still
+    /// loading becomes the PENDING request instead of a second start running
+    /// beside the first: two starts interleaving their awaits could both mount
+    /// into the host, and one runtime at a time is the invariant the host is
+    /// built around (§10, §11). Newest request wins — the user's last intent.
+    starting: std::sync::atomic::AtomicBool,
+    pending: Mutex<Option<(RuntimeName, Option<LaunchDocument>)>>,
     /// The last reader digest, cached for the probe (the reader pushes on
     /// every change that matters).
     pub last_digest: Mutex<Option<serde_json::Value>>,
@@ -45,14 +76,29 @@ impl RuntimeManager {
     pub fn new() -> Self {
         Self {
             slot: Mutex::new(Slot::None),
+            boot_phase: RwSignal::new(BootPhase::Booting),
+            boot_state: Mutex::new(BootPhase::Booting.as_str().to_string()),
+            boot_error: Mutex::new(None),
             reader_sessions_created: Default::default(),
             reader_disposes_completed: Default::default(),
             library_sessions_created: Default::default(),
+            library_disposes_completed: Default::default(),
             host: Mutex::new(None),
+            starting: std::sync::atomic::AtomicBool::new(false),
+            pending: Mutex::new(None),
             last_digest: Mutex::new(None),
             doc_status: Mutex::new("Idle".to_string()),
             doc_error: Mutex::new(None),
         }
+    }
+
+    /// Publish a boot phase: the signal the shell's view follows, and the
+    /// plain mirror the diagnostics probe reads.
+    fn set_phase(&self, phase: BootPhase) {
+        *self.boot_error.lock().unwrap() = phase.error().map(BootError::to_json);
+        *self.boot_state.lock().unwrap() = phase.as_str().to_string();
+        report_boot(&phase);
+        self.boot_phase.set(phase);
     }
 
     pub fn set_host(&self, host: web_sys::Element) {
@@ -67,12 +113,9 @@ impl RuntimeManager {
         }
     }
 
-    fn host(&self) -> web_sys::Element {
-        self.host
-            .lock()
-            .unwrap()
-            .clone()
-            .expect("runtime host element")
+    /// The mount target, if the shell has mounted its view.
+    fn host(&self) -> Option<web_sys::Element> {
+        self.host.lock().unwrap().clone()
     }
 
     /// Boot: whichever runtime the URL names (§11 — the route tells the
@@ -102,85 +145,210 @@ impl RuntimeManager {
     /// Start (or replace with) the reader runtime. Any active runtime is
     /// disposed and AWAITED first.
     pub fn start_reader(&self, state: &ShellState, launch: LaunchDocument) {
-        let state = state.clone();
+        let manager = state.manager.clone();
         wasm_bindgen_futures::spawn_local(async move {
-            let manager = &state.manager;
-            manager.dispose_active().await;
-            *manager.slot.lock().unwrap() = Slot::Starting;
-            clear_host(manager.host());
-            let module = load_module("reader").await;
-            let start = js_sys::Reflect::get(
-                &module,
-                &wasm_bindgen::JsValue::from_str("mareaderReaderStart"),
-            )
-            .expect("reader start export");
-            let start: js_sys::Function = start.unchecked_into();
-            let launch_json = serde_json::to_string(&launch).expect("launch json");
-            let id = start
-                .call2(
-                    &module,
-                    &manager.host().into(),
-                    &wasm_bindgen::JsValue::from_str(&launch_json),
-                )
-                .expect("reader start")
-                .as_f64()
-                .expect("session id") as u32;
-            manager
-                .reader_sessions_created
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            *manager.slot.lock().unwrap() = Slot::Reader { id, module };
+            manager.start_serialized(RuntimeName::Reader, Some(launch)).await;
         });
     }
 
     /// Start (or replace with) the library runtime.
     pub fn start_library(&self, state: &ShellState) {
-        let state = state.clone();
+        let manager = state.manager.clone();
         wasm_bindgen_futures::spawn_local(async move {
-            let manager = &state.manager;
-            manager.dispose_active().await;
-            *manager.slot.lock().unwrap() = Slot::Starting;
-            clear_host(manager.host());
-            let module = load_module("library").await;
-            let start = js_sys::Reflect::get(
-                &module,
-                &wasm_bindgen::JsValue::from_str("mareaderLibraryStart"),
-            )
-            .expect("library start export");
-            let start: js_sys::Function = start.unchecked_into();
-            let id = start
-                .call1(&module, &manager.host().into())
-                .expect("library start")
-                .as_f64()
-                .expect("session id") as u32;
-            manager
-                .library_sessions_created
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            *manager.slot.lock().unwrap() = Slot::Library { id, module };
+            manager.start_serialized(RuntimeName::Library, None).await;
         });
     }
 
-    async fn dispose_active(&self) {
+    /// The one start sequence. Its failure path is closed: `run_start` either
+    /// leaves a live session in the slot or an error state in the host.
+    async fn start(&self, runtime: RuntimeName, launch: Option<LaunchDocument>) {
+        if let Err(error) = self.run_start(runtime, launch).await {
+            self.fail(error);
+        }
+    }
+
+    /// One start at a time. A second request arriving mid-start is queued and
+    /// run when the current one settles, so two starts cannot interleave their
+    /// awaits into the same host. The flag and the queue are checked without
+    /// an await between them, which on wasm's single-threaded executor is what
+    /// makes the window between "queue is empty" and "flag cleared" empty too.
+    async fn start_serialized(&self, runtime: RuntimeName, launch: Option<LaunchDocument>) {
+        if self.starting.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            *self.pending.lock().unwrap() = Some((runtime, launch));
+            return;
+        }
+        self.start(runtime, launch).await;
+        loop {
+            let queued = self.pending.lock().unwrap().take();
+            match queued {
+                Some((runtime, launch)) => self.start(runtime, launch).await,
+                None => {
+                    self.starting.store(false, std::sync::atomic::Ordering::SeqCst);
+                    // A request that landed after the take but before the flag
+                    // cleared saw the flag SET, so it queued instead of opening
+                    // its own loop: pick it up here rather than stranding it.
+                    if self.pending.lock().unwrap().is_none() {
+                        return;
+                    }
+                    self.starting.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+            }
+        }
+    }
+
+    async fn run_start(
+        &self,
+        runtime: RuntimeName,
+        launch: Option<LaunchDocument>,
+    ) -> Result<(), BootError> {
+        // §5/§10: the outgoing session is gone before the replacement exists.
+        self.dispose_active().await?;
+        *self.slot.lock().unwrap() = Slot::Starting;
+        // §11: clear and paint in the same synchronous step — the host is
+        // never empty between two runtimes, and the loading state is what a
+        // failure paints over.
+        let host = match self.host() {
+            Some(host) => host,
+            None => {
+                let message = "the runtime host element is not mounted";
+                return Err(BootError::new(runtime, BootStage::Start, message));
+            }
+        };
+        clear_host(&host);
+        boot::paint_loading(&host, runtime);
+        self.set_phase(BootPhase::Loading(runtime));
+        let module = self.load_module(runtime).await?;
+        let start = start_export(&module, runtime)?;
+        let value = call_start(&start, &module, &host, runtime, launch)?;
+        let Some(id) = value.as_f64() else {
+            let name = runtime.artifact();
+            let message = format!("the {name} start export returned no session id");
+            return Err(BootError::new(runtime, BootStage::Start, message));
+        };
+        let id = id as u32;
+        match runtime {
+            RuntimeName::Reader => {
+                self.reader_sessions_created
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            RuntimeName::Library => {
+                self.library_sessions_created
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        *self.slot.lock().unwrap() = match runtime {
+            RuntimeName::Reader => Slot::Reader { id, module },
+            RuntimeName::Library => Slot::Library { id, module },
+        };
+        // The runtime mounted its own DOM into the host while its start export
+        // ran, so the shell's loading state can go.
+        boot::mark_active(&host, runtime);
+        self.set_phase(BootPhase::Active(runtime));
+        Ok(())
+    }
+
+    /// A failed start: the host paints the error state and the console keeps
+    /// the detail (§6). Nothing half-mounted survives it, and the slot stays
+    /// `Starting` — there is no live session to dispose later.
+    fn fail(&self, error: BootError) {
+        match self.host() {
+            Some(host) => {
+                clear_host(&host);
+                boot::paint_error(&host, &error);
+            }
+            // Without a host there is nothing to paint into; the console line
+            // is then the only place the failure can show (the phase signal
+            // still carries it for the diagnostics probe).
+            None => web_sys::console::error_1(&JsValue::from_str(&error.console_line())),
+        }
+        self.set_phase(BootPhase::Failed(error));
+    }
+
+    /// Dispose the live runtime and AWAIT it (§5/§10): the replacement must not
+    /// become active while the outgoing session is still tearing down. A
+    /// dispose that cannot run is a failure, not something to continue past —
+    /// continuing would put two live sessions in one host (§10).
+    async fn dispose_active(&self) -> Result<(), BootError> {
         let live = match &*self.slot.lock().unwrap() {
-            Slot::Library { id, module } => Some(("mareaderLibraryDispose", *id, module.clone())),
-            Slot::Reader { id, module } => Some(("mareaderReaderDispose", *id, module.clone())),
+            Slot::Library { id, module } => Some((RuntimeName::Library, *id, module.clone())),
+            Slot::Reader { id, module } => Some((RuntimeName::Reader, *id, module.clone())),
             _ => None,
         };
-        if let Some((dispose_name, id, module)) = live {
-            let dispose =
-                js_sys::Reflect::get(&module, &wasm_bindgen::JsValue::from_str(dispose_name))
-                    .expect("dispose export");
-            let dispose: js_sys::Function = dispose.unchecked_into();
-            let promise = dispose
-                .call1(&module, &wasm_bindgen::JsValue::from_f64(id as f64))
-                .expect("dispose call");
-            let promise: js_sys::Promise = promise.unchecked_into();
-            let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
-            if dispose_name == "mareaderReaderDispose" {
+        let Some((runtime, id, module)) = live else {
+            return Ok(());
+        };
+        let export = match runtime {
+            RuntimeName::Library => "mareaderLibraryDispose",
+            RuntimeName::Reader => "mareaderReaderDispose",
+        };
+        let key = JsValue::from_str(export);
+        let dispose = match js_sys::Reflect::get(&module, &key) {
+            Ok(dispose) => dispose,
+            Err(_) => return Err(missing_export(runtime, export)),
+        };
+        if !dispose.is_function() {
+            return Err(missing_export(runtime, export));
+        }
+        let dispose: js_sys::Function = dispose.unchecked_into();
+        let promise = dispose
+            .call1(&module, &JsValue::from_f64(id as f64))
+            .map_err(|err| BootError::new(runtime, BootStage::Dispose, js_message(&err)))?;
+        let promise: js_sys::Promise = promise.unchecked_into();
+        wasm_bindgen_futures::JsFuture::from(promise)
+            .await
+            .map_err(|err| BootError::new(runtime, BootStage::Dispose, js_message(&err)))?;
+        match runtime {
+            RuntimeName::Reader => {
                 self.reader_disposes_completed
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
-            *self.slot.lock().unwrap() = Slot::None;
+            RuntimeName::Library => {
+                self.library_disposes_completed
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
         }
+        *self.slot.lock().unwrap() = Slot::None;
+        Ok(())
+    }
+
+    /// One dynamic import of a runtime artifact, initialized. The loader caches
+    /// the module namespace per artifact (compiled code may be cached); the
+    /// LIVE session is what each start call creates — the module's wasm
+    /// INSTANCE is initialized here, once per import, and the sessions above it
+    /// come and go.
+    async fn load_module(&self, runtime: RuntimeName) -> Result<js_sys::Object, BootError> {
+        if let Some(module) = cached_module(runtime) {
+            return Ok(module);
+        }
+        let path = format!("/{}.js", runtime.artifact());
+        let promise = crate::app::loader::dyn_import(&path);
+        let value = wasm_bindgen_futures::JsFuture::from(promise)
+            .await
+            .map_err(|err| BootError::new(runtime, BootStage::ModuleLoad, js_message(&err)))?;
+        let module: js_sys::Object = value.unchecked_into();
+        // A dynamically imported artifact does not initialize itself (§12): its
+        // `default` export is the wasm-bindgen init, and the `*Start` exports
+        // below are only callable once it has resolved. A module without it is
+        // not a runtime artifact, which is a failure worth naming rather than
+        // skipping past.
+        let key = JsValue::from_str("default");
+        let init = match js_sys::Reflect::get(&module, &key) {
+            Ok(init) => init,
+            Err(_) => return Err(no_init_export(runtime)),
+        };
+        if !init.is_function() {
+            return Err(no_init_export(runtime));
+        }
+        let init: js_sys::Function = init.unchecked_into();
+        let promise = init
+            .call0(&module)
+            .map_err(|err| BootError::new(runtime, BootStage::Init, js_message(&err)))?;
+        let promise: js_sys::Promise = promise.unchecked_into();
+        wasm_bindgen_futures::JsFuture::from(promise)
+            .await
+            .map_err(|err| BootError::new(runtime, BootStage::Init, js_message(&err)))?;
+        cache_module(runtime, &module);
+        Ok(module)
     }
 
     /// A library open command: navigate + start the reader (§13's sequence —
@@ -203,7 +371,125 @@ impl Default for RuntimeManager {
     }
 }
 
-fn clear_host(host: web_sys::Element) {
+/// Tell the native host which runtime is live, or where the boot stopped.
+///
+/// One line per phase transition — a boot paints three or four in a session,
+/// never one per frame — and nothing at all in the web build (`has_tauri` is
+/// false there). Without it, a native window that never booted its frontend
+/// is indistinguishable from one that did: the exact blind spot the packaged
+/// app had. tools/tauri-smoke.mjs reads these lines as its assertion.
+fn report_boot(phase: &BootPhase) {
+    if !tauri_bridge::has_tauri() {
+        return;
+    }
+    let report = match phase {
+        BootPhase::Failed(error) => {
+            let runtime = error.runtime.artifact();
+            format!("failed {runtime} {}", error.stage.slug())
+        }
+        other => other.as_str().to_string(),
+    };
+    let args: JsValue = js_sys::Object::new().into();
+    let key = JsValue::from_str("report");
+    if js_sys::Reflect::set(&args, &key, &JsValue::from_str(&report)).is_err() {
+        return;
+    }
+    wasm_bindgen_futures::spawn_local(async move {
+        let _ = tauri_bridge::invoke("boot_report", args).await;
+    });
+}
+
+fn missing_export(runtime: RuntimeName, export: &str) -> BootError {
+    let name = runtime.artifact();
+    let message = format!("the {name} module does not export {export}()");
+    BootError::new(runtime, BootStage::Dispose, message)
+}
+
+fn no_init_export(runtime: RuntimeName) -> BootError {
+    let name = runtime.artifact();
+    let message = format!("the {name} module exports no default wasm init");
+    BootError::new(runtime, BootStage::Init, message)
+}
+
+/// The `*Start` export, or the failure that says which one is missing.
+fn start_export(
+    module: &js_sys::Object,
+    runtime: RuntimeName,
+) -> Result<js_sys::Function, BootError> {
+    let export = match runtime {
+        RuntimeName::Library => "mareaderLibraryStart",
+        RuntimeName::Reader => "mareaderReaderStart",
+    };
+    let key = JsValue::from_str(export);
+    let start = match js_sys::Reflect::get(module, &key) {
+        Ok(start) => start,
+        Err(_) => return Err(missing_start(runtime, export)),
+    };
+    if !start.is_function() {
+        return Err(missing_start(runtime, export));
+    }
+    Ok(start.unchecked_into())
+}
+
+fn missing_start(runtime: RuntimeName, export: &str) -> BootError {
+    let name = runtime.artifact();
+    let message = format!("the {name} module does not export {export}()");
+    BootError::new(runtime, BootStage::Start, message)
+}
+
+/// Call the runtime's start export. The reader takes the launch payload as a
+/// second argument; the library takes the host alone.
+fn call_start(
+    start: &js_sys::Function,
+    module: &js_sys::Object,
+    host: &web_sys::Element,
+    runtime: RuntimeName,
+    launch: Option<LaunchDocument>,
+) -> Result<JsValue, BootError> {
+    let host: JsValue = host.clone().into();
+    let result = match launch {
+        Some(launch) => {
+            let json = serde_json::to_string(&launch)
+                .map_err(|err| BootError::new(runtime, BootStage::Start, err.to_string()))?;
+            start.call2(module, &host, &JsValue::from_str(&json))
+        }
+        None => start.call1(module, &host),
+    };
+    result.map_err(|err| BootError::new(runtime, BootStage::Start, js_message(&err)))
+}
+
+/// The browser's reason, in words. A rejected `import()` is an Error whose
+/// `message` names the URL; a thrown panic value is usually a string.
+fn js_message(value: &JsValue) -> String {
+    let message = js_sys::Reflect::get(value, &JsValue::from_str("message"))
+        .ok()
+        .and_then(|message| message.as_string());
+    if let Some(message) = message {
+        return message;
+    }
+    if let Some(text) = value.as_string() {
+        return text;
+    }
+    js_sys::JSON::stringify(value)
+        .ok()
+        .and_then(|text| text.as_string())
+        .unwrap_or_else(|| format!("{value:?}"))
+}
+
+fn cached_module(runtime: RuntimeName) -> Option<js_sys::Object> {
+    match runtime {
+        RuntimeName::Library => LIBRARY_MODULE.with(|module| module.borrow().clone()),
+        RuntimeName::Reader => None,
+    }
+}
+
+fn cache_module(runtime: RuntimeName, module: &js_sys::Object) {
+    if runtime == RuntimeName::Library {
+        LIBRARY_MODULE.with(|cache| *cache.borrow_mut() = Some(module.clone()));
+    }
+}
+
+fn clear_host(host: &web_sys::Element) {
     // Remove the outgoing runtime's DOM before the next mounts (§11 — never
     // mounted underneath).
     while let Some(child) = host.first_child() {
@@ -219,41 +505,4 @@ pub fn navigate(path: &str) {
             let _ = h.push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(path));
         });
     }
-}
-
-/// One dynamic import of a runtime artifact, initialized. The loader caches
-/// the module namespace per artifact (compiled code may be cached); the LIVE
-/// session is what each start call creates — the module's wasm INSTANCE is
-/// initialized here, once per import, and the sessions above it come and go.
-async fn load_module(name: &str) -> js_sys::Object {
-    let cached = match name {
-        "library" => LIBRARY_MODULE.with(|m| m.borrow().clone()),
-        _ => None,
-    };
-    if let Some(module) = cached {
-        return module;
-    }
-    let module = crate::app::loader::dyn_import(&format!("/{name}.js"));
-    let module = wasm_bindgen_futures::JsFuture::from(module)
-        .await
-        .expect("runtime module loads");
-    let module: js_sys::Object = module.unchecked_into();
-    // A dynamically imported artifact does not initialize itself: its
-    // `default` export is the wasm-bindgen init (the same call the artifact's
-    // own page makes), and the `*Start` exports below are only callable once
-    // it has resolved.
-    let key = wasm_bindgen::JsValue::from_str("default");
-    if let Ok(init) = js_sys::Reflect::get(&module, &key)
-        && init.is_function()
-    {
-        let init: js_sys::Function = init.unchecked_into();
-        let promise = init.call0(&module).expect("runtime module init");
-        let promise: js_sys::Promise = promise.unchecked_into();
-        let done = wasm_bindgen_futures::JsFuture::from(promise);
-        done.await.expect("runtime wasm instance initializes");
-    }
-    if name == "library" {
-        LIBRARY_MODULE.with(|m| *m.borrow_mut() = Some(module.clone()));
-    }
-    module
 }

@@ -402,6 +402,13 @@ async function raceCloseDuringPrefetch() {
 const stages = {};
 const summary = {
   consoleErrorsUnrelated: 0,
+  bootContract: {
+    libraryBoot: null,
+    readerBoot: null,
+    transition: null,
+    missingLibrary: null,
+    missingReader: null,
+  },
   fixturePages: {},
   fastJumpRenderDeltas: [],
   scrollPeaks: null,
@@ -424,6 +431,419 @@ const summary = {
   samePageDriftBytes: null,
   samePageCycles: 0,
 };
+
+// --- Stage 0: the production boot contract ---------------------------------
+// Everything below this point proves the app works once it is UP. This stage
+// proves it GETS there, on the same build Tauri packages (`frontendDist:
+// ../dist`, served here by tests/browser/server.mjs), and that a boot which
+// cannot finish says so instead of leaving an empty window. It is the browser
+// half of §8/§9/§10/§11; the native half is tools/tauri-smoke.mjs plus
+// .github/workflows/deep-ci.yml's tauri-smoke job.
+currentStage = "stage0-boot-contract";
+
+/** The four artifacts the shell dynamically imports, with the status the
+ *  browser actually got (§9 — "resolves 200 when LOADED", not "the file is
+ *  on disk"). Tauri serves these through its custom protocol and the dev
+ *  server serves them from dist/; a missing one is the incident. */
+const artifactStatuses = new Map();
+page.on("response", (res) => {
+  const { pathname } = new URL(res.url());
+  if (["/library.js", "/library_bg.wasm", "/reader.js", "/reader_bg.wasm"].includes(pathname)) {
+    artifactStatuses.set(pathname, res.status());
+  }
+});
+
+function assertArtifactLoaded(path, label) {
+  const status = artifactStatuses.get(path);
+  if (status !== 200) {
+    throw new Error(`[${label}] ${path} resolved ${status ?? "never requested"}; the shell's import must reach a real artifact`);
+  }
+}
+
+/** §5: the placeholder is part of the BUILT page and the shell takes it away
+ *  once the host paints. Recorded from the very first document, with the
+ *  timer starting at DOMContentLoaded. */
+async function armShellBootWatcher() {
+  await page.addInitScript(() => {
+    window.__shellBoot = { copy: null, removedAt: null };
+    const record = () => {
+      const boot = document.getElementById("shell-boot");
+      if (boot && window.__shellBoot.copy === null) {
+        window.__shellBoot.copy = (boot.textContent ?? "").replace(/\s+/g, " ").trim();
+      }
+      if (!boot && window.__shellBoot.copy !== null && window.__shellBoot.removedAt === null) {
+        window.__shellBoot.removedAt = Math.round(performance.now());
+      }
+    };
+    document.addEventListener("DOMContentLoaded", () => {
+      record();
+      const timer = window.setInterval(record, 5);
+      window.setTimeout(() => window.clearInterval(timer), 120_000);
+    });
+  });
+}
+
+/** Dense sampling of the invariants a screenshot cannot see (§11): the host
+ *  is never empty, and two runtimes are never live in it at once. 10 ms is
+ *  fast enough to catch a paint gap that lasts a frame and cheap enough to
+ *  run across a whole transition. */
+async function startHostSampler() {
+  await page.evaluate(() => {
+    const sample = () => {
+      const host = document.getElementById("runtime-host");
+      let diag = null;
+      try {
+        diag = JSON.parse(window.__mareaderDiagnostics?.() ?? "null");
+      } catch {
+        diag = null;
+      }
+      return {
+        t: Math.round(performance.now()),
+        host: host !== null,
+        empty: host !== null && host.children.length === 0,
+        bootNodes: host ? host.querySelectorAll("[data-mareader-boot]").length : 0,
+        active: host ? host.getAttribute("data-mareader-active") : null,
+        library: host ? host.querySelectorAll(".lib-grid").length : 0,
+        reader: host ? host.querySelectorAll(".reader-bg").length : 0,
+        placeholder: document.getElementById("shell-boot") !== null,
+        bootState: diag?.bootState ?? null,
+        activeRuntime: diag?.activeRuntime ?? null,
+        librarySessions: diag?.librarySessionsCreated ?? null,
+        libraryDisposes: diag?.libraryDisposesCompleted ?? null,
+        readerSessions: diag?.readerSessionsCreated ?? null,
+        readerDisposes: diag?.readerDisposesCompleted ?? null,
+      };
+    };
+    window.__hostSamples = [];
+    window.__hostSampler = window.setInterval(() => {
+      window.__hostSamples.push(sample());
+      if (window.__hostSamples.length > 8000) window.__hostSamples.shift();
+    }, 10);
+  });
+}
+
+async function stopHostSampler() {
+  return page.evaluate(() => {
+    if (window.__hostSampler) window.clearInterval(window.__hostSampler);
+    const samples = window.__hostSamples ?? [];
+    const violations = { empty: [], twoLive: [], mixed: [], unmarked: [] };
+    for (const s of samples) {
+      // Before the shell's view mounts there is no host to be empty: the
+      // page's own placeholder is the whole window, and §5 owns that state.
+      if (!s.host) continue;
+      // §10: one runtime at a time, and the host's own marker must agree
+      // with what is mounted.
+      if (s.library + s.reader > 1) violations.twoLive.push(s);
+      if (s.active === "library" && s.reader > 0) violations.mixed.push(s);
+      if (s.active === "reader" && s.library > 0) violations.mixed.push(s);
+      // §11: never a blank window. An empty host is legal only while the
+      // page placeholder covers it — that is the loading state before the
+      // first paint, and it is visible.
+      const covered = s.bootNodes > 0 || s.placeholder;
+      if (s.empty && !covered) violations.empty.push(s);
+      // Nothing identifiable anywhere: not a boot state, not a marked
+      // runtime, not a runtime's DOM, not the placeholder.
+      if (s.bootNodes === 0 && s.active === null && s.library + s.reader === 0 && !covered) {
+        violations.unmarked.push(s);
+      }
+    }
+    return { samples, violations };
+  });
+}
+
+function firstViolation(violations) {
+  for (const kind of ["empty", "twoLive", "mixed", "unmarked"]) {
+    if (violations[kind].length > 0) {
+      return `${kind}: ${JSON.stringify(violations[kind][0])} (${violations[kind].length} sample(s))`;
+    }
+  }
+  return null;
+}
+
+/** The library's own DOM marker, not an HTTP 200: the grid is only there
+ *  when the Library runtime really mounted and rendered (§8). */
+async function libraryDomState() {
+  return page.evaluate(() => {
+    const host = document.getElementById("runtime-host");
+    return {
+      path: location.pathname,
+      active: host?.getAttribute("data-mareader-active") ?? null,
+      library: host?.querySelectorAll(".lib-grid").length ?? 0,
+      reader: host?.querySelectorAll(".reader-bg").length ?? 0,
+      bootNodes: host?.querySelectorAll("[data-mareader-boot]").length ?? 0,
+      placeholder: document.getElementById("shell-boot") !== null,
+      hosts: document.querySelectorAll("#runtime-host").length,
+    };
+  });
+}
+
+async function clickBook(title, label, timeout = 45_000) {
+  try {
+    await page.locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
+  } catch {
+    // The grid's gesture layer can swallow a synthetic hit; dispatching on
+    // the row is the same app open path either way.
+    await page.evaluate((needle) => {
+      const el = [...document.querySelectorAll(".book-title")]
+        .find((n) => (n.textContent ?? "").includes(needle));
+      if (!el) throw new Error("book row not found in the library");
+      el.click();
+    }, title);
+  }
+  return waitFor(`${label}: the reader runtime to become active`, (x) =>
+    x.bootState === "reader" &&
+    x.readerRuntimeLive === true &&
+    x.engine?.hasDocument === true &&
+    x.engine.activeRenders === 0, timeout);
+}
+
+// ---- 0a: `/` boots the Library runtime ------------------------------------
+await armShellBootWatcher();
+await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+await startHostSampler();
+const libraryBoot = await waitFor("the library runtime to boot at /", (x) =>
+  x.bootState === "library" && x.activeRuntime === "library", 60_000);
+const libraryDom = await libraryDomState();
+if (libraryDom.path !== "/") {
+  throw new Error(`[/] the boot left the route at ${libraryDom.path}`);
+}
+if (libraryDom.active !== "library") {
+  throw new Error(`[/] the host does not mark the library active (data-mareader-active=${libraryDom.active})`);
+}
+if (libraryDom.library !== 1) {
+  throw new Error(`[/] the library did not render into the host (.lib-grid x${libraryDom.library})`);
+}
+if (libraryDom.reader !== 0) {
+  throw new Error(`[/] a reader session is mounted at the library route (.reader-bg x${libraryDom.reader})`);
+}
+if (libraryDom.bootNodes !== 0) {
+  throw new Error(`[/] the shell's loading state outlived the boot (${libraryDom.bootNodes} boot node(s))`);
+}
+if (libraryDom.placeholder) {
+  throw new Error("[/] the page's boot placeholder is still in the DOM after the host painted");
+}
+if (libraryDom.hosts !== 1) {
+  throw new Error(`[/] expected exactly one runtime host, found ${libraryDom.hosts}`);
+}
+assertArtifactLoaded("/library.js", "/");
+assertArtifactLoaded("/library_bg.wasm", "/");
+const shellBoot = await page.evaluate(() => window.__shellBoot);
+if (!shellBoot?.copy?.includes("Loading MAReader")) {
+  throw new Error(`[/] the shell page never carried its loading state (saw ${JSON.stringify(shellBoot?.copy)})`);
+}
+if (shellBoot.removedAt === null) {
+  throw new Error("[/] the shell never removed the page's boot placeholder");
+}
+summary.bootContract.libraryBoot = {
+  path: libraryDom.path,
+  placeholderCopy: shellBoot.copy,
+  placeholderRemovedAtMs: shellBoot.removedAt,
+  libraryDisposes: libraryBoot.libraryDisposesCompleted ?? 0,
+};
+
+// ---- 0b: a real transition, in both directions (§10) ----------------------
+// Library → Reader is the app's primary transition: the library's session is
+// disposed and AWAITED before the reader mounts, and the handback does the
+// same in reverse. The sampler above is what proves both, at whatever moment
+// they happen.
+currentStage = "stage0-transition";
+const beforeHandoff = await snap();
+const readerActive = await clickBook("Programming Pearls", "library → reader");
+const readerDom = await libraryDomState();
+if (readerDom.active !== "reader") {
+  throw new Error(`[library → reader] the host still marks ${readerDom.active} active`);
+}
+if (readerDom.reader !== 1 || readerDom.library !== 0) {
+  throw new Error(`[library → reader] host holds reader ${readerDom.reader} / library ${readerDom.library}`);
+}
+if (readerActive.libraryDisposesCompleted < beforeHandoff.libraryDisposesCompleted + 1) {
+  throw new Error("[library → reader] the library's disposal never completed");
+}
+if (readerActive.librarySessionsCreated !== beforeHandoff.librarySessionsCreated) {
+  throw new Error("[library → reader] the library session count moved during a reader start");
+}
+assertArtifactLoaded("/reader.js", "library → reader");
+assertArtifactLoaded("/reader_bg.wasm", "library → reader");
+
+const beforeHandback = await snap();
+await clickCloseNow();
+const libraryAgain = await waitFor("the library runtime after the handback", (x) =>
+  x.bootState === "library" && x.activeRuntime === "library", 45_000);
+const handbackDom = await libraryDomState();
+if (handbackDom.library !== 1 || handbackDom.reader !== 0 || handbackDom.active !== "library") {
+  throw new Error(`[reader → library] host holds library ${handbackDom.library} / reader ${handbackDom.reader} (active ${handbackDom.active})`);
+}
+if (libraryAgain.readerDisposesCompleted < beforeHandback.readerDisposesCompleted + 1) {
+  throw new Error("[reader → library] the reader's disposal never completed");
+}
+
+// The invariants across the whole transition, then the ORDER the disposal
+// counter proves: a runtime is only marked active once its predecessor's
+// dispose promise has resolved.
+const sampled = await stopHostSampler();
+const violation = firstViolation(sampled.violations);
+if (violation) {
+  throw new Error(`runtime-host invariant violated while booting/transitioning — ${violation}`);
+}
+const readerSamples = sampled.samples.filter((s) => s.active === "reader");
+const librarySamples = sampled.samples.filter((s) => s.active === "library");
+if (readerSamples.length === 0 || librarySamples.length === 0) {
+  throw new Error(`the sampler saw no ${readerSamples.length === 0 ? "reader" : "library"} active sample`);
+}
+const referenceLibraryDisposes = librarySamples[0].libraryDisposes ?? 0;
+if ((readerSamples[0].libraryDisposes ?? 0) <= referenceLibraryDisposes) {
+  throw new Error("the reader became active before the library's disposal completed (§10)");
+}
+const readerDisposeReference = readerSamples[readerSamples.length - 1].readerDisposes ?? 0;
+const libraryAfterReader = librarySamples.filter((s) => s.t > readerSamples[readerSamples.length - 1].t);
+if (libraryAfterReader.length === 0) {
+  throw new Error("the library never came back after the reader");
+}
+if ((libraryAfterReader[0].readerDisposes ?? 0) <= readerDisposeReference) {
+  throw new Error("the library became active before the reader's disposal completed (§10)");
+}
+summary.bootContract.transition = {
+  samples: sampled.samples.length,
+  readerSamples: readerSamples.length,
+  librarySamples: librarySamples.length,
+  libraryDisposes: libraryAgain.libraryDisposesCompleted,
+  readerDisposes: libraryAgain.readerDisposesCompleted,
+};
+assertNoNewPanics("stage0 transitions", 0);
+console.log(`boot contract: host sampled ${sampled.samples.length} times across both transitions, never empty, never two live sessions`);
+
+// ---- 0c: the `/reader` boot path (§8) -------------------------------------
+currentStage = "stage0-reader-route";
+await page.goto(`${BASE}/reader?blend=1&open=${encodeURIComponent(PEARLS)}`, {
+  waitUntil: "domcontentloaded",
+});
+const readerRoute = await waitFor("the reader runtime to boot at /reader", (x) =>
+  x.bootState === "reader" && x.readerRuntimeLive === true && x.engine?.hasDocument === true, 120_000);
+const readerRouteDom = await libraryDomState();
+if (readerRouteDom.path !== "/reader") {
+  throw new Error(`[/reader] the boot left the route at ${readerRouteDom.path}`);
+}
+if (readerRouteDom.reader !== 1 || readerRouteDom.library !== 0 || readerRouteDom.active !== "reader") {
+  throw new Error(`[/reader] host holds reader ${readerRouteDom.reader} / library ${readerRouteDom.library} (active ${readerRouteDom.active})`);
+}
+if (readerRouteDom.placeholder) {
+  throw new Error("[/reader] the page's boot placeholder outlived the boot");
+}
+assertArtifactLoaded("/reader.js", "/reader");
+assertArtifactLoaded("/reader_bg.wasm", "/reader");
+summary.bootContract.readerBoot = {
+  path: readerRouteDom.path,
+  generation: readerRoute.runtime?.generation ?? null,
+};
+// Leave the page at a clean library boot: Stage 1 opens its own URL and
+// computes its own epoch/generation bases from a fresh document.
+await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+await waitFor("the library runtime after the boot-contract stage", (x) =>
+  x.bootState === "library", 60_000);
+
+// ---- 0d: a boot that cannot finish is VISIBLE, never a legacy fallback ----
+// The incident's other half (§6, §7): with the runtime artifact missing, the
+// shell must show a named error state — runtime + stage + cause — and must
+// NOT mount the old LibraryPage as a fallback. The server 404s the artifact
+// for the injected context, so this drives the real code path an incomplete
+// build produces.
+currentStage = "stage0-missing-artifact";
+async function bootFailureProbe(value, url, label) {
+  const failContext = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await failContext.addCookies([{ name: "mareader_boot_fail", value, url: BASE }]);
+  const failPage = await failContext.newPage();
+  const consoleLines = [];
+  const pageErrorLines = [];
+  failPage.on("console", (m) => consoleLines.push(`[${m.type()}] ${m.text()}`));
+  failPage.on("pageerror", (e) => pageErrorLines.push(`${e.message}\n${e.stack ?? ""}`));
+  try {
+    await failPage.goto(url, { waitUntil: "domcontentloaded" });
+    const started = Date.now();
+    let state = null;
+    for (;;) {
+      state = await failPage.evaluate(() => {
+        const node = document.querySelector('#runtime-host [data-mareader-boot="error"]');
+        let diag = null;
+        try {
+          diag = JSON.parse(window.__mareaderDiagnostics?.() ?? "null");
+        } catch {
+          diag = null;
+        }
+        return {
+          hasErrorUi: node !== null,
+          runtime: node?.getAttribute("data-mareader-runtime") ?? null,
+          stage: node?.getAttribute("data-mareader-stage") ?? null,
+          text: (node?.textContent ?? "").replace(/\s+/g, " ").trim(),
+          bootState: diag?.bootState ?? null,
+          lastBootError: diag?.lastBootError ?? null,
+          activeRuntime: diag?.activeRuntime ?? null,
+          library: document.querySelectorAll(".lib-grid").length,
+          reader: document.querySelectorAll(".reader-bg").length,
+          placeholder: document.getElementById("shell-boot") !== null,
+          hostEmpty: (document.getElementById("runtime-host")?.children.length ?? 0) === 0,
+        };
+      });
+      if (state.hasErrorUi || Date.now() - started > 30_000) break;
+      await failPage.waitForTimeout(200);
+    }
+    if (!state.hasErrorUi) {
+      throw new Error(`[${label}] no error state appeared for a missing artifact (state ${JSON.stringify(state)})`);
+    }
+    if (state.bootState !== "failed") {
+      throw new Error(`[${label}] bootState is ${state.bootState}, expected failed`);
+    }
+    if (state.runtime !== value || state.stage !== "module-load") {
+      throw new Error(`[${label}] error UI names runtime=${state.runtime} stage=${state.stage}, expected ${value} / module-load`);
+    }
+    if (!state.text.includes("could not start the")) {
+      throw new Error(`[${label}] error UI text does not name the runtime: ${state.text}`);
+    }
+    if (!state.text.includes(`${value}.js`)) {
+      throw new Error(`[${label}] error UI does not name the artifact that failed: ${state.text}`);
+    }
+    if (!state.lastBootError || state.lastBootError.runtime !== value || state.lastBootError.stage !== "module-load") {
+      throw new Error(`[${label}] diagnostics lastBootError is ${JSON.stringify(state.lastBootError)}`);
+    }
+    // §7: the only allowed outcome is the error state. No library page, no
+    // reader, no second host, and nothing left empty.
+    if (state.library !== 0 || state.reader !== 0) {
+      throw new Error(`[${label}] a runtime mounted anyway (library ${state.library}, reader ${state.reader})`);
+    }
+    if (state.activeRuntime !== null) {
+      throw new Error(`[${label}] activeRuntime is ${state.activeRuntime} after a failed boot`);
+    }
+    if (state.hostEmpty) {
+      throw new Error(`[${label}] the host is empty: the error state must be painted INTO it (${JSON.stringify(state)})`);
+    }
+    if (state.placeholder) {
+      throw new Error(`[${label}] the page placeholder still covers the error state`);
+    }
+    // §6: the console keeps the detail, and the failure is not a trap — a
+    // missing artifact must never reach a wasm panic again.
+    const logged = consoleLines.some((line) => line.includes("[mareader] boot failed"));
+    if (!logged) {
+      throw new Error(`[${label}] the console does not carry the boot failure:\n${consoleLines.join("\n")}`);
+    }
+    if (pageErrorLines.length > 0) {
+      throw new Error(`[${label}] the failed boot threw ${pageErrorLines.length} page error(s):\n${pageErrorLines.join("\n")}`);
+    }
+    return { consoleLines: consoleLines.length, ...state };
+  } finally {
+    await failContext.close();
+  }
+}
+
+summary.bootContract.missingLibrary = await bootFailureProbe(
+  "library",
+  `${BASE}/`,
+  "missing library artifact",
+);
+summary.bootContract.missingReader = await bootFailureProbe(
+  "reader",
+  `${BASE}/?blend=1&open=${encodeURIComponent(PEARLS)}`,
+  "missing reader artifact",
+);
+console.log("boot contract: a missing runtime artifact shows a named error state and never a legacy fallback");
 
 // --- Stage 1: boot + open a real book -------------------------------------
 currentStage = "stage1-open";

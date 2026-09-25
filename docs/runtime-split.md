@@ -40,16 +40,67 @@ own Trunk config files (`reader.Trunk.toml`, `library.Trunk.toml`, each with
 
 ## Loader mechanism
 
-The shell loads a runtime module on demand with a dynamic `import()` of the
+The shell loads a runtime artifact on demand with a dynamic `import()` of the
 artifact's glue JS (`/reader.js`, `/library.js` — wasm-bindgen `--target web`
-glue, which self-initializes: module evaluation instantiates the WASM and
-runs the bin's `main`). The import is issued through one inline helper
-(`dyn_import`) so the Rust side owns a `Promise` of the module namespace,
-whose exports are the runtime's mounted-session API.
+glue). The import is issued through one inline helper (`dyn_import`) so the
+Rust side owns a `Promise` of the module namespace, whose exports are the
+runtime's session API.
+
+Module evaluation does NOT start a runtime. The sequence the manager runs, in
+order, is:
+
+1. `await import("/library.js")` → the module namespace.
+2. `await namespace.default()` — the wasm-bindgen init. It instantiates the
+   artifact's WASM module once per import; the `*Start` exports below only
+   exist after it resolves, which is why it is awaited rather than assumed.
+3. `namespace.mareaderLibraryStart(host)` / `mareaderReaderStart(host, json)`
+   → the session id.
+
+Every step is a stage with its own failure surface (`module load`, `init`,
+`start`; src/app/boot.rs), because each one can fail on its own: a missing
+artifact fails at 1, a wasm that will not instantiate at 2, a missing export
+or a throwing start at 3.
 
 A loaded module stays in the realm's module map — that is compiled-code
 caching, which the phase explicitly allows. The live runtime is NOT the
-module: it is the session object the module creates per `mount` call.
+module: it is the session the `*Start` export creates, one per call. The
+module's WASM instance is initialized once per artifact; sessions come and go
+above it, which is exactly the isolation boundary this split is built on.
+
+## The boot contract
+
+One build produces the frontend the app runs. `tools/build-dist.sh` runs the
+shell page's Trunk build and the two runtime builds, merges them into `dist/`
+and then VERIFIES the result (`tools/check-runtime-artifacts.mjs`: every
+runtime artifact present and non-empty, and the shell page carrying its boot
+placeholder). Tauri's `beforeBuildCommand` calls that script through
+`npm run build:dist`; CI calls the same script; `tools/check-tauri-contract.mjs`
+fails the build if either side starts building the frontend by another path.
+
+`trunk build` alone is NOT the app's build: it emits the shell page, leaving
+the shell's dynamic imports to 404 — which is precisely how the packaged app
+shipped a native window with an empty runtime host and nothing in the
+terminal.
+
+Development has the same guarantee in operational form: `npm run dev:frontend`
+(`tools/dev.mjs`, Tauri's `beforeDevCommand`) builds all three artifacts,
+starts `trunk serve`, probes the DEV SERVER for `index.html` + both runtime
+artifacts + both wasm modules, and only then reports the boot as safe.
+
+The runtime host is never empty (`src/app/boot.rs`):
+
+| state | host holds | how it ends |
+| --- | --- | --- |
+| loading | the shell's own loading card | the runtime's mount replaces it |
+| active | the live runtime's DOM (`data-mareader-active`) | a transition starts |
+| error | runtime + stage + cause, with a reload button | a reload boots again |
+
+Before the shell itself exists the page shows the placeholder that
+`index.html` ships (`#shell-boot`, "Loading MAReader…"), removed by the shell
+as soon as the host paints; `public/shellBoot.js` covers the case where the
+shell wasm never starts at all. A failed boot paints the error state and names
+the artifact and stage in the console — there is no fallback to a monolithic
+page, because that page no longer exists.
 
 ## Mount targets
 

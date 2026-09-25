@@ -109,6 +109,11 @@ jobs:
         run: npm run build:ts
       - name: Build CSS
         run: npm run build:css
+      # Static, and deliberately so: it asserts the CONTRACT (one canonical
+      # frontend build for Tauri, CI and dev; no bare `trunk build`; devUrl
+      # matching Trunk; the native smoke wired in) without needing a dist.
+      - name: Tauri build contract
+        run: node tools/check-tauri-contract.mjs
       - name: Versions in sync
         run: node scripts/check-versions.js
       - name: Supported formats in sync

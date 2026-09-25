@@ -23,15 +23,38 @@ on:
       # The lifecycle under test is also owned on the Rust side: an open/
       # close, diagnostics, engine or virtualizer change can alter what the
       # browser baseline measures just as much as an engine-bundle change.
-      - "src/services/document/**"
-      - "src/diagnostics.rs"
-      - "src/memory.rs"
-      - "src/components/viewer/**"
-      - "src/features/reader/**"
-      - "src/zoom/**"
-      - "src/effects/**"
+      # (These are the paths at the split's tip — the pre-split
+      # src/components, src/features, src/zoom and src/memory.rs entries that
+      # used to be listed here moved into the crates below.)
+      - "src/**"
+      - "crates/reader-runtime/**"
+      - "crates/library-runtime/**"
       - "crates/pdf-engine/**"
+      - "crates/pdf-paper/**"
+      - "crates/app-state/**"
+      - "crates/app-ui/**"
+      - "crates/app-chrome/**"
+      - "crates/tauri-bridge/**"
+      - "crates/virtual-list/**"
       - "crates/virtual-list-leptos/**"
+      # The boot path itself: the one build contract, the shell page's boot
+      # markup, and the two configs that decide how Tauri serves the frontend.
+      - "index.html"
+      - "reader.html"
+      - "library.html"
+      - "Trunk.toml"
+      - "reader.Trunk.toml"
+      - "library.Trunk.toml"
+      - "package.json"
+      - "tsconfig.json"
+      - "tsconfig.tools.json"
+      - "tools/build-dist.sh"
+      - "tools/dev.mjs"
+      - "tools/tauri-smoke.mjs"
+      - "tools/check-runtime-artifacts.mjs"
+      - "tools/check-tauri-contract.mjs"
+      - "src-tauri/**"
+      - "styles/**"
 
 permissions:
   contents: read
@@ -101,5 +124,59 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: dist
+          path: dist
+          retention-days: 3
+
+  # The packaged app, launched for real (§14). Every other job here builds or
+  # serves the frontend; this one asks the native window whether a runtime
+  # actually came up, which is the question the blank-window incident turned
+  # on. It is the only gate that can fail on "the app opened and showed
+  # nothing".
+  tauri-smoke:
+    name: Tauri native boot smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: tauri-smoke-cache
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # The tauri crate's Linux build needs the WebKitGTK/GTK headers; the
+      # smoke needs an X server (xvfb), xwd to read the framebuffer and
+      # ImageMagick to summarise it.
+      - name: Install the Linux webview stack and X tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf xvfb x11-apps imagemagick
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      # The SAME canonical build Tauri runs (package.json's build:dist ->
+      # tools/build-dist.sh), so this job cannot pass on a frontend the
+      # packaged app would not have.
+      - name: Build the production frontend
+        run: npm run build:dist
+
+      - name: Build the desktop shell
+        run: cargo build --release -p mareader-shell --locked
+
+      - name: Native boot smoke
+        run: xvfb-run -a -s "-screen 0 1400x900x24" node tools/tauri-smoke.mjs
+
+      - name: Upload the frontend on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: dist-tauri-smoke
           path: dist
           retention-days: 3

@@ -37,6 +37,11 @@ fn install_web(state: ShellState) {
     };
     let probe = Closure::wrap(Box::new(move || {
         let mut value = serde_json::json!({
+            // The boot surface: which state the runtime host is showing, and
+            // the last failure with its runtime + stage (§6). A headless run
+            // (the browser suites) reads these instead of a screenshot.
+            "bootState": state.manager.boot_state.lock().unwrap().clone(),
+            "lastBootError": state.manager.boot_error.lock().unwrap().clone().unwrap_or(serde_json::Value::Null),
             // The manager's own account: which runtime is active and what
             // session identity has been created/disposed (§21's test hook).
             "activeRuntime": match state.manager.active() {
@@ -47,6 +52,7 @@ fn install_web(state: ShellState) {
             "readerSessionsCreated": state.manager.reader_sessions_created.load(std::sync::atomic::Ordering::Relaxed),
             "readerDisposesCompleted": state.manager.reader_disposes_completed.load(std::sync::atomic::Ordering::Relaxed),
             "librarySessionsCreated": state.manager.library_sessions_created.load(std::sync::atomic::Ordering::Relaxed),
+            "libraryDisposesCompleted": state.manager.library_disposes_completed.load(std::sync::atomic::Ordering::Relaxed),
             "readerRuntimeLive": state.manager.active() == Some(ActiveRuntime::Reader),
             "docStatus": state.manager.doc_status.lock().unwrap().clone(),
             "docError": state.manager.doc_error.lock().unwrap().clone(),

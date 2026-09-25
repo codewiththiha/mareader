@@ -155,6 +155,31 @@ fn set_traffic_lights(window: tauri::Window, visible: bool, header_height: Optio
     let _ = (window, visible, header_height);
 }
 
+/// The frontend's boot report: which runtime the shell brought up, or the
+/// stage it failed in. One line per boot transition (never per frame), on
+/// stderr — the terminal that launched the app, and the native smoke test's
+/// log (tools/tauri-smoke.mjs).
+///
+/// This exists because of the incident it reports on: a packaged app whose
+/// frontend could not load its runtimes opened a native window and said
+/// nothing anywhere. The window is now never blank (the shell paints a
+/// loading or error state, src/app/boot.rs), and this is the second half of
+/// that answer — a boot that fails is legible from OUTSIDE the webview.
+#[tauri::command]
+fn boot_report(report: String) {
+    let line = report
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .chars()
+        .take(160)
+        .collect::<String>();
+    if !line.is_empty() {
+        eprintln!("[mareader] boot: {line}");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -173,6 +198,7 @@ pub fn run() {
             read_file_bytes,
             read_file_text,
             set_traffic_lights,
+            boot_report,
             commands::ai::explain_word,
             commands::library::scan_folder,
             commands::library::verify_paths,

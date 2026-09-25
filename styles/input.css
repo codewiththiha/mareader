@@ -12,6 +12,9 @@
    never build class names from runtime data. */
 @source "../src";
 @source "../crates";
+/* The shell page itself renders the pre-runtime boot placeholder
+   (.shell-boot), which exists before any wasm runs. */
+@source "../index.html";
 
 /* The check scripts quote class names as prose — the chrome-contract checker
    spells the z-scale's shape out in its failure messages and comments — and
@@ -30,7 +33,8 @@
 @import "./components/pdfjs.css";      /* pdf.js text layer, selection scoping, vendored-sheet neutralisation */
 @import "./components/search.css";     /* search hits: one look for the engine's boxes and a reflowable row's */
 @import "./textures.css";              /* texture modes */
-@import "./noise.css";                 /* grain overlay + crawl keyframes */
+@import "./noise.css";                /* grain overlay + crawl keyframes */
+@import "./boot.css";                 /* the shell boot placeholder (pre-wasm) */
 @import "./components/shell.css";      /* app shell, scrollbars, drag regions, reader backdrop papers */
 @import "./components/title_bar.css";  /* toolbar glass, sidebar outro, caption buttons */
 @import "./components/animations.css"; /* reduced motion, master switch, the loading mark */
