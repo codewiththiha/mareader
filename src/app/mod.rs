@@ -1,12 +1,11 @@
 //! The Shell: the persistent host the runtimes mount into. It owns routing
-//! (one navigation authority — the runtime manager), the runtime loader and
-//! manager, the durable settings/persistence writes, the bridge the runtimes
-//! call, and the diagnostics surface that merges the manager's facts with
-//! the active runtime's digest.
+//! (one navigation authority — the runtime manager), the runtime frames the
+//! runtimes boot inside, the durable settings/persistence writes, and the
+//! diagnostics surface that merges the manager's facts with the active
+//! runtime's digest.
 
 mod boot;
 mod bootstrap;
-mod bridge;
 pub(crate) mod frame;
 pub(crate) mod manager;
 
@@ -18,10 +17,6 @@ pub fn Shell() -> impl IntoView {
     let state = bootstrap::create_shell_state();
     state.manager.attach_state(state.clone());
     provide_context(state.clone());
-
-    // The bridge: the boundary runtimes call back through (§14). Installed
-    // before any runtime loads.
-    bridge::install(state.clone());
 
     // The OS open handoff: the shell owns the file-event surface (§2) —
     // a drop/dialog lands here and becomes a reader launch.

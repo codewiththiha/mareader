@@ -458,19 +458,6 @@ impl RuntimeManager {
         self.start_reader(state, launch);
     }
 
-    /// Deliver a shell frame to the live library frame's lane: the shell
-    /// command surface's frame-era form. A delivery with no live library
-    /// frame is dropped — the request that produced it outlived its
-    /// generation, and a replacement frame never inherits its traffic (§35).
-    pub fn deliver_library_frame(&self, body: &runtime_contract::protocol::ShellFrame) {
-        let Some(driver) = self.live_driver() else {
-            return;
-        };
-        if driver.kind() == FrameKind::Library {
-            driver.send(body);
-        }
-    }
-
     /// A reader handback: dispose the reader, then the library is active.
     pub fn navigate_library(&self, state: &ShellState) {
         web_sys::console::log_1(&JsValue::from_str(&format!(

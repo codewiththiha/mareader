@@ -37,12 +37,11 @@ pub struct ReaderContext {
     pub chrome: app_state::ChromeState,
 }
 
-/// Which ShellApi implementation backs this session: the hosted bridge or the
+/// Which ShellApi implementation backs this session: the hosted frame or the
 /// standalone storage API. A Copy handle so the context stays cheaply clonable
 /// and Send — the Rc it replaces could not cross a view closure.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ApiHandle {
-    Js,
     Standalone,
     /// The hosted frame: the boundary calls leave over the frame's port,
     /// stamped with the boot's generation (`crate::frame`).
@@ -52,7 +51,6 @@ pub enum ApiHandle {
 impl ShellApi for ApiHandle {
     fn open_document(&self, launch: &LaunchDocument) {
         match self {
-            ApiHandle::Js => JsShellApi.open_document(launch),
             ApiHandle::Standalone => StandaloneApi.open_document(launch),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.open_document(launch));
@@ -61,7 +59,6 @@ impl ShellApi for ApiHandle {
     }
     fn navigate_library(&self) {
         match self {
-            ApiHandle::Js => JsShellApi.navigate_library(),
             ApiHandle::Standalone => StandaloneApi.navigate_library(),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.navigate_library());
@@ -70,7 +67,6 @@ impl ShellApi for ApiHandle {
     }
     fn read_point(&self, point: &ReadPoint) {
         match self {
-            ApiHandle::Js => JsShellApi.read_point(point),
             ApiHandle::Standalone => StandaloneApi.read_point(point),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.read_point(point));
@@ -79,7 +75,6 @@ impl ShellApi for ApiHandle {
     }
     fn save_settings(&self, settings: &Settings) {
         match self {
-            ApiHandle::Js => JsShellApi.save_settings(settings),
             ApiHandle::Standalone => StandaloneApi.save_settings(settings),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_settings(settings));
@@ -88,7 +83,6 @@ impl ShellApi for ApiHandle {
     }
     fn save_library(&self, blob: &library_core::blob::LibraryBlob) {
         match self {
-            ApiHandle::Js => JsShellApi.save_library(blob),
             ApiHandle::Standalone => StandaloneApi.save_library(blob),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_library(blob));
@@ -97,7 +91,6 @@ impl ShellApi for ApiHandle {
     }
     fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
         match self {
-            ApiHandle::Js => JsShellApi.save_covers(covers),
             ApiHandle::Standalone => StandaloneApi.save_covers(covers),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_covers(covers));
@@ -106,7 +99,6 @@ impl ShellApi for ApiHandle {
     }
     fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         match self {
-            ApiHandle::Js => JsShellApi.save_cover(path, image),
             ApiHandle::Standalone => StandaloneApi.save_cover(path, image),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_cover(path, image));
@@ -115,7 +107,6 @@ impl ShellApi for ApiHandle {
     }
     fn bake_cover(&self, path: &str) {
         match self {
-            ApiHandle::Js => JsShellApi.bake_cover(path),
             ApiHandle::Standalone => StandaloneApi.bake_cover(path),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.bake_cover(path));
@@ -124,7 +115,6 @@ impl ShellApi for ApiHandle {
     }
     fn doc_status(&self, report: &DocStatusReport) {
         match self {
-            ApiHandle::Js => JsShellApi.doc_status(report),
             ApiHandle::Standalone => StandaloneApi.doc_status(report),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.doc_status(report));
@@ -133,7 +123,6 @@ impl ShellApi for ApiHandle {
     }
     fn publish_digest(&self, json: String) {
         match self {
-            ApiHandle::Js => JsShellApi.publish_digest(json),
             ApiHandle::Standalone => StandaloneApi.publish_digest(json),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.publish_digest(json));
@@ -142,7 +131,6 @@ impl ShellApi for ApiHandle {
     }
     fn reload(&self) {
         match self {
-            ApiHandle::Js => JsShellApi.reload(),
             ApiHandle::Standalone => StandaloneApi.reload(),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.reload());
@@ -151,7 +139,6 @@ impl ShellApi for ApiHandle {
     }
     fn resolve_launch(&self, path: &str) -> Option<LaunchDocument> {
         match self {
-            ApiHandle::Js => JsShellApi.resolve_launch(path),
             ApiHandle::Standalone => StandaloneApi.resolve_launch(path),
             ApiHandle::Frame => crate::frame::with_api(|api| api.resolve_launch(path)).flatten(),
         }
@@ -195,142 +182,6 @@ impl ReaderContext {
             title: self.reader.document.title.try_get_untracked()?,
             author: self.reader.document.author.try_get_untracked()?,
         })
-    }
-}
-
-/// The hosted bridge: the Shell installs `window.__mareaderShell` before any
-/// runtime loads; every method takes a JSON string and returns nothing. One
-/// serialization step per command — the wire format IS the contract.
-/// Every target gets the type: off-wasm there is no bridge, `call` is a
-/// deliberate no-op, and the same session code runs unhosted without
-/// pretending a shell exists.
-pub struct JsShellApi;
-
-impl JsShellApi {
-    /// The webview path: reflect the bridge off `window` and call it.
-    #[cfg(target_arch = "wasm32")]
-    fn call(&self, method: &str, json: Option<String>) {
-        use wasm_bindgen::JsCast;
-        let Some(window) = web_sys::window() else {
-            return;
-        };
-        let target: js_sys::Object = window.unchecked_into();
-        let key = wasm_bindgen::JsValue::from_str("__mareaderShell");
-        let Ok(bridge) = js_sys::Reflect::get(&target, &key) else {
-            return;
-        };
-        if bridge.is_undefined() {
-            return;
-        }
-        let bridge: js_sys::Object = bridge.unchecked_into();
-        let name = wasm_bindgen::JsValue::from_str(method);
-        let Ok(f) = js_sys::Reflect::get(&bridge, &name) else {
-            return;
-        };
-        let f: js_sys::Function = f.unchecked_into();
-        let arg = wasm_bindgen::JsValue::from_str(json.as_deref().unwrap_or(""));
-        if json.is_some() {
-            _ = f.call1(&bridge, &arg);
-        } else {
-            _ = f.call0(&bridge);
-        }
-    }
-
-    /// The host path: no webview, no bridge, nothing to deliver.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn call(&self, _method: &str, _json: Option<String>) {}
-}
-
-impl ShellApi for JsShellApi {
-    fn open_document(&self, launch: &LaunchDocument) {
-        self.call(
-            "openDocument",
-            Some(serde_json::to_string(launch).unwrap_or_default()),
-        );
-    }
-    fn navigate_library(&self) {
-        self.call("navigateLibrary", None);
-    }
-    fn read_point(&self, point: &ReadPoint) {
-        self.call(
-            "readPoint",
-            Some(serde_json::to_string(point).unwrap_or_default()),
-        );
-    }
-    fn save_settings(&self, settings: &Settings) {
-        self.call(
-            "saveSettings",
-            Some(serde_json::to_string(settings).unwrap_or_default()),
-        );
-    }
-    fn save_library(&self, blob: &library_core::blob::LibraryBlob) {
-        self.call(
-            "saveLibrary",
-            Some(serde_json::to_string(blob).unwrap_or_default()),
-        );
-    }
-    fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
-        self.call(
-            "saveCovers",
-            Some(serde_json::to_string(covers).unwrap_or_default()),
-        );
-    }
-    fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
-        #[derive(serde::Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct One<'a> {
-            path: &'a str,
-            image: &'a runtime_contract::covers::CoverImage,
-        }
-        self.call(
-            "saveCover",
-            Some(serde_json::to_string(&One { path, image }).unwrap_or_default()),
-        );
-    }
-    /// Never bridged: baking a shelf cover is the LIBRARY's command. The
-    /// reader's in-session cover work (resume art, document covers) runs on
-    /// its own artifact engine and never crosses this boundary — a reader
-    /// session that somehow asks is dropped here, loudly impossible rather
-    /// than ever wiring a second bake path.
-    fn bake_cover(&self, _path: &str) {}
-    fn doc_status(&self, report: &runtime_contract::boundary::DocStatusReport) {
-        self.call(
-            "docStatus",
-            Some(serde_json::to_string(report).unwrap_or_default()),
-        );
-    }
-    fn publish_digest(&self, json: String) {
-        self.call("publishDigest", Some(json));
-    }
-    fn reload(&self) {
-        self.call("reload", None);
-    }
-    fn resolve_launch(&self, path: &str) -> Option<LaunchDocument> {
-        use wasm_bindgen::JsCast;
-        let window = web_sys::window()?;
-        let target: js_sys::Object = window.unchecked_into();
-        let Ok(bridge) =
-            js_sys::Reflect::get(&target, &wasm_bindgen::JsValue::from_str("__mareaderShell"))
-        else {
-            return None;
-        };
-        if bridge.is_undefined() {
-            return None;
-        }
-        let bridge: js_sys::Object = bridge.unchecked_into();
-        let Ok(f) =
-            js_sys::Reflect::get(&bridge, &wasm_bindgen::JsValue::from_str("resolveLaunch"))
-        else {
-            return None;
-        };
-        let f: js_sys::Function = f.unchecked_into();
-        let answer = f
-            .call1(&bridge, &wasm_bindgen::JsValue::from_str(path))
-            .ok()?;
-        if answer.is_null() || answer.is_undefined() {
-            return None;
-        }
-        serde_wasm_bindgen::from_value(answer).ok()
     }
 }
 

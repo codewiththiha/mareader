@@ -37,7 +37,6 @@ use leptos::prelude::*;
 use reader_core::settings::Settings;
 use wasm_bindgen::JsCast;
 #[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::wasm_bindgen;
 
 pub use context::LibraryContext;
 
@@ -171,32 +170,4 @@ pub fn standalone_settings() -> Settings {
     storage::load_settings()
 }
 
-// ---------------------------------------------------------------------------
-// The wasm exports the Shell's manager calls.
-// ---------------------------------------------------------------------------
 
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = mareaderLibraryStart)]
-pub fn mareader_library_start(host: wasm_bindgen::JsValue) -> u32 {
-    console_error_panic_hook::set_once();
-    let host: web_sys::Element = host.unchecked_into();
-    let api = context::ApiHandle::Js;
-    start_session(&host, api)
-}
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = mareaderLibraryDispose)]
-pub fn mareader_library_dispose(id: u32) -> js_sys::Promise {
-    dispose(id)
-}
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = mareaderLibraryCommand)]
-pub fn mareader_library_command(id: u32, cmd_json: String) {
-    // A malformed envelope is dropped: the Shell's serializer and this
-    // schema are generated from one type, so disagreement is a bug, not
-    // input to recover from.
-    if let Ok(cmd) = serde_json::from_str::<LibraryCommand>(&cmd_json) {
-        command(id, cmd);
-    }
-}

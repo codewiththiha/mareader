@@ -57,7 +57,6 @@ use leptos::prelude::*;
 use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ShellApi};
 use wasm_bindgen::JsCast;
 #[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::wasm_bindgen;
 
 pub use context::ReaderContext;
 
@@ -441,38 +440,4 @@ pub fn web_launch() -> LaunchDocument {
     launch
 }
 
-// ---------------------------------------------------------------------------
-// The wasm exports the Shell's manager calls. The payloads are JSON strings
-// of the boundary types; the session ids are this artifact's own.
-// ---------------------------------------------------------------------------
 
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = mareaderReaderStart)]
-pub fn mareader_reader_start(host: wasm_bindgen::JsValue, launch_json: String) -> u32 {
-    console_error_panic_hook::set_once();
-    let host: web_sys::Element = host.unchecked_into();
-    let launch: runtime_contract::boundary::LaunchDocument =
-        serde_json::from_str(&launch_json).expect("launch descriptor");
-    // Session-scoped bridge wiring happens inside start_session's scope.
-    let id = start_session(&host, launch, context::ApiHandle::Js);
-    diagnostics::set_reader_live(true);
-    id
-}
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = mareaderReaderDispose)]
-pub fn mareader_reader_dispose(id: u32) -> js_sys::Promise {
-    let promise = dispose(id);
-    // The live-state flag drops with the session; the digest's final push
-    // (drained) happens in the disposal tail via publish_digest.
-    diagnostics::set_reader_live(false);
-    promise
-}
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = mareaderReaderCommand)]
-pub fn mareader_reader_command(id: u32, cmd_json: String) {
-    if let Ok(cmd) = serde_json::from_str::<runtime_contract::boundary::LaunchDocument>(&cmd_json) {
-        command(id, cmd);
-    }
-}

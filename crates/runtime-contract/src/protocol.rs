@@ -1,11 +1,9 @@
 //! The frame wire protocol: the serialized form of the Shell ⇄ runtime
 //! boundary once a runtime lives in its own frame (guide §7–§9, §35).
 //!
-//! Today the same boundary crosses a same-page bridge object (JSON strings on
-//! `window.__mareaderShell`); the frame replaces the transport, not the
-//! vocabulary. Every type here is pure data — no `js-sys`, no `web-sys` — so
-//! both artifacts and the Shell serialize it from the one crate, and the
-//! shape is unit-testable off-wasm.
+//! Every type here is pure data — no `js-sys`, no `web-sys` — so both
+//! artifacts and the Shell serialize it from the one crate, and the shape is
+//! unit-testable off-wasm.
 //!
 //! Channel discipline (§8): the Shell hands each frame a dedicated
 //! `MessagePort`, so the port itself authenticates the channel; the

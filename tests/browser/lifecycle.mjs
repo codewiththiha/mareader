@@ -1439,19 +1439,20 @@ async function openFromLibrary(cycle) {
     x.engine.activeRenders === 0, 45_000);
   return o;
 }
-// The base is whatever the reload matrix left: the epoch is claimed per
-// open and per close in the LIVE page, so the same-page cycles assert the
-// DELTA — exactly one claim each — never an absolute "back to 1".
-const epochBase = (await snap()).disposalEpoch;
-// The runtime generation base: every same-page open must be a NEW runtime
-// generation (a disposed runtime is never revived in place), so generation
-// advances exactly once per cycle on top of wherever the matrix left it.
+// The shell-relative base is the runtime generation only: every same-page
+// open must be a NEW runtime generation (a disposed runtime is never revived
+// in place), so generation advances exactly once per cycle on top of
+// wherever the matrix left it. The disposal epoch is NOT carried across
+// cycles: each same-page open boots a FRESH frame — a fresh wasm world — so
+// its own epoch is 1 at the open claim and 2 at the close claim; the
+// cross-cycle pairing the epoch used to prove in one live page is carried
+// by the shell's session counters now (§21).
 const generationBase = (await snap()).runtime?.generation ?? 1;
-console.log("same-page stage: epoch base", epochBase, "| runtime generation base", generationBase);
+console.log("same-page stage: runtime generation base", generationBase);
 for (let cycle = 1; cycle <= 10; cycle += 1) {
   const o = await openFromLibrary(cycle);
-  if (o.disposalEpoch !== epochBase + 2 * cycle - 1) {
-    throw new Error(`same-page open ${cycle}: epoch ${o.disposalEpoch}, expected ${epochBase + 2 * cycle - 1} (base ${epochBase} + one open claim)`);
+  if (o.disposalEpoch !== 1) {
+    throw new Error(`same-page open ${cycle}: epoch ${o.disposalEpoch}, expected 1 (the fresh frame's first claim is the open)`);
   }
   if (o.runtime?.generation !== generationBase + cycle) {
     throw new Error(`same-page open ${cycle}: runtime generation ${o.runtime?.generation}, expected a NEW runtime (${generationBase + cycle}) — the disposed runtime was revived`);
@@ -1468,7 +1469,7 @@ for (let cycle = 1; cycle <= 10; cycle += 1) {
   await clickCloseNow();
   const c = await waitFor(`the disposal baseline (same-page cycle ${cycle})`,
     (x) => x.atBaseline === true, 45_000);
-  assertDrained(c, `same-page cycle ${cycle}`, epochBase + 2 * cycle);
+  assertDrained(c, `same-page cycle ${cycle}`);
   if (c.runtime?.state !== "disposed" || c.runtime?.generation !== generationBase + cycle) {
     throw new Error(`same-page cycle ${cycle}: runtime ${c.runtime?.state} gen ${c.runtime?.generation}, expected disposed at generation ${generationBase + cycle}`);
   }
@@ -1533,7 +1534,6 @@ const waitFrames = (n) =>
       }),
     n,
   );
-const callbackEpochBase = (await snap()).disposalEpoch;
 const callbackGenBase = (await snap()).runtime?.generation ?? 1;
 for (let cycle = 1; cycle <= 10; cycle += 1) {
   const o = await openFromLibrary(cycle);
@@ -1554,7 +1554,7 @@ for (let cycle = 1; cycle <= 10; cycle += 1) {
   assertNoNewPanics(`callback cycle ${cycle}`, panicsBeforeCycle);
   const c = await waitFor(`the disposal baseline (callback cycle ${cycle})`,
     (x) => x.atBaseline === true, 45_000);
-  assertDrained(c, `callback cycle ${cycle}`, callbackEpochBase + 2 * cycle);
+  assertDrained(c, `callback cycle ${cycle}`);
   if (c.runtime?.state !== "disposed" || c.runtime?.generation !== callbackGenBase + cycle) {
     throw new Error(`callback cycle ${cycle}: runtime ${c.runtime?.state} gen ${c.runtime?.generation}, expected disposed at generation ${callbackGenBase + cycle}`);
   }

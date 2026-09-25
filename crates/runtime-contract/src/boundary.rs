@@ -77,9 +77,9 @@ pub struct DocStatusReport {
 }
 
 /// The typed command surface a runtime calls the Shell through. One
-/// implementation per deployment: the hosted bridge
-/// (`window.__mareaderShell`, JSON strings on the wire) and the standalone
-/// substitute (direct storage writes, no navigation to own).
+/// implementation per deployment: the hosted frame (`ApiHandle::Frame`, the
+/// boundary wire over the frame's port) and the standalone substitute
+/// (direct storage writes, no navigation to own).
 pub trait ShellApi {
     /// Library → Shell: open this document. The Shell navigates to `/reader`
     /// and starts the reader runtime with this descriptor.
