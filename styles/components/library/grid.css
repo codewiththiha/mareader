@@ -57,7 +57,7 @@
 }
 
 /* The cover's own ratio is written inline per book by
-   `src/features/library/book_card.rs` (clamped there, so a pathological page
+   `crates/library-runtime/src/features/library/book_card.rs` (clamped there, so a pathological page
    cannot break the grid); this is only the default and the fill. */
 .book-cover {
   position: relative;
@@ -252,7 +252,7 @@
 }
 
 /* Covers: the two treatments the view menu offers. "Fit" is the shelf the app has always had —
-   every cover at its document's own aspect ratio, clamped in `src/features/library/book_card.rs`;
+   every cover at its document's own aspect ratio, clamped in `crates/library-runtime/src/features/library/book_card.rs`;
    "crop" is one ratio for all of them. Only the fill changes here, because the box's ratio is the
    card's inline style. */
 .book-cover-crop .book-cover-img,

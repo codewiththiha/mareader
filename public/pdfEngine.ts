@@ -154,6 +154,11 @@ async function destroy(): Promise<void> {
   } finally {
     // Teardown always completes: a release that throws must not skip the
     // document null-out, or the next open() sees a half-dead session.
+    //
+    // The sweeper is cleared HERE as well as at the top: a render already
+    // past its last dead-check can arm it while the worker is being torn
+    // down, and the baseline this close is judged by counts the timer.
+    session.clearIdleTimer();
     session.setPdf(null);
     session.setNumPages(0);
     session.setCurrentPath(null);

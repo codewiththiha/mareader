@@ -288,8 +288,17 @@ class EngineSession {
     return this.renderCount;
   }
 
-  /** Reset the idle sweeper (pdf.cleanup + scratch/pool drain). */
+  /**
+   * Reset the idle sweeper (pdf.cleanup + scratch/pool drain).
+   *
+   * Document-scoped by definition: with no document there is nothing left to
+   * sweep, and a timer armed here would outlive the close. `destroy()` clears
+   * the sweeper, but it cannot un-arm a render still resuming from an await —
+   * and `sweepTimerArmed` is a field the teardown baseline reads, so a stray
+   * re-arm is a close that never reads drained.
+   */
   noteActivity(): void {
+    if (!this.pdf) return;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       this.sweepPdf();

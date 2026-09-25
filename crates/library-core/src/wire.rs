@@ -14,7 +14,7 @@ pub enum ImportPhase {
 }
 
 /// One progress beat, emitted on the shell's `library://progress` channel
-/// and re-broadcast as a window event by `src/services/library/mod.rs`.
+/// and re-broadcast as a window event by `crates/library-runtime/src/services/mod.rs`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportProgress {

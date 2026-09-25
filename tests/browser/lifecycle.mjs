@@ -68,7 +68,19 @@ page.on("pageerror", (e) => {
   pageErrors.push(`[stage: ${currentStage}] ${e.message}\n${e.stack ?? "(no stack)"}`);
   consoleLog.push(`[err-capture] stage=${currentStage} ${e.message}`);
 });
+// The class this suite exists to catch: a frame, timer or listener firing
+// after its reactive owner was disposed (or any trap that escapes the wasm).
+const PANIC_CLASS =
+  /already been disposed|has been disposed|panicked at|RuntimeError: unreachable|RuntimeError: memory access|recursive use of an object/i;
+
 const errorLog = [];
+// Monotonic, unlike the capped ring above it: stages assert "no panic SINCE
+// my marker", and a sliding window cannot answer that.
+let panicCount = 0;
+// Console errors that are NOT the disposal/panic class (a blanket "any error
+// fails the stage" gate would red a run over a benign library that logs as
+// `error`): counted and reported, never asserted.
+let otherErrorCount = 0;
 // Trap-hunt ring: every console line, wide, dumped only on failure so the
 // statements around a wasm trap survive the run's noise.
 const huntLog = [];
@@ -82,6 +94,8 @@ page.on("console", (msg) => {
   // line that names the file and function. Keep it out of the sliding
   // window's reach.
   if (msg.type() === "error") {
+    if (PANIC_CLASS.test(line)) panicCount += 1;
+    else otherErrorCount += 1;
     errorLog.push(`[stage: ${currentStage}] ${line}`);
     if (errorLog.length > 50) errorLog.shift();
   }
@@ -218,6 +232,16 @@ async function waitFor(label, predicate, timeoutMs = 120_000) {
   }
 }
 
+/** No stage may pass while the page logged a disposal panic. Counter-based, so
+ *  a stage asserts "none SINCE my marker" — and a panic is caught by nothing
+ *  else: the counters can settle after a trap that killed the owner of a
+ *  queued callback, and that trap is the thing being prevented. */
+function assertNoNewPanics(label, sinceCount) {
+  if (panicCount > sinceCount) {
+    throw new Error(`[${label}] ${panicCount - sinceCount} disposal panic(s) during the stage:\n${errorLog.join("\n")}`);
+  }
+}
+
 async function openBook(url) {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   // Reader live AND the document actually open AND the first page rendered
@@ -261,6 +285,7 @@ async function clickCloseNow() {
  *  Every cycle here boots fresh, so the open claims epoch 1 and the close
  *  claims epoch 2 — exactly one advance per cycle. */
 async function closeAndWaitBaseline(label, settledWork, expectedEpoch = 2) {
+  const panicsBefore = panicCount;
   if (!settledWork) await clickCloseNow();
   const s = await waitFor(`the disposal baseline (${label})`, (x) =>
     x.atBaseline === true && x.runtime?.state === "disposed", 45_000);
@@ -270,6 +295,7 @@ async function closeAndWaitBaseline(label, settledWork, expectedEpoch = 2) {
   if (s.runtime?.state !== "disposed" || (s.runtime?.generation ?? 0) < 1) {
     throw new Error(`[${label}] runtime did not report disposal (state ${s.runtime?.state}, generation ${s.runtime?.generation})`);
   }
+  assertNoNewPanics(label, panicsBefore);
   return s;
 }
 
@@ -375,12 +401,14 @@ async function raceCloseDuringPrefetch() {
 
 const stages = {};
 const summary = {
+  consoleErrorsUnrelated: 0,
   fixturePages: {},
   fastJumpRenderDeltas: [],
   scrollPeaks: null,
   zoomPeaks: null,
   fastJumpPeaks: null,
   largeScrollPeaks: null,
+  callbackCycles: 0,
   closeDuringRenderRaced: false,
   closeDuringPrefetchDrops: 0,
   closeDuringSearchRaced: false,
@@ -570,6 +598,7 @@ console.log("fast-jump peaks:", JSON.stringify(jumpPeaks));
 
 // --- Stage 5: close DURING an active page render (raced, then proven) -----
 currentStage = "stage5-render-race";
+const panicsBeforeRenderRace = panicCount;
 // Zoom commits keep the render lane fed; the atomic racer closes the book
 // in the same js turn that observes an in-flight render. The interrupted
 // work must show up as rendersCancelled/rendersDropped — a close that
@@ -598,6 +627,7 @@ for (let attempt = 1; attempt <= 3 && !renderRaceWon; attempt += 1) {
       throw new Error("close-during-render won the race but no render was cancelled or dropped");
     }
     assertDrained(renderRaceSnapshot, "close during render");
+    assertNoNewPanics("close during render", panicsBeforeRenderRace);
   } else {
     console.log(`render race attempt ${attempt}: never caught an active render; settling and retrying`);
     await closeAndWaitBaseline(`render-race attempt ${attempt} missed; settled close`);
@@ -611,6 +641,7 @@ console.log("close-during-render race WON; cancelled+dropped:",
 
 // --- Stage 6: close DURING an active thumbnail prefetch -------------------
 currentStage = "stage6-prefetch-race";
+const panicsBeforePrefetchRace = panicCount;
 // The warmup fires ~1.5s after ready; dense polling catches the first
 // prefetch early, and the atomic close lands inside its render window.
 let prefetchRaceWon = false;
@@ -629,6 +660,7 @@ for (let attempt = 1; attempt <= 3 && !prefetchRaceWon; attempt += 1) {
       throw new Error("close-during-prefetch won the race but no prefetch was dropped");
     }
     assertDrained(prefetchSnapshot, "close during prefetch");
+    assertNoNewPanics("close during prefetch", panicsBeforePrefetchRace);
   } else {
     console.log(`prefetch race attempt ${attempt}: never caught an active prefetch; settling and retrying`);
     await closeAndWaitBaseline(`prefetch-race attempt ${attempt} missed; settled close`);
@@ -642,6 +674,7 @@ console.log("close-during-prefetch race WON; prefetches dropped:",
 
 // --- Stage 7: close DURING a search index build (raced, then proven) ------
 currentStage = "stage7-search-race";
+const panicsBeforeSearchRace = panicCount;
 // The build is search's long async half — a worker round trip per page,
 // ~3 pages per turn — and the engine gauges it (searchActive). Same-turn
 // observe-and-close like the other races. Each attempt uses a book whose
@@ -679,6 +712,7 @@ for (let attempt = 1; attempt <= 3 && !searchRaceWon; attempt += 1) {
       throw new Error("close-during-search won the race but the build gauge survived the close");
     }
     assertDrained(searchSnapshot, "close during search");
+    assertNoNewPanics("close during search", panicsBeforeSearchRace);
   } else if (attempt < 3) {
     console.log(`search race attempt ${attempt}: the build finished before the close could land; trying a fresh book`);
     await closeAndWaitBaseline(`search-race attempt ${attempt} missed; settled close`);
@@ -882,7 +916,81 @@ stages.afterSamePage = await snap();
   console.log(`same-page trend: slope ${Math.round(slope)} B/cycle, drift ${drift} B | recycler drift ${pooledDrift} B`);
 }
 
+// --- Stage 12: workload I — queued callbacks across the close --------------
+currentStage = "stage12-callback-x10";
+// The red-CI guide's Patch E, as a standing stage: the failure class is a
+// frame or timer armed while the reader was alive, firing after the route
+// disposed its owner. The earlier race stages land the close inside ENGINE
+// work; this one lands it inside the UI frame machinery — a zoom arms the
+// floating title's frame, the strip's rescale frame and the anchor-settle rAF
+// chain — then leaves at once and waits SEVERAL frames, so every armed
+// callback has had its chance to fire into a disposed owner. A trap fails the
+// stage through assertNoNewPanics; the residue a trapped artifact would leave
+// behind fails the drained baseline.
+const waitFrames = (n) =>
+  page.evaluate(
+    (count) =>
+      new Promise((resolve) => {
+        let seen = 0;
+        const step = () => {
+          seen += 1;
+          if (seen >= count) resolve(seen);
+          else requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }),
+    n,
+  );
+const callbackEpochBase = (await snap()).disposalEpoch;
+const callbackGenBase = (await snap()).runtime?.generation ?? 1;
+for (let cycle = 1; cycle <= 10; cycle += 1) {
+  const o = await openFromLibrary(cycle);
+  if (o.runtime?.generation !== callbackGenBase + cycle) {
+    throw new Error(`callback cycle ${cycle}: runtime generation ${o.runtime?.generation}, expected ${callbackGenBase + cycle}`);
+  }
+  // Arm the frame machinery through the app's real zoom pipeline, then move
+  // the page: the volume, the titlebar and the anchor loop all queue frames
+  // that are still pending when the close lands.
+  await page.mouse.click(700, 450);
+  await page.keyboard.press("+");
+  await waitFrames(2);
+  await page.keyboard.press("PageDown");
+  const panicsBeforeCycle = panicCount;
+  await clickCloseNow();
+  await waitFrames(8);
+  await page.waitForTimeout(120);
+  assertNoNewPanics(`callback cycle ${cycle}`, panicsBeforeCycle);
+  const c = await waitFor(`the disposal baseline (callback cycle ${cycle})`,
+    (x) => x.atBaseline === true, 45_000);
+  assertDrained(c, `callback cycle ${cycle}`, callbackEpochBase + 2 * cycle);
+  if (c.runtime?.state !== "disposed" || c.runtime?.generation !== callbackGenBase + cycle) {
+    throw new Error(`callback cycle ${cycle}: runtime ${c.runtime?.state} gen ${c.runtime?.generation}, expected disposed at generation ${callbackGenBase + cycle}`);
+  }
+  // This stage's own assertions, spelled out rather than implied by the
+  // counter balance: the runtime is gone, both engine lanes are idle, and
+  // every piece of virtualizer machinery (instances, observers, timers) is
+  // at zero — the exact residue a surviving callback would keep alive.
+  if (c.readerRuntimeLive !== false) {
+    throw new Error(`callback cycle ${cycle}: reader runtime still live`);
+  }
+  if (c.engine.activeRenders !== 0 || c.engine.activePrefetches !== 0) {
+    throw new Error(`callback cycle ${cycle}: engine still working (renders ${c.engine.activeRenders}, prefetches ${c.engine.activePrefetches})`);
+  }
+  if (c.virtualizerLive !== 0 || c.virtualizerObservers !== 0 || c.virtualizerTimers !== 0) {
+    throw new Error(`callback cycle ${cycle}: virtualizer machinery alive (live ${c.virtualizerLive}, observers ${c.virtualizerObservers}, timers ${c.virtualizerTimers})`);
+  }
+  summary.callbackCycles = cycle;
+}
+stages.afterCallbackDiscipline = await snap();
+console.log("queued-callback discipline x10 clean: no disposal panic, every armed callback fired into a disposed owner without trapping");
+
 // --- Guards ----------------------------------------------------------------
+summary.consoleErrorsUnrelated = otherErrorCount;
+if (otherErrorCount > 0) {
+  console.log(`${otherErrorCount} console error(s) outside the disposal-panic class (not asserted):`);
+  console.log(errorLog.join("\n"));
+}
+
 if (pageErrors.length > 0) {
   dumpDiagnosis(await snap().catch(() => null));
   throw new Error(`page errors during the lifecycle:\n${pageErrors.join("\n")}`);

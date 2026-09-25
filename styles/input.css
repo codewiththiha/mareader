@@ -46,7 +46,7 @@
    (book-, folder-, import-, row-, drag-). Neither spelling is written with
    its leading dot here on purpose: a dead selector in a comment is a class
    name nothing can grep for. The element ids keep their own scheme (crumb-…,
-   library-level); SeamVocab in `src/features/library/shelf_item.rs` is the
+   library-level); SeamVocab in `crates/library-runtime/src/features/library/shelf_item.rs` is the
    one table that decides which state class a surface wears. */
 @import "./components/library/shared.css"; /* the ghost icon button every library surface reveals on hover */
 @import "./components/library/grid.css";     /* the shelf grid, the book card, its covers, a dead address, the add card */

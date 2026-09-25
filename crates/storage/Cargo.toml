@@ -1,0 +1,19 @@
+[package]
+name = "storage"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ai-core = { path = "../ai-core" }
+app-state = { path = "../app-state" }
+leptos = { version = "0.8", features = ["csr"] }
+library-core = { path = "../library-core" }
+reader-core = { path = "../reader-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Not target-gated: `local()`'s return type names `web_sys::Storage` on every
+# target, so the host lanes (clippy/test) compile these too — the gate broke
+# the workspace's host compile while saving nothing (leptos csr pulls the
+# stack on every target anyway).
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Window", "Storage"] }

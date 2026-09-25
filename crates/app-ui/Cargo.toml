@@ -1,0 +1,40 @@
+[package]
+name = "app-ui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ai-core = { path = "../ai-core" }
+js-sys = "0.3"
+serde-wasm-bindgen = "0.6"
+app-chrome = { path = "../app-chrome" }
+app-state = { path = "../app-state" }
+leptos = { version = "0.8", features = ["csr"] }
+leptos-md = "0.1"
+library-core = { path = "../library-core" }
+pdf-engine = { path = "../pdf-engine" }
+reader-core = { path = "../reader-core" }
+reflow-core = { path = "../reflow-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+storage = { path = "../storage" }
+tauri-bridge = { path = "../tauri-bridge" }
+ui-geom = { path = "../ui-geom" }
+virtual-list = { path = "../virtual-list" }
+virtual-list-leptos = { path = "../virtual-list-leptos" }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Window", "Document", "Element", "HtmlElement", "HtmlDivElement",
+  "HtmlCanvasElement", "HtmlInputElement", "HtmlButtonElement",
+  "HtmlSelectElement", "Node", "NodeList", "HtmlCollection", "DomTokenList",
+  "CssStyleDeclaration", "CanvasRenderingContext2d", "Event", "MouseEvent",
+  "KeyboardEvent", "FocusOptions", "WheelEvent", "ResizeObserver",
+  "ResizeObserverEntry", "DomRect", "DomRectList", "Selection", "Range",
+  "Text", "Location", "UrlSearchParams", "Storage", "Performance",
+  "PerformanceEntry", "console", "DragEvent", "DataTransfer", "CustomEvent",
+        "CustomEventInit",
+        "MediaQueryList",
+  "AddEventListenerOptions", "EventTarget", "HtmlDocument", "Navigator",
+  "VisibilityState", "HtmlIFrameElement", "MessageEvent", "Worker",
+] }

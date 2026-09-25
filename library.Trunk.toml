@@ -1,0 +1,5 @@
+# The library runtime's build: the standalone page (library.html) plus the
+# artifact the shell dynamically imports (`/library.js`, unhashed).
+[build]
+target = "library.html"
+filehash = false

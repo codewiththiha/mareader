@@ -79,7 +79,9 @@ jobs:
         run: npm ci
 
       - name: Build the production frontend
-        run: trunk build --release
+        # All three artifacts: the shell page plus the two runtime pages the
+        # shell loads (tools/build-dist.sh merges them into dist/).
+        run: sh tools/build-dist.sh --release
 
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium

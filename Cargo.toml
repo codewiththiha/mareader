@@ -67,7 +67,7 @@ web-sys = { version = "0.3", features = [
   "CustomEvent",
   "CustomEventInit",
   "console",
-  # The web test hook (services/web_params.rs) reads `window.location.search`
+  # The web test hook (services/launch.rs) reads `window.location.search`
   # and parses it — browser builds only; the packaged app never reaches it.
   "Location",
   "UrlSearchParams",
@@ -87,6 +87,9 @@ pdf-engine = { path = "crates/pdf-engine" }
 pdf-paper = { path = "crates/pdf-paper" }
 tauri-bridge = { path = "crates/tauri-bridge" }
 app-chrome = { path = "crates/app-chrome" }
+app-state = { path = "crates/app-state" }
+app-ui = { path = "crates/app-ui" }
+storage = { path = "crates/storage" }
 # The geometry primitives. The motion spring rides `ui_geom::spring`'s
 # integrator, so it clamps to that crate's frame ceiling rather than
 # restating the number.
@@ -119,6 +122,11 @@ library-core = { path = "crates/library-core", features = ["test-util"] }
 members = [
   "src-tauri",
   "crates/ai-core",
+  "crates/app-state",
+  "crates/app-ui",
+  "crates/storage",
+  "crates/library-runtime",
+  "crates/reader-runtime",
   "crates/virtual-list",
   "crates/virtual-list-leptos",
   "crates/reader-core",

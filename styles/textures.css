@@ -87,7 +87,7 @@
    pattern rides the scroller as a background with `background-attachment:
    local`: anchored to the content, scrolling with it, behind all type by
    ordinary stacking. The pitch zooms with the type: the scroller writes
-   --tx-zoom inline (src/components/viewer/texture_surface.rs) into the same
+   --tx-zoom inline (crates/reader-runtime/src/components/viewer/texture_surface.rs) into the same
    --tex-scale formula the page texture uses, so both formats stay
    pitch-identical. The opacity dial is emulated with --tx-matte below: a
    background layer has no element opacity to fade. */
@@ -174,7 +174,7 @@
    backdrop a page here does not otherwise reach — so the overhang runs half
    a gap up and half a gap down, meeting the page above and the page below in
    the middle. The gap is published as --page-gap by the effect that resolves
-   it (src/effects/reader/layout_prefs.rs) and is zero in No Gap mode, where
+   it (crates/reader-runtime/src/effects/reader/layout_prefs.rs) and is zero in No Gap mode, where
    the pages are pulled together to overlap by a device pixel and the two
    halves collapse to the plain rule this was before. */
 .reader-bg.blend .pdf-page[id^="cont-"]::before {

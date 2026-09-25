@@ -1,0 +1,159 @@
+//! The library runtime: the shelf — its state, services, effects and UI —
+//! compiled as its own WASM artifact. It has no reader state to hold: the
+//! reader is a different artifact this one can only ask the Shell for.
+
+pub mod context;
+pub mod effects_library;
+pub mod features;
+pub mod services;
+pub mod state;
+
+use std::cell::{Cell, RefCell};
+
+use app_ui::components::primitives::overlay::lanes::OverlayBoard;
+use leptos::prelude::*;
+use reader_core::settings::Settings;
+use wasm_bindgen::JsCast;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::wasm_bindgen;
+
+pub use context::LibraryContext;
+
+/// One live library session: the unmount handle. The manager starts and
+/// disposes it like the reader's; the library keeps no cross-session state —
+/// the durable copy in storage is what the next session seeds from
+/// (persist data ≠ retain live object).
+pub struct Session {
+    pub id: u32,
+    unmount: Box<dyn FnOnce()>,
+}
+
+thread_local! {
+    static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
+    static NEXT_ID: Cell<u32> = const { Cell::new(1) };
+    static PENDING_DISPOSE: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
+}
+
+/// Mount a library session into `host`.
+pub fn start_session(host: &web_sys::Element, api: context::ApiHandle) -> u32 {
+    let id = NEXT_ID.with(|n| {
+        let id = n.get();
+        n.set(id + 1);
+        id
+    });
+    SESSION.with(|s| {
+        assert!(
+            s.borrow().is_none(),
+            "a library session is already live — the manager disposes before it starts"
+        );
+    });
+
+    let host: web_sys::HtmlElement = host.clone().unchecked_into();
+    let handle = mount_to(host, move || {
+        // Scoped to THIS session: the state seeds from storage, the effects
+        // (grid gestures, dnd, import flows) install, the UI mounts.
+        let state = context::LibraryContext::new(api);
+        provide_context(state.library.covers);
+        // One overlay registry for this session: the shelf's menus and modals
+        // arbitrate through it, and it dies with the unmount.
+        provide_context(OverlayBoard::default());
+        // The library's session effects install INSIDE this scope: the
+        // listeners and timers die with the unmount (§5, §17).
+        effects_library::library_effects(state);
+        view! { <features::library::LibraryPage state /> }
+    });
+    let unmount: Box<dyn FnOnce()> = Box::new(move || drop(handle));
+    SESSION.with(|s| {
+        *s.borrow_mut() = Some(Session { id, unmount });
+    });
+    id
+}
+
+/// Dispose the library session (the manager replaces runtimes; the reader is
+/// no different except in direction).
+pub fn dispose(id: u32) -> js_sys::Promise {
+    let mut resolve_fn: Option<js_sys::Function> = None;
+    let mut executor = |resolve: js_sys::Function, _reject: js_sys::Function| {
+        resolve_fn = Some(resolve);
+    };
+    let promise = js_sys::Promise::new(&mut executor);
+    let live = SESSION.with(|s| s.borrow().as_ref().map(|x| x.id) == Some(id));
+    if !live {
+        return js_sys::Promise::resolve(&wasm_bindgen::JsValue::from_bool(true));
+    }
+    SESSION.with(|s| {
+        if let Some(session) = s.borrow_mut().take() {
+            // The library session owns no async engine tails: the unmount's
+            // cleanups are synchronous (listeners, observers, timers), so the
+            // promise resolves on the next microtask via a plain resolve.
+            (session.unmount)();
+        }
+    });
+    if let Some(resolve) = resolve_fn {
+        let _ = resolve.call0(&js_sys::global());
+    }
+    promise
+}
+
+/// Whether a Shell hosts this artifact. The Shell installs its bridge before
+/// it loads any runtime, and the artifact's own page has no such bridge:
+/// this is the gate that keeps a dynamically imported artifact from booting
+/// a second, invisible session beside the Shell's (§12 — the runtime mounts
+/// only inside the Shell's target, and only when the Shell says so).
+pub fn shell_hosted() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsCast;
+        let Some(window) = web_sys::window() else {
+            return false;
+        };
+        let target: js_sys::Object = window.unchecked_into();
+        let Ok(bridge) =
+            js_sys::Reflect::get(&target, &wasm_bindgen::JsValue::from_str("__mareaderShell"))
+        else {
+            return false;
+        };
+        !bridge.is_undefined()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
+/// Standalone boot (`library.html`): no Shell — a storage-backed API.
+pub fn run_standalone() {
+    console_error_panic_hook::set_once();
+    let api = context::ApiHandle::Standalone;
+    let host = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.body())
+        .map(web_sys::Element::from)
+        .expect("document body for the standalone library");
+    start_session(&host, api);
+}
+
+/// The settings blob a standalone library session starts from (the hosted
+/// path's seed comes through the manager's bridge launch payload).
+pub fn standalone_settings() -> Settings {
+    storage::load_settings()
+}
+
+// ---------------------------------------------------------------------------
+// The wasm exports the Shell's manager calls.
+// ---------------------------------------------------------------------------
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = mareaderLibraryStart)]
+pub fn mareader_library_start(host: wasm_bindgen::JsValue) -> u32 {
+    console_error_panic_hook::set_once();
+    let host: web_sys::Element = host.unchecked_into();
+    let api = context::ApiHandle::Js;
+    start_session(&host, api)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = mareaderLibraryDispose)]
+pub fn mareader_library_dispose(id: u32) -> js_sys::Promise {
+    dispose(id)
+}

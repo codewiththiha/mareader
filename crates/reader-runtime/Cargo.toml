@@ -1,0 +1,51 @@
+[package]
+name = "reader-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "reader"
+path = "src/bin/reader.rs"
+
+[dependencies]
+ai-core = { path = "../ai-core" }
+app-chrome = { path = "../app-chrome" }
+app-state = { path = "../app-state" }
+app-ui = { path = "../app-ui" }
+console_error_panic_hook = "0.1.7"
+js-sys = "0.3"
+leptos = { version = "0.8", features = ["csr"] }
+leptos-md = "0.1"
+library-core = { path = "../library-core" }
+md-core = { path = "../md-core" }
+pdf-core = { path = "../pdf-core" }
+pdf-engine = { path = "../pdf-engine" }
+pdf-paper = { path = "../pdf-paper" }
+reader-core = { path = "../reader-core" }
+reflow-core = { path = "../reflow-core" }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+serde_json = "1"
+storage = { path = "../storage" }
+tauri-bridge = { path = "../tauri-bridge" }
+txt-core = { path = "../txt-core" }
+ui-geom = { path = "../ui-geom" }
+virtual-list = { path = "../virtual-list" }
+virtual-list-leptos = { path = "../virtual-list-leptos" }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Window", "Document", "Element", "HtmlElement", "HtmlDivElement",
+  "HtmlCanvasElement", "HtmlInputElement", "HtmlButtonElement",
+  "HtmlSelectElement", "Node", "NodeList", "HtmlCollection", "DomTokenList",
+  "CssStyleDeclaration", "CanvasRenderingContext2d", "Event", "MouseEvent",
+  "KeyboardEvent", "FocusOptions", "WheelEvent", "ResizeObserver",
+  "ResizeObserverEntry", "DomRect", "DomRectList", "Selection", "Range",
+  "Text", "Location", "UrlSearchParams", "Storage", "Performance",
+  "PerformanceEntry", "console", "DragEvent", "DataTransfer", "CustomEvent",
+  "AddEventListenerOptions", "EventTarget", "HtmlDocument", "Navigator",
+  "VisibilityState", "HtmlIFrameElement", "MessageEvent", "Worker",
+] }

@@ -64,8 +64,18 @@ pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
     ZOOM_STEPS[target_idx]
 }
 
+/// Hermite smoothstep: 0 below `edge0`, 1 above `edge1`, smooth between.
+/// Pure easing math, not gloss-specific — any UI fade that must start and end
+/// with zero derivative belongs here.
+pub fn smoothstep(t: f64, edge0: f64, edge1: f64) -> f64 {
+    let x = ((t - edge0) / (edge1 - edge0).max(0.0001)).clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::smoothstep;
+
     use super::{FitMode, MAX_SCALE, MIN_SCALE, clamp_scale, fit_scale, nearest_zoom};
 
     #[test]
@@ -132,19 +142,6 @@ mod tests {
         assert!(nearest_zoom(f64::NAN, 1).is_finite());
         assert_eq!(nearest_zoom(1.0, 0), 1.0);
     }
-}
-
-/// Hermite smoothstep: 0 below `edge0`, 1 above `edge1`, smooth between.
-/// Pure easing math, not gloss-specific — any UI fade that must start and end
-/// with zero derivative belongs here.
-pub fn smoothstep(t: f64, edge0: f64, edge1: f64) -> f64 {
-    let x = ((t - edge0) / (edge1 - edge0).max(0.0001)).clamp(0.0, 1.0);
-    x * x * (3.0 - 2.0 * x)
-}
-
-#[cfg(test)]
-mod smoothstep_tests {
-    use super::smoothstep;
 
     #[test]
     fn is_clamped_at_both_edges_and_smooth_between() {

@@ -11,15 +11,18 @@
 
 use leptos::prelude::*;
 
-use crate::effects::app::theme::html_style;
-use crate::state::reader::TypographySignal;
+use app_ui::theme_paint::html_style;
 
 /// Install the typography painter. Runs once at boot (the persisted
 /// typography must be live before the first text document renders) and on
 /// every change afterwards.
-pub fn apply_typography(typography: TypographySignal) {
+pub fn apply_typography(settings: RwSignal<reader_core::settings::Settings>) {
+    // The reflowable typography narrowed out of the settings blob, once,
+    // here in the shell: the durable text tokens repaint from this
+    // subscription the way they always did.
+
     Effect::new(move |_| {
-        let t = typography.get();
+        let t = settings.with(|s| s.text.clone());
         let Some(style) = html_style() else {
             return;
         };

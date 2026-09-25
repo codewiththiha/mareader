@@ -1030,7 +1030,7 @@ undefined.
 
 ### State model
 
-A single `AppState` tree of Leptos signals is threaded through the component tree: the persisted
+Per-runtime context trees of Leptos signals are threaded through each runtime's component tree: the persisted
 `settings`, the reader, the library, and the app's own `ui` state. The reader's branches are the
 document, the viewer — page, mode, fit, container size, and the zoom transaction inside it —
 search, the gloss marks and the AI's selection state. Effects subscribe to it rather than

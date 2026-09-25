@@ -1,0 +1,6 @@
+# The reader runtime's build: the standalone page (reader.html) plus the
+# artifact the shell dynamically imports (`/reader.js`, unhashed so the shell
+# can name it). Built by tools/build-dist.sh alongside the shell page.
+[build]
+target = "reader.html"
+filehash = false

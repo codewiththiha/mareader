@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mareader — reader runtime</title>
+    <link rel="stylesheet" href="vendor/pdfjs/pdf_viewer.css" />
+    <link data-trunk rel="css" href="styles.css" />
+    <link data-trunk rel="copy-dir" href="public/vendor" />
+    <link data-trunk rel="copy-file" href="public/pdfEngine.js" />
+    <link data-trunk rel="copy-file" href="public/readerEngine.js" />
+    <link data-trunk rel="copy-file" href="public/bake.worker.js" />
+    <script type="module" src="/readerEngine.js"></script>
+    <script type="module" src="/vendor/pdfjs/pdf.min.mjs"></script>
+    <script type="module" src="/pdfEngine.js"></script>
+    <!-- The reader artifact: its own Trunk config (reader.Trunk.toml) builds
+         this page; the bin is the reader runtime alone. -->
+    <link data-trunk rel="rust" href="crates/reader-runtime" data-bin="reader" data-wasm-opt="z" />
+  </head>
+  <body></body>
+</html>

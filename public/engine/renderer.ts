@@ -424,8 +424,15 @@ async function renderPageNow(
   st.scale = scale;
   page.cleanup();
 
-  if (session.bumpRenderCount() % CLEANUP_EVERY === 0) session.sweepPdf();
-  session.noteActivity();
+  // The link-layer build above awaits, so the document can be gone by the time
+  // control returns here (a close during render). A dead surface must not touch
+  // document-scoped bookkeeping — the idle sweeper belongs to the document
+  // that just died, and re-arming it keeps the teardown baseline from ever
+  // reading drained.
+  if (!st.dead) {
+    if (session.bumpRenderCount() % CLEANUP_EVERY === 0) session.sweepPdf();
+    session.noteActivity();
+  }
 
   return { ok: true, width: cssW, height: cssH, scale };
 }

@@ -1,6 +1,6 @@
 /* Motion rules. Document content does no entrance animation (page turns,
    popovers, search, toasts appear instantly); layout chrome keeps short
-   structural transitions; zoom scales one continuous surface (src/zoom).
+   structural transitions; zoom scales one continuous surface (crates/reader-runtime/src/zoom).
    Here: the global reduced-motion net, the app's own master switch
    (identical collapse), and the sidebar transitions both nets remove
    outright rather than shorten. */

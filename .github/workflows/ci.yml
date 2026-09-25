@@ -69,7 +69,7 @@ jobs:
       # The only lane that compiles the wasm32-only sites the host builds
       # never see. Denies ride each crate's own lints table.
       - name: Check the wasm frontend
-        run: cargo check --target wasm32-unknown-unknown --locked
+        run: cargo check --target wasm32-unknown-unknown --workspace --locked --exclude mareader-shell
 
       # Workspace feature unification hides under-declared dependencies;
       # app-chrome is the crate meant to be reused, so check it alone.

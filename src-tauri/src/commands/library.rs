@@ -23,7 +23,7 @@ use library_core::wire::{
     BookFileRequest, ImportPhase, ImportProgress, PathCheck, RelocateResult, StoreResult,
 };
 
-/// Mirrored by the frontend in `src/services/library/mod.rs`, which folds it
+/// Mirrored by the frontend in `crates/library-runtime/src/services/mod.rs`, which folds it
 /// into the dock's task list so no component registers a Tauri listener of
 /// its own. `tools/check-chrome-contracts.ts` fails CI when the two drift.
 const PROGRESS_EVENT: &str = "library://progress";

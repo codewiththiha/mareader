@@ -96,9 +96,9 @@ pub async fn close_window() {
 /// handle is not involved, and neither is the backend.
 ///
 /// The address is parked on the root first, and that is load-bearing rather
-/// than cosmetic. The reader's route sync (`src/app/routes.rs`) keeps
+/// than cosmetic. The shell's runtime manager (`src/app/manager.rs`) keeps
 /// `/reader` in the URL bar for as long as a book is open, so a reload from
-/// there boots a router that matches the reader, mounts the whole reader —
+/// there boots the manager into the reader runtime, which mounts the reader —
 /// its effects, its virtualizers, its engine registrations — against a
 /// document state that is empty, and then bounces to the shelf and tears it
 /// all back down. Replacing the address before the reload makes the boot land

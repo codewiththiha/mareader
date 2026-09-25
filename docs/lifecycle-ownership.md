@@ -241,16 +241,21 @@ Phase 1 turns the route boundary into the runtime boundary (`src/runtime.rs`,
   reopen path, exercised by the same-page workload).
 - **Route = runtime boundary**: `/reader` mounts the runtime
   (`begin_mount` → effects → `mark_ready`); leaving it runs
-  `ReaderRuntime::dispose`. The close button is `document_close`: the
-  document session tears down and the reader returns to the shelf, but the
-  runtime stays `Ready`. The two operations are distinct by design.
+  `ReaderRuntime::dispose`. The close button is a Shell command: the
+  reading position is flushed across the boundary and the reader returns to
+  the shelf, and the route flip disposes the runtime as a unit. There is no
+  second teardown path — a runtime that stayed `Ready` behind a closed
+  document would be exactly the hidden retention §12 rules out.
 - **Disposal order** (adapted to the dependency graph Phase 0 mapped):
   enter `Disposing` (work refused) → claim the session stamp and flush the
-  read point if a document is open → reset the reader slices (the route
-  flip follows the status immediately) → tail: close the document session
-  (destroy awaited, sweeps) → dispose every registered virtualizer → mark
-  `Disposed` (generation-guarded) → report disposal completion. The engine
-  destroy is the long pole; everything after it is local and synchronous.
+  read point if a document is open → take the registered resources out of
+  the registry → tail: close the document session (destroy awaited, sweeps)
+  → dispose every registered virtualizer → mark `Disposed`
+  (generation-guarded) → report disposal completion from outside the
+  disposed arena. The reader slices are not reset here: the whole state is
+  dropped with the route, and a reset would be a second teardown path. The
+  engine destroy is the long pole; everything after it is local and
+  synchronous.
 - **Resources owned by the runtime** (`ReaderResources`): the virtualizer
   registry — strips register where `use_virtualizer` returns and the
   runtime's dispose disposes them explicitly; component cleanup stays as

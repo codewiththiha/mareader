@@ -1,69 +1,25 @@
-//! Application bootstrap: the storage backend, the persisted state
-//! (settings, library, covers), and the contexts the pages read (app
-//! state, the viewer state slice, the appearance and texture signals).
+//! The shell's bootstrap: the durable settings load, the shell state, the
+//! bridge, and the shell's own effects. Runtimes create their own state
+//! inside their sessions (§16) — nothing here provides a global app context.
 
 use leptos::prelude::*;
 
-use crate::state::reader::TypographySignal;
-use crate::state::{AppState, AppearanceSignal, TextureSignal};
-use crate::storage::{load_covers, load_library, load_settings};
+use crate::state::ShellState;
 
-/// App state seeded from the persisted settings/library/covers. The three
-/// loads are synchronous localStorage reads plus a `serde_json` parse,
-/// deliberately: all three must be in hand before the first paint — a theme a
-/// frame late is a visible flash of the wrong palette, a shelf a frame late a
-/// visible empty state. The blob is bounded by `library_core::book::BOOKS_CAP`
-/// rather than by the document count, so the parse cannot grow without limit.
-pub(crate) fn create_app_state() -> AppState {
-    // One blob becomes four signals rather than one, so a page turn (which
-    // writes a resume point) does not notify the shelves, and a column nudge
-    // does not notify the books. The blob is loaded once and split here; the
-    // storage module never sees a signal.
-    let library = load_library();
-    // The highlights are keyed by row id, and a map written by a build that keyed
-    // them by address is carried across here — with the row list in hand, which
-    // is the only moment the two can be matched up. Before the state exists,
-    // because the first open reads its marks straight out of storage.
-    crate::storage::migrate_gloss_keys(&library.books);
-    AppState {
-        settings: RwSignal::new(load_settings()),
-        library: crate::state::library::LibraryState {
-            books: RwSignal::new(library.books),
-            shelves: RwSignal::new(library.shelves),
-            folders: RwSignal::new(library.folders),
-            view: RwSignal::new(library.view),
-            covers: RwSignal::new(load_covers()),
-            ..crate::state::library::LibraryState::default()
-        },
-        ..AppState::default()
+pub(crate) fn create_shell_state() -> ShellState {
+    ShellState {
+        settings: RwSignal::new(storage::load_settings()),
+        manager: std::sync::Arc::new(crate::app::manager::RuntimeManager::new()),
     }
 }
 
-/// Provide the app-level contexts: the app state (done by the caller), the
-/// viewer slice, the appearance/texture signals the page hosts need, and the
-/// text typography signal — all derived from settings; the viewer never
-/// touches settings itself.
-///
-/// Returns the appearance and typography memos so the app root hands them to
-/// the effects that paint from them: one memo for the whole app rather than
-/// one per consumer re-deriving the same slice.
-pub(crate) fn provide_app_contexts(state: AppState) -> (AppearanceSignal, TypographySignal) {
-    // The look, narrowed out of the settings blob once. See
-    // [`AppearanceSignal`] for why every DOM-writing consumer subscribes here
-    // instead of to `settings`.
-    let appearance: AppearanceSignal = Memo::new(move |_| state.settings.with(|s| s.appearance));
-    // Narrowed again for the page hosts, which only care about the texture:
-    // a tint nudge must not re-run their `texture-*` class.
-    let texture: TextureSignal = Memo::new(move |_| appearance.get().texture);
-    // The reflowable formats' typography, narrowed the same way: page hosts,
-    // the measurement pipeline and the painter all subscribe to this one memo.
-    let typography: TypographySignal = Memo::new(move |_| state.settings.with(|s| s.text.clone()));
-    provide_context(appearance);
-    provide_context(texture);
-    provide_context(typography);
-    // One overlay-lane registry for the whole app: menus and modals arbitrate
-    // through it, and portaled surfaces resolve it like any other descendant
-    // of the root.
-    provide_context(crate::components::primitives::overlay::lanes::OverlayBoard::default());
-    (appearance, typography)
+/// The shell's own effects: theme, typography, motion — the paints that must
+/// survive every runtime transition. Returns the appearance memo the effects
+/// share.
+pub(crate) fn install_shell_effects(state: ShellState) {
+    let appearance: app_state::AppearanceSignal =
+        Memo::new(move |_| state.settings.with(|s| s.appearance));
+    crate::effects::app::typography::apply_typography(state.settings);
+    crate::effects::app::motion::publish_motion(state.settings);
+    crate::effects::app::theme::apply_theme(state, appearance);
 }
