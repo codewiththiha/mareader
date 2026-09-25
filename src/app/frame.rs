@@ -92,12 +92,20 @@ pub enum FrameVocabulary {
     SaveSettings(Box<reader_core::settings::Settings>),
     SaveLibrary(Box<library_core::blob::LibraryBlob>),
     SaveCovers(Box<runtime_contract::covers::CoverMap>),
-    SaveCover { path: String, image: runtime_contract::covers::CoverImage },
-    BakeCover { path: String },
+    SaveCover {
+        path: String,
+        image: runtime_contract::covers::CoverImage,
+    },
+    BakeCover {
+        path: String,
+    },
     DocStatus(Box<runtime_contract::boundary::DocStatusReport>),
     PublishDigest(String),
     Reload,
-    ResolveLaunch { request: u64, path: String },
+    ResolveLaunch {
+        request: u64,
+        path: String,
+    },
 }
 
 /// What the driver reports through [`FrameEvents`]. The manager's closure
@@ -111,7 +119,10 @@ pub enum FrameEvent {
     Ready,
     Painted,
     /// The runtime itself reported a failure (protocol `Failed`).
-    Failed { stage: BootStage, cause: String },
+    Failed {
+        stage: BootStage,
+        cause: String,
+    },
     /// §12 phase 1 acknowledged — the iframe may come down.
     DisposeComplete,
     Boundary(FrameVocabulary),
@@ -147,6 +158,10 @@ struct Offer {
     listener: Closure<dyn FnMut(web_sys::MessageEvent)>,
 }
 
+/// The dispatch channel a driver reports through: the manager's
+/// generation-checked events hook (§35).
+pub type FrameEventHook = Rc<dyn Fn(u64, FrameEvent)>;
+
 /// The driver's plumbing — everything JS-side the frame interacts with, in
 /// `RefCell`s because the listener closures arrive on the event loop while
 /// the manager's awaits are suspended elsewhere.
@@ -181,19 +196,43 @@ pub struct Driver {
     saw_painted: Cell<bool>,
     saw_dispose_complete: Cell<bool>,
     /// The manager's reporter hook into the driver's event loop.
-    events: RefCell<Option<Rc<dyn Fn(u64, FrameEvent)>>>,
+    events: RefCell<Option<FrameEventHook>>,
     /// The oneshot gates the manager's awaits resolve through.
     ready_gate: RefCell<Option<js_sys::Function>>,
     ready_pending: RefCell<Option<Result<(), FrameFatalStage>>>,
     dispose_gate: RefCell<Option<js_sys::Function>>,
     dispose_pending: RefCell<Option<Result<(), FrameFatalStage>>>,
     /// What this frame boots with (the Init payload), kept for re-init.
-    launch: Option<LaunchDocument>,
+    launch: RefCell<Option<LaunchDocument>>,
     torn_down: Cell<bool>,
 }
 
 thread_local! {
     static NEXT_GENERATION: Cell<u64> = const { Cell::new(1) };
+    /// The live drivers, keyed by their generation. NOT a manager field: a
+    /// driver is `Rc`/DOM plumbing and the manager sits behind `Arc` in the
+    /// shell state (Leptos context demands `Send + Sync`), so the drivers
+    /// live on the one thread the manager's awaits and the frame's events
+    /// all run on — this page's. The manager keeps only the generation
+    /// number, and every lookup resolves it here.
+    static DRIVERS: RefCell<std::collections::HashMap<u64, Rc<Driver>>> =
+        RefCell::new(std::collections::HashMap::new());
+}
+
+/// Admit a driver into the page-thread registry (at creation).
+pub fn register(driver: Rc<Driver>) {
+    DRIVERS.with(|drivers| drivers.borrow_mut().insert(driver.generation(), driver));
+}
+
+/// The driver that owns `generation`, if it has not been torn down.
+pub fn lookup(generation: u64) -> Option<Rc<Driver>> {
+    DRIVERS.with(|drivers| drivers.borrow().get(&generation).cloned())
+}
+
+/// Remove a driver from the registry (at teardown). Idempotent: a forced
+/// and a graceful path can both reach it for one generation.
+pub fn unregister(generation: u64) {
+    DRIVERS.with(|drivers| drivers.borrow_mut().remove(&generation));
 }
 
 /// Mint the next frame generation: monotonic while this Shell documents
@@ -308,18 +347,17 @@ impl Driver {
     /// driver is inert until [`Driver::start`].
     pub fn new(kind: FrameKind, host: &web_sys::Element, generation: u64) -> Option<Rc<Self>> {
         let nonce = nonce();
-        let src = format!(
-            "{}?hosted=1&g={}&n={}",
-            kind.page(),
-            generation,
-            nonce
-        );
+        let src = format!("{}?hosted=1&g={}&n={}", kind.page(), generation, nonce);
         let document = window().and_then(|w| w.document())?;
         let element = document.create_element("iframe").ok()?;
         let iframe: web_sys::HtmlIFrameElement = element.unchecked_into();
         iframe.set_class_name("runtime-frame");
-        iframe.set_attribute("title", &format!("MAReader {}", kind.label())).ok()?;
-        iframe.set_attribute("data-mareader-runtime-frame", kind.label()).ok()?;
+        iframe
+            .set_attribute("title", &format!("MAReader {}", kind.label()))
+            .ok()?;
+        iframe
+            .set_attribute("data-mareader-runtime-frame", kind.label())
+            .ok()?;
         iframe
             .set_attribute("data-mareader-generation", &generation.to_string())
             .ok()?;
@@ -346,7 +384,7 @@ impl Driver {
             ready_pending: RefCell::new(None),
             dispose_gate: RefCell::new(None),
             dispose_pending: RefCell::new(None),
-            launch: None,
+            launch: RefCell::new(None),
             torn_down: Cell::new(false),
         }))
     }
@@ -362,13 +400,9 @@ impl Driver {
     /// Insert the frame and start the handshake. The loading cover is the
     /// caller's business and is ALREADY painted (§11 — covered before the
     /// first await); this driver's insertion is the first thing behind it.
-    pub fn start(
-        self: &Rc<Self>,
-        launch: Option<LaunchDocument>,
-        events: Rc<dyn Fn(u64, FrameEvent)>,
-    ) {
+    pub fn start(self: &Rc<Self>, launch: Option<LaunchDocument>, events: FrameEventHook) {
         *self.events.borrow_mut() = Some(events);
-        self.launch = launch;
+        *self.launch.borrow_mut() = launch;
         // The frame enters the host as the ONLY permanent child (§1's "only
         // the iframe holds focus"): the boot card overlays it until Painted.
         let _ = self.host.append_child(self.iframe.as_ref());
@@ -394,7 +428,7 @@ impl Driver {
     /// Post one offer at the frame: a fresh `MessageChannel` whose port1
     /// gets the Shell's listener and whose port2 crosses in the message.
     fn post_offer(self: &Rc<Self>) {
-        let (Some(window), Ok(channel)) = (window(), web_sys::MessageChannel::new()) else {
+        let (Some(_), Ok(channel)) = (window(), web_sys::MessageChannel::new()) else {
             return;
         };
         let port = channel.port1();
@@ -414,10 +448,21 @@ impl Driver {
             // the ticker will keep the offer alive until the bound expires.
             return;
         };
-        let options = web_sys::PostMessageOptions::new();
-        options.set_target_origin(&target_origin());
-        options.set_transfer(&transfer);
-        let _ = target.post_message_with_options(&offer, &options);
+        // postMessage(message, targetOrigin, transfer-for-ports): the typed
+        // overload with an options dict has no web-sys feature in the pinned
+        // version, so the call goes through reflect — the origin stays the
+        // frame's own, and the offer object is the only thing that crosses.
+        let Ok(post) = js_sys::Reflect::get(target.as_ref(), &JsValue::from_str("postMessage"))
+        else {
+            return;
+        };
+        let post: js_sys::Function = post.unchecked_into();
+        let _ = post.call3(
+            target.as_ref(),
+            &offer,
+            &JsValue::from_str(&target_origin()),
+            transfer.as_ref(),
+        );
         self.offers.borrow_mut().push(Offer { port, listener });
     }
 
@@ -456,10 +501,8 @@ impl Driver {
     }
 
     fn clear_offer_ticker(&self) {
-        if let Some(id) = self.offer_ticker.take() {
-            if let Some(window) = window() {
-                window.clear_interval_with_handle(id);
-            }
+        if let (Some(id), Some(window)) = (self.offer_ticker.take(), window()) {
+            window.clear_interval_with_handle(id);
         }
         // Every un-adopted offer dies with its port: the frame adopted at
         // most one, and the rest only ever received OUR offer (never a
@@ -540,32 +583,6 @@ impl Driver {
 
     /// A fatal boundary problem during boot: resolve the ready gate with the
     /// stage and make sure no timer ever fires after it. The manager paints
-    /// the error state and takes the frame down.
-    fn fatal_ready(&self, stage: FrameFatalStage) {
-        if self.torn_down.get() || self.ready_gate.borrow().is_none() {
-            // No gate outstanding: a fatal after boot (or a second one) is a
-            // driver-managed teardown fact, never a second boot result.
-            if !self.torn_down.get() {
-                self.report(FrameEvent::Failed {
-                    stage: match stage {
-                        FrameFatalStage::ReadyTimeout => BootStage::Ready,
-                        FrameFatalStage::InitializeTimeout => BootStage::Initialized,
-                        FrameFatalStage::RuntimeFailed => BootStage::Failed,
-                        FrameFatalStage::DisposeTimeout => BootStage::Disposing,
-                    },
-                    cause: fatal_cause(self, stage).to_string(),
-                });
-            }
-            return;
-        }
-        *self.ready_pending.borrow_mut() = Some(Err(stage));
-        if let Some(resolve) = self.ready_gate.borrow_mut().take() {
-            let _ = resolve.call0(&JsValue::NULL);
-        }
-    }
-
-    /// A fatal boundary problem during boot: resolve the ready gate with the
-    /// stage and make sure no timer ever fires after it. The manager paints
     /// the error state and takes the frame down. After `Ready` the same
     /// class of problem is reported as a live-frame failure instead — there
     /// is no boot left to fail.
@@ -574,10 +591,8 @@ impl Driver {
             return;
         }
         self.clear_offer_ticker();
-        if let Some(id) = self.ready_timer.take() {
-            if let Some(window) = window() {
-                window.clear_timeout_with_handle(id);
-            }
+        if let (Some(id), Some(window)) = (self.ready_timer.take(), window()) {
+            window.clear_timeout_with_handle(id);
         }
         let cause = fatal_cause(self, stage).into_owned();
         if self.saw_ready.get() {
@@ -596,7 +611,7 @@ impl Driver {
     /// The port listener's entry point, with the frame's own identity
     /// recovered by the closure's captured `Rc<Driver>` — generation checks
     /// run before ANY signal becomes visible (§8, §35).
-    fn dispatch_port(&self, event: &web_sys::MessageEvent) {
+    fn dispatch_port(self: &Rc<Self>, event: &web_sys::MessageEvent) {
         let Some(envelope) = parse_runtime_event(event) else {
             return;
         };
@@ -609,7 +624,7 @@ impl Driver {
         // makes the frame answer exactly one).
         if !self.saw_contact.get() {
             self.saw_contact.set(true);
-            self.claim_lane(&event);
+            self.claim_lane(event);
             self.report(FrameEvent::Contact);
             // The handshake's next beat belongs to the Shell: `init` rides
             // the lane back (§7, framed README's mermaid), complete with
@@ -622,6 +637,12 @@ impl Driver {
                     // The runtime also sends DisposeComplete explicitly; the
                     // stage is an extra fact, not a second answer.
                 }
+                if stage == BootStage::Failed {
+                    // §9, §11: the runtime's own failure becomes the shell's
+                    // visible runtime error state, never a silent blank.
+                    self.fatal_ready(FrameFatalStage::RuntimeFailed);
+                    return;
+                }
                 self.report(FrameEvent::Stage(stage));
             }
             RuntimeFrame::Ready => {
@@ -632,10 +653,8 @@ impl Driver {
             }
             RuntimeFrame::Painted => {
                 self.saw_painted.set(true);
-                if let Some(id) = self.painted_timer.take() {
-                    if let Some(window) = window() {
-                        window.clear_timeout_with_handle(id);
-                    }
+                if let (Some(id), Some(window)) = (self.painted_timer.take(), window()) {
+                    window.clear_timeout_with_handle(id);
                 }
                 self.report(FrameEvent::Painted);
             }
@@ -657,7 +676,9 @@ impl Driver {
                 self.report(FrameEvent::Boundary(FrameVocabulary::ReadPoint(point)));
             }
             RuntimeFrame::SaveSettings { settings } => {
-                self.report(FrameEvent::Boundary(FrameVocabulary::SaveSettings(settings)));
+                self.report(FrameEvent::Boundary(FrameVocabulary::SaveSettings(
+                    settings,
+                )));
             }
             RuntimeFrame::SaveLibrary { blob } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::SaveLibrary(blob)));
@@ -666,13 +687,18 @@ impl Driver {
                 self.report(FrameEvent::Boundary(FrameVocabulary::SaveCovers(covers)));
             }
             RuntimeFrame::SaveCover { path, image } => {
-                self.report(FrameEvent::Boundary(FrameVocabulary::SaveCover { path, image }));
+                self.report(FrameEvent::Boundary(FrameVocabulary::SaveCover {
+                    path,
+                    image,
+                }));
             }
             RuntimeFrame::BakeCover { path } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::BakeCover { path }));
             }
             RuntimeFrame::DocStatus { report } => {
-                self.report(FrameEvent::Boundary(FrameVocabulary::DocStatus(report)));
+                self.report(FrameEvent::Boundary(FrameVocabulary::DocStatus(Box::new(
+                    report,
+                ))));
             }
             RuntimeFrame::PublishDigest { json } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::PublishDigest(json)));
@@ -698,7 +724,10 @@ impl Driver {
         for offer in self.offers.borrow_mut().drain(..) {
             let is_target = target
                 .as_ref()
-                .map(|t| offer.port.as_ref() as &JsValue == t)
+                .map(|t| {
+                    let target_js: &JsValue = t.as_ref();
+                    offer.port.as_ref() as &JsValue == target_js
+                })
                 .unwrap_or(false);
             if chosen.is_none() && is_target {
                 chosen = Some(offer);
@@ -708,7 +737,7 @@ impl Driver {
         }
         self.clear_offer_ticker();
         if let Some(offer) = chosen {
-            let _ = offer.port.start();
+            offer.port.start();
             *self.lane.borrow_mut() = Some(offer);
         }
     }
@@ -727,10 +756,11 @@ impl Driver {
             &self.nonce,
             &ShellFrame::Init {
                 runtime: self.kind.contract_kind(),
-                launch: match &self.launch {
-                    Some(launch) => Some(Box::new(launch.clone())),
-                    None => None,
-                },
+                launch: self
+                    .launch
+                    .borrow()
+                    .as_ref()
+                    .map(|launch| Box::new(launch.clone())),
             },
         );
     }
@@ -764,10 +794,8 @@ impl Driver {
         if self.saw_ready.replace(true) {
             return false;
         }
-        if let Some(id) = self.ready_timer.take() {
-            if let Some(window) = window() {
-                window.clear_timeout_with_handle(id);
-            }
+        if let (Some(id), Some(window)) = (self.ready_timer.take(), window()) {
+            window.clear_timeout_with_handle(id);
         }
         *self.ready_pending.borrow_mut() = Some(Ok(()));
         if let Some(resolve) = self.ready_gate.borrow_mut().take() {
@@ -811,12 +839,10 @@ impl Driver {
     }
 
     fn resolve_dispose(&self, outcome: Result<(), FrameFatalStage>) {
-        if outcome.is_ok() {
-            if let Some(id) = self.dispose_timer.take() {
-                if let Some(window) = window() {
-                    window.clear_timeout_with_handle(id);
-                }
-            }
+        if outcome.is_ok()
+            && let (Some(id), Some(window)) = (self.dispose_timer.take(), window())
+        {
+            window.clear_timeout_with_handle(id);
         }
         *self.dispose_pending.borrow_mut() = Some(outcome);
         if let Some(resolve) = self.dispose_gate.borrow_mut().take() {
@@ -828,24 +854,19 @@ impl Driver {
     /// the window listener, and finally the iframe element. After this the
     /// driver is inert; generation checks keep stale stragglers silent.
     pub fn teardown(&self) {
+        unregister(self.generation);
         if self.torn_down.replace(true) {
             return;
         }
-        for cell in [
-            &self.ready_timer,
-            &self.painted_timer,
-            &self.dispose_timer,
-        ] {
-            if let Some(id) = cell.take() {
-                if let Some(window) = window() {
-                    window.clear_timeout_with_handle(id);
-                }
+        for cell in [&self.ready_timer, &self.painted_timer, &self.dispose_timer] {
+            if let (Some(id), Some(window)) = (cell.take(), window()) {
+                window.clear_timeout_with_handle(id);
             }
         }
         self.clear_offer_ticker();
         if let Some(lane) = self.lane.borrow_mut().take() {
             lane.port.set_onmessage(None);
-            let _ = lane.port.close();
+            lane.port.close();
             drop(lane.listener);
         }
         if let Some(parent) = self.iframe.parent_node() {
@@ -903,15 +924,13 @@ pub(crate) fn fatal_cause(
             driver.kind().label()
         )
         .into(),
-        FrameFatalStage::ReadyTimeout => format!(
-            "the frame spoke but did not announce Ready within 20 s ({detail})"
-        )
-        .into(),
+        FrameFatalStage::ReadyTimeout => {
+            format!("the frame spoke but did not announce Ready within 20 s ({detail})").into()
+        }
         FrameFatalStage::RuntimeFailed => "the runtime reported its own failure".into(),
-        FrameFatalStage::DisposeTimeout => format!(
-            "the frame did not finish its graceful disposal within 8 s ({detail})"
-        )
-        .into(),
+        FrameFatalStage::DisposeTimeout => {
+            format!("the frame did not finish its graceful disposal within 8 s ({detail})").into()
+        }
     }
 }
 

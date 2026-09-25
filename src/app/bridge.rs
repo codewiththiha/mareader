@@ -83,9 +83,11 @@ pub fn install(state: ShellState) {
                         width: cover.width,
                         height: cover.height,
                     });
-            st.manager.deliver_library_frame(
-                &runtime_contract::protocol::ShellFrame::CoverBaked { path, image },
-            );
+            st.manager
+                .deliver_library_frame(&runtime_contract::protocol::ShellFrame::CoverBaked {
+                    path,
+                    image,
+                });
         });
     });
     let st = state.clone();

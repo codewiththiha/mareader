@@ -11,7 +11,7 @@
 //! stage has a bound (§6, §11), the host paints its loading state before any
 //! await, and a failure paints the error state with runtime / stage / cause.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -26,20 +26,28 @@ use crate::app::frame::{
 use crate::state::{ActiveRuntime, ShellState};
 
 /// The active-runtime slot. `Starting` holds the in-flight disposal/load so a
-/// second navigation cannot start a second runtime mid-transition.
+/// second navigation cannot start a second runtime mid-transition. The slot
+/// keeps the frame's GENERATION, not the driver itself: `Rc`/DOM plumbing can
+/// never live in this `Arc`'d type (the shell state goes through Leptos
+/// context, which demands `Send + Sync`), and the generation is all the
+/// security property needs anyway — the whole frame security model IS the
+/// generation (§8).
 pub enum Slot {
     None,
     Starting,
-    Library { driver: Rc<Driver> },
-    Reader { driver: Rc<Driver> },
+    Library { generation: u64 },
+    Reader { generation: u64 },
 }
 
-impl Slot {
-    fn driver(&self) -> Option<Rc<Driver>> {
-        match self {
-            Slot::Library { driver } | Slot::Reader { driver } => Some(driver.clone()),
-            _ => None,
-        }
+impl RuntimeManager {
+    /// The live driver, resolved from the slot's generation on the page
+    /// thread (None while `Starting` or after teardown).
+    fn live_driver(&self) -> Option<Rc<Driver>> {
+        let generation = match &*self.slot.lock().unwrap() {
+            Slot::Library { generation } | Slot::Reader { generation } => Some(*generation),
+            Slot::None | Slot::Starting => None,
+        }?;
+        crate::app::frame::lookup(generation)
     }
 }
 
@@ -68,11 +76,17 @@ pub struct RuntimeManager {
     /// The frame generations ever seen sending a message for a generation
     /// that is not the frame they belong to (§35): a ledger, not a gate —
     /// the generation check is the gate.
-    stale_frames_seen: Cell<u64>,
-    /// The shell state, attached once the Shell component exists, so the
-    /// driver's event hook can reach the services and the navigation calls
-    /// with the same handle the bridge closures use.
-    shell_state: RefCell<Option<ShellState>>,
+    stale_frames_seen: std::sync::atomic::AtomicU64,
+}
+
+thread_local! {
+    /// The shell state, attached once the Shell component exists. NOT a
+    /// manager field: a Leptos `RwSignal` shell must stay out of any type
+    /// that crosses a `Sync` boundary (`provide_context` requires it), and
+    /// there is exactly one thread this field ever runs on — the frame
+    /// driver's closures arrive from the same event loop the manager awaits
+    /// on — so the module thread-local is the honest wiring.
+    static SHELL_STATE: RefCell<Option<ShellState>> = const { RefCell::new(None) };
 }
 
 impl RuntimeManager {
@@ -91,8 +105,7 @@ impl RuntimeManager {
             last_digest: Mutex::new(None),
             doc_status: Mutex::new("Idle".to_string()),
             doc_error: Mutex::new(None),
-            stale_frames_seen: Cell::new(0),
-            shell_state: RefCell::new(None),
+            stale_frames_seen: Default::default(),
         }
     }
 
@@ -101,7 +114,7 @@ impl RuntimeManager {
     /// from drivers the manager created — the state handle the bridge
     /// closures capture is exactly the handle the frame path needs.
     pub fn attach_state(&self, state: ShellState) {
-        *self.shell_state.borrow_mut() = Some(state);
+        SHELL_STATE.with(|slot| *slot.borrow_mut() = Some(state));
     }
 
     /// Publish a boot phase: the diagnostics probe's copy, and the native
@@ -270,9 +283,14 @@ impl RuntimeManager {
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
+        crate::app::frame::register(driver.clone());
         *self.slot.lock().unwrap() = match runtime {
-            RuntimeName::Reader => Slot::Reader { driver },
-            RuntimeName::Library => Slot::Library { driver },
+            RuntimeName::Reader => Slot::Reader {
+                generation: driver.generation(),
+            },
+            RuntimeName::Library => Slot::Library {
+                generation: driver.generation(),
+            },
         };
         boot::set_active(&host, runtime);
         self.set_phase(BootPhase::Active(runtime));
@@ -284,22 +302,25 @@ impl RuntimeManager {
     /// raise its own events into the live state (§35), and the stale ledger
     /// counts what was dropped. The hook runs on wasm's single thread, so
     /// the slot lock is never contended here.
-    fn events_hook(&self) -> Rc<dyn Fn(u64, FrameEvent)> {
-        let state = self.shell_state.borrow().clone();
+    fn events_hook(&self) -> crate::app::frame::FrameEventHook {
+        let state = SHELL_STATE.with(|slot| slot.borrow().clone());
         let Some(state) = state else {
             return Rc::new(|_generation, _event| {});
         };
         Rc::new(move |generation, event| {
             let manager = state.manager.clone();
             match event {
-                FrameEvent::Contact | FrameEvent::Stage(_) | FrameEvent::Ready => {}
+                FrameEvent::Contact | FrameEvent::Ready => {}
+                FrameEvent::Stage(stage) => {
+                    // Frame-side telemetry: every handshake stage the runtime
+                    // reports lands in the console, so a boot that stalls in
+                    // the field names where it stopped (§9's stage trail).
+                    web_sys::console::debug_1(&JsValue::from_str(&format!(
+                        "[frame {generation}] stage {stage:?}"
+                    )));
+                }
                 FrameEvent::Painted => {
-                    let current = manager
-                        .slot
-                        .lock()
-                        .unwrap()
-                        .driver()
-                        .map(|driver| driver.generation());
+                    let current = manager.live_driver().map(|driver| driver.generation());
                     if current != Some(generation) {
                         return;
                     }
@@ -312,12 +333,13 @@ impl RuntimeManager {
                     // A live runtime turned on its own failure (§11): the
                     // error state is the outcome — the frame is taken down,
                     // nothing half-mounted survives, and the phase names it.
-                    let current = manager.slot.lock().unwrap().driver();
-                    let Some(driver) = current else {
+                    let Some(driver) = manager.live_driver() else {
                         return;
                     };
                     if driver.generation() != generation {
-                        manager.stale_frames_seen.set(manager.stale_frames_seen.get() + 1);
+                        manager
+                            .stale_frames_seen
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         return;
                     }
                     let runtime: RuntimeName = driver.kind().into();
@@ -341,7 +363,9 @@ impl RuntimeManager {
                     manager.dispatch_boundary(&state, generation, vocabulary);
                 }
                 FrameEvent::Stale => {
-                    manager.stale_frames_seen.set(manager.stale_frames_seen.get() + 1);
+                    manager
+                        .stale_frames_seen
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
             }
         })
@@ -366,10 +390,14 @@ impl RuntimeManager {
     /// silent. Both outcomes COMPLETE the exchange (the forced one simply
     /// names itself), so the caller has no error to fold back into a boot.
     async fn dispose_active(&self) {
-        let (runtime, driver) = match &*self.slot.lock().unwrap() {
-            Slot::Library { driver } => (RuntimeName::Library, driver.clone()),
-            Slot::Reader { driver } => (RuntimeName::Reader, driver.clone()),
-            Slot::None | Slot::Starting => return,
+        let runtime = match self.active() {
+            Some(ActiveRuntime::Library) => RuntimeName::Library,
+            Some(ActiveRuntime::Reader) => RuntimeName::Reader,
+            None => return,
+        };
+        let Some(driver) = self.live_driver() else {
+            *self.slot.lock().unwrap() = Slot::None;
+            return;
         };
         let promise = driver.grace_dispose();
         let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
@@ -412,8 +440,7 @@ impl RuntimeManager {
     /// frame is dropped — the request that produced it outlived its
     /// generation, and a replacement frame never inherits its traffic (§35).
     pub fn deliver_library_frame(&self, body: &runtime_contract::protocol::ShellFrame) {
-        let current = self.slot.lock().unwrap().driver();
-        let Some(driver) = current else {
+        let Some(driver) = self.live_driver() else {
             return;
         };
         if driver.kind() == FrameKind::Library {
@@ -430,15 +457,10 @@ impl RuntimeManager {
     /// The frame-dispatched boundary vocabulary. Called by the driver's
     /// event hook; the hook itself is generation-gated at the port.
     pub fn dispatch_boundary(&self, state: &ShellState, generation: u64, item: FrameVocabulary) {
-        let current = self
-            .slot
-            .lock()
-            .unwrap()
-            .driver()
-            .map(|driver| driver.generation());
+        let current = self.live_driver().map(|driver| driver.generation());
         if current != Some(generation) {
             self.stale_frames_seen
-                .set(self.stale_frames_seen.get() + 1);
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return;
         }
         match item {
@@ -485,11 +507,13 @@ impl RuntimeManager {
             }
             FrameVocabulary::ResolveLaunch { request, path } => {
                 let document = crate::services::resolve_launch(&path).map(Box::new);
-                if let Some(driver) = self.slot.lock().unwrap().driver() {
-                    driver.send(&runtime_contract::protocol::ShellFrame::ResolveLaunchAnswer {
-                        request,
-                        document,
-                    });
+                if let Some(driver) = self.live_driver() {
+                    driver.send(
+                        &runtime_contract::protocol::ShellFrame::ResolveLaunchAnswer {
+                            request,
+                            document,
+                        },
+                    );
                 }
             }
         }
@@ -511,8 +535,7 @@ impl RuntimeManager {
                     width: cover.width,
                     height: cover.height,
                 });
-            let current = manager.slot.lock().unwrap().driver();
-            let Some(driver) = current else {
+            let Some(driver) = manager.live_driver() else {
                 return;
             };
             if driver.generation() != generation || driver.kind() != FrameKind::Library {

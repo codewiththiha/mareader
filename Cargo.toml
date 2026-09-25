@@ -47,7 +47,6 @@ web-sys = { version = "0.3", features = [
   "MessageChannel",
   "MessageEvent",
   "MessagePort",
-  "PostMessageOptions",
   "DomRect",
   "DomRectList",
   "Selection",

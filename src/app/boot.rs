@@ -268,21 +268,6 @@ pub fn cover(host: &web_sys::Element, runtime: RuntimeName) {
     }
 }
 
-/// Has a runtime (or the error state) painted into the host? The shell's own
-/// loading card is the one thing that does not count: it is what this question
-/// is asked in order to take away.
-pub fn painted(host: &web_sys::Element) -> bool {
-    let mut child = host.first_element_child();
-    while let Some(node) = child {
-        let is_loading = node.get_attribute(BOOT_ATTR).as_deref() == Some(LOADING);
-        if !is_loading {
-            return true;
-        }
-        child = node.next_element_sibling();
-    }
-    false
-}
-
 /// Remove the shell's LOADING state only. `clear` takes every boot node, which
 /// after a failure includes the error card — the coverage watch must never do
 /// that.

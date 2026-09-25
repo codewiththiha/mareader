@@ -100,7 +100,7 @@ fn adopt(wire: PortWire, generation: u64) {
     // waiting" — that emission is also how the Shell learns which of its
     // offered channels this boot adopted.
     emit(RuntimeFrame::Status {
-        stage: BootStage::Initializing,
+        stage: BootStage::Initialized,
     });
     // No session yet: a reader is the document it was opened with, and that
     // descriptor arrives with the Shell's init. The handshake's loading
