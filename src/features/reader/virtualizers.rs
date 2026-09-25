@@ -32,7 +32,8 @@ fn fallback_height(state: ReaderState) -> f64 {
         .content
         .metrics
         .page1_size
-        .get_untracked()
+        .try_get_untracked()
+        .flatten()
         .map_or(0.0, |size| size.height)
 }
 
@@ -106,7 +107,14 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
 
     let count = Signal::derive(move || state.document.num_pages.get() as usize);
     let estimate = move |index: usize| {
-        let gap = state.viewer.page_gap.get_untracked();
+        // The crate calls this from flush and rebuild paths that can fire
+        // after the close purged the reader state (the strip's own scope
+        // outlives it by a teardown beat). `page_gap` is the unit's
+        // liveness probe: gone means every read below is gone too, and the
+        // estimate only feeds a dead cycle.
+        let Some(gap) = state.viewer.page_gap.try_get_untracked() else {
+            return 0.0;
+        };
         let measured = state
             .document
             .content
@@ -130,6 +138,9 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     // layout is relaid out to as a zoom runs — so the two axes can never
     // disagree about how big a page is.
     let h_estimate = move |index: usize| {
+        let Some(margin) = state.viewer.page_margin.try_get_untracked() else {
+            return 0.0;
+        };
         state
             .document
             .content
@@ -137,7 +148,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             .intrinsic
             .with_untracked(|sizes| sizes.get(index).map(|s| s.width).unwrap_or(0.0))
             * state.viewer.zoom.visual_scale()
-            + 2.0 * state.viewer.page_margin.get_untracked()
+            + 2.0 * margin
     };
     let epoch = geometry_epoch(state);
     let pinned_sig: RwSignal<Option<(usize, usize)>> = RwSignal::new(None);

@@ -71,6 +71,15 @@ pub(super) struct Session {
     epoch: u64,
 }
 
+/// How many look-ahead samples are in flight: pages whose offscreen colour
+/// sample has been spawned and has not landed (or been invalidated) yet.
+/// The diagnostics snapshot's look-ahead gauge — the baseline reads it to
+/// prove the look-ahead's active work is accounted for and drains with the
+/// document (a pure count, safe to call from host tests).
+pub fn pending_samples() -> usize {
+    with(|s| s.sampling.len())
+}
+
 /// The ladder index a detection area resolves from.
 pub(super) fn slot(area: PaperArea) -> usize {
     match area {

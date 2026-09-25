@@ -27,17 +27,33 @@ teardown and retention are checkable instead of narrative.
 ### Engine surface (`public/engine/*`)
 
 `PDFReader.stats()` now reports the full resource picture: live gauges
-(`pages`, `thumbs`, `thumbTasks`, `activeRenders`, `hasDocument`,
-`hasLoadingTask`) and the monotonic lifecycle counters with pairing rules:
+(`pages`, `thumbs`, `thumbTasks`, `activeRenders`, `activePrefetches`,
+`hasDocument`, `hasLoadingTask`) and the monotonic lifecycle counters with
+pairing rules:
 
 ```text
-sessionsOpened == sessionsDestroyed
-workersCreated == workersTerminated
-rendersStarted == rendersCompleted + rendersCancelled + rendersFailed
+sessionsOpened    == sessionsDestroyed
+workersCreated    == workersTerminated
+rendersStarted    == rendersCompleted + rendersCancelled + rendersFailed
+prefetchesStarted == prefetchesCompleted + prefetchesDropped
 ```
 
-The narration (`pdf_session:*`, `pdf_worker:*`, `render:*` events) is
-opt-in and silent in normal operation; the counters are always on.
+`workersTerminated` is counted only after pdf.js's worker shutdown round
+trip resolves, and `destroy()` awaits it — so a balanced worker pair means
+the worker is actually dead, not that death was scheduled. Thumbnail
+prefetch (the warmup and the idle cache fills) is lane work: bounded by the
+thumbnail lane, registered in `thumbTasks` under `prefetch-<page>` ids so
+teardown cancels it, epoch-guarded at every await so a stale prefetch never
+lands in the next document, and fully counted.
+
+The narration (`pdf_session:*`, `pdf_worker:*`, `render:*`,
+`thumb_prefetch:*` events) is opt-in and silent in normal operation; the
+counters are always on.
+
+The look-ahead's active work is visible from the Rust side:
+`pdf_engine::backdrop::pending_samples()` feeds the snapshot's
+`lookaheadSamplesActive` — pages whose offscreen colour sample is in
+flight — and it must read zero after a dispose.
 
 ### The dev probe
 
@@ -45,21 +61,54 @@ In the app webview console:
 
 ```js
 __mareaderDiagnostics()   // prints + returns the full JSON snapshot,
-                          // and turns lifecycle narration on
+                          // with an `atBaseline` verdict, and turns
+                          // lifecycle narration on
 ```
 
 Off the webview (host tests) the surface is inert; the counters and the
 `at_baseline()` check are still unit-tested on the host.
 
+A note on the reader-side counters' semantics: `readerRuntimesCreated`
+counts OPEN ATTEMPTS that claimed the document state — the boundary hook
+today's architecture has for "a runtime began". A failed open is a create
+whose dispose never needs to run, so the pairing these counters prove is
+the close path's completion, not liveness; the liveness truth is
+`readerRuntimeLive` plus the engine's `hasDocument`. Phase 1's explicit
+runtime object replaces this hook with a real lifetime.
+
 ### CI enforcement
 
-The engine smoke suite (`tools/engine-smoke/teardown.ts`, run by the web CI
-lane against the bundle built from current source) asserts the baseline:
-after `destroy()`, after a rapid reopen+close, and after a no-op destroy,
-every live gauge must be empty and every counter pair balanced. This is the
-"open -> use -> dispose -> reopen" harness, executed on every PR.
+Two automated layers:
 
-## The manual benchmark procedure
+1. **Engine smoke suite** (`tools/engine-smoke/teardown.ts`, the web lane,
+   every PR): against the bundle built from current source, after
+   `destroy()`, after a rapid reopen + prefetch + close, and after a no-op
+   destroy — every live gauge empty, every counter pair balanced,
+   prefetches included.
+2. **Browser lifecycle baseline** (`tests/browser/`, the Deep CI lane):
+   the REAL built app in a REAL Chromium — real wasm, real pdf.js worker,
+   real renders — driven through opening a shipped sample book with blend
+   (look-ahead) enabled, the warmup prefetch, fast navigation with the
+   look-ahead observed ACTIVE, zoom pressure, a close during active work,
+   waiting for `atBaseline`, asserting every reader/engine counter drained
+   and balanced, and a reopen that repeats the cycle. The workload the
+   guide demands, automated against the production build; its per-stage
+   measurement table is the recorded baseline below.
+
+## The benchmark procedures
+
+### Automated (Deep CI, every run)
+
+The browser lane runs the documented workload matrix end to end and prints
+the per-stage measurement table (`=== PHASE0 BROWSER BASELINE ===`): after
+open, after the warmup, during scroll, after zoom, during fast jumps, after
+each raced close (render / prefetch / search), and the final state after
+the normal x10, large x5 and rapid-reopen x10 cycles, plus a summary line
+with the fast-jump render deltas and the reopen heap steps. Those tables
+are the recorded baseline — same command, same environment, every run,
+comparable across commits.
+
+### Manual (Tauri/WKWebView, per significant change)
 
 Run against a dev build (`trunk serve`, or `cargo tauri dev`); record a
 `__mareaderDiagnostics()` snapshot at every marked point, plus the process
@@ -114,10 +163,80 @@ level rises.
 
 ## Baseline results
 
-Recorded per workload; fill each table from the snapshot JSON (one row per
-cycle) when running against a given build. The structural findings below
-are already established by the ownership map and hold for any build until
-the later phases change them.
+### Recorded: browser lifecycle baseline (automated)
+
+Environment: GitHub Actions `ubuntu-24.04`, headless Chromium (Playwright),
+the production `trunk build --release` output served statically, sample
+book *Programming Pearls (2nd Edition)* opened through the web test hook
+with blend (look-ahead) enabled. The numbers below are pasted verbatim from
+the `=== PHASE0 BROWSER BASELINE ===` tables the workflow prints; rerun the
+lane to reproduce or to compare a change against it.
+
+Recorded from Deep CI run **35977320462** (branch `split-wasm-modules-t10`,
+commit `7db2d91`, 2026-09-24) — the full matrix with all three raced closes,
+zero wasm traps, verified stable across a repeat run of the same commit:
+
+```text
+=== PHASE0 BROWSER BASELINE (chromium, release wasm build) ===
+policy: window ceiling 3 | zombie cap 12 | page lane 2 | thumb lane 3 | min fixture pages 40
+--- afterOpen ---
+{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":0,"liveWindowItems":19,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":2,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":2,"rendersDropped":0,"rendersFailed":0,"rendersQueued":2,"rendersStarted":2,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":3877632,"jsHeapBytes":10000000,"atBaseline":false}
+--- afterWarmup ---
+{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":0,"liveWindowItems":19,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":2,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":2,"rendersDropped":0,"rendersFailed":0,"rendersQueued":2,"rendersStarted":2,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":3877632,"jsHeapBytes":10000000,"atBaseline":false}
+--- duringScroll ---
+{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":1,"liveWindowItems":20,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":3,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":14,"rendersDropped":0,"rendersFailed":0,"rendersQueued":14,"rendersStarted":14,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":2298816,"jsHeapBytes":10000000,"atBaseline":false}
+--- afterZoom ---
+{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":1,"liveWindowItems":20,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":3,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":29,"rendersDropped":0,"rendersFailed":0,"rendersQueued":29,"rendersStarted":29,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":5816448,"jsHeapBytes":10000000,"atBaseline":false}
+--- duringFastJump ---
+{"disposalEpoch":1,"readerRuntimeLive":true,"paneLive":1,"virtualizerLive":3,"virtualizerListeners":2,"virtualizerObservers":2,"virtualizerTimers":1,"liveWindowItems":20,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":40,"hasDocument":true,"hasLoadingTask":true,"pageActive":0,"pageQueue":0,"pages":3,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":36,"rendersDropped":0,"rendersFailed":0,"rendersQueued":36,"rendersStarted":36,"searchActive":0,"sessionsDestroyed":0,"sessionsOpened":1,"sweepTimerArmed":1,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":16,"workersCreated":1,"workersTerminated":0},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":5816448,"jsHeapBytes":10000000,"atBaseline":false}
+--- afterCloseDuringRender ---
+{"disposalEpoch":2,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageQueue":0,"pages":0,"prefetchesCompleted":16,"prefetchesDropped":0,"prefetchesStarted":16,"rawRetentionTimers":0,"rendersCancelled":2,"rendersCompleted":36,"rendersDropped":1,"rendersFailed":0,"rendersQueued":39,"rendersStarted":38,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
+--- afterCloseDuringPrefetch ---
+{"disposalEpoch":2,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageQueue":0,"pages":0,"prefetchesCompleted":1,"prefetchesDropped":1,"prefetchesStarted":2,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":3,"rendersDropped":0,"rendersFailed":0,"rendersQueued":3,"rendersStarted":3,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
+--- afterCloseDuringSearch ---
+{"disposalEpoch":2,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageQueue":0,"pages":0,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":3,"rendersDropped":0,"rendersFailed":0,"rendersQueued":3,"rendersStarted":3,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
+--- afterRapidReopen ---
+{"disposalEpoch":2,"readerRuntimeLive":false,"paneLive":0,"virtualizerLive":0,"virtualizerListeners":0,"virtualizerObservers":0,"virtualizerTimers":0,"liveWindowItems":0,"retainedVirtualItems":0,"lookaheadSamplesActive":0,"engine":{"activePrefetches":0,"activeRenders":0,"documentPages":0,"hasDocument":false,"hasLoadingTask":false,"pageActive":0,"pageQueue":0,"pages":0,"prefetchesCompleted":0,"prefetchesDropped":0,"prefetchesStarted":0,"rawRetentionTimers":0,"rendersCancelled":0,"rendersCompleted":3,"rendersDropped":0,"rendersFailed":0,"rendersQueued":3,"rendersStarted":3,"searchActive":0,"sessionsDestroyed":1,"sessionsOpened":1,"sweepTimerArmed":0,"thumbActive":0,"thumbGenerationSize":0,"thumbLimit":16,"thumbQueue":0,"thumbTasks":0,"thumbs":0,"workersCreated":1,"workersTerminated":1},"wasmHeapBytes":1835008,"heapHighWaterBytes":1835008,"liveCanvasBytes":0,"jsHeapBytes":10000000,"atBaseline":true}
+--- summary ---
+{"fixturePages":{"pearls":40,"deepOutline":40},"fastJumpRenderDeltas":[2,2,3],"scrollPeaks":{"enginePages":4,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":1,"liveCanvasBytes":5996448,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"zoomPeaks":{"enginePages":3,"activeRenders":1,"pageActive":2,"pageQueue":0,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":11875248,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"fastJumpPeaks":{"enginePages":5,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":9694080,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"largeScrollPeaks":{"enginePages":6,"activeRenders":1,"pageActive":1,"pageQueue":0,"thumbActive":1,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":3,"liveCanvasBytes":6356448,"wasmHeapBytes":2031616,"jsHeapBytes":10000000},"closeDuringRenderRaced":true,"closeDuringPrefetchDrops":1,"closeDuringSearchRaced":true,"rapidReopenHeaps":[1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008],"rapidReopenSlopeBytesPerCycle":0,"rapidReopenDriftBytes":0,"normalCycles":10,"largeCycles":5,"rapidCycles":10}
+PHASE0_BASELINE_JSON {"fixturePages":{"pearls":40,"deepOutline":40},"fastJumpRenderDeltas":[2,2,3],"scrollPeaks":{"enginePages":4,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":1,"liveCanvasBytes":5996448,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"zoomPeaks":{"enginePages":3,"activeRenders":1,"pageActive":2,"pageQueue":0,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":1,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":11875248,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"fastJumpPeaks":{"enginePages":5,"activeRenders":2,"pageActive":2,"pageQueue":1,"thumbActive":0,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":0,"liveCanvasBytes":9694080,"wasmHeapBytes":1835008,"jsHeapBytes":10000000},"largeScrollPeaks":{"enginePages":6,"activeRenders":1,"pageActive":1,"pageQueue":0,"thumbActive":1,"thumbQueue":0,"retainedVirtualItems":3,"liveWindowItems":20,"lookaheadSamplesActive":3,"liveCanvasBytes":6356448,"wasmHeapBytes":2031616,"jsHeapBytes":10000000},"closeDuringRenderRaced":true,"closeDuringPrefetchDrops":1,"closeDuringSearchRaced":true,"rapidReopenHeaps":[1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008,1835008],"rapidReopenSlopeBytesPerCycle":0,"rapidReopenDriftBytes":0,"normalCycles":10,"largeCycles":5,"rapidCycles":10}
+=== END PHASE0 BROWSER BASELINE ===
+```
+
+Read of the run: the warmup is hard — 16 prefetches start and all 16
+complete. The three memory categories stay distinct throughout:
+`wasmHeapBytes` is the wasm linear memory's ratchet, `liveCanvasBytes` is
+the canvas backing stores the strip currently holds (the category the
+original "blank screen, exploding RAM" complaint was about — it is NOT the
+browser's whole footprint), and `jsHeapBytes` is the browser-reported JS
+heap where the API is available (the lane records it best-effort and the
+baseline stands when it is not). A jump across most of the 40-page
+document costs 2–3 rasters (the destination window, not the pages flown
+over) with the render budget
+asserted from `RENDER_BUDGET`, not a loose page count. All three races
+were won: close during a render left renders cancelled + dropped, close
+during a prefetch dropped a warmup prefetch, close during a search build
+drained the build gauge to 0 — and every raced close still reached the
+full baseline with the lanes empty (`pageQueue`/`thumbQueue` 0,
+`searchActive` 0) and every counter pairing intact. The rapid-reopen gate
+is the headline: ten open/close cycles hold 1,835,008 bytes flat —
+least-squares slope 0 B/cycle, drift 0 B, no ratchet, no per-cycle growth.
+
+The zero-trap record held through the whole matrix and was re-verified by
+a repeat run of the same commit after the last teardown class was closed:
+callbacks and effects that ride LIVE strip-scope signals (geometry
+reports, flush/scroll frames, the dominant-page sync) can be re-run one
+teardown beat after the reader state is gone, where a read or write on the
+purged signals panics. Every such site now probes liveness with the
+non-panicking `try_*` reads — the strip report's document/epoch gates, the
+virtualizer's flush/apply/publish entries, the estimate closures, the
+navigation-sync arms, the auto-center steps, and the anchor/first-paint
+rAF tails. The thumbnail generation bookkeeping gained the same shape: a
+document's lane opens with its document and `resetThumbLane` closes it, so
+a straggling request cannot reseed the map the teardown just cleared.
+
+### Structural findings (hold for any build until later phases change them)
+
 
 ### Expected post-close baseline (every workload)
 

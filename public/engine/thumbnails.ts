@@ -12,13 +12,18 @@ import {
   thumbRaw,
   thumbSource,
 } from "./theme/thumbnails";
-import { THUMB_CACHE_MAX, session } from "./state";
+import { lifecycleEvent, THUMB_CACHE_MAX, session } from "./state";
 // A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
 // raster work, not clicks: queued jobs are invalidated on unmount and cached
 // paths still paint immediately.
 const THUMB_RENDER_LIMIT = 3;
 let thumbActive = 0;
 const thumbQueue: Array<() => void> = [];
+/** Pages with a prefetch in flight. A prefetch is lane work like any other
+ *  (it queues, it renders, it lands in the cache), so the same epoch that
+ *  invalidates cell renders invalidates it, and the set — like the
+ *  generation counters — resets whole at document teardown. */
+const prefetchInFlight = new Set<number>();
 /** Per-canvas-id generation counters, invalidating queued jobs a newer mount
  *  of the same id superseded. Ids are per page (`thumb-{page}`), so the map
  *  grows with the pages a document's sidebar showed — deliberately NOT pruned
@@ -29,6 +34,11 @@ const thumbQueue: Array<() => void> = [];
  *  (`resetThumbLane`), which is safe because the lane's epoch invalidates
  *  every queued job in the same breath. */
 const thumbGeneration = new Map<string, number>();
+/** Whether a document's lane is open for business. Teardown closes it: a
+ *  request that straggles in after `resetThumbLane` belongs to the dead
+ *  lane and must not reseed the generation bookkeeping the teardown just
+ *  cleared (the drained gate reads this map as zero). */
+let thumbLaneOpen = false;
 /** Bumped at document teardown. Queued lane jobs capture it and resolve as
  *  cancelled when they reach the front of the queue under a newer epoch,
  *  instead of racing the next document's mounts for recycled canvas ids. */
@@ -41,10 +51,71 @@ let thumbLaneEpoch = 0;
  *  Called from the engine's destroy. */
 export function resetThumbLane(): void {
   thumbLaneEpoch += 1;
+  thumbLaneOpen = false;
   thumbGeneration.clear();
+  prefetchInFlight.clear();
+  // Wake every await that is racing the epoch: teardown just moved it, so
+  // anything waiting for "this prefetch's era ended" must stop now. The
+  // cascade also drains the queue: each waiting job takes its stale-epoch
+  // guard, resolves its caller with a drop, and pumps the next one.
+  const waiters = epochWaiters.splice(0);
+  for (const wake of waiters) wake();
+  pumpThumbQueue();
+}
+
+/// A cancellable "the epoch moved past `epoch`" signal. A pdf.js task
+/// created inside the destroy window — after the cancel sweep, before the
+/// document nulls — sits on a worker that will never answer, and its
+/// promise never settles on its own; the epoch is the truthful "give up"
+/// signal every in-flight await can race against. Every subscriber gets an
+/// unsubscribe, because a prefetch that settles normally (the usual case)
+/// must remove its waiter rather than park a resolver here for the
+/// document's lifetime.
+const epochWaiters: Array<() => void> = [];
+
+function epochMovedSignal(epoch: number): {
+  promise: Promise<void>;
+  unsubscribe: () => void;
+} {
+  if (epoch !== thumbLaneEpoch) {
+    return { promise: Promise.resolve(), unsubscribe: () => {} };
+  }
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  const waiter = () => resolve();
+  epochWaiters.push(waiter);
+  return {
+    promise,
+    unsubscribe: () => {
+      const at = epochWaiters.indexOf(waiter);
+      if (at >= 0) epochWaiters.splice(at, 1);
+    },
+  };
+}
+
+/// The thumbnail lane's gauges for the stats surface (queue depth, active
+/// slots): the teardown baseline requires an EMPTY lane, not merely one
+/// whose jobs are no longer running.
+export function thumbLaneGauge(): { thumbQueue: number; thumbActive: number } {
+  return { thumbQueue: thumbQueue.length, thumbActive: thumbActive };
+}
+
+/** The generation map's size for the stats surface: per-canvas bookkeeping
+ *  the lane keeps until document teardown. The baseline measures it so a
+ *  long scrolling session cannot grow it unseen. */
+export function thumbGenerationSize(): number {
+  return thumbGeneration.size;
+}
+
+/** A document's lane is open again: generation bookkeeping records anew. */
+export function beginThumbLane(): void {
+  thumbLaneOpen = true;
 }
 
 function nextThumbGeneration(canvasId: string): number {
+  if (!thumbLaneOpen) return 0;
   const next = (thumbGeneration.get(canvasId) ?? 0) + 1;
   thumbGeneration.set(canvasId, next);
   return next;
@@ -273,25 +344,169 @@ export function cancelThumb(canvasId: string): void {
  *  cache-warm cell asks `hasThumb` while it is still being built, mounts
  *  already loaded, and its first render call is a synchronous blit — zero
  *  skeleton, zero waiting. Rendering the pages AROUND the reader while idle
- *  means every remount after a fling to page N answers that probe true. */
+ *  means every remount after a fling to page N answers that probe true.
+ *
+ *  Prefetch is FIRST-CLASS lane work, not a side channel: it waits in the
+ *  same bounded queue as cell renders, its pdf.js task is registered under
+ *  a `prefetch-<page>` id so a document teardown cancels it like any
+ *  other, and the lane epoch is re-checked after every await — a prefetch
+ *  started for one document can never land in the next one's cache. The
+ *  lifecycle is visible in `stats()` (activePrefetches plus the
+ *  started/completed/dropped trio), so the reader's disposal baseline can
+ *  prove no prefetch work outlived the document. */
 export async function prefetchThumb(page: number, scale: number): Promise<void> {
   if (!session.pdf) return;
   const hit = session.thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) return;
+  if (prefetchInFlight.has(page)) return;
+  const epoch = thumbLaneEpoch;
+  prefetchInFlight.add(page);
+  session.prefetchesStarted += 1;
+  session.prefetchesActive += 1;
+  lifecycleEvent("thumb_prefetch:start");
   try {
-    const pg = await session.pdf.getPage(page);
+    await new Promise<void>((resolve) => {
+      thumbQueue.push(() => {
+        const finish = () => {
+          thumbActive -= 1;
+          pumpThumbQueue();
+        };
+        // The document was torn down (or replaced) while this prefetch
+        // waited for a lane slot. Drop it without touching pdf.js — the
+        // same guard a queued cell render gets.
+        if (epoch !== thumbLaneEpoch || !session.pdf) {
+          session.prefetchesDropped += 1;
+          lifecycleEvent("thumb_prefetch:drop");
+          resolve();
+          finish();
+          return;
+        }
+        prefetchThumbInternal(page, scale, epoch)
+          .then((landed) => {
+            if (landed) {
+              session.prefetchesCompleted += 1;
+              lifecycleEvent("thumb_prefetch:complete");
+            } else {
+              session.prefetchesDropped += 1;
+              lifecycleEvent("thumb_prefetch:drop");
+            }
+          })
+          .catch(() => {
+            session.prefetchesDropped += 1;
+            lifecycleEvent("thumb_prefetch:drop");
+          })
+          .finally(finish)
+          .finally(resolve);
+      });
+      pumpThumbQueue();
+    });
+  } finally {
+    prefetchInFlight.delete(page);
+    session.prefetchesActive -= 1;
+  }
+}
+
+/// A combined cancellable signal for "this prefetch's world ended": the
+/// lane epoch moved (teardown or swap ran before this await started), or
+/// the document's destroy began while the await was in flight. The
+/// document-gone half covers the destroy window the epoch alone cannot
+/// see: a prefetch enqueued into the NEW epoch, onto a worker whose death
+/// is already underway, awaiting a promise it will never see settle.
+function prefetchWorldEnded(epoch: number): {
+  promise: Promise<void>;
+  unsubscribe: () => void;
+} {
+  const epochSignal = epochMovedSignal(epoch);
+  const goneSignal = session.documentGoneSignal();
+  const promise = Promise.race([epochSignal.promise, goneSignal.promise]);
+  let done = false;
+  return {
+    promise,
+    unsubscribe: () => {
+      if (done) return;
+      done = true;
+      epochSignal.unsubscribe();
+      goneSignal.unsubscribe();
+    },
+  };
+}
+
+/** The lane-slot half of a prefetch: render offscreen, bake, cache. Resolves
+ *  `true` only when the entry landed in THIS document's cache; every stale
+ *  or failed path cleans up after itself and resolves `false`. The pdf.js
+ *  task rides `session.thumbTasks` under a synthetic id, so `destroy`'s
+ *  cancel-everything sweep reaches it and `stats().thumbTasks` counts it. */
+async function prefetchThumbInternal(
+  page: number,
+  scale: number,
+  epoch: number
+): Promise<boolean> {
+  const taskId = `prefetch-${page}`;
+  const dying = prefetchWorldEnded(epoch);
+  try {
+    const pg = await Promise.race([
+      session.pdf!.getPage(page),
+      dying.promise.then(() => null),
+    ]);
+    if (!pg || epoch !== thumbLaneEpoch || !session.pdf) {
+      try { pg?.cleanup(); } catch (_) { /* ignore */ }
+      return false;
+    }
     const viewport = pg.getViewport({ scale });
     const made = offscreenFor(viewport);
-    if (!made) return;
+    if (!made) {
+      try { pg.cleanup(); } catch (_) { /* ignore */ }
+      return false;
+    }
     const { canvas: off, ctx } = made;
     const task = pg.render({ canvasContext: ctx, viewport });
-    await task.promise;
+    session.thumbTasks.set(taskId, task);
+    const rendering = prefetchWorldEnded(epoch);
+    let rendered = true;
+    let epochMoved = false;
+    try {
+      await Promise.race([task.promise, rendering.promise.then(() => {
+        epochMoved = true;
+      })]);
+    } catch (_) {
+      rendered = false; // cancelled by teardown, or a failed raster — best-effort either way
+    } finally {
+      // The usual path is a normal settle: remove this prefetch's waiters,
+      // or each successful prefetch would leak two resolvers into the
+      // cancellation arrays for the rest of the document's lifetime.
+      rendering.unsubscribe();
+    }
+    session.thumbTasks.delete(taskId);
+    if (epochMoved) {
+      // The teardown sweep had already run when this task was created, so
+      // the cancel-everything pass never reached it — cancel it here, or it
+      // would render into a canvas this prefetch is about to release.
+      try { task.cancel(); } catch (_) { /* ignore */ }
+    }
+    if (!rendered || epochMoved || epoch !== thumbLaneEpoch || !session.pdf) {
+      releaseCanvas(off);
+      try { pg.cleanup(); } catch (_) { /* ignore */ }
+      return false;
+    }
     pg.cleanup();
     const raw = off;
     let display: MaybeCanvas = session.themeScrubActive ? raw : await bakeRaster(raw, readPipeline());
     if (display !== raw) display = await cacheDisplay({ display });
+    // The epoch check AGAIN: a bake can wait on the theme queue, and a
+    // document swap in that window must not file this book's colours into
+    // the next document's cache.
+    if (epoch !== thumbLaneEpoch || !session.pdf) {
+      releaseCanvas(off);
+      return false;
+    }
     cachePut(page, { raw, display, cssW: Math.floor(viewport.width),
                      cssH: Math.floor(viewport.height), scale,
                      gen: session.themeScrubActive ? -1 : pipelineCache.gen, pending: null });
-  } catch (_) { /* prefetch is best-effort */ }
+    return true;
+  } catch (_) {
+    session.thumbTasks.delete(taskId);
+    return false;
+  } finally {
+    dying.unsubscribe();
+  }
 }

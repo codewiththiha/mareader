@@ -6,6 +6,7 @@ pub mod document;
 pub mod library;
 pub mod reload;
 pub mod tauri_listen;
+pub mod web_params;
 pub mod window;
 
 pub use tauri_listen::tauri_listen;

@@ -490,6 +490,11 @@ interface StatsPayload {
   thumbLimit: number;
   thumbTasks: number;
   activeRenders: number;
+  activePrefetches: number;
+  pageQueue: number;
+  pageActive: number;
+  thumbQueue: number;
+  thumbActive: number;
   hasDocument: boolean;
   hasLoadingTask: boolean;
   sessionsOpened: number;
@@ -502,6 +507,13 @@ interface StatsPayload {
   rendersFailed: number;
   rendersQueued: number;
   rendersDropped: number;
+  prefetchesStarted: number;
+  prefetchesCompleted: number;
+  prefetchesDropped: number;
+  documentPages: number;
+  thumbGenerationSize: number;
+  rawRetentionTimers: number;
+  sweepTimerArmed: number;
 }
 
 interface PDFReaderHandle {
@@ -510,6 +522,7 @@ interface PDFReaderHandle {
   destroy(): Promise<void>;
   setLifecycleLog(on: boolean): void;
   registerPage(page: number, canvasId: string, hostId?: string): void;
+  prefetchThumb(page: number, scale: number): Promise<void>;
   renderPage(canvasId: string, scale: number, renderText: boolean): Promise<EngineResult<RenderPayload>>;
   renderThumb(canvasId: string, page: number, scale: number): Promise<EngineResult<ThumbPayload>>;
   cancelThumb(canvasId: string): void;

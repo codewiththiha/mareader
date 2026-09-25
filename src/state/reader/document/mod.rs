@@ -182,7 +182,13 @@ impl DocumentState {
     /// Same, read untracked — for rAF/scroll callbacks that must not
     /// subscribe to geometry.
     pub fn page1_aspect_now(&self) -> f64 {
-        page_aspect(self.content.metrics.page1_size.get_untracked())
+        page_aspect(
+            self.content
+                .metrics
+                .page1_size
+                .try_get_untracked()
+                .flatten(),
+        )
     }
 
     /// The document's human-facing name (tracked read): its usable title,

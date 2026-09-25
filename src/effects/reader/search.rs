@@ -44,6 +44,13 @@ const REVEAL_MARGIN: f64 = 24.0;
 
 /// Run the query and store the flat match list.
 pub async fn run_search(state: ReaderState) {
+    // A build is the one search step that can still be running when the
+    // reader that asked for it is gone (a raced close disposes every signal
+    // this tail writes, and writing a disposed signal panics the wasm).
+    // spawn_local on wasm runs to completion — owner disposal does not stop
+    // it — so the document stamp is the stand-down: re-checked after every
+    // await, the same rule the open tails keep.
+    let stamp = crate::services::document::session::current_epoch();
     if state.reflowable_now() {
         run_reflow_search(state);
         return;
@@ -64,6 +71,9 @@ pub async fn run_search(state: ReaderState) {
         // The page count comes from the open flow, which alone knows the
         // document size.
         let built = engine::build_search_index(state.document.num_pages.get_untracked()).await;
+        if crate::services::document::session::current_epoch() != stamp {
+            return;
+        }
         state.search.building.set(false);
         match built {
             Ok(_) => {
@@ -86,6 +96,9 @@ pub async fn run_search(state: ReaderState) {
         return;
     }
 
+    if crate::services::document::session::current_epoch() != stamp {
+        return;
+    }
     match engine::search(&query).await {
         Ok(resp) => {
             state.search.total.set(resp.total);
@@ -159,11 +172,12 @@ pub fn clear_search(state: ReaderState) {
 }
 
 pub fn dismiss_search(state: ReaderState) {
-    // Hiding the bar disposes the overlay's owner, and the search runs are
-    // owner-scoped tasks (`floating_search` spawns through
-    // `leptos::task::spawn_local`): an index build in flight dies with them.
-    // Clear the flag BEFORE that disposal so the next search rebuilds
-    // instead of waiting on a task that will never land. The half-extracted
+    // Hiding the bar disposes the overlay's owner. The search runs are
+    // spawned through `leptos::task::spawn_local`, which on wasm RUNS TO
+    // COMPLETION — disposal does not stop a future mid-await — so the run
+    // tails stand themselves down on the document stamp instead, and this
+    // flag clear before disposal is what lets the next search rebuild
+    // rather than wait on a task that will never write again. The half-extracted
     // index it leaves is safe — the engine records a build only when one
     // COMPLETES, so the rebuild starts from a clear.
     state.search.building.set(false);

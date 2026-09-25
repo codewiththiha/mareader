@@ -143,6 +143,14 @@ fn prefetch_neighborhood(page: u32) {
 /// echo cancelled it before it ever fired.
 fn snap_to_page(virtualizer: Virtualizer, state: ReaderState, page: u32) {
     request_animation_frame(move || {
+        // One frame after arming, the panel or the reader can be gone; the
+        // reads below panic on either purged owner.
+        if virtualizer.viewport().try_get_untracked().is_none() {
+            return;
+        }
+        if state.viewer.page.try_get_untracked().is_none() {
+            return;
+        }
         virtualizer.remeasure_container();
         let vh = virtualizer.viewport().get_untracked().main;
         if vh <= 1.0 {
@@ -191,6 +199,14 @@ fn arm_glide(g: Glide) {
     // reads through ours.
     let step_drive = last_user_drive.clone();
     let step: Rc<dyn Fn()> = Rc::new(move || {
+        // Timer fires can straggle past teardown; the reads below panic on
+        // either purged owner.
+        if virtualizer.viewport().try_get_untracked().is_none() {
+            return;
+        }
+        if state.viewer.page.try_get_untracked().is_none() {
+            return;
+        }
         let since_drive = js_sys::Date::now() - step_drive.get();
         let vh = virtualizer.viewport().get_untracked().main;
         let cur = virtualizer.scroll_offset().get_untracked();
@@ -259,7 +275,9 @@ fn install_reveal_listener(auto: &AutoCenter, state: ReaderState, sidebar: RwSig
                     return;
                 }
                 let vh = v.viewport().get_untracked().main;
-                let page = state.viewer.page.get_untracked();
+                let Some(page) = state.viewer.page.try_get_untracked() else {
+                    return;
+                };
                 let target = center_target(&v, page, state.document.page1_aspect(), vh);
                 if let Some(target) = target {
                     reveal_drive.set(f64::NEG_INFINITY);
@@ -289,8 +307,13 @@ fn install_center_effect(auto: &AutoCenter, state: ReaderState, sidebar: RwSigna
     let glide_step = auto.glide_step;
 
     Effect::new(move |_| {
+        // Tracks the virtualizer's LIVE viewport signal, so a viewport write
+        // in the close window re-runs this into a purged reader state —
+        // a disposed page read ends the run first.
+        let Some(page) = state.viewer.page.try_get() else {
+            return;
+        };
         let in_thumbs = sidebar.get() == SidebarMode::Thumbs;
-        let page = state.viewer.page.get();
         // Tracked: a real measurement writes the viewport signal, which
         // re-arms this effect — so deferring here is safe.
         let vh = virtualizer.viewport().get().main;

@@ -1,0 +1,103 @@
+name: Deep CI
+
+# The expensive checks the required PR workflow deliberately does not carry
+# (docs/ci-architecture.md): the full production frontend build and the
+# browser-level lifecycle baseline — the REAL wasm app in a REAL browser,
+# driven through open / scroll / look-ahead / zoom / close-during-work /
+# dispose / reopen, asserting the disposal baseline (docs/memory-baseline.md).
+#
+# Runs nightly, on demand, and when the things this lane exists to test are
+# themselves changed (the engine bundles, the browser suite, this workflow).
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - ".github/workflows/deep-ci.yml"
+      - "tests/browser/**"
+      - "public/engine/**"
+      - "public/pdfEngine.ts"
+      - "public/readerEngine.ts"
+      # The lifecycle under test is also owned on the Rust side: an open/
+      # close, diagnostics, engine or virtualizer change can alter what the
+      # browser baseline measures just as much as an engine-bundle change.
+      - "src/services/document/**"
+      - "src/diagnostics.rs"
+      - "src/memory.rs"
+      - "src/components/viewer/**"
+      - "src/features/reader/**"
+      - "src/zoom/**"
+      - "src/effects/**"
+      - "crates/pdf-engine/**"
+      - "crates/virtual-list-leptos/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_RETRY: "10"
+  RUSTUP_DOWNLOAD_TIMEOUT: "600"
+
+jobs:
+  browser-lifecycle:
+    name: Browser lifecycle baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: wasm32-unknown-unknown
+          cache-key: deep-cache
+
+      # The real production build: Trunk's own hooks (engine bundle, tools,
+      # CSS) fire inside it, and the release WASM is what the test drives.
+      # Pinned binary — a `cargo install trunk` would spend minutes compiling
+      # a build tool every run.
+      - name: Install trunk
+        run: |
+          curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+          sudo mv trunk /usr/local/bin/trunk
+          trunk --version
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # The Trunk pre-build hooks shell out to node_modules.
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build the production frontend
+        run: trunk build --release
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser lifecycle baseline
+        run: |
+          node tests/browser/server.mjs &
+          SERVER_PID=$!
+          sleep 1
+          BASE_URL=http://127.0.0.1:8123 node tests/browser/lifecycle.mjs
+          STATUS=$?
+          kill $SERVER_PID 2>/dev/null || true
+          exit $STATUS
+
+      - name: Upload dist for local debugging
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: dist
+          path: dist
+          retention-days: 3

@@ -106,9 +106,52 @@ pub fn PdfPageStrip(
     // a geometry model that does not exist yet. (Only the vertical axis used
     // to be guarded — the asymmetry let the horizontal strip's window model
     // drift during the exact frames it needed to stay still.)
+    // The report rides a render COMPLETION, which can outlive the strip: a
+    // close during active rendering resolves the task after the virtualizers
+    // are disposed, and a report into them reads a disposed `range`. The
+    // session stamp is the liveness check — a close or swap claims a new
+    // epoch, so a report from the old document's render era is dropped.
+    // The report's true liveness oracle. The epoch stamp drops reports from
+    // a *stale document era*, but a report from the CURRENT era can still
+    // land after the strip's owner purged its signals (a close during active
+    // rendering resolves a queued completion into the torn-down strip): the
+    // epoch has not moved yet, yet `css_heights` and friends are already
+    // gone, and an `update` on them panics. Cleanups run before the purge,
+    // so this flag reads `Some(true)` exactly while the signals below are
+    // alive — checked before any signal is touched.
+    let report_alive = StoredValue::new_local(true);
+    on_cleanup({
+        move || {
+            let _ = report_alive.try_set_value(false);
+        }
+    });
+    let report_epoch = crate::services::document::session::current_epoch();
     let on_geometry = match axis {
         Axis::Vertical => {
             Callback::new(move |(page, _w, height): (u32, f64, f64)| {
+                if report_alive.try_get_value() != Some(true) {
+                    return;
+                }
+                // The reader state (metrics, viewer dials) purges one
+                // teardown beat before this strip's scope: the epoch can
+                // still match while `css_heights` is already gone, and an
+                // `update` on it panics. Probe the unit first.
+                if state
+                    .document
+                    .content
+                    .metrics
+                    .css_heights
+                    .try_with_untracked(|heights| heights.len())
+                    .is_none()
+                {
+                    return;
+                }
+                let Some(gap) = state.viewer.page_gap.try_get_untracked() else {
+                    return;
+                };
+                if crate::services::document::session::current_epoch() != report_epoch {
+                    return;
+                }
                 if state.viewer.zooming_now() {
                     return;
                 }
@@ -124,7 +167,6 @@ pub fn PdfPageStrip(
                         }
                         heights[index] = height;
                     });
-                let gap = state.viewer.page_gap.get_untracked();
                 handle.with_value(|v| v.report_size(index, height + gap));
                 // The first-paint gate lifts HERE: a geometry report only
                 // arrives when a page render completes, and the fresh open's
@@ -140,11 +182,20 @@ pub fn PdfPageStrip(
         }
         Axis::Horizontal => {
             Callback::new(move |(page, w, _h): (u32, f64, f64)| {
+                if report_alive.try_get_value() != Some(true) {
+                    return;
+                }
+                // Same reader-state probe as the vertical arm.
+                let Some(m) = state.viewer.page_margin.try_get_untracked() else {
+                    return;
+                };
+                if crate::services::document::session::current_epoch() != report_epoch {
+                    return;
+                }
                 if state.viewer.zooming_now() {
                     return;
                 }
                 if w > 0.0 {
-                    let m = state.viewer.page_margin.get_untracked();
                     handle.with_value(|v| {
                         v.report_size(page.saturating_sub(1) as usize, w + 2.0 * m)
                     });

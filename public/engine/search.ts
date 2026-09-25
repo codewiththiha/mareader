@@ -40,9 +40,23 @@ export async function extractPageText(
 > {
   const doc = session.pdf;
   if (!doc || page < 1) return fail("no_document", "No document open");
+  // A close can land while an extraction is in flight. The awaits below go
+  // to the pdf.js worker — a worker destroy() is killing — so they race the
+  // document-gone signal and fail fast instead of hanging on a promise the
+  // dead worker never settles (which would hold the search-build gauge up
+  // forever and block the disposal baseline).
+  const dying = session.documentGoneSignal();
   try {
-    const pg = await doc.getPage(page);
-    const tc = await pg.getTextContent();
+    const pg = await Promise.race([
+      doc.getPage(page),
+      dying.promise.then(() => null),
+    ]);
+    if (!pg) return fail("no_document", "Document closed mid-extraction");
+    const tc = await Promise.race([
+      pg.getTextContent(),
+      dying.promise.then(() => null),
+    ]);
+    if (!tc) return fail("no_document", "Document closed mid-extraction");
     const pageH = pg.getViewport({ scale: 1 }).height;
     const items: ExtractedPageItem[] = [];
     for (const item of tc.items) {
@@ -59,6 +73,8 @@ export async function extractPageText(
     return { ok: true, page, items };
   } catch (e) {
     return failFrom(e);
+  } finally {
+    dying.unsubscribe();
   }
 }
 

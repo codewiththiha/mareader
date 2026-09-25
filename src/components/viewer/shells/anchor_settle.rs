@@ -49,6 +49,12 @@ pub(crate) fn settle(state: ReaderState, v: &Virtualizer, frames: u32, aim: impl
 }
 
 fn frame(state: ReaderState, v: Virtualizer, frames_left: u32, generation: u64, aim: Rc<dyn Fn()>) {
+    // The surface can still be bound while the reader state is already
+    // purged (a close in the anchor window); release() below writes into
+    // that state, so the disposed probe ends the chain first.
+    if state.viewer.awaiting_anchor.try_get_untracked().is_none() {
+        return;
+    }
     if !state.viewer.owns_anchor(generation) {
         return;
     }

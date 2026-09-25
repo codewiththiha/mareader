@@ -47,8 +47,19 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     {
         let inner = inner.clone();
         Effect::new(move |_| {
-            let count = inner.options.count.get();
-            let epoch = inner.options.epoch.map(|signal| signal.get()).unwrap_or(0);
+            // A close resets the reader state this strip's options borrow
+            // while the strip itself is still mounted for the flush, and the
+            // epoch move re-runs THIS effect into that window: a disposed
+            // option reads as "the owner is going away" — run nothing.
+            let count = match inner.options.count.try_get() {
+                Some(count) => count,
+                None => return,
+            };
+            let epoch = match inner.options.epoch.map(|signal| signal.try_get()) {
+                Some(Some(epoch)) => epoch,
+                Some(None) => return,
+                None => 0,
+            };
             let estimate = inner.options.estimate_size.clone();
 
             let step = {
@@ -72,7 +83,12 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     if let Some(signal) = inner.options.pinned {
         let inner = inner.clone();
         Effect::new(move |_| {
-            let step = inner.core.borrow_mut().set_pinned(signal.get());
+            // Same teardown window as the count/epoch effect: a disposed
+            // source reads as "not pinned" rather than re-entering apply.
+            let Some(pinned) = signal.try_get() else {
+                return;
+            };
+            let step = inner.core.borrow_mut().set_pinned(pinned);
             inner.apply(step);
         });
     }

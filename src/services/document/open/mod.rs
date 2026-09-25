@@ -48,16 +48,19 @@ use super::session;
 ///     the pull: the command clears itself, so an event plus a stray second
 ///     pull can never open the same file twice.
 pub fn init_open_file_handling(state: AppState) {
+    // The pending-file handoff and its push listener are both Tauri
+    // machinery — an OS-open delivered across the webview boundary. A plain
+    // browser has neither, so this whole registration is a no-op there
+    // rather than a dangling pull.
+    if !tauri_bridge::has_tauri() {
+        return;
+    }
     let st = state;
     spawn_local(async move {
         if let Some(path) = engine::take_pending_file().await {
             open_path(st, path);
         }
     });
-
-    if !tauri_bridge::has_tauri() {
-        return;
-    }
 
     // PUSH: the listener just re-runs the pull (the doc above says why).
     let cb_state = state;
@@ -281,7 +284,7 @@ fn ready(
         },
     );
     cover::ensure(state, path, stamp);
-    warmup::prewarm_thumbs(seeded.num_pages);
+    warmup::prewarm_thumbs(seeded.num_pages, stamp);
     // The heap probe's baseline: what the book cost to open, before any
     // reading moves it. The close line is the number to compare this one
     // against — the difference is the session's ratchet.

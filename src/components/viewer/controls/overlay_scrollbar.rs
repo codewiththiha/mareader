@@ -89,10 +89,25 @@ pub fn OverlayScrollbar(
             }) as Box<dyn FnMut(web_sys::Event)>);
 
             let _ = el.add_event_listener_with_callback("scroll", cb.as_ref().unchecked_ref());
-            // Retain for the component lifetime.
-            StoredValue::new_local(cb);
+            // Removal needs the SAME JS function reference; the closure
+            // itself parks in local storage, because the cleanup hook must
+            // be Send + Sync and the closure is neither. Removing runs in
+            // the owner's cleanup, before that storage releases the closure
+            // — a dispose that only parked it (the old shape here) left the
+            // listener registered on the still-attached scroller, and the
+            // next scroll echo dispatched into a dropped closure and
+            // trapped the wasm. The element is captured, not re-looked-up:
+            // the scroller can already be off the document when this runs.
+            let fn_ref = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
+            let retained = StoredValue::new_local(Some(cb));
+            let bound = StoredValue::new_local(Some((el, fn_ref)));
             on_cleanup(move || {
-                if let Some(el) = by_id(scroller_id) {
+                if let Some((old_el, old_fn)) = bound.get_value() {
+                    let _ = old_el.remove_event_listener_with_callback("scroll", &old_fn);
+                }
+                bound.set_value(None);
+                retained.set_value(None);
+                if let Some(el) = by_id(sid) {
                     let _ = el.remove_attribute("data-overlay-sb");
                 }
             });

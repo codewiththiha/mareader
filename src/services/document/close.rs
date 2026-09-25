@@ -35,10 +35,12 @@ pub fn close_document(state: AppState) {
     super::flush::flush_read_point(state);
 
     // Tear the engine document down while the reader is idle on the shelf.
-    // destroy() is non-blocking — it drops the loading-task reference
-    // synchronously and lets the worker die in the background — so this can
-    // never hang, and a fast close → reopen is safe: the reopen's own
-    // destroy() is idempotent.
+    // destroy() AWAITS the pdf.js worker's actual shutdown before it
+    // resolves, so this tail completes only when the teardown is real —
+    // which is exactly what the dispose-complete baseline below asserts
+    // on. It runs in this background task, so the UI never waits on it,
+    // and a fast close → reopen stays safe: the reopen's own destroy() is
+    // idempotent.
     spawn_local(async move {
         _ = engine::destroy().await;
         // Finish the job: destroy() runs the advisory worker cleanup itself

@@ -129,13 +129,22 @@ pub fn ReflowStreamLayout(
         state.document.content.reflow.heights.with(|h| h.len())
     });
     let estimate = move |index: usize| {
-        state
+        // Runs inside the crate's flush/rebuild paths, which can fire after
+        // the close purged the reader state; a disposed heights store (or
+        // zoom display) means the answer only feeds a dead cycle.
+        let Some(height) = state
             .document
             .content
             .reflow
             .heights
-            .with_untracked(|h| h.get(index).copied().unwrap_or(FALLBACK_BLOCK_H))
-            * state.viewer.zoom.visual_scale()
+            .try_with_untracked(|h| h.get(index).copied().unwrap_or(FALLBACK_BLOCK_H))
+        else {
+            return FALLBACK_BLOCK_H;
+        };
+        let Some(scale) = state.viewer.zoom.display.try_get_untracked() else {
+            return FALLBACK_BLOCK_H;
+        };
+        height * scale
     };
     let epoch = epoch_signal(move |hasher| {
         state
@@ -345,6 +354,12 @@ pub fn ReflowStreamLayout(
             let column = column_ref;
             let v = v.clone();
             request_animation_frame(move || {
+                // One frame after arming the close can land; the reads below
+                // panic on the purged owner, so a disposed item signal ends
+                // the measure before any of them.
+                if items.try_get_untracked().is_none() {
+                    return;
+                }
                 if state.viewer.zooming_now() {
                     return;
                 }

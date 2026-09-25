@@ -35,8 +35,8 @@ phases replace. The inventory below is what exists now.
 | Page hosts (canvas + host registration) | `session.stateByCanvasId`, keyed by canvas id | `registerPage` (Rust: `src/components/formats/pdf/canvas.rs`) | `unregisterPage` (component `on_cleanup`), `destroy` |
 | Thumbnails | `session.thumbCache` (LRU ≤ 16 pairs), `thumbTasks`, thumb lane | `renderThumb`/`prefetchThumb` | LRU eviction, `destroy` |
 | Rust search index | `crates/pdf-engine/src/api/search.rs` thread-local — DELIBERATELY retained across close, keyed by content fingerprint | first search of a document | dropped when a DIFFERENT fingerprint is opened (`scope_to_document`) |
-| Look-ahead (paper colour) | `crates/pdf-engine/src/backdrop/mod.rs` thread-local `Session` (`sampling` set + per-area palettes); tasks via `spawn_engine` | `document_open` / scroll ticks | `document_close` resets state; epoch token invalidates in-flight samples |
-| Thumbnail prefetch/warmup | `src/services/document/open/warmup.rs` — an UNOWNED 1.5s timer + spawn_local chain | after open settles | runs to completion (bounded: ≤16 pages); guarded only by the engine answering for whatever is open |
+| Look-ahead (paper colour) | `crates/pdf-engine/src/backdrop/mod.rs` thread-local `Session` (`sampling` set + per-area palettes); tasks via `spawn_engine` | `document_open` / scroll ticks | `document_close` resets state; epoch token invalidates in-flight samples; in-flight count exposed as `backdrop::pending_samples()` (snapshot's `lookaheadSamplesActive`) |
+| Thumbnail prefetch/warmup | `src/services/document/open/warmup.rs` fires a bounded timer; the ENGINE owns the work: each prefetch queues in the bounded thumbnail lane under the document's lane epoch | after open settles | teardown cancels in-flight prefetch tasks (registered under `prefetch-<page>` ids) and the epoch drops queued/awaited ones — never filed into the next document; lifecycle visible in `stats()` |
 | Virtualizers (page strips, stream, thumbs grid) | `virtual_list_leptos::Virtualizer` handles held by components; bindings (listeners, ResizeObserver, timers) inside `VirtualizerInner` | `use_virtualizer` | `dispose()` via the hook's `on_cleanup` |
 | Virtualizer measurement store | `DocumentState.content.metrics.css_heights` / `intrinsic` (app signals) | open seeds | `DocumentState::reset` |
 | Reader reactive state | `AppState.reader` (`src/state/reader/*`) — app-lifetime signals, reset per close | bootstrap | reset by `close_document` (`DocumentState::reset`, `viewer.reset_position`, `search.reset`, `gloss.reset`, `ai_selection.reset`) |
@@ -88,8 +88,11 @@ route change itself:
   design.
 - Look-ahead samples (`backdrop::spawn_engine`): epoch-guarded, so a sample
   for one book never lands in the next.
-- Thumbnail warmup (`open/warmup.rs`): UNOWNED by design — a fire that must
-  not reach into a possibly-disposed reader; bounded at 16 prefetches.
+- Thumbnail warmup (`open/warmup.rs`): unowned on the Rust side by design
+  (a fire that must not reach into a possibly-disposed reader), but the
+  ENGINE owns each prefetch as lane work: bounded by the lane limit,
+  epoch-guarded at every await, cancelled by teardown, fully counted in
+  `stats()` — the fire can therefore no longer touch the wrong document.
 - Search index build (`src/effects/reader/search.rs`): one-build-at-a-time
   via `SearchState::building`; a close during a build leaves the index
   finishing into the retained slot (adoption contract above).
@@ -125,7 +128,9 @@ engine destroy (public/pdfEngine.ts)
 ├── session.sweepPdf()                  — pdf.cleanup while the doc is alive
 ├── cancel + release every page surface (render/text tasks, canvases, masks)
 ├── cancel thumb tasks, reset thumb lane, release thumb rasters
-├── destroyTask(loadingTask)            — worker death (idempotent)
+├── AWAIT destroyTask(loadingTask)      — the worker's actual shutdown, so
+│                                         dispose_complete means "dead", not
+│                                         "death scheduled" (idempotent)
 └── finally: pdf/numPages/path nulled, paper republished, scratch drained
 ```
 
@@ -138,3 +143,83 @@ that the engine half drains. It does NOT change ownership: the single
 exactly as they were, because they are the measured subject, not the fix.
 The proposed Phase 1 boundary that follows from this map is in
 `docs/memory-baseline.md`.
+
+The snapshot also reads the bookkeeping this map says the owners hold, so a
+dispose that left one behind is visible rather than inferred: the
+virtualizers' listener bindings, `ResizeObserver` bindings and armed timers
+(`virtualizerListeners` / `virtualizerObservers` / `virtualizerTimers`,
+summed over the live handles — all zero once the reader is gone), the
+engine's raw-retention timers and document-scoped idle sweeper
+(`rawRetentionTimers` / `sweepTimerArmed`, both required 0 by the drained
+gate), and the thumbnail generation map's size (`thumbGenerationSize`,
+cleared at teardown — measured during long sessions so growth cannot go
+unseen).
+
+### Two teardown bugs the baseline caught (and their fixes)
+
+The browser lane's raced closes — close in the same JS turn that observes
+work in flight — found two real holes in this map, both fixed on this
+branch. They are recorded because they shape Phase 1's boundary work:
+
+1. **Prefetch born inside the destroy window.** A prefetch enqueued after
+   the thumbnail lane's epoch bump but before the document nulls captures
+   the NEW epoch, passes every epoch check, and awaits a pdf.js task on a
+   worker whose death is already underway — a promise that never settles,
+   so its active-prefetch slot never drains and the disposal baseline never
+   arrives. The liveness of the document is now waited-on state on the
+   session (`noteDocumentGone` fires the moment a destroy BEGINS; the
+   prefetch's `getPage`/render awaits race it), so an await born after that
+   moment wakes immediately instead of hanging.
+
+2. **Overlay scrollbar listener outlived its owner.** The scrollbar parked
+   its scroll `Closure` in a StoredValue and never removed the listener:
+   reader dispose dropped the closure while `#page-list` stayed attached,
+   and a zoom-settle scroll echo landing in that window dispatched into the
+   dropped closure and trapped the wasm. The cleanup now removes the
+   listener with the same closure identity (against the captured element,
+   not a re-lookup) before dropping it. A repo-wide audit of
+   `add_event_listener_with_callback` sites confirmed every other
+   registration already paired with a removal.
+
+Four more holes closed the same way — each found by asking what survives
+the dispose rather than what it measures:
+
+3. **The warmup timer had no owner.** The open flow's +1500ms warm-up timer
+   captured only the page count, so open A → close A → open B within the
+   delay meant A's timer prefetched A's pages into B's cache. The engine
+   epoch cannot catch this — the fire is a brand-new prefetch of the
+   current epoch — so the timer now carries the open flow's session stamp
+   and re-verifies it at fire time and per page.
+4. **A queued prefetch's cancellation waiters leaked.** Every prefetch
+   raced its awaits against the epoch and the document-gone signal, but a
+   prefetch that settled NORMALLY never unsubscribed: each successful
+   prefetch parked two resolvers in two arrays for the document's whole
+   life. The signals now return a subscription with an unsubscribe, and
+   every await's `finally` removes its waiters.
+5. **The lanes could be non-empty while reading "drained".** Queued page
+   and thumbnail closures (with the caller resolvers they capture) sat in
+   the module queues across a dispose until the FIFO reached them. Teardown
+   now pumps both queues — every job's dead/epoch guard resolves it as a
+   drop — and `stats()` exposes all four lane gauges, which the baseline
+   requires at zero. Same family: cancelling a queued render's rAF orphaned
+   the caller's promise entirely (an await that never settles, for a job
+   the counters never saw), so teardown now lets the rAF fire into its
+   dead-state guard.
+6. **Document-scoped timers crossed documents.** The 30s idle sweeper
+   survived `destroy()` and would later run `sweepPdf` over whatever
+   document was open by then; the search index build is now gauged
+   (`searchActive`) so a close landing mid-build is visible and the
+   baseline requires the gauge empty. `destroy()` clears the idle timer.
+
+### Notes the next phases must not lose
+
+- `window.__mareaderDiagnostics` captures the app state through a
+  window-owned closure. Fine while there is exactly one runtime; when
+  Phase 2 splits library and reader runtimes, this surface needs explicit
+  installation/removal tied to the runtime that owns it, or the shell
+  window itself becomes the thing pinning a "disposable" reader open.
+- `readerRuntimesCreated`/`readerDisposesCompleted` count document CLAIMS
+  (open attempts), not reader-runtime instances — the runtime object does
+  not exist yet. The names describe the shape Phase 1 wants to measure;
+  until then they are claim counters and must not be read as an ownership
+  boundary that already exists.

@@ -10,6 +10,8 @@ import { disposeScratch, releaseCanvas } from "./engine/canvas";
 import { coverDataUrl, destroyTask, open, resolveOutline, takePendingFile } from "./engine/loader";
 import {
   cancelPage,
+  drainPageLane,
+  pageLaneGauge,
   registerPage,
   renderPage,
   rerenderLivePages,
@@ -19,6 +21,8 @@ import {
   blitThumb,
   cancelThumb,
   hasThumb,
+  thumbGenerationSize,
+  thumbLaneGauge,
   prefetchThumb,
   renderThumb,
   resetThumbLane,
@@ -75,10 +79,10 @@ function cancelAndReleasePages(): void {
     st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
     try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
-    if (st.queueHandle) {
-      cancelAnimationFrame(st.queueHandle);
-      st.queueHandle = 0;
-    }
+    // A queued render's rAF is deliberately NOT cancelled: the callback's
+    // dead-state guard resolves the caller with a drop. Cancelling here
+    // would orphan that promise — an await that never settles, for a job
+    // the counters never even saw.
     session.releasePageSurfaces(st);
   }
 }
@@ -89,6 +93,14 @@ async function destroy(): Promise<void> {
   const hadSession = session.pdf !== null;
   if (hadSession) {
     session.sessionsDestroyed += 1;
+    // First act of dying: wake every in-flight prefetch await so none of
+    // them can step onto the worker during its death throes (a task born
+    // in this window would await a promise the destroyed worker never
+    // settles, and its active-prefetch slot would never drain).
+    session.noteDocumentGone();
+    // The idle sweeper belongs to the dying document: leaving it armed lets
+    // a timer fire over the NEXT document thirty seconds later.
+    session.clearIdleTimer();
     lifecycleEvent("pdf_session:dispose_begin");
   }
   try {
@@ -99,6 +111,10 @@ async function destroy(): Promise<void> {
     // after destroy resolves finds no document to clean.
     session.sweepPdf();
     cancelAndReleasePages();
+    // Every state is dead now: the drain cascade resolves each queued job
+    // as a drop instead of leaving the closures (and their callers'
+    // resolvers) parked in the array across the dispose.
+    drainPageLane();
     session.stateByCanvasId.clear();
     for (const task of session.thumbTasks.values()) {
       try { task.cancel(); } catch (_) { /* ignore */ }
@@ -118,9 +134,16 @@ async function destroy(): Promise<void> {
       // Guarded behind a WeakSet in loader.ts: open's own timeout may be
       // destroying the same task right now, and a second destroy() on a
       // pdf.js LoadingTask double-frees the worker.
+      //
+      // AWAITED, not fire-and-forget: the reader's dispose-complete marker
+      // fires after this resolves, and it must mean "the worker is dead",
+      // not "worker death was scheduled". The close tail already runs in
+      // its own background task, so the wait costs the UI nothing; the
+      // open flow's own pre-destroy gains the same truth for free, still
+      // bounded by the open timeout behind it.
       const lt = session.loadingTask;
       session.setLoadingTask(null);
-      destroyTask(lt).catch(() => { /* fire-and-forget */ });
+      await destroyTask(lt);
     }
   } finally {
     // Teardown always completes: a release that throws must not skip the
@@ -213,12 +236,19 @@ function stats(): Stats {
   for (const st of session.stateByCanvasId.values()) {
     if (st.renderTask) activeRenders += 1;
   }
+  const pageLane = pageLaneGauge();
+  const thumbLane = thumbLaneGauge();
   return {
+    pageQueue: pageLane.pageQueue,
+    pageActive: pageLane.pageActive,
+    thumbQueue: thumbLane.thumbQueue,
+    thumbActive: thumbLane.thumbActive,
     pages: session.stateByCanvasId.size,
     thumbs: session.thumbCache.size,
     thumbLimit: THUMB_CACHE_MAX,
     thumbTasks: session.thumbTasks.size,
     activeRenders,
+    activePrefetches: session.prefetchesActive,
     hasDocument: session.pdf !== null,
     hasLoadingTask: session.loadingTask !== null,
     sessionsOpened: session.sessionsOpened,
@@ -231,6 +261,13 @@ function stats(): Stats {
     rendersFailed: session.rendersFailed,
     rendersQueued: session.rendersQueued,
     rendersDropped: session.rendersDropped,
+    prefetchesStarted: session.prefetchesStarted,
+    prefetchesCompleted: session.prefetchesCompleted,
+    prefetchesDropped: session.prefetchesDropped,
+    documentPages: session.numPages,
+    thumbGenerationSize: thumbGenerationSize(),
+    rawRetentionTimers: session.rawRetentionTimers(),
+    sweepTimerArmed: session.sweepTimerArmed(),
   };
 }
 

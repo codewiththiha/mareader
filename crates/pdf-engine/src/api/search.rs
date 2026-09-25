@@ -26,6 +26,8 @@ use std::cell::RefCell;
 use futures::stream::{self, StreamExt};
 use serde::Deserialize;
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use pdf_core::search::{PageText, SearchIndex, SearchItem};
 use reader_core::search::SearchResponse;
 
@@ -134,8 +136,30 @@ struct ItemPayload {
 /// it — the `{ok:true, count}` envelope shape is kept for the engine
 /// contract. Unreadable pages are skipped, never fatal: a corrupted page must
 /// not kill a search.
+/// In-flight search index builds (0/1 in practice). Read by the diagnostics
+/// snapshot; the disposal baseline requires it back to zero.
+static BUILD_ACTIVE: AtomicU32 = AtomicU32::new(0);
+
+pub(crate) fn search_build_active() -> u32 {
+    BUILD_ACTIVE.load(Ordering::Relaxed)
+}
+
+struct BuildActiveGuard;
+
+impl Drop for BuildActiveGuard {
+    fn drop(&mut self) {
+        BUILD_ACTIVE.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 pub async fn build_search_index(num_pages: u32) -> Result<u32, EngineError> {
     require_pdf_reader()?;
+    // The build is the one search step that can be mid-flight when a reader
+    // closes (worker round trips, page by page), so it is gauged for the
+    // teardown baseline. The guard's Drop covers every exit: the adopted
+    // short-circuit, an extraction failure, and a future dropped mid-await.
+    BUILD_ACTIVE.fetch_add(1, Ordering::Relaxed);
+    let _build_guard = BuildActiveGuard;
     if let Some(indexed) = adopted_count(num_pages) {
         return Ok(indexed);
     }

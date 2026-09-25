@@ -159,17 +159,27 @@ export type Stats = {
   /** Cached thumbnail rasters. */
   thumbs: number;
   thumbLimit: number;
-  /** In-flight thumbnail renders. */
+  /** In-flight thumbnail renders, prefetches included (prefetch tasks ride
+   *  the same table under `prefetch-<page>` ids). */
   thumbTasks: number;
   /** Live page render tasks (started, not yet resolved). */
   activeRenders: number;
+  /** Bounded page-render lane: queued jobs / running slots. */
+  pageQueue: number;
+  pageActive: number;
+  /** Thumbnail lane: queued jobs / running slots. */
+  thumbQueue: number;
+  thumbActive: number;
+  /** Thumbnail prefetches currently in flight (queued or rendering). */
+  activePrefetches: number;
   /** A document proxy is open. */
   hasDocument: boolean;
   /** A worker LoadingTask is registered on the session. */
   hasLoadingTask: boolean;
   /** Monotonic lifecycle counters. Pairing rules: sessionsOpened ==
    *  sessionsDestroyed; workersCreated == workersTerminated; rendersStarted
-   *  == rendersCompleted + rendersCancelled + rendersFailed. */
+   *  == rendersCompleted + rendersCancelled + rendersFailed;
+   *  prefetchesStarted == prefetchesCompleted + prefetchesDropped. */
   sessionsOpened: number;
   sessionsDestroyed: number;
   workersCreated: number;
@@ -182,6 +192,22 @@ export type Stats = {
    *  (superseded/unmounted before their turn). */
   rendersQueued: number;
   rendersDropped: number;
+  /** Thumbnail prefetch lifecycle: the warmup/idle cache fills. */
+  prefetchesStarted: number;
+  prefetchesCompleted: number;
+  prefetchesDropped: number;
+  /** The OPEN DOCUMENT's page count — NOT `pages` (registered page hosts).
+   *  The baseline gates its fixtures on this: a distant jump must cross
+   *  many pages. */
+  documentPages: number;
+  /** Thumbnail generation map size: per-canvas bookkeeping kept until
+   *  document teardown; teardown clears it, so the baseline requires 0. */
+  thumbGenerationSize: number;
+  /** Raw-raster retention timers still armed. Teardown releases every page
+   *  surface, so the baseline requires 0 after a close. */
+  rawRetentionTimers: number;
+  /** The document-scoped idle sweeper timer, 0/1. Destroy cancels it. */
+  sweepTimerArmed: number;
 };
 export type PDFReaderApi = {
   version: () => string;

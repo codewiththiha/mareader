@@ -1,19 +1,12 @@
 //! The lifecycle/memory diagnostics surface: one home for the Phase 0
 //! baseline counters instead of scattered debug prints.
 //!
-//! Two halves:
-//!
-//! - **Rust-owned counters** — the reader runtime's lifecycle (one create per
-//!   open flow, one dispose per `close_document`), the reader pane (the
-//!   `/reader` surface — the split-workspace pane tree will grow from this
-//!   hook), the live virtualizers with their window and zombie counts, the
-//!   disposal epoch ([`crate::services::document::session`]'s claim stamp),
-//!   and the wasm heap high-water mark.
-//! - **Engine-owned counters** — the PDF session, its worker, the page
-//!   render lane, the thumbnail cache. They are read through
-//!   `pdf_engine::api::engine_stats` at snapshot time, because those
-//!   resources are created and released inside the engine and counting them
-//!   anywhere else would count a secondhand story.
+//! Two halves: Rust-owned counters (reader runtime lifecycle, reader pane,
+//! live virtualizers, the disposal epoch, the wasm heap high-water mark) and
+//! engine-owned counters (PDF session, worker, render lane, thumbnails),
+//! read through `pdf_engine::api::engine_stats` at snapshot time because
+//! those resources are created and released inside the engine — counting
+//! them anywhere else would count a secondhand story.
 //!
 //! Counters are cheap atomics, always on. Console narration is opt-in
 //! (`window.__mareaderDiagnostics()` in the app webview turns it on and
@@ -91,8 +84,14 @@ pub(crate) fn note_heap_sample(bytes: u64) {
     HEAP_HIGH_WATER.fetch_max(bytes, Ordering::Relaxed);
 }
 
-/// The reader runtime came into existence: an open flow claimed the document
-/// state. Fired by `services::document::open`, once per attempt.
+/// An open flow CLAIMED the document state — the boundary hook today's
+/// architecture has for "a reader runtime began". Counted once per attempt,
+/// failed opens included, because the claim is what the hook observes; a
+/// failed attempt is a create whose dispose never needs to run, so the
+/// pairing these counters prove is not liveness (that is
+/// `reader_runtime_live` / the engine's `hasDocument`) but the close path's
+/// completion count. Phase 1's explicit runtime object replaces this hook
+/// with a real lifetime.
 pub(crate) fn note_reader_runtime_create() {
     READER_RUNTIMES_CREATED.fetch_add(1, Ordering::Relaxed);
     event("reader_runtime:create");
@@ -207,6 +206,22 @@ pub(crate) struct Snapshot {
     virtualizers_disposed: u64,
     live_window_items: usize,
     retained_virtual_items: usize,
+    /// The virtualizers' live DOM/event bookkeeping: event listener
+    /// bindings, `ResizeObserver` bindings, and armed timers (scroll-end
+    /// debounce + retention expiry). The ownership document lists these as
+    /// held resources; a dispose that leaked one now shows here instead of
+    /// being inferred from the handle count.
+    virtualizer_listeners: usize,
+    virtualizer_observers: usize,
+    virtualizer_timers: usize,
+    /// The reader's mounted-window ceiling (`reader_core::view::RENDER_BUDGET`
+    /// max items). The browser baseline asserts its observed peaks against
+    /// this number, so the test enforces the live policy rather than a
+    /// copy of it.
+    render_budget_max_items: u32,
+    /// Look-ahead (paper colour) samples in flight — the prefetch work the
+    /// baseline must see and see drained.
+    lookahead_samples_active: usize,
     /// The engine's half (PDF session, worker, render lane, thumbnails).
     /// `None` without an engine — reported, not guessed.
     engine: Option<pdf_engine::api::EngineStats>,
@@ -228,7 +243,13 @@ impl Snapshot {
             && self.pane_live == 0
             && self.virtualizer_live == 0
             && self.retained_virtual_items == 0
-            && self.engine.is_none_or(|e| e.drained())
+            && self.lookahead_samples_active == 0
+            // FAIL CLOSED: an engine the diagnostics bridge cannot read is
+            // not a drained engine. A missing/broken engine surface must
+            // never launder itself into "at baseline" — unverifiable is its
+            // own failure mode, and exactly the one this gate exists to
+            // catch.
+            && matches!(&self.engine, Some(engine) if engine.drained())
     }
 }
 
@@ -242,7 +263,13 @@ pub(crate) fn snapshot(reader_runtime_live: bool) -> Snapshot {
     let engine = pdf_engine::api::engine_stats();
     #[cfg(not(target_arch = "wasm32"))]
     let engine = None;
-    let (live_window_items, retained_virtual_items) = LIVE_VIRTUALIZERS.with(|live| {
+    let (
+        live_window_items,
+        retained_virtual_items,
+        virtualizer_listeners,
+        virtualizer_observers,
+        virtualizer_timers,
+    ) = LIVE_VIRTUALIZERS.with(|live| {
         let list = live.borrow();
         (
             list.iter()
@@ -251,6 +278,15 @@ pub(crate) fn snapshot(reader_runtime_live: bool) -> Snapshot {
             list.iter()
                 .map(virtual_list_leptos::Virtualizer::retained_items)
                 .sum(),
+            list.iter()
+                .map(virtual_list_leptos::Virtualizer::listener_bindings)
+                .sum(),
+            list.iter()
+                .map(virtual_list_leptos::Virtualizer::observer_bindings)
+                .sum(),
+            list.iter()
+                .map(virtual_list_leptos::Virtualizer::armed_timers)
+                .sum(),
         )
     });
     Snapshot {
@@ -258,14 +294,21 @@ pub(crate) fn snapshot(reader_runtime_live: bool) -> Snapshot {
         reader_disposes_completed: READER_DISPOSES_COMPLETED.load(Ordering::Relaxed),
         reader_runtime_live,
         disposal_epoch: crate::services::document::session::current_epoch(),
-        pane_live: PANES_CREATED.load(Ordering::Relaxed) - PANES_DISPOSED.load(Ordering::Relaxed),
+        pane_live: PANES_CREATED
+            .load(Ordering::Relaxed)
+            .saturating_sub(PANES_DISPOSED.load(Ordering::Relaxed)),
         panes_created: PANES_CREATED.load(Ordering::Relaxed),
         panes_disposed: PANES_DISPOSED.load(Ordering::Relaxed),
         virtualizer_live: LIVE_VIRTUALIZERS.with(|live| live.borrow().len()),
+        lookahead_samples_active: pdf_engine::backdrop::pending_samples(),
         virtualizers_created: VIRTUALIZERS_CREATED.load(Ordering::Relaxed),
         virtualizers_disposed: VIRTUALIZERS_DISPOSED.load(Ordering::Relaxed),
         live_window_items,
         retained_virtual_items,
+        virtualizer_listeners,
+        virtualizer_observers,
+        virtualizer_timers,
+        render_budget_max_items: reader_core::view::RENDER_BUDGET.max_items as u32,
         engine,
         wasm_heap_bytes: wasm_heap_bytes(),
         heap_high_water_bytes: HEAP_HIGH_WATER.load(Ordering::Relaxed),
@@ -275,23 +318,38 @@ pub(crate) fn snapshot(reader_runtime_live: bool) -> Snapshot {
 /// The snapshot as the dev surface hands it over: JSON, one line per field
 /// group, printable from the console.
 pub(crate) fn snapshot_json(reader_runtime_live: bool) -> String {
-    serde_json::to_string_pretty(&snapshot(reader_runtime_live))
-        .unwrap_or_else(|_| "{}".to_string())
+    let snap = snapshot(reader_runtime_live);
+    let mut value = match serde_json::to_value(&snap) {
+        Ok(value) => value,
+        Err(_) => return "{}".to_string(),
+    };
+    // The verdict rides the snapshot so an automated baseline check asserts
+    // one field instead of re-deriving the rule on the consumer side.
+    value["atBaseline"] = serde_json::Value::Bool(snap.at_baseline());
+    serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }
 
 /// Attach the development diagnostics surface:
 /// `window.__mareaderDiagnostics()` returns the JSON snapshot and turns the
 /// lifecycle narration on. A no-op off the webview (host builds have no
 /// window to hang it on and no reader to measure).
-pub fn install(reader_runtime_live: impl Fn() -> bool + 'static) {
+pub fn install(
+    reader_runtime_live: impl Fn() -> bool + 'static,
+    doc_status: impl Fn() -> String + 'static,
+    doc_error: impl Fn() -> Option<String> + 'static,
+) {
     #[cfg(target_arch = "wasm32")]
-    install_web(reader_runtime_live);
+    install_web(reader_runtime_live, doc_status, doc_error);
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = reader_runtime_live;
+    let _ = (reader_runtime_live, doc_status, doc_error);
 }
 
 #[cfg(target_arch = "wasm32")]
-fn install_web(reader_runtime_live: impl Fn() -> bool + 'static) {
+fn install_web(
+    reader_runtime_live: impl Fn() -> bool + 'static,
+    doc_status: impl Fn() -> String + 'static,
+    doc_error: impl Fn() -> Option<String> + 'static,
+) {
     use wasm_bindgen::JsCast;
     use wasm_bindgen::prelude::Closure;
 
@@ -304,7 +362,18 @@ fn install_web(reader_runtime_live: impl Fn() -> bool + 'static) {
     // builder.
     let probe = Closure::wrap(Box::new(move || {
         pdf_engine::api::set_lifecycle_log(true);
-        snapshot_json(reader_runtime_live())
+        let mut json = snapshot_json(reader_runtime_live());
+        // The document's own account of an open that went wrong, so a
+        // browser-side failure dump can say WHY the reader never settled
+        // (the engine's stats alone cannot).
+        if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&json) {
+            value["docStatus"] = serde_json::json!(doc_status());
+            value["docError"] = serde_json::json!(doc_error());
+            if let Ok(text) = serde_json::to_string_pretty(&value) {
+                json = text;
+            }
+        }
+        json
     }) as Box<dyn Fn() -> String>);
     let probe: wasm_bindgen::JsValue = probe.into_js_value();
     let name = wasm_bindgen::JsValue::from_str("__mareaderDiagnostics");
@@ -370,6 +439,10 @@ mod tests {
     /// global counters: sibling tests tick those concurrently, and the
     /// baseline question is about the SHAPE, not about this process's
     /// moment.
+    fn drained_engine() -> pdf_engine::api::EngineStats {
+        pdf_engine::api::EngineStats::default()
+    }
+
     fn drained_snapshot() -> Snapshot {
         Snapshot {
             reader_runtimes_created: 7,
@@ -384,7 +457,12 @@ mod tests {
             virtualizers_disposed: 28,
             live_window_items: 0,
             retained_virtual_items: 0,
-            engine: None,
+            virtualizer_listeners: 0,
+            virtualizer_observers: 0,
+            virtualizer_timers: 0,
+            render_budget_max_items: 3,
+            lookahead_samples_active: 0,
+            engine: Some(drained_engine()),
             wasm_heap_bytes: None,
             heap_high_water_bytes: 0,
         }
@@ -393,6 +471,15 @@ mod tests {
     #[test]
     fn a_drained_snapshot_is_at_baseline() {
         assert!(drained_snapshot().at_baseline());
+    }
+
+    #[test]
+    fn an_unreadable_engine_fails_closed() {
+        // "Cannot inspect the engine" is not "the engine is drained": a
+        // broken diagnostics bridge must never pass the gate it guards.
+        let mut snap = drained_snapshot();
+        snap.engine = None;
+        assert!(!snap.at_baseline());
     }
 
     #[test]
@@ -408,6 +495,9 @@ mod tests {
         assert!(!snap.at_baseline());
         let mut snap = drained_snapshot();
         snap.retained_virtual_items = 3;
+        assert!(!snap.at_baseline());
+        let mut snap = drained_snapshot();
+        snap.lookahead_samples_active = 1;
         assert!(!snap.at_baseline());
         // A create whose dispose never ran is deliberately NOT a baseline
         // break: a failed open consumes a create without needing a dispose,
@@ -426,6 +516,12 @@ mod tests {
             ..pdf_engine::api::EngineStats::default()
         });
         assert!(!snap.at_baseline());
+        snap.engine = Some(pdf_engine::api::EngineStats {
+            prefetches_started: 2,
+            prefetches_completed: 1,
+            ..pdf_engine::api::EngineStats::default()
+        });
+        assert!(!snap.at_baseline());
         // And a fully balanced engine half keeps it: the pairing rules hold.
         let mut snap = drained_snapshot();
         snap.engine = Some(pdf_engine::api::EngineStats {
@@ -438,6 +534,9 @@ mod tests {
             renders_cancelled: 2,
             renders_queued: 9,
             renders_dropped: 2,
+            prefetches_started: 6,
+            prefetches_completed: 4,
+            prefetches_dropped: 2,
             ..pdf_engine::api::EngineStats::default()
         });
         assert!(snap.at_baseline(), "{snap:?}");

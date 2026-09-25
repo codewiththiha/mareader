@@ -36,7 +36,15 @@ pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpG
     let page = state.viewer.page;
     let mode = state.viewer.mode;
     Effect::new(move |_| {
-        if mode.get() != axis {
+        // The dominant signal this arm tracks lives in the STRIP's scope,
+        // which outlives the reader state by a teardown beat: a virtualizer
+        // write in that window re-runs THIS effect with every reader-state
+        // read below already disposed. `try_get` is the window's exit — a
+        // disposed mode is the owner saying "stop".
+        let Some(mode_now) = mode.try_get() else {
+            return;
+        };
+        if mode_now != axis {
             return;
         }
         // The continuous text stream owns its own page bookkeeping: it

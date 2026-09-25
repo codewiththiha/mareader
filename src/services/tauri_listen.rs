@@ -19,6 +19,15 @@ use web_sys::Event;
 /// the app root or a long-lived shell component): that owner is what keeps the
 /// parked closure alive.
 pub fn tauri_listen(event: &str, handler: impl FnMut(Event) + 'static) {
+    // A plain browser has no `window.__TAURI__`: the async listen extern
+    // would throw the moment its import shim ran, and a throw inside a
+    // Leptos task aborts the whole task drain — every later spawn_local
+    // queued behind it (the document open among them) would never run.
+    // Tauri events simply do not exist off the webview, so subscribing is
+    // a no-op there.
+    if !tauri_bridge::has_tauri() {
+        return;
+    }
     let cb = Closure::wrap(Box::new(handler) as Box<dyn FnMut(Event)>);
     let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
     let event = event.to_string();

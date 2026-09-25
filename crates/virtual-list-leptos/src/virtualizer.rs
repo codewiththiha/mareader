@@ -148,7 +148,9 @@ impl VirtualizerInner {
     /// retention for the items the change evicted. Every range write in the
     /// adapter funnels through here so retention cannot miss a transition.
     pub(crate) fn publish_range(self: &Rc<Self>, new: Option<Window>) {
-        let old = self.range.get_untracked();
+        let Some(old) = self.range.try_get_untracked() else {
+            return;
+        };
         if old == new {
             return;
         }
@@ -188,6 +190,12 @@ impl VirtualizerInner {
         let inner = self.clone();
         if let Ok(handle) = set_timeout_with_handle(
             move || {
+                // Flush-time fire: the owner's signals may already be
+                // purged (dispose runs later than the purge) — the retained
+                // write below belongs to a living reader only.
+                if inner.settled.try_get_untracked().is_none() {
+                    return;
+                }
                 inner.retention_timer.borrow_mut().take();
                 let now = now_ms();
                 let active = inner.core.borrow().range();
@@ -210,6 +218,12 @@ impl VirtualizerInner {
     }
 
     pub(crate) fn apply(self: &Rc<Self>, step: Step) {
+        // The writes below wake cross-subscribed effects; after the owner's
+        // purge every one of them belongs to a dead world. `settled` is the
+        // scope's liveness probe (same arena as range/scroll_top).
+        if self.settled.try_get_untracked().is_none() {
+            return;
+        }
         if step.layout_changed {
             self.layout_version.update(|version| *version += 1);
         }
@@ -227,6 +241,9 @@ impl VirtualizerInner {
     /// writes carry the adopted position; smooth writes return no step and
     /// surface later through `handle_scroll`.
     pub(crate) fn apply_local(self: &Rc<Self>, step: Step) {
+        if self.settled.try_get_untracked().is_none() {
+            return;
+        }
         if step.layout_changed {
             self.layout_version.update(|version| *version += 1);
         }
@@ -235,6 +252,12 @@ impl VirtualizerInner {
     }
 
     pub(crate) fn handle_scroll(self: &Rc<Self>, dom_top: f64) {
+        // Flush-time callers arrive with the owner's signals already gone
+        // (dispose runs later than the purge); a disposed `settled` ends
+        // the echo here before any write below.
+        if self.settled.try_get_untracked().is_none() {
+            return;
+        }
         if !self.scroll_feedback.get() {
             // A programmatic gesture owns the surface: its anchored writes are
             // authoritative and the echo is one frame stale. Adopting it here
@@ -264,6 +287,9 @@ impl VirtualizerInner {
     }
 
     pub(crate) fn handle_viewport(self: &Rc<Self>, vp: Viewport) {
+        if self.viewport.try_get_untracked().is_none() {
+            return;
+        }
         let current = self.viewport.get_untracked();
         let eps = self.options.measure_epsilon;
         if (vp.main - current.main).abs() <= eps && (vp.cross - current.cross).abs() <= eps {
@@ -281,6 +307,12 @@ impl VirtualizerInner {
         self.flush_armed.set(true);
         let inner = self.clone();
         raf(move || {
+            // Same dispose window as the scroll rAF: the frame can be the
+            // first thing that runs after the reader went away.
+            if inner.surface.element().is_none() || inner.settled.try_get_untracked().is_none() {
+                inner.flush_armed.set(false);
+                return;
+            }
             inner.flush_armed.set(false);
             let flush = inner.core.borrow_mut().flush();
             if let Some(flush) = flush {
@@ -297,6 +329,14 @@ impl VirtualizerInner {
         let delay = Duration::from_millis(self.options.scroll_end_delay_ms as u64);
         if let Ok(handle) = set_timeout_with_handle(
             move || {
+                // Disposed while this was pending: the settled write and the
+                // idle callbacks belong to a reader that is gone. The signal
+                // read doubles as the guard — a disposed `settled` is the
+                // flush-time answer to "is this owner still here".
+                if inner.surface.element().is_none() || inner.settled.try_get_untracked().is_none()
+                {
+                    return;
+                }
                 // The scroller has been quiet for the whole window: the strip
                 // is settled, and the first paints its gate held back run now.
                 write_if_changed(inner.settled, true);
@@ -371,8 +411,13 @@ fn write_if_changed<T>(signal: RwSignal<T>, value: T)
 where
     T: PartialEq + Copy + Send + Sync + 'static,
 {
-    if signal.get_untracked() != value {
-        signal.set(value);
+    // `try_get` keeps the flush-time callers honest: a disposed signal
+    // reads as None and the write into the dead world is skipped instead
+    // of panicking.
+    match signal.try_get_untracked() {
+        Some(current) if current != value => signal.set(value),
+        Some(_) => {}
+        None => {}
     }
 }
 
@@ -429,6 +474,12 @@ impl Virtualizer {
         {
             let inner_for_listener = inner.clone();
             let closure = Closure::<dyn FnMut(Event)>::new(move |_| {
+                // The listener unbinds in dispose(), which runs one teardown
+                // beat after the signals are gone; an event landing in that
+                // window must not write into them.
+                if inner_for_listener.settled.try_get_untracked().is_none() {
+                    return;
+                }
                 let Some(element) = inner_for_listener.surface.element() else {
                     return;
                 };
@@ -441,6 +492,17 @@ impl Virtualizer {
                     inner_for_listener.scroll_armed.set(true);
                     let inner2 = inner_for_listener.clone();
                     raf(move || {
+                        // The frame is not tracked by dispose() (the closure
+                        // is handed to the browser uncancellable): a close or
+                        // swap can dispose the virtualizer while this frame
+                        // was pending, and every write below would land on a
+                        // disposed signal. A detached surface is the
+                        // "disposed" bit.
+                        if inner2.surface.element().is_none()
+                            || inner2.settled.try_get_untracked().is_none()
+                        {
+                            return;
+                        }
                         inner2.scroll_armed.set(false);
                         if let Some(dom) = inner2.pending_scroll.take() {
                             inner2.handle_scroll(dom);
@@ -735,6 +797,11 @@ impl Virtualizer {
 
     /// Report a size directly.
     pub fn report_size(&self, index: usize, size: f64) {
+        // Belt-and-braces on top of the callers' guards: a report that
+        // outlived the owner queues a size into a dead flush cycle.
+        if self.inner.settled.try_get_untracked().is_none() {
+            return;
+        }
         self.inner.core.borrow_mut().queue_size(index, size);
         self.inner.arm_flush();
     }
@@ -836,5 +903,27 @@ impl Virtualizer {
     /// it must return to zero once the reader is gone.
     pub fn retained_items(&self) -> usize {
         self.inner.retained.borrow().len()
+    }
+
+    /// Live DOM/event bookkeeping counts (diagnostics): event listener
+    /// bindings, `ResizeObserver` bindings, and armed timers (the scroll-end
+    /// debounce and the zombie-retention expiry). The ownership document
+    /// lists these as resources the virtualizer holds; the baseline reads
+    /// them here so a dispose that left one behind is visible, not inferred.
+    pub fn listener_bindings(&self) -> usize {
+        self.inner.listeners.borrow().len()
+    }
+
+    /// How many `ResizeObserver` bindings the virtualizer currently holds
+    /// (diagnostics; 0 or 1 — the container observer).
+    pub fn observer_bindings(&self) -> usize {
+        usize::from(self.inner.container_ro.borrow().is_some())
+    }
+
+    /// How many timers are armed right now (diagnostics): the scroll-end
+    /// debounce plus the zombie-retention expiry.
+    pub fn armed_timers(&self) -> usize {
+        usize::from(self.inner.scroll_end_timer.borrow().is_some())
+            + usize::from(self.inner.retention_timer.borrow().is_some())
     }
 }

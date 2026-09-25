@@ -168,17 +168,26 @@ export async function renderPageInternal(
   // second one.
   session.rendersStarted += 1;
   lifecycleEvent("render:start");
-  const result = await renderPageNow(canvasId, scale, renderText);
-  if (result.ok) {
-    session.rendersCompleted += 1;
-    lifecycleEvent("render:complete");
-  } else if (result.error.name === "cancelled") {
-    session.rendersCancelled += 1;
-    lifecycleEvent("render:cancel");
-  } else {
+  try {
+    const result = await renderPageNow(canvasId, scale, renderText);
+    if (result.ok) {
+      session.rendersCompleted += 1;
+      lifecycleEvent("render:complete");
+    } else if (result.error.name === "cancelled") {
+      session.rendersCancelled += 1;
+      lifecycleEvent("render:cancel");
+    } else {
+      session.rendersFailed += 1;
+    }
+    return result;
+  } catch (e) {
+    // The counting wrapper OWNS the invariant: a started render gets
+    // exactly one terminal classification even when the body throws
+    // instead of returning a result — otherwise the pairing rule the
+    // baseline asserts breaks on an exception path, not a real leak.
     session.rendersFailed += 1;
+    throw e;
   }
-  return result;
 }
 
 async function renderPageNow(
@@ -238,6 +247,10 @@ async function renderPageNow(
   try {
     await task.promise;
   } catch (e) {
+    // The task settled: drop the handle (only if it is still THIS task —
+    // a superseding render already cancelled and replaced it) so the
+    // active-render count reads in-flight truth, not render history.
+    if (st.renderTask === task) st.renderTask = null;
     // The raster is dead: the orphaned text extraction was already made
     // infallible at creation time, so nothing can leak here.
     try { page.cleanup(); } catch (_) { /* ignore */ }
@@ -248,6 +261,7 @@ async function renderPageNow(
     }
     return failFrom(e);
   }
+  if (st.renderTask === task) st.renderTask = null;
   if (st.dead) {
     try { page.cleanup(); } catch (_) { /* ignore */ }
     if (target !== st.canvas) releaseCanvas(target);
@@ -383,6 +397,23 @@ async function renderPageNow(
 const PAGE_RENDER_LIMIT = 2;
 let pageActive = 0;
 const pageQueue: Array<() => void> = [];
+
+/** The page lane's gauges for the stats surface (queue depth, active
+ *  slots): the teardown baseline requires an EMPTY lane, not merely one
+ *  whose in-flight jobs have settled. */
+export function pageLaneGauge(): { pageQueue: number; pageActive: number } {
+  return { pageQueue: pageQueue.length, pageActive };
+}
+
+/** Drain the queue on teardown: every queued job's guard sees the dead
+ *  state, resolves its caller with a drop, and pumps the next — the same
+ *  cascade the thumbnail lane's epoch bump runs. Without this, queued
+ *  closures (and the promise resolvers they capture) sit in the array
+ *  until the FIFO happens to reach them, retaining canvases, scales and
+ *  resolvers across the dispose. */
+export function drainPageLane(): void {
+  pumpPageQueue();
+}
 
 function pumpPageQueue(): void {
   while (pageActive < PAGE_RENDER_LIMIT && pageQueue.length > 0) {

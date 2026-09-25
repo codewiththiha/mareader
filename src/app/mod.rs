@@ -24,13 +24,19 @@ pub fn App() -> impl IntoView {
     // The dev diagnostics surface (window.__mareaderDiagnostics): one probe
     // for the lifecycle/memory baseline. The "is a reader live" half reads
     // the document status, the one authoritative bit.
-    crate::diagnostics::install(move || {
-        state.reader.document.status.get_untracked() != pdf_engine::types::DocStatus::Idle
-    });
+    crate::diagnostics::install(
+        move || state.reader.document.status.get_untracked() != pdf_engine::types::DocStatus::Idle,
+        move || format!("{:?}", state.reader.document.status.get_untracked()),
+        move || state.reader.document.error.get_untracked(),
+    );
 
     // Every app-lifetime effect, in one ordered place: see `app::effects` for
     // the order and what depends on it.
     install_app_effects(state, appearance, typography);
+
+    // The browser-only test hook (`?open=`, `?blend=`): inert in the
+    // packaged app, so it can sit behind the effects it rides.
+    crate::services::web_params::init(state);
 
     view! {
         <Router>

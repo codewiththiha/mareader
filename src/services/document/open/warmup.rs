@@ -21,17 +21,36 @@ const DELAY_MS: u64 = 1500;
 /// the engine queue from bursting.
 ///
 /// The page count is read by the CALLER, not by the fire: this timer is
-/// deliberately unowned — the warm-up belongs to the document just opened, not
-/// to whichever component is alive in a moment — so the fire must not reach
-/// into the reader's signal graph (a document closed inside that window would
-/// leave it reading a disposed arena). `prefetch_thumb` is an engine call and
-/// answers for whatever is open when it lands, which is all a warm-up is.
-pub(super) fn prewarm_thumbs(num_pages: u32) {
+/// deliberately unowned on the Rust side — the warm-up belongs to the
+/// document just opened, not to whichever component is alive in a moment —
+/// and the ENGINE owns the safety instead: every prefetch queues in the
+/// bounded thumbnail lane under the document's lane epoch, a prefetch that
+/// lands after a close/swap is dropped by that epoch instead of filing into
+/// the next document's cache, and the whole lifecycle is visible in
+/// `stats()` (activePrefetches, started/completed/dropped) — so the dispose
+/// baseline sees this fire and proves it drained.
+pub(super) fn prewarm_thumbs(num_pages: u32, stamp: u64) {
     let pages = num_pages.min(WARM_PAGES);
     _ = set_timeout_with_handle(
         move || {
+            // The timer outlives the open that scheduled it, so the stamp is
+            // the only thing that can tell it whose warm-up it is: closed at
+            // +500ms and another book opened at +800ms, an unverified fire
+            // would prefetch THIS book's pages into the NEXT book's cache —
+            // the engine epoch alone cannot catch that, because the fire is
+            // a brand-new prefetch of the current epoch, not a stale one.
+            if !crate::services::document::session::owns(stamp) {
+                return;
+            }
             spawn_local(async move {
                 for p in 1..=pages {
+                    // Same check per page: a close mid-warm-up must not keep
+                    // feeding the lane under a document that no longer owns
+                    // it (each orphaned prefetch would at best be a drop the
+                    // counters have to account for).
+                    if !crate::services::document::session::owns(stamp) {
+                        return;
+                    }
                     engine::prefetch_thumb(p, THUMB_SCALE).await;
                 }
             });

@@ -127,6 +127,13 @@ class EngineSession {
   rendersFailed = 0;
   rendersQueued = 0;
   rendersDropped = 0;
+  // Thumbnail prefetch (the warmup/idle lane work): the pairing rule is
+  // prefetchesStarted == prefetchesCompleted + prefetchesDropped, and
+  // prefetchesActive must read zero after teardown.
+  prefetchesActive = 0;
+  prefetchesStarted = 0;
+  prefetchesCompleted = 0;
+  prefetchesDropped = 0;
 
   themeScrubActive = false;
 
@@ -145,6 +152,10 @@ class EngineSession {
 
   private idleTimer: ReturnType<typeof setTimeout> | 0 = 0;
   private rawTimers = new WeakMap<PageState, ReturnType<typeof setTimeout>>();
+  /** Live raw-retention timers (armed, unfired, uncleared). The WeakMap
+   *  above is uncountable by design; this mirror counter is what the stats
+   *  surface reads, and teardown must return it to zero. */
+  private rawTimerCount = 0;
 
   setLoadingTask(t: LoadingTask | null): void {
     this.loadingTask = t;
@@ -152,7 +163,68 @@ class EngineSession {
 
   setPdf(doc: PDFDocumentProxy | null): void {
     this.pdf = doc;
+    this.documentAlive = doc !== null;
     if (!doc) this.setDetectedPaper(null); // document gone → re-detect on next open
+  }
+
+  /// The document's liveness as a waited-on flag, not just a field: an
+  /// await inside the destroy window (a task born after the cancel sweep
+  /// but before the document nulls) sits on a worker that never answers,
+  /// so the awaits race this instead of trusting the promise. Set false by
+  /// `noteDocumentGone` the moment a destroy BEGINS — by completion would
+  /// be too late for those awaits — and true again by the next open.
+  private documentAlive = false;
+  private documentGoneWaiters: Array<() => void> = [];
+
+  noteDocumentGone(): void {
+    this.documentAlive = false;
+    const waiters = this.documentGoneWaiters.splice(0);
+    for (const wake of waiters) wake();
+  }
+
+  /// Subscribe to "this document is dying". The unsubscribe is the leak
+  /// guard: a prefetch that settles NORMALLY (the usual case) must remove
+  /// its waiter, or every successful prefetch leaves a resolver parked here
+  /// for the document's whole lifetime — exactly the async bookkeeping
+  /// growth a memory baseline exists to catch.
+  documentGoneSignal(): { promise: Promise<void>; unsubscribe: () => void } {
+    if (!this.documentAlive) {
+      return { promise: Promise.resolve(), unsubscribe: () => {} };
+    }
+    let resolve!: () => void;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+    const waiter = () => resolve();
+    this.documentGoneWaiters.push(waiter);
+    return {
+      promise,
+      unsubscribe: () => {
+        const at = this.documentGoneWaiters.indexOf(waiter);
+        if (at >= 0) this.documentGoneWaiters.splice(at, 1);
+      },
+    };
+  }
+
+  /// Cancel the idle sweeper: a close must not leave a document-scoped
+  /// timer that later fires `sweepPdf` over whatever document is open by
+  /// then. `noteActivity` re-arms it for the living document.
+  clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = 0;
+    }
+  }
+
+  /** Whether the document-scoped idle sweeper is armed (0/1 for stats).
+   *  Destroy cancels the timer, so the baseline requires 0 after a close. */
+  sweepTimerArmed(): number {
+    return this.idleTimer ? 1 : 0;
+  }
+
+  /** Live raw-retention timers, for the stats surface. */
+  rawRetentionTimers(): number {
+    return this.rawTimerCount;
   }
 
   setDetectedPaper(hex: string | null): void {
@@ -258,7 +330,13 @@ class EngineSession {
       }
     }
     const rawTimer = this.rawTimers.get(st);
-    if (rawTimer) clearTimeout(rawTimer);
+    if (rawTimer) {
+      clearTimeout(rawTimer);
+      this.rawTimerCount -= 1;
+    }
+    // Delete the (now dead) handle so a second release of the same state
+    // cannot decrement the mirror counter twice.
+    this.rawTimers.delete(st);
     if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
     st.rawCanvas = null;
     releaseCanvas(st.canvas);
@@ -303,10 +381,18 @@ class EngineSession {
    *  this), and teardown (releasePageSurfaces) clears it outright. */
   dropRawIfIdle(st: PageState): void {
     const prev = this.rawTimers.get(st);
-    if (prev) clearTimeout(prev);
+    if (prev) {
+      clearTimeout(prev);
+      this.rawTimerCount -= 1; // the replaced timer will never fire
+    }
+    this.rawTimerCount += 1;
     this.rawTimers.set(
       st,
       setTimeout(() => {
+        this.rawTimerCount -= 1; // this timer just fired
+        // Drop the dead handle so a later release of the same state cannot
+        // decrement the mirror counter a second time.
+        this.rawTimers.delete(st);
         if (st.dead || this.themeScrubActive || this.appearanceMenuOpen) return;
         if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
         st.rawCanvas = null;

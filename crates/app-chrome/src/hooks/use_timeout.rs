@@ -25,7 +25,11 @@ pub struct Debouncer {
 impl Debouncer {
     /// (Re)schedule the fire `duration` from now.
     pub fn trigger(&self) {
-        self.trigger.with_value(|f| f());
+        // Try, not plain: a trigger can land during a dispose flush (an
+        // effect re-running as the owner tears down re-arms the debounce),
+        // after the owner's cleanup already ran. Writing a disposed stored
+        // value panics the wasm; dropping the arm is the correct no-op.
+        self.trigger.try_with_value(|f| f());
     }
 
     pub fn cancel(&self) {
@@ -89,14 +93,20 @@ pub fn use_debounce_for(
             let f = Rc::clone(&on_fire);
             let h = set_timeout_with_handle(
                 move || {
-                    if alive.get_value() {
+                    // The timer can outlive its owner even though cleanup
+                    // clears the pending slot: a trigger during the dispose
+                    // flush re-arms AFTER that cleanup ran. A disposed
+                    // stored value must read as "not alive" (try_, never a
+                    // panic) — the fire is then a no-op, which is exactly
+                    // what a dead owner's debounce owes.
+                    if alive.try_get_value() == Some(true) {
                         f();
                     }
                 },
                 duration(),
             )
             .ok();
-            handle.set_value(h);
+            handle.try_set_value(h);
         }
     });
     let debouncer = Debouncer {
@@ -107,7 +117,7 @@ pub fn use_debounce_for(
 
     let cleanup = debouncer;
     on_cleanup(move || {
-        cleanup.alive.set_value(false);
+        cleanup.alive.try_set_value(false);
         cleanup.clear_handle();
     });
     debouncer
@@ -141,7 +151,9 @@ pub(crate) fn use_hover_visibility(
                 h.clear();
             }
             handle.try_set_value(None);
-            visible.set(true);
+            // A show can be invoked by a callback that outlived the owner
+            // (a pointerenter straddling a dispose); try, never panic.
+            let _ = visible.try_set(true);
         }
     });
 
@@ -160,13 +172,13 @@ pub(crate) fn use_hover_visibility(
             let h = set_timeout_with_handle(
                 move || {
                     if !postpone() {
-                        vis.set(false);
+                        let _ = vis.try_set(false);
                     }
                 },
                 delay,
             )
             .ok();
-            handle.set_value(h);
+            handle.try_set_value(h);
         }
     });
 

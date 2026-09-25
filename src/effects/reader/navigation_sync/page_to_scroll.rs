@@ -59,8 +59,14 @@ pub(super) fn install(
         // the loop. The gate holds the write instead of losing it, and the
         // tracked `zooming` read brings this effect back on the frame the
         // transaction closes, to replay it.
-        let page_now = page.get();
-        let zooming = zooming.get();
+        // Same dispose window as the dominant arm: a woken run with the
+        // reader state already purged must stand down before any read.
+        let Some(page_now) = page.try_get() else {
+            return;
+        };
+        let Some(zooming) = zooming.try_get() else {
+            return;
+        };
         let Some((target, reassert)) = gate.admit(page_now, zooming) else {
             // A stand-down consumed the run. The echo flag's scroll event is
             // never coming (both arms and the DOM echo stand down for the

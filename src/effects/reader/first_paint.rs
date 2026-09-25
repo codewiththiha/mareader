@@ -34,7 +34,14 @@ fn release_when_painted(state: AppState) {
             }
             let vs = r.viewer;
             // Let the landed frame paint before the cover lifts.
-            request_animation_frame(move || vs.first_paint.set(true));
+            request_animation_frame(move || {
+                // One frame later the reader can be closed: the flag lives
+                // with the reader state and a disposed write panics.
+                if vs.first_paint.try_get_untracked().is_none() {
+                    return;
+                }
+                vs.first_paint.set(true);
+            });
         }
     });
 }
@@ -63,7 +70,9 @@ fn release_if_never_painted(state: AppState) {
         }
         let vs = r.viewer;
         if let Ok(handle) = set_timeout_with_handle(
-            move || vs.first_paint.set(true),
+            move || {
+                vs.first_paint.set(true);
+            },
             std::time::Duration::from_millis(900),
         ) {
             let _ = net.try_set_value(Some(handle));

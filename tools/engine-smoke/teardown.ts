@@ -10,6 +10,10 @@ function assertDrained(stats: StatsPayload, label: string): void {
   if (stats.thumbs !== 0) problems.push(`thumbs=${stats.thumbs}`);
   if (stats.thumbTasks !== 0) problems.push(`thumbTasks=${stats.thumbTasks}`);
   if (stats.activeRenders !== 0) problems.push(`activeRenders=${stats.activeRenders}`);
+  if (stats.pageQueue !== 0) problems.push(`pageQueue=${stats.pageQueue}`);
+  if (stats.pageActive !== 0) problems.push(`pageActive=${stats.pageActive}`);
+  if (stats.thumbQueue !== 0) problems.push(`thumbQueue=${stats.thumbQueue}`);
+  if (stats.thumbActive !== 0) problems.push(`thumbActive=${stats.thumbActive}`);
   if (stats.hasDocument) problems.push("hasDocument");
   if (stats.hasLoadingTask) problems.push("hasLoadingTask");
   if (stats.sessionsOpened !== stats.sessionsDestroyed) {
@@ -21,6 +25,14 @@ function assertDrained(stats: StatsPayload, label: string): void {
   const resolved = stats.rendersCompleted + stats.rendersCancelled + stats.rendersFailed;
   if (stats.rendersStarted !== resolved) {
     problems.push(`renders ${stats.rendersStarted} started vs ${resolved} resolved`);
+  }
+  if (stats.activePrefetches !== 0) problems.push(`activePrefetches=${stats.activePrefetches}`);
+  if (stats.thumbGenerationSize !== 0) problems.push(`thumbGenerationSize=${stats.thumbGenerationSize}`);
+  if (stats.rawRetentionTimers !== 0) problems.push(`rawRetentionTimers=${stats.rawRetentionTimers}`);
+  if (stats.sweepTimerArmed !== 0) problems.push(`sweepTimerArmed=${stats.sweepTimerArmed}`);
+  const prefetched = stats.prefetchesCompleted + stats.prefetchesDropped;
+  if (stats.prefetchesStarted !== prefetched) {
+    problems.push(`prefetches ${stats.prefetchesStarted} started vs ${prefetched} resolved`);
   }
   if (problems.length > 0) {
     throw new Error(`${label}: engine not drained after destroy — ${problems.join(", ")}`);
@@ -60,9 +72,18 @@ export async function run(): Promise<void> {
   if (!rerendered.ok && rerendered.error.name !== "cancelled") {
     throw new Error(`reopen render failed: ${rerendered.error.message}`);
   }
+  // Prefetch is lane work now: a warmup/idle prefetch must be visible as
+  // active work while it runs and resolved (completed or dropped) after the
+  // document dies — an unaccounted side channel here is exactly the leak
+  // shape the baseline exists to catch.
+  await PDFReader.prefetchThumb(2, 0.25);
+  const midPrefetchStats = PDFReader.stats();
+  if (midPrefetchStats.prefetchesStarted < 1) {
+    throw new Error("prefetch was not counted as started work");
+  }
   PDFReader.unregisterPage("reopen-0-cv");
   await PDFReader.destroy();
-  assertDrained(PDFReader.stats(), "rapid reopen + close");
+  assertDrained(PDFReader.stats(), "rapid reopen + prefetch + close");
 
   // destroy() with nothing open (the open flow runs it as its first act):
   // a no-op dispose must not count a session that never existed.

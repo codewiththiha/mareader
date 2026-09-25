@@ -14,6 +14,7 @@ import type {
 import { offscreenFor, releaseCanvas } from "./canvas";
 import { errorInfo, fail, failFrom } from "./errors";
 import { resetPaperForDocument } from "./paper";
+import { beginThumbLane } from "./thumbnails";
 import { lifecycleEvent, noteWorkerCreated, session } from "./state";
 
 type PdfjsLib = {
@@ -118,12 +119,16 @@ export async function destroyTask(task: LoadingTask | null | undefined): Promise
   if (session.loadingTask === task) {
     session.setLoadingTask(null);
   }
-  session.workersTerminated += 1;
-  lifecycleEvent("pdf_worker:terminate");
   try {
     await task.destroy();
   } catch (_) {
     /* best-effort teardown */
+  } finally {
+    // Counted only AFTER the worker shutdown round trip resolves — the
+    // counter says "terminated" when the worker actually is, which is what
+    // the reader's dispose-complete baseline asserts on.
+    session.workersTerminated += 1;
+    lifecycleEvent("pdf_worker:terminate");
   }
 }
 
@@ -282,6 +287,9 @@ export async function open(path: string): Promise<OpenResult> {
     const doc = await openDocument(path);
     session.setPdf(doc);
     session.setNumPages(doc.numPages);
+    // The new document's thumbnail lane is open: generation bookkeeping
+    // records from here until this document's teardown clears it.
+    beginThumbLane();
     session.setCurrentPath(path);
     // One session per open document: counted only once the document proxy is
     // in place, so a failed or timed-out open never counts a session that
