@@ -397,13 +397,19 @@ function assertDrained(s, label, expectedEpoch = 2) {
  *  activity check, so a caught render/prefetch cannot settle in between.
  *  This is what makes "close during active work" a manufactured race
  *  instead of a hope. */
+// The race helper reads the artifact's OWN diagnostics probe (its window,
+// fresh snapshots) — the Shell-side global merges the runtime's last pushed
+// digest one digest beat behind, so a render it reports "active" may have
+// finished. The close click below then lands while the render the close is
+// meant to interrupt is actually in flight.
 async function raceCloseDuringRender() {
   return page.evaluate(() => {
-    const raw = window.__mareaderDiagnostics?.();
+    const frame = document.querySelector("#runtime-host iframe.runtime-frame");
+    const raw = frame?.contentWindow?.__mareaderDiagnostics?.() ?? window.__mareaderDiagnostics?.();
     if (!raw) return false;
     const s = JSON.parse(raw);
     if (s.engine.activeRenders > 0) {
-      const btn = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector('button[title*="Close this book"]');
+      const btn = frame?.contentDocument?.querySelector('button[title*="Close this book"]');
       if (btn) { btn.click(); return true; }
     }
     return false;
@@ -412,11 +418,12 @@ async function raceCloseDuringRender() {
 
 async function raceCloseDuringPrefetch() {
   return page.evaluate(() => {
-    const raw = window.__mareaderDiagnostics?.();
+    const frame = document.querySelector("#runtime-host iframe.runtime-frame");
+    const raw = frame?.contentWindow?.__mareaderDiagnostics?.() ?? window.__mareaderDiagnostics?.();
     if (!raw) return false;
     const s = JSON.parse(raw);
     if (s.engine.activePrefetches > 0) {
-      const btn = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector('button[title*="Close this book"]');
+      const btn = frame?.contentDocument?.querySelector('button[title*="Close this book"]');
       if (btn) { btn.click(); return true; }
     }
     return false;

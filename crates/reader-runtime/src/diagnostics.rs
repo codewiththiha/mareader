@@ -469,6 +469,30 @@ pub fn publish_digest(api: &dyn runtime_contract::boundary::ShellApi) {
     api.publish_digest(snapshot_json());
 }
 
+/// The artifact's own `__mareaderDiagnostics()` probe, installed in its own
+/// window (the frame's in the hosted case). It answers a FRESH snapshot —
+/// the Shell-side global merges this runtime's last pushed digest with the
+/// manager's facts, which is one digest beat stale; a probe that has to race
+/// in-flight engine work (the deep CI's close-during-render race) reads this
+/// window's probe so "active" means active at the moment of the read, not at
+/// the moment of the last beat. The probe carries the reader's own fields
+/// only — the session create/dispose accounting and the AND-ed baseline
+/// verdict belong to the Shell's global (§21).
+#[cfg(target_arch = "wasm32")]
+pub fn install() {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::prelude::Closure;
+
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let probe = Closure::wrap(Box::new(|| snapshot_json()) as Box<dyn Fn() -> String>);
+    let probe: wasm_bindgen::JsValue = probe.into_js_value();
+    let name = wasm_bindgen::JsValue::from_str("__mareaderDiagnostics");
+    let target: js_sys::Object = window.unchecked_into();
+    _ = js_sys::Reflect::set(&target, &name, &probe);
+}
+
 thread_local! {
     /// Session facts the wasm exports report: creations, dispose requests.
     /// The shell's own manager keeps the authoritative counts; these mirror

@@ -97,6 +97,9 @@ pub fn start_session(
     launch: LaunchDocument,
     api: crate::context::ApiHandle,
 ) -> u32 {
+    // The artifact's own diagnostics probe (this window, fresh snapshots) —
+    // free-standing from the Shell's global, which merges one beat behind.
+    diagnostics::install();
     let id = NEXT_ID.with(|n| {
         let id = n.get();
         n.set(id + 1);
