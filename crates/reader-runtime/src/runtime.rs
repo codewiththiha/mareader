@@ -260,10 +260,11 @@ impl Default for ReaderRuntime {
 impl ReaderRuntime {
     /// A new runtime, one per session. Its reported generation is seeded from
     /// the session's ORDINAL rather than from zero, so `begin_mount` publishes
-    /// ordinal `n` and no two sessions of one artifact can claim the same
-    /// identity (§21). A disposal is therefore never mistaken for a first
-    /// mount, and the browser suite can assert "a NEW runtime, not the revived
-    /// one" from the number alone.
+    /// ordinal `n` and no two sessions of one frame can claim the same
+    /// in-frame identity (§21). A disposal is therefore never mistaken for a
+    /// first mount. This stays the runtime's own lifetime stamp — the shell's
+    /// reader-session count, not this number, is the identity the browser
+    /// suite asserts across frames.
     pub fn new() -> Self {
         let ordinal = crate::diagnostics::next_session_ordinal();
         let core = RuntimeCore {

@@ -42,6 +42,9 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   remains the single teardown path.
 - Browser peaks: page hosts ≤ render window + zombie cap, active renders ≤
   page-lane slots, counters drain to zero at baseline.
+- Disposal epoch is frame-instance-local (1 at open, 2 at close); the
+  reported runtime generation is Shell-owned — the reader-session count,
+  advancing once per reader session across frames.
 
 ## CI is the only build
 

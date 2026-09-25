@@ -63,6 +63,14 @@ fn install_web(state: ShellState) {
                 merge_runtime_digest(obj, d);
             }
         }
+        // After the merge: the reported runtime generation is shell-owned
+        // identity (§21), so the shell's reader-session count wins over the
+        // digest's per-frame copy.
+        let sessions = &state.manager.reader_sessions_created;
+        report_runtime_generation(
+            &mut value,
+            sessions.load(std::sync::atomic::Ordering::Relaxed),
+        );
         // The phase's gate, decided by the SHELL from its own manager facts:
         // no active reader AND the last reader digest said drained (or there
         // never was one — nothing reader-owned to drain).
@@ -106,9 +114,29 @@ fn merge_runtime_digest(
     }
 }
 
+/// Overwrite the merged runtime section's generation with the shell's
+/// reader-session count — the identity the application observes across
+/// frames. The digest's copy is seeded per frame from a wasm-static ordinal
+/// that restarts with every iframe, so it only proves "not the first
+/// runtime inside this frame"; the count below is bumped once per reader
+/// boot, never for the library, and never resets while the page lives. The
+/// runtime keeps its ordinal as its own internal lifetime stamp (§21).
+#[cfg(any(test, target_arch = "wasm32"))]
+fn report_runtime_generation(value: &mut serde_json::Value, reader_sessions_created: u64) {
+    if let Some(runtime) = value
+        .get_mut("runtime")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        runtime.insert(
+            "generation".to_string(),
+            serde_json::json!(reader_sessions_created),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::merge_runtime_digest;
+    use super::{merge_runtime_digest, report_runtime_generation};
 
     /// The regression behind the rapid-transition CI failure: a reader
     /// digest reporting its frame-local `readerDisposesCompleted = 1`
@@ -150,5 +178,31 @@ mod tests {
         assert_eq!(shell["virtualizerLive"], 0);
         // And the digest still reports its own local counter as-is.
         assert_eq!(digest["readerDisposesCompleted"], 1);
+    }
+
+    /// The split-run identity rule: a merged digest's per-frame generation
+    /// (every iframe's wasm world starts its counter over) is overwritten by
+    /// the shell's reader-session count, and a payload without a runtime
+    /// section is left untouched.
+    #[test]
+    fn reported_generation_is_the_shell_session_count() {
+        let mut value: serde_json::Value = serde_json::from_str(
+            r#"{
+                "activeRuntime": "reader",
+                "runtime": {"generation": 1, "state": "ready"}
+            }"#,
+        )
+        .expect("value fixture parses");
+
+        report_runtime_generation(&mut value, 7);
+
+        assert_eq!(value["runtime"]["generation"], 7);
+        assert_eq!(value["runtime"]["state"], "ready");
+        assert_eq!(value["activeRuntime"], "reader");
+
+        let mut no_runtime = serde_json::json!({"activeRuntime": "library"});
+        let expected = serde_json::json!({"activeRuntime": "library"});
+        report_runtime_generation(&mut no_runtime, 7);
+        assert_eq!(no_runtime, expected);
     }
 }

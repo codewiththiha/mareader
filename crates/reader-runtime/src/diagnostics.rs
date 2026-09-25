@@ -110,13 +110,16 @@ pub(crate) fn note_heap_sample(bytes: u64) {
 }
 
 /// The ordinal for the reader session about to start: one per session this
-/// artifact hosts, monotonic for the artifact's life.
+/// iframe instance hosts, monotonic for the frame's life — a replacement
+/// frame starts the count over.
 ///
-/// This is the runtime's IDENTITY (§21), not a per-instance counter. Two
-/// sessions inside one artifact — the Shell loads the reader once and mounts
-/// it per open — must never both answer "generation 1": a fresh runtime is a
-/// NEW number, so a revived one would be visible as a repeated number rather
-/// than as a plausible first mount. Distinct from
+/// This is the runtime's in-frame identity (§21), never the application's
+/// cross-frame one: the shell's reader-session count identifies which
+/// runtime the page is observing. Two sessions inside one frame — the
+/// frame mounts the runtime per open — must never both answer
+/// "generation 1": a fresh runtime is a NEW number, so a revived one would
+/// be visible as a repeated number rather than as a plausible first mount.
+/// Distinct from
 /// [`note_reader_runtime_create`], which counts document opens.
 pub fn next_session_ordinal() -> u64 {
     READER_SESSIONS_STARTED.fetch_add(1, Ordering::Relaxed) + 1

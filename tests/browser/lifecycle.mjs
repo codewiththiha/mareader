@@ -1411,14 +1411,14 @@ currentStage = "stage11-same-page-x10";
 // Stages 8-10 proved the RELOAD matrix: every cycle began with page.goto,
 // which discards the whole JS/wasm world. The resources that live at
 // APPLICATION scope — the wasm module and its heap ratchet, the engine's
-// raster recycler, the library's caches, the disposal epoch — never felt a
-// cycle. This workload rides the real application path instead: click the
-// book open from the library (the row the reader recorded on open), work
-// the pages, click the toolbar close, and repeat in the SAME live page.
-// Every close must still return every reader-owned resource to baseline,
-// and the epoch must advance exactly one claim per open and one per close
-// (2k-1 after open k, 2k after close k) — "every cycle starts from epoch 1"
-// is a reload artifact this stage exists to stop assuming.
+// raster recycler, the library's caches — never felt a cycle. This workload
+// rides the real application path instead: click the book open from the
+// library (the row the reader recorded on open), work the pages, click the
+// toolbar close, and repeat in the SAME live page.
+// Every close must still return every reader-owned resource to baseline.
+// Each open boots a fresh reader frame, so the epoch restarts with its wasm
+// world — 1 at the open claim, 2 at the close claim — while the cross-cycle
+// pairing the epoch used to prove lives in the shell's session counters.
 async function openFromLibrary(cycle) {
   const card = page.frameLocator("iframe.runtime-frame").locator('.book-title[title*="Programming Pearls"]').first();
   try {
