@@ -48,10 +48,14 @@ const PROBED = [
 /** What the merged artifacts are, and where the other two Trunk builds leave
  *  them. Re-copied after shell rebuilds: Trunk owns `dist/` while serving. */
 const MERGED = [
+  // The page first: Trunk names the built page after the target it built
+  // (reader.html) or normalizes it to index.html, so both are candidates.
   ["dist-reader/reader.html", "reader.html"],
+  ["dist-reader/index.html", "reader.html"],
   ["dist-reader/reader.js", "reader.js"],
   ["dist-reader/reader_bg.wasm", "reader_bg.wasm"],
   ["dist-library/library.html", "library.html"],
+  ["dist-library/index.html", "library.html"],
   ["dist-library/library.js", "library.js"],
   ["dist-library/library_bg.wasm", "library_bg.wasm"],
 ];

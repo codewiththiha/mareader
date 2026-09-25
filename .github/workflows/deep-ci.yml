@@ -141,6 +141,10 @@ jobs:
 
       - uses: ./.github/actions/setup-rust
         with:
+          # The canonical frontend build compiles Rust TO WASM, so this job
+          # needs the same target the browser job installs (without it trunk
+          # dies in `can't find crate for `core``).
+          targets: wasm32-unknown-unknown
           cache-key: tauri-smoke-cache
 
       - uses: actions/setup-node@v7
@@ -160,6 +164,14 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      # The canonical build runs Trunk (plus its pre-build hooks), so the
+      # builder the browser job pins is pinned identically here.
+      - name: Install trunk
+        run: |
+          curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+          sudo mv trunk /usr/local/bin/trunk
+          trunk --version
 
       # The SAME canonical build Tauri runs (package.json's build:dist ->
       # tools/build-dist.sh), so this job cannot pass on a frontend the

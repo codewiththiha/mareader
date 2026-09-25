@@ -3,9 +3,13 @@
 //!
 //! Two invariants live here (§5, §6, §11):
 //!
-//! * the host is NEVER empty — it holds a loading state, an active runtime, or
-//!   an error state, and the manager moves from one to the next without an
-//!   await in between (an empty host is a blank window);
+//! * the host is NEVER uncovered — it holds a loading state, an active runtime,
+//!   or an error state at every moment the window is on screen (an uncovered
+//!   host is a blank window). "The runtime became active" is NOT the same
+//!   moment as "the runtime painted": `mount_to` clears the container it is
+//!   handed, and a runtime whose first render is a suspense anchor paints no
+//!   elements for a frame or more, so the shell keeps its loading card up
+//!   until the runtime's own DOM is in the host (see [`watch_paint`]);
 //! * a failure is VISIBLE and NAMED — runtime, stage (module load / init /
 //!   start) and the underlying failure — while the console keeps the detail.
 //!
@@ -19,9 +23,12 @@
 //! LibraryPage does not come back: the user gets this error surface, which
 //! names what failed and where.
 
+use std::cell::RefCell;
+
 use serde_json::json;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::closure::Closure;
 
 /// Which runtime a boot state or failure is about.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -133,7 +140,10 @@ impl BootError {
 
     /// The headline for the window.
     pub fn headline(&self) -> String {
-        format!("MAReader could not start the {} runtime", self.runtime.label())
+        format!(
+            "MAReader could not start the {} runtime",
+            self.runtime.label()
+        )
     }
 
     /// The sub-line: which stage failed, doing what.
@@ -186,11 +196,6 @@ impl BootPhase {
         }
     }
 
-    /// Is the shell still using the page's own placeholder? Only here.
-    pub fn is_page_placeholder(&self) -> bool {
-        matches!(self, BootPhase::Booting)
-    }
-
     pub fn error(&self) -> Option<&BootError> {
         match self {
             BootPhase::Failed(error) => Some(error),
@@ -208,6 +213,23 @@ impl BootPhase {
 const BOOT_ATTR: &str = "data-mareader-boot";
 /// Set on the host itself once a runtime is mounted (the active state).
 const ACTIVE_ATTR: &str = "data-mareader-active";
+/// Which boot node is the shell's loading state, as opposed to the error state.
+const LOADING: &str = "load";
+/// How long a runtime gets to stop churning DOM before the coverage watch
+/// stands down. A boot's paint order is not one event (a suspense fallback, the
+/// document's own arrival, a view swap), so the host is watched across the
+/// whole handover rather than at a single moment.
+const WATCH_WINDOW_MS: f64 = 30_000.0;
+
+thread_local! {
+    /// The running coverage watch and the generation that owns it: a watch
+    /// started for a runtime that has since been replaced must not touch the
+    /// host its successor is painting into.
+    static WATCH_OBSERVER: RefCell<Option<web_sys::MutationObserver>> =
+        const { RefCell::new(None) };
+    static WATCH_GENERATION: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    static NEXT_WATCH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
 
 fn document() -> Option<web_sys::Document> {
     web_sys::window().and_then(|w| w.document())
@@ -226,20 +248,91 @@ fn text_node(parent: &web_sys::Element, tag: &str, class: &str, text: &str) {
     let _ = parent.append_child(&node);
 }
 
-/// The shell's loading state, painted into the host before any await.
-pub fn paint_loading(host: &web_sys::Element, runtime: RuntimeName) {
-    clear(host);
-    let Some(card) = element("div") else {
-        return;
-    };
+/// The loading card itself. Separate from painting it because the coverage
+/// watch re-appends it after a runtime's `mount_to` cleared the container.
+fn loading_card(runtime: RuntimeName) -> Option<web_sys::Element> {
+    let card = element("div")?;
     let _ = card.set_attribute("class", "runtime-boot");
-    let _ = card.set_attribute(BOOT_ATTR, "load");
+    let _ = card.set_attribute(BOOT_ATTR, LOADING);
     let _ = card.set_attribute("role", "status");
     let _ = card.set_attribute("aria-live", "polite");
     text_node(&card, "p", "runtime-boot__title", "Loading MAReader…");
     let hint = format!("Starting the {} runtime", runtime.label());
     text_node(&card, "p", "runtime-boot__hint", &hint);
-    let _ = host.append_child(&card);
+    Some(card)
+}
+
+/// The shell's loading state, painted into the host before any await. A start
+/// also retires the previous runtime's active marker: nothing is active while
+/// the replacement is loading.
+pub fn paint_loading(host: &web_sys::Element, runtime: RuntimeName) {
+    let _ = host.remove_attribute(ACTIVE_ATTR);
+    clear_loading(host);
+    cover(host, runtime);
+}
+
+/// Put the loading state back if the host has none. Idempotent on purpose: it
+/// is what every coverage tick calls, and it must never stack a second card or
+/// touch anything a runtime painted.
+pub fn cover(host: &web_sys::Element, runtime: RuntimeName) {
+    let Ok(nodes) = host.query_selector_all(&format!("[{BOOT_ATTR}]")) else {
+        return;
+    };
+    if nodes.length() > 0 {
+        return;
+    }
+    if let Some(card) = loading_card(runtime) {
+        let _ = host.append_child(&card);
+    }
+}
+
+/// Has a runtime (or the error state) painted into the host? The shell's own
+/// loading card is the one thing that does not count: it is what this question
+/// is asked in order to take away.
+pub fn painted(host: &web_sys::Element) -> bool {
+    let mut child = host.first_element_child();
+    while let Some(node) = child {
+        let is_loading = node.get_attribute(BOOT_ATTR).as_deref() == Some(LOADING);
+        if !is_loading {
+            return true;
+        }
+        child = node.next_element_sibling();
+    }
+    false
+}
+
+/// Remove the shell's LOADING state only. `clear` takes every boot node, which
+/// after a failure includes the error card — the coverage watch must never do
+/// that.
+pub fn clear_loading(host: &web_sys::Element) {
+    let Ok(nodes) = host.query_selector_all(&format!("[{BOOT_ATTR}=\"{LOADING}\"]")) else {
+        return;
+    };
+    for index in 0..nodes.length() {
+        let Some(node) = nodes.item(index) else {
+            continue;
+        };
+        if let Some(parent) = node.parent_node() {
+            let _ = parent.remove_child(&node);
+        }
+    }
+}
+
+/// Remove the page's own placeholder (`#shell-boot`, index.html). The shell
+/// does this — not the page — because the shell is what knows a runtime has
+/// painted: uncover too early and the window is blank, too late and the
+/// placeholder covers the app (public/shellBoot.js keeps the 20 s watchdog for
+/// the case where the shell never runs at all).
+pub fn uncover_page() {
+    let Some(document) = document() else {
+        return;
+    };
+    let Some(boot) = document.get_element_by_id("shell-boot") else {
+        return;
+    };
+    if let Some(parent) = boot.parent_node() {
+        let _ = parent.remove_child(&boot);
+    }
 }
 
 /// The error state (§6). The button reloads the window: a failed dynamic
@@ -280,11 +373,89 @@ fn retry_button(on_click: &js_sys::Function, label: &str) -> Option<web_sys::Ele
     Some(button.unchecked_into())
 }
 
-/// Mark the host as holding a live runtime. Called after the runtime's start
-/// export returned — the runtime has mounted its own DOM by then.
+/// Mark the host as holding a live runtime, then keep the window covered until
+/// that runtime has painted. Called after the runtime's start export returned:
+/// "active" is the manager's word for "the session exists", and a session can
+/// exist for a frame or more before its first element is in the DOM — the
+/// window is not allowed to be uncovered in between (§11).
 pub fn mark_active(host: &web_sys::Element, runtime: RuntimeName) {
-    clear(host);
     let _ = host.set_attribute(ACTIVE_ATTR, runtime.artifact());
+    if painted(host) {
+        // Painted inside its own start call (the library does): nothing to
+        // cover, and the placeholder can go in this same step.
+        clear_loading(host);
+        uncover_page();
+    } else {
+        cover(host, runtime);
+    }
+    // The watch goes on either way, and that is the point: what is in the host
+    // at this instant is the runtime's FIRST state, not its final one. A view
+    // swap that takes the old DOM out before the new is in is exactly the
+    // window this exists for — checking once and standing down is how the host
+    // went bare with the loading state already gone.
+    watch_paint(host.clone(), runtime);
+}
+
+/// The coverage watch: keep the window covered while a runtime's DOM is not
+/// there, and take the shell's card (and the page's placeholder) away the
+/// moment it is.
+///
+/// A MutationObserver, not a timer, and that choice is the whole point: its
+/// callback runs in the microtask checkpoint of the task that mutated the host,
+/// so re-covering cannot be observed from another task — a timer would leave a
+/// real hole of up to a tick, which is a blank window at 60 Hz.
+fn watch_paint(host: web_sys::Element, runtime: RuntimeName) {
+    let generation = NEXT_WATCH.with(|n| {
+        let next = n.get().wrapping_add(1);
+        n.set(next);
+        next
+    });
+    // The previous watch belongs to a runtime that is already gone.
+    stop_watch();
+    let observed = host.clone();
+    let since = js_sys::Date::now();
+    let callback = Closure::<dyn FnMut()>::new(move || {
+        if WATCH_GENERATION.with(|current| current.get()) != generation {
+            stop_watch();
+            return;
+        }
+        if js_sys::Date::now() - since > WATCH_WINDOW_MS {
+            stop_watch();
+            return;
+        }
+        if painted(&observed) {
+            clear_loading(&observed);
+            uncover_page();
+            return;
+        }
+        cover(&observed, runtime);
+    });
+    let Ok(observer) = web_sys::MutationObserver::new(callback.as_ref().unchecked_ref()) else {
+        // Without an observer the card painted by the caller still covers the
+        // window; only the handover would be missed, so this is not fatal.
+        return;
+    };
+    let init = web_sys::MutationObserverInit::new();
+    init.set_child_list(true);
+    if observer.observe_with_options(&host, &init).is_err() {
+        return;
+    }
+    // The observer holds the JS function, and the function holds the closure:
+    // `into_js_value` gives that ownership to JS, and both are collected once
+    // [`stop_watch`] disconnects and drops the observer.
+    drop(callback.into_js_value());
+    WATCH_OBSERVER.with(|slot| *slot.borrow_mut() = Some(observer));
+    WATCH_GENERATION.with(|slot| slot.set(generation));
+}
+
+/// Stop the coverage watch, if one is running.
+pub fn stop_watch() {
+    WATCH_OBSERVER.with(|slot| {
+        if let Some(observer) = slot.borrow_mut().take() {
+            observer.disconnect();
+        }
+    });
+    WATCH_GENERATION.with(|slot| slot.set(0));
 }
 
 /// Remove the shell's boot markup. Scoped to `[data-mareader-boot]`: a mounted

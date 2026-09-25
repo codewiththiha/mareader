@@ -78,7 +78,10 @@ placeholder). Tauri's `beforeBuildCommand` calls that script through
 fails the build if either side starts building the frontend by another path.
 
 `trunk build` alone is NOT the app's build: it emits the shell page, leaving
-the shell's dynamic imports to 404 — which is precisely how the packaged app
+the shell's dynamic imports to 404. The two runtime builds each emit their own
+page, whose name the merge takes as it finds it (a custom `dist` dir makes
+Trunk normalize it to `index.html`); a build that produced no page at all fails
+there instead of shipping a `dist/` without one. — which is precisely how the packaged app
 shipped a native window with an empty runtime host and nothing in the
 terminal.
 
@@ -91,16 +94,27 @@ The runtime host is never empty (`src/app/boot.rs`):
 
 | state | host holds | how it ends |
 | --- | --- | --- |
-| loading | the shell's own loading card | the runtime's mount replaces it |
+| loading | the shell's own loading card | the runtime's own DOM arrives |
 | active | the live runtime's DOM (`data-mareader-active`) | a transition starts |
 | error | runtime + stage + cause, with a reload button | a reload boots again |
 
+"The runtime is active" and "the runtime has painted" are different moments, and
+the host is covered across the gap between them. A runtime mounts with
+`mount_to`, which CLEARS the container, and its first render can be a suspense
+anchor with no elements at all — so the shell re-covers the host whenever it
+has nothing painted in it, and takes the card away when it does. That check is
+a `MutationObserver` (`src/app/boot.rs`), not a timer: its callback runs in the
+mutated task's own microtask checkpoint, so no other task can observe the host
+bare, which a polling interval cannot promise.
+
 Before the shell itself exists the page shows the placeholder that
-`index.html` ships (`#shell-boot`, "Loading MAReader…"), removed by the shell
-as soon as the host paints; `public/shellBoot.js` covers the case where the
-shell wasm never starts at all. A failed boot paints the error state and names
-the artifact and stage in the console — there is no fallback to a monolithic
-page, because that page no longer exists.
+`index.html` ships (`#shell-boot`, "Loading MAReader…"). The SHELL removes it,
+in the same step that it uncovers the host — one owner for that moment, because
+two of them is exactly how the window ended up uncovered between them.
+`public/shellBoot.js` covers the case where the shell wasm never starts at all.
+A failed boot paints the error state and names the artifact and stage in the
+console — there is no fallback to a monolithic page, because that page no
+longer exists.
 
 ## Mount targets
 

@@ -500,6 +500,7 @@ async function startHostSampler() {
       return {
         t: Math.round(performance.now()),
         host: host !== null,
+        nodes: host ? host.childNodes.length : 0,
         empty: host !== null && host.children.length === 0,
         bootNodes: host ? host.querySelectorAll("[data-mareader-boot]").length : 0,
         active: host ? host.getAttribute("data-mareader-active") : null,
@@ -526,7 +527,10 @@ async function stopHostSampler() {
   return page.evaluate(() => {
     if (window.__hostSampler) window.clearInterval(window.__hostSampler);
     const samples = window.__hostSamples ?? [];
+    window.__hostSampleContext = [];
     const violations = { empty: [], twoLive: [], mixed: [], unmarked: [] };
+    // The samples around a violation are the diagnostic that matters — a bare
+    // host is only meaningful next to what came before and after it.
     for (const s of samples) {
       // Before the shell's view mounts there is no host to be empty: the
       // page's own placeholder is the whole window, and §5 owns that state.
@@ -547,14 +551,33 @@ async function stopHostSampler() {
         violations.unmarked.push(s);
       }
     }
-    return { samples, violations };
+    for (const kind of ["empty", "twoLive", "mixed", "unmarked"]) {
+      if (violations[kind].length === 0) continue;
+      const first = violations[kind][0];
+      const at = samples.indexOf(first);
+      window.__hostSampleContext = samples.slice(Math.max(0, at - 6), at + 7);
+      break;
+    }
+    return { samples, violations, context: window.__hostSampleContext ?? [] };
   });
 }
 
-function firstViolation(violations) {
+function firstViolation(violations, context = []) {
   for (const kind of ["empty", "twoLive", "mixed", "unmarked"]) {
     if (violations[kind].length > 0) {
-      return `${kind}: ${JSON.stringify(violations[kind][0])} (${violations[kind].length} sample(s))`;
+      const first = violations[kind][0];
+      const around = context.map(
+        (s) =>
+          `t=${s.t} nodes=${s.nodes} boot=${s.bootNodes} active=${s.active} lib=${s.library} reader=${s.reader} placeholder=${s.placeholder}`,
+      );
+      // NOT named `context`: the module has one of those (the Playwright
+      // browser context) and a same-scope binding would shadow the parameter.
+      const aroundText = around.length > 0 ? "\n  around: " + around.join("\n          ") : "";
+      const counts = Object.entries(violations)
+        .filter(([, list]) => list.length > 0)
+        .map(([name, list]) => `${name}=${list.length}`)
+        .join(" ");
+      return `${kind}: ${JSON.stringify(first)} (${counts})${aroundText}`;
     }
   }
   return null;
@@ -577,6 +600,24 @@ async function libraryDomState() {
   });
 }
 
+/** Poll the DOM until it reaches a settled state. The manager reports a
+ *  runtime active the moment its start export returned; the runtime's own
+ *  content (the library grid, the reader's page host) renders a frame later,
+ *  so the assertion waits for the DOM rather than assuming one tick. The
+ *  sampler's invariants cover what must NOT happen in between. */
+async function waitForDom(label, predicate, timeoutMs = 30_000) {
+  const started = Date.now();
+  let state = await libraryDomState();
+  for (;;) {
+    if (predicate(state)) return state;
+    if (Date.now() - started > timeoutMs) {
+      throw new Error(`[${label}] the DOM never reached the settled state: ${JSON.stringify(state)}`);
+    }
+    await page.waitForTimeout(100);
+    state = await libraryDomState();
+  }
+}
+
 async function clickBook(title, label, timeout = 45_000) {
   try {
     await page.locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
@@ -597,13 +638,40 @@ async function clickBook(title, label, timeout = 45_000) {
     x.engine.activeRenders === 0, timeout);
 }
 
+// ---- 0: the library is seeded the way a user seeds it ---------------------
+// A fresh browser context has an EMPTY library: there is no grid to assert and
+// no book to open, so the stage that proves the boot contract has to run on a
+// library that holds something. Opening a document from the URL is that path
+// (the Shell disposes the library and loads the reader for `?open=`), and it
+// doubles as the first assertion that the PRODUCTION boot path renders a
+// runtime into the host rather than only returning HTTP 200s.
+currentStage = "stage0-seed";
+await page.goto(`${BASE}/?blend=1&open=${encodeURIComponent(PEARLS)}`, {
+  waitUntil: "domcontentloaded",
+});
+const seeded = await waitFor("the reader runtime to boot from ?open=", (x) =>
+  x.bootState === "reader" && x.readerRuntimeLive === true && x.engine?.hasDocument === true, 60_000);
+const seededDom = await waitForDom("?open=: the reader rendered", (s) =>
+  s.active === "reader" && s.reader >= 1 && s.library === 0 && !s.placeholder);
+assertArtifactLoaded("/reader.js", "?open= seed");
+assertArtifactLoaded("/reader_bg.wasm", "?open= seed");
+summary.bootContract.seedOpen = {
+  bootState: seeded.bootState,
+  readerSessionsCreated: seeded.readerSessionsCreated,
+  libraryDisposes: seeded.libraryDisposesCompleted ?? 0,
+  readerDom: seededDom.reader,
+};
+
 // ---- 0a: `/` boots the Library runtime ------------------------------------
 await armShellBootWatcher();
 await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
 await startHostSampler();
 const libraryBoot = await waitFor("the library runtime to boot at /", (x) =>
   x.bootState === "library" && x.activeRuntime === "library", 60_000);
-const libraryDom = await libraryDomState();
+// The settled library: its grid rendered, its loading state gone, and the
+// page's own placeholder (which covered the window until then) removed.
+const libraryDom = await waitForDom("/: the library rendered", (s) =>
+  s.library >= 1 && s.reader === 0 && !s.placeholder);
 if (libraryDom.path !== "/") {
   throw new Error(`[/] the boot left the route at ${libraryDom.path}`);
 }
@@ -649,10 +717,8 @@ summary.bootContract.libraryBoot = {
 currentStage = "stage0-transition";
 const beforeHandoff = await snap();
 const readerActive = await clickBook("Programming Pearls", "library → reader");
-const readerDom = await libraryDomState();
-if (readerDom.active !== "reader") {
-  throw new Error(`[library → reader] the host still marks ${readerDom.active} active`);
-}
+const readerDom = await waitForDom("library → reader: the reader mounted", (s) =>
+  s.active === "reader" && s.reader >= 1 && s.library === 0);
 if (readerDom.reader !== 1 || readerDom.library !== 0) {
   throw new Error(`[library → reader] host holds reader ${readerDom.reader} / library ${readerDom.library}`);
 }
@@ -669,19 +735,71 @@ const beforeHandback = await snap();
 await clickCloseNow();
 const libraryAgain = await waitFor("the library runtime after the handback", (x) =>
   x.bootState === "library" && x.activeRuntime === "library", 45_000);
-const handbackDom = await libraryDomState();
-if (handbackDom.library !== 1 || handbackDom.reader !== 0 || handbackDom.active !== "library") {
-  throw new Error(`[reader → library] host holds library ${handbackDom.library} / reader ${handbackDom.reader} (active ${handbackDom.active})`);
+const handbackDom = await waitForDom("reader → library: the library came back", (s) =>
+  s.active === "library" && s.library >= 1 && s.reader === 0);
+if (handbackDom.library !== 1 || handbackDom.reader !== 0) {
+  throw new Error(`[reader → library] host holds library ${handbackDom.library} / reader ${handbackDom.reader}`);
 }
 if (libraryAgain.readerDisposesCompleted < beforeHandback.readerDisposesCompleted + 1) {
   throw new Error("[reader → library] the reader's disposal never completed");
 }
 
+// ---- 0c: the same handoff, back to back (§10) -----------------------------
+// One pair of transitions proves the ORDER; repetition is what finds the hole
+// that only racing starts open — a navigation that lands while a disposal is
+// still settling, a queued start draining into the same host. The sampler from
+// 0a is still running, so its invariants cover every instant of all of these
+// too, not just the first pair.
+currentStage = "stage0-rapid-transitions";
+const cycles = [];
+for (let cycle = 0; cycle < 4; cycle += 1) {
+  const before = await snap();
+  const intoReader = await clickBook("Programming Pearls", `rapid ${cycle}: library → reader`);
+  const readerDomNow = await waitForDom(`rapid ${cycle}: the reader mounted`, (s) =>
+    s.active === "reader" && s.reader >= 1 && s.library === 0);
+  if (readerDomNow.reader !== 1 || readerDomNow.library !== 0) {
+    throw new Error(`[rapid ${cycle}] host holds reader ${readerDomNow.reader} / library ${readerDomNow.library}`);
+  }
+  await clickCloseNow();
+  const libraryDomNow = await waitForDom(`rapid ${cycle}: the library came back`, (s) =>
+    s.active === "library" && s.library >= 1 && s.reader === 0);
+  if (libraryDomNow.library !== 1 || libraryDomNow.reader !== 0) {
+    throw new Error(`[rapid ${cycle}] host holds library ${libraryDomNow.library} / reader ${libraryDomNow.reader}`);
+  }
+  const after = await snap();
+  if (after.libraryDisposesCompleted < before.libraryDisposesCompleted + 1) {
+    throw new Error(`[rapid ${cycle}] the library was not disposed before the reader started`);
+  }
+  if (intoReader.librarySessionsCreated !== before.librarySessionsCreated) {
+    throw new Error(`[rapid ${cycle}] a library session was created by a reader start`);
+  }
+  // Only the live session may be undisposed: after a close, none is.
+  if (after.readerDisposesCompleted !== after.readerSessionsCreated) {
+    throw new Error(
+      `[rapid ${cycle}] a reader session outlived its close (created ${after.readerSessionsCreated}, disposed ${after.readerDisposesCompleted})`,
+    );
+  }
+  if (after.readerRuntimeLive !== false) {
+    throw new Error(`[rapid ${cycle}] the reader runtime is still live after the close`);
+  }
+  cycles.push({
+    cycle,
+    librarySessions: after.librarySessionsCreated,
+    libraryDisposes: after.libraryDisposesCompleted,
+    readerSessions: after.readerSessionsCreated,
+    readerDisposes: after.readerDisposesCompleted,
+  });
+}
+summary.bootContract.rapidTransitions = cycles;
+console.log(
+  `boot contract: ${cycles.length} back-to-back handoffs (reader sessions ${cycles.at(-1).readerSessions} / disposals ${cycles.at(-1).readerDisposes}, library sessions ${cycles.at(-1).librarySessions} / disposals ${cycles.at(-1).libraryDisposes})`,
+);
+
 // The invariants across the whole transition, then the ORDER the disposal
 // counter proves: a runtime is only marked active once its predecessor's
 // dispose promise has resolved.
 const sampled = await stopHostSampler();
-const violation = firstViolation(sampled.violations);
+const violation = firstViolation(sampled.violations, sampled.context);
 if (violation) {
   throw new Error(`runtime-host invariant violated while booting/transitioning — ${violation}`);
 }
@@ -712,14 +830,15 @@ summary.bootContract.transition = {
 assertNoNewPanics("stage0 transitions", 0);
 console.log(`boot contract: host sampled ${sampled.samples.length} times across both transitions, never empty, never two live sessions`);
 
-// ---- 0c: the `/reader` boot path (§8) -------------------------------------
+// ---- 0d: the `/reader` boot path (§8) -------------------------------------
 currentStage = "stage0-reader-route";
 await page.goto(`${BASE}/reader?blend=1&open=${encodeURIComponent(PEARLS)}`, {
   waitUntil: "domcontentloaded",
 });
 const readerRoute = await waitFor("the reader runtime to boot at /reader", (x) =>
   x.bootState === "reader" && x.readerRuntimeLive === true && x.engine?.hasDocument === true, 120_000);
-const readerRouteDom = await libraryDomState();
+const readerRouteDom = await waitForDom("/reader: the reader rendered", (s) =>
+  s.active === "reader" && s.reader >= 1 && s.library === 0 && !s.placeholder);
 if (readerRouteDom.path !== "/reader") {
   throw new Error(`[/reader] the boot left the route at ${readerRouteDom.path}`);
 }
@@ -741,7 +860,7 @@ await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
 await waitFor("the library runtime after the boot-contract stage", (x) =>
   x.bootState === "library", 60_000);
 
-// ---- 0d: a boot that cannot finish is VISIBLE, never a legacy fallback ----
+// ---- 0e: a boot that cannot finish is VISIBLE, never a legacy fallback ----
 // The incident's other half (§6, §7): with the runtime artifact missing, the
 // shell must show a named error state — runtime + stage + cause — and must
 // NOT mount the old LibraryPage as a fallback. The server 404s the artifact

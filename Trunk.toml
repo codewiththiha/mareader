@@ -1,5 +1,13 @@
 [build]
 target = "./index.html"
+# Unhashed asset names, like the two runtime configs. dist/ is ONE directory
+# merged from three builds and served statically (the packaged app serves it
+# through Tauri's protocol, the dev server and CI serve it from disk): a
+# content-hashed `styles-<hash>.css` is a name the other two builds cannot
+# reference, so the runtime pages' `styles.css` had nothing to resolve to in
+# the merged dist. Stable names keep the three builds interchangeable, which is
+# what tools/check-runtime-artifacts.mjs asserts.
+filehash = false
 
 [watch]
 # Generated artifacts are excluded from the watcher to prevent a rebuild

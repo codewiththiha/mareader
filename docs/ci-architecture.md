@@ -23,6 +23,15 @@ lint            cargo metadata --locked (early) +
 test            cargo test --workspace --exclude mareader-shell --locked
 web             npm ci -> build:ts -> build:css -> contract checks -> engine smoke
 macos-shell     clippy + test of mareader-shell, natively on macOS
+
+deep (nightly / on demand / when the boot path itself changes):
+browser         the one production frontend build, then the wasm app in a real
+                browser: the boot contract stage (library at /, both runtime
+                transitions with disposal order, /reader, and a missing
+                artifact's error state), then the lifecycle/memory suite
+tauri-smoke     the same production build, then the REAL native window under
+                Xvfb: the Library runtime boots, the pixels are not one flat
+                colour, and an OS document handoff boots the Reader
 ```
 
 - **One check, one reason.** No command runs twice across lanes; the engine
@@ -36,10 +45,11 @@ macos-shell     clippy + test of mareader-shell, natively on macOS
   compiles nothing. `target/` is never transferred between jobs — a cache
   miss that rebuilds locally is cheaper and more robust than artifact
   transfer.
-- **The shell crate is excluded on Linux and compiled on macOS** because its
-  macOS-only branches (`set_traffic_lights`, objc2) do not compile on Linux.
-  The `dist/` stub there exists only to satisfy `generate_context!`; the
-  real frontend build belongs to the release pipeline.
+- **The shell crate is excluded from the Linux LINT lane and compiled on
+  macOS** because its macOS-only branches (`set_traffic_lights`, objc2) do not
+  compile on Linux. It IS built on Linux in the deep lane's native smoke job,
+  where it links against the real frontend build — that build is what caught
+  the platform stub for the traffic lights still being alive as dead code.
 
 ## Decisions worth remembering
 

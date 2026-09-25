@@ -41,6 +41,11 @@ web-sys = { version = "0.3", features = [
   "WheelEvent",
   "ResizeObserver",
   "ResizeObserverEntry",
+  # The coverage watch reads the host's child list rather than polling it
+  # (src/app/boot.rs): an observer's callback runs before any other task can
+  # see the host bare.
+  "MutationObserver",
+  "MutationObserverInit",
   "DomRect",
   "DomRectList",
   "Selection",

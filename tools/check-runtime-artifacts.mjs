@@ -24,7 +24,7 @@
 // JavaScript, not TypeScript: this one has to run inside the build itself
 // (build-dist.sh) and in lanes that have not installed node_modules yet, so it
 // uses node's own modules and nothing else. `tools/*.mjs` is the repo's
-// existing pattern for exactly that (bundle-engine.mjs, wasm-smoke.mjs).
+// existing pattern for exactly that (bundle-engine.mjs).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -42,6 +42,11 @@ const RUNTIME_FLOOR_BYTES = 1024;
  *  loads and the shared assets the runtimes fetch at boot. */
 const REQUIRED = [
   ["dist/index.html", "the Shell page — Tauri's frontendDist entry", 0],
+  // The standalone runtime pages: not what the shell imports (it imports the
+  // .js artifacts below) but part of the set the build promises, and the way
+  // either runtime is reproduced outside the shell.
+  ["dist/reader.html", "the Reader Runtime's standalone page", 0],
+  ["dist/library.html", "the Library Runtime's standalone page", 0],
   ["dist/library.js", "the Library Runtime artifact (imported by the shell)", RUNTIME_FLOOR_BYTES],
   ["dist/library_bg.wasm", "the Library Runtime wasm module", RUNTIME_FLOOR_BYTES],
   ["dist/reader.js", "the Reader Runtime artifact (imported by the shell)", RUNTIME_FLOOR_BYTES],

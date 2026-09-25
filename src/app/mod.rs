@@ -54,36 +54,12 @@ pub fn Shell() -> impl IntoView {
         }
     });
 
-    // §5: the page's own placeholder is removed the moment the host paints its
-    // first state — a loading state, a live runtime, or an error. It is
-    // page-owned because it exists before this wasm module does; it must not
-    // outlive the first paint, or it would cover the runtime's own surface.
-    //
-    // The host's children are part of the test, not an assumption: a boot that
-    // failed before anything was painted leaves the placeholder in place (it
-    // becomes the watchdog's message, public/shellBoot.js) rather than
-    // uncovering an empty window.
-    let boot_phase = state.manager.boot_phase;
-    Effect::new(move |_| {
-        if boot_phase.get().is_page_placeholder() {
-            return;
-        }
-        let Some(document) = web_sys::window().and_then(|window| window.document()) else {
-            return;
-        };
-        let Some(host) = document.get_element_by_id("runtime-host") else {
-            return;
-        };
-        if host.children().length() == 0 {
-            return;
-        }
-        let Some(boot) = document.get_element_by_id("shell-boot") else {
-            return;
-        };
-        if let Some(parent) = boot.parent_node() {
-            let _ = parent.remove_child(&boot);
-        }
-    });
+    // The page's own placeholder (`#shell-boot`) is NOT removed here: what
+    // knows a runtime has actually painted is the host itself, and boot.rs's
+    // coverage watch is the one place that decides when the window stops being
+    // covered (it removes the placeholder in the same step it takes the
+    // loading card away — src/app/boot.rs). Two owners for that moment is how
+    // the window ended up uncovered between them.
 
     view! {
         // `h-full w-full` is load-bearing: every runtime's root is `h-full`,

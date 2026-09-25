@@ -16,7 +16,6 @@ use std::cell::RefCell;
 use std::sync::Mutex;
 
 use app_state::boundary::LaunchDocument;
-use leptos::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
 
 use crate::app::boot::{self, BootError, BootPhase, BootStage, RuntimeName};
@@ -33,12 +32,12 @@ pub enum Slot {
 
 pub struct RuntimeManager {
     slot: Mutex<Slot>,
-    /// What the runtime host is showing (§6, §11). A signal because the shell's
-    /// page placeholder steps aside when the host paints its first state.
-    pub boot_phase: RwSignal<BootPhase>,
-    /// The same phase in the plain form the diagnostics probe reads (the probe
-    /// runs from JS, outside any reactive context) — the same shape as
-    /// `doc_status`/`doc_error` beside it.
+    /// What the runtime host is showing (§6, §11), in the plain form the
+    /// diagnostics probe reads: the probe runs from JS, outside any reactive
+    /// context, so this is a value and not a signal — the same shape as
+    /// `doc_status`/`doc_error` beside it. The host's own DOM is the other half
+    /// of the same fact, and the coverage watch in `boot.rs` reads THAT rather
+    /// than any shell-side copy of it.
     pub boot_state: Mutex<String>,
     pub boot_error: Mutex<Option<serde_json::Value>>,
     /// Create/dispose counts for the diagnostics identity (§21): a reader →
@@ -76,7 +75,6 @@ impl RuntimeManager {
     pub fn new() -> Self {
         Self {
             slot: Mutex::new(Slot::None),
-            boot_phase: RwSignal::new(BootPhase::Booting),
             boot_state: Mutex::new(BootPhase::Booting.as_str().to_string()),
             boot_error: Mutex::new(None),
             reader_sessions_created: Default::default(),
@@ -92,13 +90,14 @@ impl RuntimeManager {
         }
     }
 
-    /// Publish a boot phase: the signal the shell's view follows, and the
-    /// plain mirror the diagnostics probe reads.
+    /// Publish a boot phase: the diagnostics probe's copy, and the native
+    /// host's boot report. The phase is written as one pair (state + error) so
+    /// a probe can never read a failure's state beside the previous runtime's
+    /// error, or the reverse.
     fn set_phase(&self, phase: BootPhase) {
         *self.boot_error.lock().unwrap() = phase.error().map(BootError::to_json);
         *self.boot_state.lock().unwrap() = phase.as_str().to_string();
         report_boot(&phase);
-        self.boot_phase.set(phase);
     }
 
     pub fn set_host(&self, host: web_sys::Element) {
@@ -147,7 +146,9 @@ impl RuntimeManager {
     pub fn start_reader(&self, state: &ShellState, launch: LaunchDocument) {
         let manager = state.manager.clone();
         wasm_bindgen_futures::spawn_local(async move {
-            manager.start_serialized(RuntimeName::Reader, Some(launch)).await;
+            manager
+                .start_serialized(RuntimeName::Reader, Some(launch))
+                .await;
         });
     }
 
@@ -173,7 +174,10 @@ impl RuntimeManager {
     /// an await between them, which on wasm's single-threaded executor is what
     /// makes the window between "queue is empty" and "flag cleared" empty too.
     async fn start_serialized(&self, runtime: RuntimeName, launch: Option<LaunchDocument>) {
-        if self.starting.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        if self
+            .starting
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
             *self.pending.lock().unwrap() = Some((runtime, launch));
             return;
         }
@@ -183,14 +187,16 @@ impl RuntimeManager {
             match queued {
                 Some((runtime, launch)) => self.start(runtime, launch).await,
                 None => {
-                    self.starting.store(false, std::sync::atomic::Ordering::SeqCst);
+                    self.starting
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
                     // A request that landed after the take but before the flag
                     // cleared saw the flag SET, so it queued instead of opening
                     // its own loop: pick it up here rather than stranding it.
                     if self.pending.lock().unwrap().is_none() {
                         return;
                     }
-                    self.starting.store(true, std::sync::atomic::Ordering::SeqCst);
+                    self.starting
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                 }
             }
         }
@@ -201,12 +207,9 @@ impl RuntimeManager {
         runtime: RuntimeName,
         launch: Option<LaunchDocument>,
     ) -> Result<(), BootError> {
-        // §5/§10: the outgoing session is gone before the replacement exists.
-        self.dispose_active().await?;
-        *self.slot.lock().unwrap() = Slot::Starting;
-        // §11: clear and paint in the same synchronous step — the host is
-        // never empty between two runtimes, and the loading state is what a
-        // failure paints over.
+        // A watch from the runtime being replaced is stale now: it must not
+        // take the loading state away from this start's host (§11).
+        boot::stop_watch();
         let host = match self.host() {
             Some(host) => host,
             None => {
@@ -214,9 +217,21 @@ impl RuntimeManager {
                 return Err(BootError::new(runtime, BootStage::Start, message));
             }
         };
-        clear_host(&host);
+        // §11: covered BEFORE the first await. The card is additive (it
+        // removes the shell's own boot nodes and leaves a mounted runtime's
+        // DOM alone), so the outgoing session stays visible underneath it until
+        // its disposal takes it away — and the host is never bare if that
+        // disposal is the only thing on screen.
         boot::paint_loading(&host, runtime);
         self.set_phase(BootPhase::Loading(runtime));
+        // §5/§10: the outgoing session is gone before the replacement exists.
+        self.dispose_active().await?;
+        *self.slot.lock().unwrap() = Slot::Starting;
+        // The disposal may have removed the last thing in the host (its own
+        // DOM): re-paint in the same synchronous step, so nothing is ever
+        // uncovered between the teardown and the load.
+        clear_host(&host);
+        boot::paint_loading(&host, runtime);
         let module = self.load_module(runtime).await?;
         let start = start_export(&module, runtime)?;
         let value = call_start(&start, &module, &host, runtime, launch)?;
@@ -240,8 +255,9 @@ impl RuntimeManager {
             RuntimeName::Reader => Slot::Reader { id, module },
             RuntimeName::Library => Slot::Library { id, module },
         };
-        // The runtime mounted its own DOM into the host while its start export
-        // ran, so the shell's loading state can go.
+        // The runtime's session exists; its DOM may not be there yet (the
+        // reader's first render is a suspense anchor), so the loading state
+        // stays until it has painted, and the page placeholder goes with it.
         boot::mark_active(&host, runtime);
         self.set_phase(BootPhase::Active(runtime));
         Ok(())
@@ -251,6 +267,10 @@ impl RuntimeManager {
     /// the detail (§6). Nothing half-mounted survives it, and the slot stays
     /// `Starting` — there is no live session to dispose later.
     fn fail(&self, error: BootError) {
+        // The error state IS the outcome: nothing may cover it, and no coverage
+        // watch from the failed start may remove it.
+        boot::stop_watch();
+        boot::uncover_page();
         match self.host() {
             Some(host) => {
                 clear_host(&host);
