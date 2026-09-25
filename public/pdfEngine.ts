@@ -15,6 +15,7 @@ import { coverDataUrl, destroyTask, open, resolveOutline } from "./engine/loader
 import {
   beginRenderGeneration,
   cancelPage,
+  cancelPageRenders,
   drainPageLane,
   pageLaneGauge,
   readRenderTrace,
@@ -350,6 +351,7 @@ globalThis.PDFReader = {
   registerPage,
   unregisterPage,
   cancelPage,
+  cancelPageRenders,
   renderPage,
   renderThumb,
   cancelThumb,

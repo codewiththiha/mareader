@@ -41,6 +41,12 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "unregisterPage")]
     pub fn unregister_page(canvas_id: &str);
 
+    /// Cancel every in-flight page render in one call. The reader's close
+    /// path issues it synchronously with the click, before the navigate
+    /// command crosses to the Shell — teardown itself is unchanged.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "cancelPageRenders")]
+    pub fn cancel_page_renders();
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPage")]
     pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> JsValue;
 

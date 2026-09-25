@@ -26,6 +26,18 @@ pub fn unregister_page(canvas_id: &str) {
     bridge::unregister_page(canvas_id);
 }
 
+/// Cancel every in-flight page render. The reader's close path calls this as
+/// the first act of leaving: the navigate command then crosses to the Shell
+/// and the dispose returns over the frame channel, hops during which a live
+/// raster would finish as if the close had interrupted nothing. Work only —
+/// the session's destroy during disposal remains the one teardown.
+pub fn cancel_page_renders() {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::cancel_page_renders();
+}
+
 pub async fn render_page(
     canvas_id: &str,
     scale: f64,

@@ -23,5 +23,12 @@ pub fn close_document(ctx: &crate::context::ReaderContext) {
     if let Some(point) = ctx.try_read_point() {
         ctx.api.read_point(&point);
     }
+    // Stop in-flight raster work in the same tick as the click: from here
+    // the navigate command crosses to the Shell and the dispose comes back
+    // over the frame channel — hops during which a live page render could
+    // finish as if leaving had interrupted nothing. Cancelling here is the
+    // first act of teardown; the session root's cleanup still owns the
+    // engine destroy, so there remains exactly one teardown path.
+    pdf_engine::api::cancel_page_renders();
     ctx.api.navigate_library();
 }

@@ -253,6 +253,9 @@ export type PDFReaderApi = {
   registerPage: (page: number, canvasId: string, hostId?: string) => void;
   unregisterPage: (canvasId: string) => void;
   cancelPage: (canvasId: string) => void;
+  /** Cancel every in-flight page render — the close path's first act, so
+   *  leaving interrupts raster work instead of racing the frame channel. */
+  cancelPageRenders: () => void;
   renderPage: (
     canvasId: string,
     scale: number,

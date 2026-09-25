@@ -1011,6 +1011,7 @@ so the Rust side reads `ok` first and then deserializes.
 | `destroy` | Tear down the current document |
 | `registerPage` / `unregisterPage` | Bind and release a canvas for a page |
 | `cancelPage` | Cancel an in-flight page render |
+| `cancelPageRenders` | Cancel every in-flight page render (the close path's first act) |
 | `renderPage` | Render one page |
 | `renderThumb` / `cancelThumb` | Thumbnail rendering on a separate, cheaper path |
 | `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |

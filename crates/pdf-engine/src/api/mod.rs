@@ -33,8 +33,8 @@ pub use diagnostics::{EngineStats, engine_stats, set_lifecycle_log};
 pub use document::{cover_data_url, destroy, open, outline};
 pub use paper::{PaperFrame, sample_paper_page, set_paper, set_paper_active, take_paper_frame};
 pub use render::{
-    blit_thumb, cancel_thumb, has_thumb, prefetch_thumb, register_page, render_page, render_thumb,
-    unregister_page,
+    blit_thumb, cancel_page_renders, cancel_thumb, has_thumb, prefetch_thumb, register_page,
+    render_page, render_thumb, unregister_page,
 };
 pub use search::{
     build_search_index, clear_highlights, scope_to_document, search, set_active_match,

@@ -127,6 +127,21 @@ export function cancelPage(canvasId: string): void {
   }
 }
 
+/** Cancel every in-flight page render at once. The reader's close path calls
+ * this synchronously with the click, BEFORE the navigate command crosses to
+ * the Shell: the dispose returns over the frame channel, and a raster that
+ * finished inside those hops would make the close look like it interrupted
+ * nothing. Work observed in flight when the user leaves is cancelled here,
+ * not raced; the session destroy during disposal still owns the teardown. */
+export function cancelPageRenders(): void {
+  for (const st of session.stateByCanvasId.values()) {
+    if (st.renderTask) {
+      try { st.renderTask.cancel(); } catch (_) { /* ignore */ }
+      st.renderTask = null;
+    }
+  }
+}
+
 function pageOutputScale(cssW: number, cssH: number): number {
   // Full native DPR for crisp text; PAGE_MAX_PIXELS is the memory guardrail.
   const dpr = globalThis.devicePixelRatio || 1;
