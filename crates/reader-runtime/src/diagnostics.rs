@@ -493,6 +493,11 @@ pub fn install() {
     _ = js_sys::Reflect::set(&target, &name, &probe);
 }
 
+/// HTML-less hosts compile the artifact without a window: the probe is a
+/// no-op there (`snapshot_json` already covers that half).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn install() {}
+
 thread_local! {
     /// Session facts the wasm exports report: creations, dispose requests.
     /// The shell's own manager keeps the authoritative counts; these mirror
