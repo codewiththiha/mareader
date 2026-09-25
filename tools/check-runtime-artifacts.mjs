@@ -128,11 +128,17 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
+// The per-artifact sizes ride the log so the artifact audit trail is the CI
+// log itself: the dependency split's shrinking promise is checked against
+// these numbers, not against a build run someone once saw commit-side.
+const sizes = REQUIRED.map(
+  ([rel]) => `    ${rel} ${fs.statSync(path.join(root, rel)).size}`,
+).join("\n");
 const total = REQUIRED.reduce(
   (sum, [rel]) => sum + fs.statSync(path.join(root, rel)).size,
   0,
 );
 console.log(
   `runtime artifact contract OK: ${REQUIRED.length} files, ${total} bytes ` +
-    `(shell + library + reader + shared assets)`,
+    `(shell + library + reader + shared assets)\n${sizes}`,
 );
