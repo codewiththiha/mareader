@@ -28,6 +28,9 @@
 # Local-only tooling
 /.env
 
+# Dev orchestrator's freshness manifest (decides skip-vs-rebuild at startup)
+/.dev-artifacts/
+
 # Local web build output (wasm-bindgen webgen + assembled static root)
 /webgen/
 /webroot/

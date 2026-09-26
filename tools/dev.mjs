@@ -19,7 +19,9 @@
 // The invariant this establishes, in the order the shell needs it:
 //
 //   1. build all three artifacts (tools/build-dist.sh --release — the
-//      canonical build, in the profile the rest of the pipeline runs)
+//      canonical build, in the profile the rest of the pipeline runs),
+//      SKIPPED when .dev-artifacts/release-manifest.json vouches the inputs
+//      are unchanged and the artifacts exist (FORCE_REBUILD=1 to override)
 //   2. assert the artifact contract (the builder runs the checker itself)
 //   3. start `trunk serve`
 //   4. probe the dev URL for index.html + both runtime artifacts + both wasm
@@ -35,12 +37,60 @@
 // is what tauri.conf.json's beforeDevCommand calls.
 
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(root, "dist");
+
+/** Where the freshness manifest lives: OUTSIDE dist/, because Trunk owns
+ *  dist/ and the decision has to survive its rebuilds. Gitignored. */
+const MANIFEST_DIR = path.join(root, ".dev-artifacts");
+const MANIFEST_PATH = path.join(MANIFEST_DIR, "release-manifest.json");
+
+/** Everything whose change invalidates the built artifact set. Derived
+ *  outputs are excluded on purpose (see GENERATED below): their sources are
+ *  in these roots, and re-hashing what the build itself just rewrote would
+ *  mark every fresh build stale. */
+const FINGERPRINT_ROOTS = [
+  "src",
+  "crates",
+  "public",
+  "styles",
+  "tools",
+  "index.html",
+  "reader.html",
+  "library.html",
+  "Trunk.toml",
+  "reader.Trunk.toml",
+  "library.Trunk.toml",
+  "Cargo.toml",
+  "Cargo.lock",
+  "package.json",
+  "package-lock.json",
+  "tsconfig.json",
+  "tsconfig.tools.json",
+];
+
+/** Hook outputs inside the roots above — derived, never fingerprinted. */
+const GENERATED_NAMES = new Set(["pdfEngine.js", "readerEngine.js", "bake.worker.js"]);
+const ENGINE_DIR = path.join(root, "public", "engine");
+
+/** The floor a fresh manifest vouches for; proveServed still verifies the
+ *  full promised set over HTTP before any window is allowed to load. */
+const FRESHNESS_SET = [
+  "dist/index.html",
+  "dist/mareader.js",
+  "dist/mareader_bg.wasm",
+  "dist/library.html",
+  "dist/library.js",
+  "dist/library_bg.wasm",
+  "dist/reader.html",
+  "dist/reader.js",
+  "dist/reader_bg.wasm",
+];
 
 /** The files the shell imports at boot, in boot order. Probed over HTTP so the
  *  check is about what the DEV SERVER serves, not what the disk holds. */
@@ -118,6 +168,83 @@ async function buildAll() {
     console.error(`[dev] the canonical build failed (exit ${code}) — not starting the shell`);
     process.exit(code);
   }
+}
+
+/** The (path, mtime, size) fingerprint of every build input: cheap, and
+ *  moved by exactly the events that invalidate artifacts — edits and git
+ *  checkouts — while staying stable across restarts of this script. */
+function sourceFingerprint() {
+  const hash = crypto.createHash("sha256");
+  hash.update("profile:release;builder:build-dist.sh");
+  const visit = (abs) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(abs, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      if (entry.name === "target" || entry.name === "node_modules" || entry.name === ".git") {
+        continue;
+      }
+      if (GENERATED_NAMES.has(entry.name)) continue;
+      if (abs === ENGINE_DIR && entry.name.endsWith(".js")) continue;
+      const child = path.join(abs, entry.name);
+      if (entry.isDirectory()) {
+        visit(child);
+        continue;
+      }
+      try {
+        const stat = fs.statSync(child);
+        hash.update(child.slice(root.length));
+        hash.update(` ${stat.mtimeMs} ${stat.size} `);
+      } catch {
+        /* vanished mid-walk: the next start fingerprints the new state */
+      }
+    }
+  };
+  for (const rel of FINGERPRINT_ROOTS) {
+    hash.update(rel);
+    let stat;
+    try {
+      stat = fs.statSync(path.join(root, rel));
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      visit(path.join(root, rel));
+    } else {
+      hash.update(` ${stat.mtimeMs} ${stat.size} `);
+    }
+  }
+  return hash.digest("hex");
+}
+
+function artifactsPresent() {
+  return FRESHNESS_SET.every((rel) => {
+    try {
+      return fs.statSync(path.join(root, rel)).size > 0;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function readManifest() {
+  try {
+    return JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeManifest(fingerprint) {
+  fs.mkdirSync(MANIFEST_DIR, { recursive: true });
+  fs.writeFileSync(
+    MANIFEST_PATH,
+    `${JSON.stringify({ profile: "release", fingerprint }, null, 2)}\n`,
+  );
 }
 
 /** Re-copy the merged runtime artifacts if a shell rebuild removed them.
@@ -241,7 +368,27 @@ function newestMtime() {
 }
 
 async function main() {
-  await buildAll();
+  // The freshness gate: a warm restart pays NO three-target build. The
+  // manifest vouches the inputs are unchanged (and the artifacts exist);
+  // FORCE_REBUILD=1 overrides when a build itself is suspect.
+  const force = process.env.FORCE_REBUILD === "1";
+  const fingerprint = sourceFingerprint();
+  const manifest = readManifest();
+  const fresh =
+    !force &&
+    artifactsPresent() &&
+    manifest !== null &&
+    manifest.profile === "release" &&
+    manifest.fingerprint === fingerprint;
+  if (fresh) {
+    log(
+      "release artifacts are fresh — skipping the three-target build " +
+        "(FORCE_REBUILD=1 to rebuild)",
+    );
+  } else {
+    await buildAll();
+    writeManifest(fingerprint);
+  }
 
   log("starting trunk serve (the shell dev server, release profile)");
   const serve = spawn("trunk", ["serve", "--release"], { cwd: root, stdio: "inherit" });
@@ -284,6 +431,7 @@ async function main() {
     // canonical build runs again. Trunk rebuilds the shell on its own.
     log("source change detected — rebuilding the runtime artifacts");
     await buildAll();
+    writeManifest(sourceFingerprint());
     if (!(await proveServed("rebuild"))) shutdown();
   }
 }

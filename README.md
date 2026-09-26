@@ -1085,11 +1085,13 @@ that does not exist):
 npm run dev:frontend
 ```
 
-It builds all three artifacts in release mode (the profile CI and the packaged
-app run — debug wasm makes every route transition visibly slow, because each
-transition instantiates its runtime's module again), merges them, starts Trunk
-on port 1420, and only reports the boot as safe once the dev server actually
-serves every artifact the shell loads.
+It builds all three artifacts in release mode — reusing them untouched when
+the sources haven't moved since the last build (`FORCE_REBUILD=1` forces a
+fresh one) — merges them, starts Trunk on port 1420, and only reports the
+boot as safe once the dev server actually serves every artifact the shell
+loads. Release is the profile CI and the packaged app run: debug wasm makes
+every route transition visibly slow, because each transition instantiates
+its runtime's module again.
 
 Note that the file dialog and drag-and-drop rely on Tauri and are unavailable in a browser.
 
