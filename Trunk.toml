@@ -96,6 +96,21 @@ stage = "pre_build"
 command = "node"
 command_arguments = ["./node_modules/@tailwindcss/cli/dist/index.mjs", "-i", "styles/input.css", "-o", "styles.css", "--minify"]
 
+# Stage the merged runtime artifacts INTO the distribution Trunk is about to
+# apply. `trunk serve` swaps dist/ wholesale on every rebuild, and the shell's
+# staging tree carries only the shell — without this, every apply drops
+# reader/library until the orchestrator's next restore, and that window is a
+# 404 on the exact file the shell is importing ("MAReader could not start the
+# Library runtime … failed during module load"). post_build runs just before
+# the staging directory is copied over dist/, with the staging path in
+# $TRUNK_STAGING_DIR. The reader/library legs use their own config files and
+# never run this hook, so staging those builds would be pointless; a missing
+# source (fresh clone, shell leg builds first) is a skip, not an error.
+[[hooks]]
+stage = "post_build"
+command = "node"
+command_arguments = ["./tools/stage-merged.mjs"]
+
 # Deliberately no `[tools]` table: its `wasm_opt` key pins the *binaryen
 # release* Trunk downloads, so `wasm_opt = "z"` here made every release build
 # fetch `binaryen-z-<platform>.tar.gz` and die on a 404 before the bundle was

@@ -23,9 +23,13 @@
 //      SKIPPED when .dev-artifacts/release-manifest.json vouches the inputs
 //      are unchanged and the artifacts exist (FORCE_REBUILD=1 to override)
 //   2. assert the artifact contract (the builder runs the checker itself)
-//   3. start `trunk serve`
+//   3. start `trunk serve`, after clearing a trunk orphaned by an earlier
+//      session off the dev port — an orphan keeps swapping dist/ under the
+//      new session and its window is a 404 on whatever the shell imports
 //   4. probe the dev URL for index.html + both runtime artifacts + both wasm
-//      modules, and only then report the boot as safe
+//      modules, and only then report the boot as safe; anything short of a
+//      proven server exits NON-ZERO so Tauri aborts instead of opening a
+//      window against nothing
 //   5. keep the merged artifacts in place across shell rebuilds — Trunk owns
 //      `dist/`, and a shell rebuild must not be able to drop the runtimes
 //
@@ -39,6 +43,7 @@
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -157,6 +162,7 @@ const DIST_QUIET_MS = 1_200;
 const DIST_QUIET_TIMEOUT_MS = 10_000;
 const REBUILD_ATTEMPTS = 3;
 const REBUILD_RETRY_MS = 2_500;
+const PORT_RELEASE_TIMEOUT_MS = 3_500;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const log = (msg) => console.log(`[dev] ${msg}`);
@@ -173,6 +179,15 @@ function devUrl() {
   return conf.build?.devUrl ?? "http://localhost:1420";
 }
 
+function devPort() {
+  try {
+    const url = new URL(devUrl());
+    return Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  } catch {
+    return 1420;
+  }
+}
+
 /** Run a command to completion, inheriting stdio. Returns the exit code. */
 function run(command, args, options = {}) {
   return new Promise((resolve) => {
@@ -183,6 +198,92 @@ function run(command, args, options = {}) {
     });
     child.on("exit", (code, signal) => resolve(signal ? 1 : (code ?? 1)));
   });
+}
+
+/** Run a command and capture stdout; rejects on spawn failure or a non-zero
+ *  exit (a probe with no matches, for instance). */
+function capture(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd: root });
+    let out = "";
+    child.stdout?.on("data", (d) => (out += d));
+    child.stderr?.resume();
+    child.on("error", reject);
+    child.on("exit", (code) => (code === 0 ? resolve(out) : reject(new Error(`${command} exit ${code}`))));
+  });
+}
+
+/** Is anything accepting connections on the dev port right now? */
+function portIsFree(port) {
+  return new Promise((resolve) => {
+    const sock = net.connect({ port, host: "127.0.0.1" });
+    const done = (free) => {
+      sock.removeAllListeners();
+      sock.destroy();
+      resolve(free);
+    };
+    sock.setTimeout(750, () => done(true));
+    sock.once("connect", () => done(false));
+    sock.once("error", () => done(true));
+  });
+}
+
+/** A trunk serve orphaned by an earlier session holds the dev port and keeps
+ *  swapping dist/ under the new one (and its own build loop never sees the
+ *  ignore list this branch fixed). Clear OUR process off the port — pids
+ *  whose command is not trunk are left alone so the caller can fail loudly
+ *  instead of killing a stranger. Returns whether a trunk pid was signalled;
+ *  no lsof (non-macOS) counts as "could not inspect". */
+async function releaseStaleTrunk(port) {
+  let pids = [];
+  try {
+    const out = await capture("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"]);
+    pids = out.split("\n").map((s) => s.trim()).filter(Boolean);
+  } catch {
+    return false;
+  }
+  let signalled = false;
+  for (const pid of pids) {
+    let comm = "";
+    try {
+      comm = (await capture("ps", ["-p", pid, "-o", "comm="])).trim();
+    } catch {
+      continue;
+    }
+    if (!/trunk/i.test(path.basename(comm))) continue;
+    try {
+      process.kill(Number(pid), "SIGKILL");
+      signalled = true;
+      log(`released an orphaned trunk serve (pid ${pid}) from an earlier session`);
+    } catch {
+      /* already gone */
+    }
+  }
+  return signalled;
+}
+
+/** The port must be OURS before `trunk serve` binds it and before a single
+ *  probe runs — otherwise waitForServe/proveServed would prove a stale
+ *  server's dist and the new session would boot against it. */
+async function ensureDevPortFree() {
+  const port = devPort();
+  if (await portIsFree(port)) return true;
+  log(`port ${port} is busy — checking for a trunk serve orphaned by an earlier session`);
+  await releaseStaleTrunk(port);
+  const deadline = Date.now() + PORT_RELEASE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (await portIsFree(port)) {
+      log(`port ${port} is free`);
+      return true;
+    }
+    await sleep(250);
+  }
+  console.error(
+    `[dev] port ${port} is still in use by something that is not trunk — ` +
+      `the dev server cannot start. Find it with ` +
+      `\`lsof -nP -iTCP:${port} -sTCP:LISTEN\`, stop that process, and restart.`,
+  );
+  return false;
 }
 
 /** Run the canonical build. Returns the exit code — the CALLER decides
@@ -280,7 +381,9 @@ function writeManifest(fingerprint) {
 
 /** Re-copy the merged runtime artifacts if a shell rebuild removed them.
  *  Trunk owns `dist/` while it serves; the runtimes are merged in from the
- *  other two builds and are not Trunk's to keep. */
+ *  other two builds and are not Trunk's to keep. Trunk.toml's post_build
+ *  hook stages them into every applied distribution — this is the loop-level
+ *  backstop for states that hook cannot see (a wiped dist-reader, say). */
 function ensureMergedArtifacts() {
   const restored = [];
   for (const [from, to] of MERGED) {
@@ -322,9 +425,13 @@ async function probeArtifacts() {
   return failures;
 }
 
-async function waitForServe() {
+/** Wait for the dev server — but never past its own death: a serve that
+ *  exited (port stolen by an orphan, binary missing) must fail the boot in
+ *  milliseconds, not sit out the 180-second timeout. */
+async function waitForServe(dead) {
   const deadline = Date.now() + SERVE_START_TIMEOUT_MS;
   for (;;) {
+    if (dead()) return false;
     const status = await fetchStatus("/index.html");
     if (status === 200) return true;
     if (Date.now() > deadline) return false;
@@ -480,37 +587,66 @@ async function main() {
   // have run one.
   ensureIgnoreDirs();
 
+  // One orchestrator, one trunk, one server. `stop` is the ONLY sanctioned
+  // exit: any other death (fatal build, unhandled rejection) passes through
+  // the `exit` hook below so trunk — and its DevCommand shell — never
+  // outlive this process into the next session.
+  let serve = null;
+  let serveExited = false;
+  const stop = (code) => {
+    if (serve && !serveExited) {
+      try {
+        serve.kill("SIGTERM");
+      } catch {
+        /* already gone */
+      }
+    }
+    process.exit(code);
+  };
+  process.on("SIGINT", () => stop(0));
+  process.on("SIGTERM", () => stop(0));
+  process.on("exit", () => {
+    if (serve && !serveExited) {
+      try {
+        serve.kill("SIGTERM");
+      } catch {
+        /* already gone */
+      }
+    }
+  });
+
+  if (!(await ensureDevPortFree())) process.exit(1);
+
   log("starting trunk serve (the shell dev server, release profile)");
   // --enable-cooldown: discard filesystem events that land during a build.
   // Trunk's default is off, and with it off every write cargo makes inside
   // `target/` queues another build — an endless serve loop.
-  const serve = spawn("trunk", ["serve", "--release", "--enable-cooldown"], {
+  serve = spawn("trunk", ["serve", "--release", "--enable-cooldown"], {
     cwd: root,
     stdio: "inherit",
   });
-  let serveExited = false;
   serve.on("error", (e) => {
     serveExited = true;
     console.error(`[dev] cannot run trunk: ${e.message}`);
   });
-  serve.on("exit", (code) => {
+  serve.on("exit", (code, signal) => {
     serveExited = true;
-    log(`trunk serve exited (${code ?? "signal"})`);
+    log(`trunk serve exited (${signal ?? code})`);
   });
 
-  const shutdown = () => {
-    if (!serveExited) serve.kill("SIGTERM");
-    process.exit(0);
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-
-  if (!(await waitForServe())) {
+  if (!(await waitForServe(() => serveExited))) {
+    if (serveExited) {
+      console.error(
+        "[dev] trunk serve exited before the dev server came up — a window " +
+          "opened now would have nothing to load. A trunk orphaned by an " +
+          "earlier session is the usual cause; see the trunk output above.",
+      );
+      stop(1);
+    }
     console.error(`[dev] trunk serve never answered on ${devUrl()}/index.html`);
-    shutdown();
+    stop(1);
   }
-  const proven = await proveServed("boot");
-  if (!proven) shutdown();
+  if (!(await proveServed("boot"))) stop(1);
 
   log(`safe to open ${devUrl()} — the shell will find its runtimes`);
   log("watching crates/, styles/, public/ for runtime changes");
@@ -518,7 +654,14 @@ async function main() {
   let watermark = newestMtime();
   for (;;) {
     await sleep(POLL_MS);
-    if (serveExited) process.exit(0);
+    if (serveExited) {
+      console.error(
+        "[dev] trunk serve died mid-session — the dev server is gone. " +
+          "Restart tauri dev; if the port was stolen, this orchestrator " +
+          "clears a stale trunk on the next start.",
+      );
+      process.exit(1);
+    }
     ensureMergedArtifacts();
     const now = newestMtime();
     if (now === watermark) continue;
@@ -528,7 +671,7 @@ async function main() {
     log("source change detected — rebuilding the runtime artifacts");
     if (!(await rebuildRuntimeArtifacts())) continue;
     writeManifest(sourceFingerprint());
-    if (!(await proveServed("rebuild"))) shutdown();
+    if (!(await proveServed("rebuild"))) stop(1);
   }
 }
 

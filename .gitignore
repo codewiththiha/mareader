@@ -1,4 +1,6 @@
 /dist/
+/dist-reader/
+/dist-library/
 /target/
 
 # macOS
