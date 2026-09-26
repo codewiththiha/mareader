@@ -1085,8 +1085,11 @@ that does not exist):
 npm run dev:frontend
 ```
 
-It builds all three artifacts, merges them, starts Trunk on port 1420, and only reports the boot as safe once the dev server actually serves every artifact the shell
-loads.
+It builds all three artifacts in release mode (the profile CI and the packaged
+app run — debug wasm makes every route transition visibly slow, because each
+transition instantiates its runtime's module again), merges them, starts Trunk
+on port 1420, and only reports the boot as safe once the dev server actually
+serves every artifact the shell loads.
 
 Note that the file dialog and drag-and-drop rely on Tauri and are unavailable in a browser.
 

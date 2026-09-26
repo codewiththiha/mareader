@@ -2,6 +2,12 @@
 // shell, and PROVE that the dev server serves all three artifacts before a
 // window can load them.
 //
+// Everything builds in RELEASE. Every route transition mounts a fresh frame
+// that instantiates its own wasm module, and a debug (unoptimized) module
+// makes that boot take tens of seconds — a stall CI never sees because it
+// only ever runs the release profile. Dev runs the same artifacts CI and the
+// packaged app prove, so a route costs what a route costs in production.
+//
 // Why this exists (`tauri.conf.json` build.beforeDevCommand): the old command
 // was `npm run build:ts && trunk serve`, which serves whatever `dist/` happens
 // to hold. `trunk serve` builds the SHELL page only — `reader.js` and
@@ -12,7 +18,8 @@
 //
 // The invariant this establishes, in the order the shell needs it:
 //
-//   1. build all three artifacts (tools/build-dist.sh — the canonical build)
+//   1. build all three artifacts (tools/build-dist.sh --release — the
+//      canonical build, in the profile the rest of the pipeline runs)
 //   2. assert the artifact contract (the builder runs the checker itself)
 //   3. start `trunk serve`
 //   4. probe the dev URL for index.html + both runtime artifacts + both wasm
@@ -105,8 +112,8 @@ function run(command, args, options = {}) {
 }
 
 async function buildAll() {
-  log("building all three artifacts (tools/build-dist.sh)");
-  const code = await run("sh", ["tools/build-dist.sh"]);
+  log("building all three artifacts (tools/build-dist.sh --release)");
+  const code = await run("sh", ["tools/build-dist.sh", "--release"]);
   if (code !== 0) {
     console.error(`[dev] the canonical build failed (exit ${code}) — not starting the shell`);
     process.exit(code);
@@ -236,8 +243,8 @@ function newestMtime() {
 async function main() {
   await buildAll();
 
-  log("starting trunk serve (the shell dev server)");
-  const serve = spawn("trunk", ["serve"], { cwd: root, stdio: "inherit" });
+  log("starting trunk serve (the shell dev server, release profile)");
+  const serve = spawn("trunk", ["serve", "--release"], { cwd: root, stdio: "inherit" });
   let serveExited = false;
   serve.on("error", (e) => {
     serveExited = true;
