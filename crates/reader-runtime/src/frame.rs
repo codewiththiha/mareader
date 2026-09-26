@@ -138,6 +138,15 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
     let launch = launch
         .map(|launch| *launch)
         .unwrap_or_else(crate::web_launch);
+    // Hosted, though, the init IS the document handoff: a hosted frame that
+    // comes up without a path is the "No document" blank the shell should
+    // never have started — name it in the console so the handoff can be
+    // traced instead of guessed at.
+    if launch.path.is_empty() && marker().is_some() {
+        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(
+            "[reader] init carried no launch path; mounting with no document",
+        ));
+    }
     let id = crate::start_session(&root, launch, ApiHandle::Frame);
     SESSION_ID.with(|slot| slot.set(Some(id)));
     crate::diagnostics::set_reader_live(true);

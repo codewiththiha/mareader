@@ -144,6 +144,12 @@ pub(crate) fn open_with_launch(
     let saved_page = launch.resume_page;
     let saved_fraction = launch.saved_fraction;
     ctx.launch.set(launch);
+    // The console trail the open runs on: one line in, and (via `fail`) one
+    // line out if the engine refuses — an open that vanishes without either
+    // is a bug the trail has to be able to name.
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+        "[reader] open {path}"
+    )));
 
     match format_of(&path) {
         Format::Pdf => open_pdf(ctx, path, saved_page, stamp),
@@ -226,6 +232,9 @@ fn ready(
 
 /// The document did not open: surface it on the status bar and as a toast.
 fn fail(ctx: crate::context::ReaderContext, message: String) {
+    web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
+        "[reader] open failed: {message}"
+    )));
     ctx.reader.document.error.set(Some(message.clone()));
     ctx.reader.document.status.set(DocStatus::Error);
     ctx.ui.toast.set(Some(Toast::new(format!(

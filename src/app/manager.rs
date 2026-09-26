@@ -437,6 +437,20 @@ impl RuntimeManager {
 
     /// A library open command: navigate + start the reader (§13's sequence).
     pub fn open_document(&self, state: &ShellState, launch: LaunchDocument) {
+        // A launch with no path would mount a reader that can never show a
+        // document — the bare "No document" shell with a blank viewer. Refuse
+        // it here, where the launch arrives, and say so in the console
+        // instead of failing silently somewhere down the pipeline.
+        if launch.path.is_empty() {
+            web_sys::console::error_1(&JsValue::from_str(
+                "[shell] open-document refused: the launch carries no path",
+            ));
+            return;
+        }
+        web_sys::console::log_1(&JsValue::from_str(&format!(
+            "[shell] open-document: {}",
+            launch.path
+        )));
         navigate("/reader");
         self.start_reader(state, launch);
     }
