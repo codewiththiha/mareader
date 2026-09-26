@@ -889,8 +889,12 @@ const OFFER_TICK_LIMIT: u32 = 200;
 /// discovery the guide wants is exactly "it got this long and didn't finish"
 /// (§6 — never an unbounded loading state).
 const READY_TIMEOUT_MS: i32 = 20_000;
-/// `Painted` after `Ready`: two animation frames plus render jitter.
-const PAINTED_GRACE_MS: i32 = 15_000;
+/// `Painted` after `Ready`: two animation frames plus render jitter — and,
+/// since the Active phase (and its `boot: <runtime>` line) is published on
+/// Painted, this grace also bounds how long the terminal and the loading
+/// cover can lag a mounted runtime. Two seconds is many frames of render
+/// jitter; 15 s was a wait the user could feel.
+const PAINTED_GRACE_MS: i32 = 2_500;
 /// §12's forced removal: phase 1 gets 8 s, then the Shell takes phase 2.
 const DISPOSE_TIMEOUT_MS: i32 = 8_000;
 

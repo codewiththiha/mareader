@@ -17,9 +17,11 @@ on:
     paths:
       - ".github/workflows/deep-ci.yml"
       - "tests/browser/**"
-      - "public/engine/**"
-      - "public/pdfEngine.ts"
-      - "public/readerEngine.ts"
+      # The whole public tree: the engine bundles (pdfEngine/readerEngine),
+      # the shell's classic scripts (shellBoot.js) and the frame's Tauri
+      # relay (tauri-relay.js) all live here — a relay change without a
+      # Deep run means the native read-proof smoke never sees it.
+      - "public/**"
       # The lifecycle under test is also owned on the Rust side: an open/
       # close, diagnostics, engine or virtualizer change can alter what the
       # browser baseline measures just as much as an engine-bundle change.

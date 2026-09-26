@@ -213,7 +213,17 @@ async function fetchBytes(path: string): Promise<Uint8Array> {
     const bytes = await tauri.core.invoke("read_file_bytes", { path });
     return toUint8(bytes);
   }
-  return doFetch(path);
+  // A filesystem path over plain fetch() is not a URL: it would resolve
+  // against the origin, 404 (or hang) and surface as a mysterious load
+  // error. Say what is actually missing instead.
+  throw Object.assign(
+    new Error(
+      "no Tauri IPC in this frame — cannot read " +
+        path +
+        " (tauri-relay.js did not publish the parent's API here)",
+    ),
+    { name: "IpcUnavailableError" },
+  );
 }
 
 export /** Tauri `convertFileSrc` URL only — never a raw `/Users/...` path (that

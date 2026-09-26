@@ -293,8 +293,12 @@ impl RuntimeManager {
                 generation: driver.generation(),
             },
         };
-        boot::set_active(&host, runtime);
-        self.set_phase(BootPhase::Active(runtime));
+        // Active is NOT published here. The frame answered `Ready` (the
+        // runtime is mounted), but the loading cover is still down until
+        // `Painted` — reporting Active now is what made the terminal say
+        // `boot: library` while the user still stared at a loading screen.
+        // The Painted handler below sets the host active and publishes the
+        // phase, so the line lands exactly when the cover lifts.
         Ok(())
     }
 
@@ -329,6 +333,18 @@ impl RuntimeManager {
                         boot::clear_loading(&host);
                     }
                     boot::uncover_page();
+                    // The cover is up and the runtime's own DOM is on screen:
+                    // only NOW is `boot: <runtime>` an honest line. (The
+                    // driver's Painted grace reports the same event if the
+                    // frame never announces it, so this always lands.)
+                    if let (Some(host), Some(active)) = (manager.host(), manager.active()) {
+                        let runtime = match active {
+                            ActiveRuntime::Library => RuntimeName::Library,
+                            ActiveRuntime::Reader => RuntimeName::Reader,
+                        };
+                        boot::set_active(&host, runtime);
+                        manager.set_phase(BootPhase::Active(runtime));
+                    }
                 }
                 FrameEvent::Failed { stage, cause } => {
                     // A live runtime turned on its own failure (§11): the
@@ -500,8 +516,29 @@ impl RuntimeManager {
                         self.navigate_library(state);
                     }
                 }
-                *self.doc_status.lock().unwrap() = report.status.clone();
+                // The document's truth, printed the moment it changes: the
+                // terminal line `doc: Ready` means the file was read and the
+                // viewer is up (and `doc: Error — …` carries the reason).
+                // This is the line the native smoke waits for after handing
+                // a file to the app — a booted Reader that never reads
+                // cannot produce it.
+                let previous = {
+                    let mut status = self.doc_status.lock().unwrap();
+                    let changed = *status != report.status;
+                    *status = report.status.clone();
+                    changed
+                };
+                let error_changed = *self.doc_error.lock().unwrap() != report.error;
                 *self.doc_error.lock().unwrap() = report.error.clone();
+                if previous || error_changed {
+                    let detail = report.error.as_deref().unwrap_or("");
+                    let line = if detail.is_empty() {
+                        format!("doc: {}", report.status)
+                    } else {
+                        format!("doc: {} — {}", report.status, detail)
+                    };
+                    report_line(&line);
+                }
             }
             FrameVocabulary::PublishDigest(json) => {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
@@ -561,9 +598,6 @@ impl Default for RuntimeManager {
 
 /// Tell the native host which runtime is live, or where the boot stopped.
 fn report_boot(phase: &BootPhase) {
-    if !tauri_bridge::has_tauri() {
-        return;
-    }
     let report = match phase {
         BootPhase::Failed(error) => {
             let runtime = error.runtime.artifact();
@@ -571,9 +605,19 @@ fn report_boot(phase: &BootPhase) {
         }
         other => other.as_str().to_string(),
     };
+    report_line(&format!("boot: {report}"));
+}
+
+/// One honest line to the native host's terminal (`[mareader] <line>`).
+/// Boot phases prefix themselves with `boot: `; document truth rides as
+/// `doc: …`. Gated on the IPC being real — a plain browser has no host.
+fn report_line(line: &str) {
+    if !tauri_bridge::has_tauri() {
+        return;
+    }
     let args: JsValue = js_sys::Object::new().into();
     let key = JsValue::from_str("report");
-    if js_sys::Reflect::set(&args, &key, &JsValue::from_str(&report)).is_err() {
+    if js_sys::Reflect::set(&args, &key, &JsValue::from_str(line)).is_err() {
         return;
     }
     wasm_bindgen_futures::spawn_local(async move {

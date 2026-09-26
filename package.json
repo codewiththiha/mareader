@@ -10,6 +10,7 @@
     "build:ts": "tsc --noEmit --project tsconfig.json && tsc --project tsconfig.tools.json && node ./tools/bundle-engine.mjs",
     "dev:frontend": "node tools/dev.mjs",
     "build:dist": "sh tools/build-dist.sh --release",
+    "build:gate": "node tools/dev.mjs --build-only",
     "build": "npm run build:dist"
   },
   "devDependencies": {

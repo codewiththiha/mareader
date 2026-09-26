@@ -34,7 +34,24 @@
   } catch (_) {
     return; // cross-origin parent: not ours to relay through
   }
-  if (!root || typeof root !== "object") return;
+  if (!root || typeof root !== "object") {
+    // One level up is the only same-origin candidate worth trying (a nested
+    // shell), then say NOTHING was found — the line this prints in devtools
+    // is the difference between "the relay silently skipped" and a bug one
+    // look can name.
+    try {
+      root = window.top.__TAURI__;
+    } catch (_) {
+      root = null;
+    }
+    if (!root || typeof root !== "object") {
+      console.warn(
+        "[mareader] tauri-relay: this frame has no Tauri API and its parent " +
+          "does not expose one — file IO in this frame cannot work",
+      );
+      return;
+    }
+  }
 
   function facade(target) {
     return new Proxy(target, {
@@ -42,6 +59,17 @@
         if (typeof prop === "symbol") return Reflect.get(t, prop);
         var value = Reflect.get(t, prop);
         if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+          return value;
+        }
+        // Proxy invariant: for a non-configurable, non-writable own data
+        // property the 'get' result MUST be the target's exact value —
+        // returning a wrapped object here throws a TypeError on access
+        // (which is exactly how the document open died: the engine's
+        // convertFileSrc/invoke sit behind such a property). Pinned
+        // properties are therefore returned RAW; anything else may carry
+        // its facade.
+        var desc = Object.getOwnPropertyDescriptor(t, prop);
+        if (desc && desc.configurable === false && desc.writable === false) {
           return value;
         }
         if (typeof value === "function") {
@@ -58,4 +86,5 @@
   }
 
   window.__TAURI__ = facade(root);
+  console.info("[mareader] tauri-relay: Tauri API republished in this frame");
 })();

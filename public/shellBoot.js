@@ -50,3 +50,44 @@
     );
   }, DEADLINE_MS);
 })();
+
+// Warm both runtimes before anyone asks for them: fetch each runtime page,
+// then every wasm/script/style it references. The shell does this once at
+// start, so the first route switch — and every later app start, through the
+// webview's persistent HTTP and wasm code caches — is a cache hit instead of
+// a multi-megabyte download and a cold compile. Best-effort by construction:
+// any failure just means the switch pays its own cost.
+(function () {
+  if (window.location.protocol === "file:") return;
+  if (typeof fetch !== "function") return;
+  var warmed = {};
+  function prefetch(url) {
+    if (warmed[url]) return;
+    warmed[url] = true;
+    try {
+      fetch(url)
+        .then(function (res) {
+          return res.arrayBuffer();
+        })
+        .catch(function () {});
+    } catch (_) {
+      /* best-effort only */
+    }
+  }
+  ["/library.html", "/reader.html"].forEach(function (page) {
+    try {
+      fetch(page)
+        .then(function (res) {
+          return res.ok ? res.text() : "";
+        })
+        .then(function (html) {
+          var re = /(?:src|href)="(\/[^"]+\.(?:wasm|mjs|js|css))"/g;
+          var match;
+          while ((match = re.exec(html)) !== null) prefetch(match[1]);
+        })
+        .catch(function () {});
+    } catch (_) {
+      /* best-effort only */
+    }
+  });
+})();

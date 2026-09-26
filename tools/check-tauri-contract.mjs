@@ -72,13 +72,35 @@ const beforeBuild = String(build.beforeBuildCommand ?? "");
 const beforeDev = String(build.beforeDevCommand ?? "");
 
 const buildIndirect = /npm run build:dist\b/.test(beforeBuild);
+// The freshness-gated path (`cargo tauri run` / `tauri build` build only
+// when the inputs changed) is canonical too — but only if the gate script
+// runs the dev orchestrator in build-only mode, and that mode itself runs
+// the canonical builder. Anything else named "gate" is a new build path.
+const buildGated = /npm run build:gate\b/.test(beforeBuild);
 const buildDirect = beforeBuild.includes(CANONICAL_BUILDER);
-if (!buildIndirect && !buildDirect) {
+if (!buildIndirect && !buildGated && !buildDirect) {
   fail(
     `tauri.conf.json build.beforeBuildCommand is ${JSON.stringify(beforeBuild)} — ` +
       `it must run the canonical multi-artifact build (npm run build:dist, i.e. ` +
       `${CANONICAL_BUILDER}). Tauri must not build the frontend by another path.`,
   );
+}
+if (buildGated) {
+  const gateScript = String(scripts["build:gate"] ?? "");
+  if (!gateScript.includes(DEV_ORCHESTRATOR) || !gateScript.includes("--build-only")) {
+    fail(
+      `package.json scripts.build:gate is ${JSON.stringify(gateScript)} — the gated ` +
+        `beforeBuildCommand must run ${DEV_ORCHESTRATOR} --build-only (the freshness ` +
+        `gate around ${CANONICAL_BUILDER}), nothing else`,
+    );
+  }
+  const devOrchestrator = readText(DEV_ORCHESTRATOR) ?? "";
+  if (!devOrchestrator.includes(CANONICAL_BUILDER)) {
+    fail(
+      `${DEV_ORCHESTRATOR} never invokes ${CANONICAL_BUILDER} — the gate would replace ` +
+        `the canonical build instead of deciding whether to run it`,
+    );
+  }
 }
 if (/trunk build/.test(beforeBuild)) {
   fail(

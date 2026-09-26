@@ -155,10 +155,11 @@ fn set_traffic_lights(window: tauri::Window, visible: bool, header_height: Optio
     let _ = (window, visible, header_height);
 }
 
-/// The frontend's boot report: which runtime the shell brought up, or the
-/// stage it failed in. One line per boot transition (never per frame), on
-/// stderr — the terminal that launched the app, and the native smoke test's
-/// log (tools/tauri-smoke.mjs).
+/// The frontend's boot report: which runtime the shell brought up, where the
+/// boot stopped, and the document's own truth as it changes (`doc: Ready`,
+/// `doc: Error — …`). One line per transition (never per frame), on stderr —
+/// the terminal that launched the app, and the native smoke test's log
+/// (tools/tauri-smoke.mjs).
 ///
 /// This exists because of the incident it reports on: a packaged app whose
 /// frontend could not load its runtimes opened a native window and said
@@ -176,7 +177,7 @@ fn boot_report(report: String) {
         .take(160)
         .collect::<String>();
     if !line.is_empty() {
-        eprintln!("[mareader] boot: {line}");
+        eprintln!("[mareader] {line}");
     }
 }
 

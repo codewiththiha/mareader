@@ -22,8 +22,11 @@
 //      blank frame cannot fake.
 //   3. handoff — open a document the way the OS does (a second launch, whose
 //      argv the single-instance plugin forwards to the running window) and
-//      require the READER runtime to come up. That is a real runtime
-//      transition inside the packaged app, not a fixture.
+//      require the READER runtime to come up AND the document's own status
+//      to reach `doc: Ready` — the bytes crossing the same IPC relay (and
+//      asset protocol) the desktop app relies on. A Reader that mounts but
+//      cannot read a file never prints that line, so a green run now proves
+//      the read path, not just the boot.
 //
 // Environment: Linux with Xvfb (the runner provides DISPLAY), `xwd` for the
 // screenshot and `convert` (ImageMagick) to summarise it. Both are installed
@@ -108,13 +111,13 @@ function launch(extraArgs = []) {
     child,
     output,
     text: () => output.join(""),
-    /** Wait for a `[mareader] boot: <state>` line matching `pattern`. */
+    /** Wait for a `[mareader] <line>` (boot phase or doc truth) matching `pattern`. */
     async waitForBoot(pattern, timeoutMs, label) {
       const started = Date.now();
       for (;;) {
         const match = this.text()
           .split("\n")
-          .filter((line) => line.includes("[mareader] boot:"))
+          .filter((line) => line.includes("[mareader] "))
           .find((line) => pattern.test(line));
         if (match) return match.trim();
         if (this.child.exitCode !== null) {
@@ -215,6 +218,22 @@ try {
     report.boot.reader = readerLine;
     if (readerLine) {
       log(`reader boot reported: ${readerLine}`);
+      // The file must actually be READ, not merely mounted: the shell
+      // relays the document's own status to this terminal, and `doc: Ready`
+      // only lands after the bytes crossed the IPC relay (or the asset
+      // protocol) and pdf.js opened them. A Reader that boots but cannot
+      // read reports `doc: Error — …` or never settles — both fail here.
+      const docLine = await app.waitForBoot(
+        /doc: (Ready|Error)\b/,
+        T_READER_MS,
+        "document read",
+      );
+      report.boot.document = docLine;
+      if (docLine && /doc: Error/.test(docLine)) {
+        fail(`the handed-off document failed to open: ${docLine}`);
+      } else if (docLine) {
+        log(`document read reported: ${docLine}`);
+      }
       await sleep(SETTLE_MS);
       const stats = screenshotStats();
       report.pixelsAfterOpen = stats;
@@ -242,5 +261,5 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("\nTAURI SMOKE PASSED: native window booted the Library runtime, drew content, and handed a document to the Reader");
+console.log("\nTAURI SMOKE PASSED: native window booted the Library runtime, drew content, and read a handed-off document in the Reader");
 console.log("BOOT REPORT " + JSON.stringify(report));

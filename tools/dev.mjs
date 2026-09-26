@@ -89,6 +89,7 @@ const FRESHNESS_SET = [
   "dist/index.html",
   "dist/mareader.js",
   "dist/mareader_bg.wasm",
+  "dist/tauri-relay.js",
   "dist/library.html",
   "dist/library.js",
   "dist/library_bg.wasm",
@@ -104,6 +105,7 @@ const FRESHNESS_SET = [
  *  blank frame. */
 const PROBED = [
   "/index.html",
+  "/tauri-relay.js",
   "/library.html",
   "/library.js",
   "/library_bg.wasm",
@@ -626,27 +628,54 @@ function ensureIgnoreDirs() {
   }
 }
 
+/** The freshness decision, shared by the dev flow and `--build-only`
+ * (tauri.conf's beforeBuildCommand): build only when the manifest does not
+ * vouch the inputs, or artifacts are missing. Always returns the reason, so
+ * every run can say WHICH side of the gate it took. */
+function freshnessDecision() {
+  const force = process.env.FORCE_REBUILD === "1";
+  const fingerprint = sourceFingerprint();
+  if (force) return { fresh: false, fingerprint, why: "FORCE_REBUILD=1" };
+  if (!artifactsPresent())
+    return { fresh: false, fingerprint, why: "artifacts are missing" };
+  const manifest = readManifest();
+  if (manifest === null) return { fresh: false, fingerprint, why: "no manifest yet" };
+  if (manifest.profile !== "release" || manifest.fingerprint !== fingerprint)
+    return { fresh: false, fingerprint, why: "inputs changed since the last build" };
+  return { fresh: true, fingerprint, why: "inputs unchanged" };
+}
+
+/** `node tools/dev.mjs --build-only` — what tauri.conf's beforeBuildCommand
+ * runs. The same gate as the dev flow, with no server: the canonical
+ * three-target build runs when (and only when) the inputs changed, the
+ * manifest is written, exit 0. `cargo tauri run` and `tauri build` therefore
+ * pay the build once per change — not once per launch. */
+async function buildOnly() {
+  const decision = freshnessDecision();
+  if (decision.fresh) {
+    log(`build-only: ${decision.why} — skipping the three-target build`);
+    return;
+  }
+  log(`build-only: ${decision.why} — running the three-target build`);
+  await buildAllOrExit();
+  writeManifest(decision.fingerprint);
+  log("build-only: artifacts built and manifest written");
+}
+
 async function main() {
   // The freshness gate: a warm restart pays NO three-target build. The
   // manifest vouches the inputs are unchanged (and the artifacts exist);
   // FORCE_REBUILD=1 overrides when a build itself is suspect.
-  const force = process.env.FORCE_REBUILD === "1";
-  const fingerprint = sourceFingerprint();
-  const manifest = readManifest();
-  const fresh =
-    !force &&
-    artifactsPresent() &&
-    manifest !== null &&
-    manifest.profile === "release" &&
-    manifest.fingerprint === fingerprint;
-  if (fresh) {
+  const decision = freshnessDecision();
+  if (decision.fresh) {
     log(
-      "release artifacts are fresh — skipping the three-target build " +
+      `freshness gate: ${decision.why} — skipping the three-target build ` +
         "(FORCE_REBUILD=1 to rebuild)",
     );
   } else {
+    log(`freshness gate: ${decision.why} — building the three artifacts`);
     await buildAllOrExit();
-    writeManifest(fingerprint);
+    writeManifest(decision.fingerprint);
   }
 
   // Trunk hard-errors on a watch-ignore entry that does not exist yet; the
@@ -744,7 +773,15 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(`[dev] ${e.stack ?? e.message}`);
-  process.exit(1);
-});
+if (process.argv.includes("--build-only")) {
+  // beforeBuildCommand mode: gate + build, no server, no watch.
+  buildOnly().catch((e) => {
+    console.error(`[dev] ${e.stack ?? e.message}`);
+    process.exit(1);
+  });
+} else {
+  main().catch((e) => {
+    console.error(`[dev] ${e.stack ?? e.message}`);
+    process.exit(1);
+  });
+}
