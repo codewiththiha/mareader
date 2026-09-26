@@ -187,6 +187,13 @@ function toUint8(bytes: unknown): Uint8Array {
     const v = bytes as ArrayBufferView;
     return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
   }
+  // The invoke may have run on the PARENT window (tauri-relay.js publishes
+  // the frame's Tauri facade there): `instanceof` is realm-bound, so a
+  // parent-realm ArrayBuffer fails both checks above. Ask the object tag —
+  // realm-independent — and build this realm's view over the same memory.
+  if (Object.prototype.toString.call(bytes) === "[object ArrayBuffer]") {
+    return new Uint8Array(bytes as ArrayBuffer);
+  }
   if (Array.isArray(bytes)) return Uint8Array.from(bytes as number[]);
   throw Object.assign(new Error("read_file_bytes returned an unexpected type"), {
     name: "UnexpectedResponseException",

@@ -59,6 +59,10 @@ const REQUIRED = [
   ["dist/readerEngine.js", "the format-agnostic reader bundle", RUNTIME_FLOOR_BYTES],
   ["dist/bake.worker.js", "the theme bake worker", RUNTIME_FLOOR_BYTES],
   ["dist/shellBoot.js", "the shell page's boot watchdog", RUNTIME_FLOOR_BYTES],
+  // The iframes' Tauri facade (public/tauri-relay.js): without it the
+  // runtimes see no `__TAURI__` (Tauri stopped injecting sub-frames in 2.0)
+  // and every local-file open degrades to a 404 fetch — the blank reader.
+  ["dist/tauri-relay.js", "the frames' Tauri IPC facade", RUNTIME_FLOOR_BYTES],
   ["dist/vendor/pdfjs/pdf.min.mjs", "pdf.js itself", RUNTIME_FLOOR_BYTES],
   ["dist/vendor/pdfjs/pdf.worker.min.mjs", "the pdf.js worker", RUNTIME_FLOOR_BYTES],
   ["dist/vendor/pdfjs/pdf_viewer.css", "the pdf.js text-layer stylesheet", 0],

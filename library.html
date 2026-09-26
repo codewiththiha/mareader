@@ -4,9 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mareader — library runtime</title>
+    <!-- Before every other script: republish the parent frame's Tauri API on
+         this window (sub-frames stopped receiving it in Tauri 2 — see the
+         file's header). Dialog, reveal and file IO in this frame go through
+         it. -->
+    <script src="/tauri-relay.js"></script>
     <link data-trunk rel="css" href="styles.css" />
     <link data-trunk rel="copy-dir" href="public/vendor" />
-    <!-- The library artifact: its own Trunk config builds this page. -->
+    <link data-trunk rel="copy-file" href="public/tauri-relay.js" />
+    <!-- The library artifact: its own Trunk config (library.Trunk.toml) builds
+         this page. -->
     <link data-trunk rel="rust" href="crates/library-runtime" data-bin="library" data-wasm-opt="z" />
   </head>
   <body></body>

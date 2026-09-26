@@ -98,11 +98,16 @@ const FRESHNESS_SET = [
 ];
 
 /** The files the shell imports at boot, in boot order. Probed over HTTP so the
- *  check is about what the DEV SERVER serves, not what the disk holds. */
+ *  check is about what the DEV SERVER serves, not what the disk holds. The
+ *  two runtime PAGES are probed too: the shell's iframes load them by name,
+ *  and a dist that carries the scripts but not the pages still boots to a
+ *  blank frame. */
 const PROBED = [
   "/index.html",
+  "/library.html",
   "/library.js",
   "/library_bg.wasm",
+  "/reader.html",
   "/reader.js",
   "/reader_bg.wasm",
 ];
@@ -284,6 +289,21 @@ async function ensureDevPortFree() {
       `\`lsof -nP -iTCP:${port} -sTCP:LISTEN\`, stop that process, and restart.`,
   );
   return false;
+}
+
+/** Run a command to completion, capturing stdout+stderr. Returns
+ *  `{ code, out }` — the watcher uses this so a transient rebuild race does
+ *  not spray trunk's full "Build failure" block into the session log; the
+ *  output is held and only printed when every attempt has failed. */
+function runCaptured(command, args) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd: root });
+    let out = "";
+    child.stdout?.on("data", (d) => (out += d));
+    child.stderr?.on("data", (d) => (out += d));
+    child.on("error", (e) => resolve({ code: 127, out: `${out}\n[dev] ${command}: ${e.message}` }));
+    child.on("exit", (code, signal) => resolve({ code: signal ? 1 : (code ?? 1), out }));
+  });
 }
 
 /** Run the canonical build. Returns the exit code — the CALLER decides
@@ -510,9 +530,44 @@ function newestMtime() {
   return newest;
 }
 
-/** Wait until `trunk serve`'s own outputs have sat still for DIST_QUIET_MS.
- *  A missing shell output counts as NOT quiet — that is the dist/ swap
- *  window, exactly when a concurrent build must not start. */
+/** Newest mtime across `dist/.stage` and `target/wasm-opt`, or null when
+ *  neither exists. These are the two trees a Trunk build writes LATE —
+ *  staging fills as pipelines finish, wasm-opt runs just before the swap —
+ *  so they are the signals that a build is genuinely in flight. (`prepare_*
+ *  deletes `dist/.stage` at build start and the apply removes it after, so
+ *  an absent tree means idle, not mid-swap.) */
+function lateBuildActivity() {
+  let newest = null;
+  for (const rel of ["dist/.stage", "target/wasm-opt"]) {
+    const visit = (abs) => {
+      let entries;
+      try {
+        entries = fs.readdirSync(abs, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const child = path.join(abs, entry.name);
+        try {
+          const mtime = fs.statSync(child).mtimeMs;
+          if (newest === null || mtime > newest) newest = mtime;
+        } catch {
+          /* vanished mid-walk */
+        }
+        if (entry.isDirectory()) visit(child);
+      }
+    };
+    visit(path.join(root, rel));
+  }
+  return newest;
+}
+
+/** Wait until `trunk serve`'s outputs have sat still AND no build is filling
+ *  the staging tree or running wasm-opt. A missing shell output counts as
+ *  NOT quiet — that is the dist/ swap window, exactly when a concurrent
+ *  build must not start (Trunk deletes `dist/.stage` when it starts a build,
+ *  which is how a shared staging tree once deleted a wasm-opt input
+ *  mid-read). */
 async function waitForDistQuiet() {
   const deadline = Date.now() + DIST_QUIET_TIMEOUT_MS;
   for (;;) {
@@ -526,6 +581,8 @@ async function waitForDistQuiet() {
         break;
       }
     }
+    const activity = lateBuildActivity();
+    if (activity !== null) newest = newest === null ? activity : Math.max(newest, activity);
     if (newest !== null && Date.now() - newest >= DIST_QUIET_MS) return;
     if (Date.now() >= deadline) return;
     await sleep(250);
@@ -533,22 +590,32 @@ async function waitForDistQuiet() {
 }
 
 /** Canonical builds spawned while `trunk serve` is applying its own
- *  distribution race it: wasm-opt copies into a `dist/` that just ceased to
- *  exist, the build fails, and a fatal handler used to take the whole dev
- *  session with it. Wait for quiet, retry the race window, and if it still
- *  fails keep the server up — the next source change tries again. */
+ *  distribution race it — Trunk deletes `dist/.stage` at build start, so a
+ *  concurrent build's wasm-opt loses its input (exit 1, "Build failure") and
+ *  the apply can pull the ground out from under a copy. Wait for quiet,
+ *  capture each attempt's output, retry the race window, and only surface
+ *  the text when every attempt has failed: a race that heals itself should
+ *  read as a slow rebuild, not a stack trace. If it still fails, keep the
+ *  server up — the next source change tries again. */
 async function rebuildRuntimeArtifacts() {
   await waitForDistQuiet();
-  let code = 1;
+  let last = { code: 1, out: "" };
   for (let attempt = 1; attempt <= REBUILD_ATTEMPTS; attempt += 1) {
-    code = await runBuildAll();
-    if (code === 0) return true;
-    console.error(`[dev] rebuild failed (exit ${code}), attempt ${attempt}/${REBUILD_ATTEMPTS}`);
-    if (attempt < REBUILD_ATTEMPTS) await sleep(REBUILD_RETRY_MS);
+    last = await runCaptured("sh", ["tools/build-dist.sh", "--release"]);
+    if (last.code === 0) {
+      if (attempt > 1) log(`rebuild succeeded on attempt ${attempt}`);
+      return true;
+    }
+    console.error(`[dev] rebuild attempt ${attempt}/${REBUILD_ATTEMPTS} exited ${last.code} — retrying`);
+    if (attempt < REBUILD_ATTEMPTS) {
+      await sleep(REBUILD_RETRY_MS);
+      await waitForDistQuiet();
+    }
   }
   console.error(
-    "[dev] the canonical build is still failing — keeping the dev server up " +
-      "on the existing artifacts; the next source change retries",
+    `[dev] the canonical build failed after ${REBUILD_ATTEMPTS} attempts — keeping ` +
+      "the dev server up on the existing artifacts; the next source change retries.\n" +
+      last.out,
   );
   return false;
 }
@@ -605,6 +672,8 @@ async function main() {
   };
   process.on("SIGINT", () => stop(0));
   process.on("SIGTERM", () => stop(0));
+  // A closed terminal hangs up: same cleanup, so trunk cannot outlive it.
+  process.on("SIGHUP", () => stop(0));
   process.on("exit", () => {
     if (serve && !serveExited) {
       try {

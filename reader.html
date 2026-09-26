@@ -4,9 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mareader — reader runtime</title>
+    <!-- Before every other script: republish the parent frame's Tauri API on
+         this window (sub-frames stopped receiving it in Tauri 2 — see the
+         file's header). File IO in this frame goes through it. -->
+    <script src="/tauri-relay.js"></script>
     <link rel="stylesheet" href="vendor/pdfjs/pdf_viewer.css" />
     <link data-trunk rel="css" href="styles.css" />
     <link data-trunk rel="copy-dir" href="public/vendor" />
+    <link data-trunk rel="copy-file" href="public/tauri-relay.js" />
     <link data-trunk rel="copy-file" href="public/pdfEngine.js" />
     <link data-trunk rel="copy-file" href="public/readerEngine.js" />
     <link data-trunk rel="copy-file" href="public/bake.worker.js" />
