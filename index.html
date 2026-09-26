@@ -17,6 +17,11 @@
          pre-build hook) must ship next to the engine in the packaged app; the
          engine falls back to inline baking when it cannot find it. -->
     <link data-trunk rel="copy-file" href="public/bake.worker.js" />
+    <!-- The frames' Tauri facade: the runtime iframes load /tauri-relay.js
+         from the dist root, so the shell page's build is what ships it —
+         same rule as the engine bundles above (the artifact contract pins
+         it). -->
+    <link data-trunk rel="copy-file" href="public/tauri-relay.js" />
     <!-- The reader bundle: the format-agnostic half of the browser side (today
          the selection tracker, public/readerEngine.ts). It has no pdf.js
          dependency, so it goes first — and like the engine below it must run
