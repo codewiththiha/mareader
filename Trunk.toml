@@ -55,6 +55,21 @@ ignore = [
     "./public/pdfEngine.js",
     "./public/readerEngine.js",
     "./public/bake.worker.js",
+    # The repo root is the default watch path, so these were all live: every
+    # cargo run writes `target/` (Trunk's own release build, the DevCommand's
+    # debug build, and build-dist.sh's three targets), and build-dist.sh
+    # builds the two non-shell targets into `dist-reader/` and `dist-library/`
+    # — each of those writes queued a rebuild after the build that made it,
+    # and with the cooldown off by default the cycle never settled.
+    "./target",
+    "./dist-reader",
+    "./dist-library",
+    # Trees that move without a source edit: npm's store during an
+    # install, and the freshness manifest dev.mjs rewrites after each
+    # canonical build. Ignoring them keeps those events out of the loop;
+    # `dev.mjs` forces the rebuilds that actually matter itself.
+    "./node_modules",
+    "./.dev-artifacts",
 ]
 
 # Bundle the engine with esbuild (IIFE, no import graph). `node` runs the

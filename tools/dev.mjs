@@ -130,9 +130,33 @@ const WATCHED_FILES = [
   "library.Trunk.toml",
 ];
 
+/** Directory entries in Trunk.toml's `[watch] ignore` list. Trunk 0.21.x
+ *  canonicalizes every entry at startup and a missing path is a hard error,
+ *  so the directories must exist before `trunk serve` spawns — the freshness
+ *  gate can skip the build that would normally have created them (a gate
+ *  restart after `cargo clean`, for instance). File entries are all build
+ *  outputs, which the gate's own artifact check already covers. */
+const IGNORE_DIRS = [
+  "src-tauri",
+  "scripts",
+  "styles",
+  "target",
+  "dist-reader",
+  "dist-library",
+  "node_modules",
+  ".dev-artifacts",
+];
+
 const POLL_MS = 1000;
 const SERVE_START_TIMEOUT_MS = 180_000;
 const PROBE_TIMEOUT_MS = 5_000;
+/** Quiet window before a watcher rebuild: `trunk serve` swaps its
+ *  distribution at the END of a build, and a concurrent canonical build
+ *  copying wasm into that `dist/` fails with ENOENT mid-swap. */
+const DIST_QUIET_MS = 1_200;
+const DIST_QUIET_TIMEOUT_MS = 10_000;
+const REBUILD_ATTEMPTS = 3;
+const REBUILD_RETRY_MS = 2_500;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const log = (msg) => console.log(`[dev] ${msg}`);
@@ -161,9 +185,16 @@ function run(command, args, options = {}) {
   });
 }
 
-async function buildAll() {
+/** Run the canonical build. Returns the exit code — the CALLER decides
+ *  whether a failure is fatal (startup: yes; the watch loop: no, it retries
+ *  and stays up so a transient dist/ race never takes the dev server down). */
+async function runBuildAll() {
   log("building all three artifacts (tools/build-dist.sh --release)");
-  const code = await run("sh", ["tools/build-dist.sh", "--release"]);
+  return run("sh", ["tools/build-dist.sh", "--release"]);
+}
+
+async function buildAllOrExit() {
+  const code = await runBuildAll();
   if (code !== 0) {
     console.error(`[dev] the canonical build failed (exit ${code}) — not starting the shell`);
     process.exit(code);
@@ -330,7 +361,10 @@ async function proveServed(label) {
 
 /** A cheap, deterministic change detector: newest mtime across the watched
  *  trees. fs.watch is platform-dependent (recursive on some, not others) and
- *  this runs once a second over a small tree. */
+ *  this runs once a second over a small tree. Hook outputs under `public/`
+ *  are EXCLUDED for the same reason the fingerprint excludes them: every
+ *  Trunk build rewrites them, so counting them would fire a canonical rebuild
+ *  off Trunk's own churn instead of a real source edit. */
 function newestMtime() {
   let newest = 0;
   const visit = (abs) => {
@@ -342,6 +376,8 @@ function newestMtime() {
     }
     for (const entry of entries) {
       if (entry.name === "target" || entry.name === "node_modules" || entry.name === ".git") continue;
+      if (GENERATED_NAMES.has(entry.name)) continue;
+      if (abs === ENGINE_DIR && entry.name.endsWith(".js")) continue;
       const child = path.join(abs, entry.name);
       if (entry.isDirectory()) {
         visit(child);
@@ -367,6 +403,55 @@ function newestMtime() {
   return newest;
 }
 
+/** Wait until `trunk serve`'s own outputs have sat still for DIST_QUIET_MS.
+ *  A missing shell output counts as NOT quiet — that is the dist/ swap
+ *  window, exactly when a concurrent build must not start. */
+async function waitForDistQuiet() {
+  const deadline = Date.now() + DIST_QUIET_TIMEOUT_MS;
+  for (;;) {
+    let newest = null;
+    for (const rel of ["dist/index.html", "dist/mareader.js", "dist/mareader_bg.wasm"]) {
+      try {
+        const mtime = fs.statSync(path.join(root, rel)).mtimeMs;
+        newest = newest === null ? mtime : Math.max(newest, mtime);
+      } catch {
+        newest = null;
+        break;
+      }
+    }
+    if (newest !== null && Date.now() - newest >= DIST_QUIET_MS) return;
+    if (Date.now() >= deadline) return;
+    await sleep(250);
+  }
+}
+
+/** Canonical builds spawned while `trunk serve` is applying its own
+ *  distribution race it: wasm-opt copies into a `dist/` that just ceased to
+ *  exist, the build fails, and a fatal handler used to take the whole dev
+ *  session with it. Wait for quiet, retry the race window, and if it still
+ *  fails keep the server up — the next source change tries again. */
+async function rebuildRuntimeArtifacts() {
+  await waitForDistQuiet();
+  let code = 1;
+  for (let attempt = 1; attempt <= REBUILD_ATTEMPTS; attempt += 1) {
+    code = await runBuildAll();
+    if (code === 0) return true;
+    console.error(`[dev] rebuild failed (exit ${code}), attempt ${attempt}/${REBUILD_ATTEMPTS}`);
+    if (attempt < REBUILD_ATTEMPTS) await sleep(REBUILD_RETRY_MS);
+  }
+  console.error(
+    "[dev] the canonical build is still failing — keeping the dev server up " +
+      "on the existing artifacts; the next source change retries",
+  );
+  return false;
+}
+
+function ensureIgnoreDirs() {
+  for (const rel of IGNORE_DIRS) {
+    fs.mkdirSync(path.join(root, rel), { recursive: true });
+  }
+}
+
 async function main() {
   // The freshness gate: a warm restart pays NO three-target build. The
   // manifest vouches the inputs are unchanged (and the artifacts exist);
@@ -386,12 +471,23 @@ async function main() {
         "(FORCE_REBUILD=1 to rebuild)",
     );
   } else {
-    await buildAll();
+    await buildAllOrExit();
     writeManifest(fingerprint);
   }
 
+  // Trunk hard-errors on a watch-ignore entry that does not exist yet; the
+  // build above normally creates these, but a gate-skipped start may not
+  // have run one.
+  ensureIgnoreDirs();
+
   log("starting trunk serve (the shell dev server, release profile)");
-  const serve = spawn("trunk", ["serve", "--release"], { cwd: root, stdio: "inherit" });
+  // --enable-cooldown: discard filesystem events that land during a build.
+  // Trunk's default is off, and with it off every write cargo makes inside
+  // `target/` queues another build — an endless serve loop.
+  const serve = spawn("trunk", ["serve", "--release", "--enable-cooldown"], {
+    cwd: root,
+    stdio: "inherit",
+  });
   let serveExited = false;
   serve.on("error", (e) => {
     serveExited = true;
@@ -430,7 +526,7 @@ async function main() {
     // A watched source changed: the runtime artifacts are stale until the
     // canonical build runs again. Trunk rebuilds the shell on its own.
     log("source change detected — rebuilding the runtime artifacts");
-    await buildAll();
+    if (!(await rebuildRuntimeArtifacts())) continue;
     writeManifest(sourceFingerprint());
     if (!(await proveServed("rebuild"))) shutdown();
   }
