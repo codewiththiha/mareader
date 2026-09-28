@@ -36,7 +36,6 @@
 //! in the same tick.
 
 use leptos::prelude::*;
-use pdf_core::pixel_grid::{one_device_px, snap_px};
 use reader_core::view::{ViewMode, anchored_position};
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
@@ -87,81 +86,6 @@ impl ZoomActuator {
         factor: f64,
     ) -> Option<PendingScroll> {
         self.relayout(state, factor, Surface::Later)
-    }
-
-    /// Position and size every mounted page of the vertical strip for the
-    /// geometry a detached relayout produced, directly in the DOM.
-    ///
-    /// These are Leptos-owned values — each wrapper's `top` follows the
-    /// virtualizer's `item_top`, each host's box follows the stretch effect —
-    /// and their patches follow on their own schedule. An untweened landing
-    /// cannot leave the order to that schedule: its scroll write moves the
-    /// view by a whole zoom step, so any frame painted between it and those
-    /// patches shows the new offset over the OLD page positions (measured in
-    /// the browser suite: a different page under the viewport centre for one
-    /// frame). Writing the same values here first makes the scroll write
-    /// that follows land on the geometry it belongs to; the patches then
-    /// write what is already there. Host sizes come from the intrinsic page
-    /// size at the display scale — the product the commit's renders produce.
-    pub(crate) fn apply_page_geometry(&self, state: &ReaderState) {
-        let Some(spacer) = extent_element(StripExtent::Vertical) else {
-            return;
-        };
-        let Some(track) = spacer.parent_element() else {
-            return;
-        };
-        let gap = state.viewer.page_gap.get_untracked();
-        let scale = state.viewer.zoom.visual_scale();
-        let children = track.children();
-        state
-            .document
-            .content
-            .metrics
-            .intrinsic
-            .with_untracked(|sizes| {
-                for i in 0..children.length() {
-                    let Some(wrapper) = children.item(i) else {
-                        continue;
-                    };
-                    let Some(host) = wrapper.query_selector(".pdf-page").ok().flatten() else {
-                        continue;
-                    };
-                    let Some(page) = host
-                        .get_attribute("data-host-page")
-                        .and_then(|p| p.parse::<usize>().ok())
-                        .filter(|p| *p > 0)
-                    else {
-                        continue;
-                    };
-                    let index = page - 1;
-                    // Same offset and no-gap overlap the strip's wrapper style
-                    // computes (strip.rs).
-                    let overlap = if index > 0 && gap <= 1e-9 {
-                        one_device_px()
-                    } else {
-                        0.0
-                    };
-                    let top = snap_px(self.vertical.item_top(index).get_untracked()) - overlap;
-                    if let Ok(wrapper) =
-                        wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(wrapper)
-                    {
-                        let _ = web_sys::HtmlElement::style(&wrapper)
-                            .set_property("top", &format!("{top}px"));
-                    }
-                    if let Some(size) = sizes.get(index).filter(|s| s.width > 0.0 && s.height > 0.0)
-                    {
-                        let _ = host.set_attribute(
-                            "style",
-                            &format!(
-                                "width:{}px;height:{}px;--scale-factor:{}",
-                                snap_px(size.width * scale),
-                                snap_px(size.height * scale),
-                                scale
-                            ),
-                        );
-                    }
-                }
-            });
     }
 
     /// Put the strips' extents and scroll offsets where a relayout left them.
@@ -370,11 +294,13 @@ enum StripExtent {
 /// geometry it belongs to. Absent strip (the other mode, or a torn-down
 /// reader): nothing to extend.
 fn apply_extent(extent: StripExtent, total: f64) {
-    let property = match extent {
-        StripExtent::Vertical => "height",
-        StripExtent::Horizontal => "width",
+    let (selector, property) = match extent {
+        StripExtent::Vertical => ("[data-strip-extent=\"vertical\"]", "height"),
+        StripExtent::Horizontal => ("[data-strip-extent=\"horizontal\"]", "width"),
     };
-    let Some(el) = extent_element(extent)
+    let Some(el) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector(selector).ok().flatten())
         .and_then(|el| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(el).ok())
     else {
         return;
@@ -382,15 +308,4 @@ fn apply_extent(extent: StripExtent, total: f64) {
     // Called through the inherent method: the Leptos prelude's `ElementExt`
     // also names a `style`.
     let _ = web_sys::HtmlElement::style(&el).set_property(property, &format!("{total}px"));
-}
-
-/// The element carrying a strip's scroll extent, if that strip is mounted.
-fn extent_element(extent: StripExtent) -> Option<web_sys::Element> {
-    let selector = match extent {
-        StripExtent::Vertical => "[data-strip-extent=\"vertical\"]",
-        StripExtent::Horizontal => "[data-strip-extent=\"horizontal\"]",
-    };
-    web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.query_selector(selector).ok().flatten())
 }

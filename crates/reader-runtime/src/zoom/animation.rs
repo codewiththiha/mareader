@@ -134,13 +134,13 @@ pub(crate) fn same_transaction(a: &ZoomTransition, b: &ZoomTransition) -> bool {
 ///    DOM write. Everything that renders from those signals (page hosts
 ///    stretching their current bitmaps, item positions, the strip's extent)
 ///    is queued on the reactive executor by these writes.
-/// 2. The scroll write is queued behind them, and immediately before it the
-///    actuator writes the mounted pages' new positions and sizes itself
-///    (`apply_page_geometry`) — the same values those patches write, but in
-///    an order that does not depend on when the patches run. The new offset
-///    is therefore never shown over the old page positions. (Writing it
-///    first — the tween's order, invisible there because each frame is a 1%
-///    step — showed a different page under the reader's eyes for a frame.)
+/// 2. The scroll write is queued BEHIND them, on the same executor: it runs
+///    once they have patched the DOM, in the same flush, so the new offset
+///    is never shown over the old page positions. (That order holds only
+///    because page geometry is exempt from the motion nets' 0.01ms
+///    transitions — see styles/components/animations.css.) (Writing it first — the
+///    tween's order, invisible there because each frame is a 1% step — showed
+///    a different page under the reader's eyes for a frame.)
 /// 3. Only then is the transaction committed and released
 ///    ([`finish_transition`]): the freezes hold across the whole landing,
 ///    and the renders the commit issues draw into scratches and swap in one
@@ -159,7 +159,6 @@ pub(crate) fn commit_instant(state: &ReaderState, actuator: &ZoomActuator, t: &Z
             return;
         }
         if let Some(pending) = pending {
-            actuator.apply_page_geometry(&state);
             actuator.write_scroll(pending);
         }
         finish_transition(&state, &t);

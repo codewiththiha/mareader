@@ -213,7 +213,7 @@ pub fn PdfPageStrip(
     };
 
     view! {
-        <div id=scroller_id node_ref=list_ref class=scroller_class tabindex="0">
+        <div id=scroller_id node_ref=list_ref class=scroller_class tabindex="0" data-page-strip="">
             {match axis {
                 Axis::Vertical => {
                     let each_items = items;
