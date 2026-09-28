@@ -89,22 +89,12 @@ runtime-contract = { path = "crates/runtime-contract" }
 app-ui = { path = "crates/app-ui" }
 storage = { path = "crates/storage" }
 # The shell hosts runtimes; it owns none of what a runtime owns. Its only
-# domain reads are the persisted settings schema (`reader-core`), the
-# shelf's launch metadata (`library-core`), and the runtime boundary
-# itself (`runtime-contract`). A format engine, a paginator, a parser or a
-# virtualiser appearing in this manifest is a regression.
+# domain reads are the persisted settings schema (`reader-core`) and the
+# runtime boundary itself (`runtime-contract`); the shelf's own domain
+# (`library-core`) reaches it only through `storage`, never directly. A
+# format engine, a paginator, a parser or a virtualiser appearing in this
+# manifest is a regression.
 reader-core = { path = "crates/reader-core" }
-# The library's domain: the book and its fingerprint, shelves and watched
-# folders, the scan predicate, the rescan ledger, the sort and the persisted
-# blob. Shared with the Tauri shell, which does the IO and measures with the
-# same fingerprint this crate defines.
-library-core = { path = "crates/library-core" }
-
-[dev-dependencies]
-# The app's host tests build their books, rows and shelves with the domain
-# crate's own fixtures rather than a tenth private copy of a fifteen-field
-# literal; the feature is a dev-only gate and never reaches a release build.
-library-core = { path = "crates/library-core", features = ["test-util"] }
 
 [workspace]
 members = [

@@ -16,7 +16,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
-use crate::covers::{CoverImage, CoverMap};
+use crate::covers::CoverImage;
 
 /// Which runtime occupies a frame. The Shell keeps at most one ACTIVE frame
 /// and at most one WARM frame (§33's "live runtime frames" invariant, restated
@@ -167,12 +167,6 @@ pub enum RuntimeFrame {
     SaveSettings {
         settings: Box<reader_core::settings::Settings>,
     },
-    /// `ShellApi::save_library` over the wire.
-    SaveLibrary {
-        blob: Box<library_core::blob::LibraryBlob>,
-    },
-    /// `ShellApi::save_covers` over the wire.
-    SaveCovers { covers: Box<CoverMap> },
     /// `ShellApi::save_cover` over the wire.
     SaveCover { path: String, image: CoverImage },
     /// `ShellApi::bake_cover` over the wire — answered by

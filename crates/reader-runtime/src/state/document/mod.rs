@@ -55,7 +55,7 @@ pub struct DocumentState {
     /// can hold two. Every reader of a resume point and every writer of a
     /// highlight asks which row this is rather than guessing from the path —
     /// see `reader_runtime::services::document::gloss_key` and
-    /// [`library_core::book::rows_for_read`].
+    /// `library_core::book::rows_for_read` (the shelf's side of it).
     pub book_id: RwSignal<Option<String>>,
     pub title: RwSignal<Option<String>>,
     pub author: RwSignal<Option<String>>,

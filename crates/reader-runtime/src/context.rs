@@ -81,22 +81,6 @@ impl ShellApi for ApiHandle {
             }
         }
     }
-    fn save_library(&self, blob: &library_core::blob::LibraryBlob) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.save_library(blob),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.save_library(blob));
-            }
-        }
-    }
-    fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.save_covers(covers),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.save_covers(covers));
-            }
-        }
-    }
     fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         match self {
             ApiHandle::Standalone => StandaloneApi.save_cover(path, image),
@@ -105,14 +89,11 @@ impl ShellApi for ApiHandle {
             }
         }
     }
-    fn bake_cover(&self, path: &str) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi.bake_cover(path),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.bake_cover(path));
-            }
-        }
-    }
+    /// The reader never asks for a bake: it owns the engine, so a cover it
+    /// wants is one it renders and files with `save_cover`. Bakes are the
+    /// shelf's asks, and the Shell refuses one from any other frame kind —
+    /// nothing is sent.
+    fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, report: &DocStatusReport) {
         match self {
             ApiHandle::Standalone => StandaloneApi.doc_status(report),
@@ -210,12 +191,6 @@ impl ShellApi for StandaloneApi {
     }
     fn save_settings(&self, settings: &Settings) {
         let _ = storage::save_settings(settings);
-    }
-    fn save_library(&self, blob: &library_core::blob::LibraryBlob) {
-        let _ = storage::save_library(blob);
-    }
-    fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
-        let _ = storage::save_covers(covers);
     }
     fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         let mut map = storage::load_covers();

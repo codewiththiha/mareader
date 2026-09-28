@@ -91,12 +91,10 @@ pub trait ShellApi {
     fn read_point(&self, point: &ReadPoint);
     /// Runtime → Shell: persist the settings blob (the Shell owns the key).
     fn save_settings(&self, settings: &Settings);
-    /// Library → Shell: persist the library blob (the Shell owns the key).
-    fn save_library(&self, blob: &library_core::blob::LibraryBlob);
-    /// Library → Shell: persist the cover cache (the Shell owns the key).
-    fn save_covers(&self, covers: &crate::covers::CoverMap);
     /// Reader → Shell: one generated cover (the reader owns the engine that
-    /// bakes it; the Shell owns the persisted map it lands in).
+    /// bakes it; the Shell owns the persisted map it lands in). The library
+    /// blob and the cover cache are NOT boundary calls: the shelf writes
+    /// them itself, in its own frame, through the origin's one store.
     fn save_cover(&self, path: &str, image: &crate::covers::CoverImage);
     /// Library → Shell: bake page 1 of the book at `path` into cover art.
     ///
@@ -127,7 +125,6 @@ pub trait ShellApi {
 pub struct RecordApi {
     pub launches: std::cell::RefCell<Vec<LaunchDocument>>,
     pub read_points: std::cell::RefCell<Vec<ReadPoint>>,
-    pub library_calls: std::cell::RefCell<u32>,
     pub settings_saves: std::cell::RefCell<u32>,
     pub bakes: std::cell::RefCell<Vec<String>>,
 }
@@ -143,10 +140,6 @@ impl ShellApi for RecordApi {
     fn save_settings(&self, _settings: &Settings) {
         *self.settings_saves.borrow_mut() += 1;
     }
-    fn save_library(&self, _blob: &library_core::blob::LibraryBlob) {
-        *self.library_calls.borrow_mut() += 1;
-    }
-    fn save_covers(&self, _covers: &crate::covers::CoverMap) {}
     fn save_cover(&self, _path: &str, _image: &crate::covers::CoverImage) {}
     fn bake_cover(&self, path: &str) {
         self.bakes.borrow_mut().push(path.to_string());

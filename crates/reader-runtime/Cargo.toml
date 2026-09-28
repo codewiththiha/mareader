@@ -20,7 +20,6 @@ frame-transport = { path = "../frame-transport" }
 js-sys = "0.3"
 leptos = { version = "0.8", features = ["csr"] }
 leptos-md = "0.1"
-library-core = { path = "../library-core" }
 md-core = { path = "../md-core" }
 pdf-core = { path = "../pdf-core" }
 pdf-engine = { path = "../pdf-engine" }

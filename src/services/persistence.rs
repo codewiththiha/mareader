@@ -1,7 +1,7 @@
-//! The shell's persistence writes: the ONE authority for the durable keys.
-//! Runtime sessions hand data across the boundary; this module touches
-//! storage. The read-point recorder reuses the reader-side logic that used
-//! to write the blob directly.
+//! The shell's persistence writes for what crosses the boundary: settings,
+//! read points and single covers. The library blob and the cover cache are
+//! the shelf's own writes, made in its frame through the origin's one store
+//! — they never cross to the Shell.
 
 use runtime_contract::boundary::ReadPoint;
 
@@ -11,10 +11,6 @@ pub fn apply_read_point(point: &ReadPoint) {
 
 pub fn save_settings(settings: &reader_core::settings::Settings) {
     let _ = storage::save_settings(settings);
-}
-
-pub fn save_library(blob: &library_core::blob::LibraryBlob) {
-    let _ = storage::save_library(blob);
 }
 
 pub fn save_cover(path: &str, image: runtime_contract::covers::CoverImage) {

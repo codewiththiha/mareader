@@ -1312,7 +1312,6 @@ name = "frame-transport"
 version = "0.1.0"
 dependencies = [
  "js-sys",
- "library-core",
  "reader-core",
  "runtime-contract",
  "serde",
@@ -2545,7 +2544,6 @@ dependencies = [
  "console_error_panic_hook",
  "js-sys",
  "leptos",
- "library-core",
  "reader-core",
  "runtime-contract",
  "serde",
@@ -3517,7 +3515,6 @@ dependencies = [
  "js-sys",
  "leptos",
  "leptos-md",
- "library-core",
  "md-core",
  "pdf-core",
  "pdf-engine",
@@ -3695,7 +3692,6 @@ name = "runtime-contract"
 version = "0.1.0"
 dependencies = [
  "js-sys",
- "library-core",
  "reader-core",
  "serde",
  "serde_json",

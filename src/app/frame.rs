@@ -129,8 +129,6 @@ pub enum FrameVocabulary {
     NavigateLibrary,
     ReadPoint(Box<runtime_contract::boundary::ReadPoint>),
     SaveSettings(Box<reader_core::settings::Settings>),
-    SaveLibrary(Box<library_core::blob::LibraryBlob>),
-    SaveCovers(Box<runtime_contract::covers::CoverMap>),
     SaveCover {
         path: String,
         image: runtime_contract::covers::CoverImage,
@@ -785,12 +783,6 @@ impl Driver {
                 self.report(FrameEvent::Boundary(FrameVocabulary::SaveSettings(
                     settings,
                 )));
-            }
-            RuntimeFrame::SaveLibrary { blob } => {
-                self.report(FrameEvent::Boundary(FrameVocabulary::SaveLibrary(blob)));
-            }
-            RuntimeFrame::SaveCovers { covers } => {
-                self.report(FrameEvent::Boundary(FrameVocabulary::SaveCovers(covers)));
             }
             RuntimeFrame::SaveCover { path, image } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::SaveCover {

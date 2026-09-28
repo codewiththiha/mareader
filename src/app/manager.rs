@@ -1329,12 +1329,6 @@ impl RuntimeManager {
                 // edit instead of keeping the look it booted with.
                 let _ = leptos::prelude::Set::try_set(&state.settings, *settings);
             }
-            FrameVocabulary::SaveLibrary(blob) => {
-                crate::services::save_library(&blob);
-            }
-            FrameVocabulary::SaveCovers(covers) => {
-                let _ = storage::save_covers(&covers);
-            }
             FrameVocabulary::SaveCover { path, image } => {
                 crate::services::save_cover(&path, image);
             }

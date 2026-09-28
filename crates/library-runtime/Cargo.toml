@@ -49,3 +49,9 @@ web-sys = { version = "0.3", features = [
 [dev-dependencies]
 # The import service's tests read gloss marks straight off ai-core's types.
 ai-core = { path = "../ai-core" }
+# The shelf's tests build their books and shelves with the domain crate's own
+# fixtures (`library_core::testkit`); the feature is a dev-only gate and never
+# reaches a release build. Declared here, by the crate that uses them — the
+# workspace root used to enable the feature for everyone as a side effect of
+# its own dev-dependency.
+library-core = { path = "../library-core", features = ["test-util"] }

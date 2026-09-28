@@ -7,7 +7,6 @@ license = "MIT"
 
 [dependencies]
 js-sys = "0.3"
-library-core = { path = "../library-core" }
 reader-core = { path = "../reader-core" }
 serde = { version = "1", features = ["derive"] }
 

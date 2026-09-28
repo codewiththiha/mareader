@@ -6,4 +6,4 @@ mod launch;
 mod persistence;
 
 pub use launch::{install_os_open_handling, launch_from_url};
-pub use persistence::{apply_read_point, resolve_launch, save_cover, save_library, save_settings};
+pub use persistence::{apply_read_point, resolve_launch, save_cover, save_settings};

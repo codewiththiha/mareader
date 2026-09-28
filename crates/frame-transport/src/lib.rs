@@ -22,7 +22,6 @@ use std::rc::Rc;
 
 use runtime_contract::ShellApi;
 use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
-use runtime_contract::covers::CoverMap;
 use runtime_contract::protocol::{RuntimeEnvelope, RuntimeFrame};
 
 pub mod wasm;
@@ -195,16 +194,6 @@ impl<W: Wire> ShellApi for PortShellApi<W> {
     fn save_settings(&self, settings: &reader_core::settings::Settings) {
         self.emit(RuntimeFrame::SaveSettings {
             settings: Box::new(settings.clone()),
-        });
-    }
-    fn save_library(&self, blob: &library_core::blob::LibraryBlob) {
-        self.emit(RuntimeFrame::SaveLibrary {
-            blob: Box::new(blob.clone()),
-        });
-    }
-    fn save_covers(&self, covers: &CoverMap) {
-        self.emit(RuntimeFrame::SaveCovers {
-            covers: Box::new(covers.clone()),
         });
     }
     fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {

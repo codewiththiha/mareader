@@ -6,7 +6,6 @@ use app_state::state::UiState;
 use leptos::prelude::*;
 use reader_core::settings::Settings;
 use runtime_contract::boundary::ShellApi;
-use runtime_contract::covers::CoverMap;
 
 /// Which ShellApi implementation backs this session: the hosted frame or
 /// the standalone storage API (`library.html` without a Shell). A Copy handle
@@ -49,22 +48,6 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi::new().save_settings(settings),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_settings(settings));
-            }
-        }
-    }
-    fn save_library(&self, blob: &library_core::blob::LibraryBlob) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi::new().save_library(blob),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.save_library(blob));
-            }
-        }
-    }
-    fn save_covers(&self, covers: &runtime_contract::covers::CoverMap) {
-        match self {
-            ApiHandle::Standalone => StandaloneApi::new().save_covers(covers),
-            ApiHandle::Frame => {
-                crate::frame::with_api(|api| api.save_covers(covers));
             }
         }
     }
@@ -204,12 +187,6 @@ impl ShellApi for StandaloneApi {
     }
     fn save_settings(&self, settings: &Settings) {
         let _ = storage::save_settings(settings);
-    }
-    fn save_library(&self, blob: &library_core::blob::LibraryBlob) {
-        let _ = storage::save_library(blob);
-    }
-    fn save_covers(&self, covers: &CoverMap) {
-        let _ = storage::save_covers(covers);
     }
     fn save_cover(&self, path: &str, image: &runtime_contract::covers::CoverImage) {
         let mut map = storage::load_covers();
