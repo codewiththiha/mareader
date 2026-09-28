@@ -424,6 +424,11 @@ impl ReaderRuntime {
             crate::diagnostics::note_reader_runtime_dispose_begin(stamp);
         }
         pdf_engine::backdrop::document_close();
+        // The per-document memos that live outside the session's reactive
+        // tree go with it: in a hosted frame the thread-locals survive the
+        // session (the frame is recycled, not reloaded), and a memo nobody
+        // clears is memory the next session pays for without using.
+        crate::components::ai::reflow_anchor::forget_parsed_spots();
         // The resources leave the registry NOW: from this moment the tail
         // alone owns them, and a mount that lands before the engine destroy
         // resolves starts with a clean registry the stale tail cannot reach.

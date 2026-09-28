@@ -155,6 +155,20 @@ pub fn parse_spot(context: &str) -> Option<ReflowSpot> {
     spot
 }
 
+/// Drop the memo whole. Called from the session's dispose: the memo is a
+/// thread-local, so in a hosted frame it would otherwise outlive the session
+/// that filled it — a recycled reader frame mounts a fresh session in the
+/// same document, and every context string of the documents read before it
+/// would still be resident. The next session's first resolve pass re-parses
+/// what it needs (a handful of JSON parses), exactly as a cache miss does.
+pub fn forget_parsed_spots() {
+    PARSED_SPOTS.with(|cache| {
+        let mut memo = cache.borrow_mut();
+        memo.clear();
+        memo.shrink_to_fit();
+    });
+}
+
 /// The sentence to hand the model for a mark, whichever format made it: the
 /// envelope's for a reflowable mark, the plain `context` for a PDF's.
 ///
