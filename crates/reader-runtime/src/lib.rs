@@ -369,8 +369,9 @@ fn take_dispose_resolver() -> (js_sys::Promise, Option<js_sys::Function>) {
     (promise, resolve_fn)
 }
 
-/// Called by the diagnostics surface when the runtime's disposal tail
-/// completed: resolves the Shell's dispose promise.
+/// Called by the runtime's disposal tail when it completed — with or
+/// without a document to close: resolves the Shell's dispose promise. A
+/// take, so a tail that reaches it twice resolves once.
 pub fn resolve_dispose() {
     PENDING_DISPOSE.with(|p| {
         if let Some(resolve) = p.borrow_mut().take() {

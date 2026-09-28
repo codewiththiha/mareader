@@ -462,6 +462,13 @@ impl ReaderRuntime {
                 crate::diagnostics::note_reader_runtime_dispose_complete(stamp);
                 app_state::memory::log_heap("close");
             }
+            // The Shell's manager awaits the dispose export's promise before
+            // it removes or recycles the frame (§5): the tail's end resolves
+            // it, document or not. A session that never held a document — a
+            // warm reader the Shell evicts or replaces — owes the same answer
+            // as one that did; resolving it only on the document path left
+            // the Shell to wait out its forced-removal timeout for each.
+            crate::resolve_dispose();
             // The final push for this session: the runtime is disposed, the
             // engine is drained, and the Shell's baseline verdict reads this
             // digest.

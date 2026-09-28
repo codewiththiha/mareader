@@ -161,11 +161,6 @@ pub(crate) fn note_reader_runtime_dispose_complete(stamp: u64) {
         assert_dispose_baseline();
     }
     event("reader_runtime:dispose_complete");
-    // The Shell's manager awaits the dispose export's promise before it starts
-    // the next runtime (§5): the tail that just drained is what resolves it.
-    // A document close inside a live session reaches this with nothing
-    // pending, which resolves to a no-op.
-    crate::resolve_dispose();
 }
 
 /// The dispose tail's assertion (Phase 0's gate): after the sweeps, nothing
