@@ -27,6 +27,11 @@
          still ship those bundles to the dist root, where the runtime pages
          load them. -->
     <link data-trunk rel="rust" data-wasm-opt="z" />
+    <!-- The remembered paper, applied before the body exists (see the file):
+         synchronous on purpose — a deferred script would run after the first
+         paint it exists to colour. External for the CSP. -->
+    <link data-trunk rel="copy-file" href="public/bootPaint.js" />
+    <script src="/bootPaint.js"></script>
   </head>
   <body>
     <!-- The shell's boot placeholder (§5): it lives in the PAGE, never in a
@@ -36,7 +41,10 @@
          blank window. The shell removes it once its own view is mounted
          (src/app/mod.rs) and the runtime host owns the area from then on.
          The id and the copy are a CONTRACT: tools/check-runtime-artifacts.mjs
-         fails the build if either disappears from the built page. -->
+         fails the build if either disappears from the built page. The copy
+         is for assistive tech and the failure states: while healthy it is
+         visually hidden and the screen is just the remembered paper
+         (public/bootPaint.js); shellBoot.js reveals it on a timeout. -->
     <div id="shell-boot" class="shell-boot" role="status" aria-live="polite">
       <p class="shell-boot__title">Loading MAReader…</p>
       <p class="shell-boot__hint">Starting the shell</p>

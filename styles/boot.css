@@ -12,7 +12,9 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: var(--color-paper, #ffffff);
+  /* The remembered paper (public/bootPaint.js) — this element only exists
+     before the shell's first theme paint, so it never goes stale here. */
+  background: var(--boot-paper, var(--color-paper, #ffffff));
   color: var(--color-ink, #1f2937);
   font-family:
     system-ui,
@@ -33,6 +35,31 @@
   margin: 0;
   font-size: 12px;
   color: var(--color-muted, #6b7280);
+}
+
+/* Until the shell's first theme paint (which sets data-base on <html>), the
+   page itself wears the remembered paper, so nothing around the placeholder
+   flashes the default. After it, --color-paper is the live theme and the
+   remembered value — frozen at page load — must not win. */
+html:not([data-base]) {
+  background: var(--boot-paper, transparent);
+}
+
+/* Healthy boot is a blank sheet of paper: the copy stays in the tree for
+   assistive tech (role=status) and for the contract checks, but is visually
+   hidden. shellBoot.js marks a failed start with data-shell-boot, and then
+   the words matter — they come back. */
+.shell-boot:not([data-shell-boot]) > p,
+.runtime-boot[data-mareader-boot="load"] > p {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* The runtime host's own states (src/app/boot.rs): the shell's loading state
@@ -136,4 +163,10 @@
    over its replacement. */
 .runtime-frame[data-mareader-slot="active"] {
   z-index: 1;
+}
+
+/* The first runtime's cover can mount before the shell's first theme paint:
+   until then it wears the remembered paper too. */
+html:not([data-base]) .runtime-boot {
+  background: var(--boot-paper, var(--color-paper, #ffffff));
 }

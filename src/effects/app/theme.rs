@@ -68,6 +68,12 @@ pub fn apply_theme(state: ShellState, appearance: AppearanceSignal) {
             }
         }
 
+        // Not mid-scrub: a drag repaints every frame, and the value only
+        // matters at the next launch — its exit paint lands here again.
+        if !is_scrubbing() {
+            remember_boot_paint();
+        }
+
         if !warmed.get_value() {
             warmed.set_value(true);
             let _: Option<i32> = document_element()
@@ -85,4 +91,43 @@ pub fn apply_theme(state: ShellState, appearance: AppearanceSignal) {
         let settings = state.settings.get_untracked();
         schedule_save(settings);
     });
+}
+
+/// localStorage key public/bootPaint.js reads before the shell exists.
+const BOOT_PAINT_KEY: &str = "mareader.boot-paint.v1";
+
+/// Remember the paper just painted, for the next launch's first frame.
+///
+/// The page's boot placeholder paints before any Rust runs, so it can only
+/// know the theme from what an earlier session left behind: the resolved
+/// `--color-paper` and colour scheme, as `paper|scheme`. Read back from the
+/// computed style rather than re-derived, so it is exactly what this paint
+/// produced — base, tint and all. Written only when it changed.
+fn remember_boot_paint() {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(root) = document_element() else {
+        return;
+    };
+    let Ok(Some(computed)) = window.get_computed_style(&root) else {
+        return;
+    };
+    let paper = computed
+        .get_property_value("--color-paper")
+        .unwrap_or_default();
+    let paper = paper.trim();
+    if paper.is_empty() {
+        return;
+    }
+    let scheme = computed
+        .get_property_value("color-scheme")
+        .unwrap_or_default();
+    let value = format!("{paper}|{}", scheme.trim());
+    let Ok(Some(storage)) = window.local_storage() else {
+        return;
+    };
+    if storage.get_item(BOOT_PAINT_KEY).ok().flatten().as_deref() != Some(value.as_str()) {
+        let _ = storage.set_item(BOOT_PAINT_KEY, &value);
+    }
 }
