@@ -4,7 +4,7 @@ import type {
   PageState,
   RenderResult,
 } from "./types";
-import { el, isSharedScratch, releaseCanvas, releasePooledCanvas, releaseScratch, showBaked } from "./canvas";
+import { blitInto, el, isSharedScratch, releaseCanvas, releasePooledCanvas, releaseScratch, showBaked } from "./canvas";
 import { fail, failFrom } from "./errors";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
@@ -282,15 +282,21 @@ async function renderPageNow(
   const pxW = Math.max(1, Math.floor(viewport.width * out));
   const pxH = Math.max(1, Math.floor(viewport.height * out));
 
-  // Where the render draws: a scratch when the pipeline in force at start is
-  // non-identity (the visible canvas keeps its baked copy until the swap),
-  // the live canvas otherwise. pdf.js needs the destination NOW, so this half
-  // is start-time; the THEME decision itself is re-made at completion (the
-  // generation guard below) — a render that spans a pipeline change must not
-  // bake against the palette it started under.
-  const pipeline0 = session.themeScrubActive ? null : readPipeline();
-  const needsBake0 = !session.themeScrubActive && pipeline0 ? !pipelineIsIdentity(pipeline0) : false;
-  const target = needsBake0 ? document.createElement("canvas") : st.canvas;
+  // Where the render draws: ALWAYS a scratch outside a scrub, so the
+  // visible canvas keeps its last good bitmap until one synchronous blit
+  // replaces it at completion. Assigning `width`/`height` clears a canvas,
+  // and pdf.js then paints progressively — drawing straight into the live
+  // canvas (what the identity pipeline used to do) showed every re-render
+  // as a page that went blank and filled back in, most visibly at a zoom
+  // commit, which re-renders every mounted page at once. The cost is one
+  // page-sized scratch per IN-FLIGHT render, bounded by the lane
+  // (PAGE_RENDER_LIMIT) — the surface the non-identity pipelines already
+  // paid. A scrub still draws in place: it covers the page with its own
+  // `.page-snapshot` while its raws are rebuilt (theme/scrub.ts). The THEME
+  // decision itself is re-made at completion (the generation guard below):
+  // a render that spans a pipeline change must not bake against the palette
+  // it started under.
+  const target = session.themeScrubActive ? st.canvas : document.createElement("canvas");
   target.width = pxW;
   target.height = pxH;
   const ctx = target.getContext("2d", { alpha: false });
@@ -382,14 +388,21 @@ async function renderPageNow(
       st.rawCanvas = null;
       releaseCanvas(target);
     } else {
-      // The render started under the identity pipeline or a scrub and drew
-      // straight into the live canvas: that canvas IS the raw, and releasing
+      // The render started under a scrub (the one case that draws in place)
+      // and drew straight into the live canvas: that canvas IS the raw, and releasing
       // "the raw" would blank the page. Same bookkeeping the identity path
       // below keeps.
       st.rawCanvas = st.canvas;
     }
   } else {
-    // Identity / already scrubbing: the live canvas IS the raw.
+    // Identity / already scrubbing: the live canvas IS the raw. A scratch
+    // render lands here in one blit — the swap that keeps the old bitmap on
+    // screen for the whole raster.
+    if (target !== st.canvas) {
+      blitInto(st.canvas, target);
+      if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
+      releaseCanvas(target);
+    }
     st.rawCanvas = st.canvas;
     st.canvas.classList.toggle("canvas-raw", session.themeScrubActive);
   }
