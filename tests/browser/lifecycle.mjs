@@ -1820,6 +1820,357 @@ for (let cycle = 1; cycle <= 10; cycle += 1) {
 stages.afterCallbackDiscipline = await snap();
 console.log("queued-callback discipline x10 clean: no disposal panic, every armed callback fired into a disposed owner without trapping");
 
+// --- Zoom with animation off, and the noise layer's runtime state ---------
+// Both stages reboot the app per settings state: settings are read at boot,
+// so a reload is the one way to put a runtime in a known motion state.
+const SETTINGS_KEY = "mareader.settings.v1";
+const plainPearlsUrl = `${BASE}/?open=${encodeURIComponent(PEARLS)}`;
+
+async function writeSettings(patch) {
+  await page.evaluate(([key, patch]) => {
+    let s = {};
+    try { s = JSON.parse(localStorage.getItem(key) ?? "{}") ?? {}; } catch { s = {}; }
+    for (const [section, fields] of Object.entries(patch)) {
+      s[section] = { ...(s[section] ?? {}), ...fields };
+    }
+    localStorage.setItem(key, JSON.stringify(s));
+  }, [SETTINGS_KEY, patch]);
+}
+
+/** Install a per-rAF sampler in the active reader frame. Every frame it
+ *  records the scroll offset, the vertical strip's extent, and the page host
+ *  under the viewport centre: its CSS width, its `--scale-factor`, its
+ *  canvas' pixel grid, and whether that canvas is BLANK (zero-sized, or one
+ *  flat colour when downsampled — a cleared canvas, never a rendered page). */
+async function startZoomSampler() {
+  await page.evaluate(() => {
+    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    const w = f.contentWindow;
+    const d = f.contentDocument;
+    const ext = d.querySelector('[data-strip-extent="vertical"]');
+    if (!ext) throw new Error("vertical strip extent not found");
+    const sc = ext.parentElement.parentElement;
+    const probe = d.createElement("canvas");
+    probe.width = 24;
+    probe.height = 24;
+    const pctx = probe.getContext("2d", { willReadFrequently: true });
+    const blank = (c) => {
+      if (!c || !(c.width > 0) || !(c.height > 0)) return true;
+      pctx.clearRect(0, 0, 24, 24);
+      pctx.drawImage(c, 0, 0, 24, 24);
+      const px = pctx.getImageData(0, 0, 24, 24).data;
+      for (let i = 4; i < px.length; i += 4) {
+        if (px[i] !== px[0] || px[i + 1] !== px[1] || px[i + 2] !== px[2] || px[i + 3] !== px[3]) return false;
+      }
+      return true;
+    };
+    const samples = [];
+    w.__zoomSamples = samples;
+    w.__zoomSampling = true;
+    // Ground truth for ordering: every style write under the strip, every
+    // scroll event and the keydown, stamped with the frame they fell in.
+    let frameNo = 0;
+    const events = [];
+    w.__zoomEvents = events;
+    const kind = (el) => el.dataset?.stripExtent ? "ext"
+      : el.classList?.contains("pdf-page") ? `host${el.id.replace(/\D/g, "")}`
+      : el.firstElementChild?.classList?.contains("pdf-page") ? `wrap${el.firstElementChild.id.replace(/\D/g, "")}`
+      : null;
+    const mo = new w.MutationObserver((records) => {
+      events.push("D");
+      for (const rec of records) {
+        const k = kind(rec.target);
+        if (k) events.push(`${frameNo}:${Math.round(w.performance.now())}:${k}`);
+      }
+    });
+    mo.observe(sc, { subtree: true, attributes: true, attributeFilter: ["style"] });
+    w.__zoomMo = mo;
+    sc.addEventListener("scroll", () => events.push(`${frameNo}:${Math.round(w.performance.now())}:scroll${Math.round(sc.scrollTop)}`));
+    d.addEventListener("keydown", () => events.push(`${frameNo}:${Math.round(w.performance.now())}:key`), true);
+    // Recorded AFTER each frame, not in its rAF callback: rAF runs before
+    // the frame's layout and ResizeObserver delivery, both of which can still
+    // move things before the paint. A macrotask posted from rAF runs once the
+    // frame is out, so each sample is the state that was actually painted.
+    const chan = new w.MessageChannel();
+    const record = () => {
+      if (!w.__zoomSampling) return;
+      events.push(`${frameNo}:${Math.round(w.performance.now())}:S${samples.length}`);
+      const r = sc.getBoundingClientRect();
+      const cy = r.top + r.height / 2;
+      const host = [...d.querySelectorAll(".pdf-page")].find((h) => {
+        const b = h.getBoundingClientRect();
+        return b.top <= cy && b.bottom >= cy;
+      });
+      const canvas = host?.querySelector("canvas:not(.page-snapshot)") ?? null;
+      const scale = parseFloat(/--scale-factor:\s*([0-9.]+)/.exec(host?.getAttribute("style") ?? "")?.[1] ?? "NaN");
+      samples.push({
+        top: sc.scrollTop,
+        vh: sc.clientHeight,
+        ext: parseFloat(ext.style.height),
+        host: host?.id ?? null,
+        hostW: host ? host.getBoundingClientRect().width : 0,
+        scale,
+        canvasW: canvas?.width ?? 0,
+        blank: blank(canvas),
+        dpr: w.devicePixelRatio,
+        pages: [...d.querySelectorAll(".pdf-page")].map((h) => {
+          const b = h.getBoundingClientRect();
+          return `${h.id.replace(/\D/g, "")}:${Math.round(b.top - r.top + sc.scrollTop)}+${Math.round(b.height)}`;
+        }).join(","),
+      });
+    };
+    chan.port1.onmessage = record;
+    const tick = () => {
+      if (!w.__zoomSampling) return;
+      frameNo += 1;
+      chan.port2.postMessage(0);
+      w.requestAnimationFrame(tick);
+    };
+    w.requestAnimationFrame(tick);
+  });
+}
+
+async function stopZoomSampler() {
+  return page.evaluate(() => {
+    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    const w = f.contentWindow;
+    w.__zoomSampling = false;
+    w.__zoomMo?.disconnect();
+    return w.__zoomSamples ?? [];
+  });
+}
+
+const near = (a, b, tol) => Math.abs(a - b) <= tol;
+
+/** Read the page at the centre once the zoom's renders have landed: the
+ *  engine reports no render in flight, and the centre host carries a painted
+ *  canvas whose `--scale-factor` holds still across two reads. */
+async function waitCrisp(label, timeoutMs = 20_000) {
+  const started = Date.now();
+  let prev = null;
+  for (;;) {
+    const s = await snap();
+    if (s?.engine?.activeRenders === 0) {
+      await startZoomSampler();
+      await page.waitForTimeout(100);
+      const xs = await stopZoomSampler();
+      const last = xs[xs.length - 1];
+      if (last && !last.blank && prev && prev.scale === last.scale && prev.canvasW === last.canvasW) {
+        return last;
+      }
+      prev = last ?? null;
+    }
+    if (Date.now() - started > timeoutMs) {
+      throw new Error(`[${label}] the zoom's renders never settled: ${JSON.stringify(prev)}`);
+    }
+    await page.waitForTimeout(150);
+  }
+}
+
+currentStage = "zoom-animation-off";
+{
+  await writeSettings({ animations: { enabled: false } });
+  await openBook(plainPearlsUrl);
+  const motionOff = await page.evaluate(() => {
+    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    return f.contentDocument.documentElement.classList.contains("animations-off");
+  });
+  if (!motionOff) throw new Error("zoom-off: the reader frame is not in the animations-off state");
+  // Move off the first page so the anchor has room on both sides.
+  await page.mouse.click(700, 450);
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press("PageDown");
+    await page.waitForTimeout(120);
+  }
+  const before = await waitCrisp("zoom-off baseline");
+
+  // Tests 1-5: one "+", sampled every frame from before the press until the
+  // commit's render has landed.
+  await startZoomSampler();
+  await waitFrames(3);
+  await page.keyboard.press("+");
+  await page.waitForTimeout(900);
+  const xs = await stopZoomSampler();
+  const zoomEvents = await page.evaluate(() => {
+    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    return (f.contentWindow.__zoomEvents ?? []).slice(0, 120);
+  });
+  const after = await waitCrisp("zoom-off commit");
+  const extTol = (e) => Math.max(4, e * 0.004);
+  const pre = xs.filter((x) => near(x.ext, before.ext, extTol(before.ext)));
+  const post = xs.filter((x) => near(x.ext, after.ext, extTol(after.ext)));
+  const mid = xs.filter((x) => !pre.includes(x) && !post.includes(x));
+  summary.zoomOff = {
+    frames: xs.length,
+    preFrames: pre.length,
+    postFrames: post.length,
+    midFrames: mid.length,
+    blankFrames: xs.filter((x) => x.blank).length,
+    before: { scale: before.scale, ext: before.ext, top: before.top },
+    after: { scale: after.scale, ext: after.ext, top: after.top },
+  };
+  console.log(`zoom-off: ${JSON.stringify(summary.zoomOff)}`);
+  if (!(after.scale > before.scale)) {
+    throw new Error(`zoom-off: "+" did not zoom in (scale ${before.scale} -> ${after.scale})`);
+  }
+  // 1/2: the display lands on the target in one step — no frame between.
+  if (mid.length > 0) {
+    throw new Error(`zoom-off: ${mid.length} frame(s) showed an intermediate layout: ${JSON.stringify(mid.slice(0, 3))}`);
+  }
+  if (pre.length === 0 || post.length === 0) {
+    throw new Error(`zoom-off: sampler missed a side of the change (pre ${pre.length}, post ${post.length})`);
+  }
+  const firstPost = xs.indexOf(post[0]);
+  if (xs.slice(firstPost).some((x) => pre.includes(x))) {
+    throw new Error("zoom-off: the layout went back to the old scale after landing");
+  }
+  // 3: no blank canvas at any frame while the crisp render was pending.
+  const blanks = xs.filter((x) => x.blank);
+  if (blanks.length > 0) {
+    throw new Error(`zoom-off: ${blanks.length} frame(s) showed a blank canvas: ${JSON.stringify(blanks[0])}`);
+  }
+  // 4/5: the scroll offset is final ON the landing frame (no clamped write
+  // corrected a frame later), and nothing moves it afterwards.
+  const landing = xs[firstPost];
+  const settled = post[post.length - 1];
+  if (!near(landing.top, settled.top, 2)) {
+    throw new Error(`zoom-off: the landing frame's scroll ${landing.top} was corrected later to ${settled.top}`);
+  }
+  // The document point under the viewport centre stays put (gaps do not
+  // scale, hence the tolerance).
+  const f = after.scale / before.scale;
+  const expected = (before.top + before.vh / 2) * f - before.vh / 2;
+  if (!near(settled.top, expected, before.vh * 0.03 + 24)) {
+    throw new Error(`zoom-off: scroll ${settled.top} does not hold the centre anchor (expected ~${expected.toFixed(1)})`);
+  }
+  // The landing frame already shows the settled page, at its settled size:
+  // the same host under the viewport centre, as wide as it ends up. (Pages
+  // in a scanned book differ in size, so the comparison is per host.)
+  if (landing.host !== settled.host || !near(landing.hostW, settled.hostW, 2)) {
+    const around = xs.slice(Math.max(0, firstPost - 2), firstPost + 4)
+      .map((x) => `${x.host} w=${x.hostW} s=${x.scale} ext=${x.ext} top=${x.top} cw=${x.canvasW} pages=[${x.pages}]`);
+    console.log(`zoom-off events: ${zoomEvents.join(" ")}`);
+    throw new Error(`zoom-off: landing frame ${landing.host} w=${landing.hostW} != settled ${settled.host} w=${settled.hostW}; frames: ${around.join(" | ")}`);
+  }
+
+  // Test 9: a rapid "+ + - +" burst ends at a final, settled state, with no
+  // blank frame on the way. Every step commits synchronously, so the burst
+  // equals the steps one by one: two more "-" land back on `after`.
+  await startZoomSampler();
+  for (const k of ["+", "+", "-", "+"]) await page.keyboard.press(k);
+  await page.waitForTimeout(900);
+  const burst = await stopZoomSampler();
+  const burstEnd = await waitCrisp("zoom-off burst");
+  const burstBlank = burst.filter((x) => x.blank);
+  if (burstBlank.length > 0) {
+    throw new Error(`zoom-off burst: ${burstBlank.length} blank frame(s): ${JSON.stringify(burstBlank[0])}`);
+  }
+  if (!(burstEnd.scale > after.scale)) {
+    throw new Error(`zoom-off burst: net two steps in, but scale ${after.scale} -> ${burstEnd.scale}`);
+  }
+  await page.keyboard.press("-");
+  await page.waitForTimeout(200);
+  await page.keyboard.press("-");
+  const back = await waitCrisp("zoom-off return");
+  if (!near(back.scale, after.scale, 1e-6)) {
+    throw new Error(`zoom-off burst: two steps back landed at ${back.scale}, expected ${after.scale}`);
+  }
+  summary.zoomOffBurst = { frames: burst.length, endScale: burstEnd.scale, backScale: back.scale };
+
+  // Test 8: animation ON is unchanged — the same "+" still interpolates
+  // through intermediate layouts and lands on a crisp render.
+  await writeSettings({ animations: { enabled: true } });
+  await openBook(plainPearlsUrl);
+  await page.mouse.click(700, 450);
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press("PageDown");
+    await page.waitForTimeout(120);
+  }
+  const onBefore = await waitCrisp("zoom-on baseline");
+  await startZoomSampler();
+  await waitFrames(2);
+  await page.keyboard.press("+");
+  await page.waitForTimeout(900);
+  const onXs = await stopZoomSampler();
+  const onAfter = await waitCrisp("zoom-on commit");
+  const onMid = onXs.filter((x) =>
+    !near(x.ext, onBefore.ext, extTol(onBefore.ext)) && !near(x.ext, onAfter.ext, extTol(onAfter.ext)));
+  summary.zoomOn = { frames: onXs.length, midFrames: onMid.length, blankFrames: onXs.filter((x) => x.blank).length };
+  console.log(`zoom-on: ${JSON.stringify(summary.zoomOn)}`);
+  if (onMid.length === 0) throw new Error("zoom-on: the tween no longer interpolates");
+  if (summary.zoomOn.blankFrames > 0) throw new Error("zoom-on: a blank canvas frame during the tween");
+  await clickCloseNow();
+  await waitFor("the disposal baseline (zoom stage)", (x) => x.runtime?.state === "disposed", 45_000);
+}
+console.log("zoom with animation off is one discrete commit: no intermediate frame, no blank canvas, scroll final on the landing frame");
+
+currentStage = "noise-runtime-state";
+{
+  // The animated grain, proven in the running frames rather than read off
+  // the stylesheet: overlay count, the classes that drive it, the ::after's
+  // computed animation, and its transform sampled over time. A computed
+  // animation whose transform moves here, while the app shows still grain,
+  // is a compositor problem; one that does not run is a cascade problem.
+  const probeNoise = () => page.evaluate(async () => {
+    const read = (slot) => {
+      const f = document.querySelector(`#runtime-host iframe.runtime-frame[data-mareader-slot="${slot}"]`);
+      const d = f?.contentDocument;
+      if (!d?.body) return null;
+      const overlays = d.querySelectorAll(".noise-overlay");
+      const o = overlays[0] ?? null;
+      const cs = o ? f.contentWindow.getComputedStyle(o, "::after") : null;
+      return {
+        overlays: overlays.length,
+        html: d.documentElement.className,
+        body: d.body.className,
+        name: cs?.animationName ?? null,
+        duration: cs?.animationDuration ?? null,
+        iterations: cs?.animationIterationCount ?? null,
+        playState: cs?.animationPlayState ?? null,
+        transform: cs?.transform ?? null,
+      };
+    };
+    const active = read("active");
+    const transforms = new Set();
+    for (let i = 0; i < 12; i++) {
+      const r = read("active");
+      if (r?.transform) transforms.add(r.transform);
+      await new Promise((res) => setTimeout(res, 70));
+    }
+    return { active, warm: read("warm"), distinctTransforms: transforms.size };
+  });
+  summary.noise = {};
+  for (const animations of [true, false]) {
+    for (const reduced of [false, true]) {
+      await page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+      await writeSettings({
+        animations: { enabled: animations },
+        appearance: { noise: "animated", noise_intensity: 60 },
+      });
+      await openBook(plainPearlsUrl);
+      await page.waitForTimeout(400);
+      const r = await probeNoise();
+      const key = `animations_${animations ? "on" : "off"}__reduced_${reduced ? "on" : "off"}`;
+      summary.noise[key] = r;
+      console.log(`noise ${key}: ${JSON.stringify(r)}`);
+      if (r.active?.overlays !== 1) throw new Error(`noise ${key}: ${r.active?.overlays} overlays in the active frame`);
+      if (!/\bnoise-animated\b/.test(r.active.body)) throw new Error(`noise ${key}: body lacks noise-animated (${r.active.body})`);
+      if (r.warm && r.warm.overlays > 1) throw new Error(`noise ${key}: ${r.warm.overlays} overlays in the warm frame`);
+      // The grain is content, not UI motion: it crawls unless the OS asks for
+      // reduced motion, whatever the app's animation switch says.
+      const shouldRun = !reduced;
+      const runs = r.active.name !== "none" && r.distinctTransforms > 1;
+      if (runs !== shouldRun) {
+        const cause = r.active.name === "none" || r.active.iterations === "1" ? "cascade" : "animation computed but transform static";
+        throw new Error(`noise ${key}: grain ${runs ? "runs" : "is still"} but should ${shouldRun ? "run" : "be still"} (${cause})`);
+      }
+    }
+  }
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await writeSettings({ appearance: { noise: "off" }, animations: { enabled: true } });
+}
+console.log("animated noise runs in the live frame in exactly the states it should");
+
 // --- Guards ----------------------------------------------------------------
 summary.consoleErrorsUnrelated = otherErrorCount;
 if (otherErrorCount > 0) {
