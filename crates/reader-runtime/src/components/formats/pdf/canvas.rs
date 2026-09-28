@@ -27,7 +27,7 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use super::canvas_host::{LastGeo, remove_snapshots, stretch_host};
+use super::canvas_host::{Completion, LastGeo, judge_completion, remove_snapshots, stretch_host};
 use app_state::dom_contract::{HOST_PDF, TEXT_LAYER_CLASS};
 use leptos::task::spawn_local;
 use pdf_core::pixel_grid::snap_px;
@@ -236,10 +236,9 @@ pub fn PdfPageCanvas(
     // are explicit props so the component has no hidden ambient dependency.
 
     // Follows `display_scale`. Pure CSS: resize the host so the EXISTING bitmap
-    // scales with the layout, and mask the moment a render is going to wipe it.
-    // Never renders — that is the whole point of the split.
+    // scales with the layout. Never renders — that is the whole point of the
+    // split.
     let hid_stretch = host_id.clone();
-    let cid_stretch = canvas_id.clone();
     Effect::new(move || {
         let s = scale.get();
         if s <= 0.0 {
@@ -253,15 +252,12 @@ pub fn PdfPageCanvas(
         }
         stretch_host(
             &hid_stretch,
-            &cid_stretch,
             LastGeo {
                 w: lw,
                 h: lh,
                 scale: ls,
             },
             s,
-            false,
-            false,
         );
     });
 
@@ -300,7 +296,7 @@ pub fn PdfPageCanvas(
         // never opened this session), the page would sit an EMPTY TRANSPARENT
         // CANVAS for the whole slide plus the commit: "the one in view just
         // disappeared", and the stretch was invisible because the node had no
-        // bitmap to stretch. Fix: fall through to the masked-render path
+        // bitmap to stretch. Fix: fall through to the render path
         // below, but at the DISPLAY scale — read untracked so the effect does
         // NOT re-run every frame of the slide. `on_geometry` ignores writes
         // while a transition is in flight and the commit re-renders crisply at
@@ -390,31 +386,31 @@ pub fn PdfPageCanvas(
         let my_seq = seq_async.get_value() + 1;
         seq_async.set_value(my_seq);
 
-        // Flicker guards, for renders the stretch effect did NOT precede —
-        // e.g. the search nudge, or a fit refit that lands straight on
-        // render_scale. Sizes the host to the incoming scale before pdf.js
-        // wipes the canvas. The snapshot mask is asked for but SKIPPED: this
-        // run queues the render itself, and a mask would stack a full-size
-        // RGBA copy on top of the raw + bake surfaces that render allocates
-        // — three full-page layers per page at a zoom commit, which is
-        // exactly the peak the webview's footprint latches onto. The
-        // stretched bitmap stays visible until the queued render starts,
-        // frames from now (canvas_host::stretch_host).
+        // Size the host to the incoming scale for renders the stretch effect
+        // did NOT precede — the search nudge, or a fit refit that lands
+        // straight on render_scale. The current bitmap stretches into it and
+        // stays on screen until the render lands: the engine rasterises into
+        // a scratch and replaces the visible bitmap in one blit, so there is
+        // no wipe to cover.
         let (lw, lh, ls) = geo.get_value();
         if lw > 0.0 && lh > 0.0 && ls > 0.0 && (ls - s).abs() > 1e-9 {
             stretch_host(
                 &hid,
-                &cid,
                 LastGeo {
                     w: lw,
                     h: lh,
                     scale: ls,
                 },
                 s,
-                true,
-                true,
             );
         }
+        // Whether this run is the cold first-paint stop-gap issued INSIDE a
+        // transaction (see the `anim` branch above): its completion is judged
+        // differently from a render for the committed scale.
+        let issued_mid_zoom = anim;
+        let zooming_at_landing = zoom_animating;
+        let committed_at_landing = render_scale;
+        let display_at_landing = scale;
 
         // First paint for this host: drop in the sidebar's cached thumbnail,
         // upscaled, so the card reads as a blurry version of the right page
@@ -441,11 +437,47 @@ pub fn PdfPageCanvas(
             }
             match engine::render_page(&cid, s, rt).await {
                 Ok(r) => {
-                    // Unmounted mid-render, or a newer scale change superseded
-                    // this one: leave the geometry + mask to the newer task
-                    // (stale hosts caused the size jump this unit removes).
-                    if seq_async.try_get_value() != Some(my_seq) {
+                    // Unmounted mid-render: the owner's signals are gone, and
+                    // there is no host left to size.
+                    let (Some(latest), Some(zooming_now), Some(committed_now)) = (
+                        seq_async.try_get_value().map(|seq| seq == my_seq),
+                        zooming_at_landing.try_get_untracked(),
+                        committed_at_landing.try_get_untracked(),
+                    ) else {
                         return;
+                    };
+                    match judge_completion(latest, issued_mid_zoom, zooming_now, committed_now, s) {
+                        Completion::Apply => {}
+                        // A newer render owns the host and its geometry.
+                        Completion::Superseded => return,
+                        // The engine already blitted this bitmap into the
+                        // canvas, so what the canvas holds IS this render:
+                        // record that (`geo` is the stretch's base — without
+                        // it the host could never follow a later zoom), and
+                        // size the host to the scale on screen NOW, as the
+                        // stretch effect would. What stays out is the size
+                        // at the RENDERED scale — written to the host it
+                        // would snap it back to a zoom state that no longer
+                        // holds — and the report to the strip, which belongs
+                        // to that state too. If the committed scale has moved
+                        // on, the render effect's fast path sees `geo` at the
+                        // old scale and re-renders.
+                        Completion::Stale => {
+                            geo_async.try_set_value((r.width, r.height, s));
+                            painted_async.set(true);
+                            if let Some(display) = display_at_landing.try_get_untracked() {
+                                stretch_host(
+                                    &hid,
+                                    LastGeo {
+                                        w: r.width,
+                                        h: r.height,
+                                        scale: s,
+                                    },
+                                    display,
+                                );
+                            }
+                            return;
+                        }
                     }
                     // Successful render: the canvas now has a bitmap.
                     painted_async.set(true);
@@ -472,7 +504,8 @@ pub fn PdfPageCanvas(
                             "style",
                             &format!("width:{sw}px;height:{sh}px;--scale-factor:{s}"),
                         );
-                        // New bitmap is live — drop any mask in the same flush.
+                        // New bitmap is live — drop an appearance-scrub cover
+                        // (`.page-snapshot`, theme/scrub.ts) in the same flush.
                         remove_snapshots(&host);
                     }
                     // The geometry cache keeps the RAW size: it only ever
@@ -488,15 +521,16 @@ pub fn PdfPageCanvas(
                 }
                 Err(e) => {
                     // A stale or orphaned completion must not touch the host
-                    // or the mask.
+                    // or its cover.
                     if seq_async.try_get_value() != Some(my_seq) {
                         return;
                     }
                     // Cancelled / transient errors are logged, not fatal;
-                    // never leave a stale mask behind (a cancelled render also
-                    // leaves the canvas wiped, so the next scale change
-                    // re-marks). Mark the canvas NOT painted so the no-op fast
-                    // path does not skip the re-render.
+                    // never leave a scrub cover behind. A cancelled scratch
+                    // render leaves the old bitmap in place, but a scrub-time
+                    // render draws in place and can leave the canvas wiped,
+                    // so mark it NOT painted: the no-op fast path must not
+                    // skip the re-render.
                     painted_async.set(false);
                     if let Some(host) = app_chrome::hooks::dom::by_id(&hid) {
                         remove_snapshots(&host);

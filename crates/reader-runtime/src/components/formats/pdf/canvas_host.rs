@@ -22,8 +22,7 @@ pub(super) struct LastGeo {
     pub scale: f64,
 }
 
-/// Resize a `.pdf-page` host so its EXISTING bitmap stretches to `new_scale`,
-/// optionally masking the canvas with a pixel copy first.
+/// Resize a `.pdf-page` host so its EXISTING bitmap stretches to `new_scale`.
 ///
 /// The canvas' CSS box is 100% of the host, so changing the host's size is all
 /// it takes to rescale what is already on screen — instantly, with no render.
@@ -31,34 +30,19 @@ pub(super) struct LastGeo {
 /// (font sizes, `setLayerDimensions` container sizing) stays aligned; dropping
 /// it would recompute the layer at scale 1 and misalign selection.
 ///
-/// `mask` asks for the wipe cover: pdf.js reassigns `canvas.width/height` at
-/// render start, which wipes the live backing store and shows the backdrop
-/// until the new frame paints. `render_queued` declines it again: a caller
-/// that queues a render for this canvas in the same breath (the render effect
-/// always does) gets no mask, because the copy would stack a full-size RGBA
-/// surface on top of the raw + bake surfaces that render allocates — the peak
-/// a zoom commit pays per page — to cover a gap the queued render closes
-/// within frames. During a zoom ANIMATION no render happens at all, so no
-/// mask is wanted there either — the real bitmap must stay visible to be
-/// stretched.
+/// Nothing is masked here, and nothing needs to be: a page render draws into
+/// a scratch and replaces the visible bitmap in one blit when it lands
+/// (`renderPageNow` in public/engine/renderer.ts), so the stretched bitmap
+/// stays on screen for the whole raster. (This function used to be able to
+/// stack a `.page-snapshot` copy over the canvas; every caller declined it,
+/// and the only producer of those covers left is the appearance scrub.)
 ///
 /// The stretched size is snapped to the device-pixel grid: the raw product
 /// `size × scale` is fractional at almost every zoom step, and a page whose
 /// layer rect rounds one way while its neighbour's rounds the other shows the
 /// backdrop through the joint as a hairline (see [`pdf_core::pixel_grid`]).
 /// The scale ratio itself stays raw, so repeated stretches cannot drift.
-pub(super) fn stretch_host(
-    host_id: &str,
-    canvas_id: &str,
-    last: LastGeo,
-    new_scale: f64,
-    mask: bool,
-    render_queued: bool,
-) {
-    // Every element this function looks up goes through the shared dom hook;
-    // the only thing that still needs the document itself is the snapshot it
-    // CREATES below, which is fetched there rather than here so the two early
-    // returns do not pay for it.
+pub(super) fn stretch_host(host_id: &str, last: LastGeo, new_scale: f64) {
     let Some(host_el) = app_chrome::hooks::dom::by_id(host_id) else {
         return;
     };
@@ -71,80 +55,59 @@ pub(super) fn stretch_host(
             new_scale
         ),
     );
-    if !mask {
-        return;
+}
+
+/// What a finished page render may do to its host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Completion {
+    /// The host's current render: size the host, record the geometry,
+    /// report it to the strip.
+    Apply,
+    /// A newer render was issued for this host; that one owns it.
+    Superseded,
+    /// This host's latest render, landing in a zoom state it was not issued
+    /// for: mid-transaction (a zoom, or a container follow holding its
+    /// commit), or after the commit moved to another scale. Its bitmap is
+    /// already on the canvas (the blit happened engine-side) and is recorded
+    /// as the stretch base, but the size at its rendered scale must not reach
+    /// the host — it would snap the host back under the current layout — nor
+    /// the strip as a measurement.
+    Stale,
+}
+
+/// Judge a render completion against the zoom state it lands in.
+///
+/// `render_seq` alone cannot: it only moves when the render effect ISSUES a
+/// render, and the effect issues nothing while a transaction is in flight —
+/// so a render started before a zoom still owns the current sequence number
+/// when it lands mid-zoom or just after the commit.
+///
+/// * `latest` — this is the host's most recently issued render.
+/// * `issued_mid_zoom` — the cold first-paint fallthrough, rendered at the
+///   DISPLAY scale while a transaction ran (the page had no pixels at all).
+/// * `zooming_now` / `committed_now` — the zoom state at landing.
+/// * `rendered_at` — the scale this render rasterised at.
+pub(super) fn judge_completion(
+    latest: bool,
+    issued_mid_zoom: bool,
+    zooming_now: bool,
+    committed_now: f64,
+    rendered_at: f64,
+) -> Completion {
+    if !latest {
+        return Completion::Superseded;
     }
-    // A render is already queued for this canvas: it repaints the host within
-    // frames, so a mask would be a full-size RGBA copy stacked on top of the
-    // raw + bake surfaces that render allocates anyway — the peak a zoom
-    // commit pays per page, which the footprint then latches onto. The
-    // stretched bitmap stays live until pdf.js wipes it, which is the moment
-    // the queued render is about to answer.
-    if render_queued {
-        return;
-    }
-    // Read-ahead pages off screen do not need a snapshot mask — it is a
-    // full-size RGBA copy nobody sees.
-    if let Some(win) = web_sys::window() {
-        let vh = win
-            .inner_height()
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
-        let rect = host_el.get_bounding_client_rect();
-        if vh > 0.0 && (rect.bottom() < 0.0 || rect.top() > vh) {
-            return;
-        }
-    }
-    let Some(src) = app_chrome::hooks::dom::by_id(canvas_id)
-        .and_then(|el| el.dyn_ref::<web_sys::HtmlCanvasElement>().cloned())
-    else {
-        return;
+    let current = if zooming_now {
+        // Mid-transaction only the first-paint stop-gap may land; a render
+        // for the committed scale the transaction is leaving may not.
+        issued_mid_zoom
+    } else {
+        (committed_now - rendered_at).abs() <= 1e-9
     };
-    if src.width() == 0 || src.height() == 0 {
-        return;
-    }
-    // REUSE an existing snapshot instead of replacing it: a still-running
-    // previous render may already have wiped the live canvas, so a fresh copy
-    // would be blank and re-expose the flash. The old snapshot holds a pre-wipe
-    // bitmap and stretches with the host; the latest completion removes it.
-    let has_snapshot = host_el
-        .query_selector_all(&format!(".{PAGE_SNAPSHOT_CLASS}"))
-        .map(|l| l.length() > 0)
-        .unwrap_or(false);
-    if has_snapshot {
-        return;
-    }
-    let doc = web_sys::window().and_then(|w| w.document());
-    let Some(snap) = doc.as_ref().and_then(|d| d.create_element("canvas").ok()) else {
-        return;
-    };
-    _ = snap.set_attribute("class", PAGE_SNAPSHOT_CLASS);
-    if let Some(dst) = snap.dyn_ref::<web_sys::HtmlCanvasElement>() {
-        dst.set_width(src.width());
-        dst.set_height(src.height());
-        if let Ok(Some(ctx)) = dst.get_context("2d")
-            && let Some(ctx2d) = ctx.dyn_ref::<web_sys::CanvasRenderingContext2d>()
-        {
-            _ = ctx2d.draw_image_with_html_canvas_element(&src, 0.0, 0.0);
-        }
-    }
-    // Insert between the canvas and the textLayer. web-sys 0.3 has no Deref
-    // chain: Node-only methods (next_sibling, insert_before, append_child) need
-    // a Node cast.
-    if let (Some(src_node), Some(snap_node), Some(host_node)) = (
-        src.dyn_ref::<web_sys::Node>(),
-        snap.dyn_ref::<web_sys::Node>(),
-        host_el.dyn_ref::<web_sys::Node>(),
-    ) {
-        match src_node.next_sibling() {
-            Some(next) => {
-                _ = host_node.insert_before(snap_node, Some(&next));
-            }
-            None => {
-                _ = host_node.append_child(snap_node);
-            }
-        }
+    if current {
+        Completion::Apply
+    } else {
+        Completion::Stale
     }
 }
 
@@ -170,5 +133,69 @@ pub(super) fn remove_snapshots(host: &web_sys::Element) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::*;
+
+    #[test]
+    fn the_current_render_applies() {
+        assert_eq!(
+            judge_completion(true, false, false, 1.5, 1.5),
+            Completion::Apply
+        );
+    }
+
+    #[test]
+    fn a_newer_render_owns_the_host() {
+        assert_eq!(
+            judge_completion(false, false, false, 1.5, 1.5),
+            Completion::Superseded
+        );
+        assert_eq!(
+            judge_completion(false, true, true, 1.5, 1.5),
+            Completion::Superseded
+        );
+    }
+
+    #[test]
+    fn a_render_from_before_the_zoom_cannot_land_mid_transaction() {
+        // Issued at the old committed 1.0, lands while the zoom to 1.25 is
+        // still open: its geometry would snap the host back to 1.0.
+        assert_eq!(
+            judge_completion(true, false, true, 1.0, 1.0),
+            Completion::Stale
+        );
+    }
+
+    #[test]
+    fn a_render_from_before_the_zoom_cannot_land_after_the_commit() {
+        // Lands after the transaction released but before the commit's own
+        // render was issued: still the latest, but committed moved on, so
+        // its size must not reach the host or the strip's measurements.
+        assert_eq!(
+            judge_completion(true, false, false, 1.25, 1.0),
+            Completion::Stale
+        );
+    }
+
+    #[test]
+    fn the_first_paint_stop_gap_lands_only_while_its_transaction_runs() {
+        assert_eq!(
+            judge_completion(true, true, true, 1.0, 1.1),
+            Completion::Apply
+        );
+        // After the commit it is an old-scale measurement like any other.
+        assert_eq!(
+            judge_completion(true, true, false, 1.25, 1.1),
+            Completion::Stale
+        );
+        // ...unless it happened to rasterise at exactly the committed scale.
+        assert_eq!(
+            judge_completion(true, true, false, 1.25, 1.25),
+            Completion::Apply
+        );
     }
 }
