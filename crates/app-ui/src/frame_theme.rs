@@ -42,6 +42,14 @@ const PERSIST_MS: u64 = 350;
 /// Shell publishes the same class on its own document).
 const ANIMATIONS_OFF_CLASS: &str = "animations-off";
 
+/// The `<html>` class a runtime document wears while its frame is not on
+/// screen (warm behind the active runtime, or rearmed after a recycle). A
+/// hidden frame is `visibility: hidden` in the Shell, which stops painting
+/// but not CSS animation: the animated grain's crawl would keep running its
+/// compositor work in a document nobody sees. `styles/noise.css` pauses the
+/// crawl under this class; the Shell's reveal message clears it.
+const FRAME_HIDDEN_CLASS: &str = "frame-hidden";
+
 /// The runtime's persistence callback, held for the session.
 type PersistFn = StoredValue<std::rc::Rc<dyn Fn(&Settings)>, LocalStorage>;
 /// The runtime's adopt-time override pass, held for the session.
@@ -194,6 +202,23 @@ pub fn install_frame_theme(
     // Flush rather than drop: a change made in the last beat before the
     // runtime was retired is still the user's change.
     on_cleanup(flush);
+}
+
+/// Tell this document whether its frame is on screen. Runtimes call it from
+/// their frame boot (`hidden` for a warm init or a rearm, shown for a cold
+/// init) and from the Shell's reveal message (`Launch` for the reader,
+/// `Refresh` for the shelf). Idempotent; a standalone document never calls
+/// it and never carries the class.
+pub fn mark_frame_hidden(hidden: bool) {
+    let Some(el) = document_element() else {
+        return;
+    };
+    let class = el.class_list();
+    let _ = if hidden {
+        class.add_1(FRAME_HIDDEN_CLASS)
+    } else {
+        class.remove_1(FRAME_HIDDEN_CLASS)
+    };
 }
 
 /// The film-grain layer, in THIS document. The noise classes and variables

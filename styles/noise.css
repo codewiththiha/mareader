@@ -72,6 +72,15 @@ html.animations-off body.noise-animated .noise-overlay::after {
   87.5% { transform: translate3d(-8px, -13px, 0); }
   100%  { transform: translate3d(0, 0, 0); }
 }
+/* A runtime document whose frame is off screen (warm behind the active
+   runtime, or rearmed after a recycle — `app_ui::frame_theme::
+   mark_frame_hidden`): the Shell hides the frame with `visibility: hidden`,
+   which stops its paint but not its animations, so the crawl would keep
+   ticking a compositor layer nobody can see. Paused, not removed: the
+   reveal clears the class and the crawl resumes where it was. */
+html.frame-hidden body.noise-animated .noise-overlay::after {
+  animation-play-state: paused;
+}
 /* Constant peripheral motion is exactly what triggers vestibular
    discomfort: the grain stays, it just stops moving. */
 @media (prefers-reduced-motion: reduce) {

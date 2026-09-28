@@ -134,7 +134,10 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
 
     // An init without a descriptor is a reader with nothing open — the same
     // shape as a standalone boot without launch parameters, so the same
-    // default answers it.
+    // default answers it. It is also the warm boot: this frame is hidden
+    // behind the shelf until a `Launch` reveals it, and the document is
+    // told so (the animated grain pauses while nobody can see it).
+    app_ui::frame_theme::mark_frame_hidden(launch.is_none());
     let launch = launch
         .map(|launch| *launch)
         .unwrap_or_else(crate::web_launch);
@@ -190,6 +193,9 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                     }
                 }
                 ShellFrame::Launch { document } => {
+                    // The reveal (a warm reader's promotion) or an in-place
+                    // open: either way this frame is the one on screen now.
+                    app_ui::frame_theme::mark_frame_hidden(false);
                     if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
                         crate::command(id, *document);
                     }

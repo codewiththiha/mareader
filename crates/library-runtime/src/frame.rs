@@ -147,6 +147,10 @@ fn on_init(warm: bool, generation: u64) {
     root.set_attribute("class", "h-full w-full").ok();
     let _ = body.append_child(&root);
 
+    // A warm shelf is hidden behind the reader until `Refresh` reveals it;
+    // the document is told so (the animated grain pauses while nobody can
+    // see it).
+    app_ui::frame_theme::mark_frame_hidden(warm);
     let id = crate::start_session(&root, ApiHandle::Frame, warm);
     SESSION_ID.with(|slot| slot.set(Some(id)));
     emit(RuntimeFrame::Status {
@@ -219,6 +223,7 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                     // reader session moves read points and adds books. Re-read
                     // the store rather than booting a new runtime — that read
                     // is the whole reason warming is worth its memory.
+                    app_ui::frame_theme::mark_frame_hidden(false);
                     if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
                         crate::command(id, crate::LibraryCommand::Refresh);
                     }
