@@ -167,9 +167,16 @@ stays on screen for the boot either way.
 
 ## Known follow-ups (do not silently expand scope)
 
-- Recycling is measured by the browser suite (`samePageRecycledOpens`,
-  `bootContract.coverRelay`); record the numbers here once a Deep CI run
-  reports them.
+- Recycling, measured on e8b1d18 (CI #2005, Deep CI #217): cover relay
+  landed (`coverRelay.covers` 1), `reusedWarmFrame` 4/4, `peakFrames` 2,
+  rapid-reopen and same-page slope/drift 0 B, close-during-prefetch drops 1
+  (kept readers park idle prefetch via `suspendPrefetches` when their frame
+  leaves the active slot). `samePageRecycledOpens` was 0: the same-page
+  stage's close→reopen gap exceeds `RECYCLE_DELAY_MS`, so a same-document
+  Rearm is not yet exercised by CI — add a fast (<1.2s) reopen stage.
+- The Shell accepts a digest from a recycled frame only while its kept
+  session lives (recycle Pending/Disposing); `BakeCover` bypasses the live
+  gate because a cold shelf asks from inside its own mount.
 
 - `docs/runtime-split.md` still describes dynamic-import loading in places;
   production is frame-hosted (reconcile docs-only, do not change code back).
