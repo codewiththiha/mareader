@@ -46,8 +46,9 @@ pub struct ViewerSignals {
     /// stream's column, the fit maths — read one runtime number, the same
     /// arrangement the page margin uses.
     pub column_width_pct: RwSignal<f64>,
-    /// Which motions animate. Written only by the shell, from the settings
-    /// (`Motion::from_prefs`); see the type's contract.
+    /// Which motions animate. Written only by the runtime session's
+    /// projection of the frame's settings (`Motion::from_prefs`, in the
+    /// runtime's `lib.rs`); see the type's contract.
     pub motion: RwSignal<Motion>,
     /// True from the moment `page` is seeded for a freshly opened document
     /// until a scrolling strip has anchored itself to that page on mount.

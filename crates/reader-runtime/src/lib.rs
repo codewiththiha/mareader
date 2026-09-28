@@ -219,6 +219,24 @@ pub fn start_session(
                 );
             }
 
+            // The reader's motion switches, projected from the frame's own
+            // settings copy (which `install_frame_theme` keeps current,
+            // cross-frame edits included). The shell only publishes the CSS
+            // class for its own document; nothing else writes this signal, so
+            // without this projection every reader-side switch — zoom,
+            // sidebar slide, canvas resize, scroll glide — sat at its
+            // all-on default whatever the user chose. Written only on a real
+            // change: a Leptos `set` notifies even when equal.
+            {
+                let motion = ctx.reader.viewer.motion;
+                Effect::new(move |_| {
+                    let next = settings.with(|s| app_state::Motion::from_prefs(&s.animations));
+                    if motion.try_get_untracked().is_some_and(|m| m != next) {
+                        motion.set(next);
+                    }
+                });
+            }
+
             // Idle thumbnail prefetch follows the frame's slot. A closed
             // reader is KEPT (document loaded, for an instant reopen), but a
             // rail nobody can see must not render while the shelf is being

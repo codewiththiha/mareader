@@ -98,9 +98,9 @@ impl Motion {
 }
 
 impl Default for Motion {
-    /// Everything moves. The shell publishes the reader's prefs before
-    /// anything can act on them, and a reader that has not been published to
-    /// yet (a document opening, a test) must not look broken.
+    /// Everything moves. The reader runtime projects its settings onto this
+    /// at session start, before anything can act on them, and a reader that
+    /// has not been published to yet (a test) must not look broken.
     fn default() -> Self {
         Self {
             sidebar_slide: true,

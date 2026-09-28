@@ -1,6 +1,7 @@
 //! The motion preferences, published from the shell so the class on `<html>`
-//! survives every runtime transition. The reader animates from its own
-//! settings copy; this is the CSS half.
+//! survives every runtime transition. This is the shell document's CSS half
+//! only: each runtime frame paints its own class (`install_frame_theme`), and
+//! the reader projects its own settings copy onto `viewer.motion`.
 
 use leptos::prelude::*;
 
