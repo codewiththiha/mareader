@@ -391,6 +391,15 @@ impl VirtualizerCore {
         self.layout = build_layout(&shape, count, sizes, cross, gap);
         self.hint = 0;
         self.pending = None;
+        // Queued measurements were taken at the OLD scale, and `sizes` is the
+        // authority for the new one (the caller builds it from the same
+        // records those reports fed). Left queued, they flush on the next
+        // frame — or at the resume that closes a zoom — and write old-scale
+        // sizes over the rescaled layout: the items above the anchor shrink
+        // back, every page below them jumps, and the view shows a different
+        // page until fresh reports arrive. Measurements taken after this
+        // rescale queue normally.
+        self.queue.clear();
         if let Some(top) = new_top {
             self.scroll_top = top.clamp(self.min_scroll(), self.max_scroll());
         }
@@ -1095,6 +1104,32 @@ mod tests {
         assert!(step.layout_changed);
         assert_eq!(step.scroll_write, Some(4_900.0));
         assert_eq!(core.dominant(), 24);
+    }
+
+    #[test]
+    fn rescale_drops_measurements_taken_at_the_old_scale() {
+        let mut core = list_core(50, 100.0, 200.0);
+        let _ = core.on_scroll(2_400.0);
+        // A render at the old scale reports its size just before the zoom.
+        core.queue_size(10, 100.0);
+        core.queue_size(30, 100.0);
+        let step = core.rescale(2.0, &|_index| 200.0);
+        let top = step
+            .scroll_write
+            .expect("rescale writes the anchored offset");
+        // Whatever flushes next must not put the old sizes back.
+        match core.flush() {
+            None => {}
+            Some(flush) => assert_eq!(flush.applied, 0),
+        }
+        assert_eq!(core.layout.size(10), 200.0);
+        assert_eq!(core.layout.size(30), 200.0);
+        assert_eq!(core.scroll_top(), top);
+        // A measurement taken AFTER the rescale still lands.
+        core.queue_size(30, 180.0);
+        let flush = core.flush().expect("a post-rescale measurement flushes");
+        assert_eq!(flush.applied, 1);
+        assert_eq!(core.layout.size(30), 180.0);
     }
 
     #[test]
