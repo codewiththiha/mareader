@@ -63,6 +63,53 @@ export function resetThumbLane(): void {
   pumpThumbQueue();
 }
 
+/** Bumped when the reader stops being the frame on screen while its
+ *  document stays loaded (the Shell keeps a closed reader alive for an
+ *  instant reopen). Prefetch is idle-time work for a rail nobody can see
+ *  now: every queued or in-flight prefetch captured the old era and settles
+ *  as a DROP through the same guards a teardown uses, and new ones are
+ *  refused until the reader is shown again. Cell renders are untouched —
+ *  the document is still this session's. */
+let prefetchEra = 0;
+let prefetchSuspended = false;
+const eraWaiters: Array<() => void> = [];
+
+/** Abandon every queued and in-flight prefetch and refuse new ones. */
+export function suspendPrefetches(): void {
+  prefetchSuspended = true;
+  prefetchEra += 1;
+  const waiters = eraWaiters.splice(0);
+  for (const wake of waiters) wake();
+  pumpThumbQueue();
+}
+
+/** The reader is on screen again: idle prefetch may run. */
+export function resumePrefetches(): void {
+  prefetchSuspended = false;
+}
+
+function eraMovedSignal(era: number): {
+  promise: Promise<void>;
+  unsubscribe: () => void;
+} {
+  if (era !== prefetchEra) {
+    return { promise: Promise.resolve(), unsubscribe: () => {} };
+  }
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  const waiter = () => resolve();
+  eraWaiters.push(waiter);
+  return {
+    promise,
+    unsubscribe: () => {
+      const at = eraWaiters.indexOf(waiter);
+      if (at >= 0) eraWaiters.splice(at, 1);
+    },
+  };
+}
+
 /// A cancellable "the epoch moved past `epoch`" signal. A pdf.js task
 /// created inside the destroy window — after the cancel sweep, before the
 /// document nulls — sits on a worker that will never answer, and its
@@ -359,7 +406,9 @@ export async function prefetchThumb(page: number, scale: number): Promise<void> 
   const hit = session.thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) return;
   if (prefetchInFlight.has(page)) return;
+  if (prefetchSuspended) return;
   const epoch = thumbLaneEpoch;
+  const era = prefetchEra;
   prefetchInFlight.add(page);
   session.prefetchesStarted += 1;
   session.prefetchesActive += 1;
@@ -374,14 +423,14 @@ export async function prefetchThumb(page: number, scale: number): Promise<void> 
         // The document was torn down (or replaced) while this prefetch
         // waited for a lane slot. Drop it without touching pdf.js — the
         // same guard a queued cell render gets.
-        if (epoch !== thumbLaneEpoch || !session.pdf) {
+        if (epoch !== thumbLaneEpoch || era !== prefetchEra || !session.pdf) {
           session.prefetchesDropped += 1;
           lifecycleEvent("thumb_prefetch:drop");
           resolve();
           finish();
           return;
         }
-        prefetchThumbInternal(page, scale, epoch)
+        prefetchThumbInternal(page, scale, epoch, era)
           .then((landed) => {
             if (landed) {
               session.prefetchesCompleted += 1;
@@ -412,13 +461,14 @@ export async function prefetchThumb(page: number, scale: number): Promise<void> 
 /// document-gone half covers the destroy window the epoch alone cannot
 /// see: a prefetch enqueued into the NEW epoch, onto a worker whose death
 /// is already underway, awaiting a promise it will never see settle.
-function prefetchWorldEnded(epoch: number): {
+function prefetchWorldEnded(epoch: number, era: number): {
   promise: Promise<void>;
   unsubscribe: () => void;
 } {
   const epochSignal = epochMovedSignal(epoch);
+  const eraSignal = eraMovedSignal(era);
   const goneSignal = session.documentGoneSignal();
-  const promise = Promise.race([epochSignal.promise, goneSignal.promise]);
+  const promise = Promise.race([epochSignal.promise, eraSignal.promise, goneSignal.promise]);
   let done = false;
   return {
     promise,
@@ -426,6 +476,7 @@ function prefetchWorldEnded(epoch: number): {
       if (done) return;
       done = true;
       epochSignal.unsubscribe();
+      eraSignal.unsubscribe();
       goneSignal.unsubscribe();
     },
   };
@@ -439,16 +490,18 @@ function prefetchWorldEnded(epoch: number): {
 async function prefetchThumbInternal(
   page: number,
   scale: number,
-  epoch: number
+  epoch: number,
+  era: number
 ): Promise<boolean> {
   const taskId = `prefetch-${page}`;
-  const dying = prefetchWorldEnded(epoch);
+  const stale = () => epoch !== thumbLaneEpoch || era !== prefetchEra || !session.pdf;
+  const dying = prefetchWorldEnded(epoch, era);
   try {
     const pg = await Promise.race([
       session.pdf!.getPage(page),
       dying.promise.then(() => null),
     ]);
-    if (!pg || epoch !== thumbLaneEpoch || !session.pdf) {
+    if (!pg || stale()) {
       try { pg?.cleanup(); } catch (_) { /* ignore */ }
       return false;
     }
@@ -461,7 +514,7 @@ async function prefetchThumbInternal(
     const { canvas: off, ctx } = made;
     const task = pg.render({ canvasContext: ctx, viewport });
     session.thumbTasks.set(taskId, task);
-    const rendering = prefetchWorldEnded(epoch);
+    const rendering = prefetchWorldEnded(epoch, era);
     let rendered = true;
     let epochMoved = false;
     try {
@@ -483,7 +536,7 @@ async function prefetchThumbInternal(
       // would render into a canvas this prefetch is about to release.
       try { task.cancel(); } catch (_) { /* ignore */ }
     }
-    if (!rendered || epochMoved || epoch !== thumbLaneEpoch || !session.pdf) {
+    if (!rendered || epochMoved || stale()) {
       releaseCanvas(off);
       try { pg.cleanup(); } catch (_) { /* ignore */ }
       return false;
@@ -495,7 +548,7 @@ async function prefetchThumbInternal(
     // The epoch check AGAIN: a bake can wait on the theme queue, and a
     // document swap in that window must not file this book's colours into
     // the next document's cache.
-    if (epoch !== thumbLaneEpoch || !session.pdf) {
+    if (stale()) {
       releaseCanvas(off);
       return false;
     }

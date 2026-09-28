@@ -4,11 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mareader</title>
-    <!-- pdf.js text-layer base rules (required for selectable text). Served from public/. -->
-    <link rel="stylesheet" href="vendor/pdfjs/pdf_viewer.css" />
     <link data-trunk rel="css" href="styles.css" />
     <!-- Copy static assets to the dist ROOT so root-absolute URLs (/vendor/..., /pdfEngine.js)
-         resolve in the packaged app. Trunk's copy-dir preserves the referenced dir's basename. -->
+         resolve in the packaged app's runtime pages. Trunk's copy-dir preserves the referenced dir's basename. -->
     <link data-trunk rel="copy-dir" href="public/vendor" />
     <link data-trunk rel="copy-dir" href="public/samples" />
     <link data-trunk rel="copy-file" href="public/pdfEngine.js" />
@@ -22,25 +20,12 @@
          same rule as the engine bundles above (the artifact contract pins
          it). -->
     <link data-trunk rel="copy-file" href="public/tauri-relay.js" />
-    <!-- The reader bundle: the format-agnostic half of the browser side (today
-         the selection tracker, public/readerEngine.ts). It has no pdf.js
-         dependency, so it goes first — and like the engine below it must run
-         before the wasm, because the app reads selection state as soon as its
-         first components mount. -->
-    <script type="module" src="/readerEngine.js"></script>
-    <!-- pdf.js (ESM-only in v6): must load BEFORE the engine so globalThis.pdfjsLib exists. -->
-    <script type="module" src="/vendor/pdfjs/pdf.min.mjs"></script>
-    <!-- The imperative engine wrapper: sets window.PDFReader (see
-         public/pdfEngine.ts — Trunk's pre-build hook compiles it to
-         public/pdfEngine.js on every build). MUST execute BEFORE the Leptos
-         wasm (the rust link below): module scripts run in order, and the
-         app reaches for window.PDFReader as soon as its first components
-         mount (the engine version probe in the menus). If the wasm module
-         (which top-level-awaits init) ran first, it could finish
-         instantiating before this script had executed, leaving
-         window.PDFReader undefined and panicking those probes. Ordering
-         these first removes the race. -->
-    <script type="module" src="/pdfEngine.js"></script>
+    <!-- No engine scripts: the shell page loads no pdf.js, no engine wrapper
+         and no reader bundle. Documents and cover bakes both run in the
+         reader frame (the shelf's bakes are relayed there), so the shell's
+         own startup is its wasm and nothing else. The copy-file links above
+         still ship those bundles to the dist root, where the runtime pages
+         load them. -->
     <link data-trunk rel="rust" data-wasm-opt="z" />
   </head>
   <body>

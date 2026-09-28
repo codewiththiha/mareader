@@ -29,6 +29,17 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   (the "peak N page hosts" browser failure).
 - The PDF engine is still a module-global under `PdfSessionHandle`; true
   session-scoped engines are Phase 4, not a defect to "fix" opportunistically.
+- The Shell loads **no engine**: `index.html` carries no pdf.js / engine /
+  reader-bundle scripts and the root crate has no `pdf-engine` dependency
+  (`tools/check-dependency-gate.mjs` forbids it). Shelf cover bakes are
+  relayed: library `BakeCover` → Shell queue (one in flight) → the WARM
+  reader frame's `ShellFrame::BakeCover` → `RuntimeFrame::CoverReady` →
+  Shell → the asking shelf's `CoverBaked`. A warm reader's `CoverReady` is
+  the one message the warm gate admits; the reader being read in is never
+  handed shelf work.
+- `*_bg.wasm` is wasm-bindgen's file naming (`<name>.js` glue +
+  `<name>_bg.wasm` module), not an extra module: there are exactly three —
+  shell, library, reader.
 
 ## Warm slot (why a route switch is no longer a boot)
 
@@ -54,13 +65,33 @@ whatever is on screen:
 - A click that beats the warm boot waits out its REMAINDER
   (`wait_verdict()`), never a second boot of the same artifact.
 - The runtime it displaced goes `Retiring` in the same synchronous block as
-  the reveal and is disposed BEHIND it, off the critical path.
+  the reveal and is **recycled** behind it (`retire_or_recycle`): it claims
+  the warm lane, stays intact for `RECYCLE_DELAY_MS` (1.2s — a straight
+  return takes that very session back), then its session is disposed (the
+  full §12 exchange, `DisposeComplete`, counted) and `ShellFrame::Rearm`
+  mounts a fresh warm session in the SAME document. No page load, no wasm
+  fetch/compile, no pdf.js load after the first two boots.
+- A reader frame whose last digest reports `wasmHeapBytes` above
+  `READER_RECYCLE_HEAP_MAX` (320 MiB) is retired and removed instead: linear
+  memory never shrinks, so dropping the frame is the only way to return it.
+- Module-level state that outlives a session in a recycled frame must be
+  reset or released per session: the shelf's cover ledger
+  (`covers::reset_ledger`), and every Tauri listener (`tauri_listen` now
+  unlistens on owner cleanup — Tauri's registry lives in the host window).
 - A warm frame that died on the way up (`ready_outcome()` is an error or a
   timeout) is torn down and the transition falls back to `cold_start` — the
   warm slot must never cost the user the runtime.
 - The library's heavy startup passes (migrate, measure, cover backfill,
-  rescan) park in `DEFERRED` during a warm boot and run on reveal, so the
-  shelf the user left is refreshed rather than replayed from boot time.
+  rescan) park in `DEFERRED` during a warm boot and run just after the
+  reveal paints (`after_reveal`, 160ms), so the shelf the user left is
+  refreshed rather than replayed from boot time. `Refresh` re-reads only the
+  stores whose stamp moved (`storage::{library,covers,settings}_stamp`):
+  the cover map is megabytes of data URLs and re-setting it re-rendered
+  every cover at the moment of the reveal.
+- The Idle-bounce guard is two facts: `reader_launched` (a launch was sent)
+  and `reader_armed` (that session then reported Opening/Ready). A promoted
+  warm reader's boot-time `Idle` can land after the promotion and must not
+  send the user back to the shelf.
 
 ## Invariants (enforced by tests — never weaken them)
 
@@ -90,9 +121,19 @@ whatever is on screen:
 - A warmed frame is the frame that gets revealed — `backSlots.active ===
   warmShelf.warm` — and the revealed generation is the warmed generation.
   Rebooting at promotion time is a failure, not an optimisation.
-- Disposal epoch is frame-instance-local (1 at open, 2 at close); the
-  reported runtime generation is Shell-owned — the reader-session count,
-  advancing once per reader session across frames.
+- Disposal epoch is frame-instance-local: a fresh frame opens at 1, a
+  recycled frame opens at its last close + 1, and every close claims exactly
+  one past its open. The reported runtime generation is Shell-owned — the
+  reader-session count, advancing once per reader session (a rearm is a new
+  session) across frames.
+- The theme pipeline's `gen` (public/engine/theme/pipeline.ts) moves only
+  when a bake INPUT moves (filter | blend | `--color-paper`), never on a
+  root-style write alone: the engine's own `--pdf-paper*` publications
+  during a zoom used to invalidate every in-flight bake and loop re-renders
+  (the zoom flicker).
+- The film-grain `.noise-overlay` lives in each runtime document (created by
+  `install_frame_theme`), next to the body classes that drive it — never in
+  the Shell, whose body classes the frames do not share.
 
 ## CI is the only build
 
@@ -125,6 +166,10 @@ falling back to a covered cold start, so the runtime the user is leaving
 stays on screen for the boot either way.
 
 ## Known follow-ups (do not silently expand scope)
+
+- Recycling is measured by the browser suite (`samePageRecycledOpens`,
+  `bootContract.coverRelay`); record the numbers here once a Deep CI run
+  reports them.
 
 - `docs/runtime-split.md` still describes dynamic-import loading in places;
   production is frame-hosted (reconcile docs-only, do not change code back).

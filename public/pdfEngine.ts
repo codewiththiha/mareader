@@ -33,6 +33,8 @@ import {
   prefetchThumb,
   renderThumb,
   resetThumbLane,
+  resumePrefetches,
+  suspendPrefetches,
 } from "./engine/thumbnails";
 import {
   clearHighlights,
@@ -409,6 +411,8 @@ globalThis.PDFReader = {
     session.sweepSnapshots();
   },
   prefetchThumb,
+  suspendPrefetches,
+  resumePrefetches,
 } satisfies PDFReaderApi;
 
 // The engine contract is fixed by the Rust bridge: surface integrity beats

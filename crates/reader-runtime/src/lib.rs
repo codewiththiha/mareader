@@ -219,6 +219,24 @@ pub fn start_session(
                 );
             }
 
+            // Idle thumbnail prefetch follows the frame's slot. A closed
+            // reader is KEPT (document loaded, for an instant reopen), but a
+            // rail nobody can see must not render while the shelf is being
+            // revealed: leaving the screen abandons queued and in-flight
+            // prefetches (the engine counts them dropped), coming back lets
+            // them run. The first run applies the slot this session booted
+            // into — a warm session starts parked.
+            {
+                let active = app_chrome::hooks::frame_active::use_frame_active();
+                Effect::new(move |_| {
+                    if active.get() {
+                        pdf_engine::api::resume_prefetches();
+                    } else {
+                        pdf_engine::api::suspend_prefetches();
+                    }
+                });
+            }
+
             LIVE_CTX.with(|c| *c.borrow_mut() = Some(ctx));
 
             // The launch the Shell handed over (§13): the minimal descriptor,

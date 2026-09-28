@@ -312,4 +312,9 @@ export type PDFReaderApi = {
    *  host unmounts. */
   sweepSnapshots: () => void;
   prefetchThumb: (page: number, scale: number) => Promise<void>;
+  /** The reader left the screen with its document still loaded: abandon
+   *  queued/in-flight idle prefetches (they settle as drops) and refuse new
+   *  ones until `resumePrefetches`. */
+  suspendPrefetches: () => void;
+  resumePrefetches: () => void;
 };

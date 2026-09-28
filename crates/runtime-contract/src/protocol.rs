@@ -102,12 +102,23 @@ pub enum ShellFrame {
     /// [`RuntimeFrame::DisposeComplete`]. The Shell removes the iframe only
     /// after that answer (or after the forced-dispose timeout).
     Dispose,
-    /// Answer to [`RuntimeFrame::BakeCover`]: the shelf bake the Shell
-    /// performed with its own engine — `image: None` when the bake failed.
+    /// Answer to [`RuntimeFrame::BakeCover`]: the shelf bake, performed by a
+    /// reader frame's engine and relayed by the Shell — `image: None` when
+    /// the bake failed.
     CoverBaked {
         path: String,
         image: Option<CoverImage>,
     },
+    /// Recycle a disposed frame: mount a fresh WARM session in the same
+    /// document. Sent only after [`RuntimeFrame::DisposeComplete`], so the
+    /// previous session is gone and its disposal fully accounted; what is
+    /// kept is the page, the wasm instance and (for the reader) the loaded
+    /// PDF engine — the parts a boot pays for and a session does not own.
+    Rearm,
+    /// Reader only: bake the shelf cover of `path` with this frame's PDF
+    /// engine, answered by [`RuntimeFrame::CoverReady`]. The Shell routes the
+    /// library's bakes here so it never loads an engine of its own.
+    BakeCover { path: String },
     /// Answer to [`RuntimeFrame::ResolveLaunch`], matched by `request`.
     ResolveLaunchAnswer {
         request: u64,
@@ -170,6 +181,12 @@ pub enum RuntimeFrame {
     /// `ShellApi::bake_cover` over the wire — answered by
     /// [`ShellFrame::CoverBaked`].
     BakeCover { path: String },
+    /// Reader → Shell: the answer to [`ShellFrame::BakeCover`] — `image:
+    /// None` when the bake failed. The Shell forwards it to the shelf.
+    CoverReady {
+        path: String,
+        image: Option<CoverImage>,
+    },
     /// `ShellApi::doc_status` over the wire.
     DocStatus { report: DocStatusReport },
     /// `ShellApi::publish_digest` over the wire.
@@ -249,6 +266,48 @@ mod tests {
         );
         let back: RuntimeEnvelope = serde_json::from_str(&json).unwrap();
         assert_eq!(back, env);
+    }
+
+    #[test]
+    fn the_recycle_and_cover_routing_frames_wire_by_kind() {
+        let rearm = ShellEnvelope {
+            generation: 4,
+            nonce: "n".to_string(),
+            body: ShellFrame::Rearm,
+        };
+        assert_eq!(
+            serde_json::to_string(&rearm).unwrap(),
+            r#"{"generation":4,"nonce":"n","kind":"rearm"}"#
+        );
+        let bake = ShellEnvelope {
+            generation: 4,
+            nonce: "n".to_string(),
+            body: ShellFrame::BakeCover {
+                path: "/b.pdf".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&bake).unwrap();
+        assert_eq!(
+            json,
+            r#"{"generation":4,"nonce":"n","kind":"bakeCover","path":"/b.pdf"}"#
+        );
+        assert_eq!(serde_json::from_str::<ShellEnvelope>(&json).unwrap(), bake);
+        let ready = RuntimeEnvelope {
+            generation: 5,
+            body: RuntimeFrame::CoverReady {
+                path: "/b.pdf".to_string(),
+                image: None,
+            },
+        };
+        let json = serde_json::to_string(&ready).unwrap();
+        assert_eq!(
+            json,
+            r#"{"generation":5,"kind":"coverReady","path":"/b.pdf","image":null}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<RuntimeEnvelope>(&json).unwrap(),
+            ready
+        );
     }
 
     #[test]

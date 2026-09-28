@@ -204,18 +204,29 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                     on_resolve_answer(request, document.map(|document| *document));
                 }
                 ShellFrame::Dispose => {
-                    if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
+                    if let Some(id) = SESSION_ID.with(|slot| slot.take()) {
                         let promise = crate::dispose(id);
                         crate::diagnostics::set_reader_live(false);
                         wasm_bindgen_futures::spawn_local(async move {
                             let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                             emit(RuntimeFrame::DisposeComplete);
                         });
+                    } else {
+                        // Nothing mounted (an init never arrived, or a
+                        // duplicate dispose): the answer is still owed, or
+                        // the Shell waits out its forced-removal timeout.
+                        emit(RuntimeFrame::DisposeComplete);
                     }
                 }
+                ShellFrame::Rearm => {
+                    on_rearm(generation);
+                }
+                ShellFrame::BakeCover { path } => {
+                    bake_cover(path);
+                }
                 ShellFrame::CoverBaked { .. } => {
-                    // The shelf's command on the reader's port: the bake round
-                    // trip belongs to the library frame. Dropped by the
+                    // The shelf's answer on the reader's port: the relayed
+                    // bake belongs to the library frame. Dropped by the
                     // protocol, never silently.
                 }
             }
@@ -224,6 +235,58 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
     port.set_onmessage(Some(listener.as_ref().unchecked_ref()));
     // One listener per frame lifetime; the iframe removal is its GC.
     listener.forget();
+}
+
+/// The Shell recycling this frame after a completed disposal: the previous
+/// session is gone (its `DisposeComplete` is what let the Shell ask), so a
+/// fresh warm session mounts in the document that already paid for the wasm
+/// instance and the PDF engine. Same boot as a warm init — a session with no
+/// document — which is why it answers with the same `Ready`/`Painted` pair.
+#[cfg(target_arch = "wasm32")]
+fn on_rearm(generation: u64) {
+    if SESSION_ID.with(|slot| slot.get()).is_some() {
+        // Still live: a rearm is only ever sent after DisposeComplete, so a
+        // live session means the message is out of order — never stack a
+        // second session on top of the first.
+        return;
+    }
+    PENDING_OPENS.with(|opens| opens.borrow_mut().clear());
+    remove_runtime_roots();
+    on_init(None, generation);
+}
+
+/// Drop the previous session's mount point: the unmount emptied it, but the
+/// element itself belongs to the frame, and a recycled frame must hold
+/// exactly one root.
+#[cfg(target_arch = "wasm32")]
+fn remove_runtime_roots() {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    while let Some(root) = document.get_element_by_id("runtime-root") {
+        root.remove();
+    }
+}
+
+/// A shelf cover, baked on the Shell's behalf. The engine's cover path is
+/// standalone (its own loading task, torn down before it resolves), so it
+/// never touches the session's open document — a bake can run beside a
+/// warm reader or an open book alike. Always answered, `None` on failure,
+/// so the Shell's in-flight ledger never waits on silence.
+#[cfg(target_arch = "wasm32")]
+fn bake_cover(path: String) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let width = runtime_contract::covers::COVER_WIDTH;
+        let image = pdf_engine::api::cover_data_url(&path, width)
+            .await
+            .ok()
+            .map(|cover| runtime_contract::covers::CoverImage {
+                data_url: cover.data_url,
+                width: cover.width,
+                height: cover.height,
+            });
+        emit(RuntimeFrame::CoverReady { path, image });
+    });
 }
 
 /// A resolve round trip landing: the parked open flow continues with the

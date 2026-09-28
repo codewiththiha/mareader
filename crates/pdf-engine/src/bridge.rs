@@ -80,6 +80,16 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "prefetchThumb")]
     pub async fn prefetch_thumb(page: u32, scale: f64) -> JsValue;
 
+    /// The reader left the screen with its document still loaded: abandon
+    /// queued and in-flight idle prefetches (they settle as drops) and
+    /// refuse new ones until [`resume_prefetches`].
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "suspendPrefetches")]
+    pub fn suspend_prefetches();
+
+    /// The reader is on screen again: idle prefetch may run.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "resumePrefetches")]
+    pub fn resume_prefetches();
+
     /// Extract one page's text runs (`{ok, page, items:[{str,x,y,w,h}]}`)
     /// for the Rust-owned search index. The index builder calls this
     /// concurrently a few pages at a time; every request hits the pdf.js

@@ -126,6 +126,22 @@ fn on_init(warm: bool, generation: u64) {
     report_painted();
 }
 
+/// The Shell recycling this frame after a completed disposal: a fresh warm
+/// shelf mounts in the document that already paid for the wasm instance.
+/// Only ever sent after `DisposeComplete`, so the previous session is gone.
+#[cfg(target_arch = "wasm32")]
+fn on_rearm(generation: u64) {
+    if SESSION_ID.with(|slot| slot.get()).is_some() {
+        return;
+    }
+    if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+        while let Some(root) = document.get_element_by_id("runtime-root") {
+            root.remove();
+        }
+    }
+    on_init(true, generation);
+}
+
 /// A Shell envelope arriving over the port. The generation guard is the
 /// second wall (after the init nonce): a message addressed to another
 /// generation is not this frame's business, whatever it says (§8, §35).
@@ -177,8 +193,11 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         crate::command(id, crate::LibraryCommand::Refresh);
                     }
                 }
+                ShellFrame::Rearm => {
+                    on_rearm(generation);
+                }
                 ShellFrame::Dispose => {
-                    if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
+                    if let Some(id) = SESSION_ID.with(|slot| slot.take()) {
                         let promise = crate::dispose(id);
                         wasm_bindgen_futures::spawn_local(async move {
                             let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
@@ -188,10 +207,13 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         emit(RuntimeFrame::DisposeComplete);
                     }
                 }
-                ShellFrame::Launch { .. } | ShellFrame::ResolveLaunchAnswer { .. } => {
-                    // Neither means anything to the shelf: a document launch is
-                    // the reader's command, and the library never asks the Shell
-                    // to resolve one. Dropped by the protocol, not by accident.
+                ShellFrame::Launch { .. }
+                | ShellFrame::ResolveLaunchAnswer { .. }
+                | ShellFrame::BakeCover { .. } => {
+                    // None of these means anything to the shelf: a document
+                    // launch and a cover bake are the reader's commands, and
+                    // the library never asks the Shell to resolve a launch.
+                    // Dropped by the protocol, not by accident.
                 }
             }
         },

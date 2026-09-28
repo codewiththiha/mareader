@@ -95,3 +95,19 @@ pub async fn prefetch_thumb(page: u32, scale: f64) {
     }
     _ = bridge::prefetch_thumb(page, scale).await;
 }
+
+/// Park idle prefetch while the reader is off screen: what is queued or in
+/// flight settles as dropped, new requests are refused, the document and
+/// its caches stay loaded so a reopen is still instant.
+pub fn suspend_prefetches() {
+    if guard_pdf_reader() {
+        bridge::suspend_prefetches();
+    }
+}
+
+/// Lift [`suspend_prefetches`]: the reader is on screen again.
+pub fn resume_prefetches() {
+    if guard_pdf_reader() {
+        bridge::resume_prefetches();
+    }
+}

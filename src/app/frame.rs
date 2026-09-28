@@ -138,6 +138,11 @@ pub enum FrameVocabulary {
     BakeCover {
         path: String,
     },
+    /// A reader frame's answer to a relayed shelf bake.
+    CoverReady {
+        path: String,
+        image: Option<runtime_contract::covers::CoverImage>,
+    },
     DocStatus(Box<runtime_contract::boundary::DocStatusReport>),
     PublishDigest(String),
     Reload,
@@ -345,34 +350,9 @@ fn post_shell_frame(lane: &Offer, generation: u64, nonce: &str, body: &ShellFram
     let envelope = ShellEnvelope {
         generation,
         nonce: nonce.to_string(),
-        body: match body {
-            // The borrowed form cannot skip the serialise round trip:
-            // envelope's Owned body is what the contract test round-trips.
-            ShellFrame::Init {
-                runtime,
-                launch,
-                warm,
-            } => ShellFrame::Init {
-                runtime: *runtime,
-                launch: launch.clone(),
-                warm: *warm,
-            },
-            ShellFrame::Launch { document } => ShellFrame::Launch {
-                document: document.clone(),
-            },
-            ShellFrame::Refresh => ShellFrame::Refresh,
-            ShellFrame::Dispose => ShellFrame::Dispose,
-            ShellFrame::CoverBaked { path, image } => ShellFrame::CoverBaked {
-                path: path.clone(),
-                image: image.clone(),
-            },
-            ShellFrame::ResolveLaunchAnswer { request, document } => {
-                ShellFrame::ResolveLaunchAnswer {
-                    request: *request,
-                    document: document.clone(),
-                }
-            }
-        },
+        // Owned: the envelope is the contract-tested serde shape, and a
+        // derived clone stays exhaustive as the vocabulary grows.
+        body: body.clone(),
     };
     let Ok(json) = serde_json::to_string(&envelope) else {
         return;
@@ -484,6 +464,17 @@ impl Driver {
     /// its teardown.
     pub fn begin_retiring(&self) {
         self.set_slot(FrameSlot::Retiring);
+    }
+
+    /// Recycle a frame whose session finished disposing: back to the warm
+    /// slot (hidden, its traffic muted again) and a fresh session mounted in
+    /// the same document. The disposal verdict is cleared so the next
+    /// retirement of this frame awaits its own `DisposeComplete`.
+    pub fn rearm(&self) {
+        self.saw_dispose_complete.set(false);
+        *self.dispose_pending.borrow_mut() = None;
+        self.set_slot(FrameSlot::Warm);
+        self.send(&ShellFrame::Rearm);
     }
 
     fn set_slot(&self, slot: FrameSlot) {
@@ -785,6 +776,12 @@ impl Driver {
             }
             RuntimeFrame::BakeCover { path } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::BakeCover { path }));
+            }
+            RuntimeFrame::CoverReady { path, image } => {
+                self.report(FrameEvent::Boundary(FrameVocabulary::CoverReady {
+                    path,
+                    image,
+                }));
             }
             RuntimeFrame::DocStatus { report } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::DocStatus(Box::new(

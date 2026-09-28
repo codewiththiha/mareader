@@ -2550,7 +2550,6 @@ dependencies = [
  "js-sys",
  "leptos",
  "library-core",
- "pdf-engine",
  "reader-core",
  "runtime-contract",
  "serde",

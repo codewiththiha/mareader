@@ -60,6 +60,20 @@ thread_local! {
     static RETRIES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
+/// Forget every in-flight bake and queued path: called when a session
+/// starts. The ledger is module-level and a frame now outlives its sessions
+/// (the Shell recycles frames), so a session that died mid-bake would
+/// otherwise leave `DRAINING` set and its path `PENDING` — and the next
+/// session's backfill would wait forever on an answer addressed to a shelf
+/// that no longer exists.
+pub fn reset_ledger() {
+    QUEUE.with(|queue| queue.borrow_mut().clear());
+    DRAINING.with(|draining| *draining.borrow_mut() = false);
+    DIRTY.with(|dirty| *dirty.borrow_mut() = false);
+    PENDING.with(|pending| pending.borrow_mut().clear());
+    RETRIES.with(|retries| retries.borrow_mut().clear());
+}
+
 fn wanted(rows: &[Row], covers: &CoverMap) -> Vec<String> {
     book_rows(rows)
         .filter(|b| b.format == Format::Pdf)
@@ -198,7 +212,21 @@ pub fn on_baked(
     path: String,
     image: Option<runtime_contract::covers::CoverImage>,
 ) {
-    PENDING.with(|pending| pending.borrow_mut().remove(&path));
+    let requested = PENDING.with(|pending| pending.borrow_mut().remove(&path));
+    if !requested {
+        // An answer this session never asked for (the request belonged to
+        // the session before it in the same frame). The art is still good,
+        // so file it — but this session's drain did not wait on it, and
+        // moving the queue from here would start a second drain beside it.
+        if let Some(image) = image {
+            file_cover(state, path, image.data_url, image.width, image.height);
+            if !DRAINING.with(|draining| *draining.borrow()) && take_dirty() {
+                prune_now(state);
+                crate::services::persist_covers(state.library);
+            }
+        }
+        return;
+    }
     match image {
         Some(image) => {
             RETRIES.with(|retries| retries.borrow_mut().remove(&path));
@@ -255,6 +283,44 @@ mod answer_tests {
         );
         assert!(RETRIES.with(|retries| !retries.borrow().contains("/a.pdf")));
         assert!(PENDING.with(|pending| !pending.borrow().contains("/a.pdf")));
+    }
+
+    #[test]
+    fn a_new_session_starts_with_an_empty_ledger() {
+        QUEUE.with(|queue| queue.borrow_mut().push("/q.pdf".to_string()));
+        DRAINING.with(|draining| *draining.borrow_mut() = true);
+        PENDING.with(|pending| pending.borrow_mut().insert("/p.pdf".to_string()));
+        reset_ledger();
+        assert!(QUEUE.with(|queue| queue.borrow().is_empty()));
+        assert!(!DRAINING.with(|draining| *draining.borrow()));
+        assert!(PENDING.with(|pending| pending.borrow().is_empty()));
+    }
+
+    #[test]
+    fn an_unrequested_answer_files_the_art_without_moving_the_queue() {
+        let state = crate::context::LibraryContext::default();
+        reset_ledger();
+        QUEUE.with(|queue| queue.borrow_mut().push("/next.pdf".to_string()));
+        DRAINING.with(|draining| *draining.borrow_mut() = true);
+        on_baked(
+            state,
+            "/old.pdf".to_string(),
+            Some(CoverImage {
+                data_url: "data:image/jpeg;base64,x".to_string(),
+                width: 240.0,
+                height: 320.0,
+            }),
+        );
+        assert!(
+            state
+                .library
+                .covers
+                .with_untracked(|covers| covers.contains_key("/old.pdf"))
+        );
+        // The running drain still owns the queue: nothing was popped.
+        assert_eq!(QUEUE.with(|queue| queue.borrow().len()), 1);
+        assert!(PENDING.with(|pending| pending.borrow().is_empty()));
+        reset_ledger();
     }
 
     #[test]

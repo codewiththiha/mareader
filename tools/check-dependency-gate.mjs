@@ -30,9 +30,16 @@ import { execFileSync } from "node:child_process";
  */
 const RULES = [
   {
+    // The Shell hosts runtimes and loads no engine: documents AND shelf cover
+    // bakes run in the reader frame (the Shell only relays the bake). An
+    // engine reappearing here would put pdf.js back on the Shell's startup.
+    crate: "mareader",
+    forbid: ["pdf-engine", "pdf-core"],
+  },
+  {
     // The shelf knows the PDF as FORMAT metadata only (`Format::Pdf`); the
-    // execution of one — engine and geometry both — belongs to the reader
-    // and the Shell's bake service. Its bake queue crosses the boundary, so
+    // execution of one — engine and geometry both — belongs to the reader,
+    // which also bakes the shelf's covers (relayed by the Shell). Its bake queue crosses the boundary, so
     // this graph must carry no PDF code at any depth.
     crate: "library-runtime",
     forbid: ["pdf-engine", "pdf-core"],

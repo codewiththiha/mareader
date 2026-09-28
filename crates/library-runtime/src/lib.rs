@@ -75,8 +75,12 @@ pub fn start_session(host: &web_sys::Element, api: context::ApiHandle, warm: boo
         );
     });
 
+    // A fresh shelf owes nothing to the one before it in this frame.
+    services::covers::reset_ledger();
     let host: web_sys::HtmlElement = host.clone().unchecked_into();
     let state = context::LibraryContext::new(api);
+    // The baseline a later Refresh compares against: what this seed read.
+    SEEN_STAMPS.with(|slot| slot.set(StoreStamps::read()));
     LIVE_CTX.with(|c| *c.borrow_mut() = Some(state));
     let handle = mount_to(host, move || {
         // Scoped to THIS session: the state seeds from storage, the effects
@@ -140,17 +144,81 @@ pub enum LibraryCommand {
 /// the shelf (the query, the open shelf, the selection) is session state, not
 /// durable state, and overwriting it here would be a bug.
 fn refresh(ctx: LibraryContext) {
-    let blob = storage::load_library();
-    ctx.library.books.set(blob.books);
-    ctx.library.shelves.set(blob.shelves);
-    ctx.library.folders.set(blob.folders);
-    ctx.library.view.set(blob.view);
-    ctx.library.covers.set(storage::load_covers());
-    ctx.settings.set(storage::load_settings());
+    // Only what moved while the shelf waited. A reading session moves read
+    // points (the library blob) and rarely anything else; re-parsing the
+    // cover map — megabytes of data URLs — and re-setting it would re-render
+    // every cover on the shelf at the exact moment it is revealed.
+    let now = StoreStamps::read();
+    let seen = SEEN_STAMPS.with(|slot| slot.replace(now));
+    if now.library.is_none() || now.library != seen.library {
+        let blob = storage::load_library();
+        ctx.library.books.set(blob.books);
+        ctx.library.shelves.set(blob.shelves);
+        ctx.library.folders.set(blob.folders);
+        ctx.library.view.set(blob.view);
+    }
+    if now.covers.is_none() || now.covers != seen.covers {
+        ctx.library.covers.set(storage::load_covers());
+    }
+    if now.settings.is_none() || now.settings != seen.settings {
+        ctx.settings.set(storage::load_settings());
+    }
     // And the work a warm boot parked: the shelf is on screen now, so its
-    // migration, its measurement pass and its cover bakes are owed.
-    effects_library::run_deferred_startup();
+    // migration, its measurement pass and its cover bakes are owed — just
+    // not inside the reveal's own frame. They start once it has painted.
+    after_reveal(effects_library::run_deferred_startup);
 }
+
+/// Stamps of the stores a shelf seeds from, as of its last read.
+#[derive(Clone, Copy, Default)]
+struct StoreStamps {
+    library: Option<u64>,
+    covers: Option<u64>,
+    settings: Option<u64>,
+}
+
+impl StoreStamps {
+    fn read() -> Self {
+        Self {
+            library: storage::library_stamp(),
+            covers: storage::covers_stamp(),
+            settings: storage::settings_stamp(),
+        }
+    }
+}
+
+thread_local! {
+    /// What the live session last read from the store (seeded at session
+    /// start, refreshed on every Refresh).
+    static SEEN_STAMPS: Cell<StoreStamps> = Cell::new(StoreStamps::default());
+}
+
+/// Run `f` shortly after the current frame has been presented.
+fn after_reveal(f: fn()) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let Some(window) = web_sys::window() else {
+            f();
+            return;
+        };
+        let run = wasm_bindgen::closure::Closure::once_into_js(f);
+        if window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                run.unchecked_ref(),
+                REVEAL_SETTLE_MS,
+            )
+            .is_err()
+        {
+            f();
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    f();
+}
+
+/// How long a revealed shelf gets to paint before its parked passes start.
+#[cfg(target_arch = "wasm32")]
+const REVEAL_SETTLE_MS: i32 = 160;
 
 /// Run one command against the live session. Commands for a session id that
 /// is no longer live are dropped, not answered — the Shell's generation

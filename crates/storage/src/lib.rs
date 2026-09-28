@@ -230,6 +230,36 @@ pub fn save_library(blob: &LibraryBlob) -> Result<(), StorageError> {
     set(LIBRARY_KEY, &encode("save_library", blob)?)
 }
 
+/// A cheap identity for one store's current contents: a hash of the raw
+/// string under its CURRENT key, `None` when that key is absent (a store
+/// still on a retired key or a legacy shape always reloads). A runtime that
+/// seeded its signals from the store compares stamps before re-reading: the
+/// parse — and the re-render that follows a signal set — is the expensive
+/// part, and most of the time nothing changed.
+fn stamp_of(key: &str) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let raw = get(key)?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    raw.len().hash(&mut hasher);
+    raw.hash(&mut hasher);
+    Some(hasher.finish())
+}
+
+/// The library blob's stamp (see [`stamp_of`]).
+pub fn library_stamp() -> Option<u64> {
+    stamp_of(LIBRARY_KEY)
+}
+
+/// The cover map's stamp (see [`stamp_of`]).
+pub fn covers_stamp() -> Option<u64> {
+    stamp_of(COVERS_KEY)
+}
+
+/// The settings blob's stamp (see [`stamp_of`]).
+pub fn settings_stamp() -> Option<u64> {
+    stamp_of(SETTINGS_KEY)
+}
+
 /// Load the cover-art map (path -> page-1 JPEG data URL).
 pub fn load_covers() -> CoverMap {
     let stored: HashMap<String, CoverImage> = load_keyed("covers", COVERS_KEY, RETIRED_COVERS_KEY);

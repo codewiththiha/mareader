@@ -865,6 +865,29 @@ if (!shellBoot?.copy?.includes("Loading MAReader")) {
 if (shellBoot.removedAt === null) {
   throw new Error("[/] the shell never removed the page's boot placeholder");
 }
+// The shelf's cover bakes: the Shell loads no PDF engine any more, so a
+// cover can only exist if the relay works end to end — shelf asks, Shell
+// queues, the warm reader frame bakes, the Shell hands the art back, the
+// shelf files and persists it. The seeded book must get its cover.
+{
+  const started = Date.now();
+  let covers = 0;
+  for (;;) {
+    covers = await page.evaluate(() => {
+      try {
+        return Object.keys(JSON.parse(localStorage.getItem("mareader.covers.v1") ?? "{}")).length;
+      } catch {
+        return 0;
+      }
+    });
+    if (covers > 0) break;
+    if (Date.now() - started > 45_000) {
+      throw new Error("[/] the seeded book never got a cover — the bake relay through the reader frame is broken");
+    }
+    await page.waitForTimeout(250);
+  }
+  summary.bootContract.coverRelay = { covers, ms: Date.now() - started };
+}
 summary.bootContract.libraryBoot = {
   path: libraryDom.path,
   placeholderCopy: shellBoot.copy,
@@ -1603,9 +1626,12 @@ currentStage = "stage11-same-page-x10";
 // library (the row the reader recorded on open), work the pages, click the
 // toolbar close, and repeat in the SAME live page.
 // Every close must still return every reader-owned resource to baseline.
-// Each open boots a fresh reader frame, so the epoch restarts with its wasm
-// world — 1 at the open claim, 2 at the close claim — while the cross-cycle
-// pairing the epoch used to prove lives in the shell's session counters.
+// The Shell RECYCLES a reader frame after a close: the session is disposed
+// (fully drained — that is what this stage asserts) and a fresh warm session
+// mounts in the same document, so the wasm world, and with it the disposal
+// epoch, carries on. The epoch rule is therefore per frame: a fresh frame's
+// open claims 1; a recycled frame's open claims the previous close + 1; and
+// every close claims exactly one more than its open.
 async function openFromLibrary(cycle) {
   const card = page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('.book-title[title*="Programming Pearls"]').first();
   try {
@@ -1631,19 +1657,28 @@ async function openFromLibrary(cycle) {
 // in place). The warm slot changes WHEN that generation is minted — the
 // reader boots before the click now, so the generation no longer advances on
 // the click — which is why the assertion is "never repeats" rather than
-// "+1 per cycle". The disposal epoch is NOT carried across cycles: each
-// same-page open boots a FRESH frame — a fresh wasm world, warmed with no
-// document — so its own epoch is 1 at the open claim and 2 at the close
-// claim; the cross-cycle pairing the epoch used to prove in one live page is
-// carried by the shell's session counters now (§21).
+// "+1 per cycle". The disposal epoch belongs to the frame's wasm world:
+// a fresh frame opens at 1, a recycled one continues from its last close
+// (the session is new — the generation check above proves that — but the
+// module is the one the frame already loaded).
 const generationBase = (await snap()).runtime?.generation ?? 1;
 const usedGenerations = new Set();
 console.log("same-page stage: runtime generation base", generationBase);
+let lastReaderFrame = null;
+let lastCloseEpoch = null;
+summary.samePageRecycledOpens = 0;
 for (let cycle = 1; cycle <= 10; cycle += 1) {
   const o = await openFromLibrary(cycle);
-  if (o.disposalEpoch !== 1) {
-    throw new Error(`same-page open ${cycle}: epoch ${o.disposalEpoch}, expected 1 (the fresh frame's first claim is the open)`);
+  const openFrame = (await frameSlots()).active;
+  const recycled = openFrame !== null && openFrame === lastReaderFrame;
+  const expectedOpen = recycled ? lastCloseEpoch + 1 : 1;
+  if (o.disposalEpoch !== expectedOpen) {
+    throw new Error(
+      `same-page open ${cycle}: epoch ${o.disposalEpoch}, expected ${expectedOpen} ` +
+        `(${recycled ? `recycled frame ${openFrame}: one claim past its last close` : "a fresh frame's first claim is the open"})`,
+    );
   }
+  if (recycled) summary.samePageRecycledOpens += 1;
   {
     const gen = o.runtime?.generation ?? 0;
     if (gen <= generationBase || usedGenerations.has(gen)) {
@@ -1665,8 +1700,10 @@ for (let cycle = 1; cycle <= 10; cycle += 1) {
   }
   await clickCloseNow();
   const c = await waitFor(`the disposal baseline (same-page cycle ${cycle})`,
-    (x) => x.atBaseline === true, 45_000);
-  assertDrained(c, `same-page cycle ${cycle}`);
+    (x) => x.atBaseline === true && x.runtime?.state === "disposed", 45_000);
+  assertDrained(c, `same-page cycle ${cycle}`, o.disposalEpoch + 1);
+  lastReaderFrame = openFrame;
+  lastCloseEpoch = c.disposalEpoch;
   if (c.runtime?.state !== "disposed") {
     throw new Error(`same-page cycle ${cycle}: runtime ${c.runtime?.state}, expected disposed`);
   }
@@ -1758,8 +1795,10 @@ for (let cycle = 1; cycle <= 10; cycle += 1) {
   await page.waitForTimeout(120);
   assertNoNewPanics(`callback cycle ${cycle}`, panicsBeforeCycle);
   const c = await waitFor(`the disposal baseline (callback cycle ${cycle})`,
-    (x) => x.atBaseline === true, 45_000);
-  assertDrained(c, `callback cycle ${cycle}`);
+    (x) => x.atBaseline === true && x.runtime?.state === "disposed", 45_000);
+  // Same-page opens run in a recycled frame: the close claims one past the
+  // open, whatever epoch that frame's wasm world had reached.
+  assertDrained(c, `callback cycle ${cycle}`, o.disposalEpoch + 1);
   if (c.runtime?.state !== "disposed") {
     throw new Error(`callback cycle ${cycle}: runtime ${c.runtime?.state}, expected disposed`);
   }
