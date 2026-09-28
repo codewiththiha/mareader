@@ -2,6 +2,8 @@
 
 Single source of truth for what this branch is and where it stands. Read this
 before planning or editing; when it disagrees with memory, this file wins.
+How the branch got here — the three route-split designs, what each cost and
+why only the third holds — is `docs/route-split-retrospective.md`.
 
 ## What this branch is
 
@@ -229,20 +231,27 @@ The cover bake is proven in the same run without any reader resident
 
 ## Known follow-ups (do not silently expand scope)
 
-- Recycling, measured on e8b1d18 (CI #2005, Deep CI #217): cover bake
-  landed (then `coverRelay.covers` 1, now `coverBake.covers`),
-  `reusedWarmFrame` 4/4, `peakFrames` 2,
-  rapid-reopen and same-page slope/drift 0 B, close-during-prefetch drops 1
-  (kept readers park idle prefetch via `suspendPrefetches` when their frame
-  leaves the active slot). `samePageRecycledOpens` was 0: the same-page
-  stage's close→reopen gap exceeds `RECYCLE_DELAY_MS`, so a same-document
-  Rearm is not yet exercised by CI — add a fast (<1.2s) reopen stage.
+- Measured on a2aa19a (Deep CI #242): the cover bake landed from the Shell's
+  bake page with no reader resident (`coverBake.covers` 1 in ~5 s,
+  `sawBakeFrame` true), `reusedWarmFrame` 4/4, `peakFrames` 2, idle
+  eviction in 2019 ms for a 2000 ms window with no forced removal,
+  rapid-reopen and same-page slope/drift 0 B, `samePageRecycledOpens` 9/10.
+  The e8b1d18 relay numbers recorded here before (`coverRelay.covers` 1 in
+  1 ms) were the reader's own cover write, not a relay: the relay's ask was
+  dropped before the shelf was registered, which is why the bake now waits
+  for admission in `src/app/bake.rs`.
 - The Shell accepts a digest from a recycled frame only while its kept
-  session lives (recycle Pending/Disposing); `BakeCover` bypasses the live
-  gate because a cold shelf asks from inside its own mount.
-
-- `docs/runtime-split.md` still describes dynamic-import loading in places;
-  production is frame-hosted (reconcile docs-only, do not change code back).
+  session lives (recycle Pending/Disposing); a `BakeCover` ask is routed
+  ahead of both the registry and the live gate, because a cold shelf asks
+  from inside its own mount.
 - Diagnostics hardening: a reader that existed but never reported a terminal
   digest should fail `atBaseline` closed (currently only "last digest says
   drained" is required).
+- Two app-lifetime pieces have had no caller since the split (8bbda0a) and
+  are kept for the day they are re-armed, not deleted: `DragOverlay`
+  (`crates/app-ui/src/components/app_overlays/drag_overlay.rs`, with no
+  `tauri://drag-drop` listener in any runtime — drag-and-drop opening is
+  currently unwired) and `install_window_state_bridge`
+  (`crates/app-ui/src/window_bridge.rs`, so the frameless caption's
+  maximize/restore glyph never follows the window). Both need the Tauri
+  event relay to reach the runtime frames.
