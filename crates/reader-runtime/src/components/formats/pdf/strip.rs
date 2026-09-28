@@ -219,7 +219,7 @@ pub fn PdfPageStrip(
                     let each_items = items;
                     view! {
                         <div class="relative">
-                            <div aria-hidden="true" style:height=move || format!("{}px", total_size.get())></div>
+                            <div aria-hidden="true" data-strip-extent="vertical" style:height=move || format!("{}px", total_size.get())></div>
                             <For
                                 each=move || each_items.get()
                                 key=|item: &VirtualItem| item.index
@@ -287,6 +287,7 @@ pub fn PdfPageStrip(
                     view! {
                         <div
                             class="relative"
+                            data-strip-extent="horizontal"
                             style=move || {
                                 format!(
                                     "width:{}px;height:max(100%, {}px)",

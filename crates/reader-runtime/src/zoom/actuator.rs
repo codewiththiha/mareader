@@ -96,19 +96,19 @@ impl ZoomActuator {
             self.horizontal.rescale(factor, move |index| {
                 widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
             });
-            let hv = self.horizontal.clone();
+            // The rescale's own anchored write went out against the strip's
+            // OLD width (Leptos patches it after this returns), so the browser
+            // may have clamped it. Bring the extent to the new total first,
+            // then re-issue the anchored offset — in this tick, so no frame is
+            // painted at the clamped position and no deferred correction is
+            // left to run after the zoom has committed.
+            apply_extent(
+                StripExtent::Horizontal,
+                self.horizontal.total_size().get_untracked(),
+            );
             let h_scroll = self.horizontal.scroll_offset().get_untracked();
-            // The session's own page signal is the probe: a frame armed here
-            // can land after a close unmounted the strip, and a disposed
-            // reader has no surface left to scroll (touching the virtualizer's
-            // signals would abort the artifact).
-            let alive = state.viewer.page;
-            request_animation_frame(move || {
-                if alive.try_get_untracked().is_none() {
-                    return;
-                }
-                hv.scroll_to_offset(h_scroll, ScrollMode::Instant);
-            });
+            self.horizontal
+                .scroll_to_offset(h_scroll, ScrollMode::Instant);
         }
     }
 
@@ -184,12 +184,23 @@ impl ZoomActuator {
         // `scroll_to_offset` clamps to it, so adopting a larger range here
         // would leave `viewer.scroll_top` disagreeing with the offset that
         // actually landed at the very end of a document.
-        let max_scroll = (self.vertical.total_size().get_untracked() - vh).max(0.0);
+        let total = self.vertical.total_size().get_untracked();
+        let max_scroll = (total - vh).max(0.0);
         let new_scroll_top = (new_centre_y_doc - centre_in_viewport).clamp(0.0, max_scroll);
 
         if (new_scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
             state.viewer.scroll_top.set(new_scroll_top);
         }
+
+        // The spacer that gives the scroller its extent is a Leptos-owned
+        // style, patched only after `rescale` returns — so a growing
+        // document's write would be clamped against the still-short OLD
+        // extent (worst at its end), leaving a painted frame at the wrong
+        // offset. This used to be repaired by re-asserting the offset one
+        // frame later, a correction that could outlive the zoom's commit.
+        // Bringing the extent to the new total first makes the write exact
+        // in this tick; the patch that follows writes the same value.
+        apply_extent(StripExtent::Vertical, total);
 
         // Synchronous: `rescale` has already updated the virtualizer's layout
         // and signals in this tick, so commanding the offset now lands on the
@@ -197,16 +208,35 @@ impl ZoomActuator {
         // had moved and the scroll had not.
         self.vertical
             .scroll_to_offset(new_scroll_top, ScrollMode::Instant);
-
-        // Growing content: re-assert one frame later. The spacer that gives
-        // the scroller its scroll extent is patched by Leptos only after
-        // `rescale` returns, so the browser clamps the write against the
-        // still-short old extent — worst at the end of a growing document.
-        if factor > 1.0 {
-            let v = self.vertical.clone();
-            request_animation_frame(move || {
-                v.scroll_to_offset(new_scroll_top, ScrollMode::Instant);
-            });
-        }
     }
+}
+
+/// The element that gives a strip its scroll extent (strip.rs marks it).
+#[derive(Clone, Copy)]
+enum StripExtent {
+    /// The vertical strip's spacer: its height is the strip's total.
+    Vertical,
+    /// The horizontal strip's track: its width is the strip's total.
+    Horizontal,
+}
+
+/// Write a strip's scroll extent directly, ahead of Leptos' patch of the
+/// same value, so a scroll write issued in this tick is measured against the
+/// geometry it belongs to. Absent strip (the other mode, or a torn-down
+/// reader): nothing to extend.
+fn apply_extent(extent: StripExtent, total: f64) {
+    let (selector, property) = match extent {
+        StripExtent::Vertical => ("[data-strip-extent=\"vertical\"]", "height"),
+        StripExtent::Horizontal => ("[data-strip-extent=\"horizontal\"]", "width"),
+    };
+    let Some(el) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector(selector).ok().flatten())
+        .and_then(|el| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(el).ok())
+    else {
+        return;
+    };
+    // Called through the inherent method: the Leptos prelude's `ElementExt`
+    // also names a `style`.
+    let _ = web_sys::HtmlElement::style(&el).set_property(property, &format!("{total}px"));
 }
