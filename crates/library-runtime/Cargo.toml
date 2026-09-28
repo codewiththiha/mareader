@@ -37,6 +37,13 @@ web-sys = { version = "0.3", features = [
   "Location", "UrlSearchParams", "Storage", "CustomEvent",
   "AddEventListenerOptions", "EventTarget", "Navigator", "Performance",
   "PerformanceEntry", "console", "ScrollIntoViewOptions", "ScrollLogicalPosition", "VisibilityState", "MessageEvent", "Worker",
+  # `ScrollIntoViewOptions::set_behavior` and the `ScrollBehavior` enum the
+  # level's scroll-to-selection uses. Declared here because this artifact's
+  # own graph has to provide it: it used to arrive through app-ui's unused
+  # virtual-list dependency, and a feature a crate needs is the crate's own
+  # to name (`cargo` unifies features per build, and the library build is
+  # its own build).
+  "ScrollBehavior",
 ] }
 
 [dev-dependencies]

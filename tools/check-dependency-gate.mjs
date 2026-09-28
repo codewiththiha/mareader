@@ -28,21 +28,43 @@ import { execFileSync } from "node:child_process";
 /** The workspace crates whose graphs carry the boundary. `forbid` names the
  *  crates that must NEVER appear in that graph, at any depth.
  */
+/** The crates only a READER owns: the PDF engine and its geometry, the
+ *  reflowable paginator and its parsers, the virtualizer and its Leptos
+ *  binding, the markdown renderer. Neither the Shell nor the shelf may reach
+ *  any of them — the library route has to be able to run, and rest, with no
+ *  reader code resident, and a graph that pulls one of these compiles reader
+ *  code into the library artifact whether or not anything calls it.
+ */
+const READER_ONLY = [
+  "pdf-engine",
+  "pdf-core",
+  "reader-runtime",
+  "reflow-core",
+  "md-core",
+  "txt-core",
+  "virtual-list",
+  "virtual-list-leptos",
+  "leptos-md",
+];
+
 const RULES = [
   {
-    // The Shell hosts runtimes and loads no engine: documents AND shelf cover
-    // bakes run in the reader frame (the Shell only relays the bake). An
-    // engine reappearing here would put pdf.js back on the Shell's startup.
+    // The Shell hosts runtimes and loads no engine: documents run in the
+    // reader frame, and shelf covers in the Shell's own bake page
+    // (`public/bake.html`, a child document, no wasm). An engine reappearing
+    // here would put pdf.js back on the Shell's startup.
     crate: "mareader",
-    forbid: ["pdf-engine", "pdf-core"],
+    forbid: READER_ONLY,
   },
   {
     // The shelf knows the PDF as FORMAT metadata only (`Format::Pdf`); the
     // execution of one — engine and geometry both — belongs to the reader,
-    // which also bakes the shelf's covers (relayed by the Shell). Its bake queue crosses the boundary, so
-    // this graph must carry no PDF code at any depth.
+    // and the shelf's covers are baked by the Shell's bake page. The shelf
+    // shares appearance and settings with the reader through persisted
+    // storage (`storage`, `reader-core::settings`) and nothing else, so this
+    // graph must carry no reader code at any depth.
     crate: "library-runtime",
-    forbid: ["pdf-engine", "pdf-core"],
+    forbid: READER_ONLY,
   },
   {
     crate: "app-state",
