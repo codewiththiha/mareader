@@ -24,7 +24,7 @@
 //!
 //! An untweened zoom — animation off, reduced motion, or a poster that asked
 //! for none — never comes through this loop at all: [`commit_instant`] runs
-//! the whole transaction in the task that posted it.
+//! it as one discrete change.
 //!
 //! A container follow does not normally come through this loop either: its target is
 //! whatever the container allows RIGHT NOW, so the controller lands it in the
@@ -38,7 +38,7 @@ use leptos::prelude::*;
 use app_chrome::hooks::use_raf::FrameLoop;
 
 use crate::state::{ReaderState, ZoomTransition};
-use crate::zoom::actuator::ZoomActuator;
+use crate::zoom::actuator::{PendingScroll, ZoomActuator};
 use app_ui::components::primitives::motion::reduced_motion::prefers_reduced_motion;
 
 use super::config;
@@ -54,8 +54,7 @@ use super::coordinator::finish_transition;
 /// every frame of a burst, so it hits that case whenever the scale is pinned.
 ///
 /// Callers: the controller in the task that reported a new container size,
-/// [`commit_instant`] for every untweened zoom, and the tween loop for a
-/// follow that took over mid-tween. All go
+/// and the tween loop for a follow that took over mid-tween. Both go
 /// through here so "the layout moved and the display scale agrees" stays one
 /// rule rather than two that can drift.
 pub(crate) fn land(state: &ReaderState, actuator: &ZoomActuator, t: &ZoomTransition) -> bool {
@@ -115,32 +114,76 @@ pub(crate) fn interpolates_now(state: &ReaderState, t: &ZoomTransition) -> bool 
     )
 }
 
-/// Run a whole untweened transaction in the calling task: open it, land the
-/// layout on the target, commit.
+/// Whether `a` and `b` are the same transaction. A retarget replaces the
+/// transition with one that differs in `from` and `to` (it starts where the
+/// eye is and heads somewhere new), so the triple identifies it even when two
+/// posts share a millisecond clock reading.
+pub(crate) fn same_transaction(a: &ZoomTransition, b: &ZoomTransition) -> bool {
+    a.start_ms == b.start_ms && a.from == b.from && a.to == b.to && a.following == b.following
+}
+
+/// Run a whole untweened transaction: open it, move the layout to the target,
+/// write the scroll surface once the DOM agrees, commit.
 ///
 /// This is what "animation off" means for a zoom — one discrete change, not a
-/// tween with its frames removed. Nothing is deferred to a later frame, so
-/// there is no window in which the view could show a half-applied state and
-/// no frame count standing in for a correctness condition:
+/// tween with its frames removed, and no frame count standing in for a
+/// correctness condition. The order is the whole point:
 ///
-/// * the actuator brings the strip's scroll extent to the new total BEFORE
-///   its scroll write, so the anchored offset is exact in this tick (no
-///   clamped write, no correction a frame later — see `relayout_vertical`);
-/// * the page hosts stretch their CURRENT bitmaps to the target size, and the
-///   commit's renders draw into scratches and swap in one blit each, so no
-///   page is ever blank while its crisp raster is pending;
-/// * everything that runs afterwards — the scroll event, the hosts'
-///   ResizeObserver reports, the render completions — observes the committed
-///   geometry, and a render issued before the zoom is refused at landing
-///   (`judge_completion` in the page host).
+/// 1. The transition goes up and every SIGNAL moves at once — the strips'
+///    layout and window, the measurement store, the display scale — with no
+///    DOM write. Everything that renders from those signals (page hosts
+///    stretching their current bitmaps, item positions, the strip's extent)
+///    is queued on the reactive executor by these writes.
+/// 2. The scroll write is queued behind them, and immediately before it the
+///    actuator writes the mounted pages' new positions and sizes itself
+///    (`apply_page_geometry`) — the same values those patches write, but in
+///    an order that does not depend on when the patches run. The new offset
+///    is therefore never shown over the old page positions. (Writing it
+///    first — the tween's order, invisible there because each frame is a 1%
+///    step — showed a different page under the reader's eyes for a frame.)
+/// 3. Only then is the transaction committed and released
+///    ([`finish_transition`]): the freezes hold across the whole landing,
+///    and the renders the commit issues draw into scratches and swap in one
+///    blit each, so no page is ever blank while its crisp raster is pending.
 ///
-/// The transition still goes up before anything moves and comes down in
-/// [`finish_transition`]: the freeze bookkeeping in the controller watches
-/// that signal, and it is what re-arms the retention-grace reset.
+/// The fence: a newer transaction posted before step 2 runs (a retarget, a
+/// follow) owns the surface and the commit from then on, so a stale landing
+/// writes nothing and commits nothing.
 pub(crate) fn commit_instant(state: &ReaderState, actuator: &ZoomActuator, t: &ZoomTransition) {
     state.viewer.zoom.transition.set(Some(*t));
-    land(state, actuator, t);
-    finish_transition(state, t);
+    let pending = land_detached(state, actuator, t);
+    let (state, actuator, t) = (*state, actuator.clone(), *t);
+    leptos::task::spawn_local(async move {
+        let current = state.viewer.zoom.transition.try_get_untracked().flatten();
+        if !current.is_some_and(|open| same_transaction(&open, &t)) {
+            return;
+        }
+        if let Some(pending) = pending {
+            actuator.apply_page_geometry(&state);
+            actuator.write_scroll(pending);
+        }
+        finish_transition(&state, &t);
+    });
+}
+
+/// [`land`] without touching the scroll surface: the signals move, the
+/// returned offsets are for `write_scroll` once the DOM has caught up.
+fn land_detached(
+    state: &ReaderState,
+    actuator: &ZoomActuator,
+    t: &ZoomTransition,
+) -> Option<PendingScroll> {
+    let cur = state.viewer.zoom.visual_scale();
+    if (t.to - cur).abs() < config::SETTLED_EPSILON {
+        return None;
+    }
+    let pending = if state.viewer.mode.get_untracked().is_paginated() {
+        None
+    } else {
+        actuator.relayout_detached(state, t.to / cur)
+    };
+    state.viewer.zoom.display.set(t.to);
+    pending
 }
 
 /// The single tween loop owned by the zoom controller. A thin wrapper over
@@ -215,6 +258,24 @@ mod tests {
             animate,
             following,
         }
+    }
+
+    #[test]
+    fn a_retarget_is_a_different_transaction_even_in_the_same_millisecond() {
+        let first = transition(false, false);
+        let retarget = ZoomTransition {
+            from: first.to,
+            to: 1.5,
+            ..first
+        };
+        assert!(same_transaction(&first, &first));
+        assert!(!same_transaction(&first, &retarget));
+        // A follow taking over at the same scales is a different owner too.
+        let follow = ZoomTransition {
+            following: true,
+            ..first
+        };
+        assert!(!same_transaction(&first, &follow));
     }
 
     #[test]

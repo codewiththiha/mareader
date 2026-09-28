@@ -189,8 +189,8 @@ impl ZoomController {
             actuator.vertical.set_retention_grace(retention.grace_ms);
             actuator.horizontal.set_retention_grace(retention.grace_ms);
             if !following && !interpolates_now(&state, &transition) {
-                // Animation off: one discrete change, opened, landed and
-                // committed right here — no tween loop, no frames to wait.
+                // Animation off: one discrete change — no tween loop, no
+                // frames to wait; see `commit_instant` for its order.
                 commit_instant(&state, &actuator, &transition);
                 return;
             }
@@ -226,8 +226,8 @@ impl ZoomController {
 /// size the hosts already show.
 ///
 /// Every transaction ends here; only the calls differ: a tween commits on the
-/// frame it lands, an untweened zoom in the task that posted it
-/// (`commit_instant`), a container follow is committed by
+/// frame it lands, an untweened zoom once its scroll write has followed the
+/// DOM patches (`commit_instant`), a container follow is committed by
 /// the settle deadline — once per burst, at the size the container stopped
 /// at. Setting the scales is a no-op write when a follow has been landing all
 /// along, so a held commit is quiet even when it moves nothing.

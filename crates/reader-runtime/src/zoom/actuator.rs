@@ -36,6 +36,7 @@
 //! in the same tick.
 
 use leptos::prelude::*;
+use pdf_core::pixel_grid::{one_device_px, snap_px};
 use reader_core::view::{ViewMode, anchored_position};
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
@@ -61,20 +62,147 @@ impl ZoomActuator {
 
     /// Rescale both strips by `factor` — the ratio between the new and the
     /// current layout scale — holding the document point under the viewport
-    /// centre exactly where it is.
+    /// centre exactly where it is. The scroll offset is written in this tick.
+    ///
+    /// For the tween and a container follow, which relayout from inside an
+    /// animation frame or a resize report, once per frame.
     pub fn relayout_to(&self, state: &ReaderState, factor: f64) {
+        if let Some(pending) = self.relayout(state, factor, Surface::Now) {
+            self.write_scroll(pending);
+        }
+    }
+
+    /// [`Self::relayout_to`], minus the DOM: layout, window, scale signals and
+    /// the measurement store move now; the returned offsets are for
+    /// [`Self::write_scroll`], to be called once the DOM patches those signals
+    /// trigger (page hosts, item positions, the strip's extent) have run.
+    ///
+    /// An untweened zoom lands the WHOLE step at once, so a scroll offset
+    /// written ahead of those patches shows the new offset over the old page
+    /// positions — a different page under the reader's eyes — until they
+    /// arrive. A tween hides the same ordering in a 1% step.
+    pub(crate) fn relayout_detached(
+        &self,
+        state: &ReaderState,
+        factor: f64,
+    ) -> Option<PendingScroll> {
+        self.relayout(state, factor, Surface::Later)
+    }
+
+    /// Position and size every mounted page of the vertical strip for the
+    /// geometry a detached relayout produced, directly in the DOM.
+    ///
+    /// These are Leptos-owned values — each wrapper's `top` follows the
+    /// virtualizer's `item_top`, each host's box follows the stretch effect —
+    /// and their patches follow on their own schedule. An untweened landing
+    /// cannot leave the order to that schedule: its scroll write moves the
+    /// view by a whole zoom step, so any frame painted between it and those
+    /// patches shows the new offset over the OLD page positions (measured in
+    /// the browser suite: a different page under the viewport centre for one
+    /// frame). Writing the same values here first makes the scroll write
+    /// that follows land on the geometry it belongs to; the patches then
+    /// write what is already there. Host sizes come from the intrinsic page
+    /// size at the display scale — the product the commit's renders produce.
+    pub(crate) fn apply_page_geometry(&self, state: &ReaderState) {
+        let Some(spacer) = extent_element(StripExtent::Vertical) else {
+            return;
+        };
+        let Some(track) = spacer.parent_element() else {
+            return;
+        };
+        let gap = state.viewer.page_gap.get_untracked();
+        let scale = state.viewer.zoom.visual_scale();
+        let children = track.children();
+        state
+            .document
+            .content
+            .metrics
+            .intrinsic
+            .with_untracked(|sizes| {
+                for i in 0..children.length() {
+                    let Some(wrapper) = children.item(i) else {
+                        continue;
+                    };
+                    let Some(host) = wrapper.query_selector(".pdf-page").ok().flatten() else {
+                        continue;
+                    };
+                    let Some(page) = host
+                        .get_attribute("data-host-page")
+                        .and_then(|p| p.parse::<usize>().ok())
+                        .filter(|p| *p > 0)
+                    else {
+                        continue;
+                    };
+                    let index = page - 1;
+                    // Same offset and no-gap overlap the strip's wrapper style
+                    // computes (strip.rs).
+                    let overlap = if index > 0 && gap <= 1e-9 {
+                        one_device_px()
+                    } else {
+                        0.0
+                    };
+                    let top = snap_px(self.vertical.item_top(index).get_untracked()) - overlap;
+                    if let Ok(wrapper) =
+                        wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(wrapper)
+                    {
+                        let _ = web_sys::HtmlElement::style(&wrapper)
+                            .set_property("top", &format!("{top}px"));
+                    }
+                    if let Some(size) = sizes.get(index).filter(|s| s.width > 0.0 && s.height > 0.0)
+                    {
+                        let _ = host.set_attribute(
+                            "style",
+                            &format!(
+                                "width:{}px;height:{}px;--scale-factor:{}",
+                                snap_px(size.width * scale),
+                                snap_px(size.height * scale),
+                                scale
+                            ),
+                        );
+                    }
+                }
+            });
+    }
+
+    /// Put the strips' extents and scroll offsets where a relayout left them.
+    pub(crate) fn write_scroll(&self, pending: PendingScroll) {
+        if let Some((total, top)) = pending.vertical {
+            // The spacer that gives the scroller its extent is a Leptos-owned
+            // style, patched only after `rescale` returns — so a growing
+            // document's write would be clamped against the still-short OLD
+            // extent (worst at its end). Bringing the extent to the new total
+            // first makes the write exact in this tick; the patch writes the
+            // same value.
+            apply_extent(StripExtent::Vertical, total);
+            self.vertical.scroll_to_offset(top, ScrollMode::Instant);
+        }
+        if let Some((total, left)) = pending.horizontal {
+            apply_extent(StripExtent::Horizontal, total);
+            self.horizontal.scroll_to_offset(left, ScrollMode::Instant);
+        }
+    }
+
+    fn relayout(
+        &self,
+        state: &ReaderState,
+        factor: f64,
+        surface: Surface,
+    ) -> Option<PendingScroll> {
         if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
-            return; // already at this geometry; nothing to move
+            return None; // already at this geometry; nothing to move
         }
 
-        self.relayout_vertical(state, factor);
+        let vertical = self.relayout_vertical(state, factor, surface);
 
         // Horizontal strip: only scroll-horizontal mode mounts it, so in
         // every other mode rebuilding its widths (a per-frame `Vec` collect)
         // would be dead work on every frame of a zoom. Gate on the one mode
         // that owns it.
         if state.viewer.mode.get_untracked() != ViewMode::ScrollHorizontal {
-            return;
+            return Some(PendingScroll {
+                vertical,
+                horizontal: None,
+            });
         }
 
         // Widths are exact (intrinsic × scale + margin), rebuilt from the
@@ -92,24 +220,27 @@ impl ZoomActuator {
             .intrinsic
             .with_untracked(|sizes| sizes.iter().map(|s| s.width).collect::<Vec<f64>>());
         let new_scale = state.viewer.zoom.visual_scale() * factor;
+        let mut horizontal = None;
         if !widths.is_empty() {
-            self.horizontal.rescale(factor, move |index| {
+            let sizes = move |index: usize| {
                 widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
-            });
-            // The rescale's own anchored write went out against the strip's
-            // OLD width (Leptos patches it after this returns), so the browser
-            // may have clamped it. Bring the extent to the new total first,
-            // then re-issue the anchored offset — in this tick, so no frame is
-            // painted at the clamped position and no deferred correction is
-            // left to run after the zoom has committed.
-            apply_extent(
-                StripExtent::Horizontal,
+            };
+            match surface {
+                // The rescale's own anchored write goes out against the
+                // strip's OLD width, so the browser may clamp it; the pending
+                // write re-issues it against the new extent.
+                Surface::Now => self.horizontal.rescale(factor, sizes),
+                Surface::Later => self.horizontal.rescale_detached(factor, sizes),
+            }
+            horizontal = Some((
                 self.horizontal.total_size().get_untracked(),
-            );
-            let h_scroll = self.horizontal.scroll_offset().get_untracked();
-            self.horizontal
-                .scroll_to_offset(h_scroll, ScrollMode::Instant);
+                self.horizontal.scroll_offset().get_untracked(),
+            ));
         }
+        Some(PendingScroll {
+            vertical,
+            horizontal,
+        })
     }
 
     /// Rescale the vertical strip and put the document point that was under
@@ -123,7 +254,12 @@ impl ZoomActuator {
     /// column, and the column itself is never copied: the anchor reads the
     /// pre-scale store once, the store is then scaled in place, and the strip
     /// rebuild reads the now-scaled values.
-    fn relayout_vertical(&self, state: &ReaderState, factor: f64) {
+    fn relayout_vertical(
+        &self,
+        state: &ReaderState,
+        factor: f64,
+        surface: Surface,
+    ) -> Option<(f64, f64)> {
         let gap = state.viewer.page_gap.get_untracked();
         let (_, vh) = state.viewer.container_size.get_untracked();
         let scroll_top = self.vertical.scroll_offset().get_untracked();
@@ -164,9 +300,7 @@ impl ZoomActuator {
                     index,
                 ))
             });
-        let Some(new_centre_y_doc) = anchored else {
-            return; // nothing measured yet; no layout to hold still
-        };
+        let new_centre_y_doc = anchored?; // nothing measured yet; no layout to hold still
 
         // Scale the shared measurement store, then rebuild the strip's layout
         // from it. The rebuild reads the now-scaled store, so the column is
@@ -176,8 +310,11 @@ impl ZoomActuator {
                 *height *= factor;
             }
         });
-        self.vertical
-            .rescale(factor, state.document.content.metrics.strip_sizes(gap));
+        let sizes = state.document.content.metrics.strip_sizes(gap);
+        match surface {
+            Surface::Now => self.vertical.rescale(factor, sizes),
+            Surface::Later => self.vertical.rescale_detached(factor, sizes),
+        }
 
         // Scroll so the anchored point is back under the middle of the window.
         // The ceiling is the virtualizer's own (`total − viewport`):
@@ -192,23 +329,31 @@ impl ZoomActuator {
             state.viewer.scroll_top.set(new_scroll_top);
         }
 
-        // The spacer that gives the scroller its extent is a Leptos-owned
-        // style, patched only after `rescale` returns — so a growing
-        // document's write would be clamped against the still-short OLD
-        // extent (worst at its end), leaving a painted frame at the wrong
-        // offset. This used to be repaired by re-asserting the offset one
-        // frame later, a correction that could outlive the zoom's commit.
-        // Bringing the extent to the new total first makes the write exact
-        // in this tick; the patch that follows writes the same value.
-        apply_extent(StripExtent::Vertical, total);
-
-        // Synchronous: `rescale` has already updated the virtualizer's layout
-        // and signals in this tick, so commanding the offset now lands on the
-        // right frame. Deferring it left a one-frame gap where the geometry
-        // had moved and the scroll had not.
-        self.vertical
-            .scroll_to_offset(new_scroll_top, ScrollMode::Instant);
+        // The offset itself is written by `write_scroll`: in this tick for
+        // the tween (the relayout already moved the virtualizer's layout and
+        // signals, so the offset lands on the right frame — deferring it left
+        // a one-frame gap where the geometry had moved and the scroll had
+        // not), after the DOM patches for an untweened landing.
+        Some((total, new_scroll_top))
     }
+}
+
+/// Where a relayout left the strips: `(extent, scroll offset)` per axis, for
+/// [`ZoomActuator::write_scroll`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PendingScroll {
+    vertical: Option<(f64, f64)>,
+    horizontal: Option<(f64, f64)>,
+}
+
+/// When a relayout touches the scroll surface.
+#[derive(Clone, Copy)]
+enum Surface {
+    /// In the relayout's own tick (tween frames, container follows).
+    Now,
+    /// Not at all: the caller writes the returned offsets once the DOM has
+    /// been patched from the relayout's signals.
+    Later,
 }
 
 /// The element that gives a strip its scroll extent (strip.rs marks it).
@@ -225,13 +370,11 @@ enum StripExtent {
 /// geometry it belongs to. Absent strip (the other mode, or a torn-down
 /// reader): nothing to extend.
 fn apply_extent(extent: StripExtent, total: f64) {
-    let (selector, property) = match extent {
-        StripExtent::Vertical => ("[data-strip-extent=\"vertical\"]", "height"),
-        StripExtent::Horizontal => ("[data-strip-extent=\"horizontal\"]", "width"),
+    let property = match extent {
+        StripExtent::Vertical => "height",
+        StripExtent::Horizontal => "width",
     };
-    let Some(el) = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.query_selector(selector).ok().flatten())
+    let Some(el) = extent_element(extent)
         .and_then(|el| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(el).ok())
     else {
         return;
@@ -239,4 +382,15 @@ fn apply_extent(extent: StripExtent, total: f64) {
     // Called through the inherent method: the Leptos prelude's `ElementExt`
     // also names a `style`.
     let _ = web_sys::HtmlElement::style(&el).set_property(property, &format!("{total}px"));
+}
+
+/// The element carrying a strip's scroll extent, if that strip is mounted.
+fn extent_element(extent: StripExtent) -> Option<web_sys::Element> {
+    let selector = match extent {
+        StripExtent::Vertical => "[data-strip-extent=\"vertical\"]",
+        StripExtent::Horizontal => "[data-strip-extent=\"horizontal\"]",
+    };
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector(selector).ok().flatten())
 }

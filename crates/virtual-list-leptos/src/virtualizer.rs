@@ -891,6 +891,17 @@ impl Virtualizer {
         self.inner.apply(step);
     }
 
+    /// [`Self::rescale`] without touching the surface: the layout, the window
+    /// and the scroll signal move now, the DOM scroll offset does not. The
+    /// caller writes it (`scroll_to_offset`) once the DOM that positions the
+    /// items has been patched from those signals — writing it first shows
+    /// the new offset over the old item positions for as long as the patch
+    /// takes to arrive.
+    pub fn rescale_detached(&self, factor: f64, new_sizes: impl Fn(usize) -> f64) {
+        let step = self.inner.core.borrow_mut().rescale(factor, &new_sizes);
+        self.inner.apply_local(step);
+    }
+
     /// Called when scrolling settles.
     pub fn on_scroll_idle(&self, cb: impl Fn() + 'static) {
         self.inner.idle_cbs.borrow_mut().push(Rc::new(cb));
