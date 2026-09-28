@@ -29,6 +29,9 @@
 //! loop can still be handed one (a follow taking over mid-tween), so it knows
 //! how to land it without committing it.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use leptos::prelude::*;
 
 use app_chrome::hooks::use_raf::FrameLoop;
@@ -90,7 +93,28 @@ fn ease_out_cubic(t: f64) -> f64 {
 /// transition is on the signal, so retargets never stack a second loop.
 pub(crate) struct Tween {
     frames: FrameLoop,
+    /// The untweened landing being held open: `(transition start, frames
+    /// left)`. Keyed by the transition's `start_ms`, so a retarget during
+    /// the hold (a burst of steps with animation off) lands afresh and
+    /// restarts it. Lives here rather than in the step because `arm`
+    /// replaces the step on every retarget.
+    held: Rc<Cell<Option<(f64, u8)>>>,
 }
+
+/// How many frames an untweened landing keeps its transaction open after the
+/// jump, before committing.
+///
+/// A landing moves the whole step in one frame, and the frames right after
+/// it still carry echoes of the geometry it replaced: the browser's scroll
+/// event (one frame stale, and possibly clamped against the old scroll extent
+/// the growing-content re-assert fixes a frame later) and the ResizeObserver
+/// reports of the hosts it just stretched. Committing in the landing frame
+/// released the freezes in time for exactly those echoes to be adopted — one
+/// misaligned frame between the old view and the new one. A tween never
+/// shows it because its last step is ~1% of the zoom; held for two frames,
+/// the echoes fall inside the transaction and are dropped. The landing is
+/// still on screen at once: only the crisp re-render starts ~2 frames later.
+const LANDED_HOLD_FRAMES: u8 = 2;
 
 impl Tween {
     /// Build from the reader's owner — this is called in a component body, next
@@ -98,14 +122,17 @@ impl Tween {
     pub(crate) fn new() -> Self {
         Self {
             frames: FrameLoop::new(),
+            held: Rc::new(Cell::new(None)),
         }
     }
 
     /// Ensure a loop is running for the current transition.
     pub(crate) fn arm(&self, state: ReaderState, actuator: ZoomActuator) {
+        let held = Rc::clone(&self.held);
         self.frames.arm(move || {
             // Idle? The loop dies here until the next `arm`.
             let Some(t) = state.viewer.zoom.transition.get_untracked() else {
+                held.set(None);
                 return false;
             };
             let duration = config::zoom_profile().duration_ms();
@@ -122,9 +149,6 @@ impl Tween {
                 || !reader_allows
                 || prefers_reduced_motion()
             {
-                // Landing without a tween: one relayout to the target, then
-                // the commit.
-                land(&state, &actuator, &t);
                 if t.following {
                     // A held follow LANDS but must not commit: its burst has
                     // another frame coming, and a raster pass per frame of a
@@ -133,11 +157,29 @@ impl Tween {
                     // container stops moving. Going idle here instead of
                     // re-arming lets the next frame own the next rAF: `arm`
                     // adopts whatever transition is on the signal.
+                    land(&state, &actuator, &t);
                     return false;
                 }
-                finish_transition(&state, &t);
-                return false;
+                // Landing without a tween: one relayout to the target, held
+                // open for LANDED_HOLD_FRAMES, then the commit.
+                return match held.get().filter(|(id, _)| *id == t.start_ms) {
+                    None => {
+                        land(&state, &actuator, &t);
+                        held.set(Some((t.start_ms, LANDED_HOLD_FRAMES)));
+                        true
+                    }
+                    Some((id, left)) if left > 1 => {
+                        held.set(Some((id, left - 1)));
+                        true
+                    }
+                    Some(_) => {
+                        held.set(None);
+                        finish_transition(&state, &t);
+                        false
+                    }
+                };
             }
+            held.set(None);
             let progress = ((js_sys::Date::now() - t.start_ms) / duration).clamp(0.0, 1.0);
             let visual = t.from + (t.to - t.from) * ease_out_cubic(progress);
             show(&state, &actuator, visual);
