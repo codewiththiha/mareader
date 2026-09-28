@@ -30,6 +30,38 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 - The PDF engine is still a module-global under `PdfSessionHandle`; true
   session-scoped engines are Phase 4, not a defect to "fix" opportunistically.
 
+## Warm slot (why a route switch is no longer a boot)
+
+`src/app/manager.rs::run_start` used to call `dispose_active().await` BEFORE
+the replacement existed, and `start_serialized` blocked concurrent starts on
+top of that: every transition was destroy-A → create-B → boot-B, so the user
+paid a full artifact boot (fetch JS, fetch and instantiate WASM, mount) on
+every click.
+
+The manager now owns three slot states — `Active`, `Warm`, `Retiring`
+(`src/app/frame.rs::FrameSlot`) — and keeps at most one `Warm` frame behind
+whatever is on screen:
+
+- 700ms after a runtime goes active (`WARM_DELAY_MS`), the Shell boots its
+  counterpart into a hidden slot. The boot stops at `Ready`: **a warm boot
+  never opens a document**, so the PDF machinery is never paid for twice and
+  never paid for a book the user did not ask for.
+- A navigation for a kind whose warm frame is ready is a **promotion, not a
+  boot**: same element, same document, same realm, same WASM instance. The
+  reveal is the frame's `data-mareader-slot` flipping to `active` (CSS
+  `z-index`), which is why the frame painted while it waited — there is no
+  cover to hold and nothing to await.
+- A click that beats the warm boot waits out its REMAINDER
+  (`wait_verdict()`), never a second boot of the same artifact.
+- The runtime it displaced goes `Retiring` in the same synchronous block as
+  the reveal and is disposed BEHIND it, off the critical path.
+- A warm frame that died on the way up (`ready_outcome()` is an error or a
+  timeout) is torn down and the transition falls back to `cold_start` — the
+  warm slot must never cost the user the runtime.
+- The library's heavy startup passes (migrate, measure, cover backfill,
+  rescan) park in `DEFERRED` during a warm boot and run on reveal, so the
+  shelf the user left is refreshed rather than replayed from boot time.
+
 ## Invariants (enforced by tests — never weaken them)
 
 - Shell diagnostic counters are authoritative; runtime digests merge in only
@@ -42,6 +74,20 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   remains the single teardown path.
 - Browser peaks: page hosts ≤ render window + zombie cap, active renders ≤
   page-lane slots, counters drain to zero at baseline.
+- At most one frame is visible at any instant, and it is the `active` one. A
+  hidden slot is `visibility: hidden` — **never `display: none`**, which
+  starves the iframe of `requestAnimationFrame` and would therefore never
+  produce `Painted`.
+- Two frames may differ, two VISIBLE frames may not: hiding the outgoing
+  frame is part of the reveal, not a follow-up task.
+- Nothing is disposed while it is on screen (`run_retire` re-asserts this for
+  any retirement that did not come from a reveal).
+- Per kind, `created − completed == (active is X) + (warm-ready is X)`: the
+  retired session's disposal still runs to completion, just not in front of
+  the handoff.
+- A warmed frame is the frame that gets revealed — `backSlots.active ===
+  warmShelf.warm` — and the revealed generation is the warmed generation.
+  Rebooting at promotion time is a failure, not an optimisation.
 - Disposal epoch is frame-instance-local (1 at open, 2 at close); the
   reported runtime generation is Shell-owned — the reader-session count,
   advancing once per reader session across frames.
@@ -53,6 +99,15 @@ Actions judge: `CI` (format, clippy+wasm check+dependency gate, `cargo test`,
 web contracts, macOS shell) on every push; `Deep CI` (browser lifecycle
 baseline + Tauri boot smoke) on pushes touching app/engine paths. Watch run
 `361…` job logs, fix, squash fixups, force-push.
+
+## CI is skippable where it is not needed
+
+- `CI` ignores pushes that only touch `docs/**` — no lane reads those files
+  as input (the contract scripts parse SOURCE comments, never the documents
+  they point at). Any push touching code runs the whole matrix.
+- `Deep CI`'s two 45-minute lanes honour `[skip deep]` in the commit subject;
+  a `workflow_dispatch` can narrow the run to one lane or override the
+  marker. The nightly cron ignores it, so a skip is never the last word.
 
 ## Known follow-ups (do not silently expand scope)
 

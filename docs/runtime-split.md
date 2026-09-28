@@ -72,6 +72,45 @@ generation that issued it, and stale traffic is counted, never applied
 (§35). Compiled code still caches in the browser's cache, but no module
 instance is SHARED: each frame builds its own.
 
+### Slot states: active, warm, retiring
+
+Loading a runtime is the expensive part of a route switch, so the loader
+rarely runs on the click. Each frame carries a `data-mareader-slot`
+attribute — `active`, `warm`, `retiring` — and the manager
+(`src/app/manager.rs`) keeps at most one of each behind the screen:
+
+| Slot | Visible | Meaning |
+| --- | --- | --- |
+| `active` | yes | the runtime the user is looking at; `z-index: 1` |
+| `warm` | no | booted through `Ready`, waiting to be revealed |
+| `retiring` | no | displaced, still disposing — off the critical path |
+
+The counterpart runtime is warmed 700ms after a transition settles
+(`WARM_DELAY_MS`). A warm boot stops at `Ready`: it never opens a
+document, because the PDF machinery is exactly the cost that must not be
+paid for a book nobody asked for — the existing `ShellFrame::Launch` opens
+the document on the real navigation, and a revealed shelf gets a `Refresh`
+instead, since the row the reader left has moved since it seeded.
+
+A navigation whose warm frame is ready is a **promotion**: the same element
+flips its slot to `active`. Same document, same realm, same WASM instance —
+the boot is already spent. The outgoing frame becomes `retiring` in the same
+synchronous block as the reveal, so two frames are never visible at once,
+and its disposal runs behind the handoff.
+
+Two constraints follow from the browser, not from the design:
+
+- A hidden slot is `visibility: hidden`, never `display: none`. Browsers stop
+  calling `requestAnimationFrame` in a `display: none` iframe, and `Painted`
+  is rAF-driven — a warm frame hidden that way would never finish booting.
+- The frame must be in the registry BEFORE its boot verdict is awaited. A
+  promotion arriving mid-boot resolves from the same verdict, so if the frame
+  is not findable yet the promotion concludes there is nothing to reveal.
+
+A warm frame that cannot be revealed (its verdict is an error or the ready
+timeout) is torn down and the transition falls back to a cold start: the warm
+slot is an optimisation and must never cost the user the runtime.
+
 ## The boot contract
 
 One build produces the frontend the app runs. `tools/build-dist.sh` runs the

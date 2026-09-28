@@ -32,11 +32,22 @@ browser         the one production frontend build, then the wasm app in a real
 tauri-smoke     the same production build, then the REAL native window under
                 Xvfb: the Library runtime boots, the pixels are not one flat
                 colour, and an OS document handoff boots the Reader
+
+both deep lanes honour "[skip deep]" in the commit subject (never the cron)
 ```
 
 - **One check, one reason.** No command runs twice across lanes; the engine
   smoke consumes the bundle the same job built from current source, so a
   smoke pass can never mean an old artifact passed.
+- **Skippable where the answer cannot change.** `CI` ignores pushes that only
+  touch `docs/**` — no lane reads those files as input (the contract scripts
+  parse SOURCE comments, not the documents they point at), so there is
+  nothing to compile. The filter drops a run only when EVERY changed path
+  matches. `Deep CI`'s two 45-minute lanes honour `[skip deep]` in the
+  commit subject, and a `workflow_dispatch` can narrow the run to one lane or
+  override the marker. Neither escape is the last word: the nightly cron
+  takes no notice of either, so whatever the day skipped is caught
+  overnight.
 - **Parallel, not serial.** The lanes are independent; the wall clock is the
   slowest lane, not the sum.
 - **One cache key per lane** (`lint-cache`, `test-cache`, `macos-cache`):
