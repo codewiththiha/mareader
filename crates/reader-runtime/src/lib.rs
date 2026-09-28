@@ -279,14 +279,19 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     promise
 }
 
-/// An in-session command from the Shell (only drops arrive this way today):
-/// open another document inside the live session.
+/// An in-session command from the Shell: open a document inside the live
+/// session — a drop or a dialog, and the launch a warm reader is handed when
+/// it is promoted.
 pub fn command(id: u32, cmd: runtime_contract::boundary::LaunchDocument) {
     let live = SESSION.with(|s| s.borrow().as_ref().filter(|x| x.id == id).map(|_| ()));
     if live.is_some() {
         let ctx = LIVE_CTX.with(|c| *c.borrow());
         if let Some(ctx) = ctx {
-            services::document::open::open_path(ctx, cmd.path);
+            // The descriptor, not the path: the Shell already resolved the
+            // row, the resume page and the blend override, and re-resolving
+            // over the port would cost a round trip on the one path that is
+            // supposed to feel instant.
+            services::document::open::open_with_launch(ctx, cmd);
         }
     }
 }

@@ -17,9 +17,11 @@ use std::rc::Rc;
 
 use frame_transport::wasm::PortWire;
 use frame_transport::{PendingResolves, PortShellApi};
+#[cfg(target_arch = "wasm32")]
+use runtime_contract::protocol::BootStage;
 use runtime_contract::protocol::RuntimeFrame;
 #[cfg(target_arch = "wasm32")]
-use runtime_contract::protocol::{ShellEnvelope, ShellFrame};
+use runtime_contract::protocol::{RuntimeKind, ShellEnvelope, ShellFrame};
 use wasm_bindgen::JsCast;
 
 use crate::context::ApiHandle;
@@ -77,9 +79,25 @@ fn start_frame(wire: PortWire, generation: u64) {
     API.with(|slot| *slot.borrow_mut() = Some(api));
     #[cfg(target_arch = "wasm32")]
     install_shell_listener(wire.port().clone(), generation);
+    // First contact: the shelf no longer mounts on adoption either. The
+    // Shell's `init` carries `warm`, and a boot has to know it is warm
+    // BEFORE its first effect runs — the shelf's startup passes write
+    // durable state a live reader session is meanwhile editing. So this
+    // frame's first word is "alive and waiting", exactly as the reader's is.
+    emit(RuntimeFrame::Status {
+        stage: BootStage::Initialized,
+    });
+}
 
-    // The explicit runtime root (§9): the shell's painted-versus-mounted
-    // handshake, and the DOM identity the lifecycle tests read.
+/// The Shell's `init`: mount the runtime root (§9) and start the session.
+/// `warm` is the Shell's statement that this boot runs ahead of the
+/// navigation that will use it, so the shelf renders but does not work.
+fn on_init(warm: bool, generation: u64) {
+    // A re-init for a boot that already mounted is not a second session: the
+    // Shell mints one identity per frame and never reuses one.
+    if SESSION_ID.with(|slot| slot.get()).is_some() {
+        return;
+    }
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
         return;
     };
@@ -99,10 +117,10 @@ fn start_frame(wire: PortWire, generation: u64) {
     root.set_attribute("class", "h-full w-full").ok();
     let _ = body.append_child(&root);
 
-    let id = crate::start_session(&root, ApiHandle::Frame);
+    let id = crate::start_session(&root, ApiHandle::Frame, warm);
     SESSION_ID.with(|slot| slot.set(Some(id)));
     emit(RuntimeFrame::Status {
-        stage: runtime_contract::protocol::BootStage::Mounted,
+        stage: BootStage::Mounted,
     });
     emit(RuntimeFrame::Ready);
     report_painted();
@@ -126,10 +144,17 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                 return;
             }
             match envelope.body {
-                ShellFrame::Init { runtime, .. } => {
-                    // The library's init carries no payload; the kind check is
-                    // the only acknowledgement a wrong-frame boot could fake.
-                    debug_assert_eq!(runtime, runtime_contract::protocol::RuntimeKind::Library);
+                ShellFrame::Init {
+                    runtime,
+                    launch: _,
+                    warm,
+                } => {
+                    // The kind check is the only acknowledgement a
+                    // wrong-frame boot could fake; `warm` is the payload that
+                    // matters — it decides whether this shelf works now or
+                    // when it is revealed.
+                    debug_assert_eq!(runtime, RuntimeKind::Library);
+                    on_init(warm, generation);
                 }
                 ShellFrame::CoverBaked { path, image } => {
                     if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
@@ -140,6 +165,16 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                                 image: image.map(Box::new),
                             },
                         );
+                    }
+                }
+                ShellFrame::Refresh => {
+                    // Promoted from warm: the shelf it seeded at boot is a
+                    // snapshot from before the reader session ran, and a
+                    // reader session moves read points and adds books. Re-read
+                    // the store rather than booting a new runtime — that read
+                    // is the whole reason warming is worth its memory.
+                    if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
+                        crate::command(id, crate::LibraryCommand::Refresh);
                     }
                 }
                 ShellFrame::Dispose => {

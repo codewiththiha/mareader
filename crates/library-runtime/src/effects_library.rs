@@ -2,7 +2,7 @@
 //! watched folder when the window comes back, and the sink that folds the shell's progress
 //! beats into the dock's task list. All three are installed once at the app root.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
@@ -24,8 +24,26 @@ thread_local! {
 /// Called once from the app root, after the theme and the AI bridge and
 /// before the OS file handoff: a double-clicked book must not land in the
 /// middle of the library's first measurement pass.
-pub fn library_effects(state: crate::context::LibraryContext) {
+///
+/// A WARM session is the exception, and deliberately so. Those passes write
+/// durable state — the migration moves rows, the rescan imports, the backfill
+/// enqueues cover bakes the Shell answers — and a warm shelf runs while a
+/// reader session is live and editing that same store. A runtime that is only
+/// being kept ready must not compete with the one the user is using, so a
+/// warm shelf parks the passes and [`run_deferred_startup`] runs them when
+/// the shelf is actually revealed.
+pub fn library_effects(state: crate::context::LibraryContext, warm: bool) {
     install_progress_sink(state);
+    if warm {
+        DEFERRED.with(|slot| slot.set(Some(state)));
+        return;
+    }
+    startup_passes(state);
+}
+
+/// The passes a shown shelf owes its own state: migrate, measure, backfill,
+/// and keep the watched folders current while the window is in use.
+fn startup_passes(state: crate::context::LibraryContext) {
     // The store migration changes the address rows hold, so measuring first
     // would mark books `missing` for files this pass is about to move.
     migrate_store_layout(state);
@@ -41,6 +59,22 @@ pub fn library_effects(state: crate::context::LibraryContext) {
             backfill_missing(state);
         }
     });
+}
+
+thread_local! {
+    /// The startup work a warm boot held back. One shelf per frame, so one
+    /// slot is the whole bookkeeping it needs.
+    static DEFERRED: Cell<Option<crate::context::LibraryContext>> = const { Cell::new(None) };
+}
+
+/// Run the passes a warm boot parked, once, now that the shelf is on screen.
+/// Idempotent: a shelf that was never warm has nothing parked, and a second
+/// refresh must not re-measure the whole library.
+pub fn run_deferred_startup() {
+    let Some(state) = DEFERRED.with(|slot| slot.take()) else {
+        return;
+    };
+    startup_passes(state);
 }
 
 /// App-lifetime rather than page-lifetime: an import started on the library page is still

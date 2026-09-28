@@ -46,6 +46,45 @@ pub enum FrameKind {
     Reader,
 }
 
+/// Which half of the host a frame occupies.
+///
+/// The Shell keeps one runtime on screen and may keep one more booted behind
+/// it, so a route change is a reveal instead of a rebuild (`docs/runtime-split.md`).
+/// A warm frame is a full runtime — its own document, realm and wasm instance
+/// — held at `visibility: hidden`: laid out and painting, but not shown and
+/// not hit-testable, which is what keeps `requestAnimationFrame` (and so the
+/// runtime's own `Painted`) alive inside it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FrameSlot {
+    /// On screen: the runtime the user is looking at. Exactly one at a time.
+    Active,
+    /// Booted and waiting to be revealed.
+    Warm,
+    /// Revealed past: displaced by a handoff, disposing behind the runtime
+    /// that replaced it. Still owed its `DisposeComplete`, and still the
+    /// author of the terminal digest the baseline reads, so it is hidden but
+    /// not yet gone.
+    Retiring,
+}
+
+impl FrameSlot {
+    /// The `data-mareader-slot` value: CSS hides everything that is not on
+    /// screen, and the browser suites scope every DOM assertion to the one
+    /// that is.
+    pub const fn attr(self) -> &'static str {
+        match self {
+            FrameSlot::Active => "active",
+            FrameSlot::Warm => "warm",
+            FrameSlot::Retiring => "retiring",
+        }
+    }
+
+    /// Whether the frame is on screen.
+    pub const fn is_visible(self) -> bool {
+        matches!(self, FrameSlot::Active)
+    }
+}
+
 impl FrameKind {
     /// The artifact page the iframe loads (§1).
     pub const fn page(self) -> &'static str {
@@ -169,6 +208,10 @@ pub struct Driver {
     kind: FrameKind,
     generation: u64,
     nonce: String,
+    /// Which half of the host this frame is in. Mutable: promotion moves a
+    /// warm frame to active in place — the whole point being that no new
+    /// frame, document or wasm instance is built.
+    slot: Cell<FrameSlot>,
     iframe: web_sys::HtmlIFrameElement,
     host: web_sys::Element,
     /// Offer re-posting until first contact (§7's "re-init must be
@@ -197,8 +240,11 @@ pub struct Driver {
     saw_dispose_complete: Cell<bool>,
     /// The manager's reporter hook into the driver's event loop.
     events: RefCell<Option<FrameEventHook>>,
-    /// The oneshot gates the manager's awaits resolve through.
-    ready_gate: RefCell<Option<js_sys::Function>>,
+    /// A warm boot has TWO parties interested in its verdict — the warmer
+    /// that is holding the frame, and a promotion that arrived while it was
+    /// still booting. A single resolve slot would let the second waiter
+    /// replace the first's, so the gate is a list every waiter is added to.
+    ready_waiters: RefCell<Vec<js_sys::Function>>,
     ready_pending: RefCell<Option<Result<(), FrameFatalStage>>>,
     dispose_gate: RefCell<Option<js_sys::Function>>,
     dispose_pending: RefCell<Option<Result<(), FrameFatalStage>>>,
@@ -302,13 +348,19 @@ fn post_shell_frame(lane: &Offer, generation: u64, nonce: &str, body: &ShellFram
         body: match body {
             // The borrowed form cannot skip the serialise round trip:
             // envelope's Owned body is what the contract test round-trips.
-            ShellFrame::Init { runtime, launch } => ShellFrame::Init {
+            ShellFrame::Init {
+                runtime,
+                launch,
+                warm,
+            } => ShellFrame::Init {
                 runtime: *runtime,
                 launch: launch.clone(),
+                warm: *warm,
             },
             ShellFrame::Launch { document } => ShellFrame::Launch {
                 document: document.clone(),
             },
+            ShellFrame::Refresh => ShellFrame::Refresh,
             ShellFrame::Dispose => ShellFrame::Dispose,
             ShellFrame::CoverBaked { path, image } => ShellFrame::CoverBaked {
                 path: path.clone(),
@@ -345,7 +397,12 @@ fn parse_runtime_event(
 impl Driver {
     /// Create the frame element with its boot identity in the URL. The
     /// driver is inert until [`Driver::start`].
-    pub fn new(kind: FrameKind, host: &web_sys::Element, generation: u64) -> Option<Rc<Self>> {
+    pub fn new(
+        kind: FrameKind,
+        host: &web_sys::Element,
+        generation: u64,
+        slot: FrameSlot,
+    ) -> Option<Rc<Self>> {
         let nonce = nonce();
         let src = format!("{}?hosted=1&g={}&n={}", kind.page(), generation, nonce);
         let document = window().and_then(|w| w.document())?;
@@ -361,11 +418,15 @@ impl Driver {
         iframe
             .set_attribute("data-mareader-generation", &generation.to_string())
             .ok()?;
+        iframe
+            .set_attribute("data-mareader-slot", slot.attr())
+            .ok()?;
         iframe.set_src(&src);
         Some(Rc::new(Self {
             kind,
             generation,
             nonce,
+            slot: Cell::new(slot),
             iframe,
             host: host.clone(),
             offer_ticker: Cell::new(None),
@@ -380,7 +441,7 @@ impl Driver {
             saw_painted: Cell::new(false),
             saw_dispose_complete: Cell::new(false),
             events: RefCell::new(None),
-            ready_gate: RefCell::new(None),
+            ready_waiters: RefCell::new(Vec::new()),
             ready_pending: RefCell::new(None),
             dispose_gate: RefCell::new(None),
             dispose_pending: RefCell::new(None),
@@ -395,6 +456,39 @@ impl Driver {
 
     pub const fn generation(&self) -> u64 {
         self.generation
+    }
+
+    pub fn slot(&self) -> FrameSlot {
+        self.slot.get()
+    }
+
+    /// True once this frame has answered `Ready` — the question a promotion
+    /// asks before it will reveal a warm frame.
+    pub fn is_ready(&self) -> bool {
+        self.ready_pending
+            .borrow()
+            .as_ref()
+            .is_some_and(Result::is_ok)
+    }
+
+    /// Reveal a warm frame in place. Nothing is rebuilt: the document, the
+    /// realm and the wasm instance were paid for at warm time, and this only
+    /// moves which half of the host the frame sits in.
+    pub fn promote(&self) {
+        self.set_slot(FrameSlot::Active);
+    }
+
+    /// Hide a displaced frame the instant its replacement is revealed. The
+    /// disposal still runs to completion behind it; what the user must not
+    /// see is the runtime they just left, still on screen for the length of
+    /// its teardown.
+    pub fn begin_retiring(&self) {
+        self.set_slot(FrameSlot::Retiring);
+    }
+
+    fn set_slot(&self, slot: FrameSlot) {
+        self.slot.set(slot);
+        let _ = self.iframe.set_attribute("data-mareader-slot", slot.attr());
     }
 
     /// Insert the frame and start the handshake. The loading cover is the
@@ -602,10 +696,7 @@ impl Driver {
             });
             return;
         }
-        *self.ready_pending.borrow_mut() = Some(Err(stage));
-        if let Some(resolve) = self.ready_gate.borrow_mut().take() {
-            let _ = resolve.call0(&JsValue::NULL);
-        }
+        self.resolve_ready(Err(stage));
     }
 
     /// The port listener's entry point, with the frame's own identity
@@ -761,6 +852,10 @@ impl Driver {
                     .borrow()
                     .as_ref()
                     .map(|launch| Box::new(launch.clone())),
+                // Read at handshake time, not at creation: a frame created
+                // warm and revealed before it ever spoke boots as the active
+                // runtime it has become.
+                warm: self.slot.get() == FrameSlot::Warm,
             },
         );
     }
@@ -776,18 +871,26 @@ impl Driver {
     }
 
     /// The manager's "wait for Ready": a promise the READY emission or the
-    /// fatal timeout resolves. The caller inspects
-    /// [`Driver::take_ready_outcome`] after the await for the stage verdict.
-    pub fn wait_ready(&self) -> js_sys::Promise {
+    /// fatal timeout resolves. Any number of waiters may hold it — a warm
+    /// boot is awaited both by the warmer and by a promotion that caught it
+    /// mid-flight — and each resolves on the one verdict. A boot that has
+    /// already reached a verdict resolves immediately.
+    pub fn wait_verdict(&self) -> js_sys::Promise {
         js_sys::Promise::new(&mut |resolve, _reject| {
-            self.ready_gate.borrow_mut().replace(resolve);
+            if self.ready_pending.borrow().is_some() {
+                let _ = resolve.call0(&JsValue::NULL);
+            } else {
+                self.ready_waiters.borrow_mut().push(resolve);
+            }
         })
     }
 
-    /// The awaited boot verdict (set by `try_resolve_ready`/`fatal_ready`,
-    /// taken by the manager once its wait resolves).
-    pub fn take_ready_outcome(&self) -> Option<Result<(), FrameFatalStage>> {
-        self.ready_pending.borrow_mut().take()
+    /// The boot verdict, read without consuming it: a warm boot's verdict is
+    /// needed by both the task that ran the warm boot and the promotion that
+    /// may have overtaken it, so a oneshot would leave the second caller
+    /// reading "no verdict" about a frame that had already answered.
+    pub fn ready_outcome(&self) -> Option<Result<(), FrameFatalStage>> {
+        *self.ready_pending.borrow()
     }
 
     fn try_resolve_ready(&self) -> bool {
@@ -797,11 +900,16 @@ impl Driver {
         if let (Some(id), Some(window)) = (self.ready_timer.take(), window()) {
             window.clear_timeout_with_handle(id);
         }
-        *self.ready_pending.borrow_mut() = Some(Ok(()));
-        if let Some(resolve) = self.ready_gate.borrow_mut().take() {
+        self.resolve_ready(Ok(()));
+        true
+    }
+
+    /// Publish the boot verdict once and wake everyone waiting on it.
+    fn resolve_ready(&self, outcome: Result<(), FrameFatalStage>) {
+        *self.ready_pending.borrow_mut() = Some(outcome);
+        for resolve in self.ready_waiters.borrow_mut().drain(..) {
             let _ = resolve.call0(&JsValue::NULL);
         }
-        true
     }
 
     /// §12 phase 1, from the Shell's side: ask for the graceful shutdown and

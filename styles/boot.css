@@ -38,7 +38,12 @@
 /* The runtime host's own states (src/app/boot.rs): the shell's loading state
    before a runtime mounts, and the error state when one cannot start (§6,
    §11). Painted into #runtime-host, which fills the window. */
+/* Above the frames: the host stacks them, so the cover needs a layer of its
+   own to sit on top of whatever is underneath it. */
 .runtime-boot {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -94,13 +99,41 @@
   background: var(--color-accent-soft, #dbeafe);
 }
 
+/* The runtime host holds up to two frames at once (the warm-slot lifecycle in
+   docs/runtime-split.md): the one on screen and the one booted behind it.
+   Stacking them is what makes a route change a reveal instead of a rebuild —
+   both occupy the same rectangle, so a warm frame lays out and paints at the
+   real size it will be shown at. */
+#runtime-host {
+  position: relative;
+}
+
 /* The runtime frame (§1): the hosted runtime's whole window. It takes the
    host's full measure — the host itself is `h-full w-full` — so the frame's
    document lays out exactly where the runtime would mount in the same-page
    architecture; no border, no inline shrink-wrap. */
 .runtime-frame {
   display: block;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+/* The warm frame is laid out and painting, but not shown and not
+   hit-testable. `visibility` rather than `display`: a `display: none` iframe
+   gets no layout, and a runtime that cannot lay out cannot run the animation
+   frames its own painted handshake is made of. */
+.runtime-frame[data-mareader-slot="warm"],
+.runtime-frame[data-mareader-slot="retiring"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The revealed frame paints above the one it replaced: for one handoff both
+   are in the host, and DOM order alone would let the outgoing runtime paint
+   over its replacement. */
+.runtime-frame[data-mareader-slot="active"] {
+  z-index: 1;
 }

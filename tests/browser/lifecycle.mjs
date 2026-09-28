@@ -144,6 +144,9 @@ async function snap() {
     // Runtime DOM lives inside the host's frame now: canvases count across
     // both documents (§21's sampling is byte-faithful, not frame-blind).
     const docs = [document];
+    // Every frame, not only the visible one: a warm runtime's canvases are
+    // real backing stores even though nothing is showing them, and a
+    // byte-faithful memory sample cannot be frame-blind.
     for (const frame of document.querySelectorAll("#runtime-host iframe.runtime-frame")) {
       if (frame.contentDocument) docs.push(frame.contentDocument);
     }
@@ -299,7 +302,7 @@ async function clickCloseNow() {
   // swallowed in a plain browser. Dispatch on the button itself: same
   // handler, same close path the packaged app runs.
   await page.evaluate(() => {
-    const btn = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector('button[title*="Close this book"]');
+    const btn = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector('button[title*="Close this book"]');
     if (!btn) throw new Error("close button not found");
     btn.click();
   });
@@ -404,7 +407,7 @@ function assertDrained(s, label, expectedEpoch = 2) {
 // meant to interrupt is actually in flight.
 async function raceCloseDuringRender() {
   return page.evaluate(() => {
-    const frame = document.querySelector("#runtime-host iframe.runtime-frame");
+    const frame = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]");
     const raw = frame?.contentWindow?.__mareaderDiagnostics?.() ?? window.__mareaderDiagnostics?.();
     if (!raw) return false;
     const s = JSON.parse(raw);
@@ -418,7 +421,7 @@ async function raceCloseDuringRender() {
 
 async function raceCloseDuringPrefetch() {
   return page.evaluate(() => {
-    const frame = document.querySelector("#runtime-host iframe.runtime-frame");
+    const frame = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]");
     const raw = frame?.contentWindow?.__mareaderDiagnostics?.() ?? window.__mareaderDiagnostics?.();
     if (!raw) return false;
     const s = JSON.parse(raw);
@@ -528,10 +531,23 @@ async function startHostSampler() {
       } catch {
         diag = null;
       }
-      const frames = host ? host.querySelectorAll("iframe.runtime-frame") : [];
-      let runtimeDoc = null;
+      // Two frames are legal now (the on-screen one and the one booted
+      // behind it), so the sampler sorts them by slot instead of assuming a
+      // single runtime. Every DOM fact below is read from the ACTIVE frame:
+      // a warm runtime's grid or page host is on screen nowhere.
+      const frames = host ? [...host.querySelectorAll("iframe.runtime-frame")] : [];
+      let activeDoc = null;
+      let warmDoc = null;
+      let retiring = 0;
+      let leaked = 0;
       for (const f of frames) {
-        if (f.contentDocument) runtimeDoc = f.contentDocument;
+        const slot = f.getAttribute("data-mareader-slot");
+        if (slot === "active") activeDoc = f.contentDocument;
+        else if (slot === "warm") warmDoc = f.contentDocument;
+        else retiring += 1;
+        // A frame that is not the active one must be invisible: a warm
+        // runtime that rendered on screen would be two apps at once.
+        if (slot !== "active" && getComputedStyle(f).visibility !== "hidden") leaked += 1;
       }
       return {
         t: Math.round(performance.now()),
@@ -540,12 +556,19 @@ async function startHostSampler() {
         empty: host !== null && host.children.length === 0,
         bootNodes: host ? host.querySelectorAll("[data-mareader-boot]").length : 0,
         active: host ? host.getAttribute("data-mareader-active") : null,
-        library: runtimeDoc ? runtimeDoc.querySelectorAll(".lib-grid").length : 0,
-        reader: runtimeDoc ? runtimeDoc.querySelectorAll(".reader-bg").length : 0,
+        library: activeDoc ? activeDoc.querySelectorAll(".lib-grid").length : 0,
+        reader: activeDoc ? activeDoc.querySelectorAll(".reader-bg").length : 0,
+        warmLibrary: warmDoc ? warmDoc.querySelectorAll(".lib-grid").length : 0,
+        warmReader: warmDoc ? warmDoc.querySelectorAll(".reader-bg").length : 0,
         frames: frames.length,
+        actives: frames.filter((f) => f.getAttribute("data-mareader-slot") === "active").length,
+        retiring,
+        leaked,
         placeholder: document.getElementById("shell-boot") !== null,
         bootState: diag?.bootState ?? null,
         activeRuntime: diag?.activeRuntime ?? null,
+        warmRuntime: diag?.warmRuntime ?? null,
+        warmReady: diag?.warmReady ?? null,
         librarySessions: diag?.librarySessionsCreated ?? null,
         libraryDisposes: diag?.libraryDisposesCompleted ?? null,
         readerSessions: diag?.readerSessionsCreated ?? null,
@@ -565,7 +588,7 @@ async function stopHostSampler() {
     if (window.__hostSampler) window.clearInterval(window.__hostSampler);
     const samples = window.__hostSamples ?? [];
     window.__hostSampleContext = [];
-    const violations = { empty: [], twoLive: [], mixed: [], unmarked: [] };
+    const violations = { empty: [], twoLive: [], mixed: [], unmarked: [], tooManyFrames: [], leakedWarm: [], twoActive: [] };
     // The samples around a violation are the diagnostic that matters — a bare
     // host is only meaningful next to what came before and after it.
     for (const s of samples) {
@@ -574,9 +597,21 @@ async function stopHostSampler() {
       if (!s.host) continue;
       // §10: one runtime at a time, and the host's own marker must agree
       // with what is mounted.
+      // One runtime's DOM in the frame that is on screen — a warm runtime
+      // rendering its own shelf or page host is not "two live runtimes", it
+      // is the warm slot working as designed, and `leakedWarm` below is
+      // what catches the case where it is NOT hidden.
       if (s.library + s.reader > 1) violations.twoLive.push(s);
       if (s.active === "library" && s.reader > 0) violations.mixed.push(s);
       if (s.active === "reader" && s.library > 0) violations.mixed.push(s);
+      // The host may hold two frames (active + warm) and briefly two more
+      // (the retirement in flight, and the one before it that a back-to-back
+      // handoff outran), but never a fifth — an unbounded frame count is the
+      // leak this bound exists to catch. And never two frames claiming to be
+      // the one on screen.
+      if (s.frames > 4) violations.tooManyFrames.push(s);
+      if (s.actives > 1) violations.twoActive.push(s);
+      if (s.leaked > 0) violations.leakedWarm.push(s);
       // §11: never a blank window. An empty host is legal only while the
       // page placeholder covers it — that is the loading state before the
       // first paint, and it is visible.
@@ -588,7 +623,9 @@ async function stopHostSampler() {
         violations.unmarked.push(s);
       }
     }
-    for (const kind of ["empty", "twoLive", "mixed", "unmarked"]) {
+    for (const kind of [
+      "empty", "twoLive", "mixed", "unmarked", "tooManyFrames", "leakedWarm", "twoActive",
+    ]) {
       if (violations[kind].length === 0) continue;
       const first = violations[kind][0];
       const at = samples.indexOf(first);
@@ -600,12 +637,14 @@ async function stopHostSampler() {
 }
 
 function firstViolation(violations, context = []) {
-  for (const kind of ["empty", "twoLive", "mixed", "unmarked"]) {
+  for (const kind of [
+    "empty", "twoLive", "mixed", "unmarked", "tooManyFrames", "leakedWarm", "twoActive",
+  ]) {
     if (violations[kind].length > 0) {
       const first = violations[kind][0];
       const around = context.map(
         (s) =>
-          `t=${s.t} nodes=${s.nodes} boot=${s.bootNodes} active=${s.active} lib=${s.library} reader=${s.reader} placeholder=${s.placeholder}`,
+          `t=${s.t} nodes=${s.nodes} boot=${s.bootNodes} active=${s.active} lib=${s.library} reader=${s.reader} frames=${s.frames} actives=${s.actives} ret=${s.retiring} leaked=${s.leaked} placeholder=${s.placeholder}`,
       );
       // NOT named `context`: the module has one of those (the Playwright
       // browser context) and a same-scope binding would shadow the parameter.
@@ -625,21 +664,94 @@ function firstViolation(violations, context = []) {
 async function libraryDomState() {
   return page.evaluate(() => {
     const host = document.getElementById("runtime-host");
-    let runtimeDoc = null;
-    for (const f of host?.querySelectorAll("iframe.runtime-frame") ?? []) {
-      if (f.contentDocument) runtimeDoc = f.contentDocument;
-    }
+    const frames = [...(host?.querySelectorAll("iframe.runtime-frame") ?? [])];
+    const pick = (slot) => frames.find((f) => f.getAttribute("data-mareader-slot") === slot);
+    const runtimeDoc = pick("active")?.contentDocument ?? null;
+    const warmDoc = pick("warm")?.contentDocument ?? null;
     return {
       path: location.pathname,
       active: host?.getAttribute("data-mareader-active") ?? null,
       library: runtimeDoc?.querySelectorAll(".lib-grid").length ?? 0,
       reader: runtimeDoc?.querySelectorAll(".reader-bg").length ?? 0,
+      warmLibrary: warmDoc?.querySelectorAll(".lib-grid").length ?? 0,
+      warmReader: warmDoc?.querySelectorAll(".reader-bg").length ?? 0,
       bootNodes: host?.querySelectorAll("[data-mareader-boot]").length ?? 0,
       placeholder: document.getElementById("shell-boot") !== null,
       hosts: document.querySelectorAll("#runtime-host").length,
-      frames: host?.querySelectorAll("iframe.runtime-frame").length ?? 0,
+      frames: frames.length,
+      // One frame on screen; up to one booted behind it; the rest retiring.
+      actives: frames.filter((f) => f.getAttribute("data-mareader-slot") === "active").length,
+      retiring: frames.filter((f) => f.getAttribute("data-mareader-slot") === "retiring").length,
     };
   });
+}
+
+/** The frame identities, straight off the DOM. The generation is the proof
+ *  a transition reused a boot instead of paying for a second one: a warm
+ *  frame revealed in place carries the generation it was warmed with. */
+async function frameSlots() {
+  return page.evaluate(() => {
+    const host = document.getElementById("runtime-host");
+    const out = { active: null, warm: null, retiring: 0, frames: 0 };
+    for (const f of host?.querySelectorAll("iframe.runtime-frame") ?? []) {
+      out.frames += 1;
+      const generation = Number(f.getAttribute("data-mareader-generation") ?? 0);
+      switch (f.getAttribute("data-mareader-slot")) {
+        case "active": out.active = generation; break;
+        case "warm": out.warm = generation; break;
+        default: out.retiring += 1;
+      }
+    }
+    return out;
+  });
+}
+
+/** Wait for the runtime behind the active one to finish booting. The warm
+ *  slot is the feature under test, so the transition assertions wait for it
+ *  rather than racing it — a run where it never comes up is a failure. */
+async function waitForWarm(label, timeoutMs = 30_000) {
+  const started = Date.now();
+  for (;;) {
+    const s = await snap();
+    if (s?.warmReady === true && s?.warmRuntime !== null) return s;
+    if (Date.now() - started > timeoutMs) {
+      throw new Error(
+        `[${label}] the warm runtime never came up (warmRuntime ${s?.warmRuntime}, warmReady ${s?.warmReady})`,
+      );
+    }
+    await page.waitForTimeout(100);
+  }
+}
+
+/** Every session is accounted for. `created - disposed` is exactly the
+ *  runtimes that exist: the one on screen, plus the one booted behind it.
+ *  A warm runtime counts as created the moment it answers Ready, so the old
+ *  "created == disposed after a close" is only true once the warm slot is
+ *  empty — and it is never empty while the shell is warm. */
+function assertSessionBalance(s, label) {
+  for (const kind of ["reader", "library"]) {
+    const live =
+      (s.activeRuntime === kind ? 1 : 0) +
+      (s.warmRuntime === kind && s.warmReady === true ? 1 : 0);
+    const created = s[`${kind}SessionsCreated`];
+    const disposed = s[`${kind}DisposesCompleted`];
+    if (created - disposed !== live) {
+      throw new Error(
+        `[${label}] ${kind}: ${created} created - ${disposed} disposed != ${live} live ` +
+          `(active ${s.activeRuntime}, warm ${s.warmRuntime} ready ${s.warmReady})`,
+      );
+    }
+  }
+}
+
+/** The outgoing runtime is retired behind the reveal, so its disposal is no
+ *  longer ordered before the handoff — but it must still COMPLETE. */
+async function waitForRetirement(label, kind, before, timeoutMs = 45_000) {
+  return waitFor(
+    `${label}: the ${kind} finished disposing`,
+    (x) => (x[`${kind}DisposesCompleted`] ?? 0) >= before + 1,
+    timeoutMs,
+  );
 }
 
 /** Poll the DOM until it reaches a settled state. The manager reports a
@@ -662,12 +774,12 @@ async function waitForDom(label, predicate, timeoutMs = 30_000) {
 
 async function clickBook(title, label, timeout = 45_000) {
   try {
-    await page.frameLocator("iframe.runtime-frame").locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
+    await page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
   } catch {
     // The grid's gesture layer can swallow a synthetic hit; dispatching on
     // the row is the same app open path either way.
     await page.evaluate((needle) => {
-      const doc = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument;
+      const doc = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument;
       const el = [...(doc?.querySelectorAll(".book-title") ?? [])]
         .find((n) => (n.textContent ?? "").includes(needle));
       if (!el) throw new Error("book row not found in the library");
@@ -736,8 +848,13 @@ if (libraryDom.placeholder) {
 if (libraryDom.hosts !== 1) {
   throw new Error(`[/] expected exactly one runtime host, found ${libraryDom.hosts}`);
 }
-if (libraryDom.frames !== 1) {
-  throw new Error(`[/] expected exactly one live runtime frame, found ${libraryDom.frames}`);
+// One frame ON SCREEN, and at most one booted behind it (the reader, warming
+// while the shelf is up).
+if (libraryDom.actives !== 1) {
+  throw new Error(`[/] expected exactly one active runtime frame, found ${libraryDom.actives}`);
+}
+if (libraryDom.frames > 2) {
+  throw new Error(`[/] expected at most two runtime frames (active + warm), found ${libraryDom.frames}`);
 }
 assertArtifactLoaded("/library.js", "/");
 assertArtifactLoaded("/library_bg.wasm", "/");
@@ -755,56 +872,106 @@ summary.bootContract.libraryBoot = {
   libraryDisposes: libraryBoot.libraryDisposesCompleted ?? 0,
 };
 
-// ---- 0b: a real transition, in both directions (§10) ----------------------
-// Library → Reader is the app's primary transition: the library's session is
-// disposed and AWAITED before the reader mounts, and the handback does the
-// same in reverse. The sampler above is what proves both, at whatever moment
-// they happen.
+// ---- 0b: a real transition, in both directions ----------------------------
+// Library → Reader is the app's primary transition, and the whole point of
+// the warm slot: the reader was booted while the shelf was on screen, so the
+// click reveals it instead of building it. The proof is the frame identity —
+// a reader that is revealed keeps the generation it was warmed with, while a
+// rebooted one arrives with a fresh one. The sampler above covers the
+// instants in between (one frame on screen, the other hidden).
 currentStage = "stage0-transition";
+await waitForWarm("library → reader: the reader warmed behind the shelf");
+const warmSlots = await frameSlots();
 const beforeHandoff = await snap();
 const readerActive = await clickBook("Programming Pearls", "library → reader");
 const readerDom = await waitForDom("library → reader: the reader mounted", (s) =>
   s.active === "reader" && s.reader >= 1 && s.library === 0);
+const revealedSlots = await frameSlots();
 if (readerDom.reader !== 1 || readerDom.library !== 0) {
   throw new Error(`[library → reader] host holds reader ${readerDom.reader} / library ${readerDom.library}`);
 }
-if (readerActive.libraryDisposesCompleted < beforeHandoff.libraryDisposesCompleted + 1) {
-  throw new Error("[library → reader] the library's disposal never completed");
+if (revealedSlots.active !== warmSlots.warm) {
+  throw new Error(
+    `[library → reader] the reader was rebooted: the warmed frame was ` +
+      `${warmSlots.warm}, the frame on screen is ${revealedSlots.active}`,
+  );
 }
-if (readerActive.librarySessionsCreated !== beforeHandoff.librarySessionsCreated) {
-  throw new Error("[library → reader] the library session count moved during a reader start");
+// The shelf the user left is retired BEHIND the reveal — so its disposal is
+// no longer ordered before the handoff, but it must still run to completion.
+const libraryRetired = await waitForRetirement("library → reader", "library",
+  beforeHandoff.libraryDisposesCompleted ?? 0);
+assertSessionBalance(libraryRetired, "library → reader");
+// The rearm is asynchronous and outlives the retirement: wait for it rather
+// than expecting it to have landed inside the disposal window.
+const readerRearmed = await waitForWarm(
+  "library → reader: the shelf rearmed behind the reader",
+);
+if (readerRearmed.warmRuntime !== "library") {
+  throw new Error(
+    `[library → reader] the warm slot holds ${readerRearmed.warmRuntime}, expected the library`,
+  );
 }
+assertSessionBalance(readerRearmed, "library → reader (rearmed)");
 assertArtifactLoaded("/reader.js", "library → reader");
 assertArtifactLoaded("/reader_bg.wasm", "library → reader");
 
 const beforeHandback = await snap();
+await waitForWarm("reader → library: the shelf warmed behind the reader");
+const warmShelf = await frameSlots();
 await clickCloseNow();
 const libraryAgain = await waitFor("the library runtime after the handback", (x) =>
   x.bootState === "library" && x.activeRuntime === "library", 45_000);
 const handbackDom = await waitForDom("reader → library: the library came back", (s) =>
   s.active === "library" && s.library >= 1 && s.reader === 0);
+const backSlots = await frameSlots();
 if (handbackDom.library !== 1 || handbackDom.reader !== 0) {
   throw new Error(`[reader → library] host holds library ${handbackDom.library} / reader ${handbackDom.reader}`);
 }
-if (libraryAgain.readerDisposesCompleted < beforeHandback.readerDisposesCompleted + 1) {
-  throw new Error("[reader → library] the reader's disposal never completed");
+if (backSlots.active !== warmShelf.warm) {
+  throw new Error(
+    `[reader → library] the shelf was rebooted: the warmed frame was ` +
+      `${warmShelf.warm}, the frame on screen is ${backSlots.active}`,
+  );
 }
+const readerRetired = await waitForRetirement("reader → library", "reader",
+  beforeHandback.readerDisposesCompleted ?? 0);
+assertSessionBalance(readerRetired, "reader → library");
 
-// ---- 0c: the same handoff, back to back (§10) -----------------------------
-// One pair of transitions proves the ORDER; repetition is what finds the hole
-// that only racing starts open — a navigation that lands while a disposal is
-// still settling, a queued start draining into the same host. The sampler from
-// 0a is still running, so its invariants cover every instant of all of these
-// too, not just the first pair.
+// ---- 0c: the same handoff, back to back ----------------------------------
+// One pair of transitions proves the mechanism; repetition is what finds the
+// hole that only racing starts open — a click that lands while a retirement
+// is still settling, a warm boot that is still in flight when the user asks
+// for it, a queued start draining into the same host. The sampler from 0a is
+// still running, so its invariants cover every instant of all of these too,
+// not just the first pair.
 currentStage = "stage0-rapid-transitions";
 const cycles = [];
 for (let cycle = 0; cycle < 4; cycle += 1) {
+  // Waiting for the rearm is not slowing the cycle down to make it pass: it
+  // is the precondition the assertion below reads. The property under test
+  // is that a click landing on a booted warm frame COSTS NO BOOT, so the
+  // frame has to be there — and the rearm itself is the thing four cycles
+  // of it proves reliable.
+  await waitForWarm(`rapid ${cycle}: the reader rearmed behind the shelf`);
   const before = await snap();
+  const warmed = await frameSlots();
+  if (warmed.warm === null) {
+    throw new Error(`[rapid ${cycle}] the warm slot is empty after it reported ready`);
+  }
   const intoReader = await clickBook("Programming Pearls", `rapid ${cycle}: library → reader`);
   const readerDomNow = await waitForDom(`rapid ${cycle}: the reader mounted`, (s) =>
     s.active === "reader" && s.reader >= 1 && s.library === 0);
   if (readerDomNow.reader !== 1 || readerDomNow.library !== 0) {
     throw new Error(`[rapid ${cycle}] host holds reader ${readerDomNow.reader} / library ${readerDomNow.library}`);
+  }
+  const revealed = await frameSlots();
+  // The reader on screen IS the frame that was warmed. A reboot here is the
+  // failure this stage exists to catch: it would mean the warm slot paid for
+  // a boot the user never got to use.
+  if (revealed.active !== warmed.warm) {
+    throw new Error(
+      `[rapid ${cycle}] the reader was rebooted: warmed ${warmed.warm}, on screen ${revealed.active}`,
+    );
   }
   await clickCloseNow();
   const libraryDomNow = await waitForDom(`rapid ${cycle}: the library came back`, (s) =>
@@ -812,38 +979,52 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
   if (libraryDomNow.library !== 1 || libraryDomNow.reader !== 0) {
     throw new Error(`[rapid ${cycle}] host holds library ${libraryDomNow.library} / reader ${libraryDomNow.reader}`);
   }
-  const after = await snap();
-  if (after.libraryDisposesCompleted < before.libraryDisposesCompleted + 1) {
-    throw new Error(`[rapid ${cycle}] the library was not disposed before the reader started`);
-  }
-  if (intoReader.librarySessionsCreated !== before.librarySessionsCreated) {
-    throw new Error(`[rapid ${cycle}] a library session was created by a reader start`);
-  }
-  // Only the live session may be undisposed: after a close, none is.
-  if (after.readerDisposesCompleted !== after.readerSessionsCreated) {
-    throw new Error(
-      `[rapid ${cycle}] a reader session outlived its close (created ${after.readerSessionsCreated}, disposed ${after.readerDisposesCompleted})`,
-    );
-  }
+  // The retirement is behind the reveal now, so wait for it to land rather
+  // than expecting it to have happened already — then hold the accounting
+  // to the exact number of runtimes that exist.
+  const retired = await waitForRetirement(`rapid ${cycle}`, "reader",
+    intoReader.readerDisposesCompleted ?? 0);
+  assertSessionBalance(retired, `rapid ${cycle}`);
+  const after = retired;
   if (after.readerRuntimeLive !== false) {
     throw new Error(`[rapid ${cycle}] the reader runtime is still live after the close`);
   }
   cycles.push({
     cycle,
+    reusedWarmFrame: revealed.active === warmed.warm,
     librarySessions: after.librarySessionsCreated,
     libraryDisposes: after.libraryDisposesCompleted,
     readerSessions: after.readerSessionsCreated,
     readerDisposes: after.readerDisposesCompleted,
   });
 }
+// Every cycle that had a warm frame must have reused it: that is the
+// property being bought, and four cycles of it is what separates "works"
+// from "works once".
+const reused = cycles.filter((c) => c.reusedWarmFrame).length;
+if (reused < cycles.length) {
+  throw new Error(`only ${reused}/${cycles.length} handoffs reused the warm frame — the others rebooted`);
+}
 summary.bootContract.rapidTransitions = cycles;
 console.log(
   `boot contract: ${cycles.length} back-to-back handoffs (reader sessions ${cycles.at(-1).readerSessions} / disposals ${cycles.at(-1).readerDisposes}, library sessions ${cycles.at(-1).librarySessions} / disposals ${cycles.at(-1).libraryDisposes})`,
 );
 
-// The invariants across the whole transition, then the ORDER the disposal
-// counter proves: a runtime is only marked active once its predecessor's
-// dispose promise has resolved.
+// The invariants across the whole transition.
+//
+// §10 used to be an ORDERING rule — "a runtime is only marked active once
+// its predecessor's dispose promise has resolved" — because the outgoing
+// runtime was disposed before the replacement was built. The warm slot
+// inverts that on purpose: the replacement is revealed first and the
+// predecessor is retired behind it, which is what makes a route change a
+// reveal instead of a rebuild. What must still hold, and still does, is
+// every property that ordering was protecting:
+//
+//   * one runtime on screen at every sampled instant (twoLive / mixed /
+//     twoActive), and any other frame hidden (leakedWarm);
+//   * the host never blank (empty / unmarked);
+//   * every runtime that was ever shown finishes disposing (waitForRetirement
+//     and assertSessionBalance above).
 const sampled = await stopHostSampler();
 const violation = firstViolation(sampled.violations, sampled.context);
 if (violation) {
@@ -854,27 +1035,30 @@ const librarySamples = sampled.samples.filter((s) => s.active === "library");
 if (readerSamples.length === 0 || librarySamples.length === 0) {
   throw new Error(`the sampler saw no ${readerSamples.length === 0 ? "reader" : "library"} active sample`);
 }
-const referenceLibraryDisposes = librarySamples[0].libraryDisposes ?? 0;
-if ((readerSamples[0].libraryDisposes ?? 0) <= referenceLibraryDisposes) {
-  throw new Error("the reader became active before the library's disposal completed (§10)");
-}
-const readerDisposeReference = readerSamples[readerSamples.length - 1].readerDisposes ?? 0;
-const libraryAfterReader = librarySamples.filter((s) => s.t > readerSamples[readerSamples.length - 1].t);
-if (libraryAfterReader.length === 0) {
-  throw new Error("the library never came back after the reader");
-}
-if ((libraryAfterReader[0].readerDisposes ?? 0) <= readerDisposeReference) {
-  throw new Error("the library became active before the reader's disposal completed (§10)");
+// A transition that reused its warm frame shows up as a sample where two
+// frames coexist — the one on screen and the one being retired. That is the
+// new policy working, not a leak; the frame ceiling above is its bound.
+const peakFrames = Math.max(...sampled.samples.map((s) => s.frames ?? 0));
+const warmSamples = sampled.samples.filter((s) => s.retiring > 0).length;
+if (peakFrames < 2) {
+  throw new Error(
+    `the warm slot never held a second frame (peak ${peakFrames}) — the handoff is still a rebuild`,
+  );
 }
 summary.bootContract.transition = {
   samples: sampled.samples.length,
   readerSamples: readerSamples.length,
   librarySamples: librarySamples.length,
+  peakFrames,
+  retiringSamples: warmSamples,
   libraryDisposes: libraryAgain.libraryDisposesCompleted,
   readerDisposes: libraryAgain.readerDisposesCompleted,
 };
 assertNoNewPanics("stage0 transitions", 0);
-console.log(`boot contract: host sampled ${sampled.samples.length} times across both transitions, never empty, never two live sessions`);
+console.log(
+  `boot contract: host sampled ${sampled.samples.length} times across both transitions, ` +
+    `never empty, never two runtimes on screen, peak ${peakFrames} frames`,
+);
 
 // ---- 0d: the `/reader` boot path (§8) -------------------------------------
 currentStage = "stage0-reader-route";
@@ -894,8 +1078,11 @@ if (readerRouteDom.reader !== 1 || readerRouteDom.library !== 0 || readerRouteDo
 if (readerRouteDom.placeholder) {
   throw new Error("[/reader] the page's boot placeholder outlived the boot");
 }
-if (readerRouteDom.frames !== 1) {
-  throw new Error(`[/reader] expected exactly one live runtime frame, found ${readerRouteDom.frames}`);
+if (readerRouteDom.actives !== 1) {
+  throw new Error(`[/reader] expected exactly one active runtime frame, found ${readerRouteDom.actives}`);
+}
+if (readerRouteDom.frames > 2) {
+  throw new Error(`[/reader] expected at most two runtime frames (active + warm), found ${readerRouteDom.frames}`);
 }
 assertArtifactLoaded("/reader.js", "/reader");
 assertArtifactLoaded("/reader_bg.wasm", "/reader");
@@ -1123,9 +1310,9 @@ for (const where of jumpTargets) {
   // A new measurement generation: every raster the engine starts from now
   // carries this id, so the trace assertion reads exactly this jump.
   const gen = await page.evaluate(() =>
-    document.querySelector("#runtime-host iframe.runtime-frame")?.contentWindow?.PDFReader.beginRenderGeneration());
+    document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentWindow?.PDFReader.beginRenderGeneration());
   await page.evaluate((w) => {
-    const list = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector("#page-list");
+    const list = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector("#page-list");
     list.scrollTop = w === "end" ? list.scrollHeight
       : w === "top" ? 0
       : list.scrollHeight / 4;
@@ -1167,7 +1354,7 @@ for (const where of jumpTargets) {
   // the trace names the pages.
   const trace = await page.evaluate((g) =>
     {
-      const api = document.querySelector("#runtime-host iframe.runtime-frame")?.contentWindow?.PDFReader;
+      const api = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentWindow?.PDFReader;
       return api.renderTrace().filter((e) => e.gen === g);
     }, gen);
   if (trace.length === 0) {
@@ -1279,7 +1466,7 @@ for (let attempt = 1; attempt <= 3 && !searchRaceWon; attempt += 1) {
   await openBook(searchBooks[attempt - 1]);
   await page.mouse.click(700, 450);
   await page.keyboard.press("Control+f");
-  const searchBox = page.frameLocator("iframe.runtime-frame").locator('input[placeholder^="Search in document"]');
+  const searchBox = page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('input[placeholder^="Search in document"]');
   await searchBox.focus();
   await page.keyboard.type("the");
   await page.keyboard.press("Enter");
@@ -1290,7 +1477,7 @@ for (let attempt = 1; attempt <= 3 && !searchRaceWon; attempt += 1) {
       if (!raw) return false;
       const s = JSON.parse(raw);
       if (s.engine.searchActive > 0) {
-        const btn = document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelector('button[title*="Close this book"]');
+        const btn = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector('button[title*="Close this book"]');
         if (btn) { btn.click(); return true; }
       }
       return false;
@@ -1420,14 +1607,14 @@ currentStage = "stage11-same-page-x10";
 // world — 1 at the open claim, 2 at the close claim — while the cross-cycle
 // pairing the epoch used to prove lives in the shell's session counters.
 async function openFromLibrary(cycle) {
-  const card = page.frameLocator("iframe.runtime-frame").locator('.book-title[title*="Programming Pearls"]').first();
+  const card = page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('.book-title[title*="Programming Pearls"]').first();
   try {
     await card.click({ timeout: 5_000 });
   } catch {
     // The grid's gesture layer can swallow a synthetic hit; dispatching on
     // the row is the same app open path either way.
     await page.evaluate(() => {
-      const t = [...document.querySelector("#runtime-host iframe.runtime-frame")?.contentDocument?.querySelectorAll(".book-title")]
+      const t = [...document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelectorAll(".book-title")]
         .find((el) => (el.textContent ?? "").includes("Programming Pearls"));
       if (!t) throw new Error("book row not found in the library");
       t.click();
@@ -1441,21 +1628,31 @@ async function openFromLibrary(cycle) {
 }
 // The shell-relative base is the runtime generation only: every same-page
 // open must be a NEW runtime generation (a disposed runtime is never revived
-// in place), so generation advances exactly once per cycle on top of
-// wherever the matrix left it. The disposal epoch is NOT carried across
-// cycles: each same-page open boots a FRESH frame — a fresh wasm world — so
-// its own epoch is 1 at the open claim and 2 at the close claim; the
-// cross-cycle pairing the epoch used to prove in one live page is carried
-// by the shell's session counters now (§21).
+// in place). The warm slot changes WHEN that generation is minted — the
+// reader boots before the click now, so the generation no longer advances on
+// the click — which is why the assertion is "never repeats" rather than
+// "+1 per cycle". The disposal epoch is NOT carried across cycles: each
+// same-page open boots a FRESH frame — a fresh wasm world, warmed with no
+// document — so its own epoch is 1 at the open claim and 2 at the close
+// claim; the cross-cycle pairing the epoch used to prove in one live page is
+// carried by the shell's session counters now (§21).
 const generationBase = (await snap()).runtime?.generation ?? 1;
+const usedGenerations = new Set();
 console.log("same-page stage: runtime generation base", generationBase);
 for (let cycle = 1; cycle <= 10; cycle += 1) {
   const o = await openFromLibrary(cycle);
   if (o.disposalEpoch !== 1) {
     throw new Error(`same-page open ${cycle}: epoch ${o.disposalEpoch}, expected 1 (the fresh frame's first claim is the open)`);
   }
-  if (o.runtime?.generation !== generationBase + cycle) {
-    throw new Error(`same-page open ${cycle}: runtime generation ${o.runtime?.generation}, expected a NEW runtime (${generationBase + cycle}) — the disposed runtime was revived`);
+  {
+    const gen = o.runtime?.generation ?? 0;
+    if (gen <= generationBase || usedGenerations.has(gen)) {
+      throw new Error(
+        `same-page open ${cycle}: reader session ${gen} is not a new runtime ` +
+          `(base ${generationBase}, already used ${[...usedGenerations].join(",")}) — the disposed runtime was revived`,
+      );
+    }
+    usedGenerations.add(gen);
   }
   if (((o.engine ?? {}).documentPages ?? 0) < MIN_FIXTURE_PAGES) {
     throw new Error(`same-page cycle ${cycle}: fixture has ${o.engine.documentPages} pages`);
@@ -1470,8 +1667,8 @@ for (let cycle = 1; cycle <= 10; cycle += 1) {
   const c = await waitFor(`the disposal baseline (same-page cycle ${cycle})`,
     (x) => x.atBaseline === true, 45_000);
   assertDrained(c, `same-page cycle ${cycle}`);
-  if (c.runtime?.state !== "disposed" || c.runtime?.generation !== generationBase + cycle) {
-    throw new Error(`same-page cycle ${cycle}: runtime ${c.runtime?.state} gen ${c.runtime?.generation}, expected disposed at generation ${generationBase + cycle}`);
+  if (c.runtime?.state !== "disposed") {
+    throw new Error(`same-page cycle ${cycle}: runtime ${c.runtime?.state}, expected disposed`);
   }
   // The raster recycler is module-bounded, not document-owned: it may hold
   // its placeholders across cycles, but a close must not make it GROW.
@@ -1535,10 +1732,18 @@ const waitFrames = (n) =>
     n,
   );
 const callbackGenBase = (await snap()).runtime?.generation ?? 1;
+const usedCallbackGenerations = new Set();
 for (let cycle = 1; cycle <= 10; cycle += 1) {
   const o = await openFromLibrary(cycle);
-  if (o.runtime?.generation !== callbackGenBase + cycle) {
-    throw new Error(`callback cycle ${cycle}: runtime generation ${o.runtime?.generation}, expected ${callbackGenBase + cycle}`);
+  {
+    const gen = o.runtime?.generation ?? 0;
+    if (gen <= callbackGenBase || usedCallbackGenerations.has(gen)) {
+      throw new Error(
+        `callback cycle ${cycle}: reader session ${gen} is not a new runtime ` +
+          `(base ${callbackGenBase}) — the disposed runtime was revived`,
+      );
+    }
+    usedCallbackGenerations.add(gen);
   }
   // Arm the frame machinery through the app's real zoom pipeline, then move
   // the page: the volume, the titlebar and the anchor loop all queue frames
@@ -1555,8 +1760,8 @@ for (let cycle = 1; cycle <= 10; cycle += 1) {
   const c = await waitFor(`the disposal baseline (callback cycle ${cycle})`,
     (x) => x.atBaseline === true, 45_000);
   assertDrained(c, `callback cycle ${cycle}`);
-  if (c.runtime?.state !== "disposed" || c.runtime?.generation !== callbackGenBase + cycle) {
-    throw new Error(`callback cycle ${cycle}: runtime ${c.runtime?.state} gen ${c.runtime?.generation}, expected disposed at generation ${callbackGenBase + cycle}`);
+  if (c.runtime?.state !== "disposed") {
+    throw new Error(`callback cycle ${cycle}: runtime ${c.runtime?.state}, expected disposed`);
   }
   // This stage's own assertions, spelled out rather than implied by the
   // counter balance: the runtime is gone, both engine lanes are idle, and

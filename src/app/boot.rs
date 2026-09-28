@@ -352,10 +352,10 @@ pub fn set_active(host: &web_sys::Element, runtime: RuntimeName) {
     let _ = host.set_attribute(ACTIVE_ATTR, runtime.artifact());
 }
 
-/// Remove the shell's boot markup. Scoped to `[data-mareader-boot]`: a mounted
-/// runtime's own DOM does not carry the attribute and is never touched.
-pub fn clear(host: &web_sys::Element) {
-    let _ = host.remove_attribute(ACTIVE_ATTR);
+/// Remove the shell's boot markup only — the loading card and the error card.
+/// The frames are the manager's to clear (`src/app/manager.rs`): a warm
+/// runtime's iframe is not boot markup and must survive a host clear.
+pub fn clear_boot(host: &web_sys::Element) {
     let Ok(nodes) = host.query_selector_all(&format!("[{BOOT_ATTR}]")) else {
         return;
     };
@@ -367,4 +367,12 @@ pub fn clear(host: &web_sys::Element) {
             let _ = parent.remove_child(&node);
         }
     }
+}
+
+/// Remove the shell's boot markup and the active stamp. Scoped to
+/// `[data-mareader-boot]`: a mounted runtime's own DOM does not carry the
+/// attribute and is never touched.
+pub fn clear(host: &web_sys::Element) {
+    let _ = host.remove_attribute(ACTIVE_ATTR);
+    clear_boot(host);
 }

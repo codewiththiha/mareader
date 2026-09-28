@@ -58,7 +58,11 @@ thread_local! {
 }
 
 /// Mount a library session into `host`.
-pub fn start_session(host: &web_sys::Element, api: context::ApiHandle) -> u32 {
+///
+/// `warm` is the Shell's statement that this session boots ahead of the
+/// navigation that will use it: the shelf renders so the reveal is free, but
+/// it holds its startup passes until [`refresh`] runs them.
+pub fn start_session(host: &web_sys::Element, api: context::ApiHandle, warm: bool) -> u32 {
     let id = NEXT_ID.with(|n| {
         let id = n.get();
         n.set(id + 1);
@@ -83,7 +87,7 @@ pub fn start_session(host: &web_sys::Element, api: context::ApiHandle) -> u32 {
         provide_context(OverlayBoard::default());
         // The library's session effects install INSIDE this scope: the
         // listeners and timers die with the unmount (§5, §17).
-        effects_library::library_effects(state);
+        effects_library::library_effects(state, warm);
         view! { <features::library::LibraryPage state /> }
     });
     let unmount: Box<dyn FnOnce()> = Box::new(move || drop(handle));
@@ -105,6 +109,34 @@ pub enum LibraryCommand {
         /// Arc-free on the wire; the filing queue re-wraps it.
         image: Option<Box<runtime_contract::covers::CoverImage>>,
     },
+    /// Promoted from warm to visible: re-read the durable state this session
+    /// seeded at boot and has not looked at since.
+    Refresh,
+}
+
+/// Re-read the store into the live session's signals.
+///
+/// A warm library boots while the reader is still on screen, so the blob it
+/// seeded from is the one that existed before that reading session: the row
+/// the reader was in has moved, and a book imported two opens ago may not be
+/// in it. This is the cheap half of a cold boot — the wasm instance, the
+/// Leptos mount and the grid's first layout are all already paid for — and it
+/// is what makes a warm handback correct instead of merely fast.
+///
+/// Only the persisted slices are replaced. Everything the user was doing in
+/// the shelf (the query, the open shelf, the selection) is session state, not
+/// durable state, and overwriting it here would be a bug.
+fn refresh(ctx: LibraryContext) {
+    let blob = storage::load_library();
+    ctx.library.books.set(blob.books);
+    ctx.library.shelves.set(blob.shelves);
+    ctx.library.folders.set(blob.folders);
+    ctx.library.view.set(blob.view);
+    ctx.library.covers.set(storage::load_covers());
+    ctx.settings.set(storage::load_settings());
+    // And the work a warm boot parked: the shelf is on screen now, so its
+    // migration, its measurement pass and its cover bakes are owed.
+    effects_library::run_deferred_startup();
 }
 
 /// Run one command against the live session. Commands for a session id that
@@ -120,6 +152,7 @@ pub fn command(id: u32, cmd: LibraryCommand) {
             LibraryCommand::CoverBaked { path, image } => {
                 services::covers::on_baked(ctx, path, image.map(|image| *image));
             }
+            LibraryCommand::Refresh => refresh(ctx),
         }
     }
 }
@@ -160,7 +193,7 @@ pub fn run_standalone() {
         .and_then(|d| d.body())
         .map(web_sys::Element::from)
         .expect("document body for the standalone library");
-    start_session(&host, api);
+    start_session(&host, api, false);
 }
 
 /// The settings blob a standalone library session starts from (the hosted

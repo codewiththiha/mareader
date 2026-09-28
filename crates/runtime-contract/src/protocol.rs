@@ -18,9 +18,10 @@ use serde::{Deserialize, Serialize};
 use crate::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
 use crate::covers::{CoverImage, CoverMap};
 
-/// Which runtime occupies a frame. The Shell owns exactly one live frame at
-/// a time (§33's `live runtime frames <= 1` invariant); the kind says which
-/// artifact the frame booted.
+/// Which runtime occupies a frame. The Shell keeps at most one ACTIVE frame
+/// and at most one WARM frame (§33's "live runtime frames" invariant, restated
+/// for the warm-slot lifecycle: one runtime is on screen, one is booted and
+/// waiting behind it); the kind says which artifact the frame booted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RuntimeKind {
@@ -76,10 +77,27 @@ pub enum ShellFrame {
     Init {
         runtime: RuntimeKind,
         launch: Option<Box<LaunchDocument>>,
+        /// The frame was booted ahead of the navigation that will use it.
+        ///
+        /// A warm runtime mounts and paints but does no WORK: the library
+        /// holds off its startup passes — store migration, watched-folder
+        /// rescan, backfill, cover bakes — because they write durable state
+        /// a live reader is meanwhile editing, and the reader opens nothing
+        /// until it is handed a launch. Both resume on [`ShellFrame::Refresh`]
+        /// / [`ShellFrame::Launch`]. Warming is meant to buy a boot, not to
+        /// run two runtimes' workloads at once.
+        warm: bool,
     },
-    /// A document opened while this reader frame is already live (in-session
-    /// drop/dialog): the reader runs its open pipeline with this descriptor.
+    /// A document opened while this reader frame is already live (an
+    /// in-session drop/dialog, or the promotion of a warm reader): the
+    /// reader runs its open pipeline with this descriptor.
     Launch { document: Box<LaunchDocument> },
+    /// The runtime has been promoted from warm to visible. A warm runtime
+    /// boots BEFORE it is needed, so durable state another runtime wrote
+    /// while it waited is not in the signals it seeded at boot — this is its
+    /// cue to re-read that state. Deliberately cheap: a store read, never a
+    /// reboot (a refresh that cost as much as a boot would defeat warming).
+    Refresh,
     /// §12 phase 1: flush, cancel, dispose, then answer
     /// [`RuntimeFrame::DisposeComplete`]. The Shell removes the iframe only
     /// after that answer (or after the forced-dispose timeout).
@@ -189,12 +207,28 @@ mod tests {
             body: ShellFrame::Init {
                 runtime: RuntimeKind::Reader,
                 launch: None,
+                warm: false,
             },
         };
         let json = serde_json::to_string(&env).unwrap();
         assert_eq!(
             json,
-            r#"{"generation":17,"nonce":"f7a2","kind":"init","runtime":"reader","launch":null}"#
+            r#"{"generation":17,"nonce":"f7a2","kind":"init","runtime":"reader","launch":null,"warm":false}"#
+        );
+        // The same boot claimed as warm: the shelf reads that flag before
+        // its first effect runs, so it rides the init and nowhere else.
+        let warm = ShellEnvelope {
+            generation: 18,
+            nonce: "f7a2".to_string(),
+            body: ShellFrame::Init {
+                runtime: RuntimeKind::Library,
+                launch: None,
+                warm: true,
+            },
+        };
+        assert_eq!(
+            serde_json::to_string(&warm).unwrap(),
+            r#"{"generation":18,"nonce":"f7a2","kind":"init","runtime":"library","launch":null,"warm":true}"#
         );
         let back: ShellEnvelope = serde_json::from_str(&json).unwrap();
         assert_eq!(back, env);

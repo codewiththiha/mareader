@@ -143,8 +143,13 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
     // never have started — name it in the console so the handoff can be
     // traced instead of guessed at.
     if launch.path.is_empty() && marker().is_some() {
-        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(
-            "[reader] init carried no launch path; mounting with no document",
+        // Two hosted shapes reach here: the Shell warmed this frame so the
+        // click that follows has nothing to boot, or a launch handoff really
+        // did arrive empty. Only the second is a fault, and the Shell refuses
+        // an empty open before it ever starts a frame — so this line names
+        // the warm case and stays quiet about the one that cannot happen.
+        web_sys::console::debug_1(&wasm_bindgen::JsValue::from_str(
+            "[reader] init carried no launch; mounting warm with no document",
         ));
     }
     let id = crate::start_session(&root, launch, ApiHandle::Frame);
@@ -172,7 +177,14 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                 return;
             }
             match envelope.body {
-                ShellFrame::Init { runtime, launch } => {
+                ShellFrame::Init {
+                    runtime,
+                    launch,
+                    warm: _,
+                } => {
+                    // `warm` is the library's concern: a warm reader is simply
+                    // a reader the Shell has not handed a document to yet, so
+                    // the empty-launch path below already is the warm boot.
                     if runtime == RuntimeKind::Reader {
                         on_init(launch, generation);
                     }
@@ -181,6 +193,12 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                     if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
                         crate::command(id, *document);
                     }
+                }
+                ShellFrame::Refresh => {
+                    // The reader owns the only copy of its document state,
+                    // and a warm reader owns none until it is handed a
+                    // launch — so there is nothing durable to re-read. The
+                    // promotion itself rides [`ShellFrame::Launch`].
                 }
                 ShellFrame::ResolveLaunchAnswer { request, document } => {
                     on_resolve_answer(request, document.map(|document| *document));
