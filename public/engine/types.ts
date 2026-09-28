@@ -306,8 +306,8 @@ export type PDFReaderApi = {
     | { ok: true }
   >;
   sweep: () => void;
-  /** Drop the `.page-snapshot` zoom masks the live page hosts still carry,
-   *  zeroing their backing stores: a mask whose render was superseded or
+  /** Drop the `.page-snapshot` scrub covers the live page hosts still carry,
+   *  zeroing their backing stores: a cover whose render was superseded or
    *  never landed would otherwise keep a full-page raster alive until the
    *  host unmounts. */
   sweepSnapshots: () => void;

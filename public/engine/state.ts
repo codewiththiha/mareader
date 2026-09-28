@@ -65,9 +65,9 @@ const RAW_IDLE_MS = 2_000;
 const SCRUB_RAW_RETAIN_MS = 30_000;
 const SWEEP_IDLE_MS = 30_000;
 
-/** Drop every zoom mask (`.page-snapshot`) a host still carries, zeroing the
+/** Drop every scrub cover (`.page-snapshot`) a host still carries, zeroing the
  *  backing stores before the nodes go: WKWebView does not release a canvas
- *  IOSurface on DOM removal alone, so a mask dropped without this keeps its
+ *  IOSurface on DOM removal alone, so a cover dropped without this keeps its
  *  full-page RGBA buffer alive. */
 function releaseSnapshots(host: HTMLElement): void {
   host.querySelectorAll(PAGE_SNAPSHOT_SELECTOR).forEach((n) => {

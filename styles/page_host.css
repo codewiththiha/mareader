@@ -107,16 +107,18 @@ html.appearance-scrubbing .pdf-page::before {
   z-index: 0;
 }
 
-/* Snapshot overlay stacked while a scale re-render is in flight
-   (page_canvas.rs); `.pdf-page canvas` supplies position/size/filter/blend,
-   this keeps it click-through. */
+/* Snapshot cover stacked by the appearance scrub while it rebuilds a page's
+   raws (public/engine/theme/scrub.ts) — its only producer: a zoom keeps the
+   old bitmap on screen by rendering into a scratch and swapping in one blit,
+   so it needs no cover. `.pdf-page canvas` supplies position/size/filter/
+   blend; this keeps it click-through. */
 .pdf-page canvas.page-snapshot {
   pointer-events: none;
 }
 
 /* LIVE-MODE SNAPSHOT THEMING — the snapshot is a raw drawImage copy of the
    live canvas, so in LIVE mode it captures UN-themed pixels; without this
-   rule every zoom commit flashed white. Keying off `.canvas-raw` ("this
+   rule the cover would flash white. Keying off `.canvas-raw` ("this
    canvas is themed by CSS") hands the snapshot the same filter + blend, so
    it composites exactly like the canvas it copied. Baked canvases carry no
    tag, the :has() stays false and the already-themed snapshot is left
@@ -126,8 +128,8 @@ html.appearance-scrubbing .pdf-page::before {
   mix-blend-mode: var(--canvas-blend, multiply);
 }
 
-/* END-OF-ZOOM FLICKER FIX — for the one frame where snapshot and fresh
-   canvas coexist, BOTH would carry filter + blend: two blended layers
+/* ONE BLENDED LAYER — while a cover and the live canvas coexist, BOTH
+   would carry filter + blend: two blended layers
    composite as B*L*S instead of B*L (measured on sepia: rgb(238,230,206) →
    rgb(232,224,197) for one frame; exactly 0 in light mode, which is why it
    only showed in sepia/green/textured). Hiding the live canvas under the
@@ -135,7 +137,7 @@ html.appearance-scrubbing .pdf-page::before {
    so nothing disappears. `:has()` rather than a Rust-toggled class on
    purpose: the rule stops matching the instant the snapshot leaves the DOM,
    so a missed cleanup can never strand the page invisible, and engines
-   without :has() degrade to the old one-frame flicker, never a blank page. */
+   without :has() degrade to a double-blended frame, never a blank page. */
 .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }
