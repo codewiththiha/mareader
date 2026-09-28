@@ -5,8 +5,11 @@
 //! The registry lives in the HOST's arena, not the pane's: a pane's reactive
 //! owner is cleaned up in the middle of its own disposal, and the registry
 //! must still answer the teardown after that (the virtualizers it hands to
-//! the tail were registered from inside the owner being cleaned). The host
-//! drops the slot with its own owner.
+//! the tail were registered from inside the owner being cleaned). The
+//! pane's disposal tail releases the slot the moment its teardown finished
+//! ([`PaneHandle::release`]) — a pane closed inside a live session costs the
+//! host's arena nothing afterwards — and the host's owner sweeps whatever a
+//! tail never reached.
 
 use leptos::prelude::*;
 
@@ -130,6 +133,16 @@ impl PaneHandle {
         self.cell
             .try_with_value(|cell| cell.resources.document_session)
             .unwrap_or(false)
+    }
+
+    /// The pane's last word: its teardown finished, so its slot leaves the
+    /// host's arena. From here every gate reads the released slot as
+    /// `Disposed` (the `try_` reads' fallback), which is exactly the
+    /// lifecycle a pane with nothing left owns — no separate write needed,
+    /// and a stale task still holding the handle is refused, not revived.
+    /// Releasing a slot the host's owner already swept is a no-op.
+    pub(crate) fn release(&self) {
+        self.cell.dispose();
     }
 
     /// Hand every registered virtualizer to the disposal tail: the registry

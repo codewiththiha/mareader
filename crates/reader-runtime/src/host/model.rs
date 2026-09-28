@@ -206,6 +206,9 @@ pub enum PaneError {
     Illegal { pane: PaneId, from: PaneLifecycle },
     /// The host itself is disposed: it creates nothing any more.
     HostDisposed,
+    /// A pane was asked for outside every reactive owner: its scope would
+    /// belong to nothing and never be cleaned up.
+    Unowned,
 }
 
 /// One focus hand-over, as the single focus authority decided it: the pane

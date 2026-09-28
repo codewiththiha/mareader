@@ -75,12 +75,21 @@ pub struct Session {
 }
 
 /// The live session's handles for the entry points outside its reactive
-/// scope: the host in-session commands and the dispose export reach, and
-/// the session-level blend override a command updates.
-#[derive(Clone, Copy)]
+/// scope: the host in-session commands and the dispose export reach, the
+/// session-level blend override a command updates, and the session's root
+/// owner, which an in-session command re-enters so whatever it builds (a
+/// pane, when the workspace has none) belongs to the session.
+///
+/// The owner here is the ONE strong reference besides the unmount handle's,
+/// and it lives outside the session's arena: the unmount takes it out
+/// before it drops the handle, so the handle's drop is always the last one
+/// and releases the whole tree — the same single-rooted lifetime the
+/// session had before the host existed. Nothing inside the arena holds it.
+#[derive(Clone)]
 struct LiveSession {
     host: crate::host::ReaderHost,
     blend_override: RwSignal<bool>,
+    owner: Owner,
 }
 
 thread_local! {
@@ -234,6 +243,7 @@ pub fn start_session(
             let live = LiveSession {
                 host,
                 blend_override,
+                owner: Owner::current().expect("the session builds inside its mount's owner"),
             };
             LIVE_SESSION.with(|c| *c.borrow_mut() = Some(live));
 
@@ -261,7 +271,11 @@ pub fn start_session(
         }
     });
     let unmount: Box<dyn FnOnce()> = Box::new(move || {
-        LIVE_SESSION.with(|c| *c.borrow_mut() = None);
+        // Out of the thread-local FIRST (and dropped outside its borrow):
+        // the handle must hold the session's last strong owner reference,
+        // so dropping it runs the owner's teardown right here.
+        let live = LIVE_SESSION.with(|c| c.borrow_mut().take());
+        drop(live);
         drop(handle);
     });
     SESSION.with(|s| {
@@ -295,8 +309,9 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     // pane's durable write and document close touch the pane's own state,
     // and this is the last moment that state exists (§15: the durable write
     // precedes the disposal, it does not chase it).
-    if let Some(live) = LIVE_SESSION.with(|c| *c.borrow()) {
-        live.host.dispose();
+    let host = LIVE_SESSION.with(|c| c.borrow().as_ref().map(|live| live.host));
+    if let Some(host) = host {
+        host.dispose();
     }
     SESSION.with(|s| {
         if let Some(session) = s.borrow_mut().take() {
@@ -314,15 +329,17 @@ pub fn command(id: u32, cmd: runtime_contract::boundary::LaunchDocument) {
     if live.is_none() {
         return;
     }
-    let Some(live) = LIVE_SESSION.with(|c| *c.borrow()) else {
+    let Some(live) = LIVE_SESSION.with(|c| c.borrow().clone()) else {
         return;
     };
     let _ = live.blend_override.try_set(cmd.blend_override);
     // The descriptor, not the path: the Shell already resolved the row, the
     // resume page and the blend override, and re-resolving over the port
     // would cost a round trip on the one path that is supposed to feel
-    // instant.
-    if let Err(err) = live.host.open(cmd) {
+    // instant. Inside the session's owner: a pane this creates is the
+    // session's child, never an orphan.
+    let opened = live.owner.with(|| live.host.open(cmd));
+    if let Err(err) = opened {
         web_sys::console::warn_1(&format!("[reader] open refused: {err:?}").into());
     }
 }

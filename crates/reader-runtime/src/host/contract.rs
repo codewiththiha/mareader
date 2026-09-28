@@ -129,6 +129,10 @@ pub enum PaneCommand {
 /// The async half of a pane's disposal (the engine's awaited destroy, the
 /// virtualizers' final dispose). The sync half — owner cleanup, listener,
 /// observer and timer release — has already run when this is returned.
+///
+/// The future owns exactly what it still has to release and NEVER the pane
+/// runtime itself: the manager drops the pane object the moment `dispose`
+/// returns, so nothing but the tail's own captures outlives the sync half.
 pub type PaneTeardown = Pin<Box<dyn Future<Output = ()>>>;
 
 /// A pane's live resources, as the pane itself counts them.
@@ -159,7 +163,9 @@ pub trait PaneRuntime {
 
     /// The manager's publication of a lifecycle transition its core made.
     /// The pane mirrors it for its own work gates — a copy of the core's
-    /// answer, never a second authority.
+    /// answer, never a second authority. The manager publishes up to
+    /// `Disposing`; the pane's own teardown tail closes its gates as
+    /// `Disposed` when it finishes (the manager holds no pane by then).
     fn lifecycle_changed(&self, lifecycle: PaneLifecycle);
 
     /// The pane's format-neutral published facts.
@@ -196,7 +202,8 @@ pub trait PaneRuntime {
     /// Release everything the pane owns: its document session, its render
     /// and prefetch work, its virtualizers, its listeners, observers and
     /// timers, its reactive owner. The sync half runs now; the returned
-    /// future is the awaited tail.
+    /// future is the awaited tail (see [`PaneTeardown`] for what it may
+    /// hold). This is the last call the manager makes on the pane.
     fn dispose(&self) -> PaneTeardown;
 }
 

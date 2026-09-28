@@ -26,6 +26,8 @@ pub mod manager;
 pub mod model;
 mod view;
 
+use std::rc::Rc;
+
 use leptos::prelude::*;
 use runtime_contract::boundary::{LaunchDocument, ShellApi};
 use serde::Serialize;
@@ -133,13 +135,16 @@ impl ReaderHost {
         host.install_reports();
 
         // The workspace as the diagnostics surface reports it. The probe
-        // reads the manager's plain state, never the arena.
-        let probe = manager.shared();
+        // reads the manager's plain state, never the arena — and holds it
+        // WEAKLY: it lives in a thread-local that outlasts the session, so a
+        // strong reference would keep the host's state for as long as the
+        // frame waits for its next session. The teardown settles it into
+        // plain data ([`Self::take_teardown`]).
+        let probe = manager.shared().map(|shared| Rc::downgrade(&shared));
         crate::diagnostics::install_host_probe(move || {
-            probe
-                .as_ref()
-                .and_then(|shared| shared.try_borrow().ok().map(|state| snapshot_of(&state)))
-                .unwrap_or_default()
+            let shared = probe.as_ref()?.upgrade()?;
+            let state = shared.try_borrow().ok()?;
+            Some(snapshot_of(&state))
         });
         host
     }
@@ -329,9 +334,22 @@ impl ReaderHost {
         self.manager.dispose_all();
     }
 
-    /// The panes' disposal tails, for the session's runtime to await.
+    /// The panes' disposal tails, for the session's runtime to await. When
+    /// the last one finished, the diagnostics probe is settled into the
+    /// workspace's final snapshot and the manager's state is let go — the
+    /// only reference this future keeps, and only until then.
     pub fn take_teardown(&self) -> contract::PaneTeardown {
-        self.manager.take_teardown()
+        let shared = self.manager.shared();
+        let tails = self.manager.take_teardown();
+        Box::pin(async move {
+            tails.await;
+            let last = shared
+                .as_ref()
+                .and_then(|shared| shared.try_borrow().ok().map(|state| snapshot_of(&state)));
+            if let Some(last) = last {
+                crate::diagnostics::settle_host_probe(last);
+            }
+        })
     }
 }
 

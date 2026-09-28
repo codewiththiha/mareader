@@ -10,6 +10,13 @@
 //! held across a call into a pane runtime (a pane may call back into the
 //! host — a focus request, a diagnostics snapshot — from inside any of its
 //! methods).
+//!
+//! Lifetime discipline: the manager never holds the session's reactive
+//! owner, and it lets go of a pane the moment the pane's dispose returns.
+//! The session's owner stays single-rooted — the unmount handle holds the
+//! only strong reference, so the unmount alone releases the whole tree,
+//! explicit disposal or not — and a disposing pane's tail owns only what
+//! it still has to release, never the pane object itself.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -35,12 +42,6 @@ pub(crate) struct ManagerState {
     /// disposal hands them over; an in-session close spawns its own).
     teardowns: Vec<PaneTeardown>,
     factory: PaneFactory,
-    /// The host's reactive owner: every pane is built inside it, so a pane's
-    /// own owner is the host's child and the host's teardown reaches it.
-    /// Released at the workspace disposal (the host creates nothing after
-    /// it), so a straggling reference to this state never pins the
-    /// session's owner.
-    owner: Option<Owner>,
 }
 
 type Shared = Rc<RefCell<ManagerState>>;
@@ -57,15 +58,13 @@ pub struct PaneManager {
 
 impl PaneManager {
     /// A manager whose panes the injected factory builds. Call inside the
-    /// host's owner.
+    /// host's owner (its signals live in the host's arena).
     pub(crate) fn new(factory: PaneFactory) -> Self {
-        let owner = Owner::current().expect("the pane manager is built inside the host's owner");
         let shared = Rc::new(RefCell::new(ManagerState {
             core: PaneManagerCore::new(),
             panes: BTreeMap::new(),
             teardowns: Vec::new(),
             factory,
-            owner: Some(owner),
         }));
         Self {
             shared: StoredValue::new_local(shared),
@@ -167,26 +166,33 @@ impl PaneManager {
     }
 
     /// Create a pane for `request`: the core mints its id and records it,
-    /// the factory builds its runtime inside the host's owner, and the pane
-    /// enters `Mounting` (the host's view mounts it and marks it ready).
-    /// `env` receives the new id so the host can derive the pane's view of
-    /// the focus authority.
+    /// the factory builds its runtime, and the pane enters `Mounting` (the
+    /// host's view mounts it and marks it ready). `env` receives the new id
+    /// so the host can derive the pane's view of the focus authority.
+    ///
+    /// Call inside the SESSION's root owner (the session start runs in it;
+    /// an in-session command re-enters it): the pane's own owner becomes
+    /// that owner's child and the env's derived signals land in its arena,
+    /// so both die with the session whatever else happens. The manager
+    /// keeps no copy of the owner to build in — a strong one stored in the
+    /// host's own arena would be a cycle that only an explicit disposal
+    /// breaks, and a session whose unmount alone could not release it.
     pub fn create(
         &self,
         request: PaneRequest,
         launch: Option<LaunchDocument>,
         env: impl FnOnce(PaneId) -> PaneEnv,
     ) -> Result<PaneId, PaneError> {
+        if Owner::current().is_none() {
+            // Built here, the pane's owner and its env would belong to no
+            // scope at all: nothing would ever clean them up.
+            return Err(PaneError::Unowned);
+        }
         let shared = self.shared().ok_or(PaneError::HostDisposed)?;
         let (descriptor, change) = shared.borrow_mut().core.create(request)?;
         let id = descriptor.pane_id;
-        let (factory, owner) = {
-            let state = shared.borrow();
-            (state.factory.clone(), state.owner.clone())
-        };
-        let owner = owner.ok_or(PaneError::HostDisposed)?;
-        let env = env(id);
-        let pane = owner.with(|| untrack(|| factory(env, descriptor, launch)));
+        let factory = shared.borrow().factory.clone();
+        let pane = untrack(|| factory(env(id), descriptor, launch));
         shared.borrow_mut().panes.insert(id, pane);
         crate::diagnostics::note_pane_create();
         self.transition(&shared, id, |core| core.begin_mount(id))?;
@@ -264,11 +270,7 @@ impl PaneManager {
         let Some(shared) = self.shared() else {
             return;
         };
-        let ids = {
-            let mut state = shared.borrow_mut();
-            state.owner = None;
-            state.core.dispose_all()
-        };
+        let ids = shared.borrow_mut().core.dispose_all();
         for id in ids {
             let tail = self.dispose_one(&shared, id);
             shared.borrow_mut().teardowns.push(tail);
@@ -277,10 +279,11 @@ impl PaneManager {
     }
 
     /// One pane's dispose, after the core moved it to `Disposing`: out of
-    /// the live map, the lifecycle mirrored, the pane's sync teardown run.
-    /// Returns the tail that awaits the pane's async teardown and then
-    /// records `Disposed` — through the `Rc`, never the arena, because the
-    /// session's reactive scope may be gone by then.
+    /// the live map, the lifecycle mirrored, the pane's sync teardown run —
+    /// and the pane object released right there. Returns the tail that
+    /// awaits the pane's async teardown and then records `Disposed` in the
+    /// core — through the `Rc`, never the arena, because the session's
+    /// reactive scope may be gone by then.
     fn dispose_one(&self, shared: &Shared, id: PaneId) -> PaneTeardown {
         let pane = shared.borrow_mut().panes.remove(&id);
         let shared = Rc::clone(shared);
@@ -292,10 +295,16 @@ impl PaneManager {
         };
         pane.lifecycle_changed(PaneLifecycle::Disposing);
         let tail = pane.dispose();
+        // `dispose` is the last call the manager makes on a pane: the map
+        // entry is gone, and this was the manager's one remaining reference.
+        // Dropping it NOW frees the pane object (its owner shell, its
+        // context map) at the sync teardown, instead of pinning it for as
+        // long as the engine takes to destroy. The tail owns what it still
+        // has to release, and marks the pane's own gates `Disposed`.
+        drop(pane);
         Box::pin(async move {
             tail.await;
             let _ = shared.borrow_mut().core.finish_dispose(id);
-            pane.lifecycle_changed(PaneLifecycle::Disposed);
         })
     }
 
@@ -602,6 +611,54 @@ mod tests {
         let a = owner.with(|| manager.create(request("/a.pdf", true), None, env).unwrap());
         owner.cleanup();
         assert_eq!(count(&log, &format!("owner-cleanup {a}")), 1);
+    }
+
+    #[test]
+    fn dropping_the_session_owner_alone_releases_the_whole_workspace() {
+        // The unmount handle is the session owner's only strong holder: no
+        // explicit disposal ran, yet dropping it cleans every pane's scope
+        // and frees the host's arena (the manager's state with it). A
+        // manager that kept its own copy of the owner would pin all of it.
+        let (owner, manager, log, _) = fixture();
+        let a = owner.with(|| manager.create(request("/a.pdf", true), None, env).unwrap());
+        assert!(manager.shared().is_some());
+        drop(owner);
+        assert_eq!(count(&log, &format!("owner-cleanup {a}")), 1);
+        assert!(
+            manager.shared().is_none(),
+            "the host's arena outlived its owner"
+        );
+    }
+
+    #[test]
+    fn the_manager_holds_no_pane_past_its_dispose() {
+        // Only the test's own record still holds the pane once its dispose
+        // returned — the tail owns what it has to release, not the pane.
+        let (owner, manager, _, built) = fixture();
+        owner.with(|| {
+            let a = manager.create(request("/a.pdf", true), None, env).unwrap();
+            assert_eq!(Rc::strong_count(&built.borrow()[0]), 2);
+            let tail = manager.close_now(a).unwrap();
+            assert_eq!(Rc::strong_count(&built.borrow()[0]), 1);
+            drive(tail);
+            assert_eq!(manager.lifecycle(a), Some(PaneLifecycle::Disposed));
+        });
+    }
+
+    #[test]
+    fn a_pane_is_never_built_outside_an_owner() {
+        // Outside every reactive owner the pane's scope and its env would be
+        // orphans nothing cleans up: refused before an id is minted.
+        let (_owner, manager, _, built) = fixture();
+        assert_eq!(
+            manager.create(request("/a.pdf", true), None, env),
+            Err(PaneError::Unowned)
+        );
+        assert!(built.borrow().is_empty());
+        let minted = manager
+            .shared()
+            .map(|shared| shared.borrow().core.created());
+        assert_eq!(minted, Some(0));
     }
 
     #[test]

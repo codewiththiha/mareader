@@ -60,7 +60,18 @@ thread_local! {
     static HOST_PROBE: RefCell<Option<HostProbe>> = const { RefCell::new(None) };
 }
 
-type HostProbe = Box<dyn Fn() -> crate::host::HostSnapshot>;
+/// What the snapshot asks about the workspace: the live host's probe while
+/// a session runs, then — once the host's teardown finished — the final
+/// answer as plain data. The frame outlives its sessions (a recycled frame
+/// hosts the next one), so a probe left holding the host's state would keep
+/// it for as long as the frame sits between sessions.
+enum HostProbe {
+    /// Reads the manager's state through a WEAK reference: the probe never
+    /// extends the host's lifetime, it only answers while the host exists.
+    Live(Box<dyn Fn() -> Option<crate::host::HostSnapshot>>),
+    /// The workspace as its teardown left it (`disposed`, no panes).
+    Settled(crate::host::HostSnapshot),
+}
 
 /// The runtime publishes its lifecycle here on every transition; this is
 /// what makes disposal completion observable BY the runtime, not inferred
@@ -78,13 +89,24 @@ pub fn publish_runtime_view(lifecycle: crate::runtime::RuntimeLifecycle, generat
 /// snapshot asks it for the workspace — the panes, their lifecycle, the one
 /// active pane, what each pane holds. The probe reads plain Rust state (the
 /// manager core), never the arena, so a snapshot taken after the session's
-/// reactive scope is gone still gets an answer instead of a panic.
-pub(crate) fn install_host_probe(probe: impl Fn() -> crate::host::HostSnapshot + 'static) {
-    HOST_PROBE.with(|cell| *cell.borrow_mut() = Some(Box::new(probe)));
+/// reactive scope is gone still gets an answer instead of a panic. It must
+/// hold that state weakly (it answers `None` once the state is gone).
+pub(crate) fn install_host_probe(probe: impl Fn() -> Option<crate::host::HostSnapshot> + 'static) {
+    HOST_PROBE.with(|cell| *cell.borrow_mut() = Some(HostProbe::Live(Box::new(probe))));
+}
+
+/// The host's teardown finished: replace its probe with the final answer,
+/// so the session's last digest (and every snapshot until the next session)
+/// reports the torn-down workspace without anything of the host kept alive.
+pub(crate) fn settle_host_probe(last: crate::host::HostSnapshot) {
+    HOST_PROBE.with(|cell| *cell.borrow_mut() = Some(HostProbe::Settled(last)));
 }
 
 fn host_probe() -> Option<crate::host::HostSnapshot> {
-    HOST_PROBE.with(|cell| cell.borrow().as_ref().map(|probe| probe()))
+    HOST_PROBE.with(|cell| match cell.borrow().as_ref()? {
+        HostProbe::Live(probe) => probe(),
+        HostProbe::Settled(last) => Some(last.clone()),
+    })
 }
 
 /// Narrate one lifecycle event when the dev surface opted in. Counters tick

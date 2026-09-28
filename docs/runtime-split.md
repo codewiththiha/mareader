@@ -232,7 +232,11 @@ Disposal is a frame round-trip (`dispose_active`, `src/app/manager.rs`):
    owner — listeners, observers, timers, effects — explicitly. The unmount
    follows, and its cleanup runs `ReaderRuntime::dispose`, which awaits the
    panes' tails (engine destroy awaited → sweeps → virtualizer disposal →
-   each pane `Disposed`) and only then marks the runtime `Disposed`.
+   each pane `Disposed`) and only then marks the runtime `Disposed`. The
+   unmount is sufficient on its own: nothing inside the session holds its
+   reactive owner, so dropping the unmount handle releases the whole tree
+   and its cleanup still runs the host's disposal (a no-op when it already
+   ran).
 2. The frame answers `DisposeComplete`; only then does the manager remove
    the iframe (§12: phase 1 acknowledged, phase 2 removal — a strict
    timeout forces the removal either way). A session that holds no

@@ -334,6 +334,20 @@ responsibilities moved to exactly one owner:
   sweeps, virtualizer dispose, completion). The host's workspace disposal
   runs it for every pane while the session is alive; the runtime awaits
   the tails.
+- **Lifetime (what keeps memory alive).** The session's reactive owner is
+  single-rooted, exactly as it was before the host existed: the unmount
+  handle holds the only strong reference inside the frame (the live-session
+  thread-local's copy, used to re-enter the owner for in-session commands,
+  is taken out before the handle drops). Nothing in the session's arena
+  holds the owner — the manager builds panes under the caller's owner and
+  refuses (`PaneError::Unowned`) outside one — so the unmount alone
+  releases the whole tree even if the explicit disposal never ran. The
+  manager drops a pane object the moment its `dispose` returns; the tail
+  captures only the engine handle, the virtualizers, the stamp and the
+  pane handle, and releases the handle's arena slot when it finishes. The
+  diagnostics host probe holds the manager state weakly and is settled
+  into a plain final snapshot at the end of the teardown, so a recycled
+  frame keeps nothing of its last host between sessions.
 - **Boundary.** `tools/check-host-boundary.mjs` (CI lint lane) fails if
   anything under `host/` names the PDF engine, a format renderer, the pane
   implementation or a pane's reader state, or if `ReaderPage` reappears.

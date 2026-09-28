@@ -327,7 +327,13 @@ impl PaneRuntime for DocumentPane {
     ///    arm's window listeners), observer, timer and signal the pane
     ///    installed is released NOW, with its view's child owners;
     /// 6. the tail: the engine destroy awaited, the sweeps, the
-    ///    virtualizers' final dispose, the completion reported.
+    ///    virtualizers' final dispose, the completion reported, and the
+    ///    pane's handle slot released (its gates read `Disposed` from then).
+    ///
+    /// The tail captures only what it still has to release — the engine
+    /// handle, the virtualizers, the stamp, the pane handle (Copy) — never
+    /// the pane itself: the manager drops the pane object as soon as this
+    /// returns, so its owner shell and context map go with the sync half.
     fn dispose(&self) -> PaneTeardown {
         let ctx = self.ctx;
         // (1) Only while the pane's state is readable: a pane whose owner
@@ -352,10 +358,11 @@ impl PaneRuntime for DocumentPane {
         // the next pane pays for without using.
         crate::components::ai::reflow_anchor::forget_parsed_spots();
         // (4)
-        let virtualizers = ctx.pane.take_virtualizers();
-        let pdf = ctx.pane.pdf();
-        let held = ctx.pane.holds_document_session();
-        ctx.pane.note_document_session(false);
+        let handle = ctx.pane;
+        let virtualizers = handle.take_virtualizers();
+        let pdf = handle.pdf();
+        let held = handle.holds_document_session();
+        handle.note_document_session(false);
         // (5)
         self.owner.cleanup();
         crate::diagnostics::note_pane_dispose();
@@ -373,6 +380,7 @@ impl PaneRuntime for DocumentPane {
                 crate::diagnostics::note_reader_runtime_dispose_complete(stamp);
                 app_state::memory::log_heap("close");
             }
+            handle.release();
         })
     }
 }
