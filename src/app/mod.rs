@@ -65,6 +65,5 @@ pub fn Shell() -> impl IntoView {
         // to take from `<body>` (html/body are 100% in the shell stylesheet)
         // lives here now (§4: the Shell owns the one target).
         <div id="runtime-host" class="h-full w-full" node_ref=host></div>
-        <div class="noise-overlay"></div>
     }
 }

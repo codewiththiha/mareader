@@ -69,6 +69,7 @@ pub fn install_frame_theme(
         FramePipeline::Library => PaintPipeline::Chrome,
         FramePipeline::Reader => PaintPipeline::Document,
     });
+    ensure_noise_overlay();
 
     let appearance = Memo::new(move |_| settings.with(|s| s.appearance));
     let ink_contrast = Memo::new(move |_| settings.with(|s| s.text.ink_contrast));
@@ -193,4 +194,30 @@ pub fn install_frame_theme(
     // Flush rather than drop: a change made in the last beat before the
     // runtime was retired is still the user's change.
     on_cleanup(flush);
+}
+
+/// The film-grain layer, in THIS document. The noise classes and variables
+/// are painted onto the frame's own `<body>` (`paint_shared`), and the grain
+/// has to live next to them: an overlay in the Shell sat above the frames
+/// but followed the Shell's body classes, not the runtime's — so the
+/// animated grain never animated and a toggle made in a frame never reached
+/// it. One per document, kept across the sessions a recycled frame mounts.
+fn ensure_noise_overlay() {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    if document
+        .query_selector(".noise-overlay")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return;
+    }
+    let (Some(body), Ok(overlay)) = (document.body(), document.create_element("div")) else {
+        return;
+    };
+    overlay.set_class_name("noise-overlay");
+    let _ = overlay.set_attribute("aria-hidden", "true");
+    let _ = body.append_child(&overlay);
 }
