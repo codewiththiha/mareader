@@ -38,7 +38,6 @@ use std::cell::{Cell, RefCell};
 
 use app_ui::components::primitives::overlay::lanes::OverlayBoard;
 use leptos::prelude::*;
-use reader_core::settings::Settings;
 use wasm_bindgen::JsCast;
 
 pub use context::LibraryContext;
@@ -279,10 +278,4 @@ pub fn run_standalone() {
         .map(web_sys::Element::from)
         .expect("document body for the standalone library");
     start_session(&host, api, false);
-}
-
-/// The settings blob a standalone library session starts from (the hosted
-/// path's seed comes through the manager's bridge launch payload).
-pub fn standalone_settings() -> Settings {
-    storage::load_settings()
 }

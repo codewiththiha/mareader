@@ -102,9 +102,7 @@ fn observe_heap() {
     }
 }
 
-/// Record one heap sample (bytes) into the high-water mark. The probe in
-/// [`app_state::memory`] logs through here so the chart and the snapshot see the
-/// same number.
+/// Record one heap sample (bytes) into the high-water mark.
 pub(crate) fn note_heap_sample(bytes: u64) {
     HEAP_HIGH_WATER.fetch_max(bytes, Ordering::Relaxed);
 }

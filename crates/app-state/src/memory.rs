@@ -48,39 +48,12 @@ pub fn wasm_heap_bytes() -> Option<u64> {
 
 /// Log the heap's size under a tag: `[mem] open: wasm heap 64.0 MB`. Called
 /// at the points that move the heap — or that must visibly NOT move it,
-/// which is what makes the ratchet chartable. Every sample also folds into
-/// the diagnostics surface's high-water mark.
+/// which is what makes the ratchet chartable. The high-water mark the
+/// diagnostics keep is sampled by the diagnostics themselves (session
+/// start, dispose completion, every snapshot), not through this line.
 pub fn log_heap(tag: &str) {
     if let Some(bytes) = wasm_heap_bytes() {
-        heap_sample_sink()(bytes);
         let mb = bytes as f64 / (1024.0 * 1024.0);
         web_sys::console::log_1(&format!("[mem] {tag}: wasm heap {mb:.1} MB").into());
-    }
-}
-
-thread_local! {
-    // The diagnostics surface registers its high-water sampler here: memory
-    // must not depend on the diagnostics surface, so the sample flows through
-    // this one hook.
-    static HEAP_SAMPLE_SINK: std::cell::RefCell<Option<HeapSampleSink>> =
-        std::cell::RefCell::new(None);
-}
-
-/// One registered heap sampler: the boxed hook shape, named so the
-/// thread-local's type stays readable.
-type HeapSampleSink = Box<dyn Fn(u64)>;
-
-/// Register the heap-sample sink (the reader diagnostics' high-water mark).
-pub fn set_heap_sample_sink(f: HeapSampleSink) {
-    HEAP_SAMPLE_SINK.with(|cell| *cell.borrow_mut() = Some(f));
-}
-
-fn heap_sample_sink() -> impl Fn(u64) {
-    |bytes| {
-        HEAP_SAMPLE_SINK.with(|cell| {
-            if let Some(f) = cell.borrow().as_ref() {
-                f(bytes);
-            }
-        });
     }
 }
