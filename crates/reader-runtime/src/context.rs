@@ -42,6 +42,11 @@ pub struct ReaderContext {
     /// STATE is per-runtime — §9). Its reader surface follows the host's
     /// active pane.
     pub chrome: app_state::ChromeState,
+    /// The HOST's workspace open command. A document this pane's user picks
+    /// (Cmd/Ctrl+O, the frame's resolved open) is handed to the host, which
+    /// routes it to its active pane — the pane never opens a document on
+    /// its own authority.
+    pub open: Callback<LaunchDocument>,
 }
 
 /// Which ShellApi implementation backs this session: the hosted frame or the

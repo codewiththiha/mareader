@@ -25,9 +25,12 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use leptos::html;
 use leptos::prelude::*;
 
-use super::canvas_host::{Completion, LastGeo, judge_completion, remove_snapshots, stretch_host};
+use super::canvas_host::{
+    Completion, LastGeo, host_element, judge_completion, remove_snapshots, stretch_host,
+};
 use app_state::dom_contract::{HOST_PDF, TEXT_LAYER_CLASS};
 use leptos::task::spawn_local;
 use pdf_core::pixel_grid::snap_px;
@@ -178,6 +181,14 @@ pub fn PdfPageCanvas(
     // re-triggered the effect.
     let painted = Rc::new(Cell::new(false));
 
+    // The component's own two elements, by reference: the stretch, a
+    // render's landing and the cover sweep act on THIS host — never on
+    // whatever element in the document answers to its id, which a second
+    // pane's page host carries too. The ids stay: the engine resolves the
+    // canvas and host by them (`register_page`).
+    let host_ref: NodeRef<html::Div> = NodeRef::new();
+    let canvas_ref: NodeRef<html::Canvas> = NodeRef::new();
+
     // Owned clones for the side-effect closures so the originals stay for view!.
     let cid = canvas_id.clone();
     let cid_effect = canvas_id.clone();
@@ -212,7 +223,7 @@ pub fn PdfPageCanvas(
             return;
         }
         debug_assert!(
-            app_chrome::hooks::dom::by_id(&cid_boot).is_some(),
+            canvas_ref.try_get_untracked().flatten().is_some(),
             "PdfPageCanvas canvas must be in the DOM before register_page"
         );
         if !registered_boot.get() {
@@ -238,7 +249,6 @@ pub fn PdfPageCanvas(
     // Follows `display_scale`. Pure CSS: resize the host so the EXISTING bitmap
     // scales with the layout. Never renders — that is the whole point of the
     // split.
-    let hid_stretch = host_id.clone();
     Effect::new(move || {
         let s = scale.get();
         if s <= 0.0 {
@@ -251,7 +261,7 @@ pub fn PdfPageCanvas(
             return;
         }
         stretch_host(
-            &hid_stretch,
+            host_ref,
             LastGeo {
                 w: lw,
                 h: lh,
@@ -395,7 +405,7 @@ pub fn PdfPageCanvas(
         let (lw, lh, ls) = geo.get_value();
         if lw > 0.0 && lh > 0.0 && ls > 0.0 && (ls - s).abs() > 1e-9 {
             stretch_host(
-                &hid,
+                host_ref,
                 LastGeo {
                     w: lw,
                     h: lh,
@@ -467,7 +477,7 @@ pub fn PdfPageCanvas(
                             painted_async.set(true);
                             if let Some(display) = display_at_landing.try_get_untracked() {
                                 stretch_host(
-                                    &hid,
+                                    host_ref,
                                     LastGeo {
                                         w: r.width,
                                         h: r.height,
@@ -493,7 +503,7 @@ pub fn PdfPageCanvas(
                     // it to the paper session — every colour decision it
                     // feeds lives in the pdf-paper crate.
                     pdf_engine::backdrop::live_frame(&cid);
-                    if let Some(host) = app_chrome::hooks::dom::by_id(&hid) {
+                    if let Some(host) = host_element(host_ref) {
                         // Note: cannot use host.style() (tachys ElementExt::style shadows
                         // web_sys' inherent method); set the inline style attribute directly.
                         // The engine also sets `--scale-factor` inline on the host during
@@ -532,7 +542,7 @@ pub fn PdfPageCanvas(
                     // so mark it NOT painted: the no-op fast path must not
                     // skip the re-render.
                     painted_async.set(false);
-                    if let Some(host) = app_chrome::hooks::dom::by_id(&hid) {
+                    if let Some(host) = host_element(host_ref) {
                         remove_snapshots(&host);
                     }
                     web_sys::console::warn_1(
@@ -545,12 +555,13 @@ pub fn PdfPageCanvas(
 
     view! {
         <div
+            node_ref=host_ref
             id=host_id
             class=host_class
             data-reader-host=HOST_PDF
             data-host-page=page
         >
-            <canvas id=canvas_id />
+            <canvas node_ref=canvas_ref id=canvas_id />
             // Placeholder text layer. The engine REPLACES this node on each
             // text render: it builds the spans in a detached `.textLayer` and
             // swaps it in atomically, so a superseded render's late spans can

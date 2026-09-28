@@ -283,7 +283,29 @@ async function openBook(url) {
     s.engine.activeRenders === 0 &&
     s.host?.panes?.[0]?.lifecycle === "ready");
   assertHostWorkspace(s, "open");
+  await assertPaneBox(s, "open");
   return s;
+}
+
+/** The host's bounds are what the pane is actually laid out in: its entry in
+ *  the workspace slot renders at the box the host reports for it (the
+ *  entry is positioned from the manager's per-pane bounds, not by filling
+ *  the slot on its own). */
+async function assertPaneBox(s, label) {
+  const pane = s.host.panes[0];
+  const box = await page.evaluate((id) => {
+    const frame = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]");
+    const doc = frame?.contentDocument ?? document;
+    const el = doc.querySelector(`[data-pane-id="${id}"]`);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { width: r.width, height: r.height };
+  }, pane.paneId);
+  if (!box) throw new Error(`[${label}] pane ${pane.paneId} has no entry in the workspace slot`);
+  const off = Math.max(Math.abs(box.width - pane.bounds.width), Math.abs(box.height - pane.bounds.height));
+  if (off > 2) {
+    throw new Error(`[${label}] pane ${pane.paneId} renders at ${box.width}x${box.height}, the host handed it ${pane.bounds.width}x${pane.bounds.height}`);
+  }
 }
 
 /** The production path, observed: the reader runtime's host reports a live

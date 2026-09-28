@@ -56,6 +56,13 @@ pub struct ReaderState {
     pub search: SearchState,
     pub ai_selection: AiSelectionState,
     pub gloss: GlossState,
+    /// The pane's root element and host-given box: every lookup the reader
+    /// makes for its own elements runs inside this root, never the whole
+    /// document (a second pane carries the same ids).
+    pub dom: crate::pane::dom::PaneDom,
+    /// The pane's reflow measurement inbox (the batch waiting for its
+    /// debounced flush): per pane, so two panes' reports never mix.
+    pub measure: crate::effects::reader::reflow_measure::MeasureInbox,
 }
 
 impl ReaderState {

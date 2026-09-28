@@ -105,9 +105,20 @@ pub fn observe_content_size(
     element_id: &'static str,
     sink: RwSignal<(f64, f64)>,
 ) -> impl Fn() + Send + Sync + 'static {
+    observe_content_size_with(move || by_id(element_id), sink)
+}
+
+/// [`observe_content_size`] for an element the caller finds itself — a
+/// lookup scoped to one subtree (a reader pane's root) rather than the whole
+/// document. `find` runs once, when the observation arms after the mount;
+/// the same explicit stop comes back.
+pub fn observe_content_size_with(
+    find: impl Fn() -> Option<web_sys::Element> + 'static,
+    sink: RwSignal<(f64, f64)>,
+) -> impl Fn() + Send + Sync + 'static {
     let slot = new_slot();
     Effect::new(move || {
-        let Some(el) = by_id(element_id) else {
+        let Some(el) = find() else {
             return;
         };
         let on_resize: Rc<dyn Fn(Vec<ResizeObserverEntry>)> =

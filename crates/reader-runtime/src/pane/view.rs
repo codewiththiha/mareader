@@ -42,10 +42,14 @@ pub(crate) fn install_pane_effects(
     // The keyboard arm (page navigation, zoom steps, the sidebar toggles,
     // Cmd/Ctrl+O) answers only while this pane is the host's active pane:
     // the gate reads the host's one focus authority, never a copy of it.
+    // What it asks of the workspace goes through the HOST: the picked file
+    // through the host's open command (`open_dialog` ends in `ctx.open`),
+    // Escape's rail close through the host's shell controller (provided by
+    // the host in the session scope this pane's owner descends from).
     crate::effects::reader::shortcuts::shortcuts(
         state.reader,
         move || crate::services::document::open_dialog(state),
-        state.ui.sidebar,
+        expect_context::<app_ui::components::shell::controller::ShellController>(),
         move || active.try_get_untracked().unwrap_or(false),
     );
 
@@ -75,8 +79,11 @@ pub(crate) fn install_pane_effects(
     // outgoing view's rasters, and the fit the next mode owns.
     crate::effects::reader::mode_change::mode_change(state);
 
-    let actuator =
-        crate::zoom::actuator::ZoomActuator::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
+    let actuator = crate::zoom::actuator::ZoomActuator::new(
+        rv.virtualizer.clone(),
+        rv.h_virtualizer.clone(),
+        vs.dom,
+    );
     // Driven once at setup. What outlives the controller are the effects
     // `drive` installs, which live as long as this pane's owner. Everything
     // downstream only posts commands; nothing else writes a zoom scale or
@@ -110,11 +117,24 @@ pub(crate) fn install_pane_effects(
 /// The pane's content for the host's workspace slot: the viewer, the
 /// first-paint cover, and the per-document overlays (floating title, page
 /// pill, bottom bar, find bar, selection pill, gloss popover). The host
-/// places this inside `main#viewer-slot`; the wrapper fills the slot, so
-/// every overlay's `absolute` box resolves against the same rectangle it
-/// did when it sat in the slot directly.
-pub(crate) fn pane_content(state: ReaderContext, rv: ReaderVirtualizers) -> impl IntoView {
+/// places this inside its entry for the pane; the wrapper is the PANE's
+/// root — sized to the bounds the host handed the pane (filling the entry
+/// until the first measurement), the element every pane-owned lookup is
+/// scoped to (`crate::pane::dom`), and the box every overlay's `absolute`
+/// resolves against.
+///
+/// A pointer or keyboard focus landing inside the pane asks the host's
+/// focus authority to make it active (`request_focus`); the authority
+/// decides. Bubbling listeners: a control that swallows its own pointerdown
+/// sits on a pane whose surface took the pointer first.
+pub(crate) fn pane_content(
+    state: ReaderContext,
+    rv: ReaderVirtualizers,
+    request_focus: Callback<()>,
+) -> impl IntoView {
     let vs = state.reader;
+    let dom = vs.dom;
+    let measured = move || crate::pane::dom::measured(dom.bounds());
     let status = state.reader.document.status;
     let is_ready = move || status.get() == DocStatus::Ready;
     let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
@@ -128,7 +148,18 @@ pub(crate) fn pane_content(state: ReaderContext, rv: ReaderVirtualizers) -> impl
     let stream_percent = Signal::derive(move || vs.stream_percent());
 
     view! {
-        <div class="absolute inset-0">
+        <div
+            node_ref=dom.root_ref()
+            class="absolute left-0 top-0"
+            style:width=move || measured().map_or("100%".to_string(), |(w, _)| format!("{w}px"))
+            style:height=move || measured().map_or("100%".to_string(), |(_, h)| format!("{h}px"))
+            on:pointerdown=move |_| {
+                request_focus.try_run(());
+            }
+            on:focusin=move |_| {
+                request_focus.try_run(());
+            }
+        >
             <Show when=is_ready>
                 <crate::components::viewer::Viewer
                     state=vs

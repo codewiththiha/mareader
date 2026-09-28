@@ -13,7 +13,8 @@ use reader_core::view::ViewMode;
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
 use crate::components::ai::reflow_anchor::union_box;
 use crate::components::viewer::page_host::host_id_for_mode;
-use app_chrome::hooks::dom::{by_id, range_rects};
+use crate::pane::dom::PaneDom;
+use app_chrome::hooks::dom::range_rects;
 use app_state::dom_contract::{HOST_ATTR, HOST_PDF};
 
 use super::{FormatAnchorBridge, captured_mark, selection_start};
@@ -24,11 +25,13 @@ use super::{FormatAnchorBridge, captured_mark, selection_start};
 pub struct PdfAnchorBridge {
     /// The view mode, which decides which host element carries the page.
     pub mode: ViewMode,
+    /// The pane whose page hosts the anchor is looked up in.
+    pub dom: PaneDom,
 }
 
 impl FormatAnchorBridge for PdfAnchorBridge {
     fn screen_box(&self, anchor: &PageAnchor, scale: f64) -> Option<GlossBox> {
-        screen_box(anchor, scale, self.mode)
+        screen_box(anchor, scale, self.mode, self.dom)
     }
 
     fn capture(&self, scale: f64) -> Option<PageAnchor> {
@@ -71,11 +74,18 @@ fn page_from_host_id(id: &str) -> Option<u32> {
 /// Live viewport-space box for a page anchor. `None` when the scale is invalid
 /// or the host page is not mounted (virtualized away) — which by itself counts
 /// as "the anchor left the page".
-pub fn screen_box(anchor: &PageAnchor, scale: f64, mode: ViewMode) -> Option<GlossBox> {
+pub fn screen_box(
+    anchor: &PageAnchor,
+    scale: f64,
+    mode: ViewMode,
+    dom: PaneDom,
+) -> Option<GlossBox> {
     if scale <= 0.0 {
         return None;
     }
-    let hr = by_id(&host_id_for_mode(mode, anchor.page))?.get_bounding_client_rect();
+    let hr = dom
+        .by_id(&host_id_for_mode(mode, anchor.page))?
+        .get_bounding_client_rect();
     let h = anchor.rect.h * scale;
     Some(GlossBox {
         x: hr.left() + anchor.rect.x * scale,

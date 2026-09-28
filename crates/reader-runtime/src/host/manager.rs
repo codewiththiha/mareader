@@ -54,6 +54,9 @@ pub struct PaneManager {
     active: RwSignal<Option<PaneId>>,
     /// The live panes in placement order, as the core holds them.
     placed: RwSignal<Vec<PaneId>>,
+    /// Each live pane's box, as the core last recorded it: what the host's
+    /// view positions each pane's entry by. Pruned with the placement.
+    bounds: RwSignal<BTreeMap<PaneId, PaneBounds>>,
 }
 
 impl PaneManager {
@@ -70,6 +73,7 @@ impl PaneManager {
             shared: StoredValue::new_local(shared),
             active: RwSignal::new(None),
             placed: RwSignal::new(Vec::new()),
+            bounds: RwSignal::new(BTreeMap::new()),
         }
     }
 
@@ -91,6 +95,14 @@ impl PaneManager {
     /// The live panes in placement order (tracked).
     pub fn placed(&self) -> Vec<PaneId> {
         self.placed.try_get().unwrap_or_default()
+    }
+
+    /// The box the host last handed `id` (tracked). `None` until the host
+    /// measured one — the view falls back to filling the slot.
+    pub fn bounds_of(&self, id: PaneId) -> Option<PaneBounds> {
+        self.bounds
+            .try_with(|bounds| bounds.get(&id).copied())
+            .flatten()
     }
 
     /// The live runtime for `id`, cloned out of the map (no borrow held).
@@ -123,6 +135,15 @@ impl PaneManager {
             let state = shared.borrow();
             (state.core.live().to_vec(), state.core.active())
         };
+        // A pane that left the placement leaves the bounds publication too.
+        let stale = self
+            .bounds
+            .try_with_untracked(|bounds| bounds.keys().any(|id| !live.contains(id)))
+            .unwrap_or(false);
+        if stale {
+            self.bounds
+                .try_update(|bounds| bounds.retain(|id, _| live.contains(id)));
+        }
         if self.placed.try_get_untracked().as_ref() != Some(&live) {
             self.placed.try_set(live);
         }
@@ -208,6 +229,20 @@ impl PaneManager {
         self.transition(&shared, id, |core| core.mark_ready(id))
     }
 
+    /// `Ready → Suspended`: the pane keeps its document session but takes
+    /// no new work (the host suspends its panes while the frame is off
+    /// screen).
+    pub fn suspend(&self, id: PaneId) -> Result<(), PaneError> {
+        let shared = self.shared().ok_or(PaneError::HostDisposed)?;
+        self.transition(&shared, id, |core| core.suspend(id))
+    }
+
+    /// `Suspended → Ready`.
+    pub fn resume(&self, id: PaneId) -> Result<(), PaneError> {
+        let shared = self.shared().ok_or(PaneError::HostDisposed)?;
+        self.transition(&shared, id, |core| core.resume(id))
+    }
+
     /// The focus authority: make `id` the active pane.
     pub fn set_active(&self, id: PaneId) -> Result<(), PaneError> {
         let shared = self.shared().ok_or(PaneError::HostDisposed)?;
@@ -216,12 +251,28 @@ impl PaneManager {
         Ok(())
     }
 
+    /// The request a pane holds to become active: it goes to the ONE focus
+    /// authority ([`Self::set_active`]), which may refuse it (a pane on its
+    /// way out) — the pane never flips focus itself.
+    pub fn focus_request(&self, id: PaneId) -> Callback<()> {
+        let manager = *self;
+        Callback::new(move |_| {
+            let _ = manager.set_active(id);
+        })
+    }
+
     /// Hand one pane its bounds; the pane hears about it only when they
     /// changed.
     pub fn resize(&self, id: PaneId, bounds: PaneBounds) -> Result<(), PaneError> {
         let shared = self.shared().ok_or(PaneError::HostDisposed)?;
         let changed = shared.borrow_mut().core.resize(id, bounds)?;
-        if changed && let Some(pane) = self.pane(id) {
+        if !changed {
+            return Ok(());
+        }
+        self.bounds.try_update(|published| {
+            published.insert(id, bounds);
+        });
+        if let Some(pane) = self.pane(id) {
             pane.resize(bounds);
         }
         Ok(())
@@ -485,6 +536,8 @@ mod tests {
             },
             active: Signal::stored(id.get() == 1),
             settings_open: RwSignal::new(false),
+            request_focus: Callback::new(|_| {}),
+            open: Callback::new(|_| {}),
         }
     }
 
@@ -669,6 +722,80 @@ mod tests {
             manager.resize_all(|_| PaneBounds::filling(800.0, 600.0));
             manager.resize_all(|_| PaneBounds::filling(800.0, 600.0));
             assert_eq!(count(&log, &format!("resize:800x600 {a}")), 1);
+        });
+    }
+
+    #[test]
+    fn a_focus_request_goes_through_the_one_authority() {
+        let (owner, manager, log, _) = fixture();
+        owner.with(|| {
+            let a = manager.create(request("/a.pdf", true), None, env).unwrap();
+            let b = manager.create(request("/b.pdf", false), None, env).unwrap();
+            log.borrow_mut().clear();
+            // A pointer landing in pane b: the request blurs a, then b
+            // focuses — the same hand-over the host's own calls make.
+            manager.focus_request(b).run(());
+            assert_eq!(
+                *log.borrow(),
+                vec![format!("blur {a}"), format!("focus {b}")]
+            );
+            assert_eq!(manager.active_untracked(), Some(b));
+            // A pane on its way out asks in vain: the authority refuses and
+            // nothing moves.
+            let request_a = manager.focus_request(a);
+            drive(manager.close_now(a).unwrap());
+            log.borrow_mut().clear();
+            request_a.run(());
+            assert_eq!(manager.active_untracked(), Some(b));
+            assert!(log.borrow().is_empty());
+        });
+    }
+
+    #[test]
+    fn suspend_and_resume_are_mirrored_into_the_pane() {
+        let (owner, manager, log, _) = fixture();
+        owner.with(|| {
+            let a = manager.create(request("/a.pdf", true), None, env).unwrap();
+            // A pane still mounting has nothing to suspend yet.
+            assert!(matches!(manager.suspend(a), Err(PaneError::Illegal { .. })));
+            manager.mark_ready(a).unwrap();
+            manager.suspend(a).unwrap();
+            assert_eq!(manager.lifecycle(a), Some(PaneLifecycle::Suspended));
+            assert_eq!(count(&log, &format!("lifecycle:Suspended {a}")), 1);
+            manager.resume(a).unwrap();
+            assert_eq!(manager.lifecycle(a), Some(PaneLifecycle::Ready));
+            assert_eq!(count(&log, &format!("lifecycle:Ready {a}")), 2);
+            // A suspended pane is still live: the workspace disposal takes
+            // it like any other.
+            manager.suspend(a).unwrap();
+            manager.dispose_all();
+            assert_eq!(manager.lifecycle(a), Some(PaneLifecycle::Disposing));
+            drive(manager.take_teardown());
+            assert_eq!(manager.lifecycle(a), Some(PaneLifecycle::Disposed));
+        });
+    }
+
+    #[test]
+    fn bounds_are_published_per_live_pane_and_pruned_with_it() {
+        let (owner, manager, _, _) = fixture();
+        owner.with(|| {
+            let a = manager.create(request("/a.pdf", true), None, env).unwrap();
+            let b = manager.create(request("/b.pdf", false), None, env).unwrap();
+            assert_eq!(manager.bounds_of(a), None);
+            let left = PaneBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 400.0,
+                height: 600.0,
+            };
+            let right = PaneBounds { x: 400.0, ..left };
+            manager.resize(a, left).unwrap();
+            manager.resize(b, right).unwrap();
+            assert_eq!(manager.bounds_of(a), Some(left));
+            assert_eq!(manager.bounds_of(b), Some(right));
+            drive(manager.close_now(a).unwrap());
+            assert_eq!(manager.bounds_of(a), None);
+            assert_eq!(manager.bounds_of(b), Some(right));
         });
     }
 }

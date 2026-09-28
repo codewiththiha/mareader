@@ -12,8 +12,9 @@
 //! sidebar rail's mount points and the shell controller that coordinates
 //! them, the settings modal's placement, the one active pane, pane creation
 //! and removal, bounds measurement, the workspace commands (open, Library),
-//! the lifecycle dispatch to its panes, and the appearance boundary (the
-//! resolved look pushed to every pane).
+//! the lifecycle dispatch to its panes (suspending them while the frame is
+//! off screen), and the appearance boundary (the resolved look pushed to
+//! every pane).
 //!
 //! What it does NOT own: any document. It never names a format, an engine
 //! type or a pane implementation — the composition root injects a
@@ -33,7 +34,9 @@ use runtime_contract::boundary::{LaunchDocument, ShellApi};
 use serde::Serialize;
 
 use app_ui::components::shell::controller::ShellController;
-use contract::{PaneAppearance, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory, PaneSurface};
+use contract::{
+    PaneAppearance, PaneClassifier, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory, PaneSurface,
+};
 use manager::PaneManager;
 use model::{
     DocumentId, DocumentRef, PaneBounds, PaneError, PaneFormat, PaneId, PaneLifecycle, PaneRequest,
@@ -72,12 +75,19 @@ pub struct ReaderHost {
     /// The workspace slot's measured size, the source of every pane's
     /// bounds.
     slot_size: RwSignal<(f64, f64)>,
+    /// Names a launch's format tag for the descriptor (injected with the
+    /// factory: the host reads no extension itself).
+    classify: PaneClassifier,
+    /// Whether this frame is the one on screen: the host suspends its panes
+    /// while it is not.
+    frame_active: Signal<bool>,
 }
 
 impl ReaderHost {
     /// Build the host inside the session's reactive owner. `factory` is the
-    /// pane implementation the composition root chose.
-    pub fn new(session: HostSession, factory: PaneFactory) -> Self {
+    /// pane implementation the composition root chose, `classify` the same
+    /// implementation's reading of a document address.
+    pub fn new(session: HostSession, factory: PaneFactory, classify: PaneClassifier) -> Self {
         let manager = PaneManager::new(factory);
         let settings = session.settings;
         let initial = settings.with_untracked(|s| app_state::Motion::from_prefs(&s.animations));
@@ -129,9 +139,12 @@ impl ReaderHost {
             settings_open,
             motion,
             slot_size: RwSignal::new((0.0, 0.0)),
+            classify,
+            frame_active: app_chrome::hooks::frame_active::use_frame_active(),
         };
         host.install_appearance_boundary();
         host.install_bounds();
+        host.install_suspension();
         host.install_reports();
 
         // The workspace as the diagnostics surface reports it. The probe
@@ -185,6 +198,11 @@ impl ReaderHost {
     /// Bounds: the host measures its workspace slot and hands every pane its
     /// box explicitly. No split mode yet, so every pane fills the slot; the
     /// pane owns everything inside its box.
+    ///
+    /// The slot is looked up by its document-wide id ON PURPOSE: it is the
+    /// HOST's element (one per session, rendered by the host's own view),
+    /// not a pane's — every pane-owned element is looked up inside its
+    /// pane's root instead (`crate::pane::dom`).
     fn install_bounds(&self) {
         let host = *self;
         let stop = app_chrome::hooks::use_resize_observer::observe_content_size(
@@ -204,6 +222,40 @@ impl ReaderHost {
                     .resize_all(|_| PaneBounds::filling(width, height))
             });
         });
+    }
+
+    /// Suspension: while this frame is off screen (a warm reader waiting
+    /// behind the shelf, a retiring one being disposed) every placed pane
+    /// is `Suspended` — it keeps its document session but takes no new work
+    /// — and coming back on screen resumes them. A pane still mounting is
+    /// suspended when it becomes ready ([`Self::pane_ready`]); a transition
+    /// that does not apply (already there, not ready yet) is nothing to do.
+    fn install_suspension(&self) {
+        let host = *self;
+        Effect::new(move |_| {
+            let Some(on_screen) = host.frame_active.try_get() else {
+                return;
+            };
+            for id in untrack(|| host.manager.placed()) {
+                let _ = if on_screen {
+                    host.manager.resume(id)
+                } else {
+                    host.manager.suspend(id)
+                };
+            }
+        });
+    }
+
+    /// A pane's view is built and its effects installed: `Mounting →
+    /// Ready`, then straight on to `Suspended` if the frame is off screen
+    /// (a warm session's pane starts parked).
+    pub(crate) fn pane_ready(&self, id: PaneId) {
+        if self.manager.mark_ready(id).is_err() {
+            return;
+        }
+        if self.frame_active.try_get_untracked() == Some(false) {
+            let _ = self.manager.suspend(id);
+        }
     }
 
     /// The bounds a pane placed now is handed.
@@ -251,10 +303,12 @@ impl ReaderHost {
             .unwrap_or_default()
     }
 
-    /// The environment a new pane is handed: the session's slices, plus its
-    /// view of the focus authority — DERIVED from the one active id.
+    /// The environment a new pane is handed: the session's slices, its view
+    /// of the focus authority — DERIVED from the one active id — and the
+    /// two requests it may make of the host: focus, and open.
     fn env_for(&self, id: PaneId) -> PaneEnv {
         let manager = self.manager;
+        let host = *self;
         PaneEnv {
             runtime: self.session.runtime,
             settings: self.session.settings,
@@ -264,6 +318,12 @@ impl ReaderHost {
             chrome: self.chrome,
             active: Signal::derive(move || manager.active() == Some(id)),
             settings_open: self.settings_open,
+            request_focus: manager.focus_request(id),
+            open: Callback::new(move |launch: LaunchDocument| {
+                if let Err(error) = host.open(launch) {
+                    leptos::logging::warn!("[reader] the workspace refused an open: {error:?}");
+                }
+            }),
         }
     }
 
@@ -274,9 +334,13 @@ impl ReaderHost {
         launch: Option<LaunchDocument>,
         request_focus: bool,
     ) -> Result<PaneId, PaneError> {
+        let format = launch
+            .as_ref()
+            .filter(|launch| !launch.path.is_empty())
+            .map_or(PaneFormat::Pending, |launch| (self.classify)(&launch.path));
         let request = PaneRequest {
             document: launch.as_ref().and_then(document_ref),
-            format: PaneFormat::Pending,
+            format,
             initial_page: launch.as_ref().map(|l| l.resume_page).unwrap_or(1),
             initial_zoom: None,
             request_focus,
@@ -296,15 +360,25 @@ impl ReaderHost {
     /// promotion): the ACTIVE pane opens it in place — the pane keeps its id
     /// and replaces its document session. With no pane, a new one is
     /// created for it.
+    ///
+    /// A suspended pane takes no work, and an open IS work: it is resumed
+    /// for the command (every gate of the open is passed synchronously, in
+    /// the command itself) and parked again if the frame is still off
+    /// screen. The promotion's slot flip normally resumed it already.
     pub fn open(&self, launch: LaunchDocument) -> Result<PaneId, PaneError> {
-        match self.manager.active_untracked() {
-            Some(id) => {
-                let pane = self.manager.pane(id).ok_or(PaneError::Gone(id))?;
-                pane.command(PaneCommand::Open(Box::new(launch)))?;
-                Ok(id)
-            }
-            None => self.create_pane(Some(launch), true),
+        let Some(id) = self.manager.active_untracked() else {
+            return self.create_pane(Some(launch), true);
+        };
+        let pane = self.manager.pane(id).ok_or(PaneError::Gone(id))?;
+        let parked = self.manager.lifecycle(id) == Some(PaneLifecycle::Suspended);
+        if parked {
+            self.manager.resume(id)?;
         }
+        let sent = pane.command(PaneCommand::Open(Box::new(launch)));
+        if parked && self.frame_active.try_get_untracked() == Some(false) {
+            let _ = self.manager.suspend(id);
+        }
+        sent.map(|()| id)
     }
 
     /// A pane asks to become active: the ONE focus authority decides.

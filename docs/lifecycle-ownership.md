@@ -39,7 +39,7 @@ phases replace. The inventory below is what exists now.
 | Page hosts (canvas + host registration) | `session.stateByCanvasId`, keyed by canvas id | `registerPage` (Rust: `src/components/formats/pdf/canvas.rs`) | `unregisterPage` (component `on_cleanup`), `destroy` |
 | Thumbnails | `session.thumbCache` (LRU ≤ 16 pairs), `thumbTasks`, thumb lane | `renderThumb`/`prefetchThumb` | LRU eviction, `destroy` |
 | Rust search index | `crates/pdf-engine/src/api/search.rs` thread-local — DELIBERATELY retained across close, keyed by content fingerprint | first search of a document | dropped when a DIFFERENT fingerprint is opened (`scope_to_document`), or with the frame when an idle warm reader is evicted |
-| Reflow spot memo | `crates/reader-runtime/src/components/ai/reflow_anchor.rs` thread-local `PARSED_SPOTS` | first mark resolve | `forget_parsed_spots()` from the session's dispose (`runtime.rs`) — a recycled frame keeps its thread-locals, so the memo is cleared per session |
+| Reflow spot memo | the PANE's `GlossState.spots` (`crates/reader-runtime/src/state/gloss.rs` `SpotMemo`, capped), read through `reflow_anchor::parse_spot` | first mark resolve | `GlossState::reset` per document; dropped with the pane's reactive owner at its dispose — no thread-local, so a recycled frame carries nothing over |
 | Look-ahead (paper colour) | `crates/pdf-engine/src/backdrop/mod.rs` thread-local `Session` (`sampling` set + per-area palettes); tasks via `spawn_engine` | `document_open` / scroll ticks | `document_close` resets state; epoch token invalidates in-flight samples; in-flight count exposed as `backdrop::pending_samples()` (snapshot's `lookaheadSamplesActive`) |
 | Thumbnail prefetch/warmup | `src/services/document/open/warmup.rs` fires a bounded timer; the ENGINE owns the work: each prefetch queues in the bounded thumbnail lane under the document's lane epoch | after open settles | teardown cancels in-flight prefetch tasks (registered under `prefetch-<page>` ids) and the epoch drops queued/awaited ones — never filed into the next document; lifecycle visible in `stats()` |
 | Virtualizers (page strips, stream, thumbs grid) | `virtual_list_leptos::Virtualizer` handles held by components; bindings (listeners, ResizeObserver, timers) inside `VirtualizerInner` | `use_virtualizer` | `dispose()` via the hook's `on_cleanup` |
@@ -62,15 +62,19 @@ never release reader resources:
 3. `crates/pdf-engine/src/api/search.rs` thread-local index + fingerprint
    scope — retained across close BY DESIGN (reopen adopts it).
 4. `crates/pdf-engine/src/backdrop/mod.rs` thread-local paper `Session`.
-5. `src/effects/app/library.rs`, `src/effects/reader/reflow_measure.rs`,
-   `src/effects/app/shortcuts/navigation.rs`, `src/effects/appearance/mod.rs`
-   thread-locals — app-lifetime effect bookkeeping (debounce cells, scroll
-   state).
+5. `src/effects/app/library.rs`, `src/effects/appearance/mod.rs`
+   thread-locals — app-lifetime effect bookkeeping (debounce cells). The
+   reflow measurement queue is the pane's own now (`ReaderState.measure`,
+   `crates/reader-runtime/src/effects/reader/reflow_measure.rs`), and the
+   key-hold engine (`crates/reader-runtime/src/effects/reader/shortcuts/navigation.rs`)
+   is window-level by design — one keyboard — capturing its target strip
+   from the ACTIVE pane's root per hold and ending on that pane's blur or
+   teardown.
 6. `src/services/library/covers.rs` and `import/claim.rs` thread-locals —
    import/cover queues (library-side by design).
-7. `src/components/viewer/shells/scroll_shell.rs` thread-local,
-   `src/components/ai/reflow_anchor.rs` thread-local — reader-surface
-   bookkeeping that survives via module scope.
+7. `crates/reader-runtime/src/components/viewer/shells/scroll_shell.rs`
+   thread-local — a constant listener-options object (stateless). The
+   reflow spot memo that used to sit beside it is per pane now (row above).
 8. `crates/app-chrome/src/floating/dismiss.rs` — topmost-overlay registry
    (shell scope).
 9. `public/pdfEngine.ts` module state: `themeChain` promise, the
@@ -320,9 +324,32 @@ responsibilities moved to exactly one owner:
   a tombstone: every operation on it answers `Gone`.
 - **Focus.** One authority: `PaneManager::set_active` asks the core, which
   names the pane to blur and the pane to focus; the manager blurs, publishes
-  the ONE `active` signal, then focuses. Panes derive `active` from it.
-- **Bounds.** The host measures `#viewer-slot` and hands each pane its box
-  (no split: every pane fills it); the pane owns its viewport geometry.
+  the ONE `active` signal, then focuses. Panes derive `active` from it, and
+  REQUEST focus through `PaneEnv::request_focus` (a pointerdown or focusin
+  on the pane's root → `PaneManager::focus_request` → `set_active`). A
+  pane's blur stops its auto-scroll and ends a key hold.
+- **Bounds.** The host measures `#viewer-slot` (the host's own element, the
+  one document-wide id lookup left) and hands each pane its box (no split:
+  every pane fills it). The manager publishes each live pane's box
+  (`PaneManager::bounds_of`); the host's entry is positioned by it, and the
+  pane's root (`PaneDom`, `crates/reader-runtime/src/pane/dom.rs`) is sized
+  by the copy `mount`/`resize` hand it. The pane budgets its startup fit
+  against that box and owns everything inside it; every pane-owned DOM
+  lookup is scoped to its root (`PaneDom::by_id`/`select`/`page_list`).
+- **Descriptor.** The host records a `PaneRequest` with the document, its
+  format (named by the injected `PaneClassifier`, never by the host), the
+  resume page and an optional initial zoom. The pane opens the launch only
+  when the descriptor names a document, resumes at the descriptor's page,
+  and seeds its first document at the descriptor's zoom (consumed once).
+- **Suspension.** The host follows the frame's slot (`use_frame_active`):
+  off screen every placed pane is `Suspended` (document kept, no new work);
+  back on screen they resume. A pane that becomes ready off screen is parked
+  at once; `ReaderHost::open` resumes a parked pane for the command. The
+  pane mirrors the lifecycle into the engine's thumbnail prefetch switch.
+- **Workspace commands.** A pane's open (Cmd/Ctrl+O, the frame's resolved
+  open) goes to the host through `PaneEnv::open` → `ReaderHost::open`;
+  Escape closes the rail through the host's `ShellController`, never by
+  writing the sidebar store.
 - **Resources** (`pane/handle.rs::PaneResources`, in the host's arena so it
   outlives the pane's owner mid-dispose): the virtualizers (including the
   reflow stream's and the thumbnail rail's) and the engine document
@@ -330,7 +357,8 @@ responsibilities moved to exactly one owner:
   only through the pane's `PdfSessionHandle` and released by its destroy
   and sweeps; listeners, observers and timers live in the pane's owner.
 - **Disposal** is the pane's `dispose`: read point → claim → paper close →
-  memo forget → virtualizers taken → owner cleanup (sync) → tail (destroy,
+  virtualizers taken → owner cleanup (sync; the per-pane memos go with it)
+  → tail (destroy,
   sweeps, virtualizer dispose, completion). The host's workspace disposal
   runs it for every pane while the session is alive; the runtime awaits
   the tails.
@@ -353,7 +381,13 @@ responsibilities moved to exactly one owner:
   implementation or a pane's reader state, or if `ReaderPage` reappears.
 
 Still module-global and therefore Phase 4's: the JS PDF engine session
-(`public/engine/state.ts`, one document per realm), the look-ahead paper
-session, the disposal epoch (`services::document::session`) and the search
-index. With one pane per session they are exactly as scoped as before; a
-second concurrent pane needs session-scoped engines first.
+(`public/engine/state.ts`, one document per realm) and its prefetch switch,
+the look-ahead paper session, the disposal epoch (`services::document::session`),
+the search index, and the engine-side counters a pane's
+`PaneResourceCounts` cannot yet attribute to one pane (renders, prefetches,
+look-ahead samples — realm totals in the diagnostics `engine` block). With
+one pane per session they are exactly as scoped as before; a second
+concurrent pane needs session-scoped engines first. Session-level by
+design, not pane state: the frame's port and parked opens (`frame.rs`), the
+live-session record (`lib.rs`), the diagnostics probes, and the host's
+`#viewer-slot` measurement.

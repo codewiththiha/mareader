@@ -18,7 +18,7 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 0 — memory/lifecycle baseline | **done**: browser lifecycle suite (`tests/browser/lifecycle.mjs`), counters in `crates/reader-runtime/src/diagnostics.rs`, results in `docs/memory-baseline.md` |
 | 1 — explicit runtime/session lifecycle | **done**: `ReaderRuntime` state machine, generations, resource registry, observable disposal (`crates/reader-runtime/src/runtime.rs`) |
 | 2 — Shell / Library / Reader split | **done**: three WASM artifacts, shell-owned iframes with a `MessageChannel` handshake, `frame-transport` crate, dispose-as-a-unit |
-| 3 — Reader Host & panes | **done**: `ReaderHost` + `PaneManager` own the workspace (`crates/reader-runtime/src/host/`), the document pane owns one session (`crates/reader-runtime/src/pane/`); `ReaderPage` removed. Map in `docs/lifecycle-ownership.md` (Phase 3 section) |
+| 3 — Reader Host & panes | **done**: `ReaderHost` + `PaneManager` own the workspace (`crates/reader-runtime/src/host/`), the document pane owns one session (`crates/reader-runtime/src/pane/`); `ReaderPage` removed. Map in `docs/lifecycle-ownership.md` (Phase 3 section); what is still a bridge: [Phase 3 bridges](#phase-3-bridges-what-phase-45-inherit) |
 | 4+ — session-scoped engines, split mode, … | **not started** — waiting on the phase guide |
 
 ## Architecture as built (do not re-derive)
@@ -111,9 +111,10 @@ whatever is on screen:
   The HIGH-WATER mark, not `wasmHeapBytes`: the live heap is low again after
   every close and would keep every frame.
 - Module-level state that outlives a session in a recycled frame must be
-  reset or released per session (below); the reflow spot memo
-  (`reflow_anchor::forget_parsed_spots`) is cleared on dispose for the same
-  reason. The search index deliberately survives a close (a bounded cache
+  reset or released per session (below). The reflow spot memo and the
+  reflow measurement queue are no longer module-level at all: they are the
+  pane's state (`GlossState.spots`, `ReaderState.measure`) and die with its
+  owner. The search index deliberately survives a close (a bounded cache
   of the last book's text, cheaper than re-extraction); the eviction bounds
   its life instead.
 - Hidden frames tell their documents so: `app_ui::frame_theme::
@@ -242,6 +243,48 @@ evicts it (`warmReaderEvictions`, session balance, `frames === 1`,
 it, and after a read-and-close the recycled reader is evicted the same way.
 The cover bake is proven in the same run without any reader resident
 (`coverBake.covers`, `bakeFrameResident` back to `false`).
+
+## Phase 3 bridges (what Phase 4/5 inherit)
+
+Phase 3 made the host the workspace owner and the pane the owner of one
+document session. What is still a BRIDGE — correct for one pane per
+session, and named here so the later phases replace it deliberately:
+
+- **Scoped already (do not regress):** every pane-owned DOM lookup goes
+  through the pane's root (`crates/reader-runtime/src/pane/dom.rs`,
+  `ReaderState.dom`) or a `NodeRef`; the reflow measurement queue and the
+  spot memo are pane state, not thread-locals; focus is REQUESTED by the
+  pane (`PaneEnv::request_focus`) and decided by the manager; bounds are
+  published per pane (`PaneManager::bounds_of`) and position the host's
+  entry and size the pane's root; the host suspends panes while the frame
+  is off screen and resumes them on reveal; Cmd/Ctrl+O and the frame's
+  resolved open reach the host (`PaneEnv::open` → `ReaderHost::open`);
+  Escape closes the rail through the host's `ShellController`; the
+  descriptor's document, page, format (via the injected `PaneClassifier`)
+  and zoom are honoured by the pane.
+- **Phase 4 (session-scoped engines):** the JS PDF engine session is one per
+  realm (`public/engine/state.ts`), so the prefetch switch the pane's
+  lifecycle drives is realm-wide, the diagnostics `engine` counters
+  (renders, prefetches, look-ahead samples) are realm totals that
+  `PaneResourceCounts` cannot attribute (it counts virtualizers and the
+  document session only), the disposal epoch
+  (`crates/reader-runtime/src/services/document/session.rs`) is one claim
+  stamp per realm, and the look-ahead paper session and search index are
+  realm thread-locals. Gloss marks are still persisted by the pane straight
+  to storage (`storage::persist_gloss` from
+  `crates/reader-runtime/src/components/ai/gloss/controller/commands.rs`), a pre-existing path
+  that becomes a Shell command when the Shell owns per-document
+  persistence; reads are allowed and unchanged.
+- **Phase 5 (split mode):** every pane's box is still the whole
+  `#viewer-slot` (the host has one layout); the chrome slots (title,
+  view menu, rail, settings) are filled by the ACTIVE pane only; the
+  floating document title is portaled at window level and placed from the
+  pane root's box; the key-hold engine is window-level (one keyboard) and
+  captures the active pane's strip per hold; `PaneRequest.initial_zoom`
+  has no host-side source yet (a duplicated or split pane will supply it);
+  the focus request rides bubbling `pointerdown`/`focusin`, so a control
+  that stops propagation inside a background pane will need a capture
+  listener once two panes are visible.
 
 ## Known follow-ups (do not silently expand scope)
 

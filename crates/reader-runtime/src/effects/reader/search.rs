@@ -27,7 +27,6 @@ use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use crate::state::ReaderState;
 use app_chrome::TITLE_BAR_H;
-use app_chrome::hooks::dom::{h_page_list, page_list};
 use pdf_engine::api as engine;
 use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
 use reader_core::view::ViewMode;
@@ -205,7 +204,7 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
     }
 
     if mode == ViewMode::ScrollHorizontal {
-        let Some(list) = h_page_list() else {
+        let Some(list) = state.dom.h_page_list() else {
             return;
         };
         let scale = state.viewer.zoom.visual_scale();
@@ -265,7 +264,7 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
         return;
     }
 
-    let Some(list) = page_list() else {
+    let Some(list) = state.dom.page_list() else {
         return;
     };
     let scale = state.viewer.zoom.visual_scale();

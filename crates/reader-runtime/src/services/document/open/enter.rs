@@ -21,7 +21,7 @@ use pdf_engine::types::{DocStatus, PageSize};
 use reader_core::format::Format;
 use reader_core::outline::OutlineNode;
 use reader_core::view::ViewMode;
-use reader_core::zoom_math::FitMode;
+use reader_core::zoom_math::{FitMode, clamp_scale};
 
 use crate::context::ReaderContext;
 use crate::zoom::target::FitDims;
@@ -131,7 +131,15 @@ pub(super) fn resume_page(saved_page: u32, num_pages: u32) -> u32 {
 /// page to fit, the window IS the page, type size belongs to the typography
 /// settings, and the zoom starts at 1 with no fit to remember.
 pub(super) fn startup_scale(ctx: &ReaderContext, page_size: (f64, f64)) -> (FitMode, f64) {
+    // The zoom the pane was CREATED with (its descriptor's `initial_zoom`)
+    // wins over every fit, once: the first document that seeds consumes it,
+    // so a later open in the same pane fits as usual. The stream has no zoom
+    // to seed (below), so there it is consumed and dropped.
+    let requested = ctx.pane.take_initial_zoom();
     let streaming = ctx.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
+    if let Some(zoom) = requested.filter(|_| !streaming) {
+        return (FitMode::None, clamp_scale(zoom));
+    }
     // The startup fit mode is a user setting, not a hard-coded fit-width,
     // and `sanitize` has already replaced a persisted `None` with the
     // default — so this is always a real fit mode here.
@@ -146,29 +154,41 @@ pub(super) fn startup_scale(ctx: &ReaderContext, page_size: (f64, f64)) -> (FitM
         // The container CANNOT be asked at seed time: `container_size` is
         // what the mounted scroller reports and nothing is mounted yet —
         // seeding from it fits the first page against the previous document's
-        // box. The window is alive already, so measure IT: the title bar
-        // overlays the content, so only a DOCKED rail gives width up, and the
-        // fit maths gets the same container the mounted viewer will report a
-        // moment later — which turns the post-mount refit into a no-op.
+        // box. The PANE's box is known already: the host measured it and
+        // handed it over (`PaneRuntime::resize`), and the mounted viewer
+        // fills exactly that box — which turns the post-mount refit into a
+        // no-op, whatever else shares the window.
         //
         // The column-width dial stays out of this budget: a reflowable page
         // box already carries it through the geometry it was cut with, and a
         // PDF page IS the column — the same contract the live fit maths holds
         // (`crate::zoom::target`).
-        const DOCKED_RAIL_W: f64 = 288.0;
-        let (vw, vh) = app_chrome::hooks::use_viewport::viewport_size();
-        let docked = !ctx.settings.with_untracked(|s| s.layout.sidebar_overlay)
-            && ctx.ui.sidebar.get_untracked() != app_state::state::SidebarMode::None;
-        let cw = vw - if docked { DOCKED_RAIL_W } else { 0.0 };
+        let (cw, ch) = ctx
+            .reader
+            .dom
+            .measured_size()
+            .unwrap_or_else(|| window_budget(ctx));
         FitDims::from_geometry(
             ctx.reader.viewer.mode.get_untracked(),
-            (cw.max(1.0), vh.max(1.0)),
+            (cw.max(1.0), ch.max(1.0)),
             ctx.reader.viewer.page_margin.get_untracked(),
             page_size,
         )
         .map_or(1.0, |dims| dims.fit(startup_fit, 1.0))
     };
     (startup_fit, scale)
+}
+
+/// The box a pane the host has not measured yet will get, from the window:
+/// the title bar overlays the content, so only a DOCKED rail gives width up.
+/// Only the first open of a pane created before the host's first slot
+/// measurement lands here.
+fn window_budget(ctx: &ReaderContext) -> (f64, f64) {
+    const DOCKED_RAIL_W: f64 = 288.0;
+    let (vw, vh) = app_chrome::hooks::use_viewport::viewport_size();
+    let docked = !ctx.settings.with_untracked(|s| s.layout.sidebar_overlay)
+        && ctx.ui.sidebar.get_untracked() != app_state::state::SidebarMode::None;
+    (vw - if docked { DOCKED_RAIL_W } else { 0.0 }, vh)
 }
 
 /// The document is open: flip the route. LAST, and after every signal the

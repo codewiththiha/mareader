@@ -159,6 +159,10 @@ pub fn ThumbCell(
     // so it stays visible on every card, not just the active one.
     let is_current = move || state.viewer.page.get() == page;
     let cid = format!("thumb-{page}");
+    // The cell's own canvas, by reference: the cleanup below zeroes THIS
+    // canvas even when it has already left the document (an id lookup only
+    // finds attached elements — and would find another pane's twin).
+    let canvas_ref: NodeRef<html::Canvas> = NodeRef::new();
 
     // Page-1 aspect drives the fixed cell geometry; the shared helper falls
     // back to a 3:4 portrait default if page1_size isn't populated yet.
@@ -185,9 +189,7 @@ pub fn ThumbCell(
         // alone — every close/open cycle would otherwise leak a batch of
         // IOSurfaces until GC gets around to it. Zero the backing store so
         // the panel's close costs a constant, never growth.
-        if let Some(el) = app_chrome::hooks::dom::by_id(&cid_cleanup)
-            && let Some(cv) = el.dyn_ref::<web_sys::HtmlCanvasElement>()
-        {
+        if let Some(cv) = canvas_ref.try_get_untracked().flatten() {
             cv.set_width(0);
             cv.set_height(0);
             // Symmetry with the engine's `releaseCanvas`: it zeroes the
@@ -335,6 +337,7 @@ pub fn ThumbCell(
                 style:height=move || format!("{}px", cell_h())
             >
                 <canvas
+                    node_ref=canvas_ref
                     id=cid
                     class="thumb-canvas absolute inset-0 block h-full w-full"
                     class=("thumb-canvas-blank", move || !loaded.get())

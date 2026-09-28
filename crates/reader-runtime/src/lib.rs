@@ -183,7 +183,9 @@ pub fn start_session(
 
             // The composition root: the production path is
             // ReaderRuntime → ReaderHost → PaneManager → document pane. The
-            // host is handed the pane implementation here and never names it.
+            // host is handed the pane implementation here — its factory, and
+            // its reading of a document address for the descriptor — and
+            // never names it.
             let host = crate::host::ReaderHost::new(
                 crate::host::HostSession {
                     runtime,
@@ -193,6 +195,7 @@ pub fn start_session(
                     session_id: id,
                 },
                 crate::pane::document::factory(),
+                crate::pane::document::classify,
             );
             // The session's end, as the unmount runs it: the host disposes
             // its panes (a no-op when the dispose export already did, while

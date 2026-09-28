@@ -20,6 +20,7 @@ use std::rc::Rc;
 
 use frame_transport::wasm::PortWire;
 use frame_transport::{PendingResolves, PortShellApi};
+use leptos::prelude::Callable;
 use runtime_contract::boundary::LaunchDocument;
 use runtime_contract::protocol::{BootStage, RuntimeFrame};
 #[cfg(target_arch = "wasm32")]
@@ -282,7 +283,9 @@ fn on_resolve_answer(request: u64, document: Option<LaunchDocument>) {
     if let Some((ctx, path)) = PENDING_OPENS.with(|opens| opens.borrow_mut().remove(&request)) {
         let launch =
             document.unwrap_or_else(|| crate::services::document::open::bare_launch(&path));
-        crate::services::document::open::open_with_launch(ctx, launch);
+        // Through the host's open command, like the standalone tail: the
+        // pane that asked parked only the question, not the authority.
+        ctx.open.try_run(launch);
     }
 }
 

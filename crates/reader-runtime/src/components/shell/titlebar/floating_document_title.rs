@@ -55,7 +55,6 @@ use leptos::portal::Portal;
 use leptos::prelude::*;
 
 use crate::components::ai::anchor::host_id_for_mode;
-use app_chrome::hooks::dom::{VIEWER_SLOT_ID, by_id};
 use app_chrome::hooks::use_window_event::use_window_event;
 use app_chrome::titlebar::root::TitleBarCtx;
 use app_ui::components::shell::controller::ShellController;
@@ -104,11 +103,15 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
             let page = page.max(1);
             // A missing host is the ordinary virtualization gap (the page
             // under the eyes is between mounts), so this stays a silent
-            // `by_id` — but the viewer slot itself is chrome.
-            let Some(doc_el) = by_id(&host_id_for_mode(mode, page)) else {
+            // miss. Both elements are THIS pane's: the page host is looked
+            // up inside the pane's root, and the gap is measured against the
+            // pane's own box — never the host's workspace slot, which a
+            // pane has no business discovering from the document.
+            let dom = state.reader.dom;
+            let Some(doc_el) = dom.by_id(&host_id_for_mode(mode, page)) else {
                 return;
             };
-            let Some(viewer) = by_id(VIEWER_SLOT_ID) else {
+            let Some(viewer) = dom.root() else {
                 return;
             };
 
@@ -161,6 +164,9 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
     // page indefinitely after zooming, because zooming does not move
     // `page`/`container_size` (the anchored page stays dominant).
     Effect::new(move |_| {
+        // The pane's own box: a pane resized inside the workspace (no window
+        // resize at all) re-measures its gap too.
+        _ = state.reader.dom.bounds();
         _ = state.reader.viewer.container_size.get();
         _ = state.reader.viewer.page.get();
         _ = state.reader.viewer.mode.get();

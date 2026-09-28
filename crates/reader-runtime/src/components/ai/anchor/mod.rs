@@ -39,7 +39,6 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::state::ReaderState;
-use app_chrome::hooks::dom::by_id;
 
 pub mod pdf;
 pub mod reflow;
@@ -133,7 +132,10 @@ pub fn anchor_screen_box(
         let bridge = ReflowAnchorBridge { state, spot, mode };
         return bridge.screen_box(anchor, scale);
     }
-    let bridge = PdfAnchorBridge { mode };
+    let bridge = PdfAnchorBridge {
+        mode,
+        dom: state.dom,
+    };
     bridge.screen_box(anchor, scale)
 }
 
@@ -170,11 +172,11 @@ pub fn stroke_resolver(
     Callback::new(move |(mark, scale): (GlossMark, f64)| {
         if state.reflowable_now() {
             let mode = state.viewer.mode.get_untracked();
-            let host = host_id.as_deref().and_then(by_id);
+            let host = host_id.as_deref().and_then(|id| state.dom.by_id(id));
             // A reflowable mark belongs to whichever page its block sits on
             // NOW, which a re-cut can move; the stored page number is the one
             // it was captured under.
-            let spot = super::reflow_anchor::parse_spot(&mark.context);
+            let spot = super::reflow_anchor::parse_spot(state.gloss.spots, &mark.context);
             if let Some(page) = page {
                 let current = spot
                     .and_then(|s| {

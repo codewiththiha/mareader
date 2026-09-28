@@ -75,7 +75,10 @@ fn anchor_for(
         return bridge.capture(scale);
     }
     // A PDF's anchor is a page-space rect read off the live selection.
-    let bridge = PdfAnchorBridge { mode };
+    let bridge = PdfAnchorBridge {
+        mode,
+        dom: reader.dom,
+    };
     bridge.capture(scale)
 }
 

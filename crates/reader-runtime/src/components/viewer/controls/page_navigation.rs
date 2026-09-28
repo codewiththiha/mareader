@@ -8,8 +8,8 @@
 
 use leptos::prelude::*;
 
+use crate::pane::dom::PaneDom;
 use crate::state::ReaderState;
-use app_chrome::hooks::dom::page_list;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;
@@ -32,7 +32,7 @@ pub fn StreamPageNav(state: ReaderState) -> impl IntoView {
                 <IconButton
                     icon=IconName::Prev
                     title="Previous screen (ArrowLeft)"
-                    on_click=move || step_screen(-1.0)
+                    on_click=move || step_screen(state.dom, -1.0)
                 />
             </Tooltip>
             <span class="w-10 text-center text-sm tabular-nums text-muted">
@@ -42,7 +42,7 @@ pub fn StreamPageNav(state: ReaderState) -> impl IntoView {
                 <IconButton
                     icon=IconName::Next
                     title="Next screen (ArrowRight)"
-                    on_click=move || step_screen(1.0)
+                    on_click=move || step_screen(state.dom, 1.0)
                 />
             </Tooltip>
         </div>
@@ -51,8 +51,8 @@ pub fn StreamPageNav(state: ReaderState) -> impl IntoView {
 
 /// Scroll the stream one screenful in `direction` (-1 up, 1 down), keeping
 /// a tenth of the outgoing screen for continuity.
-fn step_screen(direction: f64) {
-    let Some(el) = page_list() else {
+fn step_screen(dom: PaneDom, direction: f64) {
+    let Some(el) = dom.page_list() else {
         return;
     };
     let viewport = el.client_height() as f64;

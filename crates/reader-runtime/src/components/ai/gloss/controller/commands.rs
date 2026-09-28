@@ -45,8 +45,8 @@ fn same_glossed_spot(a: &GlossMark, b: &GlossMark) -> bool {
         return false;
     }
     let (left, right) = (
-        crate::components::ai::reflow_anchor::parse_spot(&a.context),
-        crate::components::ai::reflow_anchor::parse_spot(&b.context),
+        crate::components::ai::reflow_anchor::read_spot(&a.context),
+        crate::components::ai::reflow_anchor::read_spot(&b.context),
     );
     match (left, right) {
         (Some(left), Some(right)) => left == right,

@@ -23,7 +23,8 @@
 //! and a cached rect is exactly what a re-flow invalidates. The ENVELOPE is the
 //! opposite case — persisted, write-once content re-read on every one of those
 //! frames — so its parse is memoized ([`parse_spot`]) against the string it
-//! came from.
+//! came from, in the PANE's memo (`crate::state::gloss::SpotMemo`): a second
+//! pane's dispose cannot clear it, and it dies with its own pane.
 //!
 //! The walk itself (a block's text nodes, the character offsets addressing
 //! them, the `Range` a span becomes) is shared with everything that paints over
@@ -31,9 +32,6 @@
 //! [`crate::components::formats::reflow::spot`]. What stays here is the mark's
 //! own arithmetic: [`union_box`] (client rects → one stroke box) and the
 //! envelope above it.
-
-use std::cell::RefCell;
-use std::collections::HashMap;
 
 use ai_core::gloss::{GlossBox, PageAnchor, ReflowSpot};
 use leptos::prelude::*;
@@ -46,6 +44,7 @@ use crate::components::formats::reflow::spot::{clamp_span, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
 use crate::state::ReaderState;
 use crate::state::ReflowContent;
+use crate::state::gloss::SpotMemo;
 use app_chrome::hooks::dom::range_rects;
 use app_state::dom_contract::BLOCK_INDEX_ATTR;
 use app_ui::theme_paint::document_element;
@@ -104,30 +103,6 @@ fn parse_envelope(context: &str) -> Option<SpotEnvelope> {
 /// cannot see.
 const OFFSCREEN_SLACK: f64 = 0.25;
 
-/// How many contexts are remembered before the memo is dropped whole.
-///
-/// One document's marks fit far inside this, so in practice a document parses
-/// each of its envelopes once and then answers from the memo; the cap only
-/// keeps a long session across many documents from growing it forever.
-/// Clearing rather than evicting one entry keeps the hot path free of
-/// bookkeeping, and the price of a clear is a handful of JSON parses.
-const SPOT_CACHE_CAP: usize = 512;
-
-// Parsed spots, memoized by the exact context string they came from. (A `//`
-// block rather than a doc comment: rustdoc has nothing to attach a doc comment
-// on a macro invocation to, and `-D warnings` says so.)
-//
-// Keying on content is what makes this safe: a `context` is write-once —
-// `spot_envelope` produces it at capture and nothing edits it in place — so
-// the same string always parses to the same spot, and a replaced context
-// simply arrives under a different key. `None` is cached too: a legacy or
-// malformed context is exactly as stable as a good one, and re-testing it
-// every frame is what the memo is here to stop.
-thread_local! {
-    static PARSED_SPOTS: RefCell<HashMap<String, Option<ReflowSpot>>> =
-        RefCell::new(HashMap::new());
-}
-
 /// The spot a mark carries, if it carries one.
 ///
 /// A PDF's context is a sentence, which never starts with the tag, so this is
@@ -140,33 +115,20 @@ thread_local! {
 /// every scroll and zoom frame, so it answers from a memo instead of
 /// re-parsing the JSON each time. The projection below it is NOT memoized —
 /// that one must stay honest about the layout as it is right now.
-pub fn parse_spot(context: &str) -> Option<ReflowSpot> {
-    if let Some(hit) = PARSED_SPOTS.with(|cache| cache.borrow().get(context).copied()) {
+pub fn parse_spot(memo: SpotMemo, context: &str) -> Option<ReflowSpot> {
+    if let Some(hit) = memo.get(context) {
         return hit;
     }
-    let spot = parse_envelope(context).map(|envelope| envelope.spot);
-    PARSED_SPOTS.with(|cache| {
-        let mut memo = cache.borrow_mut();
-        if memo.len() >= SPOT_CACHE_CAP {
-            memo.clear();
-        }
-        memo.insert(context.to_string(), spot);
-    });
+    let spot = read_spot(context);
+    memo.insert(context, spot);
     spot
 }
 
-/// Drop the memo whole. Called from the session's dispose: the memo is a
-/// thread-local, so in a hosted frame it would otherwise outlive the session
-/// that filled it — a recycled reader frame mounts a fresh session in the
-/// same document, and every context string of the documents read before it
-/// would still be resident. The next session's first resolve pass re-parses
-/// what it needs (a handful of JSON parses), exactly as a cache miss does.
-pub fn forget_parsed_spots() {
-    PARSED_SPOTS.with(|cache| {
-        let mut memo = cache.borrow_mut();
-        memo.clear();
-        memo.shrink_to_fit();
-    });
+/// The spot a context carries, parsed now with no memo — for the callers off
+/// the per-frame path (comparing two marks when one is added), which have no
+/// pane memo to hand and run once per gesture.
+pub fn read_spot(context: &str) -> Option<ReflowSpot> {
+    parse_envelope(context).map(|envelope| envelope.spot)
 }
 
 /// The sentence to hand the model for a mark, whichever format made it: the
@@ -210,8 +172,10 @@ pub fn page_of_block(reflow: ReflowContent, block: usize) -> Option<u32> {
 /// frame, for an answer one id read gives.
 fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sys::Element> {
     // An id lookup, not a formatted attribute selector: this runs once per mark
-    // per refresh, the stream's layer refreshes on every scroll frame, and
-    // `querySelector` is the expensive half of this function. The rows carry
+    // per refresh, the stream's layer refreshes on every scroll frame, and an
+    // attribute match is the expensive kind of search. The id is looked up in
+    // THIS pane's root (`#id` scoped to a subtree is the engine's id fast
+    // path), so another pane's twin row can never answer. The rows carry
     // both handles — see `page_host::block_row_id` for why neither replaces the
     // other.
     let id = block_row_id(block);
@@ -229,14 +193,14 @@ fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sy
         // and the mark hides, which is what a scoped `querySelector` on the
         // host used to say, without first fetching the host to search it.
         let scoped = format!("#{}", host_id_for_mode(mode, page));
-        if let Some(row) = app_chrome::hooks::dom::by_id(&id)
+        if let Some(row) = state.dom.by_id(&id)
             && row.closest(&scoped).ok().flatten().is_some()
         {
             return Some(row);
         }
         return None;
     }
-    app_chrome::hooks::dom::by_id(&id)
+    state.dom.by_id(&id)
 }
 
 /// The viewport box a set of client rects covers, as the five fields a mark's
@@ -451,15 +415,35 @@ mod tests {
         let spot = ReflowSpot::new(4, 12, 19);
         let envelope = spot_envelope(&spot, "  a manuscript page, scraped clean  ");
         assert!(envelope.starts_with(SPOT_TAG));
-        assert_eq!(parse_spot(&envelope), Some(spot));
+        assert_eq!(read_spot(&envelope), Some(spot));
 
         // A PDF's context is a sentence, and must never read as a spot.
-        assert_eq!(parse_spot("a manuscript page, scraped clean"), None);
-        assert_eq!(parse_spot(""), None);
+        assert_eq!(read_spot("a manuscript page, scraped clean"), None);
+        assert_eq!(read_spot(""), None);
         // A tagged but corrupt payload is no spot, not a panic.
-        assert_eq!(parse_spot("rf1:{\"spot\":}"), None);
+        assert_eq!(read_spot("rf1:{\"spot\":}"), None);
         // An older envelope version is not this one's payload.
-        assert_eq!(parse_spot("rf0:{\"block\":1,\"start\":0,\"end\":2}"), None);
+        assert_eq!(read_spot("rf0:{\"block\":1,\"start\":0,\"end\":2}"), None);
+    }
+
+    #[test]
+    fn each_pane_keeps_its_own_spot_memo() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let spot = ReflowSpot::new(2, 3, 9);
+            let envelope = spot_envelope(&spot, "a line");
+            let (a, b) = (SpotMemo::default(), SpotMemo::default());
+            assert_eq!(parse_spot(a, &envelope), Some(spot));
+            assert_eq!(parse_spot(a, "a plain sentence"), None);
+            assert_eq!(a.len(), 2, "hits and misses are both remembered");
+            assert!(b.is_empty(), "another pane's memo is untouched");
+            assert_eq!(parse_spot(b, &envelope), Some(spot));
+            // One pane's clear (its document closed) leaves the other's.
+            a.clear();
+            assert!(a.is_empty());
+            assert_eq!(b.len(), 1);
+            assert_eq!(b.get(&envelope), Some(Some(spot)));
+        });
     }
 
     #[test]
@@ -491,7 +475,7 @@ mod tests {
         // An envelope from before the sentence travelled with it explains from
         // what is there rather than failing: `text` is `#[serde(default)]`.
         let legacy = mark("rf1:{\"spot\":{\"block\":1,\"start\":0,\"end\":2}}");
-        assert_eq!(parse_spot(&legacy.context), Some(ReflowSpot::new(1, 0, 2)));
+        assert_eq!(read_spot(&legacy.context), Some(ReflowSpot::new(1, 0, 2)));
         assert_eq!(explain_context(&legacy), "");
     }
 

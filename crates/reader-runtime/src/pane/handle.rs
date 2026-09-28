@@ -49,6 +49,9 @@ pub(crate) struct PaneCell {
     /// publication of the core's answer, not a second authority.
     lifecycle: PaneLifecycle,
     resources: PaneResources,
+    /// The zoom the pane's descriptor asked for, until the first document's
+    /// startup scale consumes it.
+    pending_zoom: Option<f64>,
 }
 
 /// The pane's Copy handle. Every access is `try_`: a handle captured by a
@@ -106,6 +109,20 @@ impl PaneHandle {
         )
     }
 
+    /// Record the zoom the pane was created with (its descriptor's
+    /// `initial_zoom`; `None` leaves the fit to the settings).
+    pub(crate) fn seed_initial_zoom(&self, zoom: Option<f64>) {
+        let _ = self.cell.try_update_value(|cell| cell.pending_zoom = zoom);
+    }
+
+    /// The requested zoom, handed out ONCE: the first document that seeds
+    /// takes it, every later open fits as the settings say.
+    pub(crate) fn take_initial_zoom(&self) -> Option<f64> {
+        self.cell
+            .try_update_value(|cell| cell.pending_zoom.take())
+            .flatten()
+    }
+
     /// Register a virtualizer this pane created.
     pub fn track_virtualizer(&self, v: &virtual_list_leptos::Virtualizer) {
         let _ = self.cell.try_update_value(|cell| cell.resources.track(v));
@@ -151,5 +168,33 @@ impl PaneHandle {
         self.cell
             .try_update_value(|cell| std::mem::take(&mut cell.resources.virtualizers))
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use leptos::prelude::*;
+
+    use super::PaneHandle;
+    use crate::host::model::{PaneManagerCore, PaneRequest};
+    use crate::runtime::ReaderRuntime;
+
+    #[test]
+    fn the_requested_zoom_is_handed_out_once() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let (descriptor, _) = PaneManagerCore::new()
+                .create(PaneRequest {
+                    initial_zoom: Some(1.5),
+                    ..PaneRequest::default()
+                })
+                .unwrap();
+            let handle = PaneHandle::new(descriptor.pane_id, ReaderRuntime::new());
+            assert_eq!(handle.take_initial_zoom(), None);
+            handle.seed_initial_zoom(descriptor.initial_zoom);
+            assert_eq!(handle.take_initial_zoom(), Some(1.5));
+            // Consumed: the pane's next document fits as the settings say.
+            assert_eq!(handle.take_initial_zoom(), None);
+        });
     }
 }

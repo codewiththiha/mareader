@@ -216,6 +216,12 @@ pub type PaneFactory = Rc<PaneBuild>;
 /// launch it opens first (none for a pane waiting for one).
 pub type PaneBuild = dyn Fn(PaneEnv, PaneDescriptor, Option<LaunchDocument>) -> Rc<dyn PaneRuntime>;
 
+/// Names the format tag of a document address, for the descriptor the host
+/// records BEFORE the pane exists. Injected beside the factory by the same
+/// composition root: which extensions mean which format is the pane
+/// implementation's knowledge, never the host's.
+pub type PaneClassifier = fn(&str) -> PaneFormat;
+
 /// What the host hands every pane it creates: Copy handles onto the
 /// session's own slices — never the Shell's state, never another pane's.
 #[derive(Clone, Copy)]
@@ -231,4 +237,12 @@ pub struct PaneEnv {
     pub active: Signal<bool>,
     /// The settings-open signal the host's modal slot follows.
     pub settings_open: RwSignal<bool>,
+    /// Ask the host's focus authority to make THIS pane active (a pointer
+    /// or keyboard focus landing inside it). A request: the authority
+    /// decides, and the pane hears the answer through `focus`/`blur` and
+    /// `active`.
+    pub request_focus: Callback<()>,
+    /// The host's workspace open command: a document the pane's user picks
+    /// is handed back to the host, which routes it (to its active pane).
+    pub open: Callback<LaunchDocument>,
 }

@@ -98,9 +98,11 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
     let settings_modal = slot_view(host, ChromeSlot::Settings);
 
     // The workspace slot's entries: one per placed pane, keyed by PANE id
-    // (never a document id or an index). A pane that is not the active one
-    // keeps its box (its virtualizers keep measuring) but is hidden and
-    // inert; no split mode yet.
+    // (never a document id or an index), each positioned at the box the host
+    // handed that pane — filling the slot until the first measurement
+    // lands. A pane that is not the active one keeps its box (its
+    // virtualizers keep measuring) but is hidden and inert; no split mode
+    // yet, so every box is the whole slot.
     let manager = host.manager;
     let pane_entry = move |id: PaneId| {
         let Some(pane) = manager.pane(id) else {
@@ -108,12 +110,26 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
         };
         let site = PaneSite::here();
         let content = untrack(|| pane.mount(host.bounds_now(), site));
-        // The pane's effects are installed and its view is built.
-        let _ = manager.mark_ready(id);
+        // The pane's effects are installed and its view is built (and, off
+        // screen, it is parked right away).
+        host.pane_ready(id);
         let inactive = move || manager.active() != Some(id);
+        let bounds = move || {
+            manager
+                .bounds_of(id)
+                .filter(|b| b.width > 0.0 && b.height > 0.0)
+        };
         view! {
             <div
-                class="absolute inset-0"
+                class="absolute"
+                style:left=move || bounds().map_or("0px".to_string(), |b| format!("{}px", b.x))
+                style:top=move || bounds().map_or("0px".to_string(), |b| format!("{}px", b.y))
+                style:width=move || {
+                    bounds().map_or("100%".to_string(), |b| format!("{}px", b.width))
+                }
+                style:height=move || {
+                    bounds().map_or("100%".to_string(), |b| format!("{}px", b.height))
+                }
                 data-pane-id=id.get()
                 data-pane-format=move || {
                     manager

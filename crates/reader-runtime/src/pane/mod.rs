@@ -9,12 +9,15 @@
 //!   registry.
 //! - [`engine`] — the pane's guarded handle onto the engine's document
 //!   session.
+//! - [`dom`] — the pane's root element and host-given box: every lookup a
+//!   pane makes for its own elements runs inside that root.
 //! - `view` — the effects the pane installs and the content it renders in
 //!   the host's workspace slot.
 //!
 //! [`PaneRuntime`]: crate::host::contract::PaneRuntime
 
 pub mod document;
+pub mod dom;
 pub mod engine;
 pub mod handle;
 mod view;

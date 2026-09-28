@@ -8,7 +8,7 @@
 //!
 //! * the STREAM and the PAGE HOSTS measure their mounted blocks, divide out
 //!   the live scale (the store is scale-1 truth), and hand the batch to
-//!   [`ingest`];
+//!   their pane's inbox ([`MeasureInbox::ingest`]);
 //! * ingest parks the batch and arms a DEBOUNCED flush — a heights write bumps
 //!   the stream's epoch (an `O(n)` layout rebuild), so one frame of a fling
 //!   must never cost one rebuild per frame;
@@ -25,7 +25,6 @@
 //! row corrects, and a correction survives a layout change only when the
 //! block's own estimate survived it.
 
-use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -58,42 +57,73 @@ const INGEST_DEBOUNCE_MS: u64 = 120;
 /// drop them — beside the `(block index, scale-1 height)` reports themselves.
 type PendingBatch = (usize, f64, Vec<(usize, f64)>);
 
-thread_local! {
-    /// The batch the next flush will land, with the identity of the document
-    /// and display scale it was measured against: either changing while a
-    /// batch waits is a reason to drop the stale reports.
-    static PENDING: RefCell<PendingBatch> = const { RefCell::new((0, 1.0, Vec::new())) };
-    /// The installed flush. `None` outside the reader's lifetime: an ingest
-    /// with nobody home is a report nobody owes an answer to.
-    static FLUSHER: RefCell<Option<Debouncer>> = const { RefCell::new(None) };
+/// The pane's measurement inbox: the batch the next flush will land and the
+/// flush that lands it. PER PANE, in the pane's arena — two panes measuring
+/// at once each keep their own batch (a shared one would drop the other
+/// pane's reports as "a different document"), and one pane's teardown can
+/// no longer unhook the other's flush. Reached through the pane's
+/// [`crate::state::ReaderState::measure`].
+#[derive(Clone, Copy)]
+pub struct MeasureInbox {
+    /// The waiting batch, with the identity of the document and display
+    /// scale it was measured against: either changing while a batch waits is
+    /// a reason to drop the stale reports.
+    pending: StoredValue<PendingBatch, LocalStorage>,
+    /// The installed flush. `None` outside the pane's mounted lifetime: an
+    /// ingest with nobody home is a report nobody owes an answer to.
+    flusher: StoredValue<Option<Debouncer>, LocalStorage>,
 }
 
-/// Hand a batch of measured SCALE-1 heights — `(block index, height)` — to
-/// the shared store. The caller divides out the live display scale first: the
-/// store is the scale-1 truth the estimate seeds, and a zoomed number written
-/// into it would poison every layout that reads it.
-///
-/// `doc_id` is the block list's `Arc` pointer (see
-/// `crate::state::document::reflow::ReflowContent::document_id`): the
-/// flush drops a batch whose document has since been swapped out.
-pub fn ingest(doc_id: usize, scale: f64, batch: &[(usize, f64)]) {
-    if batch.is_empty() {
-        return;
-    }
-    PENDING.with(|pending| {
-        let mut pending = pending.borrow_mut();
-        if pending.0 != doc_id || pending.1 != scale {
-            pending.2.clear();
-            pending.0 = doc_id;
-            pending.1 = scale;
+impl Default for MeasureInbox {
+    fn default() -> Self {
+        Self {
+            pending: StoredValue::new_local((0, 1.0, Vec::new())),
+            flusher: StoredValue::new_local(None),
         }
-        pending.2.extend_from_slice(batch);
-    });
-    FLUSHER.with(|flusher| {
-        if let Some(debouncer) = *flusher.borrow() {
+    }
+}
+
+impl MeasureInbox {
+    /// Hand a batch of measured SCALE-1 heights — `(block index, height)` —
+    /// to the pane's store. The caller divides out the live display scale
+    /// first: the store is the scale-1 truth the estimate seeds, and a zoomed
+    /// number written into it would poison every layout that reads it.
+    ///
+    /// `doc_id` is the block list's `Arc` pointer (see
+    /// `crate::state::document::reflow::ReflowContent::document_id`): the
+    /// flush drops a batch whose document has since been swapped out.
+    pub fn ingest(&self, doc_id: usize, scale: f64, batch: &[(usize, f64)]) {
+        if batch.is_empty() {
+            return;
+        }
+        // `try_`: a frame armed before the pane's dispose reports into an
+        // inbox that is already gone, and that report is owed to nobody.
+        let parked = self.pending.try_update_value(|pending| {
+            if pending.0 != doc_id || pending.1 != scale {
+                pending.2.clear();
+                pending.0 = doc_id;
+                pending.1 = scale;
+            }
+            pending.2.extend_from_slice(batch);
+        });
+        if parked.is_none() {
+            return;
+        }
+        if let Some(debouncer) = self.flusher.try_get_value().flatten() {
             debouncer.trigger();
         }
-    });
+    }
+
+    /// The waiting batch, taken.
+    fn take(&self) -> PendingBatch {
+        self.pending
+            .try_update_value(std::mem::take)
+            .unwrap_or_default()
+    }
+
+    fn install(&self, debouncer: Option<Debouncer>) {
+        let _ = self.flusher.try_set_value(debouncer);
+    }
 }
 
 /// Install the pipeline: the debounced flush and the re-estimate effect.
@@ -104,8 +134,9 @@ pub fn install_reflow_measure(state: crate::context::ReaderContext) {
     let debouncer = use_debounce(Duration::from_millis(INGEST_DEBOUNCE_MS), move || {
         flush(state);
     });
-    FLUSHER.with(|slot| *slot.borrow_mut() = Some(debouncer));
-    on_cleanup(|| FLUSHER.with(|slot| *slot.borrow_mut() = None));
+    let inbox = state.reader.measure;
+    inbox.install(Some(debouncer));
+    on_cleanup(move || inbox.install(None));
 
     // The re-estimate. Tracked reads: the typography and the two width dials.
     // A layout-relevant change re-runs the pure estimate and re-seeds the
@@ -167,7 +198,7 @@ pub fn install_reflow_measure(state: crate::context::ReaderContext) {
 
 /// Land the waiting batch in the shared store, then let the cut follow.
 fn flush(state: crate::context::ReaderContext) {
-    let (doc_id, scale, batch) = PENDING.with(|pending| std::mem::take(&mut *pending.borrow_mut()));
+    let (doc_id, scale, batch) = state.reader.measure.take();
     if batch.is_empty() {
         return;
     }

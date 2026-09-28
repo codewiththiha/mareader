@@ -10,10 +10,10 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
+use crate::pane::dom::PaneDom;
 use crate::state::ReaderState;
-use app_chrome::hooks::dom::{h_page_list, page_list};
 use app_ui::components::primitives::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
 use reader_core::view::{ViewMode, spread_step_next, spread_step_prev};
 
@@ -46,6 +46,14 @@ const HOLD_PX_PER_SEC: f64 = 1000.0;
 // thread_local, not StoredValue: the hold engine is driven from window
 // keydown/keyup listeners that do not share a reactive owner, so the
 // rAF loop has to outlive any one effect.
+//
+// WINDOW-level on purpose, not per pane: a held key is one physical key on
+// one keyboard, and window keys reach only the host's ACTIVE pane (every
+// other pane's arm stands down on the host's focus authority). What the hold
+// scrolls is NOT looked up per frame: the strip is captured, from the active
+// pane's own root, when the key goes down (`HOLD_TARGET`), so a hold can never
+// drift onto another pane's strip. A focus change ends it (the pane's blur
+// calls `end_key_hold`), and so does the pane's teardown (the arm's cleanup).
 thread_local! {
     static HOLD_DIR: Cell<f64> = const { Cell::new(0.0) };
     static HOLD_DOWN_AT: Cell<f64> = const { Cell::new(0.0) };
@@ -53,6 +61,9 @@ thread_local! {
     static HOLD_RAF: Cell<bool> = const { Cell::new(false) };
     /// 1 = vertical (#page-list), 2 = horizontal (#h-page-list).
     static HOLD_AXIS: Cell<u8> = const { Cell::new(1) };
+    /// The strip the running hold scrolls, captured from the active pane at
+    /// key-down; released the moment the hold ends.
+    static HOLD_TARGET: RefCell<Option<web_sys::Element>> = const { RefCell::new(None) };
 }
 
 fn page_prev(state: ReaderState) {
@@ -81,12 +92,8 @@ fn page_next(state: ReaderState) {
 /// Keep keyboard focus on the active scroll strip itself, not a text-layer
 /// span the virtualizer is about to unmount. `preventScroll` so focusing does
 /// not fight the scroll we are about to apply.
-fn focus_scroll_list(horizontal: bool) {
-    let Some(list) = (if horizontal {
-        h_page_list()
-    } else {
-        page_list()
-    }) else {
+fn focus_scroll_list(dom: PaneDom, horizontal: bool) {
+    let Some(list) = strip(dom, horizontal) else {
         return;
     };
     let Some(html) = list.dyn_ref::<web_sys::HtmlElement>() else {
@@ -101,14 +108,7 @@ fn focus_scroll_list(horizontal: bool) {
 /// to the scrollable range and skipped entirely when the clamp eats the step
 /// (a boundary hold must not fight the elastic edge). The y/x twins differ
 /// only in element and axis properties, so one helper serves both.
-fn scroll_reader_axis(horizontal: bool, delta: f64, smooth: bool) {
-    let Some(list) = (if horizontal {
-        h_page_list()
-    } else {
-        page_list()
-    }) else {
-        return;
-    };
+fn scroll_reader_axis(list: &web_sys::Element, horizontal: bool, delta: f64, smooth: bool) {
     let (current, extent, client) = if horizontal {
         (
             list.scroll_left() as f64,
@@ -141,36 +141,45 @@ fn scroll_reader_axis(horizontal: bool, delta: f64, smooth: bool) {
     list.scroll_to_with_scroll_to_options(&opts);
 }
 
-fn scroll_reader_y(dy: f64, smooth: bool) {
-    scroll_reader_axis(false, dy, smooth);
+/// The active pane's strip on one axis, found inside the pane's own root.
+fn strip(dom: PaneDom, horizontal: bool) -> Option<web_sys::Element> {
+    if horizontal {
+        dom.h_page_list()
+    } else {
+        dom.page_list()
+    }
 }
 
-fn scroll_reader_x(dx: f64, smooth: bool) {
-    scroll_reader_axis(true, dx, smooth);
+/// The strip's viewport length along its main axis.
+fn viewport_len(list: &web_sys::Element, horizontal: bool) -> f64 {
+    if horizontal {
+        list.client_width() as f64
+    } else {
+        list.client_height() as f64
+    }
 }
 
-fn scroll_reader_line_y(dir: f64, smooth: bool) {
-    let Some(list) = page_list() else { return };
-    scroll_reader_y(dir * line_scroll_px(list.client_height() as f64), smooth);
+/// One line-sized nudge of the pane's strip.
+fn scroll_reader_line(dom: PaneDom, horizontal: bool, dir: f64, smooth: bool) {
+    let Some(list) = strip(dom, horizontal) else {
+        return;
+    };
+    let delta = dir * line_scroll_px(viewport_len(&list, horizontal));
+    scroll_reader_axis(&list, horizontal, delta, smooth);
 }
 
-fn scroll_reader_page_y(dir: f64, smooth: bool) {
-    let Some(list) = page_list() else { return };
-    scroll_reader_y(dir * page_scroll_px(list.client_height() as f64), smooth);
+/// One screen-sized step of the pane's strip.
+fn scroll_reader_page(dom: PaneDom, horizontal: bool, dir: f64, smooth: bool) {
+    let Some(list) = strip(dom, horizontal) else {
+        return;
+    };
+    let delta = dir * page_scroll_px(viewport_len(&list, horizontal));
+    scroll_reader_axis(&list, horizontal, delta, smooth);
 }
 
-fn scroll_reader_line_x(dir: f64, smooth: bool) {
-    let Some(list) = h_page_list() else { return };
-    scroll_reader_x(dir * line_scroll_px(list.client_width() as f64), smooth);
-}
-
-fn scroll_reader_page_x(dir: f64, smooth: bool) {
-    let Some(list) = h_page_list() else { return };
-    scroll_reader_x(dir * page_scroll_px(list.client_width() as f64), smooth);
-}
-
-fn begin_line_hold(dir: f64, horizontal: bool, glide: bool) {
+fn begin_line_hold(dom: PaneDom, dir: f64, horizontal: bool, glide: bool) {
     HOLD_DIR.with(|d| d.set(dir));
+    HOLD_TARGET.with(|t| *t.borrow_mut() = strip(dom, horizontal));
     HOLD_AXIS.with(|a| a.set(if horizontal { 2 } else { 1 }));
     let now = js_sys::Date::now();
     HOLD_DOWN_AT.with(|t| t.set(now));
@@ -179,12 +188,8 @@ fn begin_line_hold(dir: f64, horizontal: bool, glide: bool) {
     // scroll switch) decides whether it eases or lands. The hold that follows
     // is not: the rAF loop below IS the scrolling, frames and all, and it runs
     // whether or not the tap glided.
-    focus_scroll_list(horizontal);
-    if horizontal {
-        scroll_reader_line_x(dir, glide);
-    } else {
-        scroll_reader_line_y(dir, glide);
-    }
+    focus_scroll_list(dom, horizontal);
+    scroll_reader_line(dom, horizontal, dir, glide);
     if HOLD_RAF.with(|r| r.get()) {
         return;
     }
@@ -202,12 +207,15 @@ fn end_line_hold(dir: f64) {
 
 fn stop_line_hold() {
     HOLD_DIR.with(|d| d.set(0.0));
+    HOLD_TARGET.with(|t| t.borrow_mut().take());
 }
 
 fn hold_tick() {
     let dir = HOLD_DIR.with(|d| d.get());
     if dir == 0.0 {
         HOLD_RAF.with(|r| r.set(false));
+        // The hold is over: the strip it captured is released with it.
+        HOLD_TARGET.with(|t| t.borrow_mut().take());
         return;
     }
     let now = js_sys::Date::now();
@@ -220,11 +228,12 @@ fn hold_tick() {
     if now - down_at >= HOLD_DELAY_MS {
         let dt = frame_delta(last, now, MAX_SCROLL_FRAME_S);
         let delta = dir * HOLD_PX_PER_SEC * dt;
-        if HOLD_AXIS.with(|a| a.get()) == 2 {
-            scroll_reader_x(delta, false);
-        } else {
-            scroll_reader_y(delta, false);
-        }
+        let horizontal = HOLD_AXIS.with(|a| a.get()) == 2;
+        HOLD_TARGET.with(|t| {
+            if let Some(list) = t.borrow().as_ref() {
+                scroll_reader_axis(list, horizontal, delta, false);
+            }
+        });
     }
     request_animation_frame(hold_tick);
 }
@@ -260,17 +269,15 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
     match action {
         NavAction::PagePrev => page_prev(state),
         NavAction::PageNext => page_next(state),
-        NavAction::HoldLine { dir, horizontal } => begin_line_hold(dir as f64, horizontal, glide),
+        NavAction::HoldLine { dir, horizontal } => {
+            begin_line_hold(state.dom, dir as f64, horizontal, glide)
+        }
         NavAction::PageStep { dir, horizontal } => {
-            focus_scroll_list(horizontal);
+            focus_scroll_list(state.dom, horizontal);
             // A repeat is the browser hammering the key; easing each one
             // would queue a stack of overlapping smooth scrolls.
             let smooth = glide && !ev.repeat();
-            if horizontal {
-                scroll_reader_page_x(dir as f64, smooth);
-            } else {
-                scroll_reader_page_y(dir as f64, smooth);
-            }
+            scroll_reader_page(state.dom, horizontal, dir as f64, smooth);
         }
     }
 }
@@ -284,7 +291,8 @@ pub(super) fn end_hold_for(key: &str) {
     }
 }
 
-/// Stops the glide when the window loses focus.
+/// Stops the glide: the window lost focus, the pane lost the host's focus,
+/// or the pane is going away.
 pub(super) fn stop_hold() {
     stop_line_hold();
 }

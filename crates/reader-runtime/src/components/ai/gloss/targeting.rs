@@ -62,7 +62,13 @@ pub fn use_card_targeting(
     // The card's spot rides in the open mark's own context envelope, so the
     // resolver reads it from whichever mark is current — one closure, and no
     // second copy of the mark to keep in step.
-    let spot = Signal::derive(move || ctrl.open.mark.get().and_then(|m| parse_spot(&m.context)));
+    let spots = state.reader.gloss.spots;
+    let spot = Signal::derive(move || {
+        ctrl.open
+            .mark
+            .get()
+            .and_then(|m| parse_spot(spots, &m.context))
+    });
     let resolve = anchor_resolver(state.reader, spot);
     // A reflowable document re-cuts its pages when the typography or the column
     // width moves: the mark keeps its words, but the words are somewhere else,

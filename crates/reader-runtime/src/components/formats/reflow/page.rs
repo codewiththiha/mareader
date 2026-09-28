@@ -36,8 +36,6 @@ use wasm_bindgen::JsCast;
 
 use reflow_core::geometry::{PageGeometry, SpineSide};
 
-use app_chrome::hooks::dom::by_id;
-
 use super::block_render;
 use crate::components::formats::block_render::BlockView;
 use crate::components::viewer::page_host::block_row_id;
@@ -163,7 +161,7 @@ pub fn ReflowPage(
                     .with_untracked(|blocks| Arc::as_ptr(blocks) as usize);
                 let mut batch: Vec<(usize, f64)> = Vec::new();
                 for index in start..end {
-                    let Some(row) = by_id(&block_row_id(index)) else {
+                    let Some(row) = state.dom.by_id(&block_row_id(index)) else {
                         continue;
                     };
                     let Ok(el) = row.dyn_into::<web_sys::HtmlElement>() else {
@@ -174,7 +172,7 @@ pub fn ReflowPage(
                         batch.push((index, height / scale));
                     }
                 }
-                crate::effects::reader::reflow_measure::ingest(doc_id, scale, &batch);
+                state.measure.ingest(doc_id, scale, &batch);
             });
         });
     }

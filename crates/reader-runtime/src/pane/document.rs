@@ -26,11 +26,29 @@ use crate::pane::handle::PaneHandle;
 use crate::services::document::session;
 use crate::state::ReaderState;
 use pdf_engine::types::DocStatus;
-use reader_core::format::Format;
+use reader_core::format::{Format, format_of};
 
 /// The factory the composition root hands the host.
 pub fn factory() -> PaneFactory {
     Rc::new(build)
+}
+
+/// The format tag a path names, for the host's descriptor: the host asks
+/// through the injected [`crate::host::contract::PaneClassifier`] and never
+/// reads an extension itself.
+pub fn classify(path: &str) -> PaneFormat {
+    if path.is_empty() {
+        return PaneFormat::Pending;
+    }
+    tag(format_of(path))
+}
+
+fn tag(format: Format) -> PaneFormat {
+    match format {
+        Format::Pdf => PaneFormat::Pdf,
+        Format::Markdown => PaneFormat::Markdown,
+        Format::Text => PaneFormat::Text,
+    }
 }
 
 fn build(
@@ -52,6 +70,10 @@ pub(crate) struct DocumentPane {
     ctx: ReaderContext,
     env: PaneEnv,
     surface: PaneSurface,
+    /// The format the pane was last ASKED to show (its descriptor's, then
+    /// each in-place open's): what [`PaneRuntime::format`] answers while no
+    /// document has landed yet.
+    requested: Cell<PaneFormat>,
     /// `mount` builds the pane's effects and virtualizers exactly once.
     mounted: Cell<bool>,
 }
@@ -61,9 +83,21 @@ impl DocumentPane {
     /// first open. The manager calls the factory inside the host's owner, so
     /// the handle's slot lands in the host's arena and the pane's owner is
     /// the host's child.
+    ///
+    /// The DESCRIPTOR is what the pane was asked for: the launch opens only
+    /// when the descriptor names a document, it resumes at the descriptor's
+    /// page, and the descriptor's zoom (if any) seeds the first document in
+    /// place of the settings' fit.
     fn create(env: PaneEnv, descriptor: PaneDescriptor, launch: Option<LaunchDocument>) -> Self {
         let id = descriptor.pane_id;
         let handle = PaneHandle::new(id, env.runtime);
+        handle.seed_initial_zoom(descriptor.initial_zoom);
+        let launch = launch
+            .filter(|_| descriptor.document.is_some())
+            .map(|mut launch| {
+                launch.resume_page = descriptor.initial_page.max(1);
+                launch
+            });
         let owner = Owner::new();
         let (ctx, surface) = owner.with(|| {
             // The pane's handle, for the components that register what they
@@ -81,6 +115,7 @@ impl DocumentPane {
                 launch,
                 id: env.session_id,
                 chrome: env.chrome,
+                open: env.open,
             };
             let status = reader.document.status;
             let error = reader.document.error;
@@ -97,21 +132,6 @@ impl DocumentPane {
             // only if the session already knows `blend_on`.
             crate::effects::reader::blend_backdrop::paper_settings(ctx);
 
-            // Idle thumbnail prefetch follows the frame's slot. A closed
-            // reader is KEPT (document loaded, for an instant reopen), but a
-            // rail nobody can see must not render while the shelf is being
-            // revealed: leaving the screen abandons queued and in-flight
-            // prefetches, coming back lets them run. The first run applies the
-            // slot this session booted into — a warm session starts parked.
-            let frame_active = app_chrome::hooks::frame_active::use_frame_active();
-            Effect::new(move |_| {
-                if frame_active.get() {
-                    pdf_engine::api::resume_prefetches();
-                } else {
-                    pdf_engine::api::suspend_prefetches();
-                }
-            });
-
             // The launch the pane was created for: opened by the pane that
             // owns the document, before the host's first status report, so
             // the session's first word to the Shell is `Opening`.
@@ -127,6 +147,7 @@ impl DocumentPane {
             ctx,
             env,
             surface,
+            requested: Cell::new(descriptor.format),
             mounted: Cell::new(false),
         }
     }
@@ -182,14 +203,13 @@ impl PaneRuntime for DocumentPane {
             .try_with_untracked(Option::is_none)
             .unwrap_or(true)
         {
-            return PaneFormat::Pending;
+            // Nothing landed yet: the format it was asked to open.
+            return self.requested.get();
         }
-        match document.format.try_get_untracked() {
-            Some(Format::Pdf) => PaneFormat::Pdf,
-            Some(Format::Markdown) => PaneFormat::Markdown,
-            Some(Format::Text) => PaneFormat::Text,
-            None => PaneFormat::Pending,
-        }
+        document
+            .format
+            .try_get_untracked()
+            .map_or(PaneFormat::Pending, tag)
     }
 
     fn document(&self) -> Option<DocumentId> {
@@ -201,20 +221,35 @@ impl PaneRuntime for DocumentPane {
 
     fn lifecycle_changed(&self, lifecycle: PaneLifecycle) {
         self.ctx.pane.publish_lifecycle(lifecycle);
+        // Idle thumbnail prefetch follows the HOST's suspension (which
+        // follows the frame's slot): a suspended pane is KEPT (document
+        // loaded, for an instant reopen), but a rail nobody can see must not
+        // render while the shelf is being revealed — suspending abandons
+        // queued and in-flight prefetches, resuming lets them run. A warm
+        // session's pane goes Ready then straight to Suspended, so it starts
+        // parked. The engine's prefetch switch is realm-wide until Phase 4
+        // gives each pane its own engine session.
+        match lifecycle {
+            PaneLifecycle::Suspended => pdf_engine::api::suspend_prefetches(),
+            PaneLifecycle::Ready => pdf_engine::api::resume_prefetches(),
+            _ => {}
+        }
     }
 
     fn surface(&self) -> PaneSurface {
         self.surface
     }
 
-    fn mount(&self, _bounds: PaneBounds, site: PaneSite) -> AnyView {
+    fn mount(&self, bounds: PaneBounds, site: PaneSite) -> AnyView {
         if self.mounted.replace(true) {
             // A pane mounts once; a second placement would install every
             // effect twice.
             return ().into_any();
         }
         let ctx = self.ctx;
+        ctx.reader.dom.set_bounds(bounds);
         let active = self.env.active;
+        let request_focus = self.env.request_focus;
         // The pane's effects and virtualizers belong to the PANE's owner —
         // they live until the pane's dispose, whatever the host does with
         // the view.
@@ -222,7 +257,7 @@ impl PaneRuntime for DocumentPane {
             .owner
             .with(|| untrack(|| crate::pane::view::install_pane_effects(ctx, active)));
         self.owned(site, move || {
-            crate::pane::view::pane_content(ctx, rv).into_any()
+            crate::pane::view::pane_content(ctx, rv, request_focus).into_any()
         })
     }
 
@@ -265,12 +300,13 @@ impl PaneRuntime for DocumentPane {
         Some(view)
     }
 
-    fn resize(&self, _bounds: PaneBounds) {
-        // The pane fills the box the host placed it in (`absolute inset-0`
-        // inside the host's entry). Everything inside is the pane's own
-        // geometry: its viewport measures itself and the zoom follow
-        // re-fits from that measurement — the host's number is never a
-        // second source for it.
+    fn resize(&self, bounds: PaneBounds) {
+        // The host's box for this pane: its root is sized to it, the
+        // startup fit of the next open budgets against it, and the chrome it
+        // paints over (the floating title) re-measures on it. Everything
+        // INSIDE is the pane's own geometry: its viewport measures itself
+        // and the zoom follow re-fits from that measurement.
+        self.ctx.reader.dom.set_bounds(bounds);
     }
 
     fn focus(&self) {
@@ -280,8 +316,10 @@ impl PaneRuntime for DocumentPane {
 
     fn blur(&self) {
         // A pane losing focus stops its holds (an auto-scroll, a held
-        // key): the keyboard arm already stands down on the derived signal.
+        // key): the keyboard arm already stands down on the derived signal,
+        // so the keyup that would have ended a hold goes elsewhere.
         let _ = self.ctx.reader.viewer.auto_scroll.try_set(false);
+        crate::effects::reader::shortcuts::end_key_hold();
     }
 
     fn appearance(&self, appearance: PaneAppearance) {
@@ -300,6 +338,7 @@ impl PaneRuntime for DocumentPane {
         }
         match command {
             PaneCommand::Open(launch) => {
+                self.requested.set(classify(&launch.path));
                 crate::services::document::open::open_with_launch(self.ctx, *launch);
             }
             PaneCommand::PrepareLeave => crate::services::document::prepare_leave(&self.ctx),
@@ -320,13 +359,15 @@ impl PaneRuntime for DocumentPane {
     ///    exists (the Shell owns the library blob);
     /// 2. the document session claimed (a newer open's stale tail can no
     ///    longer land) and the paper session closed;
-    /// 3. the per-document memos outside the reactive tree forgotten;
-    /// 4. the virtualizers taken out of the registry — from here the tail
+    /// 3. the virtualizers taken out of the registry — from here the tail
     ///    alone owns them;
-    /// 5. the pane's owner cleaned up: every effect, listener (the keyboard
-    ///    arm's window listeners), observer, timer and signal the pane
-    ///    installed is released NOW, with its view's child owners;
-    /// 6. the tail: the engine destroy awaited, the sweeps, the
+    /// 4. the pane's owner cleaned up: every effect, listener (the keyboard
+    ///    arm's window listeners, which end a key hold still gliding),
+    ///    observer, timer and signal the pane installed is released NOW,
+    ///    with its view's child owners — and the per-pane memos (the gloss
+    ///    spot memo, the measurement inbox) with them: they are the pane's
+    ///    state, not thread-locals a recycled frame would carry over;
+    /// 5. the tail: the engine destroy awaited, the sweeps, the
     ///    virtualizers' final dispose, the completion reported, and the
     ///    pane's handle slot released (its gates read `Disposed` from then).
     ///
@@ -353,20 +394,16 @@ impl PaneRuntime for DocumentPane {
             crate::diagnostics::note_reader_runtime_dispose_begin(stamp);
         }
         pdf_engine::backdrop::document_close();
-        // (3) In a hosted frame the thread-locals survive the session (the
-        // frame is recycled, not reloaded): a memo nobody clears is memory
-        // the next pane pays for without using.
-        crate::components::ai::reflow_anchor::forget_parsed_spots();
-        // (4)
+        // (3)
         let handle = ctx.pane;
         let virtualizers = handle.take_virtualizers();
         let pdf = handle.pdf();
         let held = handle.holds_document_session();
         handle.note_document_session(false);
-        // (5)
+        // (4)
         self.owner.cleanup();
         crate::diagnostics::note_pane_dispose();
-        // (6)
+        // (5)
         Box::pin(async move {
             if stamp.is_some() || held {
                 pdf.destroy().await;

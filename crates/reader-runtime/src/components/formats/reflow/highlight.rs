@@ -39,13 +39,14 @@
 
 use leptos::prelude::*;
 
-use app_chrome::hooks::dom::{by_id, range_rects};
+use app_chrome::hooks::dom::range_rects;
 
 use std::hash::Hash;
 use std::sync::Arc;
 
 use super::spot::{match_spans, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
+use crate::pane::dom::PaneDom;
 use crate::state::ReaderState;
 use app_ui::epoch::epoch_signal;
 
@@ -132,9 +133,10 @@ pub fn BlockSearchHits(
             clear_if_painted(boxes);
             return;
         }
-        if by_id(&row_id).is_none() {
+        let dom = state.dom;
+        if dom.by_id(&row_id).is_none() {
             // Created but not attached: an element exists before it is in the
-            // document, and `by_id` only finds what is. One frame from now it is
+            // document, and an id lookup only finds what is. One frame from now it is
             // there, so the walk is retried once — giving up here would leave the
             // row bare until something invalidated it, and nothing invalidates
             // for a reader who is only scrolling.
@@ -147,11 +149,11 @@ pub fn BlockSearchHits(
                 if boxes.try_get_untracked().is_none() {
                     return;
                 }
-                paint_row(&id, &needle, boxes);
+                paint_row(dom, &id, &needle, boxes);
             });
             return;
         }
-        paint_row(&row_id, needle, boxes);
+        paint_row(dom, &row_id, needle, boxes);
     });
 
     // The occurrence in THIS block that the reader has stepped to, if any. Read
@@ -203,11 +205,11 @@ pub fn BlockSearchHits(
 /// Deliberately free of signal READS: it is called from the effect above and
 /// from the one-frame retry, and a retry that subscribed would turn a frame
 /// callback into a reactive node of its own.
-fn paint_row(row_id: &str, needle: &str, boxes: RwSignal<Vec<HitBox>>) {
+fn paint_row(dom: PaneDom, row_id: &str, needle: &str, boxes: RwSignal<Vec<HitBox>>) {
     // A row that is not mounted has no text to cover — the same answer a gloss
     // stroke gets for a block the virtualizer has evicted, with the same
     // consequence: nothing is painted until it comes back.
-    let Some(row) = by_id(row_id) else {
+    let Some(row) = dom.by_id(row_id) else {
         clear_if_painted(boxes);
         return;
     };

@@ -39,6 +39,7 @@ use leptos::prelude::*;
 use reader_core::view::{ViewMode, anchored_position};
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
+use crate::pane::dom::PaneDom;
 use crate::state::ReaderState;
 
 /// Wraps the reader's two strip virtualizers and centralises the reader's one
@@ -49,13 +50,17 @@ use crate::state::ReaderState;
 pub struct ZoomActuator {
     pub vertical: Virtualizer,
     pub horizontal: Virtualizer,
+    /// The pane whose strips these are: the extent elements are looked up
+    /// inside it, never across the document.
+    dom: PaneDom,
 }
 
 impl ZoomActuator {
-    pub fn new(vertical: Virtualizer, horizontal: Virtualizer) -> Self {
+    pub fn new(vertical: Virtualizer, horizontal: Virtualizer, dom: PaneDom) -> Self {
         Self {
             vertical,
             horizontal,
+            dom,
         }
     }
 
@@ -97,11 +102,11 @@ impl ZoomActuator {
             // extent (worst at its end). Bringing the extent to the new total
             // first makes the write exact in this tick; the patch writes the
             // same value.
-            apply_extent(StripExtent::Vertical, total);
+            apply_extent(self.dom, StripExtent::Vertical, total);
             self.vertical.scroll_to_offset(top, ScrollMode::Instant);
         }
         if let Some((total, left)) = pending.horizontal {
-            apply_extent(StripExtent::Horizontal, total);
+            apply_extent(self.dom, StripExtent::Horizontal, total);
             self.horizontal.scroll_to_offset(left, ScrollMode::Instant);
         }
     }
@@ -291,16 +296,15 @@ enum StripExtent {
 
 /// Write a strip's scroll extent directly, ahead of Leptos' patch of the
 /// same value, so a scroll write issued in this tick is measured against the
-/// geometry it belongs to. Absent strip (the other mode, or a torn-down
-/// reader): nothing to extend.
-fn apply_extent(extent: StripExtent, total: f64) {
+/// geometry it belongs to — THIS pane's strip, looked up in its root. Absent
+/// strip (the other mode, or a torn-down reader): nothing to extend.
+fn apply_extent(dom: PaneDom, extent: StripExtent, total: f64) {
     let (selector, property) = match extent {
         StripExtent::Vertical => ("[data-strip-extent=\"vertical\"]", "height"),
         StripExtent::Horizontal => ("[data-strip-extent=\"horizontal\"]", "width"),
     };
-    let Some(el) = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.query_selector(selector).ok().flatten())
+    let Some(el) = dom
+        .select(selector)
         .and_then(|el| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(el).ok())
     else {
         return;

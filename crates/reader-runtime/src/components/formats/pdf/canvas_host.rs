@@ -5,6 +5,8 @@
 //! the component makes it obvious that the component decides WHEN the host
 //! changes, while this module knows HOW.
 
+use leptos::html;
+use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use pdf_core::pixel_grid::snap_px;
@@ -42,8 +44,8 @@ pub(super) struct LastGeo {
 /// layer rect rounds one way while its neighbour's rounds the other shows the
 /// backdrop through the joint as a hairline (see [`pdf_core::pixel_grid`]).
 /// The scale ratio itself stays raw, so repeated stretches cannot drift.
-pub(super) fn stretch_host(host_id: &str, last: LastGeo, new_scale: f64) {
-    let Some(host_el) = app_chrome::hooks::dom::by_id(host_id) else {
+pub(super) fn stretch_host(host: NodeRef<html::Div>, last: LastGeo, new_scale: f64) {
+    let Some(host_el) = host_element(host) else {
         return;
     };
     let _ = host_el.set_attribute(
@@ -55,6 +57,16 @@ pub(super) fn stretch_host(host_id: &str, last: LastGeo, new_scale: f64) {
             new_scale
         ),
     );
+}
+
+/// The page host element the component rendered, by its own reference —
+/// never by id, which a second pane's page host carries too. `None` before
+/// the mount and once the component's owner is gone (a render landing after
+/// the page was virtualized away), where there is nothing left to touch.
+pub(super) fn host_element(host: NodeRef<html::Div>) -> Option<web_sys::Element> {
+    host.try_get_untracked()
+        .flatten()
+        .map(web_sys::Element::from)
 }
 
 /// What a finished page render may do to its host.

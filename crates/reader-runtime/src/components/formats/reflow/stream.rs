@@ -60,7 +60,7 @@ use virtual_list_leptos::{
 use wasm_bindgen::JsCast;
 
 use app_chrome::hooks::dom::PAGE_LIST_ID;
-use app_chrome::hooks::use_resize_observer::observe_content_size;
+use app_chrome::hooks::use_resize_observer::observe_content_size_with;
 use reflow_core::pager::first_block_of_page;
 
 use super::block_render;
@@ -111,7 +111,9 @@ pub fn ReflowStreamLayout(
     // The container observation dies with this layout, explicitly: an
     // observer outliving its scroller retains the element and everything
     // mounted inside it.
-    let stop_observing = observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
+    let dom = state.dom;
+    let stop_observing =
+        observe_content_size_with(move || dom.by_id(PAGE_LIST_ID), state.viewer.container_size);
     on_cleanup(stop_observing);
     // The stream takes the mount anchor's flag exactly like a page strip:
     // raised here for a remount, and by the open flow for a document that
@@ -337,7 +339,7 @@ pub fn ReflowStreamLayout(
     // reported back — two ways at once. `report_size` keeps the virtualizer's
     // OWN layout live (the immediate half); the same numbers, divided by the
     // display scale back to scale-1 truth, also feed the shared height store
-    // (`effects::reader::reflow_measure::ingest`), which debounces them into
+    // (the pane's `MeasureInbox`, `effects::reader::reflow_measure`), which debounces them into
     // the page cut. The model above is measured at the PAGE column width; when
     // the reading column is narrower (a small window, a fat margin) the real
     // blocks run taller, and this pass keeps the stream's geometry honest
@@ -409,7 +411,7 @@ pub fn ReflowStreamLayout(
                         }
                     }
                 }
-                crate::effects::reader::reflow_measure::ingest(doc_id, scale, &batch);
+                state.measure.ingest(doc_id, scale, &batch);
             });
         });
     }
@@ -625,7 +627,7 @@ pub fn ReflowStreamLayout(
                 state=state
                 host_id=PAGE_LIST_ID
             />
-            <OverlayScrollbar scroller_id=PAGE_LIST_ID horizontal=false />
+            <OverlayScrollbar dom=state.dom scroller_id=PAGE_LIST_ID horizontal=false />
             <Show when=move || progress_visible.get()>
                 <ProgressStrip fraction=Signal::derive(progress) />
             </Show>

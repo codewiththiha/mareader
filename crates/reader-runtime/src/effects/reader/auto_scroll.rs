@@ -9,7 +9,6 @@
 
 use leptos::prelude::*;
 
-use app_chrome::hooks::dom::{h_page_list, page_list};
 use app_chrome::hooks::use_raf::FrameLoop;
 
 use crate::state::ReaderState;
@@ -57,7 +56,9 @@ fn tick(state: ReaderState, last_ms: StoredValue<f64, LocalStorage>) -> bool {
     let delta = AUTO_SCROLL_PX_PER_SEC * dt;
 
     let done = match mode {
-        reader_core::view::ViewMode::ScrollVertical => page_list()
+        reader_core::view::ViewMode::ScrollVertical => state
+            .dom
+            .page_list()
             .map(|el| {
                 step(
                     &el,
@@ -69,7 +70,9 @@ fn tick(state: ReaderState, last_ms: StoredValue<f64, LocalStorage>) -> bool {
                 )
             })
             .unwrap_or(false),
-        reader_core::view::ViewMode::ScrollHorizontal => h_page_list()
+        reader_core::view::ViewMode::ScrollHorizontal => state
+            .dom
+            .h_page_list()
             .map(|el| {
                 step(
                     &el,

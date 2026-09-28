@@ -29,7 +29,6 @@ use leptos::prelude::*;
 
 use super::page_navigation::{PageNavigation, StreamPageNav};
 use crate::state::ReaderState;
-use app_chrome::hooks::dom::page_list;
 use app_chrome::hooks::{DEFAULT_HOVER_DELAY, use_drag_hold, use_hover_reveal_with};
 use app_chrome::layers::BAR;
 use app_ui::components::primitives::form::range_input::RangeInput;
@@ -116,7 +115,7 @@ pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
                         // A percentage of the document: resolve it against
                         // the scroller's real extent, where the stream's
                         // every measured height already lives.
-                        if let Some(el) = page_list() {
+                        if let Some(el) = reader.dom.page_list() {
                             let max = (el.scroll_height() - el.client_height()).max(0) as f64;
                             el.set_scroll_top((position / 100.0 * max) as i32);
                         }

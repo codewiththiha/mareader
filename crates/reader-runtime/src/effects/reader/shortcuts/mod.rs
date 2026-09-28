@@ -16,7 +16,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::state::ReaderState;
-use app_state::state::SidebarMode;
+use app_ui::components::shell::controller::ShellController;
 use auto_scroll::handle_auto_scroll_shortcut;
 use navigation::{end_hold_for, handle_navigation_shortcut, stop_hold};
 use window::handle_modifier_shortcut;
@@ -49,19 +49,29 @@ fn is_chrome_scroll_target(ev: &leptos::ev::KeyboardEvent) -> bool {
 /// Chrome surfaces that own their own arrow keys.
 const CHROME_SCROLL_SELECTOR: &str = "#thumb-scroll, aside, .menu-popover, [data-search-chrome]";
 
+/// End any key hold still gliding. The hold engine is window-level (one
+/// keyboard), so a pane that loses the host's focus ends it: the keys that
+/// would have released it now go to another pane.
+pub(crate) fn end_key_hold() {
+    stop_hold();
+}
+
 /// Called once per pane, from its mount scope. `on_open` is the reader's
 /// open-file action (Cmd/Ctrl+O), injected so the viewer never depends on
-/// app chrome. `is_active` is the host's focus authority as this pane sees
-/// it: a window-level key belongs to the ACTIVE pane only, so every other
-/// pane's arm stands down.
+/// app chrome. `shell` is the HOST's workspace controller: Escape closes the
+/// rail through it, never by writing the host's sidebar store itself.
+/// `is_active` is the host's focus authority as this pane sees it: a
+/// window-level key belongs to the ACTIVE pane only, so every other pane's
+/// arm stands down.
 pub fn shortcuts(
     state: ReaderState,
     on_open: impl Fn() + 'static,
-    // Sidebar mode is read/written for the panel toggles (app chrome
-    // state passed in explicitly).
-    sidebar: RwSignal<SidebarMode>,
+    shell: ShellController,
     is_active: impl Fn() -> bool + 'static,
 ) {
+    // Derived once, here: asking the controller per keypress would build a
+    // fresh derived signal every time.
+    let sidebar_open = shell.is_sidebar_open();
     // Handles are parked and removed on cleanup. The session installs these
     // once for its own lifetime, and a dropped handle does NOT unregister
     // the listener — an owner that went away would leave a keydown handler
@@ -83,8 +93,8 @@ pub fn shortcuts(
                     // Closes the bar but leaves the muted highlights behind; the
                     // next interaction with the document clears them.
                     crate::effects::reader::search::dismiss_search(state);
-                } else if sidebar.get() != SidebarMode::None {
-                    sidebar.set(SidebarMode::None);
+                } else if sidebar_open.try_get_untracked() == Some(true) {
+                    shell.close_sidebar();
                 }
                 return;
             }

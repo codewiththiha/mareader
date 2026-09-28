@@ -103,7 +103,9 @@ pub fn open_path(ctx: crate::context::ReaderContext, path: String) {
         .api
         .resolve_launch(&path)
         .unwrap_or_else(|| bare_launch(&path));
-    open_with_launch(ctx, launch);
+    // The workspace's open command: the HOST routes it (to its active pane,
+    // in place), never this pane on its own say-so.
+    ctx.open.try_run(launch);
 }
 
 /// A descriptor for a path nothing in the store answers for: the open

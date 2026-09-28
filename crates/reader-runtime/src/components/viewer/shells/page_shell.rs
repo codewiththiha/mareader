@@ -6,7 +6,7 @@ use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::layouts::layout_chrome;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use crate::state::ReaderState;
-use app_chrome::hooks::use_resize_observer::observe_content_size;
+use app_chrome::hooks::use_resize_observer::observe_content_size_with;
 
 /// Shared shell for Single & Spread. The child is centered with `margin:auto`
 /// in the true viewport, which degrades to start-alignment on overflow —
@@ -27,7 +27,9 @@ pub fn PageShell(
     // The container observation dies with this shell, explicitly: an
     // observer outliving its scroller retains the element and every canvas
     // mounted inside it.
-    let stop_observing = observe_content_size(scroller_id, state.viewer.container_size);
+    let dom = state.dom;
+    let stop_observing =
+        observe_content_size_with(move || dom.by_id(scroller_id), state.viewer.container_size);
     on_cleanup(stop_observing);
     let texture_class = texture_class(state);
     let tx_zoom = zoom_style(state);
@@ -64,7 +66,7 @@ pub fn PageShell(
                     {children()}
                 </div>
             </div>
-            <OverlayScrollbar scroller_id=scroller_id />
+            <OverlayScrollbar dom=state.dom scroller_id=scroller_id />
             <Show when=move || progress_visible.get()>
                 <ProgressStrip fraction=fraction />
             </Show>

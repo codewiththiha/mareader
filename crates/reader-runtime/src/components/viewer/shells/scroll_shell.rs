@@ -18,7 +18,7 @@ use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::layouts::layout_chrome;
 use crate::state::ReaderState;
 use app_chrome::hooks::dom::{H_PAGE_LIST_ID, PAGE_LIST_ID};
-use app_chrome::hooks::use_resize_observer::observe_content_size;
+use app_chrome::hooks::use_resize_observer::observe_content_size_with;
 
 #[component]
 pub fn ScrollShell(
@@ -35,7 +35,9 @@ pub fn ScrollShell(
     // explicitly: an observer that outlived its scroller would retain the
     // element — and every page canvas mounted inside it — for the life of
     // the app.
-    let stop_observing = observe_content_size(scroller_id, state.viewer.container_size);
+    let dom = state.dom;
+    let stop_observing =
+        observe_content_size_with(move || dom.by_id(scroller_id), state.viewer.container_size);
     on_cleanup(stop_observing);
     // This strip is about to be placed on `viewer.page` (see `anchor_to_page`);
     // until it is, the scroll→page sync must not read it. Idempotent with the
@@ -140,6 +142,7 @@ pub fn ScrollShell(
             />
 
             <OverlayScrollbar
+                dom=state.dom
                 scroller_id=scroller_id
                 horizontal=axis == Axis::Horizontal
             />

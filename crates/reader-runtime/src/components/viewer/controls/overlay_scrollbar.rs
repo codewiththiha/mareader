@@ -4,11 +4,14 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 
-use app_chrome::hooks::dom::by_id;
+use crate::pane::dom::PaneDom;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
 
 #[component]
 pub fn OverlayScrollbar(
+    /// The pane the scroller belongs to: `scroller_id` is looked up inside
+    /// it, never across the document (another pane carries the same id).
+    dom: PaneDom,
     scroller_id: &'static str,
     #[prop(default = false)] horizontal: bool,
 ) -> impl IntoView {
@@ -21,7 +24,7 @@ pub fn OverlayScrollbar(
     // Bind once when the scroller mounts.
     Effect::new({
         move |_| {
-            let Some(el) = by_id(scroller_id) else {
+            let Some(el) = dom.by_id(scroller_id) else {
                 return;
             };
             if el.get_attribute("data-overlay-sb").as_deref() == Some("1") {
@@ -56,7 +59,7 @@ pub fn OverlayScrollbar(
             let sid = scroller_id;
 
             let cb = Closure::wrap(Box::new(move |_: web_sys::Event| {
-                if let Some(el) = by_id(sid) {
+                if let Some(el) = dom.by_id(sid) {
                     let (total, client, pos) = if horiz {
                         (
                             el.scroll_width() as f64,
@@ -115,7 +118,7 @@ pub fn OverlayScrollbar(
                 }
                 bound.set_value(None);
                 retained.set_value(None);
-                if let Some(el) = by_id(sid) {
+                if let Some(el) = dom.by_id(sid) {
                     let _ = el.remove_attribute("data-overlay-sb");
                 }
             });
@@ -146,7 +149,7 @@ pub fn OverlayScrollbar(
                 }
             }
             on:pointerdown=move |ev| {
-                if let Some(el) = by_id(scroller_id) {
+                if let Some(el) = dom.by_id(scroller_id) {
                     let pos = if horizontal {
                         el.scroll_left()
                     } else {
@@ -162,7 +165,7 @@ pub fn OverlayScrollbar(
                 }
             }
             on:pointermove=move |ev| {
-                if let (Some((p0, s0)), Some(el)) = (drag.get(), by_id(scroller_id)) {
+                if let (Some((p0, s0)), Some(el)) = (drag.get(), dom.by_id(scroller_id)) {
                     let (total, client) = if horizontal {
                         (el.scroll_width() as f64, el.client_width() as f64)
                     } else {
