@@ -40,6 +40,14 @@ where
         self.last_sent.try_get_value().flatten()
     }
 
+    /// Forget what was sent. The next decision goes out even if it matches
+    /// the last one — for when something ELSE may have moved the native side
+    /// (another runtime frame drove the same window resource while this one
+    /// was hidden).
+    pub fn forget(&self) {
+        self.last_sent.try_set_value(None);
+    }
+
     /// Send one command and verify it landed.
     pub fn send(&self, want: bool, payload: P) {
         (self.send)(want, payload);
@@ -48,9 +56,10 @@ where
 
 /// Build a verified switch owned by the current reactive owner: `command`
 /// performs the side effect, `truth` reports what the state should be right
-/// now (untracked reads only).
+/// now (untracked reads only) — or `None` when this owner no longer gets a
+/// say (a hidden runtime frame), in which case no correction is sent.
 pub fn use_verified_switch<P, Fut>(
-    truth: impl Fn() -> bool + 'static,
+    truth: impl Fn() -> Option<bool> + 'static,
     command: impl Fn(bool, P) -> Fut + 'static,
 ) -> VerifiedSwitch<P>
 where
@@ -68,7 +77,9 @@ where
         wasm_bindgen_futures::spawn_local(async move {
             command(want, payload.clone()).await;
             // The decision may have moved while the command was in flight.
-            let now = truth();
+            let Some(now) = truth() else {
+                return;
+            };
             if now != want {
                 last_sent.try_set_value(Some(now));
                 command(now, payload).await;

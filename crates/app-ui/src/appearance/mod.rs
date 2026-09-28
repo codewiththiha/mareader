@@ -24,7 +24,7 @@ use reader_core::appearance::Appearance;
 use reader_core::settings::Settings;
 use storage::save_settings;
 
-use crate::theme_paint::paint_appearance_now;
+use crate::theme_paint::paint_for_pipeline;
 
 /// How long after the last slider tick we write Settings. Long enough that a
 /// continuous drag is one write; short enough that a tap still feels instant.
@@ -122,7 +122,7 @@ fn paint_appearance(a: Appearance, ink_contrast: f64) {
     request_animation_frame(move || {
         PAINT_SCHEDULED.with(|s| s.set(false));
         if let Some((a, ic)) = PAINT_PENDING.with(|p| p.take()) {
-            paint_appearance_now(a, ic);
+            paint_for_pipeline(a, ic);
         }
     });
 }

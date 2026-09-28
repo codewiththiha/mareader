@@ -88,6 +88,19 @@ pub fn start_session(host: &web_sys::Element, api: context::ApiHandle, warm: boo
         // The library's session effects install INSIDE this scope: the
         // listeners and timers die with the unmount (§5, §17).
         effects_library::library_effects(state, warm);
+        // This frame's own `<html>`: the chrome pipeline only — the shelf has
+        // no raster and no reflowable page, so it writes neither token set
+        // and never addresses an engine. Edits go to the Shell to persist.
+        {
+            use runtime_contract::boundary::ShellApi;
+            let api = state.api;
+            app_ui::frame_theme::install_frame_theme(
+                state.settings,
+                app_ui::frame_theme::FramePipeline::Library,
+                move |s| api.save_settings(s),
+                |_| {},
+            );
+        }
         view! { <features::library::LibraryPage state /> }
     });
     let unmount: Box<dyn FnOnce()> = Box::new(move || drop(handle));

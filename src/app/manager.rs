@@ -1002,6 +1002,10 @@ impl RuntimeManager {
             FrameVocabulary::ReadPoint(point) => crate::services::apply_read_point(&point),
             FrameVocabulary::SaveSettings(settings) => {
                 crate::services::save_settings(&settings);
+                // The Shell paints its own document too (the backdrop between
+                // frames, the boot and error covers): follow the runtime's
+                // edit instead of keeping the look it booted with.
+                let _ = leptos::prelude::Set::try_set(&state.settings, *settings);
             }
             FrameVocabulary::SaveLibrary(blob) => {
                 crate::services::save_library(&blob);

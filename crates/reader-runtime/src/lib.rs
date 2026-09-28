@@ -191,6 +191,34 @@ pub fn start_session(
             let appearance_hooks_guard = appearance_hooks::install();
             on_cleanup(move || drop(appearance_hooks_guard));
 
+            // This frame's own `<html>`: the Shell paints only its document,
+            // so the reader paints its look, typography and motion here, and
+            // hands its edits to the Shell for persistence. A launch's blend
+            // override is per-open, never the user's saved choice: it is
+            // stripped on the way out and re-applied to an adopted blob.
+            {
+                let api = ctx.api;
+                let launch = ctx.launch;
+                app_ui::frame_theme::install_frame_theme(
+                    settings,
+                    app_ui::frame_theme::FramePipeline::Reader,
+                    move |s| {
+                        if launch.try_with_untracked(|l| l.blend_override) == Some(true) {
+                            let mut saved = s.clone();
+                            saved.layout.blend_mode = storage::load_settings().layout.blend_mode;
+                            api.save_settings(&saved);
+                        } else {
+                            api.save_settings(s);
+                        }
+                    },
+                    move |s| {
+                        if launch.try_with_untracked(|l| l.blend_override) == Some(true) {
+                            s.layout.blend_mode = true;
+                        }
+                    },
+                );
+            }
+
             LIVE_CTX.with(|c| *c.borrow_mut() = Some(ctx));
 
             // The launch the Shell handed over (§13): the minimal descriptor,

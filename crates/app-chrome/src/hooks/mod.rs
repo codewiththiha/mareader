@@ -15,6 +15,7 @@
 //! that moved mid-flight cannot leave the stale one settled last.
 
 pub mod dom;
+pub mod frame_active;
 pub mod hover_reveal;
 pub mod use_raf;
 pub mod use_resize_observer;

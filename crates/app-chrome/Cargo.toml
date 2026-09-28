@@ -46,6 +46,11 @@ web-sys = { version = "0.3", features = [
   "DomRectList",
   "HtmlDivElement",
   "ResizeObserver",
+  # `use_frame_active`: the runtime frame watches its own <iframe> element
+  # for the Shell's slot attribute (active / warm / retiring).
+  "MutationObserver",
+  "MutationObserverInit",
+  "MutationRecord",
   "ResizeObserverEntry",
   "Event",
   "console",

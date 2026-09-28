@@ -27,6 +27,14 @@
 //! resolves and answers a mismatch — the lights' version of the bar's own
 //! recheck, and why an unfocus always ends with the lights gone.
 //!
+//! ONE WINDOW, SEVERAL FRAMES. Every runtime frame mounts its own title bar
+//! and therefore its own `TrafficLights`, but the lights are one pair per
+//! window. Only the frame the Shell has marked active may drive them
+//! ([`use_frame_active`]): a warm frame's pinned bar must not re-light them
+//! and a retiring frame's hover-out must not hide them. On promotion the
+//! frame forgets what it last sent — the other frame may have moved the
+//! native side meanwhile — and re-sends its own truth, pin included.
+//!
 //! Dynamic `y` (Tahoe-proof centering) — mirrors `readest` `traffic_light.rs`
 //! `compute_traffic_light_y + OnceLock + ResizeObserver`. The bar is `h-12`
 //! (48px, [`TITLE_BAR_H`](crate::TITLE_BAR_H)) but `y` is NOT
@@ -41,6 +49,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
+use crate::hooks::frame_active::use_frame_active;
 use crate::hooks::use_resize_observer::observe_elements;
 use crate::hooks::verified_switch::use_verified_switch;
 use crate::titlebar::TITLE_BAR_H;
@@ -60,6 +69,7 @@ pub fn TrafficLights(
     bar_hosted: Signal<bool>,
 ) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
+    let active = use_frame_active();
     let hide_grace = StoredValue::new_local(None::<TimeoutHandle>);
     // Live header height for Tahoe-proof centering. Observed on
     // `#toolbar-row`; `on_cleanup` in `observe_elements` disconnects it.
@@ -96,8 +106,15 @@ pub fn TrafficLights(
     // landed, where a tracked read would create a dependency on an owner
     // that no longer runs it.
     let truth = move || {
-        rail_hosted.get_untracked()
-            || (bar_hosted.get_untracked() && ctx.is_some_and(|c| c.visible.get_untracked()))
+        // A hidden frame abstains: its correction would fight the active
+        // frame's decision over the same native buttons.
+        if !active.try_get_untracked().unwrap_or(false) {
+            return None;
+        }
+        Some(
+            rail_hosted.get_untracked()
+                || (bar_hosted.get_untracked() && ctx.is_some_and(|c| c.visible.get_untracked())),
+        )
     };
     // Send-and-verify lives in the shared hook: the decision is recorded,
     // the IPC awaited, and a truth that moved mid-flight answered with one
@@ -108,6 +125,20 @@ pub fn TrafficLights(
         let Some(ctx) = ctx else {
             return;
         };
+        let clear_grace = || {
+            if let Some(h) = hide_grace.get_value() {
+                h.clear();
+                hide_grace.set_value(None);
+            }
+        };
+        if !active.get() {
+            // Not on screen: drop any pending hide and forget what was sent,
+            // so the promotion that reveals this frame re-sends its truth
+            // even when it matches the stale record.
+            clear_grace();
+            lights.forget();
+            return;
+        }
         let on = rail_hosted.get() || (bar_hosted.get() && ctx.visible.get());
         // Re-read header_height so every transition (hover in/out,
         // sidebar slide, resize) carries the current centered `y` — Rust
@@ -117,10 +148,7 @@ pub fn TrafficLights(
         if on {
             // Never send the end-of-slide false if hover re-enters on the
             // following frame.
-            if let Some(h) = hide_grace.get_value() {
-                h.clear();
-                hide_grace.set_value(None);
-            }
+            clear_grace();
             if lights.last_sent() == Some(true) {
                 return;
             }
@@ -145,7 +173,10 @@ pub fn TrafficLights(
             let handle = set_timeout_with_handle(
                 move || {
                     hide_grace.set_value(None);
-                    lights.send(false, h);
+                    // The frame may have been hidden during the grace.
+                    if active.get_untracked() {
+                        lights.send(false, h);
+                    }
                 },
                 Duration::from_millis(120),
             )

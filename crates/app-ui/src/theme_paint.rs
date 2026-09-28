@@ -139,3 +139,54 @@ pub fn paint_appearance_now(a: Appearance, ink_contrast: f64) {
     // NB: the cssText setter cannot fail — no Result to discard here.
     style.set_css_text(&buf);
 }
+
+/// The chrome-only paint: what a surface WITHOUT a document needs — the
+/// shared layer (base mode, `.dark`, colour scheme, texture/grain dials) and
+/// the tint's UI-token overrides. No `--canvas-*` pair (there is no raster
+/// to filter) and no `--tx-*` palette (there is no reflowable page): the
+/// shelf paints what the shelf reads and nothing a reader would.
+pub fn paint_chrome_appearance(a: Appearance) {
+    paint_shared(&a);
+    let Some(style) = html_style() else { return };
+    // Cleared as a set first: a removed tint must not leave a stale override
+    // tinting the UI.
+    for name in raster::UI_TOKENS {
+        let _ = style.remove_property(name);
+    }
+    for (name, value) in a.ui_overrides() {
+        let _ = style.set_property(name, &value);
+    }
+}
+
+/// Which pipeline a document paints. Set once per runtime document by
+/// [`crate::frame_theme::install_frame_theme`]; the slider scrub's live paint
+/// reads it so a drag in the shelf never writes reader tokens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaintPipeline {
+    /// Everything: shared layer, raster tokens, reflow tokens. The reader,
+    /// and the shell (whose backdrop shows between frames).
+    Document,
+    /// Shared layer + UI tokens only. The library.
+    Chrome,
+}
+
+thread_local! {
+    static PIPELINE: std::cell::Cell<PaintPipeline> =
+        const { std::cell::Cell::new(PaintPipeline::Document) };
+}
+
+pub fn set_paint_pipeline(p: PaintPipeline) {
+    PIPELINE.with(|c| c.set(p));
+}
+
+pub fn paint_pipeline() -> PaintPipeline {
+    PIPELINE.with(|c| c.get())
+}
+
+/// Paint `a` with whatever this document's pipeline is.
+pub fn paint_for_pipeline(a: Appearance, ink_contrast: f64) {
+    match paint_pipeline() {
+        PaintPipeline::Document => paint_appearance_now(a, ink_contrast),
+        PaintPipeline::Chrome => paint_chrome_appearance(a),
+    }
+}

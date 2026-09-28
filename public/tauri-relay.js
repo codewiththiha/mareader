@@ -87,4 +87,45 @@
 
   window.__TAURI__ = facade(root);
   console.info("[mareader] tauri-relay: Tauri API republished in this frame");
+
+  // The window drag region. Tauri's `data-tauri-drag-region` is not a
+  // platform feature: it is a mousedown listener in the SAME initialization
+  // script CVE-2024-35222 stopped injecting into sub-frames. The shell page
+  // has it, but the shell page is covered edge to edge by the runtime
+  // iframes, so every press on a title bar lands in a frame that has no
+  // listener — and the window cannot be moved. Re-install the listener here,
+  // with Tauri's own semantics: only the element that CARRIES the attribute
+  // (not its descendants, so buttons inside a bar stay clickable), primary
+  // button only, double-click toggles maximize.
+  var invoke = root.core && root.core.invoke;
+  if (typeof invoke !== "function") return;
+  function call(cmd) {
+    try {
+      var p = invoke(cmd);
+      if (p && typeof p.catch === "function") {
+        p.catch(function (err) {
+          console.warn("[mareader] tauri-relay: " + cmd + " failed", err);
+        });
+      }
+    } catch (err) {
+      console.warn("[mareader] tauri-relay: " + cmd + " threw", err);
+    }
+  }
+  document.addEventListener("mousedown", function (e) {
+    var target = e.target;
+    if (!target || typeof target.getAttribute !== "function") return;
+    var attr = target.getAttribute("data-tauri-drag-region");
+    if (attr === null || attr === "false") return;
+    if (e.button !== 0 || (e.detail !== 1 && e.detail !== 2)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    // On macOS a title-bar double-click follows the system preference
+    // (zoom / minimize / nothing); the internal command honours it the way
+    // the shell page's own drag script does.
+    call(
+      e.detail === 2
+        ? "plugin:window|internal_toggle_maximize"
+        : "plugin:window|start_dragging",
+    );
+  });
 })();
