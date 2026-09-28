@@ -85,12 +85,30 @@ attribute — `active`, `warm`, `retiring` — and the manager
 | `warm` | no | booted through `Ready`, waiting to be revealed |
 | `retiring` | no | displaced, still disposing — off the critical path |
 
-The counterpart runtime is warmed 700ms after a transition settles
-(`WARM_DELAY_MS`). A warm boot stops at `Ready`: it never opens a
-document, because the PDF machinery is exactly the cost that must not be
-paid for a book nobody asked for — the existing `ShellFrame::Launch` opens
-the document on the real navigation, and a revealed shelf gets a `Refresh`
-instead, since the row the reader left has moved since it seeded.
+The two runtimes are warmed on different words. The shelf is warmed 700ms
+after the reader settles on screen (`WARM_DELAY_MS`): it is light, and a
+reading session always ends on it. The reader is warmed only on the shelf's
+**intent signal** — `RuntimeFrame::ExpectReader`, which the shelf sends
+(throttled to one a second) when the pointer is over or moving across the
+grid, or a card is pressed or focused — never on the shelf's paint. A warm
+boot stops at `Ready`: it never opens a document, because the PDF machinery
+is exactly the cost that must not be paid for a book nobody asked for — the
+existing `ShellFrame::Launch` opens the document on the real navigation, and
+a revealed shelf gets a `Refresh` instead, since the row the reader left has
+moved since it seeded.
+
+A warm reader does not stay for free. Every intent signal restarts a
+`WARM_READER_IDLE_MS` (60 s) clock, and when it runs out with the shelf
+still on screen the reader is **evicted**: disposed through the same §12
+exchange as any retirement and its frame removed
+(`RuntimeManager::evict_idle_warm_reader`). The reader is the heavy runtime
+— its frame keeps a wasm heap that never shrinks, pdf.js, the engine's
+worker — so a reader kept "just in case" is exactly the memory the library
+route is supposed to give back; with the eviction, the library route at rest
+holds the library alone (`readerFramesResident 0` in the diagnostics probe).
+The next intent boots a fresh reader; a click that beats it pays a boot with
+the shelf still on screen, never a covered cold start. The browser suite
+shortens the window through `?warmIdleMs=` on the boot URL.
 
 A navigation whose warm frame is ready is a **promotion**: the same element
 flips its slot to `active`. Same document, same realm, same WASM instance —
@@ -210,7 +228,9 @@ Disposal is a frame round-trip (`dispose_active`, `src/app/manager.rs`):
    disposal → finish_dispose(generation)).
 2. The frame answers `DisposeComplete`; only then does the manager remove
    the iframe (§12: phase 1 acknowledged, phase 2 removal — a strict
-   timeout forces the removal either way).
+   timeout forces the removal either way). A session that holds no
+   document — a warm reader being evicted or replaced — answers the same
+   way at the end of its tail; it merely has no engine document to destroy.
 3. The slot returns to idle; the next start builds a NEW frame, so no
    static, listener, or heap survives on the shell side either.
 
@@ -234,9 +254,22 @@ from a replaced frame is counted as stale and never applied.
   for a hosted frame by the transport's port handle (`PortShellApi` in
   `crates/frame-transport/src/lib.rs`).
 - shell → runtime: the `ShellFrame` protocol vocabulary
-  (`crates/runtime-contract/src/protocol.rs`) for commands such as a cover
-  bake, and the frame's own boot events answering back (`FrameEvent`:
-  contact, stage, painted, failed-with-stage, `DisposeComplete`).
+  (`crates/runtime-contract/src/protocol.rs`) for commands such as a launch,
+  a refresh or a baked cover's answer, and the frame's own boot events
+  answering back (`FrameEvent`: contact, stage, painted, failed-with-stage,
+  `DisposeComplete`, the shelf's `ExpectReader` intent).
+
+Shelf covers are the one piece of PDF work the library needs, and it is done
+by neither runtime: the shelf's `BakeCover` ask goes to the Shell, which
+mounts its own hidden bake page (`src/app/bake.rs` → `public/bake.html`,
+script `public/coverBake.ts`: pdf.js and the engine's cover render, no wasm,
+no runtime), drives it over `window.postMessage`, answers the shelf with
+`ShellFrame::CoverBaked`, and removes the page a few seconds after the queue
+drains. The Shell page itself still loads no engine, and no reader is ever
+booted for a cover. A cold shelf asks from inside its own mount, before its
+Ready verdict admits it to the Shell's frame registry: the baker keys the
+ask on the frame generation, boots the page at once, starts the bake when
+the frame is admitted, and prunes the ask if the frame is torn down first.
 
 Standalone pages install a storage-backed shell substitute so the same
 entry code runs unhosted; the trait keeps exactly these two implementations
@@ -261,7 +294,11 @@ graph) is what promises those closures never reconverge again.
 
 `styles.css`, `public/vendor` (pdf.js), `pdfEngine.js`, `readerEngine.js`,
 `bake.worker.js` are referenced by all three HTML entries, so each build
-emits them; the merged `dist/` holds one copy. All three runtimes are
+emits them; the merged `dist/` holds one copy (`bake.html` and
+`coverBake.js` ship with the shell page alone). pdf.js itself is not a
+script tag anywhere but the bake page: the reader's engine imports it on the
+first PDF open (`ensurePdfjs` in `public/engine/loader.ts`), so a reader
+session that never opens a PDF never fetches or holds it. All three runtimes are
 served from the same origin but live in separate frame realms — own
 document, own window, own WASM instance. What stays shared is
 origin-level: `localStorage` (one browser store; each runtime touches only

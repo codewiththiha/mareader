@@ -1023,12 +1023,13 @@ so the Rust side reads `ok` first and then deserializes.
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
 | `stats` | Internal counters, used to assert memory is actually released |
 
-Load order in `index.html` is deliberate. The reader bundle goes first because it needs nothing;
-then pdf.js, which is ESM-only in version 6 and must execute before the engine so
-`globalThis.pdfjsLib` exists; then the engine. All three run before the WebAssembly module, which
-top-level-awaits its own init: the app reaches for `window.PDFReader` and for the selection state
-as soon as its first components mount, and a module script that had not run yet leaves both
-undefined.
+Load order in `reader.html` is deliberate. The reader bundle goes first because it needs nothing;
+then the engine. Both run before the WebAssembly module, which top-level-awaits its own init: the
+app reaches for `window.PDFReader` and for the selection state as soon as its first components
+mount, and a module script that had not run yet leaves both undefined. pdf.js (ESM-only in
+version 6) is not a script tag: the engine imports it on the first PDF open (`ensurePdfjs` in
+`public/engine/loader.ts`) and finds it on `globalThis.pdfjsLib` afterwards, so a reader session
+that never opens a PDF — a warm reader, a Markdown or text session — never fetches or holds it.
 
 ### State model
 

@@ -31,12 +31,17 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   session-scoped engines are Phase 4, not a defect to "fix" opportunistically.
 - The Shell loads **no engine**: `index.html` carries no pdf.js / engine /
   reader-bundle scripts and the root crate has no `pdf-engine` dependency
-  (`tools/check-dependency-gate.mjs` forbids it). Shelf cover bakes are
-  relayed: library `BakeCover` → Shell queue (one in flight) → the WARM
-  reader frame's `ShellFrame::BakeCover` → `RuntimeFrame::CoverReady` →
-  Shell → the asking shelf's `CoverBaked`. A warm reader's `CoverReady` is
-  the one message the warm gate admits; the reader being read in is never
-  handed shelf work.
+  (`tools/check-dependency-gate.mjs` forbids it, and the whole reader-only
+  set — `reader-runtime`, `reflow-core`, `md-core`, `txt-core`,
+  `virtual-list*`, `leptos-md` — for both the Shell and `library-runtime`).
+  Shelf cover bakes never touch a reader: library `BakeCover` → the Shell's
+  own bake page (`src/app/bake.rs` mounts a hidden `public/bake.html`, whose
+  script `public/coverBake.ts` is pdf.js plus the engine's cover render — no
+  wasm, no runtime) → `window.postMessage` ask/answer → the asking shelf's
+  `CoverBaked`. One bake in flight; the page is removed 5 s after its queue
+  drains, so at rest nothing but the shelf is resident. A standalone
+  `library.html` boot has no Shell and never drains its queue (the shelf
+  shows placeholder art).
 - `*_bg.wasm` is wasm-bindgen's file naming (`<name>.js` glue +
   `<name>_bg.wasm` module), not an extra module: there are exactly three —
   shell, library, reader.
@@ -53,10 +58,24 @@ The manager now owns three slot states — `Active`, `Warm`, `Retiring`
 (`src/app/frame.rs::FrameSlot`) — and keeps at most one `Warm` frame behind
 whatever is on screen:
 
-- 700ms after a runtime goes active (`WARM_DELAY_MS`), the Shell boots its
-  counterpart into a hidden slot. The boot stops at `Ready`: **a warm boot
-  never opens a document**, so the PDF machinery is never paid for twice and
-  never paid for a book the user did not ask for.
+- The two runtimes warm asymmetrically. 700ms after the READER goes active
+  (`WARM_DELAY_MS`), the Shell boots the shelf into a hidden slot. The
+  reader is booted behind the shelf only on the shelf's **intent signal** —
+  `RuntimeFrame::ExpectReader`, sent (throttled to one a second) when the
+  pointer is over or moving across `#library-level`, or a card is pressed
+  or focused — never on the shelf's paint. A boot stops at `Ready`: **a warm
+  boot never opens a document**, so the PDF machinery is never paid for
+  twice and never paid for a book the user did not ask for.
+- A warm reader is **evicted when the shelf goes quiet**: each intent signal
+  restarts a `WARM_READER_IDLE_MS` (60 s) clock; when it runs out with the
+  shelf still on screen, the reader is disposed (the full §12 exchange,
+  counted in `readerDisposesCompleted`) and its frame removed
+  (`evict_idle_warm_reader`). This is the one path that removes a reader
+  frame while the user stays on the shelf, and it is what makes the library
+  route's memory the library's alone: `readerFramesResident` (the probe's
+  count of reader frames in the DOM, any slot) is `0` at rest. The suite
+  shortens the window with `?warmIdleMs=` (read once, at manager
+  construction, off the boot URL).
 - A navigation for a kind whose warm frame is ready is a **promotion, not a
   boot**: same element, same document, same realm, same WASM instance. The
   reveal is the frame's `data-mareader-slot` flipping to `active` (CSS
@@ -71,9 +90,25 @@ whatever is on screen:
   full §12 exchange, `DisposeComplete`, counted) and `ShellFrame::Rearm`
   mounts a fresh warm session in the SAME document. No page load, no wasm
   fetch/compile, no pdf.js load after the first two boots.
-- A reader frame whose last digest reports `wasmHeapBytes` above
+- A reader frame whose last digest reports `heapHighWaterBytes` above
   `READER_RECYCLE_HEAP_MAX` (320 MiB) is retired and removed instead: linear
   memory never shrinks, so dropping the frame is the only way to return it.
+  The HIGH-WATER mark, not `wasmHeapBytes`: the live heap is low again after
+  every close and would keep every frame.
+- Module-level state that outlives a session in a recycled frame must be
+  reset or released per session (below); the reflow spot memo
+  (`reflow_anchor::forget_parsed_spots`) is cleared on dispose for the same
+  reason. The search index deliberately survives a close (a bounded cache
+  of the last book's text, cheaper than re-extraction); the eviction bounds
+  its life instead.
+- Hidden frames tell their documents so: `app_ui::frame_theme::
+  mark_frame_hidden` puts `html.frame-hidden` on a warm or rearmed runtime
+  document (cleared by `Launch` / `Refresh`), and `styles/noise.css` pauses
+  the animated grain under it — a hidden frame is `visibility: hidden`, which
+  stops paint but not animation.
+- pdf.js is loaded on the first PDF open (`public/engine/loader.ts::
+  ensurePdfjs`, a dynamic `import()`), not by a `reader.html` script tag: a
+  warm reader, or a Markdown/text session, never fetches or holds it.
 - Module-level state that outlives a session in a recycled frame must be
   reset or released per session: the shelf's cover ledger
   (`covers::reset_ledger`), and every Tauri listener (`tauri_listen` now
@@ -181,14 +216,22 @@ The warm slot is proven by the browser lifecycle baseline, not by reasoning:
 handoffs, the host sampler's `peakFrames` is 2 (one on screen, one behind
 it — never a third on screen), and every memory trend is unchanged
 (`slope 0 B/cycle, drift 0 B` across normal, rapid and same-page cycles).
-A click that outran the 700ms rearm boots the lane on demand instead of
+A click that outran the warm boot boots the lane on demand instead of
 falling back to a covered cold start, so the runtime the user is leaving
-stays on screen for the boot either way.
+stays on screen for the boot either way. The eviction has its own stage
+(`stage0-idle-eviction`, `?warmIdleMs=2000`): an untouched shelf boots no
+reader (`frames === 1`, `readerFramesResident 0`), intent boots one, silence
+evicts it (`warmReaderEvictions`, session balance, `frames === 1`,
+`atBaseline`), renewed intent boots a fresh generation and the click reveals
+it, and after a read-and-close the recycled reader is evicted the same way.
+The cover bake is proven in the same run without any reader resident
+(`coverBake.covers`, `bakeFrameResident` back to `false`).
 
 ## Known follow-ups (do not silently expand scope)
 
-- Recycling, measured on e8b1d18 (CI #2005, Deep CI #217): cover relay
-  landed (`coverRelay.covers` 1), `reusedWarmFrame` 4/4, `peakFrames` 2,
+- Recycling, measured on e8b1d18 (CI #2005, Deep CI #217): cover bake
+  landed (then `coverRelay.covers` 1, now `coverBake.covers`),
+  `reusedWarmFrame` 4/4, `peakFrames` 2,
   rapid-reopen and same-page slope/drift 0 B, close-during-prefetch drops 1
   (kept readers park idle prefetch via `suspendPrefetches` when their frame
   leaves the active slot). `samePageRecycledOpens` was 0: the same-page
