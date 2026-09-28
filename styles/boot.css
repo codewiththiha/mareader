@@ -165,6 +165,24 @@ html:not([data-base]) {
   z-index: 1;
 }
 
+/* The Shell's cover-bake page (src/app/bake.rs): a child document that
+   loads pdf.js alone and renders shelf covers while the shelf lacks them. It
+   sits on <body>, outside the runtime host, and is never shown. Hidden the
+   same way as a warm runtime frame — laid out, `visibility: hidden`, not
+   hit-testable — because pdf.js paces a render on animation frames, and a
+   frame that gets no layout gets none of those; `display: none` would stall
+   every bake until its timeout. */
+.bake-frame {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
 /* The first runtime's cover can mount before the shell's first theme paint:
    until then it wears the remembered paper too. */
 html:not([data-base]) .runtime-boot {

@@ -58,6 +58,11 @@ const REQUIRED = [
   ["dist/pdfEngine.js", "the imperative pdf.js wrapper (window.PDFReader)", RUNTIME_FLOOR_BYTES],
   ["dist/readerEngine.js", "the format-agnostic reader bundle", RUNTIME_FLOOR_BYTES],
   ["dist/bake.worker.js", "the theme bake worker", RUNTIME_FLOOR_BYTES],
+  // The Shell's cover-bake page and its script (src/app/bake.rs): without
+  // them the shelf's covers never arrive — the Shell mounts this page for
+  // every bake queue instead of asking a reader frame.
+  ["dist/bake.html", "the Shell's cover-bake page", 0],
+  ["dist/coverBake.js", "the cover-bake page's script", RUNTIME_FLOOR_BYTES],
   ["dist/shellBoot.js", "the shell page's boot watchdog", RUNTIME_FLOOR_BYTES],
   ["dist/bootPaint.js", "the shell page's remembered-paper first paint", RUNTIME_FLOOR_BYTES],
   // The iframes' Tauri facade (public/tauri-relay.js): without it the

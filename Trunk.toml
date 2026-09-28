@@ -55,6 +55,7 @@ ignore = [
     "./public/pdfEngine.js",
     "./public/readerEngine.js",
     "./public/bake.worker.js",
+    "./public/coverBake.js",
     # The repo root is the default watch path, so these were all live: every
     # cargo run writes `target/` (Trunk's own release build, the DevCommand's
     # debug build, and build-dist.sh's three targets), and build-dist.sh

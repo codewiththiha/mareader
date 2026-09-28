@@ -138,11 +138,6 @@ pub enum FrameVocabulary {
     BakeCover {
         path: String,
     },
-    /// A reader frame's answer to a relayed shelf bake.
-    CoverReady {
-        path: String,
-        image: Option<runtime_contract::covers::CoverImage>,
-    },
     DocStatus(Box<runtime_contract::boundary::DocStatusReport>),
     PublishDigest(String),
     Reload,
@@ -169,6 +164,11 @@ pub enum FrameEvent {
     },
     /// §12 phase 1 acknowledged — the iframe may come down.
     DisposeComplete,
+    /// The shelf's intent hint (protocol `ExpectReader`): a book may be
+    /// opened soon, so the manager boots — or keeps — its reader behind the
+    /// shelf. A hint about the FUTURE, not a fact about this frame, which
+    /// is why it is not boundary vocabulary.
+    ExpectReader,
     Boundary(FrameVocabulary),
     /// A message whose generation is not this frame's — kept for the
     /// diagnostics ledger, never applied (§35).
@@ -270,9 +270,14 @@ thread_local! {
         RefCell::new(std::collections::HashMap::new());
 }
 
-/// Admit a driver into the page-thread registry (at creation).
+/// Admit a driver into the page-thread registry. The manager admits a cold
+/// frame on its Ready verdict and a warm one as it starts; the baker is told
+/// either way, because a cold shelf's cover asks precede its own admission
+/// (`bake::frame_registered`).
 pub fn register(driver: Rc<Driver>) {
-    DRIVERS.with(|drivers| drivers.borrow_mut().insert(driver.generation(), driver));
+    let generation = driver.generation();
+    DRIVERS.with(|drivers| drivers.borrow_mut().insert(generation, driver));
+    crate::app::bake::frame_registered(generation);
 }
 
 /// The driver that owns `generation`, if it has not been torn down.
@@ -281,9 +286,28 @@ pub fn lookup(generation: u64) -> Option<Rc<Driver>> {
 }
 
 /// Remove a driver from the registry (at teardown). Idempotent: a forced
-/// and a graceful path can both reach it for one generation.
+/// and a graceful path can both reach it for one generation, and so can a
+/// frame that was never admitted (a boot that failed). The baker prunes the
+/// asks of a frame that is gone (`bake::frame_gone`).
 pub fn unregister(generation: u64) {
     DRIVERS.with(|drivers| drivers.borrow_mut().remove(&generation));
+    crate::app::bake::frame_gone(generation);
+}
+
+/// How many frames of `kind` are in the page right now, whatever slot they
+/// sit in — active, warm or retiring. The diagnostics probe's
+/// `readerFramesResident`: the number the memory question is actually
+/// about, since a frame that exists holds its realm, its wasm instance and
+/// its heap high-water mark whether or not a session is live in it.
+#[cfg(target_arch = "wasm32")]
+pub fn resident(kind: FrameKind) -> usize {
+    DRIVERS.with(|drivers| {
+        drivers
+            .borrow()
+            .values()
+            .filter(|driver| driver.kind() == kind)
+            .count()
+    })
 }
 
 /// Mint the next frame generation: monotonic while this Shell documents
@@ -777,11 +801,8 @@ impl Driver {
             RuntimeFrame::BakeCover { path } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::BakeCover { path }));
             }
-            RuntimeFrame::CoverReady { path, image } => {
-                self.report(FrameEvent::Boundary(FrameVocabulary::CoverReady {
-                    path,
-                    image,
-                }));
+            RuntimeFrame::ExpectReader => {
+                self.report(FrameEvent::ExpectReader);
             }
             RuntimeFrame::DocStatus { report } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::DocStatus(Box::new(

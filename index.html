@@ -20,12 +20,17 @@
          same rule as the engine bundles above (the artifact contract pins
          it). -->
     <link data-trunk rel="copy-file" href="public/tauri-relay.js" />
+    <!-- The Shell's cover-bake page (src/app/bake.rs): pdf.js plus the
+         engine's cover render, mounted hidden while the shelf has covers to
+         bake and removed after. Shipped from here like the relay above; the
+         shell page itself never loads it. -->
+    <link data-trunk rel="copy-file" href="public/bake.html" />
+    <link data-trunk rel="copy-file" href="public/coverBake.js" />
     <!-- No engine scripts: the shell page loads no pdf.js, no engine wrapper
-         and no reader bundle. Documents and cover bakes both run in the
-         reader frame (the shelf's bakes are relayed there), so the shell's
-         own startup is its wasm and nothing else. The copy-file links above
-         still ship those bundles to the dist root, where the runtime pages
-         load them. -->
+         and no reader bundle. Documents run in the reader frame and shelf
+         cover bakes in the bake page above, so the shell's own startup is
+         its wasm and nothing else. The copy-file links above still ship
+         those bundles to the dist root, where the runtime pages load them. -->
     <link data-trunk rel="rust" data-wasm-opt="z" />
     <!-- The remembered paper, applied before the body exists (see the file):
          synchronous on purpose — a deferred script would run after the first

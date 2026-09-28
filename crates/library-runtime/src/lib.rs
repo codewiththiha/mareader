@@ -26,6 +26,10 @@ pub mod frame {
     ) -> Option<R> {
         None
     }
+
+    /// Off wasm there is no Shell to warn: the shelf's intent hint goes
+    /// nowhere (the host lanes render the grid without a reader to boot).
+    pub fn expect_reader() {}
 }
 pub mod services;
 pub mod state;

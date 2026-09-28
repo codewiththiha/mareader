@@ -64,6 +64,20 @@ fn install_web(state: ShellState) {
             },
             "warmReady": state.manager.warm_ready(),
             "warmGeneration": state.manager.warm_generation(),
+            // The memory question, asked of the DOM rather than the slots:
+            // how many reader frames exist at all (active, warm, retiring),
+            // each one a realm with a wasm heap that never shrinks. The
+            // library route at rest is `0` here, and the idle eviction is
+            // what takes it there (`warmReaderIdleMs` after the shelf's last
+            // intent signal; `warmReaderEvictions` counts the times it did).
+            "readerFramesResident": state.manager.reader_frames_resident(),
+            "warmReaderIdleMs": state.manager.warm_reader_idle_ms(),
+            "warmReaderEvictions": state.manager.warm_reader_evictions.load(std::sync::atomic::Ordering::Relaxed),
+            // The shell's cover baker: whether its page is currently mounted
+            // (it is torn down a few seconds after the last bake) and how
+            // many covers it has answered, either way, since boot.
+            "bakeFrameResident": crate::app::bake::resident(),
+            "coversAnswered": crate::app::bake::answered(),
             "warmTrafficSeen": state.manager.warm_traffic_seen.load(std::sync::atomic::Ordering::Relaxed),
             "staleFramesSeen": state.manager.stale_frames_seen.load(std::sync::atomic::Ordering::Relaxed),
             "docStatus": state.manager.doc_status.lock().unwrap().clone(),

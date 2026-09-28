@@ -31,8 +31,6 @@ wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
   "Window", "Document", "Element", "HtmlElement", "HtmlDivElement",
   "HtmlInputElement", "HtmlButtonElement", "HtmlSelectElement", "Node",
-  "HtmlHeadElement",
-  "HtmlScriptElement",
   "NodeList", "HtmlCollection", "DomTokenList", "CssStyleDeclaration",
   "Event", "MouseEvent", "KeyboardEvent", "WheelEvent", "DragEvent",
   "DataTransfer", "DomRect", "ResizeObserver", "ResizeObserverEntry",

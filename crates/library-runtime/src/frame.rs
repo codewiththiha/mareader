@@ -32,6 +32,8 @@ thread_local! {
     static API: RefCell<Option<PortShellApi<PortWire>>> = const { RefCell::new(None) };
     /// The session the frame started, for the Shell's command traffic.
     static SESSION_ID: Cell<Option<u32>> = const { Cell::new(None) };
+    /// When the shelf last told the Shell to expect a reader (`expect_reader`).
+    static LAST_EXPECT_READER_MS: Cell<Option<u64>> = const { Cell::new(None) };
 }
 
 /// Boot through the frame when this artifact's URL names one.
@@ -65,6 +67,34 @@ pub fn with_api<R>(f: impl FnOnce(&PortShellApi<PortWire>) -> R) -> Option<R> {
 /// One outgoing message, for the boot's own stage reporting below.
 fn emit(body: RuntimeFrame) {
     with_api(|api| api.emit(body));
+}
+
+/// How often the shelf repeats its intent hint at most. A pointer crossing
+/// the grid raises `pointerover` on every card edge; the Shell only needs to
+/// hear "still here" about once a second to keep its reader booted.
+const EXPECT_READER_THROTTLE_MS: u64 = 1_000;
+
+/// Tell the Shell a book is about to be opened (the pointer is over the
+/// shelf, a card has focus or is pressed). The Shell boots its reader
+/// behind the shelf on this word alone — it no longer warms one on every
+/// shelf paint — and every repeat keeps that reader from being evicted as
+/// idle, so the open that follows is still a reveal while a shelf nobody is
+/// touching keeps no reader resident. Standalone (no Shell) there is nobody
+/// to tell, and the call is a no-op.
+pub fn expect_reader() {
+    let now = runtime_contract::time::now_ms();
+    let due = LAST_EXPECT_READER_MS.with(|last| {
+        let due = last
+            .get()
+            .is_none_or(|sent| now.saturating_sub(sent) >= EXPECT_READER_THROTTLE_MS);
+        if due {
+            last.set(Some(now));
+        }
+        due
+    });
+    if due {
+        emit(RuntimeFrame::ExpectReader);
+    }
 }
 
 fn start_frame(wire: PortWire, generation: u64) {
@@ -207,13 +237,11 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         emit(RuntimeFrame::DisposeComplete);
                     }
                 }
-                ShellFrame::Launch { .. }
-                | ShellFrame::ResolveLaunchAnswer { .. }
-                | ShellFrame::BakeCover { .. } => {
-                    // None of these means anything to the shelf: a document
-                    // launch and a cover bake are the reader's commands, and
-                    // the library never asks the Shell to resolve a launch.
-                    // Dropped by the protocol, not by accident.
+                ShellFrame::Launch { .. } | ShellFrame::ResolveLaunchAnswer { .. } => {
+                    // Neither means anything to the shelf: a document launch
+                    // is the reader's command, and the library never asks
+                    // the Shell to resolve a launch. Dropped by the
+                    // protocol, not by accident.
                 }
             }
         },

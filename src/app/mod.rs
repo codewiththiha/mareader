@@ -4,6 +4,7 @@
 //! diagnostics surface that merges the manager's facts with the active
 //! runtime's digest.
 
+pub(crate) mod bake;
 mod boot;
 mod bootstrap;
 pub(crate) mod frame;

@@ -5,7 +5,6 @@
 
 pub mod arrange;
 pub mod conflict;
-pub mod cover_engine;
 pub mod covers;
 pub mod duplicate;
 pub mod import;

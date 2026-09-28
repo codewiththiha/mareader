@@ -221,12 +221,10 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                 ShellFrame::Rearm => {
                     on_rearm(generation);
                 }
-                ShellFrame::BakeCover { path } => {
-                    bake_cover(path);
-                }
                 ShellFrame::CoverBaked { .. } => {
-                    // The shelf's answer on the reader's port: the relayed
-                    // bake belongs to the library frame. Dropped by the
+                    // The shelf's cover answer on the reader's port: covers
+                    // are the Shell's bake frame talking to the library
+                    // frame, and the reader is neither. Dropped by the
                     // protocol, never silently.
                 }
             }
@@ -266,27 +264,6 @@ fn remove_runtime_roots() {
     while let Some(root) = document.get_element_by_id("runtime-root") {
         root.remove();
     }
-}
-
-/// A shelf cover, baked on the Shell's behalf. The engine's cover path is
-/// standalone (its own loading task, torn down before it resolves), so it
-/// never touches the session's open document — a bake can run beside a
-/// warm reader or an open book alike. Always answered, `None` on failure,
-/// so the Shell's in-flight ledger never waits on silence.
-#[cfg(target_arch = "wasm32")]
-fn bake_cover(path: String) {
-    wasm_bindgen_futures::spawn_local(async move {
-        let width = runtime_contract::covers::COVER_WIDTH;
-        let image = pdf_engine::api::cover_data_url(&path, width)
-            .await
-            .ok()
-            .map(|cover| runtime_contract::covers::CoverImage {
-                data_url: cover.data_url,
-                width: cover.width,
-                height: cover.height,
-            });
-        emit(RuntimeFrame::CoverReady { path, image });
-    });
 }
 
 /// A resolve round trip landing: the parked open flow continues with the

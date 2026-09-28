@@ -21,6 +21,7 @@
 /public/pdfEngine.js
 /public/readerEngine.js
 /public/bake.worker.js
+/public/coverBake.js
 /public/engine/*.js
 /scripts/
 

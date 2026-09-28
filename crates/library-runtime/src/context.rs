@@ -216,9 +216,10 @@ impl ShellApi for StandaloneApi {
         map.insert(path.to_string(), std::sync::Arc::new(image.clone()));
         let _ = storage::save_covers(&map);
     }
-    /// Never reached: the standalone bake runs from `covers.rs`' drain
-    /// directly, because it needs this session's context to file the answer
-    /// — see [`crate::services::cover_engine`].
+    /// No Shell, no baker: the standalone page has nobody to ask, so the
+    /// ask goes nowhere and the shelf shows the covers it already holds
+    /// (`covers.rs` never starts a standalone drain — this is only reached
+    /// by the host tests' queue policy).
     fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}
     fn publish_digest(&self, _json: String) {}

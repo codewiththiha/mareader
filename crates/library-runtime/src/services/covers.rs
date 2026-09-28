@@ -1,30 +1,24 @@
-//! The shelf's covers, rendered away from the reader.
+//! The shelf's covers, rendered away from the shelf.
 //!
 //! A cover is page 1 of a book as a small JPEG. The library carries no engine
-//! to render one: a hosted session ASKS the Shell across the boundary
-//! (`ShellApi::bake_cover`, answered by the `coverBaked` command), and the
-//! standalone artifact deploys the engine beside itself and reaches it
-//! through [`crate::services::cover_engine`]. Either way the queue is a
-//! request/response drain, one path in flight, with one retry per path.
+//! to render one, in either deployment: a hosted session ASKS the Shell
+//! across the boundary (`ShellApi::bake_cover`, answered by the `coverBaked`
+//! command — the Shell bakes in a pdf.js-only frame of its own), and the
+//! standalone page, which has no Shell, bakes nothing (its covers arrive
+//! from the reader's open pipeline, which files one on every first open).
+//! The queue is a request/response drain, one path in flight, with one
+//! retry per path.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use leptos::prelude::*;
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{Book, Row, book_rows};
 use reader_core::format::Format;
 use runtime_contract::boundary::ShellApi;
 use runtime_contract::covers::{CoverImage, CoverMap};
-
-/// One width for both renders of the same art — the import queue's and the
-/// open pipeline's: two widths would be two renders and a cache that misses
-/// on the other one.
-#[cfg(target_arch = "wasm32")]
-pub(crate) const COVER_WIDTH: f64 = 240.0;
 
 pub const COVER_CAP: usize = 60;
 
@@ -52,9 +46,8 @@ thread_local! {
     static QUEUE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static DRAINING: RefCell<bool> = const { RefCell::new(false) };
     static DIRTY: RefCell<bool> = const { RefCell::new(false) };
-    /// Requests whose answer (a `coverBaked` command, or the standalone
-    /// facade's settle) has not come back yet. Guards against a path being
-    /// queued twice while its bake is in flight.
+    /// Requests whose answer (a `coverBaked` command) has not come back yet.
+    /// Guards against a path being queued twice while its bake is in flight.
     static PENDING: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
     /// One retry each: a cover can fail for a reason that is true for a second — a file still being copied, a worker still warming up — but a queue that re-attempts a genuinely unrenderable file forever never drains.
     static RETRIES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
@@ -83,6 +76,11 @@ fn wanted(rows: &[Row], covers: &CoverMap) -> Vec<String> {
 }
 
 pub fn backfill_missing(state: crate::context::LibraryContext) {
+    // No Shell, no baker: the standalone page has nobody to ask, and a queue
+    // it started would only sit at its first path forever.
+    if matches!(state.api, crate::context::ApiHandle::Standalone) {
+        return;
+    }
     RETRIES.with(|retries| retries.borrow_mut().clear());
     let wanted = state.library.books.with_untracked(|rows| {
         state
@@ -174,39 +172,21 @@ fn drain(state: crate::context::LibraryContext) {
     PENDING.with(|pending| {
         pending.borrow_mut().insert(path.clone());
     });
-    match state.api {
-        // The hosted bake: the request crosses the boundary, the answer
-        // comes back as `coverBaked` into this session (a stale generation is
-        // dropped Shell-side), and [`on_baked`] moves the queue on. The frame
-        // carries the round trip over its port — the boundary asks, the
-        // answer lands, one retry policy.
-        crate::context::ApiHandle::Frame => {
-            state.api.bake_cover(&path);
-        }
-        // The standalone artifact deploys the engine beside itself and
-        // reaches it through the facade; the settle files through the same
-        // [`on_baked`], so the retry/persist policy is literally one body.
-        crate::context::ApiHandle::Standalone => {
-            // The bake worker is a wasm artifact: on the host test lane the
-            // request stays PENDING, exactly like a hosted `bakeCover` whose
-            // answer never comes, so host tests exercise the queue/retry
-            // policy and nobody schedules a wasm future off-wasm.
-            #[cfg(target_arch = "wasm32")]
-            spawn_local(async move {
-                let baked = super::cover_engine::bake(&path, COVER_WIDTH).await.0;
-                on_baked(state, path, baked);
-            });
-            #[cfg(not(target_arch = "wasm32"))]
-            let _ = (state, path);
-        }
-    }
+    // The request crosses the boundary, the answer comes back as
+    // `coverBaked` into this session (a stale generation is dropped
+    // Shell-side), and [`on_baked`] moves the queue on. The frame carries the
+    // round trip over its port — the boundary asks, the answer lands, one
+    // retry policy. Off the frame (the standalone api, the host test lane)
+    // the ask goes nowhere and the path stays PENDING: exactly a hosted
+    // `bakeCover` whose answer never comes, which is what lets the host tests
+    // exercise the queue/retry policy without a baker.
+    state.api.bake_cover(&path);
 }
 
 /// One bake answer for `path`: files the art and clears the retry, or
 /// requeues once on the first failure and drops the path on the second —
 /// then moves the queue on. Called from the session command surface
-/// (`coverBaked`, hosted) and from the standalone facade's settle: one body,
-/// one retry policy, no second drain semantics for either deployment.
+/// (`coverBaked`): one body, one retry policy.
 pub fn on_baked(
     state: crate::context::LibraryContext,
     path: String,

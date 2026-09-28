@@ -7,20 +7,34 @@
 //! That policy is a warm slot (see `docs/runtime-split.md`).
 //!
 //! ```text
-//! cold boot   ACTIVE painted ──▶ WARM counterpart boots (hidden, no work)
-//!             click          ──▶ reveal WARM in place ──▶ ACTIVE
-//!                                                    └─▶ old ACTIVE recycles
-//! recycle     kept intact 1.2 s ──▶ session disposed (§12) ──▶ fresh WARM
-//!             session mounted in the SAME frame (no page load, no wasm fetch
-//!             or compile, no pdf.js load) — or retired for real when a
-//!             reader's heap is past its ceiling
+//! reader painted ──▶ WARM library boots behind it (hidden, no work)
+//! shelf intent   ──▶ WARM reader boots behind the shelf (pointer over the
+//!                    grid, a card focused or pressed — never on paint)
+//! click          ──▶ reveal WARM in place ──▶ ACTIVE
+//!                                        └─▶ old ACTIVE recycles
+//! recycle        kept intact 1.2 s ──▶ session disposed (§12) ──▶ fresh WARM
+//!                session mounted in the SAME frame (no page load, no wasm
+//!                fetch or compile, no pdf.js load) — or retired for real
+//!                when a reader's heap high-water mark is past its ceiling
+//! warm reader    idle behind the shelf for WARM_READER_IDLE_MS with no
+//!                further intent ──▶ evicted: disposed and its frame removed
 //! ```
 //!
-//! After the first two boots, a route change never boots anything: the
-//! frame the user left becomes the warm counterpart in place. Going straight
+//! A route change is a reveal whenever the counterpart is booted, and the
+//! frame the user left becomes the warm counterpart in place; going straight
 //! back inside the keep window takes the very session that was left.
 //! Disposal still runs on every leave — every session is drained and
-//! accounted exactly as before — only the frame outlives it.
+//! accounted exactly as before — only the frame outlives it, and for the
+//! reader only for a bounded while.
+//!
+//! The two runtimes are not symmetric here, on purpose. The shelf is small
+//! and its warm boot is cheap, so it waits behind a reading session for as
+//! long as that session lasts. The reader is the heavy one — its frame
+//! keeps a wasm heap that never shrinks, the PDF engine and its worker, the
+//! search index — and a reader kept "just in case" behind the shelf is
+//! exactly the memory the library route is supposed to give back. So the
+//! reader is booted on the shelf's INTENT signal (`ExpectReader`), kept
+//! while the intent repeats, and evicted once the shelf has gone quiet.
 //!
 //! The ordering is the whole change. Disposal used to be awaited BEFORE the
 //! replacement existed, which made every transition a cold boot of the
@@ -30,10 +44,12 @@
 //! costs a reveal, and the memory is still reclaimed as a unit (the retired
 //! frame is removed identically, just not on the critical path).
 //!
-//! The trade this makes, stated plainly: two runtimes are briefly resident
-//! where the old policy held one. The second one is boot-only — a warm reader
-//! holds no document, and a warm shelf runs none of its startup passes — so
-//! what is resident is a module and a mount, not a workload.
+//! The trade this makes, stated plainly: two runtimes are resident while the
+//! user reads, and briefly after they stop. The second one is boot-only — a
+//! warm reader holds no document, and a warm shelf runs none of its startup
+//! passes — so what is resident is a module and a mount, not a workload; and
+//! at rest on the shelf, with nobody reaching for a book, the reader is not
+//! resident at all.
 //!
 //! Every step can still fail — the artifact page does not load, its wasm
 //! rejects, the frame simply never says `Ready` — and a failed start is a
@@ -107,11 +123,20 @@ impl WarmState {
     }
 }
 
-/// How long the shell waits after a runtime is on screen before it boots the
-/// counterpart behind it. Long enough that the runtime the user is looking at
+/// How long the shell waits after the reader is on screen before it boots
+/// the shelf behind it. Long enough that the runtime the user is looking at
 /// keeps the machine while it settles; short enough that the warm one is up
 /// before the click that needs it.
 const WARM_DELAY_MS: i32 = 700;
+
+/// How long a warm reader stays behind the shelf after the last intent
+/// signal (`ExpectReader`: the pointer over the grid, a card focused or
+/// pressed) before it is evicted — disposed, and its frame removed. Long
+/// enough that "close the book, glance at the shelf, open the next" is
+/// still a reveal; short enough that a shelf left alone gives the reader's
+/// memory back within about a minute. The browser suite shortens it through
+/// the `?warmIdleMs=` hook (`warm_reader_idle_ms`).
+const WARM_READER_IDLE_MS: i32 = 60_000;
 
 /// How long a runtime the user just left stays intact, hidden, before its
 /// session is disposed and the frame recycled. Two jobs: the disposal lands
@@ -120,11 +145,14 @@ const WARM_DELAY_MS: i32 = 700;
 /// — scroll, selection and all — with no disposal or remount at all.
 const RECYCLE_DELAY_MS: i32 = 1_200;
 
-/// A reader frame whose wasm heap grew past this is retired for real rather
-/// than recycled. Linear memory never shrinks: a frame that once held a huge
-/// document keeps that high-water mark for its whole life, and removing the
-/// frame is the only way to hand it back. Below the line, keeping the frame
-/// is what makes the next open a reveal instead of a boot.
+/// A reader frame whose wasm heap high-water mark passed this is retired for
+/// real rather than recycled. Linear memory never shrinks: a frame that once
+/// held a huge document keeps that high-water mark for its whole life
+/// whatever its live heap says afterwards, so the decision reads the
+/// digest's `heapHighWaterBytes`, never the drained `wasmHeapBytes` (which
+/// is low after every close and would keep every frame). Below the line,
+/// keeping the frame is what makes the next open a reveal instead of a boot
+/// — for as long as the idle eviction lets it stay.
 const READER_RECYCLE_HEAP_MAX: f64 = 320.0 * 1024.0 * 1024.0;
 
 /// The bound on a recycled frame's rearm (Rearm → Ready). A fresh session in
@@ -150,13 +178,6 @@ struct Recycle {
     lane: WarmLane,
     phase: RecyclePhase,
     timer: Option<i32>,
-}
-
-/// One relayed shelf cover: which library frame asked, for which file.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct BakeRequest {
-    library: u64,
-    path: String,
 }
 
 pub struct RuntimeManager {
@@ -213,6 +234,13 @@ pub struct RuntimeManager {
     /// The frame being recycled, if one is (at most one: it holds the warm
     /// lane).
     recycle: Mutex<Option<Recycle>>,
+    /// The eviction timer of the warm reader: armed when a reader becomes
+    /// warm behind the shelf, restarted by every intent signal, cancelled by
+    /// its promotion. Its expiry is the one path that removes a reader frame
+    /// while the user stays on the shelf.
+    warm_idle_timer: Mutex<Option<i32>>,
+    /// Warm readers evicted as idle so far (the probe's `warmReaderEvictions`).
+    pub warm_reader_evictions: std::sync::atomic::AtomicU64,
 }
 
 thread_local! {
@@ -226,18 +254,13 @@ thread_local! {
     /// Promotions waiting for a recycle to finish (its rearm, or its
     /// failure). Resolved together whenever a recycle ends.
     static RECYCLE_WAITERS: RefCell<Vec<js_sys::Function>> = const { RefCell::new(Vec::new()) };
-    /// Shelf covers waiting for a reader frame, oldest first. The Shell loads
-    /// no PDF engine: bakes are relayed to a reader frame and answered back.
-    static BAKE_QUEUE: RefCell<std::collections::VecDeque<BakeRequest>> =
-        const { RefCell::new(std::collections::VecDeque::new()) };
-    /// The one bake in flight: which reader frame is baking it. One at a
-    /// time on purpose — each bake is a PDF parse, and a shelf full of new
-    /// books must not turn into a burst that stalls the frame it runs in.
-    static BAKE_IN_FLIGHT: RefCell<Option<(u64, BakeRequest)>> = const { RefCell::new(None) };
 }
 
 impl RuntimeManager {
     pub fn new() -> Self {
+        // The boot URL's test hooks are read now, while the URL still is the
+        // boot URL (see `warm_reader_idle_ms`).
+        let _ = warm_reader_idle_ms();
         Self {
             slot: Mutex::new(Slot::None),
             warm: Mutex::new(WarmState::None),
@@ -259,6 +282,8 @@ impl RuntimeManager {
             reader_launched: Mutex::new(None),
             reader_armed: Mutex::new(None),
             recycle: Mutex::new(None),
+            warm_idle_timer: Mutex::new(None),
+            warm_reader_evictions: Default::default(),
         }
     }
 
@@ -326,6 +351,22 @@ impl RuntimeManager {
     #[cfg(target_arch = "wasm32")]
     pub fn warm_generation(&self) -> Option<u64> {
         self.warm.lock().unwrap().lane().map(|lane| lane.generation)
+    }
+
+    /// How many reader frames are in the page, whatever their slot (the
+    /// probe's `readerFramesResident`). This — not the active runtime, not
+    /// the warm lane — is the memory question: a reader frame that exists
+    /// holds its realm, its wasm instance and its heap high-water mark.
+    #[cfg(target_arch = "wasm32")]
+    pub fn reader_frames_resident(&self) -> usize {
+        crate::app::frame::resident(FrameKind::Reader)
+    }
+
+    /// The idle window a warm reader gets behind the shelf, as the probe
+    /// reports it (the suite reads it back to know what it shortened it to).
+    #[cfg(target_arch = "wasm32")]
+    pub fn warm_reader_idle_ms(&self) -> i32 {
+        warm_reader_idle_ms()
     }
 
     /// The mount target, if the shell has mounted its view.
@@ -565,8 +606,43 @@ impl RuntimeManager {
             // schedule below a no-op: the counterpart IS the frame just left.
             self.retire_or_recycle(generation);
         }
-        self.schedule_warm(lane.kind.counterpart());
+        self.warm_counterpart_unasked(lane.kind);
         true
+    }
+
+    /// Boot the counterpart of the runtime that just came on screen, when
+    /// the policy boots one UNASKED. Only the shelf is: a reading session
+    /// always ends on the shelf, and the shelf is light. The reader is never
+    /// booted unasked — the shelf's intent signal (`expect_reader`) is what
+    /// boots it, so a shelf nobody is reaching into keeps no reader
+    /// resident.
+    fn warm_counterpart_unasked(&self, revealed: RuntimeName) {
+        let counterpart = revealed.counterpart();
+        if counterpart == RuntimeName::Library {
+            self.schedule_warm(counterpart, WARM_DELAY_MS);
+        }
+    }
+
+    /// The shelf's intent signal: a book may be opened soon. Boots the
+    /// reader behind the shelf now if none is booting or booted, and either
+    /// way restarts the idle eviction clock — repeated intent is what keeps
+    /// a warm reader alive. Ignored unless the sender is the shelf on
+    /// screen: a warm or retiring shelf has no user reaching into it.
+    pub fn expect_reader(&self, generation: u64) {
+        if self.active() != Some(ActiveRuntime::Library)
+            || self.live_driver().map(|driver| driver.generation()) != Some(generation)
+        {
+            return;
+        }
+        match self.warm_lane_for(RuntimeName::Reader) {
+            Some(_) => {
+                // Already booting, booted or recycling: the eviction clock is
+                // armed once the frame is warm-ready (and by the recycle's
+                // rearm); a restart here is a no-op until then.
+                self.touch_warm_reader();
+            }
+            None => self.schedule_warm(RuntimeName::Reader, 0),
+        }
     }
 
     /// Boot a runtime the slow way: no warm frame to reveal, so the host
@@ -710,14 +786,19 @@ impl RuntimeManager {
                         manager.set_phase(BootPhase::Active(runtime));
                     }
                     // The runtime the user is looking at is settled: now the
-                    // counterpart may boot behind it.
+                    // counterpart may boot behind it — when the policy boots
+                    // one unasked (the shelf behind a reader; never a reader
+                    // behind the shelf, which waits for intent).
                     if let Some(active) = manager.active() {
                         let runtime = match active {
                             ActiveRuntime::Library => RuntimeName::Library,
                             ActiveRuntime::Reader => RuntimeName::Reader,
                         };
-                        manager.schedule_warm(runtime.counterpart());
+                        manager.warm_counterpart_unasked(runtime);
                     }
+                }
+                FrameEvent::ExpectReader => {
+                    manager.expect_reader(generation);
                 }
                 FrameEvent::Failed { stage, cause } => {
                     let Some(driver) = crate::app::frame::lookup(generation) else {
@@ -796,10 +877,9 @@ impl RuntimeManager {
     // The warm slot
     // -----------------------------------------------------------------
 
-    /// Boot the counterpart behind the runtime on screen, once the host has
-    /// something to look at. Idempotent, and a no-op while the slot already
-    /// holds a runtime (promoted or not).
-    fn schedule_warm(&self, kind: RuntimeName) {
+    /// Boot `kind` behind the runtime on screen after `delay_ms`. Idempotent,
+    /// and a no-op while the slot already holds a runtime (promoted or not).
+    fn schedule_warm(&self, kind: RuntimeName, delay_ms: i32) {
         let Some(manager) = self.handle() else {
             return;
         };
@@ -834,7 +914,7 @@ impl RuntimeManager {
         });
         match window.set_timeout_with_callback_and_timeout_and_arguments_0(
             timer.as_ref().unchecked_ref(),
-            WARM_DELAY_MS,
+            delay_ms,
         ) {
             Ok(handle) => *claimed.warm_timer.lock().unwrap() = Some(handle),
             Err(_) => {
@@ -889,7 +969,7 @@ impl RuntimeManager {
         // a session, and the accounting has to be able to see it.
         self.note_session_created(lane.kind);
         self.set_warm_ready(lane);
-        self.pump_bakes();
+        self.arm_warm_reader_idle(lane);
         web_sys::console::debug_1(&JsValue::from_str(&format!(
             "[mareader] {} warm at generation {}",
             lane.kind.label(),
@@ -927,6 +1007,7 @@ impl RuntimeManager {
             *warm = WarmState::None;
             drop(warm);
             self.abandon_warm_timer();
+            self.abandon_warm_reader_idle();
         }
         // A lane that was a recycling frame stops being one with it (a warm
         // failure, a superseded recycle); the promotion path has already
@@ -962,6 +1043,97 @@ impl RuntimeManager {
     }
 
     // -----------------------------------------------------------------
+    // The warm reader's idle eviction
+    // -----------------------------------------------------------------
+
+    /// Start (or restart) the eviction clock for a reader that just became
+    /// warm-ready behind the shelf. A warm shelf gets no clock: it waits
+    /// behind a reading session for as long as the session lasts.
+    fn arm_warm_reader_idle(&self, lane: WarmLane) {
+        if lane.kind != RuntimeName::Reader {
+            return;
+        }
+        self.abandon_warm_reader_idle();
+        let (Some(manager), Some(window)) = (self.handle(), web_sys::window()) else {
+            return;
+        };
+        let tick = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
+            *manager.warm_idle_timer.lock().unwrap() = None;
+            manager.evict_idle_warm_reader(lane);
+        });
+        if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+            tick.as_ref().unchecked_ref(),
+            warm_reader_idle_ms(),
+        ) {
+            *self.warm_idle_timer.lock().unwrap() = Some(id);
+        }
+        tick.into_js_value();
+    }
+
+    /// Intent repeated: the warm reader is still wanted, so its clock starts
+    /// over. Only a READY warm reader has a clock to restart; a booting or
+    /// recycling one arms its own when it becomes ready.
+    fn touch_warm_reader(&self) {
+        let ready = match *self.warm.lock().unwrap() {
+            WarmState::Ready(lane) if lane.kind == RuntimeName::Reader => Some(lane),
+            _ => None,
+        };
+        if let Some(lane) = ready
+            && self.recycle_phase(lane.generation).is_none()
+        {
+            self.arm_warm_reader_idle(lane);
+        }
+    }
+
+    fn abandon_warm_reader_idle(&self) {
+        let handle = self.warm_idle_timer.lock().unwrap().take();
+        if let (Some(handle), Some(window)) = (handle, web_sys::window()) {
+            window.clear_timeout_with_handle(handle);
+        }
+    }
+
+    /// The clock ran out with the shelf still on screen and nobody reaching
+    /// for a book: the warm reader goes — the same graceful disposal as a
+    /// retirement (§12), its frame removed after — and the lane is freed, so
+    /// the next intent boots a fresh reader and a click that beats it pays a
+    /// cold start. This is the one moment the reader's memory (its realm,
+    /// wasm heap high-water mark, engine and worker) is handed back while
+    /// the user stays on the shelf.
+    fn evict_idle_warm_reader(&self, lane: WarmLane) {
+        let held = matches!(
+            *self.warm.lock().unwrap(),
+            WarmState::Ready(current) if current == lane
+        );
+        if !held || self.active() != Some(ActiveRuntime::Library) {
+            return;
+        }
+        // Mid-recycle there is no session to dispose yet; the rearm's Ready
+        // arms a fresh clock. Never reached in practice (the clock is armed
+        // on the rearm), kept so the order of events cannot matter.
+        if self.recycle_phase(lane.generation).is_some() {
+            return;
+        }
+        if crate::app::frame::lookup(lane.generation).is_none() {
+            self.clear_warm(lane.generation);
+            return;
+        }
+        web_sys::console::debug_1(&JsValue::from_str(&format!(
+            "[mareader] the warm reader idled {} s behind the shelf: evicted (generation {})",
+            warm_reader_idle_ms() / 1000,
+            lane.generation
+        )));
+        // The lane first, the frame second: from here the slot is free for
+        // the next intent, and the frame's disposal runs off the critical
+        // path like any retirement. The frame stays in its warm slot while
+        // it disposes — it is hidden already, and a retiring stamp would
+        // let its terminal digest overwrite the probe's.
+        self.clear_warm(lane.generation);
+        self.warm_reader_evictions
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.retire(lane.generation);
+    }
+
+    // -----------------------------------------------------------------
     // Retirement
     // -----------------------------------------------------------------
 
@@ -991,7 +1163,6 @@ impl RuntimeManager {
             driver.begin_retiring();
         }
         let runtime: RuntimeName = driver.kind().into();
-        self.requeue_bakes_from(generation);
         let promise = driver.grace_dispose();
         let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
         match driver.take_dispose_outcome() {
@@ -1007,7 +1178,6 @@ impl RuntimeManager {
             }
         }
         self.note_dispose_completed(runtime);
-        self.pump_bakes();
     }
 
     /// Dispose the live frame and AWAIT it. Only the cold path needs this: it
@@ -1022,7 +1192,6 @@ impl RuntimeManager {
             *self.slot.lock().unwrap() = Slot::None;
             return;
         };
-        self.requeue_bakes_from(driver.generation());
         let promise = driver.grace_dispose();
         let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
         match driver.take_dispose_outcome() {
@@ -1086,33 +1255,27 @@ impl RuntimeManager {
     /// The frame-dispatched boundary vocabulary. Called by the driver's
     /// event hook; the hook itself is generation-gated at the port.
     pub fn dispatch_boundary(&self, state: &ShellState, generation: u64, item: FrameVocabulary) {
+        // A bake request is gate-free: a cold shelf asks for its backfill
+        // from inside its own mount — before its Ready verdict admits it to
+        // the frame registry, and before the manager has made it the live
+        // slot — so both the registry lookup and the live check below would
+        // drop the shelf's only request. A bake request writes nothing
+        // durable: the baker keys it on the generation, starts it once that
+        // frame is admitted, and prunes it if the frame is torn down first.
+        // Only a shelf bakes; a frame already known as anything else is
+        // refused.
+        if let FrameVocabulary::BakeCover { path } = item {
+            let known_not_a_shelf = crate::app::frame::lookup(generation)
+                .is_some_and(|driver| driver.kind() != FrameKind::Library);
+            if !known_not_a_shelf {
+                crate::app::bake::request(generation, path);
+            }
+            return;
+        }
         let Some(driver) = crate::app::frame::lookup(generation) else {
             return;
         };
-        // A cover answer is the one message a WARM frame may deliver: the
-        // warm reader is exactly where shelf bakes are sent (it is idle, and
-        // it has the engine), so its answer is requested traffic, not a
-        // hidden runtime describing the application.
-        //
-        // The REQUEST side is gate-free too: a cold shelf asks for its
-        // backfill from inside its own mount, before the manager has made
-        // it the live slot, and the live check below would count that as
-        // stale traffic and drop the shelf's only request. A bake request
-        // writes nothing durable, and the relay already drops requests
-        // whose shelf is gone.
         let item = match item {
-            FrameVocabulary::CoverReady { path, image } => {
-                if driver.kind() == FrameKind::Reader {
-                    self.deliver_bake(generation, path, image);
-                }
-                return;
-            }
-            FrameVocabulary::BakeCover { path } => {
-                if driver.kind() == FrameKind::Library {
-                    self.request_bake(generation, path);
-                }
-                return;
-            }
             // A recycled frame's kept session is still the session that just
             // left: its tail (a prefetch that settles as dropped after the
             // close, the dispose beats) is the evidence the disposal
@@ -1175,8 +1338,8 @@ impl RuntimeManager {
             FrameVocabulary::SaveCover { path, image } => {
                 crate::services::save_cover(&path, image);
             }
-            // Both routed before the gates above.
-            FrameVocabulary::BakeCover { .. } | FrameVocabulary::CoverReady { .. } => {}
+            // Routed before the gates above.
+            FrameVocabulary::BakeCover { .. } => {}
             FrameVocabulary::DocStatus(report) => {
                 let live = self.live_driver().map(|d| d.generation()) == Some(generation)
                     && self.active() == Some(ActiveRuntime::Reader);
@@ -1243,134 +1406,6 @@ impl RuntimeManager {
     }
 
     // -----------------------------------------------------------------
-    // Shelf covers, relayed to a reader frame
-    // -----------------------------------------------------------------
-
-    /// A cover the library frame asked for. The Shell has no PDF engine (it
-    /// is the one piece of the app that must stay small and always
-    /// responsive), so the request is queued for a reader frame — the warm
-    /// one while the shelf is up — and the answer is relayed back to the
-    /// asking shelf by generation (§35: a bake that outlived its shelf dies
-    /// at the boundary).
-    fn request_bake(&self, library: u64, path: String) {
-        let request = BakeRequest { library, path };
-        let queued = BAKE_QUEUE.with(|queue| {
-            let mut queue = queue.borrow_mut();
-            let in_flight = BAKE_IN_FLIGHT.with(|slot| {
-                slot.borrow()
-                    .as_ref()
-                    .is_some_and(|(_, busy)| *busy == request)
-            });
-            if in_flight || queue.contains(&request) {
-                return false;
-            }
-            queue.push_back(request);
-            true
-        });
-        if queued {
-            self.pump_bakes();
-        }
-    }
-
-    /// The reader frame a bake can run in right now: the booted, idle warm
-    /// reader — only ever that one. Bakes come from a shelf on screen, and
-    /// the reader behind it has nothing else to do; the reader the user is
-    /// READING in is never handed shelf work. A frame mid-recycle has no
-    /// session to bake with, so the queue waits for its rearm.
-    fn bake_target(&self) -> Option<Rc<Driver>> {
-        let recycling = self.recycle.lock().unwrap().map(|r| r.lane.generation);
-        if let WarmState::Ready(lane) = *self.warm.lock().unwrap()
-            && lane.kind == RuntimeName::Reader
-            && recycling != Some(lane.generation)
-            && let Some(driver) = crate::app::frame::lookup(lane.generation)
-        {
-            return Some(driver);
-        }
-        None
-    }
-
-    /// Start the next queued bake, if nothing is in flight and a reader
-    /// frame can take it. Called on every event that can make one possible:
-    /// a request, an answer, a reader frame becoming ready.
-    fn pump_bakes(&self) {
-        // A baker that vanished without a word (removed by force, torn down
-        // on a failure path) owes no answer any more: its bake goes back to
-        // the front of the queue.
-        let orphaned = BAKE_IN_FLIGHT.with(|slot| {
-            slot.borrow()
-                .as_ref()
-                .filter(|(baker, _)| crate::app::frame::lookup(*baker).is_none())
-                .map(|(baker, _)| *baker)
-        });
-        if let Some(baker) = orphaned {
-            self.requeue_bakes_from(baker);
-        }
-        if BAKE_IN_FLIGHT.with(|slot| slot.borrow().is_some()) {
-            return;
-        }
-        let Some(target) = self.bake_target() else {
-            return;
-        };
-        // Drop requests whose shelf is already gone: nobody is left to show
-        // the cover, and the next shelf asks again for what it still lacks.
-        let next = BAKE_QUEUE.with(|queue| {
-            let mut queue = queue.borrow_mut();
-            while let Some(request) = queue.pop_front() {
-                if crate::app::frame::lookup(request.library).is_some() {
-                    return Some(request);
-                }
-            }
-            None
-        });
-        let Some(request) = next else {
-            return;
-        };
-        target.send(&ShellFrame::BakeCover {
-            path: request.path.clone(),
-        });
-        BAKE_IN_FLIGHT.with(|slot| *slot.borrow_mut() = Some((target.generation(), request)));
-    }
-
-    /// A reader's answer: forward it to the shelf that asked and move on.
-    fn deliver_bake(
-        &self,
-        reader: u64,
-        path: String,
-        image: Option<runtime_contract::covers::CoverImage>,
-    ) {
-        let finished = BAKE_IN_FLIGHT.with(|slot| {
-            let mut slot = slot.borrow_mut();
-            let answered = slot
-                .as_ref()
-                .is_some_and(|(baker, request)| *baker == reader && request.path == path);
-            if answered { slot.take() } else { None }
-        });
-        let Some((_, request)) = finished else {
-            return;
-        };
-        if let Some(library) = crate::app::frame::lookup(request.library)
-            && library.kind() == FrameKind::Library
-        {
-            library.send(&ShellFrame::CoverBaked { path, image });
-        }
-        self.pump_bakes();
-    }
-
-    /// A reader frame is going away (disposal or removal): the bake it was
-    /// running will never be answered, so it goes back to the front of the
-    /// queue for the next reader frame.
-    fn requeue_bakes_from(&self, reader: u64) {
-        let lost = BAKE_IN_FLIGHT.with(|slot| {
-            let mut slot = slot.borrow_mut();
-            let owned = slot.as_ref().is_some_and(|(baker, _)| *baker == reader);
-            if owned { slot.take() } else { None }
-        });
-        if let Some((_, request)) = lost {
-            BAKE_QUEUE.with(|queue| queue.borrow_mut().push_front(request));
-        }
-    }
-
-    // -----------------------------------------------------------------
     // Recycling
     // -----------------------------------------------------------------
 
@@ -1384,20 +1419,24 @@ impl RuntimeManager {
     /// Whether the runtime just left may keep its frame. The shelf always
     /// may (its heap is small and bounded); a reader only below the heap
     /// line, read from its last digest — the drained one it published on
-    /// its way out.
+    /// its way out. The HIGH-WATER mark is what is read: the live heap is
+    /// low again after every close, but the frame's linear memory stays at
+    /// the largest size the session ever reached, and that is the number a
+    /// kept frame keeps paying for.
     fn may_recycle(&self, kind: RuntimeName) -> bool {
         match kind {
             RuntimeName::Library => true,
             RuntimeName::Reader => {
-                let heap = self
-                    .last_digest
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .and_then(|digest| digest.get("wasmHeapBytes"))
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(0.0);
-                heap <= READER_RECYCLE_HEAP_MAX
+                let digest = self.last_digest.lock().unwrap();
+                let read = |key: &str| {
+                    digest
+                        .as_ref()
+                        .and_then(|digest| digest.get(key))
+                        .and_then(serde_json::Value::as_f64)
+                        .unwrap_or(0.0)
+                };
+                let high_water = read("heapHighWaterBytes").max(read("wasmHeapBytes"));
+                high_water <= READER_RECYCLE_HEAP_MAX
             }
         }
     }
@@ -1493,9 +1532,6 @@ impl RuntimeManager {
             self.clear_warm(lane.generation);
             return;
         };
-        if lane.kind == RuntimeName::Reader {
-            self.requeue_bakes_from(lane.generation);
-        }
         let promise = driver.grace_dispose();
         let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
         let outcome = driver.take_dispose_outcome();
@@ -1556,18 +1592,19 @@ impl RuntimeManager {
     }
 
     /// A recycle that cannot finish: remove the frame, free the lane, and
-    /// warm a fresh counterpart if one is still wanted.
+    /// warm a fresh counterpart if the policy boots one unasked (the shelf
+    /// behind a reader; a reader waits for the shelf's next intent).
     fn drop_recycled(&self, driver: &Rc<Driver>, lane: WarmLane) {
         driver.teardown();
         self.end_recycle(lane);
         self.clear_warm(lane.generation);
-        let wanted = match self.active() {
-            Some(ActiveRuntime::Library) => RuntimeName::Library.counterpart() == lane.kind,
-            Some(ActiveRuntime::Reader) => RuntimeName::Reader.counterpart() == lane.kind,
-            None => false,
+        let revealed = match self.active() {
+            Some(ActiveRuntime::Library) => RuntimeName::Library,
+            Some(ActiveRuntime::Reader) => RuntimeName::Reader,
+            None => return,
         };
-        if wanted {
-            self.schedule_warm(lane.kind);
+        if revealed.counterpart() == lane.kind {
+            self.warm_counterpart_unasked(revealed);
         }
     }
 
@@ -1588,7 +1625,9 @@ impl RuntimeManager {
         self.note_session_created(lane.kind);
         self.set_warm_ready(lane);
         wake_recycle_waiters();
-        self.pump_bakes();
+        // A recycled reader is a warm reader like any other: it stays only
+        // while the shelf keeps reaching for a book.
+        self.arm_warm_reader_idle(lane);
         web_sys::console::debug_1(&JsValue::from_str(&format!(
             "[mareader] {} recycled warm at generation {}",
             lane.kind.label(),
@@ -1731,6 +1770,39 @@ fn clear_host(host: &web_sys::Element) {
         }
     }
     boot::clear_boot(host);
+}
+
+/// The warm reader's idle window: [`WARM_READER_IDLE_MS`], or the value the
+/// browser suite names in `?warmIdleMs=<ms>` (web test hook, like
+/// `?open=`/`?blend=` in `crate::services::launch`). The URL is read once,
+/// at the first call — `RuntimeManager::new` makes that call, while the boot
+/// URL is still in the bar: the shell's own navigation (`navigate`) replaces
+/// the URL path and drops the query, so a later read would see nothing.
+/// Clamped to at least one second so a hook cannot evict a reader the same
+/// tick it became warm.
+fn warm_reader_idle_ms() -> i32 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        thread_local! {
+            static HOOK: std::cell::OnceCell<Option<i32>> = const { std::cell::OnceCell::new() };
+        }
+        if let Some(ms) = HOOK.with(|hook| *hook.get_or_init(warm_idle_hook)) {
+            return ms;
+        }
+    }
+    WARM_READER_IDLE_MS
+}
+
+/// `?warmIdleMs=` off the current URL, if the page is a web test run.
+#[cfg(target_arch = "wasm32")]
+fn warm_idle_hook() -> Option<i32> {
+    if tauri_bridge::has_tauri() {
+        return None;
+    }
+    let search = web_sys::window()?.location().search().ok()?;
+    let params = web_sys::UrlSearchParams::new_with_str(&search).ok()?;
+    let ms = params.get("warmIdleMs")?.trim().parse::<i32>().ok()?;
+    Some(ms.max(1_000))
 }
 
 /// History-API navigation: two paths, `/` and `/reader` (§11). popstate is

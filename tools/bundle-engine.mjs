@@ -36,3 +36,9 @@ await bundle(["public/readerEngine.ts"], "public/readerEngine.js");
 // to pdfEngine.js so index.html can copy-file it to the dist root — copying
 // public/engine/ wholesale would ship the TypeScript sources.
 await bundle(["public/engine/theme/bake.worker.ts"], "public/bake.worker.js");
+
+// The Shell's cover-bake page script (public/bake.html): the engine's cover
+// render alone, for the hidden frame the Shell mounts to bake shelf covers
+// without a reader. Its own bundle so the bake page never loads the reader
+// facade, and the facade never learns about the bake wire.
+await bundle(["public/coverBake.ts"], "public/coverBake.js");
