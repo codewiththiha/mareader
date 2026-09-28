@@ -795,6 +795,37 @@ async function clickBook(title, label, timeout = 45_000) {
     x.engine.activeRenders === 0, timeout);
 }
 
+/** The shelf's intent signal: the pointer over the grid. The Shell boots a
+ *  reader behind the shelf on this — never on the shelf's paint — so every
+ *  stage that expects a warm reader has to do what a user does before a
+ *  click: reach into the shelf. `hover()` moves the real mouse (pointerover
+ *  fires as it would for a user); the fallback dispatches the same event
+ *  on the level for a grid whose gesture layer swallowed the move. */
+async function signalShelfIntent(label) {
+  try {
+    await page
+      .frameLocator('iframe.runtime-frame[data-mareader-slot="active"]')
+      .locator("#library-level")
+      .hover({ timeout: 5_000, position: { x: 40, y: 40 } });
+  } catch {
+    const dispatched = await page.evaluate(() => {
+      const doc = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument;
+      const level = doc?.getElementById("library-level");
+      if (!level) return false;
+      level.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      return true;
+    });
+    if (!dispatched) throw new Error(`[${label}] the shelf has no #library-level to reach into`);
+  }
+}
+
+/** Move the mouse off the shelf, so no further intent reaches it while a
+ *  stage waits for the warm reader's idle eviction. (0, 0) is the Shell's
+ *  own chrome, outside every runtime frame's level. */
+async function leaveShelfAlone() {
+  await page.mouse.move(0, 0);
+}
+
 // ---- 0: the library is seeded the way a user seeds it ---------------------
 // A fresh browser context has an EMPTY library: there is no grid to assert and
 // no book to open, so the stage that proves the boot contract has to run on a
@@ -820,6 +851,30 @@ summary.bootContract.seedOpen = {
 };
 
 // ---- 0a: `/` boots the Library runtime ------------------------------------
+// The reader files a book's cover on its first open (its open pipeline: a
+// second, small render of page 1 that lands shortly AFTER the first page is
+// on screen), and a shelf that finds its cover never asks for a bake. The
+// cover block below is the one proof the Shell's bake page works end to
+// end, so the shelf must start without one. Let the seed's own cover land
+// first — clearing the key while that write is still in flight would only
+// have it reappear a moment later — then drop the persisted covers before
+// the library boots. A seed whose cover never lands (a failed render leaves
+// the stylised fallback) has nothing to drop, and the shelf bakes anyway.
+{
+  const started = Date.now();
+  while (Date.now() - started < 15_000) {
+    const landed = await page.evaluate(() => {
+      try {
+        return Object.keys(JSON.parse(localStorage.getItem("mareader.covers.v1") ?? "{}")).length > 0;
+      } catch {
+        return false;
+      }
+    });
+    if (landed) break;
+    await page.waitForTimeout(250);
+  }
+  await page.evaluate(() => localStorage.removeItem("mareader.covers.v1"));
+}
 await armShellBootWatcher();
 await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
 await startHostSampler();
@@ -850,13 +905,25 @@ if (libraryDom.placeholder) {
 if (libraryDom.hosts !== 1) {
   throw new Error(`[/] expected exactly one runtime host, found ${libraryDom.hosts}`);
 }
-// One frame ON SCREEN, and at most one booted behind it (the reader, warming
-// while the shelf is up).
+// One frame ON SCREEN and nothing behind it: the library route at rest is
+// the library alone. A reader is booted behind the shelf on the shelf's
+// intent signal (a pointer over the grid), never on the shelf's paint — a
+// reader kept "just in case" is exactly the memory the library route is
+// meant to give back, and nothing in this stage has reached into the shelf.
 if (libraryDom.actives !== 1) {
   throw new Error(`[/] expected exactly one active runtime frame, found ${libraryDom.actives}`);
 }
-if (libraryDom.frames > 2) {
-  throw new Error(`[/] expected at most two runtime frames (active + warm), found ${libraryDom.frames}`);
+if (libraryDom.frames !== 1) {
+  throw new Error(`[/] expected the library frame alone at rest, found ${libraryDom.frames} runtime frame(s)`);
+}
+{
+  const atRest = await snap();
+  if (atRest.warmRuntime !== null || (atRest.readerFramesResident ?? 0) !== 0) {
+    throw new Error(
+      `[/] a reader is resident behind an untouched shelf (warm ${atRest.warmRuntime}, ` +
+        `readerFramesResident ${atRest.readerFramesResident})`,
+    );
+  }
 }
 assertArtifactLoaded("/library.js", "/");
 assertArtifactLoaded("/library_bg.wasm", "/");
@@ -872,14 +939,20 @@ if (shellBoot.removedAt === null) {
 if (!(shellBoot.titleWidth !== null && shellBoot.titleWidth <= 1)) {
   throw new Error(`[/] the boot placeholder's copy is visible on a healthy start (title width ${shellBoot.titleWidth})`);
 }
-// The shelf's cover bakes: the Shell loads no PDF engine any more, so a
-// cover can only exist if the relay works end to end — shelf asks, Shell
-// queues, the warm reader frame bakes, the Shell hands the art back, the
-// shelf files and persists it. The seeded book must get its cover.
+// The shelf's cover bakes: neither the Shell nor the library loads a PDF
+// engine, and no reader is booted for them — a cover can only exist if the
+// Shell's own bake page works end to end: shelf asks, Shell mounts
+// `bake.html` (pdf.js alone, no wasm), the page bakes, the Shell hands the
+// art back, the shelf files and persists it. The seeded book must get its
+// cover, and the bake page must be GONE a few seconds after: it is a
+// transient worker, not a resident.
 {
   const started = Date.now();
   let covers = 0;
+  let sawBakeFrame = false;
   for (;;) {
+    const s = await snap();
+    if (s?.bakeFrameResident === true) sawBakeFrame = true;
     covers = await page.evaluate(() => {
       try {
         return Object.keys(JSON.parse(localStorage.getItem("mareader.covers.v1") ?? "{}")).length;
@@ -889,11 +962,32 @@ if (!(shellBoot.titleWidth !== null && shellBoot.titleWidth <= 1)) {
     });
     if (covers > 0) break;
     if (Date.now() - started > 45_000) {
-      throw new Error("[/] the seeded book never got a cover — the bake relay through the reader frame is broken");
+      throw new Error("[/] the seeded book never got a cover — the Shell's bake page is broken");
     }
     await page.waitForTimeout(250);
   }
-  summary.bootContract.coverRelay = { covers, ms: Date.now() - started };
+  const baked = await snap();
+  if ((baked?.readerFramesResident ?? 0) !== 0) {
+    throw new Error(`[/] baking a cover booted a reader (readerFramesResident ${baked.readerFramesResident})`);
+  }
+  // The covers were cleared before this boot, so the only way one exists now
+  // is the bake page: it must have been seen resident. (It stays for the
+  // idle grace after the drain, well above the poll interval above.)
+  if (!sawBakeFrame && baked?.bakeFrameResident !== true) {
+    throw new Error("[/] a cover arrived without the Shell's bake page ever being resident");
+  }
+  const bakeGone = await waitFor("/: the bake page removed after the covers drained", (x) =>
+    x.bakeFrameResident === false, 30_000);
+  const bakeFrames = await page.evaluate(() => document.querySelectorAll("iframe.bake-frame").length);
+  if (bakeFrames !== 0) {
+    throw new Error(`[/] the probe says the bake page is gone but ${bakeFrames} bake frame(s) are in the DOM`);
+  }
+  summary.bootContract.coverBake = {
+    covers,
+    ms: Date.now() - started,
+    sawBakeFrame,
+    coversAnswered: bakeGone.coversAnswered ?? null,
+  };
 }
 summary.bootContract.libraryBoot = {
   path: libraryDom.path,
@@ -910,6 +1004,9 @@ summary.bootContract.libraryBoot = {
 // rebooted one arrives with a fresh one. The sampler above covers the
 // instants in between (one frame on screen, the other hidden).
 currentStage = "stage0-transition";
+// The reader is booted on intent: reach into the shelf first, as a user
+// does on the way to a card, then wait for the boot that signal started.
+await signalShelfIntent("library → reader");
 await waitForWarm("library → reader: the reader warmed behind the shelf");
 const warmSlots = await frameSlots();
 const beforeHandoff = await snap();
@@ -981,7 +1078,9 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
   // is the precondition the assertion below reads. The property under test
   // is that a click landing on a booted warm frame COSTS NO BOOT, so the
   // frame has to be there — and the rearm itself is the thing four cycles
-  // of it proves reliable.
+  // of it proves reliable. No intent signal here on purpose: the reader the
+  // user just left is recycled in place whether or not they reach for the
+  // next book, and this is the stage that proves it.
   await waitForWarm(`rapid ${cycle}: the reader rearmed behind the shelf`);
   const before = await snap();
   const warmed = await frameSlots();
@@ -1120,13 +1219,136 @@ summary.bootContract.readerBoot = {
   path: readerRouteDom.path,
   generation: readerRoute.runtime?.generation ?? null,
 };
+// ---- 0e: the warm reader is evicted when the shelf goes quiet -------------
+// The memory half of the split. A reader booted behind the shelf — on
+// intent, or recycled from the session the user just left — is a resident
+// realm: a wasm instance whose heap never shrinks, pdf.js, a worker. The
+// Shell keeps it only while the shelf keeps reaching for a book; once the
+// shelf has been quiet for the idle window it is disposed and its frame
+// removed, and the library route is the library alone. `?warmIdleMs=` is
+// the suite's hook on that window (60 s in production; 2 s here), read off
+// the boot URL.
+currentStage = "stage0-idle-eviction";
+await page.goto(`${BASE}/?warmIdleMs=2000`, { waitUntil: "domcontentloaded" });
+const idleBoot = await waitFor("the library runtime to boot for the eviction stage", (x) =>
+  x.bootState === "library" && x.activeRuntime === "library", 60_000);
+await waitForDom("eviction: the library rendered", (s) =>
+  s.library >= 1 && s.reader === 0 && !s.placeholder);
+if (idleBoot.warmReaderIdleMs !== 2000) {
+  throw new Error(`[eviction] the idle hook was not read (warmReaderIdleMs ${idleBoot.warmReaderIdleMs})`);
+}
+// Intent boots the reader…
+await signalShelfIntent("eviction: intent");
+const idleWarm = await waitForWarm("eviction: the reader warmed on intent");
+if (idleWarm.warmRuntime !== "reader" || (idleWarm.readerFramesResident ?? 0) !== 1) {
+  throw new Error(
+    `[eviction] expected one warm reader after intent (warm ${idleWarm.warmRuntime}, ` +
+      `readerFramesResident ${idleWarm.readerFramesResident})`,
+  );
+}
+const warmedGeneration = (await frameSlots()).warm;
+// …and silence evicts it: the lane empties, the session is disposed and
+// accounted, the frame leaves the DOM.
+await leaveShelfAlone();
+const evictionStarted = Date.now();
+const evicted = await waitFor("eviction: the idle reader evicted", (x) =>
+  (x.warmReaderEvictions ?? 0) >= 1 &&
+  x.warmRuntime === null &&
+  (x.readerFramesResident ?? 0) === 0, 30_000);
+const evictionMs = Date.now() - evictionStarted;
+assertSessionBalance(evicted, "eviction");
+// The eviction is the idle window plus the reader's own dispose beat — a
+// warm reader holds no document, so there is nothing slow to close. An
+// eviction that takes the Shell's forced-removal timeout (8 s) on top means
+// the reader never answered its dispose, and the memory the user was
+// promised back within the window came back only by force.
+if (evictionMs > idleBoot.warmReaderIdleMs + 4_000) {
+  throw new Error(
+    `[eviction] the idle reader took ${evictionMs} ms to leave (window ${idleBoot.warmReaderIdleMs} ms): ` +
+      "its dispose was not answered, the Shell waited out its forced-removal timeout",
+  );
+}
+{
+  const slots = await frameSlots();
+  if (slots.warm !== null || slots.frames !== 1) {
+    throw new Error(`[eviction] the host still holds ${slots.frames} frame(s) (warm ${slots.warm}) after the eviction`);
+  }
+  if (evicted.atBaseline !== true) {
+    throw new Error("[eviction] the shell is not at baseline with no reader resident");
+  }
+}
+// Reaching in again boots a fresh reader (a new generation: the evicted
+// frame is gone, not hidden), and the click that follows is a reveal of
+// THAT frame — an eviction costs nothing the next open cannot recover.
+await signalShelfIntent("eviction: renewed intent");
+const rewarmed = await waitForWarm("eviction: a fresh reader warmed after the eviction");
+const rewarmedSlots = await frameSlots();
+if (rewarmedSlots.warm === null || rewarmedSlots.warm === warmedGeneration) {
+  throw new Error(
+    `[eviction] expected a fresh warm reader after the eviction, got generation ${rewarmedSlots.warm} ` +
+      `(evicted ${warmedGeneration})`,
+  );
+}
+const afterEviction = await clickBook("Programming Pearls", "eviction: library → reader");
+const revealedAfterEviction = await frameSlots();
+if (revealedAfterEviction.active !== rewarmedSlots.warm) {
+  throw new Error(
+    `[eviction] the open after the eviction rebooted: warmed ${rewarmedSlots.warm}, on screen ${revealedAfterEviction.active}`,
+  );
+}
+// Close: the reader is recycled in place (warm again), and with no further
+// intent it is evicted too — the user's own scenario: read, go back to the
+// shelf, and within the idle window the reader's memory is gone.
+await waitForWarm("eviction: the shelf warmed behind the reader");
+await clickCloseNow();
+await waitFor("eviction: the library after the close", (x) =>
+  x.bootState === "library" && x.activeRuntime === "library", 45_000);
+await leaveShelfAlone();
+const recycledGone = await waitFor("eviction: the recycled reader evicted after the close", (x) =>
+  (x.warmReaderEvictions ?? 0) >= 2 &&
+  x.warmRuntime === null &&
+  (x.readerFramesResident ?? 0) === 0 &&
+  x.atBaseline === true, 45_000);
+assertSessionBalance(recycledGone, "eviction (after a read)");
+{
+  const slots = await frameSlots();
+  if (slots.frames !== 1 || slots.active === null) {
+    throw new Error(`[eviction] after the read the host holds ${slots.frames} frame(s) (active ${slots.active})`);
+  }
+  // Both evictions disposed a reader that held no document (the second one
+  // was recycled after its read, so it was warm again when it idled): each
+  // must have ANSWERED its dispose. A forced removal is the Shell giving up
+  // on that answer, and it is logged as exactly that.
+  const forced = huntLog.filter((line) =>
+    line.startsWith(`[${currentStage}]`) && line.includes("forced frame removal"));
+  if (forced.length > 0) {
+    throw new Error(`[eviction] a reader was removed by force instead of answering its dispose:\n${forced.join("\n")}`);
+  }
+}
+summary.bootContract.idleEviction = {
+  idleMs: idleBoot.warmReaderIdleMs,
+  firstEvictionMs: evictionMs,
+  evictions: recycledGone.warmReaderEvictions,
+  readerSessions: recycledGone.readerSessionsCreated,
+  readerDisposes: recycledGone.readerDisposesCompleted,
+  readerFramesResident: recycledGone.readerFramesResident,
+  rewarmedFresh: rewarmedSlots.warm !== warmedGeneration,
+  revealedAfterEviction: revealedAfterEviction.active === rewarmedSlots.warm,
+  openedGeneration: afterEviction.runtime?.generation ?? null,
+};
+assertNoNewPanics("stage0 idle eviction", 0);
+console.log(
+  `boot contract: the idle warm reader was evicted in ${evictionMs} ms (window ${idleBoot.warmReaderIdleMs} ms), ` +
+    `${recycledGone.warmReaderEvictions} evictions, ${recycledGone.readerFramesResident} reader frames resident after a read`,
+);
+
 // Leave the page at a clean library boot: Stage 1 opens its own URL and
 // computes its own epoch/generation bases from a fresh document.
 await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
 await waitFor("the library runtime after the boot-contract stage", (x) =>
   x.bootState === "library", 60_000);
 
-// ---- 0e: a boot that cannot finish is VISIBLE, never a legacy fallback ----
+// ---- 0f: a boot that cannot finish is VISIBLE, never a legacy fallback ----
 // The incident's other half (§6, §7): with the runtime artifact missing, the
 // shell must show a named error state — runtime + stage + cause — and must
 // NOT mount the old LibraryPage as a fallback. The server 404s the artifact
