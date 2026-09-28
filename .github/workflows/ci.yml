@@ -6,6 +6,13 @@ on:
   push:
     branches: ["**"]
     tags-ignore: ["v*"]
+    # Nothing in these five lanes reads docs/ as an input — the contract
+    # scripts parse SOURCE comments, never the documents they point at — so a
+    # push that only writes prose has nothing to compile, lint or type-check.
+    # Any push that also touches code runs the lot: the filter drops a run
+    # only when every changed path matches.
+    paths-ignore:
+      - "docs/**"
   pull_request:
   workflow_dispatch:
 

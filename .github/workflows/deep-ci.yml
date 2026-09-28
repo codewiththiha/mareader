@@ -8,10 +8,26 @@ name: Deep CI
 #
 # Runs nightly, on demand, and when the things this lane exists to test are
 # themselves changed (the engine bundles, the browser suite, this workflow).
+#
+# A push can opt out per commit: "[skip deep]" in the commit SUBJECT drops
+# both lanes. These are the two most expensive jobs in the repo and the two
+# that cannot run in under a minute, so a push that only moves a comment
+# should not have to pay for them twice. The nightly schedule ignores the
+# marker — whatever is skipped during the day is caught overnight.
 on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: "Which lane to run"
+        type: choice
+        options: [both, browser, tauri]
+        default: both
+      ignore-skip:
+        description: "Run even if the commit says [skip deep]"
+        type: boolean
+        default: false
   push:
     branches: ["**"]
     paths:
@@ -72,10 +88,42 @@ env:
   RUSTUP_DOWNLOAD_TIMEOUT: "600"
 
 jobs:
+  # One tiny job decides whether this push opted out. It reads the SUBJECT
+  # only: `contains()` sees the whole commit message, so a body that merely
+  # QUOTES the marker in prose — this file's own comments do — would
+  # otherwise drop the most expensive gate in the repo by accident.
+  skip:
+    name: Resolve the skip marker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      skip: ${{ steps.subject.outputs.skip }}
+    steps:
+      # The message arrives through the environment, never interpolated into
+      # the script: a subject carrying quotes or a command substitution is
+      # data here, not shell.
+      - id: subject
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          subject="${MESSAGE%%$'\n'*}"
+          case "$subject" in
+            *"[skip deep]"*) echo "skip=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "skip=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
   browser-lifecycle:
     name: Browser lifecycle baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    needs: skip
+    # Two ways in: the commit subject says "[skip deep]", or a dispatch
+    # narrowed the run to the other lane. Neither can be the last word — the
+    # nightly cron ignores both, and a dispatch can override the marker.
+    if: >-
+      github.event.inputs.lanes != 'tauri'
+      && (needs.skip.outputs.skip != 'true'
+      || github.event.inputs.ignore-skip == 'true')
     steps:
       - uses: actions/checkout@v7
 
@@ -138,6 +186,11 @@ jobs:
     name: Tauri native boot smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    needs: skip
+    if: >-
+      github.event.inputs.lanes != 'browser'
+      && (needs.skip.outputs.skip != 'true'
+      || github.event.inputs.ignore-skip == 'true')
     steps:
       - uses: actions/checkout@v7
 
