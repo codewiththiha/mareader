@@ -28,7 +28,9 @@ deep (nightly / on demand / when the boot path itself changes):
 browser         the one production frontend build, then the wasm app in a real
                 browser: the boot contract stage (library at /, both runtime
                 transitions with disposal order, /reader, and a missing
-                artifact's error state), then the lifecycle/memory suite
+                artifact's error state), then the lifecycle/memory suite;
+                the dist it measured is uploaded (3 days) pass or fail, so a
+                run can be replayed or compared locally
 tauri-smoke     the same production build, then the REAL native window under
                 Xvfb: the Library runtime boots, the pixels are not one flat
                 colour, and an OS document handoff boots the Reader

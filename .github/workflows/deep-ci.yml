@@ -169,8 +169,13 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
           exit $STATUS
 
+      # Every run, not only a failed one: the build a green run measured is
+      # the one a local comparison (route-switch latency, memory after a
+      # return) or a bisect wants to serve, and a passing run used to leave
+      # nothing to download. Three days is the whole window such a
+      # comparison needs.
       - name: Upload dist for local debugging
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v5
         with:
           name: dist
