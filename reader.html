@@ -15,8 +15,11 @@
     <link data-trunk rel="copy-file" href="public/pdfEngine.js" />
     <link data-trunk rel="copy-file" href="public/readerEngine.js" />
     <link data-trunk rel="copy-file" href="public/bake.worker.js" />
+    <!-- No pdf.js script tag: the engine imports it on the first PDF open
+         (public/engine/loader.ts, `ensurePdfjs`), so a reader session that
+         never opens a PDF never loads it. The stylesheet above stays: the
+         text layer's per-span geometry is its rules. -->
     <script type="module" src="/readerEngine.js"></script>
-    <script type="module" src="/vendor/pdfjs/pdf.min.mjs"></script>
     <script type="module" src="/pdfEngine.js"></script>
     <!-- The reader artifact: its own Trunk config (reader.Trunk.toml) builds
          this page; the bin is the reader runtime alone. -->

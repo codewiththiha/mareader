@@ -76,12 +76,23 @@ function withTimeout<T>(
 // the app's lifetime.
 let workerSrcConfigured = false;
 
-/** Resolve pdf.js off globalThis at call time — never at module evaluate. */
-function getPdfjs(): PdfjsLib {
+/** Where pdf.js lives. Typed `string`, not a literal, on purpose: a literal
+ *  specifier would have tsc resolve the module and esbuild bundle it, and
+ *  this one must stay a runtime `import()` — see `ensurePdfjs`. */
+const PDFJS_MODULE_URL: string = "/vendor/pdfjs/pdf.min.mjs";
+
+/** The one in-flight load of pdf.js, so concurrent first opens share it. */
+let pdfjsLoading: Promise<PdfjsLib> | null = null;
+
+/** pdf.js if some script has already put it on `globalThis` (a page that
+ *  loads it with a script tag, the smoke harness's stub, or an earlier
+ *  `ensurePdfjs`). */
+function presentPdfjs(): PdfjsLib | null {
   const l = globalThis.pdfjsLib as PdfjsLib | undefined;
-  if (!l || typeof l.getDocument !== "function") {
-    throw new Error("pdf.js is not loaded");
-  }
+  return l && typeof l.getDocument === "function" ? l : null;
+}
+
+function configureWorker(l: PdfjsLib): PdfjsLib {
   // Absolute worker URL so Tauri's Worker constructor resolves against the
   // webview origin, not a broken custom-protocol base.
   if (l.GlobalWorkerOptions && !workerSrcConfigured) {
@@ -98,8 +109,52 @@ function getPdfjs(): PdfjsLib {
   return l;
 }
 
-export function getDocument(params: Record<string, unknown>) {
-  return getPdfjs().getDocument(params);
+/** pdf.js, loaded on first use. The reader page no longer loads it with a
+ *  script tag: a reader session that never opens a PDF (a warm reader the
+ *  shelf never clicked into, a Markdown or text session) then never fetches,
+ *  compiles or holds it — the first PDF open pays the one fetch (cached by
+ *  the browser after that), and the module lives for the frame's life like
+ *  any other. A page that does load pdf.js itself (the Shell's bake page,
+ *  which wants it in parallel with its own script) is found on `globalThis`
+ *  and never loaded twice. A failed load is not cached: the next open
+ *  retries. */
+export function ensurePdfjs(): Promise<PdfjsLib> {
+  const present = presentPdfjs();
+  if (present) return Promise.resolve(configureWorker(present));
+  if (!pdfjsLoading) {
+    pdfjsLoading = import(PDFJS_MODULE_URL)
+      .then((mod: unknown) => {
+        // pdf.js's module build publishes itself on `globalThis.pdfjsLib`
+        // as it evaluates; the namespace is the fallback for a build that
+        // stops doing so.
+        const lib = presentPdfjs() ?? (mod as PdfjsLib);
+        if (!lib || typeof lib.getDocument !== "function") {
+          throw new Error("pdf.js is not loaded");
+        }
+        globalThis.pdfjsLib = lib;
+        return configureWorker(lib);
+      })
+      .catch((e: unknown) => {
+        pdfjsLoading = null;
+        throw e;
+      });
+  }
+  return pdfjsLoading;
+}
+
+/** Resolve pdf.js off globalThis at call time — never at module evaluate.
+ *  Synchronous, for the paths that only run once a document is open (the
+ *  text layer): by then `ensurePdfjs` has loaded it. */
+function getPdfjs(): PdfjsLib {
+  const l = presentPdfjs();
+  if (!l) {
+    throw new Error("pdf.js is not loaded");
+  }
+  return configureWorker(l);
+}
+
+export async function getDocument(params: Record<string, unknown>) {
+  return (await ensurePdfjs()).getDocument(params);
 }
 
 // A LoadingTask is destroyed at most once, ever: `open`'s own timeout and the
@@ -162,7 +217,7 @@ const OPEN_TIMEOUT_MSG = "Timed out opening this PDF (pdf.js worker failed to in
  *  teardown can find it, one ceiling on the worker, and a cleanup that runs if
  *  the ceiling wins. Only the source differs between callers. */
 async function openTask(source: Record<string, unknown>): Promise<PDFDocumentProxy> {
-  const task = getDocument({ ...BASE_PARAMS, ...source });
+  const task = await getDocument({ ...BASE_PARAMS, ...source });
   noteWorkerCreated();
   session.setLoadingTask(task);
   return await withTimeout(task.promise, OPEN_TIMEOUT_MS, OPEN_TIMEOUT_MSG, () => {
@@ -540,7 +595,7 @@ export async function coverDataUrl(path: string, maxWidth = 240): Promise<CoverR
     if (session.pdf && session.currentPath === path) {
       result = await renderCoverFromPdf(session.pdf, maxWidth);
     } else {
-      const task = getDocument({ ...BASE_PARAMS, data: await fetchBytes(path) });
+      const task = await getDocument({ ...BASE_PARAMS, data: await fetchBytes(path) });
       noteWorkerCreated();
       try {
         const doc = await task.promise;
