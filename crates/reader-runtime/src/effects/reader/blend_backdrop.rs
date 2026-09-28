@@ -24,7 +24,7 @@
 //! the APP root, because the session must know the blend switch and detection
 //! area BEFORE the first document opens (the first book's first frame
 //! publishes only if the session already knows `blend_on`);
-//! [`blend_backdrop`] (geometry) stays with ReaderPage, where the
+//! [`blend_backdrop`] (geometry) stays with the pane (`crate::pane`), where the
 //! virtualizer's scroll lives.
 
 use leptos::prelude::*;
@@ -67,7 +67,7 @@ fn publish(layout: LayoutSettings) {
     );
 }
 
-/// Geometry → the session. Called once from ReaderPage, alongside the other
+/// Geometry → the session. Called once per pane from its mount, alongside the other
 /// reader effects; see the module doc for why this half waits for the reader.
 pub fn blend_backdrop(state: crate::context::ReaderContext) {
     let settings = state.settings;

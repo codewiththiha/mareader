@@ -3,10 +3,12 @@
 //!
 //! The two places are not a stylistic choice — see the sidebar family's
 //! `overlay.rs` for the stacking-context story that puts the floating rail
-//! outside `.reader-bg`. The page mounts [`crate::components::shell::sidebar::push::PushRail`]
-//! and [`crate::components::shell::sidebar::overlay::OverlayRail`], each
-//! self-gating on the shell controller's layout; this composition renders
-//! identically inside either.
+//! outside `.reader-bg`. The reader host mounts
+//! [`crate::components::shell::sidebar::push::PushRail`] and
+//! [`crate::components::shell::sidebar::overlay::OverlayRail`], each
+//! self-gating on the shell controller's layout, and the active pane fills
+//! both through its rail slot; this composition renders identically inside
+//! either.
 //!
 //! Every open/close paint fact the panel hosts need — which panel stays
 //! painted through a close, whether thumbnail cells may mount, the intro
@@ -26,7 +28,7 @@ use app_ui::components::shell::controller::ShellController;
 #[component]
 pub(crate) fn ReaderRail(
     state: crate::context::ReaderContext,
-    /// The shell's layout truth, owned by the page so both mount points
+    /// The shell's layout truth, owned by the host so both mount points
     /// share one controller (and one open/close machine).
     shell: ShellController,
 ) -> impl IntoView {

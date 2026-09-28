@@ -18,7 +18,8 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 0 — memory/lifecycle baseline | **done**: browser lifecycle suite (`tests/browser/lifecycle.mjs`), counters in `crates/reader-runtime/src/diagnostics.rs`, results in `docs/memory-baseline.md` |
 | 1 — explicit runtime/session lifecycle | **done**: `ReaderRuntime` state machine, generations, resource registry, observable disposal (`crates/reader-runtime/src/runtime.rs`) |
 | 2 — Shell / Library / Reader split | **done**: three WASM artifacts, shell-owned iframes with a `MessageChannel` handshake, `frame-transport` crate, dispose-as-a-unit |
-| 3+ — Reader Host & panes, session-scoped engines, split mode, … | **not started** — waiting on the phase guide |
+| 3 — Reader Host & panes | **done**: `ReaderHost` + `PaneManager` own the workspace (`crates/reader-runtime/src/host/`), the document pane owns one session (`crates/reader-runtime/src/pane/`); `ReaderPage` removed. Map in `docs/lifecycle-ownership.md` (Phase 3 section) |
+| 4+ — session-scoped engines, split mode, … | **not started** — waiting on the phase guide |
 
 ## Architecture as built (do not re-derive)
 
@@ -31,6 +32,18 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   (the "peak N page hosts" browser failure).
 - The PDF engine is still a module-global under `PdfSessionHandle`; true
   session-scoped engines are Phase 4, not a defect to "fix" opportunistically.
+  Until then production runs exactly ONE pane per reader session, even
+  though the pane manager's API never assumes one.
+- Inside the reader frame: `start_session` (composition root) → runtime →
+  `ReaderHost` (chrome placement, `ShellController`, settings modal
+  placement, focus/active pane, bounds, status reports) → `PaneManager`
+  (ids, lifecycle, create/focus/resize/close/dispose_all) → the document
+  pane (its own `ReaderState`, effects, virtualizers, document session).
+  The host never names a PDF type or a pane's state
+  (`tools/check-host-boundary.mjs`, CI lint lane); pane content reaches the
+  chrome only through `ChromeSlot` views. Panes never see `AppState` or
+  Shell state; the Shell reads the host through the `host` block of the
+  diagnostics digest.
 - The Shell loads **no engine**: `index.html` carries no pdf.js / engine /
   reader-bundle scripts and the root crate has no `pdf-engine` dependency
   (`tools/check-dependency-gate.mjs` forbids it, and the whole reader-only
@@ -139,7 +152,8 @@ whatever is on screen:
   and it is never empty while the shell is warm — a warm runtime counts as
   created the moment it answers `Ready`.
 - Leaving the reader cancels in-flight page renders synchronously with the
-  click (`close_document` → `cancel_page_renders`) before the navigate
+  click (the active pane's `PaneCommand::PrepareLeave` →
+  `cancel_page_renders`) before the navigate
   command crosses the frame channel; the session destroy during disposal
   remains the single teardown path.
 - Browser peaks: page hosts ≤ render window + zombie cap, active renders ≤
@@ -244,6 +258,11 @@ The cover bake is proven in the same run without any reader resident
   session lives (recycle Pending/Disposing); a `BakeCover` ask is routed
   ahead of both the registry and the live gate, because a cold shelf asks
   from inside its own mount.
+- Pane teardown is observable: every digest carries `host` (lifecycle,
+  activePane, per-pane lifecycle/bounds/resources, panesCreated) and the
+  browser suite asserts one ready, focused pane with a fresh id per open
+  and an empty, disposed workspace after close (`assertHostWorkspace`,
+  `assertHostDisposed` in `tests/browser/lifecycle.mjs`).
 - Diagnostics hardening: a reader that existed but never reported a terminal
   digest should fail `atBaseline` closed (currently only "last digest says
   drained" is required).

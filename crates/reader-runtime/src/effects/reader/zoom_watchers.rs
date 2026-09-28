@@ -61,7 +61,7 @@ const REFIT_DEBOUNCE: Duration = Duration::from_millis(FOLLOW_SETTLE_MS);
 
 /// Re-resolve the scale when the world under it changes in a way that is not
 /// the container moving: a fit mode chosen or dropped, or a view-mode flip.
-/// Called once from the reader shell (ReaderPage), alongside `follow_watcher`.
+/// Called once per pane, from its mount, alongside `follow_watcher`.
 ///
 /// A PAGE turn joins that list only while Settings → Layout → Auto Resize is
 /// on. The page matters because the ceiling a hand-picked zoom is held to is
@@ -173,7 +173,7 @@ pub fn fit_watcher(state: crate::context::ReaderContext) {
 /// scrollbar flicker for the length of the burst. Landing in the frame the
 /// size was reported costs one relayout per frame and one raster at the end.
 ///
-/// Called once from the reader shell (ReaderPage), alongside `fit_watcher`.
+/// Called once per pane, from its mount, alongside `fit_watcher`.
 pub fn follow_watcher(state: crate::context::ReaderContext, sidebar: RwSignal<SidebarMode>) {
     let vs = state.reader.viewer;
     // The same end frame, delivered late instead of frame by frame, for the one

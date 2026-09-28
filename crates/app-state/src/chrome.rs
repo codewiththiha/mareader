@@ -17,7 +17,7 @@ use reader_core::settings::Settings;
 #[derive(Clone, Copy)]
 pub struct ReaderSurface {
     pub reflowable: Signal<bool>,
-    pub search_visible: RwSignal<bool>,
+    pub search_visible: Signal<bool>,
     pub sidebar_slide: RwSignal<Motion>,
 }
 

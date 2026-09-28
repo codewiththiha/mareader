@@ -18,7 +18,7 @@ use app_ui::components::primitives::controls::button::{Button, ButtonVariant};
 #[component]
 pub(crate) fn SidebarHeader(reader: ReaderState, sidebar: RwSignal<SidebarMode>) -> impl IntoView {
     // The settings modal's open signal lives at the reader page and is shared
-    // through context (see `crate::features::page`), so this header can open the same
+    // through context (see `crate::host`), so this header can open the same
     // modal the 3-dash menu does.
     let settings_open =
         use_context::<RwSignal<bool>>().expect("the reader page provides the settings-open signal");

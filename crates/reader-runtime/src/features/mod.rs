@@ -1,9 +1,8 @@
-//! The reader's feature surfaces. The session host (the old `ReaderPage`,
-//! now the runtime boundary) owns the chrome composition and the effect
-//! wiring; the rail is the sidebar's content tree.
+//! The reader's feature surfaces that are neither host nor pane plumbing:
+//! the rail (the sidebar's content tree, which the active pane fills into
+//! the host's rail slot) and the virtualizer setup a pane's mount runs.
+//! The workspace composition lives in `crate::host`; the per-pane effect
+//! wiring in `crate::pane`.
 
-pub mod page;
 pub mod rail;
 pub mod virtualizers;
-
-pub use page::ReaderPage;

@@ -121,7 +121,8 @@ The app uses the adapter and keeps only app-specific policy locally:
 
 ## Continuous reader flow
 
-1. `ReaderPage` builds one `Virtualizer` for the continuous surface.
+1. Each reader pane (`reader_runtime::pane::document::DocumentPane`, created by the
+   reader host) builds one `Virtualizer` for the continuous surface.
 2. `ScrollShell` binds the scroll container and hands the mounted window to
    `UniversalStripHost`, which picks the format's strip — `PdfPageStrip` or the
    reflowable one. The strip renders `v.items()`, and the PDF's reports measured

@@ -172,7 +172,7 @@ pub fn PdfPageStrip(
                 // arrives when a page render completes, and the fresh open's
                 // window mounts around the resume page — so the first report
                 // means the reader's page has pixels. Until then the loader
-                // cover owns the slot (see `crate::features::page`).
+                // cover owns the slot (see `crate::pane`).
                 if page == state.viewer.page.get_untracked()
                     && !state.viewer.first_paint.get_untracked()
                 {

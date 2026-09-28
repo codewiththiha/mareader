@@ -73,7 +73,7 @@ pub struct ViewerSignals {
     /// when their mount anchor lands (DOM text paints synchronously), and
     /// the paginated modes — which have no anchor to land — release on
     /// their first frame after mount. A safety net in
-    /// `features::page` guarantees a release either way. For
+    /// `crate::pane` guarantees a release either way. For
     /// exactly that long an opaque cover the colour of the reader's paper
     /// masks the viewer there, so the first renders — however healthy — are
     /// never watched arriving: the reader appears already settled on the

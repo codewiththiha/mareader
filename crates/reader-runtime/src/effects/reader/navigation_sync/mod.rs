@@ -1,5 +1,5 @@
 //! Navigation sync: keeps `viewer.page` and the continuous/horizontal scroll
-//! position in sync around the virtualizers. Wired once from ReaderPage.
+//! position in sync around the virtualizers. Wired once per pane, from its mount.
 //!
 //! - scroll → page: the virtualizer's dominant-page signal ([`dominant`]);
 //! - page → scroll: `scroll_to_index(Start, Auto)` — `Auto` resolves to a
@@ -57,7 +57,7 @@ pub(super) struct Arms {
     pub zooming: Signal<bool>,
 }
 
-/// Must be called once from the app root (ReaderPage), alongside the zoom sources.
+/// Must be called once per pane (its mount), alongside the zoom sources.
 pub fn navigation_sync(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: Virtualizer) {
     let arms = Arms {
         state,

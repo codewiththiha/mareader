@@ -1,8 +1,9 @@
-//! The reader session's context: the state slices this runtime owns, the
-//! Phase 1 lifecycle owner, and the boundary to the Shell. This is what a
-//! reader function receives instead of the old unified `ReaderContext` — the type
-//! cannot name library state, which is the compile-level kill switch the
-//! phase asks for.
+//! A pane's context: the pane's OWN reader state, its handle (identity,
+//! lifecycle gate, resource registry), the session's settings/UI slices and
+//! the boundary to the Shell. This is what every reader function receives.
+//! The type cannot name library state, the Shell's state, or another pane's
+//! state: each pane builds its own (`crate::pane::document`), and the host
+//! never holds one.
 
 use crate::state::ReaderState;
 use app_state::state::UiState;
@@ -10,14 +11,18 @@ use leptos::prelude::*;
 use reader_core::settings::Settings;
 use runtime_contract::boundary::{DocStatusReport, LaunchDocument, ReadPoint, ShellApi};
 
-/// The reader session's own state bundle. Field names match the old
-/// `ReaderContext`'s reader-reachable paths (`ctx.reader.*`, `ctx.settings`,
-/// `ctx.ui`) so the bodies moved out of the unified tree read the same; what
-/// no longer EXISTS on this type is every library path.
+/// One pane's state bundle. Field names keep the reader-reachable paths
+/// (`ctx.reader.*`, `ctx.settings`, `ctx.ui`) the reader's bodies read; what
+/// does not EXIST on this type is every library path and the session's
+/// lifecycle owner (a pane asks its own handle whether it may work).
 #[derive(Clone, Copy)]
 pub struct ReaderContext {
+    /// THIS pane's document, viewer, search, AI-selection and gloss state —
+    /// created with the pane, dropped with the pane.
     pub reader: ReaderState,
-    pub runtime: crate::runtime::ReaderRuntime,
+    /// The pane's handle: its id, its lifecycle gate, the resources its
+    /// dispose owns.
+    pub pane: crate::pane::handle::PaneHandle,
     /// The session's settings copy: seeded from storage at start, persisted
     /// through the boundary when the reader edits it. The shell owns the
     /// durable key; the session owns the live value (persist data ≠ retain
@@ -26,14 +31,16 @@ pub struct ReaderContext {
     pub ui: UiState,
     /// The boundary. Commands only — never a state handle from the Shell.
     pub api: ApiHandle,
-    /// The launch descriptor the session was started with. Behind a signal
-    /// only so the context stays Copy — every view closure captures it.
+    /// The launch this pane's current document was opened with. Behind a
+    /// signal only so the context stays Copy — every view closure captures
+    /// it.
     pub launch: RwSignal<LaunchDocument>,
     /// The session id the manager knows this runtime by.
     pub id: u32,
-    /// The shared-chrome handles this session provides: the title bar and
-    /// appearance surfaces read these (chrome CODE is shared; chrome STATE is
-    /// per-runtime — §9).
+    /// The shared-chrome handles the HOST built for this session: the title
+    /// bar and appearance surfaces read these (chrome CODE is shared; chrome
+    /// STATE is per-runtime — §9). Its reader surface follows the host's
+    /// active pane.
     pub chrome: app_state::ChromeState,
 }
 

@@ -24,7 +24,7 @@ use runtime_contract::boundary::ShellApi;
 /// continuous scroll writes once instead of once per row boundary.
 const SAVE_MS: u64 = 400;
 
-/// Must be called once from the app root (ReaderPage), alongside the zoom sources.
+/// Must be called once per pane (its mount), alongside the zoom sources.
 pub fn reading_progress(state: crate::context::ReaderContext) {
     // Derived once, not per run: the effect below re-runs on every page turn.
     let zooming = state.reader.viewer.zooming();

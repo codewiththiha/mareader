@@ -218,14 +218,15 @@ pub fn ReflowStreamLayout(
     // StoredValue because a cleanup closure must be Send + Sync, which the
     // Rc inside a Virtualizer is not.
     crate::diagnostics::track_virtualizer(&v);
-    // The runtime owns the instance (Phase 1 §9); the cleanup pairs.
-    let stream_runtime = use_context::<crate::runtime::ReaderRuntime>()
-        .expect("ReaderRuntime must be provided by the reader route");
-    stream_runtime.track_virtualizer(&v);
+    // The PANE owns the instance (its dispose disposes it); the cleanup
+    // pairs.
+    let stream_pane = use_context::<crate::pane::handle::PaneHandle>()
+        .expect("the document pane provides its handle");
+    stream_pane.track_virtualizer(&v);
     let tracked = StoredValue::new_local(v.clone());
     on_cleanup(move || {
         tracked.with_value(crate::diagnostics::untrack_virtualizer);
-        stream_runtime.untrack_virtualizer(&tracked.get_value());
+        stream_pane.untrack_virtualizer(&tracked.get_value());
     });
 
     // Publish the handle: search reveal and the bottom bar's scrubber aim

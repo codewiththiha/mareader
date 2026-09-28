@@ -5,7 +5,7 @@
 //!
 //! [`flush_read_point`] is what a session ending owes the library: the resume
 //! point the progress effect is still debouncing, written now. Both exits call
-//! it — the close, and the reload in [`crate::services::reload`].
+//! it — a pane's dispose, and the reload in [`crate::services::reload`].
 //!
 //! [`gloss_key`] is the one fact the lifecycle owns that is not about the
 //! engine: which book the open document is. The address alone cannot say —
@@ -19,7 +19,7 @@ pub(crate) mod flush;
 pub mod open;
 pub(crate) mod session;
 
-pub use close::close_document;
+pub use close::prepare_leave;
 pub(crate) use flush::flush_read_point;
 pub use open::{init_open_file_handling, open_dialog, open_path};
 

@@ -1,34 +1,29 @@
-//! Closing a document: flush the reading position and hand the Shell its
-//! navigate-to-library command. There is no separate document-close teardown
-//! — the route flip disposes the runtime as a unit
-//! (`crate::runtime::ReaderRuntime::dispose`), so there is exactly one
-//! teardown path.
+//! What a pane owes when the workspace is about to leave for the library.
+//!
+//! Leaving is the HOST's move (`crate::host::ReaderHost::return_to_library`):
+//! it asks every pane to prepare, then hands the Shell its navigate command,
+//! and the Shell's dispose comes back over the boundary to tear the host and
+//! its panes down (`crate::host::manager::PaneManager::dispose_all`). This
+//! module is the pane's half of the first step, and nothing more: there is no
+//! separate document-close teardown — a pane's document session ends in the
+//! pane's dispose, which is the one teardown path.
 
 use runtime_contract::boundary::ShellApi;
 
-/// Close the current document and return to the library shelf.
+/// Write the pane's durable reading point and stop its in-flight raster work.
 ///
-/// The durable write happens HERE, inside the live session; the teardown is
-/// the Shell's move. Closing the book navigates to the library, and that
-/// navigation disposes this runtime as a unit (§12) — the session root's
-/// cleanup owns the engine destroy, the sweeps and the resource release, so
-/// nothing here resets reader state or waits on the engine. One teardown
-/// path, not two.
-pub fn close_document(ctx: &crate::context::ReaderContext) {
-    // The durable write goes FIRST, through the boundary: the Shell owns the
-    // library blob, and this session is about to end. The runtime disposal
-    // itself is the Shell's move (navigate_library disposes the session);
-    // the dispose tail flushes again unconditionally, so a late change still
-    // lands.
+/// The durable write happens HERE, inside the live session, through the
+/// boundary: the Shell owns the library blob, and this session is about to
+/// end. The pane's dispose flushes again unconditionally, so a late change
+/// still lands.
+pub fn prepare_leave(ctx: &crate::context::ReaderContext) {
     if let Some(point) = ctx.try_read_point() {
         ctx.api.read_point(&point);
     }
     // Stop in-flight raster work in the same tick as the click: from here
     // the navigate command crosses to the Shell and the dispose comes back
     // over the frame channel — hops during which a live page render could
-    // finish as if leaving had interrupted nothing. Cancelling here is the
-    // first act of teardown; the session root's cleanup still owns the
-    // engine destroy, so there remains exactly one teardown path.
+    // finish as if leaving had interrupted nothing. Cancelling is the first
+    // act of teardown; the pane's dispose still owns the engine destroy.
     pdf_engine::api::cancel_page_renders();
-    ctx.api.navigate_library();
 }

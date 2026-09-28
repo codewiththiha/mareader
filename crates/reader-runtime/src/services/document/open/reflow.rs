@@ -200,9 +200,14 @@ fn ready(
     // search index goes with them: this format searches its own blocks, and
     // a closed PDF's extracted text must not sit in the wasm heap while a
     // text book is open.
+    // Through the PANE's engine handle: the one teardown path a pane's
+    // document session has, whether the pane is closing or only changing
+    // format.
+    let pdf = state.pane.pdf();
     spawn_local(async move {
-        _ = pdf_engine::api::destroy().await;
+        pdf.destroy().await;
     });
+    state.pane.note_document_session(false);
     pdf_engine::api::scope_to_document(None, "", 0);
     pdf_engine::backdrop::document_close();
 

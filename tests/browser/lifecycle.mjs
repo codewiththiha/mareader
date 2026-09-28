@@ -273,14 +273,56 @@ async function openBook(url) {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   // Reader live AND the document actually open AND the first page rendered
   // AND the runtime itself reporting Ready (it publishes its own lifecycle).
-  return waitFor("the reader to open and first-render", (s) =>
+  const s = await waitFor("the reader to open and first-render", (s) =>
     s.readerRuntimeLive === true &&
     s.runtime?.state === "ready" &&
     (s.runtime?.generation ?? 0) >= 1 &&
     s.engine?.hasDocument === true &&
     s.engine.sessionsOpened >= 1 &&
     s.engine.rendersCompleted >= 1 &&
-    s.engine.activeRenders === 0);
+    s.engine.activeRenders === 0 &&
+    s.host?.panes?.[0]?.lifecycle === "ready");
+  assertHostWorkspace(s, "open");
+  return s;
+}
+
+/** The production path, observed: the reader runtime's host reports a live
+ *  workspace of exactly one READY pane, that pane is the one active pane,
+ *  it holds the document session and its virtualizers, and its identity is
+ *  a pane id — never the document's. */
+function assertHostWorkspace(s, label) {
+  const host = s.host;
+  if (!host) throw new Error(`[${label}] the snapshot carries no host block`);
+  if (host.lifecycle !== "live") throw new Error(`[${label}] host is ${host.lifecycle}, expected live`);
+  if (host.panes.length !== 1) throw new Error(`[${label}] host has ${host.panes.length} panes, expected 1`);
+  const pane = host.panes[0];
+  if (typeof pane.paneId !== "number") throw new Error(`[${label}] pane id ${JSON.stringify(pane.paneId)} is not a pane id`);
+  if (typeof pane.documentId !== "string" || !/^(book|path):/.test(pane.documentId)) {
+    throw new Error(`[${label}] pane ${pane.paneId} names document ${JSON.stringify(pane.documentId)}`);
+  }
+  if (host.activePane !== pane.paneId || pane.focused !== true) {
+    throw new Error(`[${label}] active pane ${host.activePane} != the one pane ${pane.paneId} (focused ${pane.focused})`);
+  }
+  const focused = host.panes.filter((p) => p.focused).length;
+  if (focused !== 1) throw new Error(`[${label}] ${focused} panes claim focus`);
+  if (pane.format !== "pdf") throw new Error(`[${label}] pane format ${pane.format}, expected pdf`);
+  if (pane.resources.documentSession !== true) throw new Error(`[${label}] the pane does not hold its document session`);
+  if (pane.resources.virtualizers < 2) {
+    throw new Error(`[${label}] the pane owns ${pane.resources.virtualizers} virtualizers, expected its two strips`);
+  }
+  if (!(pane.bounds.width > 0 && pane.bounds.height > 0)) {
+    throw new Error(`[${label}] the host handed the pane no bounds (${JSON.stringify(pane.bounds)})`);
+  }
+}
+
+/** The workspace teardown, observed: the host is disposed, no pane is left
+ *  (every pane's dispose finished), nobody is active. */
+function assertHostDisposed(s, label) {
+  const host = s.host;
+  if (!host) throw new Error(`[${label}] the snapshot carries no host block`);
+  if (host.lifecycle !== "disposed" || host.panes.length !== 0 || host.activePane !== null) {
+    throw new Error(`[${label}] host not torn down: ${JSON.stringify(host)}`);
+  }
 }
 
 /** Wait for the warmup's prefetch fire to pass through the thumbnail lane.
@@ -317,6 +359,7 @@ async function closeAndWaitBaseline(label, settledWork, expectedEpoch = 2) {
   const s = await waitFor(`the disposal baseline (${label})`, (x) =>
     x.atBaseline === true && x.runtime?.state === "disposed", 45_000);
   assertDrained(s, label, expectedEpoch);
+  assertHostDisposed(s, label);
   // The runtime itself reports disposal completion (Phase 1 §12): state
   // Disposed with a generation stamp — disposal is owned, not inferred.
   if (s.runtime?.state !== "disposed" || (s.runtime?.generation ?? 0) < 1) {

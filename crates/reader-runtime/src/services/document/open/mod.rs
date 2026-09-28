@@ -121,16 +121,18 @@ pub fn bare_launch(path: &str) -> runtime_contract::boundary::LaunchDocument {
 }
 
 /// The open itself, with the launch descriptor naming the row (when the
-/// library named one) and where to resume. The session mount already began
-/// this runtime; an in-session open reuses the live slot.
+/// library named one) and where to resume. Runs inside ONE pane: an
+/// in-session open replaces that pane's document session and keeps the
+/// pane.
 pub(crate) fn open_with_launch(
     ctx: crate::context::ReaderContext,
     launch: runtime_contract::boundary::LaunchDocument,
 ) {
     let path = launch.path.clone();
-    // WORK gate: refused once the runtime entered Disposing (a session end
-    // cancels a still-queued open before it reaches the engine).
-    if !ctx.runtime.lifecycle().admits_work() {
+    // WORK gate: refused once the pane (or the session) entered Disposing —
+    // a pane's dispose cancels a still-queued open before it reaches the
+    // engine.
+    if !ctx.pane.admits_work() {
         return;
     }
     // Claim the document state for THIS attempt. Every hop below re-checks
@@ -160,7 +162,7 @@ pub(crate) fn open_with_launch(
 /// The PDF tail of the open flow: hand the path to the engine and seed from
 /// its answer.
 fn open_pdf(ctx: crate::context::ReaderContext, path: String, saved_page: u32, stamp: u64) {
-    let pdf = ctx.runtime.pdf();
+    let pdf = ctx.pane.pdf();
     if !pdf.work_admitted() {
         return;
     }
@@ -173,7 +175,12 @@ fn open_pdf(ctx: crate::context::ReaderContext, path: String, saved_page: u32, s
             return;
         }
         match opened {
-            Ok(open) => ready(ctx, path, open, saved_page, stamp),
+            Ok(open) => {
+                // The engine now holds this pane's document: the pane's
+                // dispose owes its destroy.
+                ctx.pane.note_document_session(true);
+                ready(ctx, path, open, saved_page, stamp)
+            }
             Err(e) => fail(ctx, e.message),
         }
     });

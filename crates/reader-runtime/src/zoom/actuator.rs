@@ -44,7 +44,7 @@ use crate::state::ReaderState;
 /// Wraps the reader's two strip virtualizers and centralises the reader's one
 /// relayout path. The vertical (continuous) and horizontal strips stay as
 /// separate virtualizers — they are created as separate hooks in
-/// `ReaderPage` — but resizing a strip's items is done only here.
+/// the pane's mount — but resizing a strip's items is done only here.
 #[derive(Clone)]
 pub struct ZoomActuator {
     pub vertical: Virtualizer,

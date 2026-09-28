@@ -21,6 +21,9 @@ mount_to_body -> App
 └── app-lifetime effects (theme, motion, drag-drop, window bridge)
 ```
 
+(That tree is the Phase 0 app; `ReaderPage` has since been replaced by the
+reader host and its panes — see the Phase 3 section at the end.)
+
 Route changes mount and unmount component trees, but the STATE and the
 engine session are app-lifetime singletons — that is exactly what the later
 phases replace. The inventory below is what exists now.
@@ -281,3 +284,62 @@ Phase 0 drain gates, counters and fail-closed accounting all still gate
 every close; look-ahead, virtualization and retention behavior are
 untouched. `AppState.reader` remains the signals bag (domain models stay in
 `ReaderState`); the shell's `AppState.runtime` handle is coordination-only.
+
+## What Phase 3 adds: the reader host and its panes
+
+The production path is now `/reader → ReaderRuntime → ReaderHost →
+PaneManager → document pane` (`crates/reader-runtime/src/lib.rs::start_session`
+composes it). The old `ReaderPage` monolith is gone; each of its
+responsibilities moved to exactly one owner:
+
+| Responsibility (was `ReaderPage`) | Owner now |
+| --- | --- |
+| Title bar composition, left cluster (sidebar toggle, Library) | host (`host/view.rs`) |
+| `ShellController` (rail open/close machine, layout truth) | host |
+| Settings-open signal and the modal's placement | host (content: active pane's `Settings` slot) |
+| Rail mount points (`PushRail`/`OverlayRail`) | host (content: active pane's `Rail` slot) |
+| `.reader-bg` backdrop + blend class, `main#viewer-slot` | host |
+| Appearance menu; motion switches resolved from settings | host (appearance boundary pushes `PaneAppearance`) |
+| Doc-status and page reports to the Shell | host (from the ACTIVE pane's `PaneSurface`) |
+| Library button's leave: read point + render cancel | pane (`PaneCommand::PrepareLeave`), then the host's navigate |
+| AI chunk bridge (window Tauri listener) | session (composition root) |
+| Frame theme / settings persistence, appearance raster hooks | session (composition root) → Shell persists |
+| Reader state (`ReaderState`), `ReaderContext` | pane (one per pane, never global) |
+| Document open / session / close, paper settings, prefetch gate | pane |
+| Virtualizers, zoom controller, navigation sync, reading progress, reflow pipeline, mode change, first paint, blend geometry | pane (installed at mount, in the pane's owner) |
+| Keyboard shortcuts (window listeners) | pane, gated on the host's `active` |
+| Viewer, first-paint cover, floating title, page pill, bottom bar, find bar, selection pill, gloss popover | pane content |
+| Document title, view menu | pane (`TitleCenter` / `TitleTrailing` slots) |
+
+- **Identity.** `PaneId` is minted by the manager core from a monotonic
+  counter, never reused, never a path, a document id or an index. The
+  descriptor (`host/model.rs::PaneDescriptor`) is data only.
+- **Lifecycle.** `New → Mounting → Ready → (Suspended) → Disposing →
+  Disposed`, decided by the pure `PaneManagerCore` (unit-tested on the host)
+  and mirrored into the pane's handle for its work gates. A disposed pane is
+  a tombstone: every operation on it answers `Gone`.
+- **Focus.** One authority: `PaneManager::set_active` asks the core, which
+  names the pane to blur and the pane to focus; the manager blurs, publishes
+  the ONE `active` signal, then focuses. Panes derive `active` from it.
+- **Bounds.** The host measures `#viewer-slot` and hands each pane its box
+  (no split: every pane fills it); the pane owns its viewport geometry.
+- **Resources** (`pane/handle.rs::PaneResources`, in the host's arena so it
+  outlives the pane's owner mid-dispose): the virtualizers (including the
+  reflow stream's and the thumbnail rail's) and the engine document
+  session. Render work, prefetch and look-ahead are the engine's, reached
+  only through the pane's `PdfSessionHandle` and released by its destroy
+  and sweeps; listeners, observers and timers live in the pane's owner.
+- **Disposal** is the pane's `dispose`: read point → claim → paper close →
+  memo forget → virtualizers taken → owner cleanup (sync) → tail (destroy,
+  sweeps, virtualizer dispose, completion). The host's workspace disposal
+  runs it for every pane while the session is alive; the runtime awaits
+  the tails.
+- **Boundary.** `tools/check-host-boundary.mjs` (CI lint lane) fails if
+  anything under `host/` names the PDF engine, a format renderer, the pane
+  implementation or a pane's reader state, or if `ReaderPage` reappears.
+
+Still module-global and therefore Phase 4's: the JS PDF engine session
+(`public/engine/state.ts`, one document per realm), the look-ahead paper
+session, the disposal epoch (`services::document::session`) and the search
+index. With one pane per session they are exactly as scoped as before; a
+second concurrent pane needs session-scoped engines first.

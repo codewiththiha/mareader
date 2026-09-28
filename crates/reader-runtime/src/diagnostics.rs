@@ -56,23 +56,35 @@ thread_local! {
     /// the app (host tests) — reported, not guessed.
     static RUNTIME_VIEW: RefCell<Option<crate::runtime::RuntimeView>> =
         const { RefCell::new(None) };
+    /// The live reader host's workspace probe (see [`install_host_probe`]).
+    static HOST_PROBE: RefCell<Option<HostProbe>> = const { RefCell::new(None) };
 }
+
+type HostProbe = Box<dyn Fn() -> crate::host::HostSnapshot>;
 
 /// The runtime publishes its lifecycle here on every transition; this is
 /// what makes disposal completion observable BY the runtime, not inferred
 /// from its surroundings.
-pub fn publish_runtime_view(
-    lifecycle: crate::runtime::RuntimeLifecycle,
-    generation: u64,
-    virtualizer_count: usize,
-) {
+pub fn publish_runtime_view(lifecycle: crate::runtime::RuntimeLifecycle, generation: u64) {
     RUNTIME_VIEW.with(|cell| {
         *cell.borrow_mut() = Some(crate::runtime::RuntimeView {
             lifecycle,
             generation,
-            virtualizer_count,
         });
     });
+}
+
+/// The reader host installs its probe here for the session's life: a
+/// snapshot asks it for the workspace — the panes, their lifecycle, the one
+/// active pane, what each pane holds. The probe reads plain Rust state (the
+/// manager core), never the arena, so a snapshot taken after the session's
+/// reactive scope is gone still gets an answer instead of a panic.
+pub(crate) fn install_host_probe(probe: impl Fn() -> crate::host::HostSnapshot + 'static) {
+    HOST_PROBE.with(|cell| *cell.borrow_mut() = Some(Box::new(probe)));
+}
+
+fn host_probe() -> Option<crate::host::HostSnapshot> {
+    HOST_PROBE.with(|cell| cell.borrow().as_ref().map(|probe| probe()))
 }
 
 /// Narrate one lifecycle event when the dev surface opted in. Counters tick
@@ -139,7 +151,7 @@ pub(crate) fn note_reader_runtime_create() {
     event("reader_runtime:create");
 }
 
-/// The reader runtime's dispose began: `close_document` started tearing the
+/// A pane's dispose began: its document session started tearing the
 /// engine document down and resetting the reader slice. The caller passes
 /// its claim stamp so the completion assertion can tell its own moment from
 /// a later open's.
@@ -186,14 +198,14 @@ fn assert_dispose_baseline() {
     eprintln!("[lifecycle] reader dispose left resources behind:\n{json}");
 }
 
-/// A reader pane mounted (today: the `/reader` surface; the workspace pane
-/// tree of later phases reports the same hook).
+/// The reader host's pane manager created a pane (and will dispose it: the
+/// pair is the manager's, not a component's mount/unmount).
 pub(crate) fn note_pane_create() {
     PANES_CREATED.fetch_add(1, Ordering::Relaxed);
     event("pane:create");
 }
 
-/// A reader pane's owner disposed it.
+/// The pane manager ran a pane's dispose (its sync teardown completed).
 pub(crate) fn note_pane_dispose() {
     PANES_DISPOSED.fetch_add(1, Ordering::Relaxed);
     event("pane:dispose");
@@ -302,6 +314,12 @@ pub(crate) struct Snapshot {
     /// `None` rather than inventing a state).
     #[serde(skip_serializing_if = "Option::is_none")]
     runtime: Option<RuntimeSnapshot>,
+    /// The reader host's workspace: its panes (id, document, format,
+    /// lifecycle, bounds, resources) and the one active pane — the
+    /// production path `ReaderRuntime → ReaderHost → PaneManager → pane`
+    /// made observable. `None` before a host installed its probe.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host: Option<crate::host::HostSnapshot>,
     wasm_heap_bytes: Option<u64>,
     heap_high_water_bytes: u64,
 }
@@ -350,6 +368,16 @@ pub fn set_reader_live(live: bool) {
 pub(crate) fn snapshot() -> Snapshot {
     observe_heap();
     let runtime_view = RUNTIME_VIEW.with(|cell| *cell.borrow());
+    let host = host_probe();
+    let pane_virtualizers: usize = host
+        .as_ref()
+        .map(|host| {
+            host.panes
+                .iter()
+                .map(|pane| pane.resources.virtualizers)
+                .sum()
+        })
+        .unwrap_or(0);
     let engine = engine_probe();
     let (
         live_window_items,
@@ -411,7 +439,7 @@ pub(crate) fn snapshot() -> Snapshot {
                 active_render_tasks: engine_stats.active_renders,
                 active_prefetch: engine_stats.active_prefetches,
                 registered_pages: engine_stats.pages,
-                virtualizer_count: view.virtualizer_count,
+                virtualizer_count: pane_virtualizers,
                 listener_count: virtualizer_listeners,
                 timer_count: virtualizer_timers,
                 worker_count: engine_stats
@@ -420,6 +448,7 @@ pub(crate) fn snapshot() -> Snapshot {
             }
         }),
         engine,
+        host,
         wasm_heap_bytes: wasm_heap_bytes(),
         heap_high_water_bytes: HEAP_HIGH_WATER.load(Ordering::Relaxed),
     }
@@ -556,7 +585,7 @@ mod tests {
 
     #[test]
     fn the_runtime_reports_its_own_lifecycle_in_the_snapshot() {
-        publish_runtime_view(crate::runtime::RuntimeLifecycle::Ready, 3, 2);
+        publish_runtime_view(crate::runtime::RuntimeLifecycle::Ready, 3);
         let value: serde_json::Value =
             serde_json::from_str(&snapshot_json()).expect("snapshot is JSON");
         let runtime = value
@@ -564,7 +593,9 @@ mod tests {
             .expect("the runtime view rides the snapshot");
         assert_eq!(runtime["state"], "ready");
         assert_eq!(runtime["generation"], 3);
-        assert_eq!(runtime["virtualizerCount"], 2);
+        // No host installed in this test: the runtime counts no pane
+        // resources rather than inventing some.
+        assert_eq!(runtime["virtualizerCount"], 0);
         // The snapshot's runtime half reports the resource counts the
         // baseline gates on (Phase 1 §12) — present even with no engine.
         for field in [
@@ -637,6 +668,7 @@ mod tests {
             render_budget_max_items: 3,
             lookahead_samples_active: 0,
             runtime: None,
+            host: None,
             engine: Some(drained_engine()),
             wasm_heap_bytes: None,
             heap_high_water_bytes: 0,

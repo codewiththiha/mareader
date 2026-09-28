@@ -89,6 +89,13 @@ jobs:
       - name: Dependency gate
         run: node tools/check-dependency-gate.mjs
 
+      # The reader host's direction (host → pane contract → format) inside
+      # one crate, where the graph gate cannot see it: the host names no
+      # engine, format or pane-implementation type, and the legacy
+      # ReaderPage workspace owner stays gone.
+      - name: Reader host boundary
+        run: node tools/check-host-boundary.mjs
+
   test:
     name: Rust / test
     runs-on: ubuntu-24.04

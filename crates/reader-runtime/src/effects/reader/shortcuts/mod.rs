@@ -2,7 +2,7 @@
 //! guards, and the routing to the per-intent handlers (`window` combos,
 //! `zoom` steps, `navigation` + the scroll-hold engine).
 //!
-//! Called once from the app root. The listener callback runs OUTSIDE the
+//! Installed once per pane. The listener callback runs OUTSIDE the
 //! reactive owner, so everything it touches is a Copy signal handle /
 //! ReaderState captured by value.
 
@@ -49,15 +49,18 @@ fn is_chrome_scroll_target(ev: &leptos::ev::KeyboardEvent) -> bool {
 /// Chrome surfaces that own their own arrow keys.
 const CHROME_SCROLL_SELECTOR: &str = "#thumb-scroll, aside, .menu-popover, [data-search-chrome]";
 
-/// Called once per reader session, from its mount scope. `on_open` is the
-/// reader's open-file action (Cmd/Ctrl+O), injected so the viewer never
-/// depends on app chrome.
+/// Called once per pane, from its mount scope. `on_open` is the reader's
+/// open-file action (Cmd/Ctrl+O), injected so the viewer never depends on
+/// app chrome. `is_active` is the host's focus authority as this pane sees
+/// it: a window-level key belongs to the ACTIVE pane only, so every other
+/// pane's arm stands down.
 pub fn shortcuts(
     state: ReaderState,
     on_open: impl Fn() + 'static,
     // Sidebar mode is read/written for the panel toggles (app chrome
     // state passed in explicitly).
     sidebar: RwSignal<SidebarMode>,
+    is_active: impl Fn() -> bool + 'static,
 ) {
     // Handles are parked and removed on cleanup. The session installs these
     // once for its own lifetime, and a dropped handle does NOT unregister
@@ -66,6 +69,9 @@ pub fn shortcuts(
     // engine.
     let keydown =
         window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
+            if !is_active() {
+                return;
+            }
             let key = ev.key();
 
             // Escape is a dismiss action, never text input, so it must work even

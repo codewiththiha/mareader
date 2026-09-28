@@ -3,14 +3,19 @@
 //! manager.
 //!
 //! A session is an explicit instance: [`start_session`] creates the reactive
-//! ownership root, the [`ReaderContext`] (reader state + the Phase 1
-//! `ReaderRuntime` lifecycle owner + the session's settings/UI slices + the
-//! [`ShellApi`](runtime_contract::boundary::ShellApi) boundary), installs the
-//! reader effects INSIDE that scope, and mounts the reader host. [`dispose`]
-//! unmounts the root — whose first-registered cleanup is the Phase 1
-//! disposal chain — and resolves only when the runtime reports its own
-//! disposal complete. The compiled module stays cached between sessions;
-//! nothing live does.
+//! ownership root, the session's `ReaderRuntime` (its lifecycle owner) and
+//! settings/UI slices, and composes the production path inside that scope:
+//!
+//! ```text
+//! ReaderRuntime → ReaderHost (crate::host) → PaneManager → document pane (crate::pane)
+//! ```
+//!
+//! The host owns the workspace (chrome placement, focus, bounds, commands);
+//! each pane owns one document session and builds its own
+//! [`ReaderContext`]. [`dispose`] has the host dispose its panes while the
+//! session is alive, then unmounts the root, and resolves only when the
+//! runtime reports its own disposal complete. The compiled module stays
+//! cached between sessions; nothing live does.
 
 pub mod appearance_hooks;
 pub mod components;
@@ -20,6 +25,7 @@ pub mod effects;
 pub mod features;
 #[cfg(target_arch = "wasm32")]
 pub mod frame;
+pub mod host;
 
 /// The frame boot is a wasm-artifact path — off wasm there is no iframe and
 /// no port. The stub compiles the frame's call sites (`context`'s dispatch,
@@ -43,6 +49,7 @@ pub mod frame {
     /// this is never taken, so the parked continuation never exists.
     pub fn open_path_in_frame(_ctx: crate::context::ReaderContext, _path: String) {}
 }
+pub mod pane;
 pub mod runtime;
 pub mod services;
 pub mod state;
@@ -50,7 +57,6 @@ pub mod zoom;
 
 use std::cell::{Cell, RefCell};
 
-use crate::state::ReaderState;
 use app_state::state::UiState;
 use app_ui::components::primitives::overlay::lanes::OverlayBoard;
 use leptos::prelude::*;
@@ -68,13 +74,22 @@ pub struct Session {
     pub launch: LaunchDocument,
 }
 
+/// The live session's handles for the entry points outside its reactive
+/// scope: the host in-session commands and the dispose export reach, and
+/// the session-level blend override a command updates.
+#[derive(Clone, Copy)]
+struct LiveSession {
+    host: crate::host::ReaderHost,
+    blend_override: RwSignal<bool>,
+}
+
 thread_local! {
-    /// The live session's context: in-session commands (`drop`-to-open) run
-    /// against it while the session exists, and dispose clears it — the last
-    /// runtime reference to the session's state (§6: the recorded lifetime
-    /// object, released with the instance).
-    static LIVE_CTX: RefCell<Option<crate::context::ReaderContext>> =
-        const { RefCell::new(None) };
+    /// The live session: in-session commands (`drop`-to-open) run against
+    /// its host while the session exists, and dispose clears it — the last
+    /// runtime reference to the session (§6: the recorded lifetime object,
+    /// released with the instance). The host, not a context: there is no
+    /// global "current document" here; the host routes to its panes.
+    static LIVE_SESSION: RefCell<Option<LiveSession>> = const { RefCell::new(None) };
 }
 
 thread_local! {
@@ -115,51 +130,30 @@ pub fn start_session(
     let host: web_sys::HtmlElement = host.clone().unchecked_into();
     let handle = mount_to(host, {
         move || {
-            // Everything below is scoped to THIS session's owner: the state,
-            // the runtime slot, the effects and listeners all die with the
-            // unmount, and the first-registered cleanup is the disposal.
-            // The session's settings copy: seeded from the durable blob the
-            // Shell writes through the boundary (§15 — persisted data, not the
-            // Shell's live signals), so a reader boots with the saved look and
-            // type.
+            // Everything below is scoped to THIS session's owner: the host,
+            // its panes, their effects and listeners all die with the
+            // unmount. The session's settings copy: seeded from the durable
+            // blob the Shell writes through the boundary (§15 — persisted
+            // data, not the Shell's live signals), so a reader boots with the
+            // saved look and type.
             let settings = RwSignal::new(storage::load_settings());
             if launch.blend_override {
                 use leptos::prelude::Update;
                 settings.update(|s| s.layout.blend_mode = true);
             }
-            let reader = ReaderState::default();
             let runtime = crate::runtime::ReaderRuntime::new();
-            let launch = RwSignal::new(launch);
             let ui = UiState {
                 sidebar: RwSignal::new(app_state::SidebarMode::None),
                 toast: RwSignal::new(None),
                 window_maximized: RwSignal::new(false),
             };
-            let reflowable = Signal::derive(move || reader.document.format.get().is_reflowable());
-            let search_visible = reader.search.visible;
-            let sidebar_slide = reader.viewer.motion;
-            let ctx = ReaderContext {
-                reader,
-                runtime,
-                settings,
-                ui,
-                api,
-                launch,
-                id,
-                chrome: app_state::ChromeState {
-                    settings,
-                    ui,
-                    reader: app_state::ReaderSurface {
-                        reflowable,
-                        search_visible,
-                        sidebar_slide,
-                    },
-                },
-            };
+            // The per-open blend override (the test hook's `?blend=1`): the
+            // launch's, and each later launch the Shell hands this session.
+            let blend_override = RwSignal::new(launch.blend_override);
 
-            // What the reader's own pages and effects consume (§17: the
-            // runtime provides the contexts its session reads; the Shell keeps
-            // the <html> paints). The look narrows once and the page hosts
+            // What the reader's panes and effects consume (§17: the runtime
+            // provides the contexts its session reads; the Shell keeps the
+            // <html> paints). The look narrows once and the page hosts
             // subscribe to the texture slice of it, so a tint nudge cannot
             // re-run their `texture-*` class.
             let appearance: app_state::AppearanceSignal =
@@ -174,13 +168,30 @@ pub fn start_session(
             // modals arbitrate through it, and it dies with the unmount.
             provide_context(OverlayBoard::default());
 
-            // THE SESSION IS THE LIFECYCLE BOUNDARY (the route was, in the
-            // unified app): begin the mount in this scope, register the
-            // disposal cleanup FIRST so it runs LAST.
+            // THE SESSION IS THE LIFECYCLE BOUNDARY: begin the runtime's
+            // mount in this scope.
             runtime.begin_mount();
-            provide_context(runtime);
+
+            // The composition root: the production path is
+            // ReaderRuntime → ReaderHost → PaneManager → document pane. The
+            // host is handed the pane implementation here and never names it.
+            let host = crate::host::ReaderHost::new(
+                crate::host::HostSession {
+                    runtime,
+                    settings,
+                    ui,
+                    api,
+                    session_id: id,
+                },
+                crate::pane::document::factory(),
+            );
+            // The session's end, as the unmount runs it: the host disposes
+            // its panes (a no-op when the dispose export already did, while
+            // the session was still alive), then the runtime awaits the
+            // panes' teardown tails and reports its own completion.
             on_cleanup(move || {
-                ctx.runtime.dispose(ctx);
+                host.dispose();
+                runtime.dispose(api, host.take_teardown());
             });
 
             // The shared appearance chrome's raster hooks are THIS session's
@@ -191,114 +202,66 @@ pub fn start_session(
             let appearance_hooks_guard = appearance_hooks::install();
             on_cleanup(move || drop(appearance_hooks_guard));
 
+            // The AI chunk listener: a session-wide Tauri event bridge (the
+            // chunks it re-dispatches are addressed by request, not by pane),
+            // unregistered with this scope.
+            crate::services::ai::install_ai_chunk_bridge();
+
             // This frame's own `<html>`: the Shell paints only its document,
             // so the reader paints its look, typography and motion here, and
             // hands its edits to the Shell for persistence. A launch's blend
             // override is per-open, never the user's saved choice: it is
             // stripped on the way out and re-applied to an adopted blob.
-            {
-                let api = ctx.api;
-                let launch = ctx.launch;
-                app_ui::frame_theme::install_frame_theme(
-                    settings,
-                    app_ui::frame_theme::FramePipeline::Reader,
-                    move |s| {
-                        if launch.try_with_untracked(|l| l.blend_override) == Some(true) {
-                            let mut saved = s.clone();
-                            saved.layout.blend_mode = storage::load_settings().layout.blend_mode;
-                            api.save_settings(&saved);
-                        } else {
-                            api.save_settings(s);
-                        }
-                    },
-                    move |s| {
-                        if launch.try_with_untracked(|l| l.blend_override) == Some(true) {
-                            s.layout.blend_mode = true;
-                        }
-                    },
-                );
-            }
-
-            // The reader's motion switches, projected from the frame's own
-            // settings copy (which `install_frame_theme` keeps current,
-            // cross-frame edits included). The shell only publishes the CSS
-            // class for its own document; nothing else writes this signal, so
-            // without this projection every reader-side switch — zoom,
-            // sidebar slide, canvas resize, scroll glide — sat at its
-            // all-on default whatever the user chose. Written only on a real
-            // change: a Leptos `set` notifies even when equal.
-            {
-                let motion = ctx.reader.viewer.motion;
-                Effect::new(move |_| {
-                    let next = settings.with(|s| app_state::Motion::from_prefs(&s.animations));
-                    if motion.try_get_untracked().is_some_and(|m| m != next) {
-                        motion.set(next);
-                    }
-                });
-            }
-
-            // Idle thumbnail prefetch follows the frame's slot. A closed
-            // reader is KEPT (document loaded, for an instant reopen), but a
-            // rail nobody can see must not render while the shelf is being
-            // revealed: leaving the screen abandons queued and in-flight
-            // prefetches (the engine counts them dropped), coming back lets
-            // them run. The first run applies the slot this session booted
-            // into — a warm session starts parked.
-            {
-                let active = app_chrome::hooks::frame_active::use_frame_active();
-                Effect::new(move |_| {
-                    if active.get() {
-                        pdf_engine::api::resume_prefetches();
+            app_ui::frame_theme::install_frame_theme(
+                settings,
+                app_ui::frame_theme::FramePipeline::Reader,
+                move |s| {
+                    if blend_override.try_get_untracked() == Some(true) {
+                        let mut saved = s.clone();
+                        saved.layout.blend_mode = storage::load_settings().layout.blend_mode;
+                        api.save_settings(&saved);
                     } else {
-                        pdf_engine::api::suspend_prefetches();
+                        api.save_settings(s);
                     }
-                });
-            }
+                },
+                move |s| {
+                    if blend_override.try_get_untracked() == Some(true) {
+                        s.layout.blend_mode = true;
+                    }
+                },
+            );
 
-            LIVE_CTX.with(|c| *c.borrow_mut() = Some(ctx));
+            let live = LiveSession {
+                host,
+                blend_override,
+            };
+            LIVE_SESSION.with(|c| *c.borrow_mut() = Some(live));
 
             // The launch the Shell handed over (§13): the minimal descriptor,
-            // opened by the runtime that owns the document. Nothing outside
-            // this scope holds the path — an in-session open re-resolves what
-            // it is handed, but a launch is already resolved. Opened BEFORE
-            // the status report below, so the session's first word to the
-            // Shell is `Opening`: an Idle report would send a live session's
-            // Shell straight back to the shelf.
-            // The paper session's blend switch and detection area, sent
-            // BEFORE the first open: the first book's first frame publishes
-            // only if the session already knows `blend_on` (the same
-            // before-the-first-open contract the deleted app root held).
-            crate::effects::reader::blend_backdrop::paper_settings(ctx);
-
-            let launch = ctx.launch.get_untracked();
-            if !launch.path.is_empty() {
-                services::document::open::open_with_launch(ctx, launch);
+            // opened by the pane that owns the document. A warm session
+            // (empty launch) still gets its one pane, waiting for the launch
+            // its promotion hands over.
+            let first = (!launch.path.is_empty()).then_some(launch);
+            if let Err(err) = host.create_pane(first, true) {
+                web_sys::console::error_1(&format!("[reader] no pane: {err:?}").into());
             }
 
-            // The two facts the Shell's probe serves from this runtime (§21):
-            // the document status its Idle policy answers from, and the
-            // snapshot itself — engine counters, gauges, the baseline verdict.
-            // Both are PUSHED across the boundary: the Shell holds no reader
-            // state, and this session's scope is what ends the pushing.
-            install_status_report(ctx);
-            install_page_report(ctx);
             // The digest cadence runs in the web build only: the browser
             // suite's probe samples it through scrolls and jumps (a blink of
             // look-ahead activity has to be catchable), and the packaged app
             // pays nothing for a dev instrument (§21).
             if !tauri_bridge::has_tauri() {
-                start_digest_beat(ctx.api);
+                start_digest_beat(api);
             }
 
-            view! { <features::page::ReaderPage state=ctx /> }
+            // The host and its first pane exist: the session is live.
+            runtime.mark_ready();
 
-            // Every reader effect and resource is installed: the runtime is
-            // live (features::page::ReaderPage ends with mark_ready once the
-            // document work is admitted).
+            view! { <crate::host::ReaderHostView host=host /> }
         }
     });
     let unmount: Box<dyn FnOnce()> = Box::new(move || {
-        LIVE_CTX.with(|c| *c.borrow_mut() = None);
+        LIVE_SESSION.with(|c| *c.borrow_mut() = None);
         drop(handle);
     });
     SESSION.with(|s| {
@@ -311,9 +274,12 @@ pub fn start_session(
     id
 }
 
-/// Dispose the session: unmount (which runs the Phase 1 disposal chain) and
-/// resolve when the runtime reports completion. The manager awaits this
-/// before it starts the next runtime (§5).
+/// Dispose the session: the host disposes its panes while the session is
+/// still alive (each pane writes its read point, closes its document
+/// session, releases its owner — explicitly, observably), then the unmount
+/// runs the runtime's disposal, which resolves when the runtime reports its
+/// own completion. The manager awaits this before it starts the next
+/// runtime (§5).
 pub fn dispose(id: u32) -> js_sys::Promise {
     let (promise, resolve) = take_dispose_resolver();
     let live = SESSION.with(|s| s.borrow().as_ref().map(|x| x.id) == Some(id));
@@ -325,15 +291,12 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     if let Some(resolve) = resolve {
         PENDING_DISPOSE.with(|p| *p.borrow_mut() = Some(resolve));
     }
-    // What a session ending owes while it is still ALIVE: the read point the
-    // progress effect may still be debouncing, and the paper session's
-    // document close. Both touch the session's own state, and this is the
-    // last moment that state exists — after the unmount below its owner is
-    // disposed, and a reactive read then is illegal (§15: the durable write
+    // The workspace's disposal runs while the session is still ALIVE: each
+    // pane's durable write and document close touch the pane's own state,
+    // and this is the last moment that state exists (§15: the durable write
     // precedes the disposal, it does not chase it).
-    if let Some(ctx) = LIVE_CTX.with(|c| *c.borrow()) {
-        crate::services::document::flush::flush_read_point(&ctx);
-        pdf_engine::backdrop::document_close();
+    if let Some(live) = LIVE_SESSION.with(|c| *c.borrow()) {
+        live.host.dispose();
     }
     SESSION.with(|s| {
         if let Some(session) = s.borrow_mut().take() {
@@ -345,18 +308,22 @@ pub fn dispose(id: u32) -> js_sys::Promise {
 
 /// An in-session command from the Shell: open a document inside the live
 /// session — a drop or a dialog, and the launch a warm reader is handed when
-/// it is promoted.
+/// it is promoted. The HOST routes it (into its active pane).
 pub fn command(id: u32, cmd: runtime_contract::boundary::LaunchDocument) {
     let live = SESSION.with(|s| s.borrow().as_ref().filter(|x| x.id == id).map(|_| ()));
-    if live.is_some() {
-        let ctx = LIVE_CTX.with(|c| *c.borrow());
-        if let Some(ctx) = ctx {
-            // The descriptor, not the path: the Shell already resolved the
-            // row, the resume page and the blend override, and re-resolving
-            // over the port would cost a round trip on the one path that is
-            // supposed to feel instant.
-            services::document::open::open_with_launch(ctx, cmd);
-        }
+    if live.is_none() {
+        return;
+    }
+    let Some(live) = LIVE_SESSION.with(|c| *c.borrow()) else {
+        return;
+    };
+    let _ = live.blend_override.try_set(cmd.blend_override);
+    // The descriptor, not the path: the Shell already resolved the row, the
+    // resume page and the blend override, and re-resolving over the port
+    // would cost a round trip on the one path that is supposed to feel
+    // instant.
+    if let Err(err) = live.host.open(cmd) {
+        web_sys::console::warn_1(&format!("[reader] open refused: {err:?}").into());
     }
 }
 
@@ -376,38 +343,6 @@ pub fn resolve_dispose() {
     PENDING_DISPOSE.with(|p| {
         if let Some(resolve) = p.borrow_mut().take() {
             let _ = resolve.call0(&js_sys::global());
-        }
-    });
-}
-
-/// The doc-status report (§21), installed in the session's own scope: the
-/// Shell's URL policy and its probe read the session's document status, and
-/// the session is the only place that status exists. Pushed on every change.
-fn install_status_report(ctx: crate::context::ReaderContext) {
-    let api = ctx.api;
-    let reader = ctx.reader;
-    Effect::new(move |_| {
-        // try_: the disposal flush can wake this effect after its owner is
-        // gone, and a bare read panics there — the report is worth nothing
-        // once the session is over, so a dead read is simply the end.
-        let Some(status) = reader.document.status.try_get() else {
-            return;
-        };
-        let error = reader.document.error.try_get().flatten();
-        let word = format!("{status:?}");
-        report_status(&api, &word, error);
-    });
-}
-
-/// The viewer's page, published for the digest (§21): the Shell's probe
-/// answers "which page is this session on" from the same push the status
-/// rides, and the page lives here. Read tracked, so every move republishes.
-fn install_page_report(ctx: crate::context::ReaderContext) {
-    let page = ctx.reader.viewer.page;
-    Effect::new(move |_| {
-        // try_: same disposal-flush guard as the status report.
-        if let Some(page) = page.try_get() {
-            diagnostics::set_reader_page(page);
         }
     });
 }

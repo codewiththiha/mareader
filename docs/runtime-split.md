@@ -33,10 +33,10 @@ own Trunk config files (`reader.Trunk.toml`, `library.Trunk.toml`, each with
 - Shell: `src/main.rs` (`mareader` bin) — mounts the shell: route state, the
   runtime manager and its frames, the persistent overlays, the diagnostics
   surface, the frame channel the runtimes answer on.
-- Reader: `crates/reader-runtime/src/main.rs` — reads its launch descriptor
-  and mounts the reader session (see below); `run_standalone` boots without a
-  shell.
-- Library: `crates/library-runtime/src/main.rs` — same shape.
+- Reader: `crates/reader-runtime/src/bin/reader.rs` — reads its launch
+  descriptor and mounts the reader session (see below); `run_standalone`
+  boots without a shell.
+- Library: `crates/library-runtime/src/bin/library.rs` — same shape.
 
 ## Loader mechanism
 
@@ -205,11 +205,14 @@ runtime's iframe at a time. A runtime never reaches outside its mount root;
    descriptor (`?hosted=1&g=<generation>&n=<nonce>`), so a stale frame can
    never pass as the session that replaced it (§6/§35).
 3. The frame's entry instantiates the artifact in its own realm and pairs
-   with the shell over the channel; the session mounts inside the frame —
-   a fresh reactive ownership root, a fresh `ReaderState` + `ReaderRuntime`
-   (the Phase 1 owner, begin_mount → mark_ready inside the session scope),
-   fresh effects/listeners, the engine session — all owned by that
-   session's scope.
+   with the shell over the channel; the session mounts inside the frame
+   (`reader_runtime::start_session`, the composition root) — a fresh
+   reactive ownership root and `ReaderRuntime` (begin_mount → mark_ready),
+   the reader host (`crates/reader-runtime/src/host/`) with its pane
+   manager, and the host's first pane (`crates/reader-runtime/src/pane/`),
+   which builds its OWN `ReaderState`, effects, listeners, virtualizers and
+   engine session under its own reactive owner. A warm session gets its
+   pane too, waiting for the launch its promotion hands over.
 4. The runtime reports `Ready`; the manager records the slot as
    `Slot::Reader { generation }` with the frame's generation. The launch
    data crossing the boundary is a serialized `LaunchDocument` (`book_id`,
@@ -222,10 +225,14 @@ runtime's iframe at a time. A runtime never reaches outside its mount root;
 Disposal is a frame round-trip (`dispose_active`, `src/app/manager.rs`):
 
 1. The manager issues the dispose over the frame's channel; the session
-   tears down INSIDE the frame — Leptos runs the scope cleanups, whose
-   FIRST-registered cleanup is the Phase 1 `ReaderRuntime::dispose` chain
-   (flush → registry take → engine destroy awaited → sweeps → virtualizer
-   disposal → finish_dispose(generation)).
+   tears down INSIDE the frame. While the session is still alive the host
+   disposes every pane (`PaneManager::dispose_all`): each pane flushes its
+   read point, claims its document session, closes the paper session,
+   takes its virtualizers out of its registry and cleans up its reactive
+   owner — listeners, observers, timers, effects — explicitly. The unmount
+   follows, and its cleanup runs `ReaderRuntime::dispose`, which awaits the
+   panes' tails (engine destroy awaited → sweeps → virtualizer disposal →
+   each pane `Disposed`) and only then marks the runtime `Disposed`.
 2. The frame answers `DisposeComplete`; only then does the manager remove
    the iframe (§12: phase 1 acknowledged, phase 2 removal — a strict
    timeout forces the removal either way). A session that holds no

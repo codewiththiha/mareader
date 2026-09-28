@@ -1,35 +1,33 @@
-//! The reader runtime: the explicit lifecycle owner between the shell and
-//! the reader's resources.
-//!
-//! Phase 1's contract, in one place:
+//! The reader runtime: the SESSION's lifecycle owner, between the Shell's
+//! manager and the reader host.
 //!
 //! ```text
-//! /reader mounts  → ReaderRuntime::begin_mount → (effects install) → mark_ready
-//! document close  → Shell command: navigate to the library → the route flip
-//! /reader unmounts→ ReaderRuntime::dispose (ordered, idempotent, observable)
+//! session start  → ReaderRuntime::begin_mount → ReaderHost (panes mount) → mark_ready
+//! Library        → host: panes prepare to leave → Shell command: navigate
+//! session end    → host disposes every pane (explicit, observable)
+//!                → ReaderRuntime::dispose awaits the panes' tails → Disposed
 //! ```
 //!
-//! Ownership rule: domain signals stay in `ReaderState` (they are the
-//! reader's reactive model); everything that must DIE with the reader —
-//! the document session, the virtualizers, the pdf.js engine session's
-//! document-level operations — is owned and driven from here. The shell
-//! (`ReaderContext`) holds this runtime as a Copy handle for coordination; it
-//! does not own reader resources.
+//! Ownership rule: the runtime owns the SESSION's lifetime and nothing
+//! document-shaped. Documents, virtualizers, engine sessions and the
+//! listeners around them belong to the panes (`crate::pane`), which the
+//! host (`crate::host`) creates and disposes; the runtime only refuses new
+//! work once the session is ending and reports its own completion after the
+//! panes' teardown tails resolved.
 //!
 //! Disposal is a state machine, not a flag pile: `New → Mounting → Ready →
-//! Disposing → Disposed`. Work-ops (open, render, register, document
-//! close) are refused once `Disposing` is entered; teardown-ops (destroy,
-//! sweep) stay admitted until `Disposed`. A disposed runtime is never
-//! revived — the next `/reader` entry runs `begin_mount`, which starts a
-//! NEW generation under the same slot (the same stamping philosophy the
-//! document session has always used). Async tails capture the generation
-//! they belong to and are stale-guarded by it.
+//! Disposing → Disposed`. Work-ops are refused once `Disposing` is entered;
+//! teardown-ops stay admitted until `Disposed`. A disposed runtime is never
+//! revived — the next session runs `begin_mount`, which starts a NEW
+//! generation. Async tails capture the generation they belong to and are
+//! stale-guarded by it.
 
 use leptos::prelude::*;
-use serde::Serialize;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::services::document::session;
+use serde::Serialize;
+
+use crate::host::contract::PaneTeardown;
 
 // ---------------------------------------------------------------------------
 // Lifecycle state machine (pure — host-testable)
@@ -126,129 +124,26 @@ impl RuntimeCore {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Resources: the browser/runtime things that die with the reader
-// ---------------------------------------------------------------------------
-
-/// The reader-owned runtime resources. Deliberately narrow: virtualizers
-/// register here when the strips mount and are disposed BY the runtime's
-/// dispose sequence — component cleanup stays as the inner safety net, not
-/// the owner (Phase 1 §9: do not rely only on Leptos cleanup). Engine
-/// document-level operations route through [`PdfSessionHandle`].
-#[derive(Clone, Default)]
-pub struct ReaderResources {
-    virtualizers: Vec<virtual_list_leptos::Virtualizer>,
-}
-
-impl ReaderResources {
-    pub fn track(&mut self, v: &virtual_list_leptos::Virtualizer) {
-        if !self.virtualizers.iter().any(|known| known == v) {
-            self.virtualizers.push(v.clone());
-        }
-    }
-
-    /// The owner's own cleanup dropped one. Returns whether it was ours.
-    pub fn untrack(&mut self, v: &virtual_list_leptos::Virtualizer) -> bool {
-        let Some(at) = self.virtualizers.iter().position(|known| known == v) else {
-            return false;
-        };
-        self.virtualizers.remove(at);
-        true
-    }
-
-    pub fn virtualizer_count(&self) -> usize {
-        self.virtualizers.len()
-    }
-
-    /// Consume the registry, handing every still-registered virtualizer to
-    /// the caller (the disposal tails): the registry is out of the picture
-    /// from that moment, so a mount landing mid-tail cannot be touched.
-    pub fn into_virtualizers(self) -> Vec<virtual_list_leptos::Virtualizer> {
-        self.virtualizers
-    }
-}
-
-// ---------------------------------------------------------------------------
-// The PDF session handle: the engine boundary behind one owner
-// ---------------------------------------------------------------------------
-
-/// The reader runtime's handle onto the PDF engine session. Every call is
-/// guarded by the lifecycle state captured when the handle was made: work
-/// ops no-op once disposal began, teardown ops stay admitted until
-/// `Disposed`. This is the production path for document-level engine
-/// operations; the module-level `pdf_engine::api` functions it delegates to
-/// are the adapter's internals, with removal tied to the Phase 4 format
-/// split (they remain for the page-host surface, classified in the Phase 1
-/// report).
-#[derive(Clone, Copy)]
-pub struct PdfSessionHandle {
-    work: bool,
-    teardown: bool,
-}
-
-impl PdfSessionHandle {
-    /// Open a document. The caller checks [`RuntimeLifecycle::admits_work`]
-    /// before starting an open (the open flow itself decides what a refused
-    /// open means for the UI); the handle records the decision.
-    pub fn work_admitted(&self) -> bool {
-        self.work
-    }
-
-    /// Open a document through the engine session. The work admission is
-    /// decided by the caller (the open flow owns what a refusal means for
-    /// the UI) via [`Self::work_admitted`]; this delegation keeps every
-    /// document-level engine entry on the handle.
-    pub async fn open(
-        &self,
-        path: &str,
-    ) -> Result<pdf_engine::types::OpenResult, pdf_engine::api::EngineError> {
-        pdf_engine::api::open(path).await
-    }
-
-    pub async fn destroy(&self) {
-        if !self.teardown {
-            return;
-        }
-        let _ = pdf_engine::api::destroy().await;
-    }
-
-    pub fn sweep(&self) {
-        if !self.teardown {
-            return;
-        }
-        pdf_engine::api::sweep();
-    }
-
-    pub fn sweep_snapshots(&self) {
-        if !self.teardown {
-            return;
-        }
-        pdf_engine::api::sweep_snapshots();
-    }
-}
-
 /// The runtime's self-reported view, published to the diagnostics surface on
-/// every transition (Phase 1 §12: the runtime itself reports its lifecycle
-/// and its live resource count; disposal completion is observable from the
-/// runtime, not inferred from its surroundings).
+/// every transition: the runtime itself reports its lifecycle, and disposal
+/// completion is observable from the runtime, not inferred from its
+/// surroundings. The resources it counts are the panes' (the host reports
+/// them).
 #[derive(Clone, Copy, Debug)]
 pub struct RuntimeView {
     pub lifecycle: RuntimeLifecycle,
     pub generation: u64,
-    pub virtualizer_count: usize,
 }
 
 // ---------------------------------------------------------------------------
 // The runtime itself
 // ---------------------------------------------------------------------------
 
-/// The reader runtime owner. Copy by design: the shell and the reader tree
-/// share ONE runtime through Copy handles onto the same core/resources, the
-/// same way they share the signals.
+/// The session's lifecycle owner. Copy by design: the host and every pane
+/// share ONE runtime through Copy handles onto the same core.
 #[derive(Clone, Copy)]
 pub struct ReaderRuntime {
     core: RwSignal<RuntimeCore>,
-    resources: StoredValue<ReaderResources, LocalStorage>,
 }
 
 impl Default for ReaderRuntime {
@@ -271,10 +166,9 @@ impl ReaderRuntime {
             generation: ordinal.saturating_sub(1),
             ..RuntimeCore::default()
         };
-        crate::diagnostics::publish_runtime_view(core.lifecycle, core.generation, 0);
+        crate::diagnostics::publish_runtime_view(core.lifecycle, core.generation);
         Self {
             core: RwSignal::new(core),
-            resources: StoredValue::new_local(ReaderResources::default()),
         }
     }
 
@@ -291,10 +185,9 @@ impl ReaderRuntime {
     }
 
     /// The generation stamp async tails capture to reject stale results.
-    /// The stamp is read through `try_` for the same reason the lifecycle is:
-    /// a tail that outlives the arena must not panic on it. A disposed
-    /// runtime answers with a stamp no live generation can carry — there is
-    /// no generation left to be stale FOR.
+    /// Read through `try_` for the same reason the lifecycle is: a tail that
+    /// outlives the arena must not panic on it. A disposed runtime answers
+    /// with a stamp no live generation can carry.
     pub fn generation(&self) -> u64 {
         self.core
             .try_get_untracked()
@@ -303,31 +196,19 @@ impl ReaderRuntime {
     }
 
     /// Write to the core and republish the diagnostics view. The async
-    /// disposal tails call this AFTER their owner may already be disposed —
-    /// the engine destroy outlives the session's reactive scope — and a
-    /// disposed signal must not turn a completed teardown into a panic
-    /// (wasm's abort would poison the artifact for every later session). A
+    /// disposal tail calls this AFTER its owner may already be disposed, and
+    /// a disposed signal must not turn a completed teardown into a panic. A
     /// dead runtime's bookkeeping is dropped, not fatal.
     fn set(&self, f: impl FnOnce(&mut RuntimeCore)) {
         let _ = self.core.try_update(|core| {
             f(core);
-            crate::diagnostics::publish_runtime_view(
-                core.lifecycle,
-                core.generation,
-                self.resources
-                    .try_with_value(|r| r.virtualizer_count())
-                    .unwrap_or(0),
-            );
+            crate::diagnostics::publish_runtime_view(core.lifecycle, core.generation);
         });
     }
 
-    /// The `/reader` route mount: start (or restart, as a NEW generation) the
-    /// runtime. A restart that lands while a disposal tail is still awaiting
-    /// the engine takes the stale resources away from that tail (disposING
-    /// them here — every stale instance is route-dead and its dispose is
-    /// idempotent), so the tail can never touch the fresh generation's
-    /// registrations. Effects and resource registration happen between this
-    /// and [`Self::mark_ready`].
+    /// The session mount: start (or restart, as a NEW generation) the
+    /// runtime. The host and its first pane are built between this and
+    /// [`Self::mark_ready`].
     pub fn begin_mount(&self) -> u64 {
         let mut started = None;
         self.set(|core| {
@@ -335,68 +216,27 @@ impl ReaderRuntime {
                 started = Some(core.generation);
             }
         });
-        if started.is_some() {
-            let stale = self.resources.try_get_value().unwrap_or_default();
-            let _ = self.resources.try_set_value(ReaderResources::default());
-            for v in stale.into_virtualizers() {
-                v.dispose();
-            }
-        }
         started.unwrap_or_else(|| self.generation())
     }
 
-    /// The mount's effects and resources are installed: the runtime is live.
+    /// The session's host is built and its panes are mounting: live.
     pub fn mark_ready(&self) {
         self.set(|core| {
             let _ = core.mark_ready();
         });
     }
 
-    /// Register a reader virtualizer with the runtime's resource owner.
-    /// Called where `use_virtualizer` returns; the registering owner's
-    /// cleanup pairs with [`Self::untrack_virtualizer`].
-    pub fn track_virtualizer(&self, v: &virtual_list_leptos::Virtualizer) {
-        // Registration and its cleanup can run either side of the arena's
-        // death (a strip's cleanup against a runtime whose session already
-        // ended): the resources are borrowed through `try_` on both ends, so
-        // a dead registry drops the bookkeeping instead of aborting.
-        let _ = self.resources.try_update_value(|r| r.track(v));
-    }
-
-    /// The registering owner's cleanup dropped its virtualizer.
-    pub fn untrack_virtualizer(&self, v: &virtual_list_leptos::Virtualizer) {
-        let _ = self.resources.try_update_value(|r| {
-            r.untrack(v);
-        });
-    }
-
-    /// The guarded engine-session handle. Capture it FRESH at each use — the
-    /// guards snapshot the lifecycle at creation.
-    pub fn pdf(&self) -> PdfSessionHandle {
-        let lifecycle = self.lifecycle();
-        PdfSessionHandle {
-            work: lifecycle.admits_work(),
-            teardown: lifecycle.admits_teardown(),
-        }
-    }
-
-    /// Dispose the runtime: close the active document IF one is open, tear
-    /// down every reader-owned resource in dependency order, and become
-    /// unusable. Safe to call exactly once; later calls are no-ops that
-    /// return `false`. Never revives — the next mount is a new generation.
+    /// Dispose the runtime: enter `Disposing` (work refused from here), then
+    /// await the panes' teardown tails the host handed over — the engine
+    /// destroys, the virtualizers' final dispose — and only then mark
+    /// `Disposed` and report completion. Safe to call exactly once; later
+    /// calls are no-ops that return `false`. Never revives.
     ///
-    /// Order (adapted to the real dependency graph Phase 0 mapped: strip
-    /// callbacks can straggle past the document's death, so the signal
-    /// liveness guards from Phase 0 run ahead of the explicit teardown):
-    /// enter `Disposing` (work refused from here) → claim the session stamp
-    /// if a document was open → close the paper session → spawn the tail:
-    /// close the document session (destroy awaited, sweeps) → dispose every
-    /// registered virtualizer → mark `Disposed` → report disposal
-    /// completion. The DURABLE half (the read point) already went across the
-    /// boundary while the session was alive — the dispose export flushes
-    /// before it unmounts, because this function runs with the reactive tree
-    /// already being torn down.
-    pub fn dispose(&self, state: crate::context::ReaderContext) -> bool {
+    /// The panes' SYNC teardown (read point, owner cleanup, listeners,
+    /// observers, timers) already ran when the host disposed them, while
+    /// the session was still alive; this function runs inside the session
+    /// unmount's cleanup and only owns the ordering of the async tails.
+    pub fn dispose(&self, api: crate::context::ApiHandle, panes: PaneTeardown) -> bool {
         let mut began = false;
         self.set(|core| {
             began = core.begin_dispose();
@@ -404,48 +244,10 @@ impl ReaderRuntime {
         if !began {
             return false;
         }
-        // This runs inside the unmount's cleanup: the session's reactive
-        // owner is being torn down, so the reads below are try_ (a disposed
-        // slice has nothing left to say) and the reactive reset that a
-        // DOCUMENT close owes is not repeated here — the state is about to
-        // be dropped whole, and the durable write already happened while the
-        // session was alive (the dispose export's flush). Only the
-        // engine-side close has to run: the paper session outlives the
-        // artifact's mount.
-        let doc_open = state
-            .reader
-            .document
-            .status
-            .try_get_untracked()
-            .map(|s| s != pdf_engine::types::DocStatus::Idle)
-            .unwrap_or(false);
-        let stamp = doc_open.then(session::claim);
-        if let Some(stamp) = stamp {
-            crate::diagnostics::note_reader_runtime_dispose_begin(stamp);
-        }
-        pdf_engine::backdrop::document_close();
-        // The per-document memos that live outside the session's reactive
-        // tree go with it: in a hosted frame the thread-locals survive the
-        // session (the frame is recycled, not reloaded), and a memo nobody
-        // clears is memory the next session pays for without using.
-        crate::components::ai::reflow_anchor::forget_parsed_spots();
-        // The resources leave the registry NOW: from this moment the tail
-        // alone owns them, and a mount that lands before the engine destroy
-        // resolves starts with a clean registry the stale tail cannot reach.
-        let stale = self.resources.try_get_value().unwrap_or_default();
-        let _ = self.resources.try_set_value(ReaderResources::default());
-        let pdf = self.pdf();
         let rt = *self;
         let generation = self.generation();
         spawn_local(async move {
-            if stamp.is_some() {
-                pdf.destroy().await;
-                pdf.sweep();
-                pdf.sweep_snapshots();
-            }
-            for v in stale.into_virtualizers() {
-                v.dispose();
-            }
+            panes.await;
             rt.set(|core| {
                 let _ = core.finish_dispose(generation);
             });
@@ -454,25 +256,16 @@ impl ReaderRuntime {
             // signals, so the `set` above is refused and the view would stay
             // `Disposing` forever — a runtime that never says it finished,
             // which is precisely what the Shell's manager awaits and what the
-            // baseline probe reads (§12, §21). The view is a thread-local for
-            // this beat: a runtime still has to be able to report its own
-            // completion after its reactive scope is gone.
-            crate::diagnostics::publish_runtime_view(RuntimeLifecycle::Disposed, generation, 0);
-            if let Some(stamp) = stamp {
-                crate::diagnostics::note_reader_runtime_dispose_complete(stamp);
-                app_state::memory::log_heap("close");
-            }
+            // baseline probe reads (§12, §21).
+            crate::diagnostics::publish_runtime_view(RuntimeLifecycle::Disposed, generation);
             // The Shell's manager awaits the dispose export's promise before
             // it removes or recycles the frame (§5): the tail's end resolves
-            // it, document or not. A session that never held a document — a
-            // warm reader the Shell evicts or replaces — owes the same answer
-            // as one that did; resolving it only on the document path left
-            // the Shell to wait out its forced-removal timeout for each.
+            // it, document or not.
             crate::resolve_dispose();
             // The final push for this session: the runtime is disposed, the
-            // engine is drained, and the Shell's baseline verdict reads this
+            // panes are gone, and the Shell's baseline verdict reads this
             // digest.
-            crate::diagnostics::publish_digest(&state.api);
+            crate::diagnostics::publish_digest(&api);
         });
         true
     }

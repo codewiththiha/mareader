@@ -125,7 +125,6 @@ impl LibraryContext {
             toast,
             window_maximized,
         };
-        let search_visible = RwSignal::new(false);
         let sidebar_slide = RwSignal::new(app_state::state::Motion::default());
         Self {
             library: crate::state::LibraryState {
@@ -145,7 +144,7 @@ impl LibraryContext {
                 ui,
                 reader: app_state::ReaderSurface {
                     reflowable: leptos::prelude::Signal::derive(|| false),
-                    search_visible,
+                    search_visible: leptos::prelude::Signal::derive(|| false),
                     sidebar_slide,
                 },
             },

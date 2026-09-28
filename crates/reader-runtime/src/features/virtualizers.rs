@@ -1,6 +1,6 @@
 //! Builds and wires the reader's two virtualizers: the vertical scroll list
-//! and the horizontal strip. Extracted out of `ReaderPage` so the page
-//! component stays a layout + effect coordinator rather than a setup pile.
+//! and the horizontal strip. One pair per pane: the pane's mount builds them
+//! and the pane's dispose owns their end.
 
 use std::hash::Hash;
 
@@ -20,7 +20,7 @@ use app_ui::epoch::epoch_signal;
 /// virtualizer crates that enforce it.
 pub(crate) const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
-/// The handles `ReaderPage` hands to the viewer components and effects. Both
+/// The handles a pane hands to its viewer components and effects. Both
 /// virtualizers always exist (they are hooks); a view binds only the one for
 /// its axis when it mounts. The `StoredValue`s are the `Clone`-safe wrappers
 /// the components pass by value, while the raw handles drive the effects.
@@ -110,7 +110,7 @@ fn geometry_epoch(state: ReaderState) -> Signal<u64> {
 
 pub(crate) fn use_reader_virtualizers(
     state: ReaderState,
-    runtime: crate::runtime::ReaderRuntime,
+    pane: crate::pane::handle::PaneHandle,
 ) -> ReaderVirtualizers {
     seed_css_heights(state);
 
@@ -224,18 +224,18 @@ pub(crate) fn use_reader_virtualizers(
     // Send + Sync, which the Rc inside a Virtualizer is not.
     crate::diagnostics::track_virtualizer(&virtualizer);
     crate::diagnostics::track_virtualizer(&h_virtualizer);
-    // The RUNTIME owns these instances (Phase 1 §9): its dispose sequence
-    // disposes them explicitly — the component cleanups below and inside the
-    // virtualizer crate are the inner safety net, not the owner.
-    runtime.track_virtualizer(&virtualizer);
-    runtime.track_virtualizer(&h_virtualizer);
+    // The PANE owns these instances: its dispose sequence disposes them
+    // explicitly — the component cleanups below and inside the virtualizer
+    // crate are the inner safety net, not the owner.
+    pane.track_virtualizer(&virtualizer);
+    pane.track_virtualizer(&h_virtualizer);
     let tracked_v = StoredValue::new_local(virtualizer.clone());
     let tracked_h = StoredValue::new_local(h_virtualizer.clone());
     on_cleanup(move || {
         tracked_v.with_value(crate::diagnostics::untrack_virtualizer);
         tracked_h.with_value(crate::diagnostics::untrack_virtualizer);
-        runtime.untrack_virtualizer(&tracked_v.get_value());
-        runtime.untrack_virtualizer(&tracked_h.get_value());
+        pane.untrack_virtualizer(&tracked_v.get_value());
+        pane.untrack_virtualizer(&tracked_h.get_value());
     });
 
     {
