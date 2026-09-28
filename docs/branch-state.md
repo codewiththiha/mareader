@@ -66,8 +66,10 @@ whatever is on screen:
 
 - Shell diagnostic counters are authoritative; runtime digests merge in only
   keys the shell does not already own (`src/diagnostics.rs`, unit-tested).
-- `readerSessionsCreated == readerDisposesCompleted` after every close, and
-  `librarySessionsCreated == libraryDisposesCompleted` after every handback.
+- Per kind, `created - completed == (active is X) + (warm-ready is X)`. The
+  old `created == completed` form is only true when the warm slot is EMPTY,
+  and it is never empty while the shell is warm — a warm runtime counts as
+  created the moment it answers `Ready`.
 - Leaving the reader cancels in-flight page renders synchronously with the
   click (`close_document` → `cancel_page_renders`) before the navigate
   command crosses the frame channel; the session destroy during disposal
@@ -97,8 +99,10 @@ whatever is on screen:
 No Rust is compiled in the dev sandbox (disk limits). Push and let GitHub
 Actions judge: `CI` (format, clippy+wasm check+dependency gate, `cargo test`,
 web contracts, macOS shell) on every push; `Deep CI` (browser lifecycle
-baseline + Tauri boot smoke) on pushes touching app/engine paths. Watch run
-`361…` job logs, fix, squash fixups, force-push.
+baseline + Tauri boot smoke) on pushes touching app/engine paths. Watch the
+run's job logs (`ci_watch.py` at the workspace root polls them), fix, squash
+fixups, force-push. No lane reads `docs/**`, so a docs-only push runs neither
+workflow.
 
 ## CI is skippable where it is not needed
 
@@ -108,6 +112,17 @@ baseline + Tauri boot smoke) on pushes touching app/engine paths. Watch run
 - `Deep CI`'s two 45-minute lanes honour `[skip deep]` in the commit subject;
   a `workflow_dispatch` can narrow the run to one lane or override the
   marker. The nightly cron ignores it, so a skip is never the last word.
+
+## Measured, not assumed
+
+The warm slot is proven by the browser lifecycle baseline, not by reasoning:
+`rapidTransitions` reports `reusedWarmFrame: true` for all four back-to-back
+handoffs, the host sampler's `peakFrames` is 2 (one on screen, one behind
+it — never a third on screen), and every memory trend is unchanged
+(`slope 0 B/cycle, drift 0 B` across normal, rapid and same-page cycles).
+A click that outran the 700ms rearm boots the lane on demand instead of
+falling back to a covered cold start, so the runtime the user is leaving
+stays on screen for the boot either way.
 
 ## Known follow-ups (do not silently expand scope)
 
