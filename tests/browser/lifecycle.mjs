@@ -1632,7 +1632,19 @@ currentStage = "stage11-same-page-x10";
 // epoch, carries on. The epoch rule is therefore per frame: a fresh frame's
 // open claims 1; a recycled frame's open claims the previous close + 1; and
 // every close claims exactly one more than its open.
-async function openFromLibrary(cycle) {
+/** Open the fixture from the library and wait for THAT open: a runtime
+ *  generation `fresh` accepts, live with its document and no render in
+ *  flight. Waiting on liveness alone raced the click — the reader kept from
+ *  the previous close already satisfies it, so a fast run read the old
+ *  session back before the new one existed. A generation that never becomes
+ *  fresh times out here into the latest snapshot, and the caller's own
+ *  assertion names the failure. */
+// The generation of the last reader an open actually landed in. A stage's
+// "new runtime" base must be this, not the generation snapped after a close:
+// by then the warm slot may already have booted the NEXT reader, whose
+// generation is minted before the click that opens it.
+let lastOpenedGeneration = 0;
+async function openFromLibrary(cycle, fresh = () => true) {
   const card = page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('.book-title[title*="Programming Pearls"]').first();
   try {
     await card.click({ timeout: 5_000 });
@@ -1646,10 +1658,18 @@ async function openFromLibrary(cycle) {
       t.click();
     });
   }
-  const o = await waitFor(`same-page open ${cycle}`, (x) =>
+  const opened = (x) =>
     x.readerRuntimeLive === true &&
     x.engine?.hasDocument === true &&
-    x.engine.activeRenders === 0, 45_000);
+    x.engine.activeRenders === 0;
+  let o;
+  try {
+    o = await waitFor(`same-page open ${cycle}`, (x) =>
+      opened(x) && fresh(x.runtime?.generation ?? 0), 45_000);
+  } catch {
+    o = await waitFor(`same-page open ${cycle}`, opened, 5_000);
+  }
+  lastOpenedGeneration = o.runtime?.generation ?? lastOpenedGeneration;
   return o;
 }
 // The shell-relative base is the runtime generation only: every same-page
@@ -1668,7 +1688,7 @@ let lastReaderFrame = null;
 let lastCloseEpoch = null;
 summary.samePageRecycledOpens = 0;
 for (let cycle = 1; cycle <= 10; cycle += 1) {
-  const o = await openFromLibrary(cycle);
+  const o = await openFromLibrary(cycle, (gen) => gen > generationBase && !usedGenerations.has(gen));
   const openFrame = (await frameSlots()).active;
   const recycled = openFrame !== null && openFrame === lastReaderFrame;
   const expectedOpen = recycled ? lastCloseEpoch + 1 : 1;
@@ -1768,10 +1788,10 @@ const waitFrames = (n) =>
       }),
     n,
   );
-const callbackGenBase = (await snap()).runtime?.generation ?? 1;
+const callbackGenBase = lastOpenedGeneration || ((await snap()).runtime?.generation ?? 1);
 const usedCallbackGenerations = new Set();
 for (let cycle = 1; cycle <= 10; cycle += 1) {
-  const o = await openFromLibrary(cycle);
+  const o = await openFromLibrary(cycle, (gen) => gen > callbackGenBase && !usedCallbackGenerations.has(gen));
   {
     const gen = o.runtime?.generation ?? 0;
     if (gen <= callbackGenBase || usedCallbackGenerations.has(gen)) {
