@@ -22,15 +22,16 @@
 //! the tween continues from wherever the eye is towards the new target, on a
 //! restarted clock.
 //!
-//! A container follow does not normally come through this loop: its target is
+//! An untweened zoom — animation off, reduced motion, or a poster that asked
+//! for none — never comes through this loop at all: [`commit_instant`] runs
+//! the whole transaction in the task that posted it.
+//!
+//! A container follow does not normally come through this loop either: its target is
 //! whatever the container allows RIGHT NOW, so the controller lands it in the
 //! frame the new size was reported and holds the commit for the burst's end —
 //! easing towards a moving target has the page visibly chasing the window. The
 //! loop can still be handed one (a follow taking over mid-tween), so it knows
 //! how to land it without committing it.
-
-use std::cell::Cell;
-use std::rc::Rc;
 
 use leptos::prelude::*;
 
@@ -52,8 +53,9 @@ use super::coordinator::finish_transition;
 /// both strips for a factor of one. A container follow asks for the landing on
 /// every frame of a burst, so it hits that case whenever the scale is pinned.
 ///
-/// Two callers, deliberately: the controller in the task that reported a new
-/// container size, and the tween loop for every untweened landing. Both go
+/// Callers: the controller in the task that reported a new container size,
+/// [`commit_instant`] for every untweened zoom, and the tween loop for a
+/// follow that took over mid-tween. All go
 /// through here so "the layout moved and the display scale agrees" stays one
 /// rule rather than two that can drift.
 pub(crate) fn land(state: &ReaderState, actuator: &ZoomActuator, t: &ZoomTransition) -> bool {
@@ -86,35 +88,72 @@ fn ease_out_cubic(t: f64) -> f64 {
     1.0 - u * u * u
 }
 
+/// Whether a transition eases between its endpoints over animation frames.
+///
+/// Five reasons not to: the poster asked for none, it is a container follow
+/// (it must sit in the window, not chase it), the profile has no duration,
+/// the reader switched zoom animation off, or the OS asked for reduced
+/// motion. Every consumer decides through here — the command effect when it
+/// opens a transaction, and the tween loop on every frame, so a preference
+/// that flips mid-flight lands the tween instead of finishing it.
+pub(crate) fn interpolates(
+    t: &ZoomTransition,
+    duration_ms: f64,
+    reader_allows: bool,
+    reduced_motion: bool,
+) -> bool {
+    t.animate && !t.following && duration_ms > 0.0 && reader_allows && !reduced_motion
+}
+
+/// [`interpolates`], against the live preferences.
+pub(crate) fn interpolates_now(state: &ReaderState, t: &ZoomTransition) -> bool {
+    interpolates(
+        t,
+        config::zoom_profile().duration_ms(),
+        state.viewer.motion.get_untracked().zoom,
+        prefers_reduced_motion(),
+    )
+}
+
+/// Run a whole untweened transaction in the calling task: open it, land the
+/// layout on the target, commit.
+///
+/// This is what "animation off" means for a zoom — one discrete change, not a
+/// tween with its frames removed. Nothing is deferred to a later frame, so
+/// there is no window in which the view could show a half-applied state and
+/// no frame count standing in for a correctness condition:
+///
+/// * the actuator brings the strip's scroll extent to the new total BEFORE
+///   its scroll write, so the anchored offset is exact in this tick (no
+///   clamped write, no correction a frame later — see `relayout_vertical`);
+/// * the page hosts stretch their CURRENT bitmaps to the target size, and the
+///   commit's renders draw into scratches and swap in one blit each, so no
+///   page is ever blank while its crisp raster is pending;
+/// * everything that runs afterwards — the scroll event, the hosts'
+///   ResizeObserver reports, the render completions — observes the committed
+///   geometry, and a render issued before the zoom is refused at landing
+///   (`judge_completion` in the page host).
+///
+/// The transition still goes up before anything moves and comes down in
+/// [`finish_transition`]: the freeze bookkeeping in the controller watches
+/// that signal, and it is what re-arms the retention-grace reset.
+pub(crate) fn commit_instant(state: &ReaderState, actuator: &ZoomActuator, t: &ZoomTransition) {
+    state.viewer.zoom.transition.set(Some(*t));
+    land(state, actuator, t);
+    finish_transition(state, t);
+}
+
 /// The single tween loop owned by the zoom controller. A thin wrapper over
 /// [`FrameLoop`]: the machinery (re-arm slot, alive flag, owner cleanup) is
 /// the primitive's; what is left here is the one thing only the tween knows —
 /// what a frame does. `arm` is idempotent: a running loop adopts whatever
 /// transition is on the signal, so retargets never stack a second loop.
+///
+/// Only interpolating transactions come here; an untweened one never reaches
+/// the loop (see [`commit_instant`]).
 pub(crate) struct Tween {
     frames: FrameLoop,
-    /// The untweened landing being held open: `(transition start, frames
-    /// left)`. Keyed by the transition's `start_ms`, so a retarget during
-    /// the hold (a burst of steps with animation off) lands afresh and
-    /// restarts it. Lives here rather than in the step because `arm`
-    /// replaces the step on every retarget.
-    held: Rc<Cell<Option<(f64, u8)>>>,
 }
-
-/// How many frames an untweened landing keeps its transaction open after the
-/// jump, before committing.
-///
-/// A landing moves the whole step in one frame, and the frames right after
-/// it still carry echoes of the geometry it replaced: the browser's scroll
-/// event (one frame stale, and possibly clamped against the old scroll extent
-/// the growing-content re-assert fixes a frame later) and the ResizeObserver
-/// reports of the hosts it just stretched. Committing in the landing frame
-/// released the freezes in time for exactly those echoes to be adopted — one
-/// misaligned frame between the old view and the new one. A tween never
-/// shows it because its last step is ~1% of the zoom; held for two frames,
-/// the echoes fall inside the transaction and are dropped. The landing is
-/// still on screen at once: only the crisp re-render starts ~2 frames later.
-const LANDED_HOLD_FRAMES: u8 = 2;
 
 impl Tween {
     /// Build from the reader's owner — this is called in a component body, next
@@ -122,64 +161,36 @@ impl Tween {
     pub(crate) fn new() -> Self {
         Self {
             frames: FrameLoop::new(),
-            held: Rc::new(Cell::new(None)),
         }
     }
 
     /// Ensure a loop is running for the current transition.
     pub(crate) fn arm(&self, state: ReaderState, actuator: ZoomActuator) {
-        let held = Rc::clone(&self.held);
         self.frames.arm(move || {
             // Idle? The loop dies here until the next `arm`.
             let Some(t) = state.viewer.zoom.transition.get_untracked() else {
-                held.set(None);
                 return false;
             };
-            let duration = config::zoom_profile().duration_ms();
-            // Five reasons not to interpolate: the poster asked for the first
-            // frame, this is a container follow (it must sit in the window,
-            // not chase it), the profile has no duration, the OS asked for
-            // reduced motion, or the reader switched zoom animation off. The
-            // last two are read here rather than at every `post`, so no
-            // surface can bypass them by forgetting to ask.
-            let reader_allows = state.viewer.motion.get_untracked().zoom;
-            if !t.animate
-                || t.following
-                || duration <= 0.0
-                || !reader_allows
-                || prefers_reduced_motion()
-            {
+            if !interpolates_now(&state, &t) {
                 if t.following {
-                    // A held follow LANDS but must not commit: its burst has
-                    // another frame coming, and a raster pass per frame of a
-                    // slide is the storm the held transaction exists to avoid.
-                    // The controller's settle deadline commits it once the
-                    // container stops moving. Going idle here instead of
-                    // re-arming lets the next frame own the next rAF: `arm`
-                    // adopts whatever transition is on the signal.
+                    // A follow that took over mid-tween LANDS but must not
+                    // commit: its burst has another frame coming, and a raster
+                    // pass per frame of a slide is the storm the held
+                    // transaction exists to avoid. The controller's settle
+                    // deadline commits it once the container stops moving.
+                    // Going idle here instead of re-arming lets the next frame
+                    // own the next rAF: `arm` adopts whatever transition is on
+                    // the signal.
                     land(&state, &actuator, &t);
                     return false;
                 }
-                // Landing without a tween: one relayout to the target, held
-                // open for LANDED_HOLD_FRAMES, then the commit.
-                return match held.get().filter(|(id, _)| *id == t.start_ms) {
-                    None => {
-                        land(&state, &actuator, &t);
-                        held.set(Some((t.start_ms, LANDED_HOLD_FRAMES)));
-                        true
-                    }
-                    Some((id, left)) if left > 1 => {
-                        held.set(Some((id, left - 1)));
-                        true
-                    }
-                    Some(_) => {
-                        held.set(None);
-                        finish_transition(&state, &t);
-                        false
-                    }
-                };
+                // Animation switched off (or reduced motion turned on) while
+                // this tween ran: finish it the way an untweened zoom runs,
+                // in one step, right now.
+                commit_instant(&state, &actuator, &t);
+                return false;
             }
-            held.set(None);
+            let duration = config::zoom_profile().duration_ms();
             let progress = ((js_sys::Date::now() - t.start_ms) / duration).clamp(0.0, 1.0);
             let visual = t.from + (t.to - t.from) * ease_out_cubic(progress);
             show(&state, &actuator, visual);
@@ -195,6 +206,37 @@ impl Tween {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn transition(animate: bool, following: bool) -> ZoomTransition {
+        ZoomTransition {
+            from: 1.0,
+            to: 1.25,
+            start_ms: 0.0,
+            animate,
+            following,
+        }
+    }
+
+    #[test]
+    fn a_plain_zoom_interpolates_when_everything_allows_it() {
+        assert!(interpolates(&transition(true, false), 180.0, true, false));
+    }
+
+    #[test]
+    fn animation_off_never_interpolates() {
+        // The reader's switch, reduced motion, a zero-length profile and a
+        // poster that asked for none each land the zoom in one step.
+        assert!(!interpolates(&transition(true, false), 180.0, false, false));
+        assert!(!interpolates(&transition(true, false), 180.0, true, true));
+        assert!(!interpolates(&transition(true, false), 0.0, true, false));
+        assert!(!interpolates(&transition(false, false), 180.0, true, false));
+    }
+
+    #[test]
+    fn a_follow_never_interpolates() {
+        assert!(!interpolates(&transition(true, true), 180.0, true, false));
+        assert!(!interpolates(&transition(false, true), 180.0, true, false));
+    }
 
     #[test]
     fn ease_starts_fast_and_lands_exactly() {

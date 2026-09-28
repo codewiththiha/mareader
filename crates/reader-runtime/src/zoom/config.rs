@@ -40,10 +40,12 @@ pub const FOLLOW_SETTLE_MS: u64 = 180;
 /// mean a step one layer considers settled and the other animates.
 pub(crate) const SETTLED_EPSILON: f64 = 0.0005;
 
-/// How (and whether) a zoom animates.
+/// How a zoom animates. WHETHER it animates is the reader's preference
+/// (`viewer.motion.zoom`) and the OS reduced-motion setting, decided in one
+/// place — `animation::interpolates` — rather than a second switch here that
+/// nothing ever turned off.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ZoomAnimationConfig {
-    pub enabled: bool,
     pub duration_ms: f64,
 }
 
@@ -76,14 +78,10 @@ impl ZoomProfile {
         scale.clamp(self.min, self.max)
     }
 
-    /// Effective tween duration: zero when animation is disabled (the tween
-    /// then degenerates to an immediate landing).
+    /// The tween's duration. Zero means no tween: the zoom commits in one
+    /// discrete step, like it does with animation switched off.
     pub fn duration_ms(&self) -> f64 {
-        if self.animation.enabled {
-            self.animation.duration_ms
-        } else {
-            0.0
-        }
+        self.animation.duration_ms
     }
 }
 
@@ -94,7 +92,6 @@ pub fn zoom_profile() -> ZoomProfile {
         min: MIN_SCALE,
         max: MAX_SCALE,
         animation: ZoomAnimationConfig {
-            enabled: true,
             duration_ms: ZOOM_ANIM_MS,
         },
         retention: ZoomRetentionConfig {
@@ -119,17 +116,7 @@ mod tests {
     }
 
     #[test]
-    fn a_disabled_animation_collapses_to_an_instant_landing() {
-        let p = ZoomProfile {
-            min: MIN_SCALE,
-            max: MAX_SCALE,
-            animation: ZoomAnimationConfig {
-                enabled: false,
-                duration_ms: 250.0,
-            },
-            retention: zoom_profile().retention,
-        };
-        assert_eq!(p.duration_ms(), 0.0);
+    fn the_profile_tweens_for_the_configured_duration() {
         assert_eq!(zoom_profile().duration_ms(), ZOOM_ANIM_MS);
     }
 

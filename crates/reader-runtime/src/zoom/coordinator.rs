@@ -40,7 +40,7 @@ use crate::state::{ReaderState, ZoomTransition};
 use crate::zoom::actuator::ZoomActuator;
 use app_chrome::hooks::use_timeout::use_debounce;
 
-use super::animation::{Tween, land};
+use super::animation::{Tween, commit_instant, interpolates_now, land};
 use super::command::holds_commit;
 use super::{config, target};
 
@@ -93,10 +93,10 @@ impl ZoomController {
                 grace_v.prune_retained_now();
                 grace_hv.prune_retained_now();
                 // The commit's renders have landed by now: drop the worker
-                // caches they no longer need and any zoom mask a superseded
-                // render left on a host, so a settled zoom stops holding its
-                // peak surfaces — the webview's footprint latches onto the
-                // highest water the session reached.
+                // caches they no longer need (and any stranded scrub cover),
+                // so a settled zoom stops holding its peak surfaces — the
+                // webview's footprint latches onto the highest water the
+                // session reached.
                 pdf_engine::api::sweep();
                 pdf_engine::api::sweep_snapshots();
             },
@@ -188,6 +188,12 @@ impl ZoomController {
             let retention = config::zoom_profile().retention;
             actuator.vertical.set_retention_grace(retention.grace_ms);
             actuator.horizontal.set_retention_grace(retention.grace_ms);
+            if !following && !interpolates_now(&state, &transition) {
+                // Animation off: one discrete change, opened, landed and
+                // committed right here — no tween loop, no frames to wait.
+                commit_instant(&state, &actuator, &transition);
+                return;
+            }
             // The transition goes up BEFORE anything moves: the frames it
             // holds are exactly the ones that must not feed a measurement or
             // the browser's scroll echo back into the layout being
@@ -214,27 +220,38 @@ impl ZoomController {
 /// Land a transition: bring the render scale onto the target and release the
 /// freezes.
 ///
-/// There is no geometry step left to run — the last tween frame (or the first
-/// frame of an untweened landing) already relayed the layout out to exactly
+/// There is no geometry step left to run — the last tween frame (or an
+/// untweened zoom's landing) already relayed the layout out to exactly
 /// the target, so all that remains is for the rasters to catch up with the
 /// size the hosts already show.
 ///
-/// Every transaction ends here; only the calls differ: a tween and a discrete
-/// refit commit on the frame they land, a container follow is committed by
+/// Every transaction ends here; only the calls differ: a tween commits on the
+/// frame it lands, an untweened zoom in the task that posted it
+/// (`commit_instant`), a container follow is committed by
 /// the settle deadline — once per burst, at the size the container stopped
 /// at. Setting the scales is a no-op write when a follow has been landing all
 /// along, so a held commit is quiet even when it moves nothing.
 pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     state.viewer.zoom.committed.set(t.to);
-    state.viewer.zoom.display.set(t.to);
+    // Every path that reaches here has already shown `t.to` (the last tween
+    // frame, a landing, a follow), so this write is normally a no-op — and a
+    // Leptos `set` notifies even then, re-running every mounted page's
+    // stretch effect for nothing. Only write when the display actually
+    // differs: a tween whose last frame landed an ulp away from the target,
+    // or a follow committed before its first landing.
+    if state.viewer.zoom.display.get_untracked() != t.to {
+        state.viewer.zoom.display.set(t.to);
+    }
     // Releasing the transition last is what un-freezes page/scroll sync and
     // geometry feedback — everything downstream re-runs against a settled
     // scale, never a half-landed one.
     state.viewer.zoom.transition.set(None);
     // Nothing renders inside a transaction; sweep the rasters now that the
-    // render scale has moved, and drop the zoom masks whose renders the
-    // transition superseded — they would otherwise sit on full-page surfaces
-    // until each host's next completion.
+    // render scale has moved. The snapshot sweep is a backstop for the one
+    // producer of `.page-snapshot` covers left, the appearance scrub: a zoom
+    // itself puts none up (renders swap in one blit), but a cover stranded by
+    // a scrub would otherwise sit on a full-page surface until its host's
+    // next completion.
     pdf_engine::api::sweep();
     pdf_engine::api::sweep_snapshots();
     // The heap probe at the commit: a zoom is JS-side surfaces, not wasm, so
