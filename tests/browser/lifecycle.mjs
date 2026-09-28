@@ -499,11 +499,13 @@ function assertArtifactLoaded(path, label) {
  *  timer starting at DOMContentLoaded. */
 async function armShellBootWatcher() {
   await page.addInitScript(() => {
-    window.__shellBoot = { copy: null, removedAt: null };
+    window.__shellBoot = { copy: null, removedAt: null, background: null, titleWidth: null };
     const record = () => {
       const boot = document.getElementById("shell-boot");
       if (boot && window.__shellBoot.copy === null) {
         window.__shellBoot.copy = (boot.textContent ?? "").replace(/\s+/g, " ").trim();
+        window.__shellBoot.background = getComputedStyle(boot).backgroundColor;
+        window.__shellBoot.titleWidth = boot.querySelector(".shell-boot__title")?.getBoundingClientRect().width ?? null;
       }
       if (!boot && window.__shellBoot.copy !== null && window.__shellBoot.removedAt === null) {
         window.__shellBoot.removedAt = Math.round(performance.now());
@@ -864,6 +866,11 @@ if (!shellBoot?.copy?.includes("Loading MAReader")) {
 }
 if (shellBoot.removedAt === null) {
   throw new Error("[/] the shell never removed the page's boot placeholder");
+}
+// A healthy boot is blank paper: the copy is in the tree (above) but not on
+// screen. It only shows when shellBoot.js marks a failed start.
+if (!(shellBoot.titleWidth !== null && shellBoot.titleWidth <= 1)) {
+  throw new Error(`[/] the boot placeholder's copy is visible on a healthy start (title width ${shellBoot.titleWidth})`);
 }
 // The shelf's cover bakes: the Shell loads no PDF engine any more, so a
 // cover can only exist if the relay works end to end — shelf asks, Shell
@@ -2159,6 +2166,44 @@ currentStage = "noise-runtime-state";
     }
     return { active, warm: read("warm"), distinctTransforms: transforms.size };
   });
+  // The loading mark, the same way: the real markup mounted in the live
+  // frame, its first dot's computed animation and transform sampled. It
+  // chases (travels) unless the OS asks for reduced motion — the app's own
+  // animations switch must not freeze it into three still dots.
+  const probeLoader = () => page.evaluate(async () => {
+    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    const d = f.contentDocument;
+    const w = f.contentWindow;
+    const box = d.createElement("div");
+    box.className = "loader";
+    box.style.cssText = "width:72px;position:fixed;left:0;top:0";
+    for (const k of ["a", "b", "c"]) {
+      const dot = d.createElement("span");
+      dot.className = `loader-dot loader-dot-${k}`;
+      box.appendChild(dot);
+    }
+    d.body.appendChild(box);
+    const dot = box.firstElementChild;
+    const transforms = new Set();
+    const opacities = new Set();
+    let cs = w.getComputedStyle(dot);
+    for (let i = 0; i < 14; i++) {
+      cs = w.getComputedStyle(dot);
+      transforms.add(cs.transform);
+      opacities.add(cs.opacity);
+      await new Promise((res) => setTimeout(res, 70));
+    }
+    const out = {
+      name: cs.animationName,
+      duration: cs.animationDuration,
+      iterations: cs.animationIterationCount,
+      transforms: transforms.size,
+      opacities: opacities.size,
+    };
+    box.remove();
+    return out;
+  });
+  summary.loader = {};
   summary.noise = {};
   for (const animations of [true, false]) {
     for (const reduced of [false, true]) {
@@ -2184,12 +2229,49 @@ currentStage = "noise-runtime-state";
         const cause = r.active.name === "none" || r.active.iterations === "1" ? "cascade" : "animation computed but transform static";
         throw new Error(`noise ${key}: grain ${runs ? "runs" : "is still"} but should ${shouldRun ? "run" : "be still"} (${cause})`);
       }
+      const l = await probeLoader();
+      summary.loader[key] = l;
+      console.log(`loader ${key}: ${JSON.stringify(l)}`);
+      if (reduced) {
+        if (l.name !== "loader-fade" || l.opacities < 2) {
+          throw new Error(`loader ${key}: reduced motion should breathe in place, got ${JSON.stringify(l)}`);
+        }
+      } else if (l.name !== "loader-hop-a" || l.iterations !== "infinite" || l.transforms < 2) {
+        throw new Error(`loader ${key}: the mark should chase, got ${JSON.stringify(l)}`);
+      }
     }
   }
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await writeSettings({ appearance: { noise: "off" }, animations: { enabled: true } });
 }
 console.log("animated noise runs in the live frame in exactly the states it should");
+console.log("the loading mark chases unless the OS asks for reduced motion");
+
+currentStage = "boot-paint";
+{
+  // The next launch's first frame wears the paper this one painted: seed a
+  // remembered paper, reload, and the placeholder must show it before any
+  // wasm runs; once the shell has painted, the real paper replaces the seed.
+  const BOOT_PAINT_KEY = "mareader.boot-paint.v1";
+  const seed = "rgb(12, 34, 56)";
+  await page.evaluate(([k, v]) => localStorage.setItem(k, v), [BOOT_PAINT_KEY, `${seed}|dark`]);
+  await page.reload();
+  await page.waitForFunction(() => window.__shellBoot?.removedAt !== null, null, { timeout: 45_000 });
+  const boot = await page.evaluate(() => window.__shellBoot);
+  if (boot.background !== seed) {
+    throw new Error(`boot-paint: the placeholder wore ${boot.background}, not the remembered ${seed}`);
+  }
+  await page.waitForFunction(([k, v]) => {
+    const now = localStorage.getItem(k);
+    return now !== null && !now.startsWith(v);
+  }, [BOOT_PAINT_KEY, seed], { timeout: 15_000 });
+  summary.bootPaint = {
+    seeded: boot.background,
+    stored: await page.evaluate((k) => localStorage.getItem(k), BOOT_PAINT_KEY),
+  };
+  console.log(`boot-paint: ${JSON.stringify(summary.bootPaint)}`);
+}
+console.log("the boot placeholder is blank paper in the remembered theme");
 
 // --- Guards ----------------------------------------------------------------
 summary.consoleErrorsUnrelated = otherErrorCount;
