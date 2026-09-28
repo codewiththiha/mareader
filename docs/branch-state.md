@@ -135,6 +135,26 @@ whatever is on screen:
   `install_frame_theme`), next to the body classes that drive it — never in
   the Shell, whose body classes the frames do not share.
 
+## Untweened zoom (animations off)
+
+- One discrete commit (`zoom/animation.rs::commit_instant`): detached
+  rescale, `display = committed = to` in one batch, then the deferred scroll
+  write, then `finish_transition`. No FrameLoop, no frame-count holds.
+- The old bitmap stays up until the commit's render blits in
+  (`renderer.ts` scratch + blit); stale completions record geometry for the
+  stretch but never write the rendered-scale host or strip report.
+- The one-frame misaligned landing was CSS, not scheduling: the motion nets
+  give every element `transition-duration: 0.01ms`, and
+  `transition-property` defaults to `all`, so wrapper `top` and host size
+  painted one frame at the old value while `scrollTop` did not.
+  `[data-page-strip]` removes transitions under both nets
+  (styles/components/animations.css). The browser suite's zoom-off stage
+  asserts no mid-scale frame, no blank frame, the final offset, and a
+  landing frame identical to the settled one.
+- Noise: the four-state matrix (animations × reduced motion) is asserted in
+  the active and warm frames from computed `::after` state. Only reduced
+  motion stops the grain; the app's animations-off switch keeps it moving.
+
 ## CI is the only build
 
 No Rust is compiled in the dev sandbox (disk limits). Push and let GitHub
