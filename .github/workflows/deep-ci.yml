@@ -261,6 +261,31 @@ jobs:
             exit 1
           fi
 
+      # A closed split must give its memory back: open → read → close cycles
+      # beside one kept pane, sampled after each close (16 in Chromium; 40 in
+      # WebKit, to see whether its growth levels off). The slope per cycle is
+      # the answer (tools/measure-split-cycles.mjs).
+      - name: Split close cycles
+        if: always()
+        run: |
+          set -o pipefail
+          failed=0
+          : > cycles.log
+          for engine in "" "--webkit --cycles 40"; do
+            DIST_DIR=builds/current/ PORT=8124 node tests/browser/server.mjs > /dev/null &
+            SERVER_PID=$!
+            sleep 1
+            echo "=== cycles ${engine:-chromium}" | tee -a cycles.log
+            node tools/measure-split-cycles.mjs current http://127.0.0.1:8124 $engine 2>&1 | tee -a cycles.log \
+              || { echo "cycles failed for ${engine:-chromium}" | tee -a cycles.log; failed=$((failed + 1)); }
+            kill $SERVER_PID 2>/dev/null || true
+            wait $SERVER_PID 2>/dev/null || true
+          done
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::$failed cycle run(s) failed"
+            exit 1
+          fi
+
       - name: Summary
         if: always()
         run: |
@@ -276,11 +301,17 @@ jobs:
             require("fs").appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join("\n") + "\n");
           '
 
+      - name: Cycles summary
+        if: always()
+        run: node tools/summarize-cycles.mjs cycles.log
+
       - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: memory-replay
-          path: replay.log
+          path: |
+            replay.log
+            cycles.log
           retention-days: 7
 
   # The packaged app, launched for real (§14). Every other job here builds or
