@@ -275,7 +275,9 @@ session, and named here so the later phases replace it deliberately:
   entry and size the pane's root; the host suspends panes while the frame
   is off screen and resumes them on reveal; Cmd/Ctrl+O and the frame's
   resolved open reach the host (`PaneEnv::open` → `ReaderHost::open`);
-  Escape closes the rail through the host's `ShellController`; the
+  Escape closes the rail through the host's `ShellController` (unless a
+  modal or dismissable surface claims that press:
+  `app_chrome::floating::dismiss::escape_is_claimed`); the
   descriptor's document, page, format (via the injected `PaneClassifier`)
   and zoom are honoured by the pane; a pane's gloss marks are written by
   the Shell (`ShellApi::save_gloss`, the list crossing as JSON because
@@ -391,8 +393,9 @@ deliberately rather than discovering it:
 - **Row click.** A workspace setting (Settings → Workspace,
   `WorkspaceSettings::library_click`): open in the focused pane (default,
   `Replace`), open as a new split (`Split`), or nothing (`DragOnly`; the
-  keyboard still opens beside). A file already open is focused, not opened
-  twice. Opening resolves the row's launch synchronously from the store
+  keyboard still opens beside). A new split goes right of the focused pane,
+  or down when only a vertical split fits (`library::beside_axis`). A file
+  already open is focused, not opened twice. Opening resolves the row's launch synchronously from the store
   (`storage::resolve_launch`).
 - **Session.** `DragSession` is `Idle → Arming → Dragging`: a press arms,
   the shared `DRAG_THRESHOLD_PX` (6 px) starts the drag, and only then is
@@ -444,8 +447,9 @@ deliberately rather than discovering it:
 - **Browser.** `tests/browser/lifecycle.mjs` stage 14 (Markdown fixture):
   Library rows dropped right and nested bottom, focus on the new pane, the
   open tabs (focus, ×), a row click replacing the focused pane, Escape, a
-  release back over the rail, a full workspace (four panes) offering no
-  target, and a dispose mid-drag. Stage 15: a PDF kept across three
+  release back over the rail, the `Split` and `DragOnly` click settings
+  (set through the settings sheet, whose Escape must leave the rail open),
+  a full workspace (four panes) offering no target, and a dispose mid-drag. Stage 15: a PDF kept across three
   Markdown split/close cycles (same PDF session, pane and virtualizer
   counts back to the PDF-only baseline), then PDF + Markdown + TXT disposed
   with every pane owner released.
