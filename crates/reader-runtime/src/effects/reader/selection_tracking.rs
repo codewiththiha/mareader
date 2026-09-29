@@ -29,7 +29,9 @@ use ai_core::gloss::PageAnchor;
 use crate::components::ai::anchor::{FormatAnchorBridge, PdfAnchorBridge, ReflowAnchorBridge};
 use crate::components::ai::reflow_anchor;
 use crate::state::SelectionDetail;
-use app_ui::components::primitives::hooks::use_custom_event::use_raw_event;
+use app_ui::components::primitives::hooks::use_custom_event::use_raw_event_from;
+
+use crate::pane::origin::{Origin, origin_of};
 
 /// The JS protocol of the event detail: `null` (clear) or a full
 /// `SelectionDetail`. The engine already debounces and dedupes, so every
@@ -82,21 +84,37 @@ fn anchor_for(
     bridge.capture(scale)
 }
 
-pub fn selection_tracking(state: crate::context::ReaderContext) {
-    use_raw_event(app_ui::events::SELECTION_DETAIL_EVENT, move |detail| {
-        match parse_selection_detail(detail) {
-            Some(selection) => {
-                let anchor = anchor_for(&selection, state);
-                state.reader.ai_selection.anchor.set(anchor);
-                state.reader.ai_selection.detail.set(Some(selection));
-                // A new selection supersedes any open explanation.
-                state.reader.ai_selection.popover_open.set(false);
+/// Same routing as the page range (`page_selection`): a selection in another
+/// pane clears this pane's pill.
+pub fn selection_tracking(state: crate::context::ReaderContext, active: Signal<bool>) {
+    use_raw_event_from(
+        app_ui::events::SELECTION_DETAIL_EVENT,
+        move |detail, origin| {
+            let active = active.try_get_untracked().unwrap_or(false);
+            let mine = origin_of(&state.reader.dom, active, origin.as_ref()) == Origin::Mine;
+            match parse_selection_detail(detail).filter(|_| mine) {
+                Some(selection) => {
+                    let anchor = anchor_for(&selection, state);
+                    state.reader.ai_selection.anchor.set(anchor);
+                    state.reader.ai_selection.detail.set(Some(selection));
+                    // A new selection supersedes any open explanation.
+                    state.reader.ai_selection.popover_open.set(false);
+                }
+                None => {
+                    // Another pane's selection reaches here as a clear too:
+                    // write only when there is something to clear.
+                    let sel = state.reader.ai_selection;
+                    let held = sel.detail.with_untracked(Option::is_some)
+                        || sel.anchor.with_untracked(Option::is_some)
+                        || sel.popover_open.get_untracked();
+                    if !held {
+                        return;
+                    }
+                    state.reader.ai_selection.anchor.set(None);
+                    state.reader.ai_selection.detail.set(None);
+                    state.reader.ai_selection.popover_open.set(false);
+                }
             }
-            None => {
-                state.reader.ai_selection.anchor.set(None);
-                state.reader.ai_selection.detail.set(None);
-                state.reader.ai_selection.popover_open.set(false);
-            }
-        }
-    });
+        },
+    );
 }

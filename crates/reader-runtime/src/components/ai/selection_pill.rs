@@ -189,10 +189,12 @@ pub fn SelectionPill(state: crate::context::ReaderContext) -> impl IntoView {
                                     )
                                 }
                             });
-                        if let Some(m) = mark {
+                        let root = state.reader.dom.root();
+                        if let (Some(m), Some(root)) = (mark, root) {
                             // Self-contained open: bumps the open request with
                             // the mark in hand. Never races detail being cleared.
-                            request_gloss_open(&m);
+                            // Raised on this pane's root: only this pane opens.
+                            request_gloss_open(&root, &m);
                         } else {
                             // Don't leave a stale open flag if capture failed.
                             popover_open.set(false);

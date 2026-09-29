@@ -13,10 +13,18 @@
 
 use leptos::prelude::*;
 
-use app_ui::components::primitives::hooks::use_custom_event::use_raw_event;
+use app_ui::components::primitives::hooks::use_custom_event::use_raw_event_from;
 
-pub fn link_navigation(state: crate::context::ReaderContext) {
-    use_raw_event(app_ui::events::NAVIGATE_EVENT, move |detail| {
+use crate::pane::origin::{Origin, origin_of};
+
+/// The event is dispatched on the clicked link and bubbles: only the pane
+/// the link is in turns its page (`crate::pane::origin`).
+pub fn link_navigation(state: crate::context::ReaderContext, active: Signal<bool>) {
+    use_raw_event_from(app_ui::events::NAVIGATE_EVENT, move |detail, origin| {
+        let active = active.try_get_untracked().unwrap_or(false);
+        if origin_of(&state.reader.dom, active, origin.as_ref()) == Origin::Other {
+            return;
+        }
         let Some(page) = js_sys::Reflect::get(detail, &"page".into())
             .ok()
             .and_then(|v| v.as_f64())

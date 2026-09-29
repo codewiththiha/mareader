@@ -48,6 +48,26 @@ pub fn dispatch_typed_event<T: Serialize>(name: &str, payload: &T) {
     }
 }
 
+/// Dispatch a typed CustomEvent ON `target`, bubbling to `window`: the
+/// listeners are still window listeners, but the event's target says where
+/// it came from — how one of several panes tells its own requests from
+/// another pane's.
+pub fn dispatch_typed_event_on<T: Serialize>(
+    target: &web_sys::EventTarget,
+    name: &str,
+    payload: &T,
+) {
+    let Ok(detail) = serde_wasm_bindgen::to_value(payload) else {
+        return;
+    };
+    let init = web_sys::CustomEventInit::new();
+    init.set_detail(&detail);
+    init.set_bubbles(true);
+    if let Ok(ev) = web_sys::CustomEvent::new_with_event_init_dict(name, &init) {
+        let _ = target.dispatch_event(&ev);
+    }
+}
+
 /// Dispatch a payload-less CustomEvent on `window` — a one-shot gesture with
 /// no state to carry (e.g. [`REVEAL_ACTIVE_EVENT`]).
 pub fn dispatch_event(name: &str) {

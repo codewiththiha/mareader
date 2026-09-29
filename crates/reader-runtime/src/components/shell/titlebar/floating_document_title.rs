@@ -241,8 +241,14 @@ pub fn FloatingDocumentTitle(state: crate::context::ReaderContext) -> impl IntoV
         <Portal>
             <div
                 node_ref=label_ref
-                class="pointer-events-none fixed left-3 top-3 block truncate text-sm font-medium \
+                class="pointer-events-none fixed block truncate text-sm font-medium \
                        text-white mix-blend-difference"
+                // The top-left corner of THIS pane's box (a `left-3 top-3`
+                // inset from it): a split's right or lower pane labels its
+                // own corner, not the window's. Plain offsets — rule 2 bars
+                // a transform on this node.
+                style:left=move || format!("calc(0.75rem + {}px)", state.reader.dom.bounds().x)
+                style:top=move || format!("calc(0.75rem + {}px)", state.reader.dom.bounds().y)
                 style:max-width=move || {
                     // Persist must beat the width clamp too. When the page
                     // fills the viewer the gap is ~0, so the budget falls

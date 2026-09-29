@@ -21,10 +21,10 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::components::ai::gloss::controller::GlossController;
+use crate::pane::origin::raised_in;
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
-use app_ui::components::primitives::hooks::use_custom_event::{
-    dispatch_typed_event, use_typed_event,
-};
+use app_ui::components::primitives::hooks::use_custom_event::use_typed_event_from;
+use app_ui::events::dispatch_typed_event_on;
 
 pub use app_ui::events::GLOSS_CONTEXT_EVENT;
 
@@ -62,9 +62,11 @@ pub struct UndoBatch {
 /// quick second removal can never be eaten by the first one's timer.
 static UNDO_GEN: AtomicU64 = AtomicU64::new(1);
 
-/// Dispatch [`GLOSS_CONTEXT_EVENT`] (fired by a mark's contextmenu handler).
-pub fn dispatch_gloss_context(x: f64, y: f64, id: &str) {
-    dispatch_typed_event(
+/// Dispatch [`GLOSS_CONTEXT_EVENT`] (fired by a mark's contextmenu handler)
+/// ON the mark, bubbling: only the pane the mark is in opens its menu.
+pub fn dispatch_gloss_context(origin: &web_sys::EventTarget, x: f64, y: f64, id: &str) {
+    dispatch_typed_event_on(
+        origin,
         GLOSS_CONTEXT_EVENT,
         &ContextTarget {
             x,
@@ -145,8 +147,8 @@ pub fn use_select_mode(state: crate::context::ReaderContext, ctrl: GlossControll
     // selection mode; inside it, right-click toggles selection (marks.rs).
     // Placement (cursor point) + viewport clamping + dismissal are the
     // `ContextMenu` primitive's job; this listener only delivers the payload.
-    use_typed_event::<ContextTarget>(GLOSS_CONTEXT_EVENT, move |t| {
-        if selecting.get_untracked() {
+    use_typed_event_from::<ContextTarget>(GLOSS_CONTEXT_EVENT, move |t, origin| {
+        if selecting.get_untracked() || !raised_in(&state.reader.dom, origin.as_ref()) {
             return;
         }
         menu.set(Some(t));

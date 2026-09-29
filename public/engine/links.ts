@@ -104,8 +104,10 @@ export async function buildLinkLayer(
       aEl.dataset.page = String(p);
       aEl.addEventListener("click", (ev) => {
         ev.preventDefault();
-        globalThis.dispatchEvent(
-          new CustomEvent(NAVIGATE_EVENT, { detail: { page: p } })
+        // On the link itself, bubbling to the window: every pane listens
+        // there, and only the pane this link is in may turn its page.
+        aEl.dispatchEvent(
+          new CustomEvent(NAVIGATE_EVENT, { detail: { page: p }, bubbles: true })
         );
       });
     }

@@ -1,5 +1,8 @@
 // The engine's half of the window-event protocol. The engine talks to the
-// app by dispatching CustomEvents on `window`: it owns the pdf.js side and
+// app by CustomEvents the app hears on `window` — raised ON the element they
+// came from (the clicked link, the selection's page host) and bubbling, so
+// each of several panes keeps only its own; a clear is raised on the window
+// itself. The engine owns the pdf.js side and
 // cannot hold a Leptos signal, and the app cannot be called from a bundled
 // IIFE. So the boundary is three event names, and a name that disagrees
 // fails at runtime and nowhere else — no compiler, no type, no error:

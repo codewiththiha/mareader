@@ -25,5 +25,6 @@ pub mod document;
 pub mod dom;
 pub mod engine;
 pub mod handle;
+pub mod origin;
 pub mod session;
 mod view;

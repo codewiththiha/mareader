@@ -20,8 +20,10 @@ use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::mark_layer::GLOSS_OPEN_EVENT;
 use crate::components::ai::gloss::phase::{AiPhase, GlossPhase};
 use crate::context::ReaderContext;
+use crate::pane::origin::raised_in;
 use crate::services::ai::invoke_explain_word;
 use app_chrome::hooks::use_viewport::viewport_size;
+use app_ui::components::primitives::hooks::use_custom_event::use_typed_event_from;
 use app_ui::components::primitives::motion::spring::SpringBox;
 
 use super::GlossController;
@@ -36,20 +38,18 @@ pub fn use_open_listener(state: crate::context::ReaderContext, ctrl: GlossContro
     let detail = state.reader.ai_selection.detail;
     let popover_open = state.reader.ai_selection.popover_open;
 
-    let handle = window_event_listener(
-        leptos::ev::Custom::new(GLOSS_OPEN_EVENT),
-        move |ev: web_sys::CustomEvent| {
-            let Ok(m) = serde_wasm_bindgen::from_value::<GlossMark>(ev.detail()) else {
-                return;
-            };
-            detail.set(None);
-            state.reader.ai_selection.anchor.set(None);
-            ctrl.open.pending.set(Some(m));
-            ctrl.open.request.update(|n| *n += 1);
-            popover_open.set(true);
-        },
-    );
-    on_cleanup(move || handle.remove());
+    // Raised on the stroke or the pill that asked, bubbling: every pane's
+    // popover hears it, and only the pane it came from opens.
+    use_typed_event_from::<GlossMark>(GLOSS_OPEN_EVENT, move |m, origin| {
+        if !raised_in(&state.reader.dom, origin.as_ref()) {
+            return;
+        }
+        detail.set(None);
+        state.reader.ai_selection.anchor.set(None);
+        ctrl.open.pending.set(Some(m));
+        ctrl.open.request.update(|n| *n += 1);
+        popover_open.set(true);
+    });
 }
 
 /// What an open request means, given the controller's state when it lands.

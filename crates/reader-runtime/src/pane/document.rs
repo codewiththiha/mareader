@@ -233,9 +233,13 @@ impl PaneRuntime for DocumentPane {
             PaneLifecycle::Suspended => self.ctx.pane.pdf().suspend_prefetches(),
             PaneLifecycle::Ready => {
                 // The pane in front presents: its session's paper is the one
-                // the root backdrop shows.
+                // the root backdrop shows. With several panes Ready (a split
+                // resuming together), only the ACTIVE one does; another pane
+                // presents when it takes focus (`focus`).
                 let pdf = self.ctx.pane.pdf();
-                pdf.present();
+                if self.env.active.try_get_untracked().unwrap_or(false) {
+                    pdf.present();
+                }
                 pdf.resume_prefetches();
             }
             _ => {}
@@ -317,7 +321,11 @@ impl PaneRuntime for DocumentPane {
 
     fn focus(&self) {
         // The keyboard arm and every other active-only behaviour read the
-        // host's derived `active` signal; nothing to copy here.
+        // host's derived `active` signal; nothing to copy here. What does
+        // follow focus is the realm's one presented session: the root
+        // backdrop shows the paper of the pane in front. (A pane not Ready
+        // has nothing to present; its Ready presents if it is still active.)
+        self.ctx.pane.pdf().present();
     }
 
     fn blur(&self) {

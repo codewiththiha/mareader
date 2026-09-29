@@ -36,9 +36,11 @@ pub(crate) fn install_pane_effects(
     // navigation, page selection, the AI selection anchor), so they are
     // installed in the pane's owner and die with it — each arm's window
     // listener unregisters with this scope.
-    crate::effects::reader::link_navigation::link_navigation(state);
-    crate::effects::reader::page_selection::page_selection(state);
-    crate::effects::reader::selection_tracking::selection_tracking(state);
+    // The events arrive on the window for every pane alike; each arm keeps
+    // only its own (`crate::pane::origin`).
+    crate::effects::reader::link_navigation::link_navigation(state, active);
+    crate::effects::reader::page_selection::page_selection(state, active);
+    crate::effects::reader::selection_tracking::selection_tracking(state, active);
     // The keyboard arm (page navigation, zoom steps, the sidebar toggles,
     // Cmd/Ctrl+O) answers only while this pane is the host's active pane:
     // the gate reads the host's one focus authority, never a copy of it.
@@ -150,6 +152,9 @@ pub(crate) fn pane_content(
     view! {
         <div
             node_ref=dom.root_ref()
+            // `crate::pane::origin::PANE_ROOT_ATTR`: an event raised inside
+            // finds its pane by this.
+            data-pane-root=""
             class="absolute left-0 top-0"
             style:width=move || measured().map_or("100%".to_string(), |(w, _)| format!("{w}px"))
             style:height=move || measured().map_or("100%".to_string(), |(_, h)| format!("{h}px"))

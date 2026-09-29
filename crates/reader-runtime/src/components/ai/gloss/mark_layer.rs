@@ -60,7 +60,7 @@ use crate::components::ai::gloss::selection_mode::{
 use app_ui::components::primitives::interactions::long_press::{LongPressOptions, use_long_press};
 
 pub use app_ui::events::GLOSS_OPEN_EVENT;
-use app_ui::events::dispatch_typed_event;
+use app_ui::events::dispatch_typed_event_on;
 
 /// Exact-fit stroke radius. Shared with `ai::anchor::pdf::screen_box` so the
 /// morphing surface settles onto EXACTLY the box the stroke occupies — one
@@ -206,7 +206,9 @@ pub fn GlossMarkLayer(
                                     toggle_selected(selected, &click_mark.id);
                                     return;
                                 }
-                                request_gloss_open(&click_mark);
+                                if let Some(origin) = ev.target() {
+                                    request_gloss_open(&origin, &click_mark);
+                                }
                             }
                             on:contextmenu=move |ev| {
                                 ev.prevent_default();
@@ -218,7 +220,11 @@ pub fn GlossMarkLayer(
                                     toggle_selected(selected, &context_id);
                                     return;
                                 }
+                                let Some(origin) = ev.target() else {
+                                    return;
+                                };
                                 dispatch_gloss_context(
+                                    &origin,
                                     ev.client_x() as f64,
                                     ev.client_y() as f64,
                                     &context_id,
@@ -255,8 +261,12 @@ pub fn GlossMarkLayer(
 /// click and the selection Explain pill so every open is a self-contained
 /// CustomEvent (mark in the detail) that bumps the open request — never a bare
 /// `popover_open = true` that races against `detail` being cleared.
-pub fn request_gloss_open(mark: &GlossMark) {
-    dispatch_typed_event(GLOSS_OPEN_EVENT, mark);
+///
+/// Raised ON `origin` (the clicked stroke, the pill's pane root) and
+/// bubbling: every pane's popover listens on the window, and only the pane
+/// the request came from opens (`crate::pane::origin`).
+pub fn request_gloss_open(origin: &web_sys::EventTarget, mark: &GlossMark) {
+    dispatch_typed_event_on(origin, GLOSS_OPEN_EVENT, mark);
 }
 
 /// Position of a stroke inside its layer. Shared verbatim by the stroke button
