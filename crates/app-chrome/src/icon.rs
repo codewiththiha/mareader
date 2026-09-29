@@ -23,6 +23,10 @@ pub enum IconName {
     Check,
     SinglePage,
     DualPage,
+    /// A pane with a second one beside it (split the workspace right).
+    SplitRight,
+    /// A pane with a second one below it (split the workspace down).
+    SplitDown,
     Continuous,
     HScroll,
     /// The 3-dash menu trigger (Readest-style).
@@ -172,6 +176,14 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::DualPage => (
             "0 0 24 24",
             "<rect x='3' y='4' width='8.5' height='16' rx='1.5'/><rect x='12.5' y='4' width='8.5' height='16' rx='1.5'/>",
+        ),
+        IconName::SplitRight => (
+            "0 0 24 24",
+            "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='M12 4v16'/>",
+        ),
+        IconName::SplitDown => (
+            "0 0 24 24",
+            "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='M3 12h18'/>",
         ),
         IconName::Continuous => (
             "0 0 24 24",

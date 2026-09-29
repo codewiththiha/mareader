@@ -105,6 +105,13 @@ impl PaneManager {
             .flatten()
     }
 
+    /// The box the host last handed `id` (untracked).
+    pub fn bounds_untracked(&self, id: PaneId) -> Option<PaneBounds> {
+        self.bounds
+            .try_with_untracked(|bounds| bounds.get(&id).copied())
+            .flatten()
+    }
+
     /// The live runtime for `id`, cloned out of the map (no borrow held).
     pub fn pane(&self, id: PaneId) -> Option<Rc<dyn PaneRuntime>> {
         self.shared()?.borrow().panes.get(&id).cloned()
@@ -290,19 +297,19 @@ impl PaneManager {
     }
 
     /// Close one pane inside a live session: `→ Disposing`, out of the
-    /// placement, focus handed to its successor, then disposed NOW (the
-    /// sync half runs here; the async tail is spawned and finishes the
-    /// bookkeeping).
-    pub fn close(&self, id: PaneId) -> Result<(), PaneError> {
-        spawn_local(self.close_now(id)?);
+    /// placement, focus handed to its successor (`prefer` when live: the
+    /// layout's nearest pane), then disposed NOW (the sync half runs here;
+    /// the async tail is spawned and finishes the bookkeeping).
+    pub fn close(&self, id: PaneId, prefer: Option<PaneId>) -> Result<(), PaneError> {
+        spawn_local(self.close_now(id, prefer)?);
         Ok(())
     }
 
     /// [`Self::close`]'s synchronous half: everything up to and including
     /// the pane's sync teardown. Returns the tail the caller must drive.
-    pub fn close_now(&self, id: PaneId) -> Result<PaneTeardown, PaneError> {
+    pub fn close_now(&self, id: PaneId, prefer: Option<PaneId>) -> Result<PaneTeardown, PaneError> {
         let shared = self.shared().ok_or(PaneError::HostDisposed)?;
-        let change = shared.borrow_mut().core.begin_close(id)?;
+        let change = shared.borrow_mut().core.begin_close(id, prefer)?;
         let tail = self.dispose_one(&shared, id);
         self.publish(&shared);
         self.hand_over(&shared, change);
@@ -538,6 +545,7 @@ mod tests {
             settings_open: RwSignal::new(false),
             request_focus: Callback::new(|_| {}),
             open: Callback::new(|_| {}),
+            can_split: Signal::stored(false),
         }
     }
 
@@ -609,7 +617,7 @@ mod tests {
         owner.with(|| {
             let a = manager.create(request("/a.pdf", true), None, env).unwrap();
             let b = manager.create(request("/b.pdf", false), None, env).unwrap();
-            let tail = manager.close_now(a).unwrap();
+            let tail = manager.close_now(a, None).unwrap();
             assert_eq!(manager.lifecycle(a), Some(PaneLifecycle::Disposing));
             assert_eq!(count(&log, &format!("owner-cleanup {a}")), 1);
             assert_eq!(manager.active_untracked(), Some(b));
@@ -621,7 +629,10 @@ mod tests {
             // A disposed pane takes no further operations and is never
             // revived.
             assert_eq!(manager.set_active(a), Err(PaneError::Gone(a)));
-            assert!(matches!(manager.close_now(a), Err(PaneError::Gone(_))));
+            assert!(matches!(
+                manager.close_now(a, None),
+                Err(PaneError::Gone(_))
+            ));
             assert_eq!(manager.mark_ready(a), Err(PaneError::Gone(a)));
             assert!(manager.pane(a).is_none());
             assert_eq!(built.borrow()[0].disposes.get(), 1);
@@ -691,7 +702,7 @@ mod tests {
         owner.with(|| {
             let a = manager.create(request("/a.pdf", true), None, env).unwrap();
             assert_eq!(Rc::strong_count(&built.borrow()[0]), 2);
-            let tail = manager.close_now(a).unwrap();
+            let tail = manager.close_now(a, None).unwrap();
             assert_eq!(Rc::strong_count(&built.borrow()[0]), 1);
             drive(tail);
             assert_eq!(manager.lifecycle(a), Some(PaneLifecycle::Disposed));
@@ -743,7 +754,7 @@ mod tests {
             // A pane on its way out asks in vain: the authority refuses and
             // nothing moves.
             let request_a = manager.focus_request(a);
-            drive(manager.close_now(a).unwrap());
+            drive(manager.close_now(a, None).unwrap());
             log.borrow_mut().clear();
             request_a.run(());
             assert_eq!(manager.active_untracked(), Some(b));
@@ -793,7 +804,7 @@ mod tests {
             manager.resize(b, right).unwrap();
             assert_eq!(manager.bounds_of(a), Some(left));
             assert_eq!(manager.bounds_of(b), Some(right));
-            drive(manager.close_now(a).unwrap());
+            drive(manager.close_now(a, None).unwrap());
             assert_eq!(manager.bounds_of(a), None);
             assert_eq!(manager.bounds_of(b), Some(right));
         });

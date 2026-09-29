@@ -50,7 +50,9 @@ pub(crate) fn install_pane_effects(
     // the host in the session scope this pane's owner descends from).
     crate::effects::reader::shortcuts::shortcuts(
         state.reader,
-        move || crate::services::document::open_dialog(state),
+        move || {
+            crate::services::document::open_dialog(state, crate::host::contract::Placement::Here)
+        },
         expect_context::<app_ui::components::shell::controller::ShellController>(),
         move || active.try_get_untracked().unwrap_or(false),
     );

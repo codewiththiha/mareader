@@ -31,11 +31,12 @@ sid is the session generation: it is minted once, never reused, and the JS
 registry refuses every call naming a sid it does not hold — so work captured
 against a replaced or disposed session cannot reach the next one.
 
-**Element lookup is still realm-wide.** The engine resolves a page's canvas
-and host by id (`getElementById`), so two panes in one realm need distinct
-element ids. The production reader has one document pane per realm today, so
-this holds by construction; pane-unique DOM ids are a prerequisite recorded
-for Phase 5 (split mode), not something the session owns.
+**Element lookup is per session.** A page registers with its canvas and
+host ELEMENTS (the Rust side resolves them inside its own pane root), so the
+engine never resolves a page by a realm-wide id, and every canvas an engine
+session sweeps carries `data-engine-sid`. Two panes showing the same page
+number in one realm — the split workspace — never reach each other's
+elements.
 
 ## Production call graph
 

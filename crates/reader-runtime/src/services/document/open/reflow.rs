@@ -56,9 +56,14 @@ struct Parsed {
 /// The document's bytes as text, through the shell's gated read command.
 /// Outside the desktop shell there is no filesystem to read from — the
 /// plain-browser build answers with the same "desktop only" error the open
-/// dialog gives.
+/// dialog gives, except for the bundled samples the page itself serves
+/// (the web build's `?open=/samples/…` hook, which the browser suite uses
+/// for its mixed-format workspace).
 async fn read_file_text(path: &str) -> Result<String, String> {
     if !tauri_bridge::has_tauri() {
+        if path.starts_with("/samples/") {
+            return fetch_sample_text(path).await;
+        }
         return Err(
             "Opening files is only available in the desktop app. Drag and drop runs through \
              the shell too."
@@ -73,6 +78,49 @@ async fn read_file_text(path: &str) -> Result<String, String> {
     value
         .as_string()
         .ok_or_else(|| "read_file_text returned no text".to_string())
+}
+
+/// A bundled sample's text, fetched from the page's own origin. A missing
+/// sample must fail as missing: the dev server answers unknown paths with
+/// the app's HTML (its SPA fallback), which is not the document.
+async fn fetch_sample_text(path: &str) -> Result<String, String> {
+    use wasm_bindgen::JsCast;
+    let describe = |e: JsValue| e.as_string().unwrap_or_else(|| format!("{e:?}"));
+    let method = |target: &JsValue, name: &str| -> Result<js_sys::Function, String> {
+        js_sys::Reflect::get(target, &JsValue::from_str(name))
+            .map_err(describe)?
+            .dyn_into::<js_sys::Function>()
+            .map_err(|_| format!("no {name}()"))
+    };
+    let window: JsValue = web_sys::window().ok_or("no window")?.into();
+    let request = method(&window, "fetch")?
+        .call1(&window, &JsValue::from_str(path))
+        .map_err(describe)?;
+    let response = wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(request))
+        .await
+        .map_err(describe)?;
+    let ok = js_sys::Reflect::get(&response, &JsValue::from_str("ok"))
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let headers =
+        js_sys::Reflect::get(&response, &JsValue::from_str("headers")).map_err(describe)?;
+    let kind = method(&headers, "get")?
+        .call1(&headers, &JsValue::from_str("content-type"))
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default();
+    if !ok || kind.starts_with("text/html") {
+        return Err(format!("{path}: no such sample"));
+    }
+    let text = method(&response, "text")?
+        .call0(&response)
+        .map_err(describe)?;
+    wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(text))
+        .await
+        .map_err(describe)?
+        .as_string()
+        .ok_or_else(|| format!("{path}: not text"))
 }
 
 /// Shared open flow for the reflowable formats: replace the pane's document,

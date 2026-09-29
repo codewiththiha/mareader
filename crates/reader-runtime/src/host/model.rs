@@ -29,6 +29,13 @@ impl PaneId {
     pub fn get(self) -> u64 {
         self.0
     }
+
+    /// A pane id out of thin air, for the pure layout tests only: ids are
+    /// otherwise minted by the manager core and never forged.
+    #[cfg(test)]
+    pub(crate) fn for_tests(n: u64) -> Self {
+        Self(n)
+    }
 }
 
 impl std::fmt::Display for PaneId {
@@ -209,7 +216,17 @@ pub enum PaneError {
     /// A pane was asked for outside every reactive owner: its scope would
     /// belong to nothing and never be cleaned up.
     Unowned,
+    /// The workspace already holds [`MAX_PANES`] live panes.
+    WorkspaceFull,
+    /// The layout refused the placement (the pane it was to go beside is
+    /// not in the workspace).
+    Layout(super::tree::TreeError),
 }
+
+/// The most live panes one workspace holds. Every pane is a live format
+/// session (a PDF one with its own worker and render queue), so the bound is
+/// a resource bound first; the layout's minimum pane size is the other.
+pub const MAX_PANES: usize = 4;
 
 /// One focus hand-over, as the single focus authority decided it: the pane
 /// to blur (if any) and the pane to focus (if any). The reactive layer calls
@@ -268,6 +285,9 @@ impl PaneManagerCore {
     ) -> Result<(PaneDescriptor, FocusChange), PaneError> {
         if self.host_disposed {
             return Err(PaneError::HostDisposed);
+        }
+        if self.order.len() >= MAX_PANES {
+            return Err(PaneError::WorkspaceFull);
         }
         self.next_id += 1;
         let id = PaneId(self.next_id);
@@ -375,9 +395,15 @@ impl PaneManagerCore {
     }
 
     /// Begin closing `id`: `→ Disposing`, out of the placement order, and —
-    /// if it was active — focus handed to the next live pane (the one that
-    /// took its place in the order, else the one before it), or to nobody.
-    pub fn begin_close(&mut self, id: PaneId) -> Result<FocusChange, PaneError> {
+    /// if it was active — focus handed to its successor: `prefer` when that
+    /// is a live pane (the layout's choice, the pane nearest the closed
+    /// one), else the next live pane in placement order (the one that took
+    /// its place, else the one before it), or nobody.
+    pub fn begin_close(
+        &mut self,
+        id: PaneId,
+        prefer: Option<PaneId>,
+    ) -> Result<FocusChange, PaneError> {
         let record = self.live_record(id)?;
         record.lifecycle = PaneLifecycle::Disposing;
         let at = self.order.iter().position(|known| *known == id);
@@ -387,11 +413,14 @@ impl PaneManagerCore {
         if self.active != Some(id) {
             return Ok(FocusChange::default());
         }
-        let successor = at.and_then(|at| {
-            self.order
-                .get(at)
-                .or_else(|| at.checked_sub(1).and_then(|before| self.order.get(before)))
-                .copied()
+        let preferred = prefer.filter(|pane| self.order.contains(pane));
+        let successor = preferred.or_else(|| {
+            at.and_then(|at| {
+                self.order
+                    .get(at)
+                    .or_else(|| at.checked_sub(1).and_then(|before| self.order.get(before)))
+                    .copied()
+            })
         });
         // The closing pane is already out of the running: it is blurred as
         // part of its own dispose, not by the hand-over.
@@ -568,7 +597,7 @@ mod tests {
         assert!(!core.lifecycle(id).expect("known").admits_work());
         core.resume(id).expect("resume");
         assert!(core.lifecycle(id).expect("known").admits_work());
-        core.begin_close(id).expect("close");
+        core.begin_close(id, None).expect("close");
         assert_eq!(core.lifecycle(id), Some(PaneLifecycle::Disposing));
         assert!(core.lifecycle(id).expect("known").admits_teardown());
         core.finish_dispose(id).expect("disposed");
@@ -623,20 +652,20 @@ mod tests {
         let c = ready(&mut core, "/c.pdf");
         core.focus(b).expect("focus b");
         // b closes: the pane that took its place (c) becomes active.
-        let change = core.begin_close(b).expect("close b");
+        let change = core.begin_close(b, None).expect("close b");
         assert_eq!(change.focus, Some(c));
         assert_eq!(core.active(), Some(c));
         ok(&core);
         // c closes: nothing after it, so the one before (a) takes over.
-        let change = core.begin_close(c).expect("close c");
+        let change = core.begin_close(c, None).expect("close c");
         assert_eq!(change.focus, Some(a));
         ok(&core);
         // closing an inactive pane leaves focus alone.
         let d = ready(&mut core, "/d.pdf");
-        assert!(core.begin_close(d).expect("close d").is_noop());
+        assert!(core.begin_close(d, None).expect("close d").is_noop());
         assert_eq!(core.active(), Some(a));
         // the last pane closes: nobody is active.
-        let change = core.begin_close(a).expect("close a");
+        let change = core.begin_close(a, None).expect("close a");
         assert_eq!(change.focus, None);
         assert_eq!(core.active(), None);
         assert!(core.live().is_empty());
@@ -644,10 +673,63 @@ mod tests {
     }
 
     #[test]
+    fn closing_the_active_pane_prefers_the_layouts_successor_when_it_is_live() {
+        let mut core = PaneManagerCore::new();
+        let a = ready(&mut core, "/a.pdf");
+        let b = ready(&mut core, "/b.pdf");
+        let c = ready(&mut core, "/c.pdf");
+        core.focus(b).expect("focus b");
+        // The layout names a (b's nearest neighbour on screen), though c
+        // took b's place in the order: the layout wins.
+        let change = core.begin_close(b, Some(a)).expect("close b");
+        assert_eq!(
+            change,
+            FocusChange {
+                blur: None,
+                focus: Some(a)
+            }
+        );
+        ok(&core);
+        // A preference that is not live (the closing pane itself, a pane
+        // already gone) falls back to the order.
+        let change = core.begin_close(a, Some(a)).expect("close a");
+        assert_eq!(change.focus, Some(c));
+        ok(&core);
+        let d = ready(&mut core, "/d.pdf");
+        core.focus(d).expect("focus d");
+        let change = core.begin_close(d, Some(b)).expect("close d");
+        assert_eq!(change.focus, Some(c), "b is gone, so the order decides");
+        // Closing an inactive pane ignores the preference entirely.
+        let e = ready(&mut core, "/e.pdf");
+        assert!(core.begin_close(e, Some(e)).expect("close e").is_noop());
+        assert_eq!(core.active(), Some(c));
+        ok(&core);
+    }
+
+    #[test]
+    fn a_full_workspace_refuses_another_pane_until_one_closes() {
+        let mut core = PaneManagerCore::new();
+        let panes: Vec<PaneId> = (0..MAX_PANES)
+            .map(|n| ready(&mut core, &format!("/{n}.pdf")))
+            .collect();
+        let created = core.created();
+        assert_eq!(
+            core.create(request("/one-more.pdf")),
+            Err(PaneError::WorkspaceFull)
+        );
+        assert_eq!(core.created(), created, "a refused create mints nothing");
+        ok(&core);
+        core.begin_close(panes[0], None).expect("close one");
+        // A disposing pane is out of the workspace already.
+        ready(&mut core, "/one-more.pdf");
+        ok(&core);
+    }
+
+    #[test]
     fn a_disposed_pane_refuses_every_operation_and_is_never_reused() {
         let mut core = PaneManagerCore::new();
         let a = ready(&mut core, "/a.pdf");
-        core.begin_close(a).expect("close");
+        core.begin_close(a, None).expect("close");
         // Disposing already refuses work operations.
         assert_eq!(core.focus(a), Err(PaneError::Gone(a)));
         core.finish_dispose(a).expect("disposed");
@@ -659,7 +741,7 @@ mod tests {
         assert_eq!(core.begin_mount(a), Err(PaneError::Gone(a)));
         assert_eq!(core.mark_ready(a), Err(PaneError::Gone(a)));
         assert_eq!(core.suspend(a), Err(PaneError::Gone(a)));
-        assert_eq!(core.begin_close(a), Err(PaneError::Gone(a)));
+        assert_eq!(core.begin_close(a, None), Err(PaneError::Gone(a)));
         assert!(core.finish_dispose(a).is_err(), "disposed twice");
         // A new pane for the SAME document gets a new id.
         let again = ready(&mut core, "/a.pdf");
@@ -784,7 +866,7 @@ mod tests {
                 }
                 3 => {
                     if let Some(id) = pick(next(64), &ids) {
-                        let _ = core.begin_close(id);
+                        let _ = core.begin_close(id, None);
                     }
                 }
                 4 => {

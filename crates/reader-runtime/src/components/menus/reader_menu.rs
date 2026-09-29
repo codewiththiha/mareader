@@ -6,6 +6,8 @@ use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 
+use crate::host::contract::{OpenRequest, Placement};
+use crate::host::tree::SplitAxis;
 use crate::state::ZoomCommand;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
@@ -49,6 +51,31 @@ fn FitButton(
             on_click=move || state.reader.viewer.fit.set(f)
         />
     }
+}
+
+/// Show this pane's document again in a new pane beside it, at the page
+/// this pane is on. The host places it (and refuses it, with a toast, when
+/// the workspace is full); this pane keeps its own session untouched.
+fn split_beside(state: crate::context::ReaderContext, axis: SplitAxis) {
+    let Some(mut launch) = state.launch.try_get_untracked() else {
+        return;
+    };
+    if launch.path.is_empty() {
+        return;
+    }
+    launch.resume_page = state
+        .reader
+        .viewer
+        .page
+        .try_get_untracked()
+        .unwrap_or(1)
+        .max(1);
+    launch.saved_fraction = None;
+    launch.blend_override = false;
+    state.open.try_run(OpenRequest {
+        launch,
+        placement: Placement::Beside(axis),
+    });
 }
 
 #[component]
@@ -113,6 +140,47 @@ pub fn ReaderMenu(
                         >
                             <span class="ml-auto flex gap-0.5"><Kbd>"Shift"</Kbd><Kbd>"A"</Kbd></span>
                         </MenuItem>
+                    }
+                }}
+                <Separator vertical=false spacing="my-1" />
+                // ── The workspace: this document again beside itself, or
+                // (desktop, where there is a file dialog) another one ──
+                {move || {
+                    let full = !state.can_split.get();
+                    let empty = state.launch.with(|launch| launch.path.is_empty());
+                    view! {
+                        <MenuItem
+                            icon=IconName::SplitRight
+                            label="Split Right".to_string()
+                            disabled=full || empty
+                            on_click=move || {
+                                open.set(false);
+                                split_beside(state, SplitAxis::Horizontal);
+                            }
+                        />
+                        <MenuItem
+                            icon=IconName::SplitDown
+                            label="Split Down".to_string()
+                            disabled=full || empty
+                            on_click=move || {
+                                open.set(false);
+                                split_beside(state, SplitAxis::Vertical);
+                            }
+                        />
+                        {tauri_bridge::has_tauri().then(|| view! {
+                            <MenuItem
+                                icon=IconName::Open
+                                label="Open Beside…".to_string()
+                                disabled=full
+                                on_click=move || {
+                                    open.set(false);
+                                    crate::services::document::open_dialog(
+                                        state,
+                                        Placement::Beside(SplitAxis::Horizontal),
+                                    );
+                                }
+                            />
+                        })}
                     }
                 }}
                 <Separator vertical=false spacing="my-1" />

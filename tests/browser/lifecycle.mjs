@@ -296,8 +296,7 @@ async function openBook(url) {
  *  the workspace slot renders at the box the host reports for it (the
  *  entry is positioned from the manager's per-pane bounds, not by filling
  *  the slot on its own). */
-async function assertPaneBox(s, label) {
-  const pane = s.host.panes[0];
+async function assertPaneBox(s, label, pane = s.host.panes[0]) {
   const box = await page.evaluate((id) => {
     const frame = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]");
     const doc = frame?.contentDocument ?? document;
@@ -2143,6 +2142,210 @@ for (let cycle = 1; cycle <= 10; cycle += 1) {
 }
 stages.afterCallbackDiscipline = await snap();
 console.log("queued-callback discipline x10 clean: no disposal panic, every armed callback fired into a disposed owner without trapping");
+
+// --- Stage 13: a real mixed-format split workspace ------------------------
+currentStage = "stage13-split-workspace";
+// The production path with two live panes: a PDF, then a Markdown document
+// placed BESIDE it through the host's one open command (the web build's
+// `__mareaderOpenIn` hook drives exactly what the menu's split and the
+// file dialog's "Open Beside…" drive). Both run their own format session;
+// the host owns the layout, the divider and the focus; closing the PDF
+// pane leaves the Markdown pane alive and reading.
+const SPLIT_NOTES = "/samples/Split Notes.md";
+const activeFrame = '#runtime-host iframe.runtime-frame[data-mareader-slot="active"]';
+
+/** The layout's leaves, in order (the snapshot's `layout` is the tree). */
+function layoutLeaves(node) {
+  if (!node) return [];
+  if (node.leaf !== undefined) return [node.leaf];
+  return [...layoutLeaves(node.split.first), ...layoutLeaves(node.split.second)];
+}
+
+/** Two ready panes, one PDF and one Markdown, each holding its session. */
+function assertSplitWorkspace(s, label, pdfPane) {
+  const host = s.host;
+  if (host.lifecycle !== "live") throw new Error(`[${label}] host is ${host.lifecycle}`);
+  if (host.panes.length !== 2) throw new Error(`[${label}] ${host.panes.length} panes, expected 2`);
+  const pdf = host.panes.find((p) => p.paneId === pdfPane);
+  const md = host.panes.find((p) => p.paneId !== pdfPane);
+  if (!pdf || pdf.format !== "pdf") throw new Error(`[${label}] the PDF pane is gone: ${JSON.stringify(host.panes)}`);
+  if (md.format !== "markdown") throw new Error(`[${label}] the second pane is ${md.format}, expected markdown`);
+  for (const pane of [pdf, md]) {
+    if (pane.lifecycle !== "ready") throw new Error(`[${label}] pane ${pane.paneId} is ${pane.lifecycle}`);
+    if (pane.resources.documentSession !== true) throw new Error(`[${label}] pane ${pane.paneId} holds no document session`);
+    if (!(pane.viewportArea > 0)) throw new Error(`[${label}] pane ${pane.paneId} reports viewport area ${pane.viewportArea}`);
+    if (!(pane.resources.zoom > 0)) throw new Error(`[${label}] pane ${pane.paneId} reports zoom ${pane.resources.zoom}`);
+  }
+  if (pdf.documentId === md.documentId) throw new Error(`[${label}] both panes name document ${pdf.documentId}`);
+  if (typeof md.paneId !== "number" || md.paneId === pdf.paneId) throw new Error(`[${label}] pane ids ${pdf.paneId} / ${md.paneId}`);
+  const focused = host.panes.filter((p) => p.focused);
+  if (focused.length !== 1 || focused[0].paneId !== host.activePane) {
+    throw new Error(`[${label}] ${focused.length} focused panes, active ${host.activePane}`);
+  }
+  // The PDF engine holds exactly the PDF pane's session: the Markdown pane
+  // runs no engine session at all.
+  if (s.engine.sessionsLive !== 1) throw new Error(`[${label}] ${s.engine.sessionsLive} engine sessions, expected the PDF pane's one`);
+  const split = host.layout?.split;
+  if (!split || split.axis !== "horizontal") throw new Error(`[${label}] layout is not a left|right split: ${JSON.stringify(host.layout)}`);
+  const leaves = layoutLeaves(host.layout);
+  if (leaves.join() !== `${pdf.paneId},${md.paneId}`) throw new Error(`[${label}] layout leaves ${leaves}, expected PDF then Markdown`);
+  // Side by side, not stacked: the Markdown pane starts where the PDF ends.
+  if (!(pdf.bounds.x + pdf.bounds.width <= md.bounds.x + 1) || Math.abs(pdf.bounds.y - md.bounds.y) > 1) {
+    throw new Error(`[${label}] panes are not side by side: ${JSON.stringify([pdf.bounds, md.bounds])}`);
+  }
+  return { pdf, md, split };
+}
+
+/** Wait for `predicate` AND for the layout to have landed: every pane's
+ *  rendered entry measures the box the host reports for it. The digest is
+ *  pushed on a beat, so right after a re-layout (a split, a drag's last
+ *  frame, a close) the snapshot and the DOM can each be one frame from the
+ *  other; a box that never converges still fails, at the deadline. */
+async function waitForSettledLayout(label, predicate, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    const s = await snap();
+    if (s && predicate(s)) {
+      const boxes = await page.evaluate((sel) => {
+        const doc = document.querySelector(sel)?.contentDocument;
+        const out = {};
+        for (const el of doc?.querySelectorAll("[data-pane-id]") ?? []) {
+          const r = el.getBoundingClientRect();
+          out[el.dataset.paneId] = { width: r.width, height: r.height };
+        }
+        return out;
+      }, activeFrame);
+      last = { panes: s.host.panes.map((p) => ({ id: p.paneId, host: p.bounds })), boxes };
+      const agree = s.host.panes.every((p) => {
+        const b = boxes[p.paneId];
+        return b && Math.abs(b.width - p.bounds.width) <= 2 && Math.abs(b.height - p.bounds.height) <= 2;
+      });
+      if (agree) return s;
+    }
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`[${label}] the layout never settled: ${JSON.stringify(last)}`);
+}
+
+/** Every placed pane is SHOWN (inactive is not hidden), with a live box. */
+async function paneEntries() {
+  return page.evaluate((sel) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    return [...(doc?.querySelectorAll("[data-pane-id]") ?? [])].map((el) => {
+      const r = el.getBoundingClientRect();
+      const cs = el.ownerDocument.defaultView.getComputedStyle(el);
+      return {
+        id: Number(el.dataset.paneId),
+        active: el.dataset.paneActive === "true",
+        visible: cs.visibility !== "hidden" && cs.pointerEvents !== "none" && r.width > 0 && r.height > 0,
+      };
+    });
+  }, activeFrame);
+}
+
+{
+  const panicsBefore = panicCount;
+  const opened = await openBook(pearlsUrl);
+  const pdfPane = opened.host.panes[0].paneId;
+  const placed = await page.evaluate(([sel, path]) => {
+    const hook = document.querySelector(sel)?.contentWindow?.__mareaderOpenIn;
+    if (typeof hook !== "function") throw new Error("the web build's __mareaderOpenIn hook is missing");
+    return hook(path, "right");
+  }, [activeFrame, SPLIT_NOTES]);
+  if (placed !== true) throw new Error("[split] the host refused the Markdown pane beside the PDF");
+
+  const both = await waitForSettledLayout("split: PDF | Markdown both ready", (s) =>
+    s.host?.panes?.length === 2 &&
+    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true) &&
+    s.host.panes.some((p) => p.format === "markdown"), 60_000);
+  const { pdf, md } = assertSplitWorkspace(both, "split", pdfPane);
+  // The pane the open created took focus.
+  if (both.host.activePane !== md.paneId) throw new Error(`[split] active pane ${both.host.activePane}, expected the new Markdown pane ${md.paneId}`);
+  await assertPaneBox(both, "split: pdf", pdf);
+  await assertPaneBox(both, "split: markdown", md);
+  const entries = await paneEntries();
+  if (entries.length !== 2 || !entries.every((e) => e.visible)) {
+    throw new Error(`[split] both panes must be shown and live: ${JSON.stringify(entries)}`);
+  }
+  if (entries.filter((e) => e.active).length !== 1) throw new Error(`[split] ${JSON.stringify(entries)} marks not exactly one active entry`);
+
+  // Focus follows the pointer: a press inside the PDF pane makes it the
+  // one active pane (the host's capture listener, before the content).
+  await page.evaluate(([sel, id]) => {
+    const f = document.querySelector(sel);
+    const target = f.contentDocument.querySelector(`[data-pane-id="${id}"] [data-pane-root]`);
+    if (!target) throw new Error(`pane ${id} has no root`);
+    target.dispatchEvent(new f.contentWindow.PointerEvent("pointerdown", { bubbles: true, composed: true }));
+  }, [activeFrame, pdfPane]);
+  await waitFor("[split] the pressed PDF pane became active", (s) =>
+    s.host?.activePane === pdfPane && s.host.panes.filter((p) => p.focused).length === 1, 10_000);
+
+  // The divider: a real pointer drag moves the split's RATIO; both panes
+  // are handed their new boxes and neither is recreated.
+  const handle = await page.evaluate((sel) => {
+    const f = document.querySelector(sel);
+    const d = f.contentDocument.querySelector('[role="separator"][data-split-id]');
+    if (!d) return null;
+    const fr = f.getBoundingClientRect();
+    const r = d.getBoundingClientRect();
+    return { x: fr.left + r.left + r.width / 2, y: fr.top + r.top + r.height / 2 };
+  }, activeFrame);
+  if (!handle) throw new Error("[split] the host drew no divider");
+  const beforeDrag = await snap();
+  await page.mouse.move(handle.x, handle.y);
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step += 1) {
+    await page.mouse.move(handle.x - step * 15, handle.y);
+  }
+  await page.mouse.up();
+  const dragged = await waitForSettledLayout("split: the divider drag re-laid both panes", (s) => {
+    const p = s.host?.panes?.find((x) => x.paneId === pdfPane);
+    return p && p.bounds.width < pdf.bounds.width - 100;
+  }, 15_000);
+  const afterDrag = assertSplitWorkspace(dragged, "split: dragged", pdfPane);
+  if (dragged.host.panesCreated !== both.host.panesCreated) throw new Error("[split] a divider drag created panes");
+  if (!(afterDrag.split.ratio >= 0.15 && afterDrag.split.ratio <= 0.85)) throw new Error(`[split] ratio ${afterDrag.split.ratio} escaped its clamp`);
+  const widthSum = afterDrag.pdf.bounds.width + afterDrag.md.bounds.width;
+  if (Math.abs(widthSum - (pdf.bounds.width + md.bounds.width)) > 2) throw new Error(`[split] the drag changed the total width (${widthSum})`);
+  await assertPaneBox(dragged, "split: dragged pdf", afterDrag.pdf);
+  await assertPaneBox(dragged, "split: dragged markdown", afterDrag.md);
+
+  // Close the PDF pane through the host's own control: the Markdown pane
+  // keeps its session, takes focus and the whole slot; the PDF's engine
+  // session and every raster it owned go with its pane.
+  await page.evaluate(([sel, id]) => {
+    const btn = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-close="${id}"] button`);
+    if (!btn) throw new Error(`pane ${id} has no close control`);
+    btn.click();
+  }, [activeFrame, pdfPane]);
+  const alone = await waitForSettledLayout("split: the PDF pane closed, the Markdown pane lives", (s) =>
+    s.host?.panes?.length === 1 && s.host.panes[0].paneId === md.paneId &&
+    s.engine?.sessionsLive === 0 && s.engine.pageCanvasBytesEst === 0 &&
+    s.engine.thumbnailRasterBytesEst === 0, 30_000);
+  const survivor = alone.host.panes[0];
+  if (survivor.lifecycle !== "ready" || survivor.resources.documentSession !== true || survivor.format !== "markdown") {
+    throw new Error(`[split] the surviving pane is not reading: ${JSON.stringify(survivor)}`);
+  }
+  if (alone.host.activePane !== md.paneId || survivor.focused !== true) throw new Error(`[split] the survivor did not take focus (${alone.host.activePane})`);
+  if (alone.host.layout?.leaf !== md.paneId) throw new Error(`[split] layout after close: ${JSON.stringify(alone.host.layout)}`);
+  if (Math.abs(survivor.bounds.width - widthSum) > 2) throw new Error(`[split] the survivor did not take the slot (${survivor.bounds.width} of ${widthSum})`);
+  await assertPaneBox(alone, "split: survivor", survivor);
+  if (alone.disposalEpoch !== 3) throw new Error(`[split] disposal epoch ${alone.disposalEpoch} after the pane close, expected 3 (two opens, one pane dispose)`);
+  if ((await paneEntries()).length !== 1) throw new Error("[split] the closed pane's entry is still in the slot");
+  assertNoNewPanics("split workspace", panicsBefore);
+
+  summary.splitWorkspace = {
+    panes: both.host.panes.map((p) => ({ paneId: p.paneId, format: p.format, bounds: p.bounds })),
+    dragRatio: afterDrag.split.ratio,
+    dragRenders: dragged.engine.rendersStarted - beforeDrag.engine.rendersStarted,
+    survivor: survivor.paneId,
+  };
+  stages.afterSplitWorkspace = alone;
+  // Four mints: the two opens, the PDF pane's dispose, the survivor's.
+  await closeAndWaitBaseline("split workspace", false, 4);
+  console.log(`split workspace: PDF | Markdown, divider ratio ${afterDrag.split.ratio}, closed the PDF, the Markdown pane read on`);
+}
 
 // --- Zoom with animation off, and the noise layer's runtime state ---------
 // Both stages reboot the app per settings state: settings are read at boot,

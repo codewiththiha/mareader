@@ -20,7 +20,8 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 2 — Shell / Library / Reader split | **done**: three WASM artifacts, shell-owned iframes with a `MessageChannel` handshake, `frame-transport` crate, dispose-as-a-unit |
 | 3 — Reader Host & panes | **done**: `ReaderHost` + `PaneManager` own the workspace (`crates/reader-runtime/src/host/`), the document pane owns one session (`crates/reader-runtime/src/pane/`); `ReaderPage` removed. Map in `docs/lifecycle-ownership.md` (Phase 3 section); what is still a bridge: [Phase 3 bridges](#phase-3-bridges-what-phase-45-inherit) |
 | 4 — session-scoped PDF / Markdown / TXT engines | **done**: each pane owns one `FormatSession` per opened document — `PdfSession` (`crates/pdf-engine/src/session/`, one engine session per sid in `public/engine/state.ts`), `MdSession` / `TxtSession` (`crates/reader-runtime/src/pane/session.rs`); async stamps per pane; inventory, call graph and retained realm state in `docs/session-ownership.md`, enforced by `tools/check-session-ownership.mjs`; what Phase 5 inherits: [Phase 4 bridges](#phase-4-bridges-what-phase-5-inherits) |
-| 5+ — split mode, … | **not started** — waiting on the phase guide |
+| 5 — production split workspace | **implemented**: `/reader` runs a `PaneTree` (layout over pane ids only, `crates/reader-runtime/src/host/tree.rs`) under the `ReaderHost`; up to four live panes, each with its own `FormatSession`; `open_document(target)` places a document in a pane or beside it; host-owned dividers, focus outline and per-pane close; see [Phase 5: the split workspace](#phase-5-the-split-workspace) |
+| 6+ — drag/drop suggestions, appearance blend, … | **not started** — waiting on the phase guide |
 
 ## Architecture as built (do not re-derive)
 
@@ -34,12 +35,15 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 - The PDF engine is session-scoped: every document call names a session
   (`sid`), each pane's `PdfSession` owns one, and reader code reaches it only
   through `pane.pdf()` / `MountedPdf` (`crates/reader-runtime/src/pane/engine.rs`).
-  Production still runs exactly ONE document pane per reader realm — element
-  ids are resolved realm-wide, so pane-unique DOM ids come first in Phase 5 —
-  even though neither the pane manager nor the engine assumes one.
+  Several document panes share one reader realm: a page's canvas and host
+  are handed to the engine as ELEMENTS when the page registers (pinned to
+  its session), and every canvas the engine sweeps carries
+  `data-engine-sid`, so page-numbered ids in two panes never cross.
 - Inside the reader frame: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
-  placement, focus/active pane, bounds, status reports) → `PaneManager`
+  placement, focus/active pane, bounds, status reports, the workspace's
+  dividers / focus outline / pane close) → `PaneTree` (the split layout:
+  splits, ratios and pane ids — never a document) → `PaneManager`
   (ids, lifecycle, create/focus/resize/close/dispose_all) → the document
   pane (its own `ReaderState`, effects, virtualizers, document session).
   The host never names a PDF type or a pane's state
@@ -315,6 +319,47 @@ deliberately rather than discovering it:
   awaited by THAT pane's open only. A fresh pane has nothing to wait for;
   no open awaits or disposes another pane's document, so split mode can
   open several documents at once without a realm-wide lock.
+
+## Phase 5: the split workspace
+
+- **Layout.** `PaneTree` is pure data: a leaf is a `PaneId`, a split has an
+  axis, a clamped ratio (`MIN_RATIO`..`MAX_RATIO`, and a drag never leaves
+  a side under `MIN_PANE_PX`) and two children. No empty node and no
+  one-child split can be built; `remove` collapses a split into its sibling
+  and names the focus successor (a first child's close focuses the
+  sibling's first leaf, a second child's its last). Unit tests cover split
+  h/v, nesting, close, normalisation, the ratio clamp and a seeded random
+  sequence against `check_invariants`.
+- **Placement.** `ReaderHost::open_document(launch, target)`: `Active` (the
+  Shell's commands: a drop, a warm reader's launch), `Pane(id)` in place
+  (the pane keeps its id and replaces its document), or `Beside { of,
+  axis }` — a new pane with its own session, split off `of`, taking focus.
+  Transactional: the pane is created, placed and handed its box before its
+  view mounts, and a refused placement closes it again. Panes ask through
+  `PaneEnv.open` with a `Placement` (`Here` / `Beside`), never naming
+  another pane. `MAX_PANES` is 4 (`PaneError::WorkspaceFull`, surfaced as a
+  toast).
+- **Resize.** A divider drag records a ratio and applies the last one per
+  animation frame; the new layout reaches panes through the same
+  `PaneManager::resize` path a window resize takes, so each pane's own
+  viewport and zoom scheduling absorbs it.
+- **Focus.** One active id in the manager. A press or keyboard focus inside
+  a pane's entry makes it active (capture phase, host-owned); events that
+  bubble to the window are claimed by the pane they came from
+  (`crate::pane::origin`), and only the active pane presents its paper to
+  the shared backdrop. Inactive panes stay shown and live.
+- **Close.** `close_pane(id)` removes the leaf, closes that pane only
+  (`manager.close(id, successor)`), and re-lays out; every other pane keeps
+  its session. The last pane closes with the reader.
+- **Diagnostics.** The `host` block carries `layout` (the tree), and each
+  pane `viewportArea` and `resources.zoom` next to its lifecycle, format,
+  bounds and active flag.
+- **Browser smoke.** `tests/browser/lifecycle.mjs` stage 13 opens a PDF, puts
+  `public/samples/Split Notes.md` beside it (web-only hook
+  `window.__mareaderOpenIn`), checks two ready panes with independent
+  sessions, a pointer focus switch, a divider drag, then closes the PDF pane
+  and checks the Markdown pane reads on with the PDF's engine session and
+  rasters gone.
 
 ## Known follow-ups (do not silently expand scope)
 

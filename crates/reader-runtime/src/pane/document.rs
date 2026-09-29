@@ -115,6 +115,7 @@ impl DocumentPane {
                 id: env.session_id,
                 chrome: env.chrome,
                 open: env.open,
+                can_split: env.can_split,
             };
             let status = reader.document.status;
             let error = reader.document.error;
@@ -364,6 +365,14 @@ impl PaneRuntime for DocumentPane {
         PaneResourceCounts {
             virtualizers: self.ctx.pane.virtualizer_count(),
             document_session: self.ctx.pane.holds_document_session(),
+            zoom: self
+                .ctx
+                .reader
+                .viewer
+                .zoom
+                .display
+                .try_get_untracked()
+                .unwrap_or(1.0),
         }
     }
 

@@ -37,6 +37,7 @@ use reader_core::format::{Format, format_of};
 
 use app_state::state::Toast;
 
+use crate::host::contract::{OpenRequest, Placement};
 use crate::pane::session::FormatSession;
 
 /// Wire OS-level file opening (double-click / "Open with" / default-app
@@ -65,19 +66,20 @@ pub fn init_open_file_handling(ctx: crate::context::ReaderContext) {
     let st = ctx;
     spawn_local(async move {
         if let Some(path) = tauri_bridge::take_pending_file().await {
-            open_path(st, path);
+            open_path(st, path, Placement::Here);
         }
     });
 }
 
-/// Native open-dialog flow: pick a file, then run the shared open-flow.
+/// Native open-dialog flow: pick a file, then run the shared open-flow,
+/// placing the document per `placement` (this pane, or a new one beside it).
 ///
 /// Cancel (the chrome's own [`CANCELLED`](app_chrome::dialog::CANCELLED) sentence) is a
 /// silent no-op; any other error surfaces on the doc status / status bar.
-pub fn open_dialog(ctx: crate::context::ReaderContext) {
+pub fn open_dialog(ctx: crate::context::ReaderContext, placement: Placement) {
     spawn_local(async move {
         match app_chrome::dialog::pick_document().await {
-            Ok(path) => open_path(ctx, path),
+            Ok(path) => open_path(ctx, path, placement),
             Err(msg) if msg != app_chrome::dialog::CANCELLED => fail(ctx, msg),
             Err(_) => {}
         }
@@ -93,23 +95,23 @@ pub fn open_dialog(ctx: crate::context::ReaderContext) {
 /// engine, the reflowable formats to the reflow pipeline ([`reflow`]). Both
 /// tails converge on the same state contract, so everything downstream —
 /// viewer, navigation, shelf — is format-agnostic.
-pub fn open_path(ctx: crate::context::ReaderContext, path: String) {
+pub fn open_path(ctx: crate::context::ReaderContext, path: String, placement: Placement) {
     // An in-session open (drop, dialog): the row identity, resume point,
     // display name and cover are answered by the boundary against the
     // persisted library — the session itself holds no library state. Over a
     // frame port that answer cannot come synchronously, so the frame's own
     // flow parks the continuation until the answer lands.
     if ctx.api == crate::context::ApiHandle::Frame {
-        crate::frame::open_path_in_frame(ctx, path);
+        crate::frame::open_path_in_frame(ctx, path, placement);
         return;
     }
     let launch = ctx
         .api
         .resolve_launch(&path)
         .unwrap_or_else(|| bare_launch(&path));
-    // The workspace's open command: the HOST routes it (to its active pane,
-    // in place), never this pane on its own say-so.
-    ctx.open.try_run(launch);
+    // The workspace's open command: the HOST places it (here, or beside this
+    // pane), never this pane on its own say-so.
+    ctx.open.try_run(OpenRequest { launch, placement });
 }
 
 /// A descriptor for a path nothing in the store answers for: the open

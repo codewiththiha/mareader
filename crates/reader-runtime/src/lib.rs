@@ -47,7 +47,12 @@ pub mod frame {
 
     /// The frame open flow never runs off-wasm; the branch that would call
     /// this is never taken, so the parked continuation never exists.
-    pub fn open_path_in_frame(_ctx: crate::context::ReaderContext, _path: String) {}
+    pub fn open_path_in_frame(
+        _ctx: crate::context::ReaderContext,
+        _path: String,
+        _placement: crate::host::contract::Placement,
+    ) {
+    }
 }
 pub mod pane;
 pub mod runtime;
@@ -251,11 +256,11 @@ pub fn start_session(
             LIVE_SESSION.with(|c| *c.borrow_mut() = Some(live));
 
             // The launch the Shell handed over (§13): the minimal descriptor,
-            // opened by the pane that owns the document. A warm session
-            // (empty launch) still gets its one pane, waiting for the launch
-            // its promotion hands over.
+            // opened by the pane that owns the document — the workspace's
+            // root. A warm session (empty launch) still gets its one pane,
+            // waiting for the launch its promotion hands over.
             let first = (!launch.path.is_empty()).then_some(launch);
-            if let Err(err) = host.create_pane(first, true) {
+            if let Err(err) = host.create_root(first) {
                 web_sys::console::error_1(&format!("[reader] no pane: {err:?}").into());
             }
 
@@ -265,6 +270,7 @@ pub fn start_session(
             // pays nothing for a dev instrument (§21).
             if !tauri_bridge::has_tauri() {
                 start_digest_beat(api);
+                install_open_in_hook();
             }
 
             // The host and its first pane exist: the session is live.
@@ -326,7 +332,8 @@ pub fn dispose(id: u32) -> js_sys::Promise {
 
 /// An in-session command from the Shell: open a document inside the live
 /// session — a drop or a dialog, and the launch a warm reader is handed when
-/// it is promoted. The HOST routes it (into its active pane).
+/// it is promoted. The HOST routes it: into its active pane, in place
+/// ([`host::OpenTarget::Active`]).
 pub fn command(id: u32, cmd: runtime_contract::boundary::LaunchDocument) {
     let live = SESSION.with(|s| s.borrow().as_ref().filter(|x| x.id == id).map(|_| ()));
     if live.is_none() {
@@ -341,7 +348,9 @@ pub fn command(id: u32, cmd: runtime_contract::boundary::LaunchDocument) {
     // would cost a round trip on the one path that is supposed to feel
     // instant. Inside the session's owner: a pane this creates is the
     // session's child, never an orphan.
-    let opened = live.owner.with(|| live.host.open(cmd));
+    let opened = live
+        .owner
+        .with(|| live.host.open_document(cmd, host::OpenTarget::Active));
     if let Err(err) = opened {
         web_sys::console::warn_1(&format!("[reader] open refused: {err:?}").into());
     }
@@ -412,6 +421,70 @@ fn start_digest_beat(api: crate::context::ApiHandle) {
 /// A host build has no bridge and no timer to push through.
 #[cfg(not(target_arch = "wasm32"))]
 fn start_digest_beat(_api: crate::context::ApiHandle) {}
+
+/// The browser suite's workspace hook (web build only, like `?open=`):
+/// `window.__mareaderOpenIn(path, target)` opens a bundled sample through
+/// the host's one open command — `"active"` in place, `"right"` / `"down"`
+/// in a new pane beside the active one. Only `/samples/` paths, and `true`
+/// when the host placed it. The hook dies with the session scope: the
+/// window property is deleted and the closure dropped, so a disposed
+/// session leaves nothing reachable from the page.
+#[cfg(target_arch = "wasm32")]
+fn install_open_in_hook() {
+    use wasm_bindgen::prelude::Closure;
+    const HOOK: &str = "__mareaderOpenIn";
+    let Some(win) = web_sys::window() else {
+        return;
+    };
+    let hook = Closure::<dyn Fn(String, String) -> bool>::new(|path: String, target: String| {
+        if !path.starts_with("/samples/") {
+            return false;
+        }
+        let Some(live) = LIVE_SESSION.with(|c| c.borrow().clone()) else {
+            return false;
+        };
+        let active = untrack(|| live.host.manager().active());
+        let target = match (target.as_str(), active) {
+            ("active", _) => host::OpenTarget::Active,
+            ("right", Some(of)) => host::OpenTarget::Beside {
+                of,
+                axis: host::tree::SplitAxis::Horizontal,
+            },
+            ("down", Some(of)) => host::OpenTarget::Beside {
+                of,
+                axis: host::tree::SplitAxis::Vertical,
+            },
+            _ => return false,
+        };
+        let launch = LaunchDocument {
+            book_id: None,
+            path,
+            resume_page: 1,
+            saved_fraction: None,
+            blend_override: false,
+            cover_data_url: None,
+            display_name: None,
+        };
+        live.owner
+            .with(|| live.host.open_document(launch, target))
+            .is_ok()
+    });
+    let key = wasm_bindgen::JsValue::from_str(HOOK);
+    if js_sys::Reflect::set(&win, &key, hook.as_ref()).is_err() {
+        return;
+    }
+    let owned = StoredValue::new_local(Some(hook));
+    on_cleanup(move || {
+        if let Some(win) = web_sys::window() {
+            let _ = js_sys::Reflect::delete_property(&win, &wasm_bindgen::JsValue::from_str(HOOK));
+        }
+        let _ = owned.try_set_value(None);
+    });
+}
+
+/// A host build has no page to hang a hook on.
+#[cfg(not(target_arch = "wasm32"))]
+fn install_open_in_hook() {}
 
 /// The doc-status bridge: the session's document state is what the Shell's
 /// URL policy and probe read. Called by the status effect in the entry view.

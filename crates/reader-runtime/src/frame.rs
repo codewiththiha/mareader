@@ -28,6 +28,7 @@ use runtime_contract::protocol::{RuntimeKind, ShellEnvelope, ShellFrame};
 use wasm_bindgen::JsCast;
 
 use crate::context::{ApiHandle, ReaderContext};
+use crate::host::contract::{OpenRequest, Placement};
 
 thread_local! {
     /// The live frame's boundary (set at adoption; it dies with the frame).
@@ -42,8 +43,16 @@ thread_local! {
     /// The open flows parked on their resolve answers, by request id. A drop
     /// / dialog open arrives sync; its launch resolution is async over the
     /// port, and this is the rendezvous.
-    static PENDING_OPENS: RefCell<HashMap<u64, (ReaderContext, String)>> =
+    static PENDING_OPENS: RefCell<HashMap<u64, PendingOpen>> =
         RefCell::new(HashMap::new());
+}
+
+/// One open parked on its resolve answer: the pane that asked, the path it
+/// asked about and where the document is to go once it resolves.
+struct PendingOpen {
+    ctx: ReaderContext,
+    path: String,
+    placement: Placement,
 }
 
 /// Boot through the frame when this artifact's URL names one. `true` as soon
@@ -77,10 +86,22 @@ fn emit(body: RuntimeFrame) {
 /// persisted library, park the continuation, run it when the answer lands.
 /// The frame has no synchronous boundary query — the only honest async form
 /// of "open, resumed where the library says" is to wait for the answer.
-pub fn open_path_in_frame(ctx: ReaderContext, path: String) {
+///
+/// The placement is parked with it: where the document goes was decided
+/// when the user asked, not when the answer lands.
+pub fn open_path_in_frame(ctx: ReaderContext, path: String, placement: Placement) {
     with_api(|api| {
         let (request, _ticket) = api.ask_resolve_launch(&path);
-        PENDING_OPENS.with(|opens| opens.borrow_mut().insert(request, (ctx, path)));
+        PENDING_OPENS.with(|opens| {
+            opens.borrow_mut().insert(
+                request,
+                PendingOpen {
+                    ctx,
+                    path,
+                    placement,
+                },
+            )
+        });
     });
 }
 
@@ -280,12 +301,17 @@ fn on_resolve_answer(request: u64, document: Option<LaunchDocument>) {
     if let Some(resolves) = RESOLVES.with(|slot| slot.borrow().clone()) {
         resolves.settle(request, document.clone());
     }
-    if let Some((ctx, path)) = PENDING_OPENS.with(|opens| opens.borrow_mut().remove(&request)) {
+    if let Some(PendingOpen {
+        ctx,
+        path,
+        placement,
+    }) = PENDING_OPENS.with(|opens| opens.borrow_mut().remove(&request))
+    {
         let launch =
             document.unwrap_or_else(|| crate::services::document::open::bare_launch(&path));
         // Through the host's open command, like the standalone tail: the
         // pane that asked parked only the question, not the authority.
-        ctx.open.try_run(launch);
+        ctx.open.try_run(OpenRequest { launch, placement });
     }
 }
 

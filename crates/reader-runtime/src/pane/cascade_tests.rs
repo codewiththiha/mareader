@@ -73,6 +73,7 @@ impl PaneRuntime for SessionPane {
         PaneResourceCounts {
             virtualizers: 0,
             document_session: self.handle.holds_document_session(),
+            zoom: 1.0,
         }
     }
     fn dispose(&self) -> PaneTeardown {
@@ -111,6 +112,7 @@ fn env(id: PaneId) -> PaneEnv {
         settings_open: RwSignal::new(false),
         request_focus: Callback::new(|_| {}),
         open: Callback::new(|_| {}),
+        can_split: Signal::stored(false),
     }
 }
 
@@ -195,7 +197,7 @@ fn removing_one_pane_disposes_only_its_session() {
         handles.borrow()[0].install_session(FormatSession::Pdf(pdf.clone()));
         handles.borrow()[1].install_session(FormatSession::Text(txt.clone()));
 
-        drive(manager.close_now(a).unwrap());
+        drive(manager.close_now(a, None).unwrap());
 
         assert!(!pdf.is_live());
         assert!(txt.is_live());

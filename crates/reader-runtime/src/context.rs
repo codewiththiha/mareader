@@ -43,10 +43,14 @@ pub struct ReaderContext {
     /// active pane.
     pub chrome: app_state::ChromeState,
     /// The HOST's workspace open command. A document this pane's user picks
-    /// (Cmd/Ctrl+O, the frame's resolved open) is handed to the host, which
-    /// routes it to its active pane — the pane never opens a document on
-    /// its own authority.
-    pub open: Callback<LaunchDocument>,
+    /// (Cmd/Ctrl+O, the frame's resolved open, a split) is handed to the
+    /// host with where it goes relative to this pane — here, or in a new
+    /// pane beside it — and the host places it: the pane never opens a
+    /// document on its own authority.
+    pub open: Callback<crate::host::contract::OpenRequest>,
+    /// Whether the workspace would take another pane now (the view menu's
+    /// split items follow it).
+    pub can_split: Signal<bool>,
 }
 
 /// Which ShellApi implementation backs this session: the hosted frame or the

@@ -4,9 +4,16 @@
 //! ```text
 //! /reader → ReaderRuntime (session lifecycle)
 //!         → ReaderHost    (chrome placement, focus, bounds, workspace commands)
+//!         → PaneTree      (the layout: splits, ratios, PaneIds — nothing else)
 //!         → PaneManager   (pane create / focus / resize / close / dispose_all)
 //!         → pane runtime  (one document session each, behind `PaneRuntime`)
 //! ```
+//!
+//! The tree and the manager hold the same set of panes, and the host is the
+//! one place that changes both: a pane is created (manager) and then placed
+//! (tree), and a closing pane leaves the tree first so the tree can name its
+//! successor for the manager's focus hand-over. The layout lays the tree out
+//! over the measured workspace slot and every pane is handed its box.
 //!
 //! What the host OWNS: the title bar and where the chrome regions sit, the
 //! sidebar rail's mount points and the shell controller that coordinates
@@ -25,6 +32,7 @@
 pub mod contract;
 pub mod manager;
 pub mod model;
+pub mod tree;
 mod view;
 
 use std::rc::Rc;
@@ -35,12 +43,28 @@ use serde::Serialize;
 
 use app_ui::components::shell::controller::ShellController;
 use contract::{
-    PaneAppearance, PaneClassifier, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory, PaneSurface,
+    OpenRequest, PaneAppearance, PaneClassifier, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory,
+    PaneSurface, Placement,
 };
 use manager::PaneManager;
 use model::{
-    DocumentId, DocumentRef, PaneBounds, PaneError, PaneFormat, PaneId, PaneLifecycle, PaneRequest,
+    DocumentId, DocumentRef, MAX_PANES, PaneBounds, PaneError, PaneFormat, PaneId, PaneLifecycle,
+    PaneRequest,
 };
+use tree::{LayoutNode, PaneTree, Side, SplitAxis, SplitId, TreeLayout};
+
+/// Where the workspace puts a document. Explicit on purpose: there is no
+/// hidden "current document" deciding it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OpenTarget {
+    /// The active pane, in place — or, with no pane at all, the workspace's
+    /// first pane (the Shell's commands: a drop, a warm reader's launch).
+    Active,
+    /// This pane, in place: it keeps its id and replaces its document.
+    Pane(PaneId),
+    /// A new pane beside `of`, split along `axis`, after it.
+    Beside { of: PaneId, axis: SplitAxis },
+}
 
 pub use view::ReaderHostView;
 
@@ -75,6 +99,15 @@ pub struct ReaderHost {
     /// The workspace slot's measured size, the source of every pane's
     /// bounds.
     slot_size: RwSignal<(f64, f64)>,
+    /// The workspace layout: splits and pane ids, nothing heavier.
+    tree: RwSignal<PaneTree>,
+    /// The tree laid out over the slot: every pane's box and every
+    /// divider's strip. What the bounds effect and the view both follow.
+    layout: Memo<TreeLayout>,
+    /// A divider drag's latest ratio, waiting for the next frame: pointer
+    /// moves only record it, one frame applies the last (see
+    /// [`Self::drag_divider`]).
+    pending_ratio: StoredValue<Option<(SplitId, f64)>>,
     /// Names a launch's format tag for the descriptor (injected with the
     /// factory: the host reads no extension itself).
     classify: PaneClassifier,
@@ -131,6 +164,12 @@ impl ReaderHost {
         let settings_open = RwSignal::new(false);
         provide_context(settings_open);
 
+        let slot_size = RwSignal::new((0.0, 0.0));
+        let tree = RwSignal::new(PaneTree::new());
+        let layout = Memo::new(move |_| {
+            let (width, height) = slot_size.get();
+            tree.with(|tree| tree.layout(PaneBounds::filling(width, height)))
+        });
         let host = Self {
             session,
             manager,
@@ -138,7 +177,10 @@ impl ReaderHost {
             shell,
             settings_open,
             motion,
-            slot_size: RwSignal::new((0.0, 0.0)),
+            slot_size,
+            tree,
+            layout,
+            pending_ratio: StoredValue::new(None),
             classify,
             frame_active: app_chrome::hooks::frame_active::use_frame_active(),
         };
@@ -153,11 +195,13 @@ impl ReaderHost {
         // strong reference would keep the host's state for as long as the
         // frame waits for its next session. The teardown settles it into
         // plain data ([`Self::take_teardown`]).
+        // The layout rides along through the tree's signal handle — an arena
+        // key, not a reference: once the session is gone it reads nothing.
         let probe = manager.shared().map(|shared| Rc::downgrade(&shared));
         crate::diagnostics::install_host_probe(move || {
             let shared = probe.as_ref()?.upgrade()?;
             let state = shared.try_borrow().ok()?;
-            Some(snapshot_of(&state))
+            Some(snapshot_of(&state, layout_of(tree)))
         });
         host
     }
@@ -195,9 +239,11 @@ impl ReaderHost {
         }
     }
 
-    /// Bounds: the host measures its workspace slot and hands every pane its
-    /// box explicitly. No split mode yet, so every pane fills the slot; the
-    /// pane owns everything inside its box.
+    /// Bounds: the host measures its workspace slot, lays the tree out over
+    /// it, and hands every pane its box explicitly; the pane owns everything
+    /// inside its box. A divider drag is the same path — a new ratio, a new
+    /// layout, new boxes — so a pane reacts to it exactly as to a window
+    /// resize, through its own viewport and zoom-follow machinery.
     ///
     /// The slot is looked up by its document-wide id ON PURPOSE: it is the
     /// HOST's element (one per session, rendered by the host's own view),
@@ -211,15 +257,69 @@ impl ReaderHost {
         );
         on_cleanup(stop);
         Effect::new(move |_| {
-            let Some((width, height)) = host.slot_size.try_get() else {
+            let Some(layout) = host.layout.try_get() else {
                 return;
             };
             // Tracked on the placement too: a pane placed after the last
-            // measurement is handed the current box.
+            // layout is handed the current box.
             let _ = host.manager.placed();
-            untrack(|| {
-                host.manager
-                    .resize_all(|_| PaneBounds::filling(width, height))
+            untrack(|| host.hand_out_bounds(&layout));
+        });
+    }
+
+    /// Every live pane's box from `layout`. A pane the tree does not hold
+    /// (none should exist) fills the slot rather than getting nothing.
+    fn hand_out_bounds(&self, layout: &TreeLayout) {
+        let whole = self.slot_rect();
+        self.manager
+            .resize_all(|id| layout.bounds_of(id).unwrap_or(whole));
+    }
+
+    /// Re-lay the tree NOW and hand the boxes out: a pane placed by an open
+    /// has its box before its view mounts.
+    fn relayout_now(&self) {
+        let rect = self.slot_rect();
+        let layout = self
+            .tree
+            .try_with_untracked(|tree| tree.layout(rect))
+            .unwrap_or_default();
+        self.hand_out_bounds(&layout);
+    }
+
+    /// The workspace slot as a rect at the origin (the tree's coordinates).
+    fn slot_rect(&self) -> PaneBounds {
+        let (width, height) = self.slot_size.try_get_untracked().unwrap_or_default();
+        PaneBounds::filling(width, height)
+    }
+
+    /// The layout (tracked): the view positions pane entries and dividers
+    /// by it.
+    pub fn layout(&self) -> TreeLayout {
+        self.layout.try_get().unwrap_or_default()
+    }
+
+    /// A divider drag moved: record the ratio the pointer asks for and
+    /// apply the LAST one on the next animation frame. Pointer events can
+    /// outpace frames several times over; each applied ratio re-lays the
+    /// workspace and hands two panes new boxes, which is what their own
+    /// resize handling (viewport measurement, zoom follow, the render
+    /// scheduler) absorbs — once per frame, never once per event.
+    pub fn drag_divider(&self, split: SplitId, ratio: f64) {
+        let queued = self
+            .pending_ratio
+            .try_update_value(|pending| pending.replace((split, ratio)).is_some())
+            .unwrap_or(true);
+        if queued {
+            return;
+        }
+        let host = *self;
+        request_animation_frame(move || {
+            let Some(Some((split, ratio))) = host.pending_ratio.try_update_value(Option::take)
+            else {
+                return;
+            };
+            host.tree.try_update(|tree| {
+                let _ = tree.set_ratio(split, ratio);
             });
         });
     }
@@ -258,10 +358,11 @@ impl ReaderHost {
         }
     }
 
-    /// The bounds a pane placed now is handed.
-    fn bounds_now(&self) -> PaneBounds {
-        let (width, height) = self.slot_size.try_get_untracked().unwrap_or_default();
-        PaneBounds::filling(width, height)
+    /// The box `id` holds now (what its view mounts at).
+    pub(crate) fn bounds_now(&self, id: PaneId) -> PaneBounds {
+        self.manager
+            .bounds_untracked(id)
+            .unwrap_or_else(|| self.slot_rect())
     }
 
     /// The two facts the Shell's probe serves from this session (§21): the
@@ -319,21 +420,65 @@ impl ReaderHost {
             active: Signal::derive(move || manager.active() == Some(id)),
             settings_open: self.settings_open,
             request_focus: manager.focus_request(id),
-            open: Callback::new(move |launch: LaunchDocument| {
-                if let Err(error) = host.open(launch) {
+            // The pane names only itself: the host turns its placement into
+            // the explicit target.
+            open: Callback::new(move |request: OpenRequest| {
+                let target = match request.placement {
+                    Placement::Here => OpenTarget::Pane(id),
+                    Placement::Beside(axis) => OpenTarget::Beside { of: id, axis },
+                };
+                if let Err(error) = host.open_document(request.launch, target) {
                     leptos::logging::warn!("[reader] the workspace refused an open: {error:?}");
+                    let message = match error {
+                        PaneError::WorkspaceFull => {
+                            format!("The workspace holds at most {MAX_PANES} panes.")
+                        }
+                        _ => "That document could not be placed.".to_string(),
+                    };
+                    host.session
+                        .ui
+                        .toast
+                        .set(Some(app_state::state::Toast::new(message)));
                 }
             }),
+            can_split: Signal::derive(move || manager.placed().len() < MAX_PANES),
         }
     }
 
-    /// Create a pane for `launch` (none: an empty pane waiting for one) and
-    /// hand it the current appearance and bounds.
-    pub fn create_pane(
+    /// The workspace's first pane, for `launch` (none: an empty pane
+    /// waiting for one — a warm reader), filling the slot.
+    pub fn create_root(&self, launch: Option<LaunchDocument>) -> Result<PaneId, PaneError> {
+        if self.tree.try_with_untracked(PaneTree::is_empty) != Some(true) {
+            return Err(PaneError::Layout(tree::TreeError::NotEmpty));
+        }
+        self.create_placed(launch, |tree, id| tree.set_root(id))
+    }
+
+    /// Create a pane and place it in the tree, transactionally: the pane is
+    /// created (the manager mints its id, and it takes focus), `place` puts
+    /// it in the layout, and every pane is handed its new box — or, when
+    /// the layout refuses, the pane is closed again and nothing changed.
+    fn create_placed(
         &self,
         launch: Option<LaunchDocument>,
-        request_focus: bool,
+        place: impl FnOnce(&mut PaneTree, PaneId) -> Result<(), tree::TreeError>,
     ) -> Result<PaneId, PaneError> {
+        let id = self.create_unplaced(launch)?;
+        let placed = self
+            .tree
+            .try_update(|tree| place(tree, id))
+            .unwrap_or(Err(tree::TreeError::UnknownPane(id)));
+        if let Err(error) = placed {
+            let _ = self.manager.close(id, None);
+            return Err(PaneError::Layout(error));
+        }
+        self.relayout_now();
+        Ok(id)
+    }
+
+    /// Create a pane for `launch` and hand it the current appearance. Not
+    /// yet placed: [`Self::create_placed`] is the only caller.
+    fn create_unplaced(&self, launch: Option<LaunchDocument>) -> Result<PaneId, PaneError> {
         let format = launch
             .as_ref()
             .filter(|launch| !launch.path.is_empty())
@@ -343,7 +488,8 @@ impl ReaderHost {
             format,
             initial_page: launch.as_ref().map(|l| l.resume_page).unwrap_or(1),
             initial_zoom: None,
-            request_focus,
+            // A pane the user just opened is the one they look at.
+            request_focus: true,
         };
         let host = *self;
         let id = self
@@ -352,23 +498,49 @@ impl ReaderHost {
         if let Some(pane) = self.manager.pane(id) {
             pane.appearance(self.appearance_now());
         }
-        self.manager.resize(id, self.bounds_now())?;
         Ok(id)
     }
 
-    /// The workspace's open command (a drop, a dialog, a warm reader's
-    /// promotion): the ACTIVE pane opens it in place — the pane keeps its id
-    /// and replaces its document session. With no pane, a new one is
-    /// created for it.
+    /// The workspace's document placement: `launch` goes where `target`
+    /// says (see [`OpenTarget`]).
+    ///
+    /// * In place ([`OpenTarget::Pane`], or the active pane): the pane keeps
+    ///   its id and replaces its document session — the one per-pane
+    ///   document change; no other pane is touched.
+    /// * Beside: a NEW pane with its own session, split off the named one;
+    ///   it takes focus. Transactional: a refused placement leaves the
+    ///   workspace as it was. A document that then fails to load leaves the
+    ///   new pane showing its error, closable like any other.
+    pub fn open_document(
+        &self,
+        launch: LaunchDocument,
+        target: OpenTarget,
+    ) -> Result<PaneId, PaneError> {
+        match target {
+            OpenTarget::Active => match self.manager.active_untracked() {
+                Some(id) => self.open_in(id, launch),
+                None => self.create_root(Some(launch)),
+            },
+            OpenTarget::Pane(id) => self.open_in(id, launch),
+            OpenTarget::Beside { of, axis } => {
+                let known = self.tree.try_with_untracked(|tree| tree.contains(of));
+                if known != Some(true) {
+                    return Err(PaneError::Layout(tree::TreeError::UnknownPane(of)));
+                }
+                self.create_placed(Some(launch), |tree, id| {
+                    tree.split(of, axis, Side::After, id).map(|_| ())
+                })
+            }
+        }
+    }
+
+    /// Open `launch` in pane `id`, in place.
     ///
     /// A suspended pane takes no work, and an open IS work: it is resumed
     /// for the command (every gate of the open is passed synchronously, in
     /// the command itself) and parked again if the frame is still off
     /// screen. The promotion's slot flip normally resumed it already.
-    pub fn open(&self, launch: LaunchDocument) -> Result<PaneId, PaneError> {
-        let Some(id) = self.manager.active_untracked() else {
-            return self.create_pane(Some(launch), true);
-        };
+    fn open_in(&self, id: PaneId, launch: LaunchDocument) -> Result<PaneId, PaneError> {
         let pane = self.manager.pane(id).ok_or(PaneError::Gone(id))?;
         let parked = self.manager.lifecycle(id) == Some(PaneLifecycle::Suspended);
         if parked {
@@ -386,9 +558,28 @@ impl ReaderHost {
         self.manager.set_active(id)
     }
 
-    /// Close one pane inside the live session.
+    /// Close one pane inside the live session. It leaves the layout first
+    /// (its split collapses into the sibling), and the layout names the
+    /// pane nearest to it as the focus successor; then the manager disposes
+    /// it — only it: every other pane keeps its session.
     pub fn close_pane(&self, id: PaneId) -> Result<(), PaneError> {
-        self.manager.close(id)
+        match self.manager.lifecycle(id) {
+            None => return Err(PaneError::Unknown(id)),
+            Some(lifecycle) if !lifecycle.is_live() => return Err(PaneError::Gone(id)),
+            Some(_) => {}
+        }
+        let successor = self
+            .tree
+            .try_update(|tree| tree.remove(id).ok().flatten())
+            .flatten();
+        self.manager.close(id, successor)?;
+        self.relayout_now();
+        Ok(())
+    }
+
+    /// How many panes the workspace shows (tracked).
+    pub fn pane_count(&self) -> usize {
+        self.manager.placed().len()
     }
 
     /// The Library button: every pane writes its durable point and stops its
@@ -406,6 +597,10 @@ impl ReaderHost {
     /// panes' async tails wait in [`Self::take_teardown`].
     pub fn dispose(&self) {
         self.manager.dispose_all();
+        // The layout lets go of the panes with the manager. Untracked: the
+        // workspace view is being torn down, not re-laid out.
+        self.tree
+            .try_update_untracked(|tree| *tree = PaneTree::new());
     }
 
     /// The panes' disposal tails, for the session's runtime to await. When
@@ -417,9 +612,12 @@ impl ReaderHost {
         let tails = self.manager.take_teardown();
         Box::pin(async move {
             tails.await;
-            let last = shared
-                .as_ref()
-                .and_then(|shared| shared.try_borrow().ok().map(|state| snapshot_of(&state)));
+            let last = shared.as_ref().and_then(|shared| {
+                shared
+                    .try_borrow()
+                    .ok()
+                    .map(|state| snapshot_of(&state, None))
+            });
             if let Some(last) = last {
                 crate::diagnostics::settle_host_probe(last);
             }
@@ -449,6 +647,9 @@ pub struct HostSnapshot {
     /// disposal began.
     pub lifecycle: &'static str,
     pub active_pane: Option<PaneId>,
+    /// The workspace layout: the split tree over pane ids (`None` when no
+    /// pane is placed, or once the session is gone).
+    pub layout: Option<LayoutNode>,
     /// Every pane not yet `Disposed`, in placement order (a disposing pane
     /// stays listed until its tail finished).
     pub panes: Vec<PaneSnapshot>,
@@ -464,12 +665,23 @@ pub struct PaneSnapshot {
     pub document_id: Option<DocumentId>,
     pub format: PaneFormat,
     pub lifecycle: PaneLifecycle,
+    /// The one active pane (inactive is not disposed: an inactive pane is
+    /// listed live, keeps its session and is shown).
     pub focused: bool,
     pub bounds: PaneBounds,
+    /// The pane's box in CSS px² — with its zoom, what its raster demand
+    /// scales with.
+    pub viewport_area: f64,
     pub resources: contract::PaneResourceCounts,
 }
 
-fn snapshot_of(state: &manager::ManagerState) -> HostSnapshot {
+/// The layout the tree holds now, if the session still does.
+fn layout_of(tree: RwSignal<PaneTree>) -> Option<LayoutNode> {
+    tree.try_with_untracked(|tree| tree.root().cloned())
+        .flatten()
+}
+
+fn snapshot_of(state: &manager::ManagerState, layout: Option<LayoutNode>) -> HostSnapshot {
     let core = &state.core;
     let mut panes: Vec<PaneSnapshot> = Vec::new();
     let listed = core.live().iter().copied().chain(core.disposing());
@@ -492,6 +704,7 @@ fn snapshot_of(state: &manager::ManagerState) -> HostSnapshot {
             lifecycle: record.lifecycle,
             focused: core.active() == Some(id),
             bounds: record.bounds,
+            viewport_area: record.bounds.width * record.bounds.height,
             resources: runtime.map(|pane| pane.resources()).unwrap_or_default(),
         });
     }
@@ -502,6 +715,7 @@ fn snapshot_of(state: &manager::ManagerState) -> HostSnapshot {
             "live"
         },
         active_pane: core.active(),
+        layout,
         panes,
         panes_created: core.created(),
     }

@@ -136,12 +136,15 @@ pub enum PaneCommand {
 pub type PaneTeardown = Pin<Box<dyn Future<Output = ()>>>;
 
 /// A pane's live resources, as the pane itself counts them.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Debug, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaneResourceCounts {
     pub virtualizers: usize,
     /// Whether the pane holds an open document session.
     pub document_session: bool,
+    /// The scale the pane displays its document at — with its box, what
+    /// the pane's raster demand scales with (the multi-pane accounting).
+    pub zoom: f64,
 }
 
 /// One pane runtime. The host calls these and nothing else.
@@ -243,6 +246,29 @@ pub struct PaneEnv {
     /// `active`.
     pub request_focus: Callback<()>,
     /// The host's workspace open command: a document the pane's user picks
-    /// is handed back to the host, which routes it (to its active pane).
-    pub open: Callback<LaunchDocument>,
+    /// is handed back to the host, which places it — in this pane, or in a
+    /// new pane beside it ([`OpenRequest`]).
+    pub open: Callback<OpenRequest>,
+    /// Whether the workspace would take another pane now (a split the
+    /// pane's menu may offer). Derived from the host's placement.
+    pub can_split: Signal<bool>,
+}
+
+/// Where a pane asks the host to put a document, relative to ITSELF: the
+/// pane names no other pane (it knows none), and the host turns this into
+/// an explicit workspace target with the asking pane's id.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Placement {
+    /// In the asking pane, in place: its document session is replaced.
+    Here,
+    /// In a new pane beside the asking one, split along the axis (the new
+    /// pane after it: right of it, or below it).
+    Beside(super::tree::SplitAxis),
+}
+
+/// A pane's open request: the document and where it goes.
+#[derive(Clone, PartialEq, Debug)]
+pub struct OpenRequest {
+    pub launch: LaunchDocument,
+    pub placement: Placement,
 }

@@ -405,8 +405,8 @@ the pane's generation. Realm-wide by design: id mints, the appearance
 broadcast, the retained search index (content-keyed), code and allocation
 caches, and the diagnostics totals (renders, prefetches, look-ahead samples
 — summed across sessions in the diagnostics `engine` block, per session in
-`sessionStats`). Element ids are still resolved realm-wide; pane-unique DOM
-ids are Phase 5's prerequisite. Session-level by
+`sessionStats`). Page elements are pinned per session (Phase 5), so
+several panes share the realm. Session-level by
 design, not pane state: the frame's port and parked opens (`frame.rs`), the
 live-session record (`lib.rs`), the diagnostics probes, and the host's
 `#viewer-slot` measurement.
