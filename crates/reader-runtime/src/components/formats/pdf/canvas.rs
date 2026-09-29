@@ -165,6 +165,15 @@ pub fn PdfPageCanvas(
     /// page or two and sweep nothing past.
     #[prop(optional)]
     settled: Option<Signal<bool>>,
+    /// Whether the page's box is inside (or near) the scroller's visible
+    /// window, derived from the virtualizer's own model by the strip; page
+    /// modes leave it `None`. The fling gate EXEMPTS a visible page: it
+    /// rasterises even while the strip still moves — a page the reader is
+    /// looking at must never sit blurry on its thumbnail underlay — while
+    /// overscan pages a fling sweeps past keep waiting for the settle. The
+    /// read is tracked, so the crossing itself re-runs the render effect.
+    #[prop(optional)]
+    in_view: Option<Signal<bool, LocalStorage>>,
     /// True while a real zoom *gesture* owns the layout. Distinct from
     /// `zoom_animating`, which every resize-driven animation also holds — a
     /// fit slide, a window drag carrying a hand-picked zoom — for the whole
@@ -414,7 +423,17 @@ pub fn PdfPageCanvas(
         // engine's render lane. A render already in flight is never touched —
         // the gate only governs STARTING one, and the underlay blit below is
         // the same one the cold first paint uses.
-        if !painted.get() && settled.as_ref().is_some_and(|s| !s.get()) {
+        //
+        // EXEMPTION: a page inside the pane's visible viewport — per the
+        // virtualizer's own model, `in_view`, read TRACKED so the crossing
+        // itself re-runs this effect — rasterises even while the strip
+        // moves, so what the reader is looking at never sits blurry on an
+        // upscaled thumbnail. The lane paces the starts (its cap is
+        // realm-wide across panes) and its generation guards drop a
+        // superseded raster cheaply, so the churn the gate exists to stop —
+        // rasterising pages the fling is only SWEEPING PAST — stays stopped.
+        let visible_now = in_view.as_ref().is_none_or(|v| v.get());
+        if !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
             if !(gw > 0.0 && gh > 0.0) {
                 pdf().blit_thumb(&cid_effect, page);
             }

@@ -230,7 +230,11 @@ pub fn PdfPageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let top = handle.with_value(|v| v.item_top(index));
+                                    let size = handle.with_value(|v| v.item_size(index));
                                     let dormant = dormant_signal(items, index);
+                                    let in_view = handle.with_value(|v| {
+                                        in_view_signal(v.clone(), top, size)
+                                    });
                                     // Offsets are snapped for the same reason
                                     // sizes are: the wrapper's top is a running
                                     // sum of page extents at the live scale, so
@@ -269,6 +273,7 @@ pub fn PdfPageStrip(
                                                 zoom_animating=state.viewer.zooming()
                                                 dormant=dormant
                                                 settled=settled
+                                                in_view=in_view
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)
@@ -306,7 +311,11 @@ pub fn PdfPageStrip(
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let left = handle.with_value(|v| v.item_top(index));
+                                    let size = handle.with_value(|v| v.item_size(index));
                                     let dormant = dormant_signal(items, index);
+                                    let in_view = handle.with_value(|v| {
+                                        in_view_signal(v.clone(), left, size)
+                                    });
                                     // top:0 — the strip owns the full window height and
                                     // the auto-hiding title bar overlays it, like Spread.
                                     // The main-axis offset is snapped to the device-pixel
@@ -326,6 +335,7 @@ pub fn PdfPageStrip(
                                                 zoom_animating=state.viewer.zooming()
                                                 dormant=dormant
                                                 settled=settled
+                                                in_view=in_view
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=canvas_id_for_axis(axis, page)
@@ -369,5 +379,35 @@ fn dormant_signal(
             .get()
             .iter()
             .any(|item| item.index == index && item.state == VirtualItemState::Zombie)
+    })
+}
+
+/// Main-axis slack on either side of the viewport within which a page counts
+/// as visible for the page host's fling gate: a visible page rasterises even
+/// while the strip still moves — what the reader is looking at must never
+/// sit on an upscaled thumbnail underlay — while overscan pages a fling is
+/// sweeping past keep waiting for the settle.
+const IN_VIEW_MARGIN_PX: f64 = 160.0;
+
+/// Whether one mounted item is inside (or within [`IN_VIEW_MARGIN_PX`] of)
+/// the scroller's visible window, derived from the virtualizer's OWN model —
+/// the same scroll offset, viewport extent and item offsets the windowing
+/// uses, so it agrees with the layout by construction and needs no observer.
+/// The derived value is a BOOL, so the render effect that reads it re-runs
+/// when the page crosses the boundary, not on every scroll tick.
+fn in_view_signal(
+    virtualizer: Virtualizer,
+    top: Signal<f64, LocalStorage>,
+    size: Signal<f64, LocalStorage>,
+) -> Signal<bool, LocalStorage> {
+    Signal::derive_local(move || {
+        let scroll = virtualizer.scroll_offset().get();
+        let viewport = virtualizer.viewport().get().main;
+        // A layout rebuild moves every offset without a scroll; the total
+        // extent is the layout-version carrier this derive re-reads through.
+        let _ = virtualizer.total_size().get();
+        let start = top.get();
+        let span = size.get().max(0.0);
+        start + span >= scroll - IN_VIEW_MARGIN_PX && start <= scroll + viewport + IN_VIEW_MARGIN_PX
     })
 }
