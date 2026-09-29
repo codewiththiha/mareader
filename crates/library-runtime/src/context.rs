@@ -59,6 +59,10 @@ impl ShellApi for ApiHandle {
             }
         }
     }
+    /// The shelf never glosses: a mark is made in a reader, and the shelf's
+    /// own gloss upkeep (a removed or duplicated row's marks) is row data it
+    /// writes in its own frame, like the library blob. Nothing is sent.
+    fn save_gloss(&self, _key: &str, _marks: String) {}
     fn bake_cover(&self, path: &str) {
         match self {
             ApiHandle::Standalone => StandaloneApi::new().bake_cover(path),
@@ -191,6 +195,9 @@ impl ShellApi for StandaloneApi {
         let mut map = storage::load_covers();
         map.insert(path.to_string(), std::sync::Arc::new(image.clone()));
         let _ = storage::save_covers(&map);
+    }
+    fn save_gloss(&self, key: &str, marks: String) {
+        storage::persist_encoded_gloss(key, &marks);
     }
     /// No Shell, no baker: the standalone page has nobody to ask, so the
     /// ask goes nowhere and the shelf shows the covers it already holds

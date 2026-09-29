@@ -96,6 +96,12 @@ pub trait ShellApi {
     /// blob and the cover cache are NOT boundary calls: the shelf writes
     /// them itself, in its own frame, through the origin's one store.
     fn save_cover(&self, path: &str, image: &crate::covers::CoverImage);
+    /// Reader → Shell: persist one document's gloss marks (the whole list —
+    /// the stored shape is a document's list, so every edit replaces it).
+    /// `key` is the document's gloss key; `marks` is the list as
+    /// `storage::encode_gloss` encoded it: this crate must not know the mark
+    /// type, so the list crosses as its JSON and the writer decodes it.
+    fn save_gloss(&self, key: &str, marks: String);
     /// Library → Shell: bake page 1 of the book at `path` into cover art.
     ///
     /// A COMMAND, not a call: the library artifact owns no engine, so the
@@ -127,6 +133,7 @@ pub struct RecordApi {
     pub read_points: std::cell::RefCell<Vec<ReadPoint>>,
     pub settings_saves: std::cell::RefCell<u32>,
     pub bakes: std::cell::RefCell<Vec<String>>,
+    pub gloss_saves: std::cell::RefCell<Vec<(String, String)>>,
 }
 
 impl ShellApi for RecordApi {
@@ -141,6 +148,9 @@ impl ShellApi for RecordApi {
         *self.settings_saves.borrow_mut() += 1;
     }
     fn save_cover(&self, _path: &str, _image: &crate::covers::CoverImage) {}
+    fn save_gloss(&self, key: &str, marks: String) {
+        self.gloss_saves.borrow_mut().push((key.to_string(), marks));
+    }
     fn bake_cover(&self, path: &str) {
         self.bakes.borrow_mut().push(path.to_string());
     }

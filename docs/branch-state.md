@@ -261,7 +261,12 @@ session, and named here so the later phases replace it deliberately:
   resolved open reach the host (`PaneEnv::open` → `ReaderHost::open`);
   Escape closes the rail through the host's `ShellController`; the
   descriptor's document, page, format (via the injected `PaneClassifier`)
-  and zoom are honoured by the pane.
+  and zoom are honoured by the pane; a pane's gloss marks are written by
+  the Shell (`ShellApi::save_gloss`, the list crossing as JSON because
+  `runtime-contract` may not depend on `ai-core`) and Reload Window asks
+  the Shell (`ShellApi::reload`) instead of reloading the frame's own
+  document. `tools/check-host-boundary.mjs` fails on any other store write
+  or window reload in reader code outside `context.rs`'s `StandaloneApi`.
 - **Phase 4 (session-scoped engines):** the JS PDF engine session is one per
   realm (`public/engine/state.ts`), so the prefetch switch the pane's
   lifecycle drives is realm-wide, the diagnostics `engine` counters
@@ -270,11 +275,7 @@ session, and named here so the later phases replace it deliberately:
   document session only), the disposal epoch
   (`crates/reader-runtime/src/services/document/session.rs`) is one claim
   stamp per realm, and the look-ahead paper session and search index are
-  realm thread-locals. Gloss marks are still persisted by the pane straight
-  to storage (`storage::persist_gloss` from
-  `crates/reader-runtime/src/components/ai/gloss/controller/commands.rs`), a pre-existing path
-  that becomes a Shell command when the Shell owns per-document
-  persistence; reads are allowed and unchanged.
+  realm thread-locals.
 - **Phase 5 (split mode):** every pane's box is still the whole
   `#viewer-slot` (the host has one layout); the chrome slots (title,
   view menu, rail, settings) are filled by the ACTIVE pane only; the

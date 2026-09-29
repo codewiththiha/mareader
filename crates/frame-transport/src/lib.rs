@@ -202,6 +202,12 @@ impl<W: Wire> ShellApi for PortShellApi<W> {
             image: image.clone(),
         });
     }
+    fn save_gloss(&self, key: &str, marks: String) {
+        self.emit(RuntimeFrame::SaveGloss {
+            key: key.to_string(),
+            marks,
+        });
+    }
     fn bake_cover(&self, path: &str) {
         self.emit(RuntimeFrame::BakeCover {
             path: path.to_string(),
@@ -259,6 +265,17 @@ mod tests {
         let bake_path = posted[1].find(r#""path":"/books/a.pdf""#);
         assert!(bake_path.is_some(), "{}", posted[1]);
         assert!(posted[3].contains(r#""kind":"ready""#), "{}", posted[3]);
+    }
+
+    #[test]
+    fn a_gloss_save_leaves_over_the_port_for_the_shell_to_write() {
+        let (api, wire, _) = api();
+        api.save_gloss("b-3", "[]".to_string());
+        let posted = wire.posted.borrow();
+        assert_eq!(
+            *posted,
+            vec![r#"{"generation":17,"kind":"saveGloss","key":"b-3","marks":"[]"}"#.to_string()]
+        );
     }
 
     #[test]

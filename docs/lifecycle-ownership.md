@@ -45,7 +45,7 @@ phases replace. The inventory below is what exists now.
 | Virtualizers (page strips, stream, thumbs grid) | `virtual_list_leptos::Virtualizer` handles held by components; bindings (listeners, ResizeObserver, timers) inside `VirtualizerInner` | `use_virtualizer` | `dispose()` via the hook's `on_cleanup` |
 | Virtualizer measurement store | `DocumentState.content.metrics.css_heights` / `intrinsic` (app signals) | open seeds | `DocumentState::reset` |
 | Reader reactive state | `AppState.reader` (`src/state/reader/*`) — app-lifetime signals, reset per close | bootstrap | reset by `close_document` (`DocumentState::reset`, `viewer.reset_position`, `search.reset`, `gloss.reset`, `ai_selection.reset`) |
-| Gloss marks (in-memory) | `AppState.reader.gloss`, persisted per row id | open loads | `close_document` drops the copy (disk copy persists by design) |
+| Gloss marks (in-memory) | the PANE's `GlossState.marks`; the durable copy per row id is written by the Shell (`ShellApi::save_gloss` → `storage::persist_encoded_gloss`) | open loads (a read) | `close_document` drops the copy (disk copy persists by design) |
 | Covers | `AppState.library.covers` + `services/library/covers.rs` cache (quota-capped) | import / open tail | persists across sessions by design (library state) |
 | Backdrop publication | `--pdf-paper` custom property on `<html>` + `pdf_engine::backdrop` published colour | paper session | `document_close` / `destroy()` republish to theme paper |
 | Theme bake worker | `public/bake.worker.ts` — module-level worker per bake, created/terminated by the bake pipeline | bake start | pipeline end |
@@ -308,6 +308,8 @@ responsibilities moved to exactly one owner:
 | Library button's leave: read point + render cancel | pane (`PaneCommand::PrepareLeave`), then the host's navigate |
 | AI chunk bridge (window Tauri listener) | session (composition root) |
 | Frame theme / settings persistence, appearance raster hooks | session (composition root) → Shell persists |
+| Gloss marks' durable copy | pane edits the list → Shell writes it (`ShellApi::save_gloss`) |
+| Reload Window (reader menu) | pane flushes its read point → Shell reloads (`ShellApi::reload`) |
 | Reader state (`ReaderState`), `ReaderContext` | pane (one per pane, never global) |
 | Document open / session / close, paper settings, prefetch gate | pane |
 | Virtualizers, zoom controller, navigation sync, reading progress, reflow pipeline, mode change, first paint, blend geometry | pane (installed at mount, in the pane's owner) |
@@ -378,7 +380,10 @@ responsibilities moved to exactly one owner:
   frame keeps nothing of its last host between sessions.
 - **Boundary.** `tools/check-host-boundary.mjs` (CI lint lane) fails if
   anything under `host/` names the PDF engine, a format renderer, the pane
-  implementation or a pane's reader state, or if `ReaderPage` reappears.
+  implementation or a pane's reader state, if `ReaderPage` reappears, or
+  if reader code outside `context.rs` (the Shell-less `StandaloneApi`)
+  names a `storage::` function that is not on its read allowlist or reloads
+  the window itself — durable writes and the window are the Shell's.
 
 Still module-global and therefore Phase 4's: the JS PDF engine session
 (`public/engine/state.ts`, one document per realm) and its prefetch switch,

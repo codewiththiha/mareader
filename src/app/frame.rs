@@ -133,6 +133,10 @@ pub enum FrameVocabulary {
         path: String,
         image: runtime_contract::covers::CoverImage,
     },
+    SaveGloss {
+        key: String,
+        marks: String,
+    },
     BakeCover {
         path: String,
     },
@@ -788,6 +792,12 @@ impl Driver {
                 self.report(FrameEvent::Boundary(FrameVocabulary::SaveCover {
                     path,
                     image,
+                }));
+            }
+            RuntimeFrame::SaveGloss { key, marks } => {
+                self.report(FrameEvent::Boundary(FrameVocabulary::SaveGloss {
+                    key,
+                    marks,
                 }));
             }
             RuntimeFrame::BakeCover { path } => {

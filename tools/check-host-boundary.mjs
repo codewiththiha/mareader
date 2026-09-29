@@ -21,6 +21,13 @@
 // workspace monolith must not come back as a name anywhere in the reader
 // runtime's code.
 //
+// A third keeps the Shell's side of the boundary the Shell's: durable
+// persistence and the window belong to the Shell, so reader code reaches
+// them only through `ShellApi`. Outside `context.rs` (whose `StandaloneApi`
+// IS the Shell for a Shell-less `reader.html`) the reader may READ the
+// origin's store — the allowlist below — but never write it, and never
+// reload the window itself.
+//
 // Plain node modules only, so it runs in a lane that has not run `npm ci`.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -47,6 +54,25 @@ const HOST_FORBIDDEN = [
   [/\bReaderState\b/, "a pane's state: the host holds none"],
   [/\breader_core::(format|view|reflow)\b/, "document-format types belong to the pane"],
 ];
+
+/** The store reads reader code may make itself; every other `storage::`
+ *  name is a write (or a new function nobody has classified yet) and goes
+ *  through `ShellApi`. An allowlist, so a new writer fails closed. */
+const STORAGE_READS = new Set([
+  "get",
+  "load_settings",
+  "load_library",
+  "load_covers",
+  "load_gloss",
+  "library_stamp",
+  "covers_stamp",
+  "settings_stamp",
+  "encode_gloss",
+  "resolve_launch",
+]);
+
+/** The one file allowed to write: the Shell-less `StandaloneApi`. */
+const SHELL_SUBSTITUTE = join(RUNTIME, "context.rs");
 
 /** `crate::context::` is allowed for the boundary handle only. */
 const CONTEXT_ALLOWED = new Set(["ApiHandle"]);
@@ -104,10 +130,25 @@ for (const file of hostFiles) {
 }
 
 for (const file of walk(RUNTIME)) {
+  const substitute = file === SHELL_SUBSTITUTE;
   codeLines(file).forEach((line, i) => {
+    const at = `${relative(ROOT, file)}:${i + 1}`;
     if (/\bReaderPage\b/.test(line)) {
       failures.push(
-        `${relative(ROOT, file)}:${i + 1}: the legacy ReaderPage workspace owner is gone — the host and its panes own the reader\n    ${line.trim()}`,
+        `${at}: the legacy ReaderPage workspace owner is gone — the host and its panes own the reader\n    ${line.trim()}`,
+      );
+    }
+    if (substitute) return;
+    for (const match of line.matchAll(/\bstorage::(\w+)/g)) {
+      if (!STORAGE_READS.has(match[1])) {
+        failures.push(
+          `${at}: storage::${match[1]} is not a read — durable writes are the Shell's (ShellApi)\n    ${line.trim()}`,
+        );
+      }
+    }
+    if (/\breload_window\b/.test(line)) {
+      failures.push(
+        `${at}: the window is the Shell's — ask with ShellApi::reload\n    ${line.trim()}`,
       );
     }
   });
@@ -118,4 +159,7 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`  ${failure}`);
   process.exit(1);
 }
-console.log(`host boundary: ${hostFiles.length} host sources clean; no legacy ReaderPage`);
+console.log(
+  `host boundary: ${hostFiles.length} host sources clean; no legacy ReaderPage; ` +
+    "reader writes and reloads go through ShellApi",
+);

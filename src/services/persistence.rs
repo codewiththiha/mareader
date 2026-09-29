@@ -1,7 +1,7 @@
 //! The shell's persistence writes for what crosses the boundary: settings,
-//! read points and single covers. The library blob and the cover cache are
-//! the shelf's own writes, made in its frame through the origin's one store
-//! — they never cross to the Shell.
+//! read points, single covers and a reader's gloss marks. The library blob
+//! and the cover cache are the shelf's own writes, made in its frame through
+//! the origin's one store — they never cross to the Shell.
 
 use runtime_contract::boundary::ReadPoint;
 
@@ -11,6 +11,12 @@ pub fn apply_read_point(point: &ReadPoint) {
 
 pub fn save_settings(settings: &reader_core::settings::Settings) {
     let _ = storage::save_settings(settings);
+}
+
+/// One document's marks, as the reader encoded them (`ShellApi::save_gloss`):
+/// decoded here, so a malformed list is refused rather than written.
+pub fn save_gloss(key: &str, marks: &str) {
+    storage::persist_encoded_gloss(key, marks);
 }
 
 pub fn save_cover(path: &str, image: runtime_contract::covers::CoverImage) {

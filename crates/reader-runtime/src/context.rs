@@ -101,6 +101,14 @@ impl ShellApi for ApiHandle {
             }
         }
     }
+    fn save_gloss(&self, key: &str, marks: String) {
+        match self {
+            ApiHandle::Standalone => StandaloneApi.save_gloss(key, marks),
+            ApiHandle::Frame => {
+                crate::frame::with_api(|api| api.save_gloss(key, marks));
+            }
+        }
+    }
     /// The reader never asks for a bake: it owns the engine, so a cover it
     /// wants is one it renders and files with `save_cover`. Bakes are the
     /// shelf's asks, and the Shell refuses one from any other frame kind —
@@ -208,6 +216,9 @@ impl ShellApi for StandaloneApi {
         let mut map = storage::load_covers();
         map.insert(path.to_string(), std::sync::Arc::new(image.clone()));
         let _ = storage::save_covers(&map);
+    }
+    fn save_gloss(&self, key: &str, marks: String) {
+        storage::persist_encoded_gloss(key, &marks);
     }
     fn bake_cover(&self, _path: &str) {}
     fn doc_status(&self, _report: &runtime_contract::boundary::DocStatusReport) {}

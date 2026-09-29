@@ -11,19 +11,30 @@
 //!
 //! Which also means it owes exactly what a quit owes: the reading position the
 //! progress effect is still debouncing. Flush it, then go.
+//!
+//! The window is the Shell's, so the reload is ASKED for (`ShellApi::reload`),
+//! never performed here: inside the reader's frame `location.reload()` would
+//! restart only the frame's own document — and after the `/` rewrite
+//! `reload_window` makes first, it would load the Shell's page INSIDE the
+//! reader frame.
+
+use runtime_contract::boundary::ShellApi;
 
 use crate::context::ReaderContext;
 
-/// Restart the app in place: flush the session's last write, then reload.
+/// Restart the app in place: flush the session's last write, then ask the
+/// Shell to reload.
 ///
 /// The reader lands back on the shelf, because that is where a cold boot
 /// starts and nothing here pretends otherwise — the book keeps its resume
-/// point, so reopening it lands where the reload found the reader.
+/// point, so reopening it lands where the reload found the reader. The flush
+/// and the ask leave over the same port in that order, so the Shell has
+/// written the position before it reloads.
 pub fn reload_app(state: ReaderContext) {
     // The heap line before the reload is the one worth having: it is the
     // number the restart is about to give back, and after it the process is
     // new and every earlier reading is gone.
     app_state::memory::log_heap("reload");
     crate::services::document::flush_read_point(&state);
-    app_chrome::window::api::reload_window();
+    state.api.reload();
 }

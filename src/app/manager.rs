@@ -1332,6 +1332,14 @@ impl RuntimeManager {
             FrameVocabulary::SaveCover { path, image } => {
                 crate::services::save_cover(&path, image);
             }
+            // Only a reader glosses — the shelf's own gloss upkeep is row data
+            // it writes in its frame — so a list from any other kind is not a
+            // gloss the user made, and is refused.
+            FrameVocabulary::SaveGloss { key, marks } => {
+                if driver.kind() == FrameKind::Reader {
+                    crate::services::save_gloss(&key, &marks);
+                }
+            }
             // Routed before the gates above.
             FrameVocabulary::BakeCover { .. } => {}
             FrameVocabulary::DocStatus(report) => {

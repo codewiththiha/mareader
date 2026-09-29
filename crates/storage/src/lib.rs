@@ -429,6 +429,31 @@ pub fn persist_gloss(row_id: &str, marks: &[GlossMark]) {
     }
 }
 
+/// One row's marks as they cross the reader → Shell boundary: the JSON of the
+/// list, because the boundary crate (`runtime-contract`) must not know the
+/// mark type (`tools/check-dependency-gate.mjs` keeps `ai-core` out of it).
+pub fn encode_gloss(marks: &[GlossMark]) -> Result<String, StorageError> {
+    encode("encode_gloss", marks)
+}
+
+fn decode_gloss(encoded: &str) -> Result<Vec<GlossMark>, StorageError> {
+    serde_json::from_str(encoded).map_err(|e| StorageError {
+        op: "decode_gloss",
+        detail: format!("parse failed: {e}"),
+    })
+}
+
+/// The writer's half of [`encode_gloss`]: decode, then [`persist_gloss`]. A
+/// list that does not decode is reported and dropped, never written — the
+/// store is one map for every row, and a malformed list must not cost the
+/// other rows their marks.
+pub fn persist_encoded_gloss(row_id: &str, encoded: &str) {
+    match decode_gloss(encoded) {
+        Ok(marks) => persist_gloss(row_id, &marks),
+        Err(e) => e.report(),
+    }
+}
+
 /// One row's marks, copied onto another row: the duplicate's highlights are
 /// its own list under its own id, each mark wearing a freshly minted id, so
 /// nothing about the two lists is shared.
@@ -541,6 +566,22 @@ mod tests {
             "the scheme the capture sites mint is the scheme the copy mints"
         );
         assert_eq!(fresh[1].id, "g3-1701", "the index keeps the stamps apart");
+    }
+
+    #[test]
+    fn a_list_survives_the_boundary_encoding_and_garbage_does_not_decode() {
+        let marks = vec![mark("g3-1", "palimpsest", 3), mark("g9-2", "sietch", 9)];
+        let encoded = encode_gloss(&marks).expect("a mark list encodes");
+        assert_eq!(decode_gloss(&encoded).expect("and decodes"), marks);
+        assert!(
+            decode_gloss("[]")
+                .expect("an emptied list decodes")
+                .is_empty()
+        );
+        assert!(
+            decode_gloss("{\"not\":\"a list\"}").is_err(),
+            "a malformed list is refused, so it can never be written"
+        );
     }
 
     #[test]

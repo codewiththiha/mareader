@@ -169,6 +169,8 @@ pub enum RuntimeFrame {
     },
     /// `ShellApi::save_cover` over the wire.
     SaveCover { path: String, image: CoverImage },
+    /// `ShellApi::save_gloss` over the wire.
+    SaveGloss { key: String, marks: String },
     /// `ShellApi::bake_cover` over the wire — answered by
     /// [`ShellFrame::CoverBaked`].
     BakeCover { path: String },
@@ -257,6 +259,23 @@ mod tests {
         );
         let back: RuntimeEnvelope = serde_json::from_str(&json).unwrap();
         assert_eq!(back, env);
+    }
+
+    #[test]
+    fn a_gloss_save_wires_its_key_and_the_encoded_list() {
+        let env = RuntimeEnvelope {
+            generation: 7,
+            body: RuntimeFrame::SaveGloss {
+                key: "b-12".to_string(),
+                marks: "[]".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&env).unwrap();
+        assert_eq!(
+            json,
+            r#"{"generation":7,"kind":"saveGloss","key":"b-12","marks":"[]"}"#
+        );
+        assert_eq!(serde_json::from_str::<RuntimeEnvelope>(&json).unwrap(), env);
     }
 
     #[test]

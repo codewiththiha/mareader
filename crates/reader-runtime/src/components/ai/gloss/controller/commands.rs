@@ -3,6 +3,7 @@
 
 use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
+use runtime_contract::boundary::ShellApi;
 
 use crate::components::ai::gloss::phase::GlossPhase;
 
@@ -71,16 +72,23 @@ pub(super) fn build_commands(
     let processing_id = state.reader.gloss.processing_id;
     let marks = state.reader.gloss.marks;
 
-    // The marks' one write to storage. There is no per-mark write: the stored
-    // shape is a document's list, so every mutation persists the whole list,
-    // and a document that is not open has nowhere to put it. The KEY is
-    // `crate::services::document::gloss_key`'s rather than the path, so a book
-    // of its own writes the list its own reader reads — the load at open asks
-    // the same question and the two cannot drift.
+    // The marks' one write, and it is the Shell's: durable persistence is
+    // Shell-owned, so the pane hands the list over the boundary
+    // (`ShellApi::save_gloss`) instead of writing the store itself. There is
+    // no per-mark write: the stored shape is a document's list, so every
+    // mutation sends the whole list, and a document that is not open has
+    // nowhere to put it. The KEY is `crate::services::document::gloss_key`'s
+    // rather than the path, so a book of its own writes the list its own
+    // reader reads — the load at open asks the same question and the two
+    // cannot drift.
     let persist = move || {
         let key = crate::services::document::gloss_key(state);
-        if !key.is_empty() {
-            storage::persist_gloss(&key, &marks.get_untracked());
+        if key.is_empty() {
+            return;
+        }
+        match marks.with_untracked(|list| storage::encode_gloss(list.as_slice())) {
+            Ok(encoded) => state.api.save_gloss(&key, encoded),
+            Err(e) => e.report(),
         }
     };
 
