@@ -87,13 +87,15 @@ pub fn shortcuts(
             // Escape is a dismiss action, never text input, so it must work even
             // with a search input focused — handle it before the form-target
             // guard. Closes the floating search overlay first, then the
-            // sidebar.
+            // sidebar — unless a modal or menu is up, whose press this is.
             if key == "Escape" {
                 if state.search.visible.get() {
                     // Closes the bar but leaves the muted highlights behind; the
                     // next interaction with the document clears them.
                     crate::effects::reader::search::dismiss_search(state);
-                } else if sidebar_open.try_get_untracked() == Some(true) {
+                } else if sidebar_open.try_get_untracked() == Some(true)
+                    && !app_chrome::floating::dismiss::escape_is_claimed()
+                {
                     shell.close_sidebar();
                 }
                 return;

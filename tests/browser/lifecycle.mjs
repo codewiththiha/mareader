@@ -2530,6 +2530,7 @@ async function frameClick(selector, label, timeoutMs = 10_000) {
 /** Settings → Workspace → the row-click choice, then close the modal. */
 async function chooseLibraryClick(choice) {
   const label = `settings: library click ${choice}`;
+  const railWasOpen = (await libraryPanel()) !== null;
   await frameClick('button[title="Reader settings"]', label);
   await frameClick('button[aria-label="Workspace"]', label);
   await frameClick(`[data-setting="library-click"] [data-choice="${choice}"]`, label);
@@ -2558,6 +2559,11 @@ async function chooseLibraryClick(choice) {
     await frameClick('[role="dialog"][aria-label="Reader settings"] button[title="Close"]', label, 2_000);
   }
   await page.waitForTimeout(150);
+  // One Escape peels one layer: the press that dismissed the sheet is not
+  // also the sidebar's, so the Library tab is still there to click.
+  if (railWasOpen && (await libraryPanel()) === null) {
+    throw new Error(`[${label}] closing the settings sheet folded the rail away too`);
+  }
 }
 
 /** Nothing about the workspace changed, and no drag is left behind. */
