@@ -2347,6 +2347,362 @@ async function paneEntries() {
   console.log(`split workspace: PDF | Markdown, divider ratio ${afterDrag.split.ratio}, closed the PDF, the Markdown pane read on`);
 }
 
+// --- Stage 14: document drag and drop -------------------------------------
+currentStage = "stage14-drag-drop";
+// The production drag: a pane's drag handle carries a copy of its document
+// to a split of the REAL workspace (the host measures its slot and its
+// panes), the preview is geometry only (nothing opens until the drop), and
+// the drop is the host's one workspace command — the pane it creates takes
+// focus. Escape, the keyboard's own placement and a release outside the
+// workspace change nothing. Then the Shell-carried drag: a book held on the
+// shelf enters its "Open in Reader" zone, the Shell reveals the (empty,
+// warm) reader and relays the pointer, and the drop opens the book in the
+// reader's workspace. A light Markdown fixture throughout: this proves the
+// drag, not a PDF's render timing.
+
+/** A light document opened from the URL, in one ready pane. */
+async function openLight(path) {
+  await page.goto(`${BASE}/?open=${encodeURIComponent(path)}`, { waitUntil: "domcontentloaded" });
+  return waitFor(`${path} to open in one pane`, (s) =>
+    s.readerRuntimeLive === true && s.host?.lifecycle === "live" &&
+    s.host.panes?.length === 1 && s.host.panes[0].lifecycle === "ready" &&
+    s.host.panes[0].resources?.documentSession === true, 60_000);
+}
+
+/** An element of the active frame's document, boxed in PAGE coordinates. */
+async function frameBox(inner) {
+  return page.evaluate(([sel, inner]) => {
+    const f = document.querySelector(sel);
+    const el = f?.contentDocument?.querySelector(inner);
+    if (!el) return null;
+    const fr = f.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return { x: fr.left + r.left, y: fr.top + r.top, width: r.width, height: r.height };
+  }, [activeFrame, inner]);
+}
+
+/** The drop preview the active frame draws, if any. */
+async function dropPreview() {
+  return page.evaluate((sel) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const el = doc?.querySelector("[data-drop-preview]");
+    if (!el) return null;
+    return {
+      word: el.dataset.dropPreview,
+      pane: Number(el.dataset.dropPane),
+      label: el.textContent,
+      announced: doc.querySelector("[data-drop-announce]")?.textContent ?? "",
+    };
+  }, activeFrame);
+}
+
+async function waitPreview(label, predicate, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await dropPreview();
+    if (predicate(last)) return last;
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`[${label}] the preview never matched: ${JSON.stringify(last)}`);
+}
+
+/** Press pane `id`'s drag handle with the real mouse and carry the pointer
+ *  to `to` (page coordinates) in steps. The button stays down. */
+async function liftPane(id, to) {
+  const grip = await frameBox(`[data-pane-grip="${id}"] button`);
+  if (!grip) throw new Error(`pane ${id} has no drag handle`);
+  const from = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
+  // The handle must be what a press there hits: anything painted over it
+  // would swallow the drag before it began.
+  const hit = await page.evaluate(([sel, id, x, y]) => {
+    const f = document.querySelector(sel);
+    const fr = f.getBoundingClientRect();
+    const el = f.contentDocument.elementFromPoint(x - fr.left, y - fr.top);
+    return el?.closest(`[data-pane-grip="${id}"]`) ? null : (el?.outerHTML ?? "nothing").slice(0, 160);
+  }, [activeFrame, id, from.x, from.y]);
+  if (hit) throw new Error(`pane ${id}'s drag handle is covered by ${hit}`);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  const steps = 12;
+  for (let step = 1; step <= steps; step += 1) {
+    await page.mouse.move(from.x + ((to.x - from.x) * step) / steps, from.y + ((to.y - from.y) * step) / steps);
+  }
+}
+
+/** Nothing about the workspace changed, and no drag is left behind. */
+function assertUnchanged(s, before, label) {
+  if (s.host.panes.length !== before.host.panes.length) throw new Error(`[${label}] ${s.host.panes.length} panes, expected ${before.host.panes.length}`);
+  if (s.host.panesCreated !== before.host.panesCreated) throw new Error(`[${label}] a pane was created`);
+  if (JSON.stringify(s.host.layout) !== JSON.stringify(before.host.layout)) throw new Error(`[${label}] the layout changed: ${JSON.stringify(s.host.layout)}`);
+  if (s.host.drag !== "idle") throw new Error(`[${label}] the drag session is ${s.host.drag}`);
+}
+
+{
+  const panicsBefore = panicCount;
+  const one = await openLight(SPLIT_NOTES);
+  const first = one.host.panes[0];
+  if (one.host.drag !== "idle") throw new Error(`[drag] a fresh workspace reports drag ${one.host.drag}`);
+
+  // Right: into the pane's right tenth, halfway down.
+  const firstBox = await frameBox(`[data-pane-id="${first.paneId}"]`);
+  await liftPane(first.paneId, { x: firstBox.x + firstBox.width * 0.92, y: firstBox.y + firstBox.height * 0.5 });
+  const right = await waitPreview("drag: the right-edge preview", (p) => p?.word === "right" && p.pane === first.paneId);
+  if (!right.announced.includes("split right")) throw new Error(`[drag] the live region says ${JSON.stringify(right.announced)}`);
+  const during = await snap();
+  if (during.host.drag !== "overTarget") throw new Error(`[drag] mid-drag phase ${during.host.drag}`);
+  if (during.host.panes.length !== 1 || during.host.panesCreated !== one.host.panesCreated) {
+    throw new Error("[drag] something opened before the drop");
+  }
+  await page.mouse.up();
+  const two = await waitForSettledLayout("drag: dropped on the right", (s) =>
+    s.host?.panes?.length === 2 &&
+    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 30_000);
+  const second = two.host.panes.find((p) => p.paneId !== first.paneId);
+  if (two.host.activePane !== second.paneId || !second.focused) throw new Error(`[drag] the dropped pane did not take focus (${two.host.activePane})`);
+  if (two.host.layout?.split?.axis !== "horizontal" || layoutLeaves(two.host.layout).join() !== `${first.paneId},${second.paneId}`) {
+    throw new Error(`[drag] a right drop laid out ${JSON.stringify(two.host.layout)}`);
+  }
+  // The same document in two panes: a new pane of its own, not a move.
+  if (second.format !== "markdown" || second.documentId !== first.documentId) throw new Error(`[drag] the new pane shows ${second.format} ${second.documentId}`);
+  if (two.host.drag !== "idle" || (await dropPreview()) !== null) throw new Error("[drag] the drag outlived its drop");
+  await assertPaneBox(two, "drag: first", two.host.panes.find((p) => p.paneId === first.paneId));
+  await assertPaneBox(two, "drag: second", second);
+
+  // Bottom of the new pane: a nested split.
+  const secondBox = await frameBox(`[data-pane-id="${second.paneId}"]`);
+  await liftPane(second.paneId, { x: secondBox.x + secondBox.width * 0.5, y: secondBox.y + secondBox.height * 0.93 });
+  await waitPreview("drag: the bottom-edge preview", (p) => p?.word === "bottom" && p.pane === second.paneId);
+  await page.mouse.up();
+  const three = await waitForSettledLayout("drag: dropped at the bottom", (s) =>
+    s.host?.panes?.length === 3 &&
+    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 30_000);
+  const third = three.host.panes.find((p) => p.paneId !== first.paneId && p.paneId !== second.paneId);
+  if (three.host.activePane !== third.paneId) throw new Error(`[drag] the second drop's pane did not take focus (${three.host.activePane})`);
+  const nested = three.host.layout?.split?.second?.split;
+  if (three.host.layout?.split?.axis !== "horizontal" || nested?.axis !== "vertical" ||
+      layoutLeaves(three.host.layout).join() !== `${first.paneId},${second.paneId},${third.paneId}`) {
+    throw new Error(`[drag] a bottom drop laid out ${JSON.stringify(three.host.layout)}`);
+  }
+
+  // The keyboard's placement: Enter aims at the first offered split, an
+  // arrow key moves it, Escape ends it with nothing changed.
+  await page.evaluate(([sel, id]) => {
+    const f = document.querySelector(sel);
+    f.contentWindow.focus();
+    f.contentDocument.querySelector(`[data-pane-grip="${id}"] button`).focus();
+  }, [activeFrame, third.paneId]);
+  await page.keyboard.press("Enter");
+  await waitPreview("drag: the keyboard placement starts", (p) => p?.word === "right" && p.pane === third.paneId);
+  await page.keyboard.press("ArrowLeft");
+  await waitPreview("drag: an arrow key moves it", (p) => p?.word === "left" && p.pane === third.paneId);
+  await page.keyboard.press("Escape");
+  await waitPreview("drag: Escape clears the keyboard placement", (p) => p === null);
+  assertUnchanged(await snap(), three, "drag: keyboard escape");
+
+  // Escape mid pointer drag: the preview goes, the release does nothing.
+  await liftPane(first.paneId, { x: firstBox.x + firstBox.width * 0.1, y: firstBox.y + firstBox.height * 0.5 });
+  await waitPreview("drag: a pointer drag before Escape", (p) => p?.pane === first.paneId);
+  await page.evaluate((sel) => document.querySelector(sel).contentWindow.focus(), activeFrame);
+  await page.keyboard.press("Escape");
+  await waitPreview("drag: Escape clears the pointer drag", (p) => p === null);
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  assertUnchanged(await snap(), three, "drag: pointer escape");
+
+  // A full workspace offers nothing: with a fourth pane (MAX_PANES) a drag
+  // finds no target over any pane, and its release changes nothing. (A
+  // point outside the workspace is the pure geometry tests' case: the slot
+  // fills the frame, under the floating title bar too.)
+  if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[drag] the host refused a fourth pane");
+  const four = await waitForSettledLayout("drag: a full workspace", (s) =>
+    s.host?.panes?.length === 4 &&
+    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 30_000);
+  const leftBox = await frameBox(`[data-pane-id="${first.paneId}"]`);
+  await liftPane(first.paneId, { x: leftBox.x + leftBox.width * 0.92, y: leftBox.y + leftBox.height * 0.5 });
+  await page.waitForTimeout(300);
+  const full = await snap();
+  if ((await dropPreview()) !== null || full.host.drag !== "overWorkspace") {
+    throw new Error(`[drag] a full workspace offered a target (drag ${full.host.drag})`);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  assertUnchanged(await snap(), four, "drag: full workspace release");
+  assertNoNewPanics("drag and drop", panicsBefore);
+
+  summary.dragDrop = {
+    panes: three.host.panes.map((p) => ({ paneId: p.paneId, bounds: p.bounds })),
+    layout: three.host.layout,
+    focusedAfterDrops: [two.host.activePane, three.host.activePane],
+  };
+  // The reader disposed mid-drag: the button is still down, the session
+  // live, when the workspace goes — and the disposed host reports no drag.
+  await liftPane(first.paneId, { x: leftBox.x + leftBox.width * 0.5, y: leftBox.y + leftBox.height * 0.5 });
+  await page.waitForTimeout(200);
+  const held = await snap();
+  if (held.host.drag === "idle") throw new Error("[drag] the drag before the dispose never went live");
+  // Eight mints: four opens (the URL's, two drops, the fourth pane), four
+  // pane disposes.
+  const disposed = await closeAndWaitBaseline("drag and drop", false, 8);
+  await page.mouse.up();
+  if (disposed.host.drag !== "idle") throw new Error(`[drag] the disposed host still reports drag ${disposed.host.drag}`);
+  console.log(`drag and drop: right and nested bottom drops, keyboard placement; Escape and a full workspace left the tree alone; a dispose mid-drag (${held.host.drag}) left drag ${disposed.host.drag}`);
+}
+
+// The Shell-carried drag, from the shelf into the revealed reader.
+{
+  const panicsBefore = panicCount;
+  const vp = page.viewportSize();
+  /** Hold the "Split Notes" card and carry it into the shelf's "Open in
+   *  Reader" zone; returns once the reader is on screen. */
+  async function carryToReader(label) {
+    await waitFor(`${label}: the shelf`, (x) => x.bootState === "library", 45_000);
+    await signalShelfIntent(label);
+    await waitForWarm(label);
+    const card = page.frameLocator(activeFrame).locator(".book-title", { hasText: "Split Notes" }).first();
+    await card.scrollIntoViewIfNeeded({ timeout: 10_000 });
+    const box = await card.boundingBox();
+    if (!box) throw new Error(`[${label}] the Split Notes card has no box`);
+    const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    const to = { x: vp.width - 8, y: from.y };
+    for (let step = 1; step <= 16; step += 1) {
+      await page.mouse.move(from.x + ((to.x - from.x) * step) / 16, from.y);
+    }
+    return waitFor(`${label}: the reader came on screen for the drag`, (x) =>
+      x.bootState === "reader" && x.readerRuntimeLive === true && x.host?.lifecycle === "live", 30_000);
+  }
+
+  const revealed = await carryToReader("handoff");
+  if (revealed.host.panes.some((p) => p.resources?.documentSession)) throw new Error("[handoff] the revealed reader already shows a document");
+  await page.mouse.move(vp.width / 2, vp.height / 2, { steps: 8 });
+  const here = await waitPreview("handoff: the empty workspace offers itself", (p) => p?.word === "here");
+  const aimed = await snap();
+  if (aimed.host.drag !== "overTarget" || aimed.host.panesCreated !== revealed.host.panesCreated) {
+    throw new Error(`[handoff] mid-drag ${aimed.host.drag}, ${aimed.host.panesCreated} panes created`);
+  }
+  await page.mouse.up();
+  const dropped = await waitFor("handoff: the carried book opened in the reader", (s) =>
+    s.host?.panes?.length === 1 && s.host.panes[0].format === "markdown" &&
+    s.host.panes[0].lifecycle === "ready" && s.host.panes[0].resources?.documentSession === true, 30_000);
+  const pane = dropped.host.panes[0];
+  if (pane.paneId !== here.pane || !pane.focused || dropped.host.drag !== "idle") {
+    throw new Error(`[handoff] the drop landed in ${pane.paneId} (preview ${here.pane}), focused ${pane.focused}, drag ${dropped.host.drag}`);
+  }
+  if ((await page.evaluate(() => document.querySelectorAll("[data-drag-shield]").length)) !== 0) {
+    throw new Error("[handoff] the Shell's drag shield outlived the drag");
+  }
+
+  // Cancelled: Escape, then the release — the reader it revealed for the
+  // drag has nothing to show and hands the window back to the shelf.
+  await clickCloseNow();
+  await carryToReader("handoff cancel");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  const back = await waitFor("handoff cancel: back on the shelf", (x) => x.bootState === "library", 30_000);
+  if ((await page.evaluate(() => document.querySelectorAll("[data-drag-shield]").length)) !== 0) {
+    throw new Error("[handoff cancel] the Shell's drag shield outlived the drag");
+  }
+  assertNoNewPanics("shelf to reader drag", panicsBefore);
+  summary.shelfDrag = { droppedPane: pane.paneId, format: pane.format, cancelledTo: back.bootState };
+  console.log("shelf to reader drag: the Shell carried the book into the empty reader; a cancelled carry went back to the shelf");
+}
+
+// --- Stage 15: split workspace memory and lifecycle -----------------------
+currentStage = "stage15-split-memory";
+// A PDF pane stays open while a Markdown pane is split beside it and closed
+// three times: the PDF's session is the same one throughout, and each close
+// takes the workspace back to its PDF-only baseline. Then PDF + Markdown +
+// TXT, and the reader's dispose releases every pane owner.
+const PLAIN_NOTES = "/samples/Plain Notes.txt";
+
+async function openIn(path, target) {
+  return page.evaluate(([sel, path, target]) => {
+    const hook = document.querySelector(sel)?.contentWindow?.__mareaderOpenIn;
+    if (typeof hook !== "function") throw new Error("the web build's __mareaderOpenIn hook is missing");
+    return hook(path, target);
+  }, [activeFrame, path, target]);
+}
+
+{
+  const panicsBefore = panicCount;
+  const opened = await openBook(pearlsUrl);
+  const pdfPane = opened.host.panes[0].paneId;
+  const pdfDocument = opened.host.panes[0].documentId;
+  const alone = await waitForSettledLayout("memory: the PDF alone", (s) => s.host?.panes?.length === 1, 15_000);
+  const baseline = {
+    paneLive: alone.paneLive, virtualizerLive: alone.virtualizerLive, sessionsOpened: alone.engine.sessionsOpened,
+    virtualizersCreated: alone.virtualizersCreated, virtualizersDisposed: alone.virtualizersDisposed,
+  };
+  const heapAfterClose = [];
+  for (let cycle = 1; cycle <= 3; cycle += 1) {
+    if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error(`[memory ${cycle}] the host refused the Markdown pane`);
+    const both = await waitForSettledLayout(`memory ${cycle}: PDF | Markdown`, (s) =>
+      s.host?.panes?.length === 2 &&
+      s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 30_000);
+    const md = both.host.panes.find((p) => p.paneId !== pdfPane);
+    await page.evaluate(([sel, id]) => {
+      const btn = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-close="${id}"] button`);
+      if (!btn) throw new Error(`pane ${id} has no close control`);
+      btn.click();
+    }, [activeFrame, md.paneId]);
+    let closed = null;
+    for (const deadline = Date.now() + 20_000; Date.now() < deadline; await page.waitForTimeout(100)) {
+      closed = await snap();
+      if (closed?.host?.panes?.length === 1 && closed.host.panes[0].paneId === pdfPane) break;
+    }
+    if (!(closed?.host?.panes?.length === 1 && closed.host.panes[0].paneId === pdfPane)) {
+      throw new Error(`[memory ${cycle}] closing Markdown pane ${md.paneId} (PDF ${pdfPane}) left: ` + JSON.stringify({
+        bootState: closed?.bootState, live: closed?.readerRuntimeLive, host: closed?.host?.lifecycle,
+        active: closed?.host?.activePane, layout: closed?.host?.layout,
+        panes: closed?.host?.panes?.map((p) => ({ id: p.paneId, format: p.format, lifecycle: p.lifecycle })),
+        panics: panicCount - panicsBefore, errors: errorLog.slice(-8),
+      }));
+    }
+    await waitForSettledLayout(`memory ${cycle}: the Markdown pane closed`, (s) =>
+      s.host?.panes?.length === 1 && s.host.panes[0].paneId === pdfPane, 30_000);
+    let back = null;
+    for (const deadline = Date.now() + 15_000; Date.now() < deadline; await page.waitForTimeout(100)) {
+      back = await snap();
+      if (back.paneLive === baseline.paneLive && back.virtualizerLive === baseline.virtualizerLive) break;
+    }
+    if (back.paneLive !== baseline.paneLive || back.virtualizerLive !== baseline.virtualizerLive) {
+      throw new Error(`[memory ${cycle}] not back at the PDF-only baseline ${JSON.stringify(baseline)}: ` +
+        JSON.stringify({ paneLive: back.paneLive, virtualizerLive: back.virtualizerLive,
+          panesCreated: back.panesCreated, panesDisposed: back.panesDisposed,
+          virtualizersCreated: back.virtualizersCreated, virtualizersDisposed: back.virtualizersDisposed,
+          host: back.host.panes.map((p) => ({ id: p.paneId, format: p.format, lifecycle: p.lifecycle })) }));
+    }
+    const pdf = back.host.panes[0];
+    if (pdf.documentId !== pdfDocument || pdf.resources.documentSession !== true || back.engine.sessionsLive !== 1) {
+      throw new Error(`[memory ${cycle}] the PDF pane lost its session: ${JSON.stringify(pdf)}`);
+    }
+    if (back.engine.sessionsOpened !== baseline.sessionsOpened) throw new Error(`[memory ${cycle}] the PDF was reopened`);
+    heapAfterClose.push(back.wasmHeapBytes);
+  }
+  if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[memory] the host refused the Markdown pane");
+  await waitFor("memory: PDF | Markdown", (s) => s.host?.panes?.length === 2 &&
+    s.host.panes.every((p) => p.lifecycle === "ready"), 30_000);
+  if ((await openIn(PLAIN_NOTES, "right")) !== true) throw new Error("[memory] the host refused the TXT pane");
+  const all = await waitForSettledLayout("memory: PDF | Markdown | TXT", (s) =>
+    s.host?.panes?.length === 3 &&
+    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 30_000);
+  const formats = all.host.panes.map((p) => p.format).sort().join();
+  if (formats !== "markdown,pdf,text") throw new Error(`[memory] the three panes are ${formats}`);
+  assertNoNewPanics("split memory", panicsBefore);
+  summary.splitMemory = {
+    baseline,
+    heapAfterMarkdownClose: heapAfterClose,
+    threeFormats: all.host.panes.map((p) => ({ paneId: p.paneId, format: p.format })),
+  };
+  stages.afterSplitMemory = all;
+  // Twelve mints: the PDF, three Markdown opens and their three pane
+  // disposes, the Markdown and TXT opens, and the three panes' disposes.
+  await closeAndWaitBaseline("split memory", false, 12);
+  console.log(`split memory: the PDF kept its session across 3 Markdown split/close cycles (heap after each close ${heapAfterClose.join(", ")}); PDF + Markdown + TXT disposed clean`);
+}
+
 // --- Zoom with animation off, and the noise layer's runtime state ---------
 // Both stages reboot the app per settings state: settings are read at boot,
 // so a reload is the one way to put a runtime in a known motion state.

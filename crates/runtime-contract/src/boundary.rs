@@ -41,6 +41,22 @@ pub struct LaunchDocument {
     pub display_name: Option<String>,
 }
 
+/// A document being dragged from one runtime into another, as the Shell
+/// carries it (Library → Reader): an identity and an address, nothing a
+/// runtime holds live. The receiving side resolves the rest (resume point,
+/// cover) through the established open path — the Shell's own store — at
+/// the drop, never during the drag.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentDragDescriptor {
+    /// The library row, when the drag started on one.
+    #[serde(default)]
+    pub book_id: Option<String>,
+    pub path: String,
+    /// What the user sees the document called (the row's title).
+    pub label: String,
+}
+
 /// A durable write-through: where the reader got to in the open document.
 /// The reader sends this on its progress debounce and — unconditionally —
 /// on close/dispose; the Shell applies it to the persisted library blob

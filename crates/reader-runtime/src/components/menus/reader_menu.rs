@@ -57,21 +57,9 @@ fn FitButton(
 /// this pane is on. The host places it (and refuses it, with a toast, when
 /// the workspace is full); this pane keeps its own session untouched.
 fn split_beside(state: crate::context::ReaderContext, axis: SplitAxis) {
-    let Some(mut launch) = state.launch.try_get_untracked() else {
+    let Some(launch) = crate::pane::document::view_again(state) else {
         return;
     };
-    if launch.path.is_empty() {
-        return;
-    }
-    launch.resume_page = state
-        .reader
-        .viewer
-        .page
-        .try_get_untracked()
-        .unwrap_or(1)
-        .max(1);
-    launch.saved_fraction = None;
-    launch.blend_override = false;
     state.open.try_run(OpenRequest {
         launch,
         placement: Placement::Beside(axis),

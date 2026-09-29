@@ -202,6 +202,14 @@ pub trait PaneRuntime {
     /// The pane's own count of what it holds.
     fn resources(&self) -> PaneResourceCounts;
 
+    /// The launch that opens ANOTHER view of this pane's document, at the
+    /// page this pane is on — what a drag lifted from this pane drops into a
+    /// new pane. `None` while the pane holds no document. The pane keeps its
+    /// own session: this is an address, never a session handed over.
+    fn duplicate_launch(&self) -> Option<LaunchDocument> {
+        None
+    }
+
     /// Release everything the pane owns: its document session, its render
     /// and prefetch work, its virtualizers, its listeners, observers and
     /// timers, its reactive owner. The sync half runs now; the returned

@@ -19,6 +19,7 @@ const MIME = {
   ".wasm": "application/wasm",
   ".pdf": "application/pdf",
   ".md": "text/markdown; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".bcmap": "application/octet-stream",

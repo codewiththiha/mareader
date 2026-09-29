@@ -24,7 +24,7 @@ use leptos::prelude::Callable;
 use runtime_contract::boundary::LaunchDocument;
 use runtime_contract::protocol::{BootStage, RuntimeFrame};
 #[cfg(target_arch = "wasm32")]
-use runtime_contract::protocol::{RuntimeKind, ShellEnvelope, ShellFrame};
+use runtime_contract::protocol::{DocumentDragEvent, RuntimeKind, ShellEnvelope, ShellFrame};
 use wasm_bindgen::JsCast;
 
 use crate::context::{ApiHandle, ReaderContext};
@@ -220,6 +220,16 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                     app_ui::frame_theme::mark_frame_hidden(false);
                     if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
                         crate::command(id, *document);
+                    }
+                }
+                ShellFrame::DocumentDrag { event } => {
+                    // A library document the Shell carried here: its Begin
+                    // is this frame's reveal, like a launch's.
+                    if matches!(event, DocumentDragEvent::Begin { .. }) {
+                        app_ui::frame_theme::mark_frame_hidden(false);
+                    }
+                    if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
+                        crate::document_drag(id, event);
                     }
                 }
                 ShellFrame::Refresh => {

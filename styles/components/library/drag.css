@@ -177,3 +177,27 @@
 .lib-crumb-probe-item > span {
   min-width: 0;
 }
+
+/* The "Open in Reader" zone: a strip along the window's right edge, shown while exactly one book
+   is held in a hosted shelf. Entering it hands the drag to the Shell, which carries it on to the
+   reader's workspace. Its width is the controller's READER_ZONE_PX. No motion: it appears with
+   the drag and needs no entrance. */
+.lib-drag-reader-zone {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 48px;
+  z-index: var(--z-drag-overlay);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 2px dashed var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  writing-mode: vertical-rl;
+  letter-spacing: 0.04em;
+}

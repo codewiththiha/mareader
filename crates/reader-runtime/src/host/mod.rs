@@ -29,7 +29,11 @@
 //! through [`contract::PaneRuntime`]. `tools/check-host-boundary.mjs` holds
 //! that line in CI.
 
+pub mod commands;
 pub mod contract;
+pub mod drag;
+pub mod drop_target;
+pub mod geometry;
 pub mod manager;
 pub mod model;
 pub mod tree;
@@ -39,13 +43,17 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 use runtime_contract::boundary::{LaunchDocument, ShellApi};
+use runtime_contract::protocol::DocumentDragEvent;
 use serde::Serialize;
 
 use app_ui::components::shell::controller::ShellController;
+use commands::{DropPlan, WorkspaceCommand};
 use contract::{
     OpenRequest, PaneAppearance, PaneClassifier, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory,
     PaneSurface, Placement,
 };
+use drag::{DocumentDragSource, DragOrigin, DragSession, DropIntent};
+use geometry::{DropGeometry, PaneGeometry};
 use manager::PaneManager;
 use model::{
     DocumentId, DocumentRef, MAX_PANES, PaneBounds, PaneError, PaneFormat, PaneId, PaneLifecycle,
@@ -62,8 +70,15 @@ pub enum OpenTarget {
     Active,
     /// This pane, in place: it keeps its id and replaces its document.
     Pane(PaneId),
-    /// A new pane beside `of`, split along `axis`, after it.
-    Beside { of: PaneId, axis: SplitAxis },
+    /// A new pane beside `of`, split along `axis`, on `side` of it — the
+    /// one placement the Split menu, the test hook and a drop all use. The
+    /// layout policy refuses it when a half would be under the minimum
+    /// pane size ([`tree::split_fits`]).
+    Split {
+        of: PaneId,
+        axis: SplitAxis,
+        side: Side,
+    },
 }
 
 pub use view::ReaderHostView;
@@ -77,6 +92,11 @@ pub struct HostSession {
     pub ui: app_state::UiState,
     pub api: crate::context::ApiHandle,
     pub session_id: u32,
+    /// Run a closure inside the session's root owner (nothing, once the
+    /// session is gone). Work that begins in an event handler — a menu's
+    /// split, a drop — has no current owner, and a pane created there would
+    /// belong to no scope. A plain `fn`: the host keeps no owner of its own.
+    pub enter: fn(&mut dyn FnMut()),
 }
 
 /// The reader host. Copy: the title bar's closures, the workspace slot and
@@ -101,6 +121,10 @@ pub struct ReaderHost {
     slot_size: RwSignal<(f64, f64)>,
     /// The workspace layout: splits and pane ids, nothing heavier.
     tree: RwSignal<PaneTree>,
+    /// The one document drag session (see [`drag`]): typed data only, no
+    /// DOM reference. Idle whenever no drag is live, and cleared by the
+    /// workspace's disposal.
+    drag: RwSignal<DragSession>,
     /// The tree laid out over the slot: every pane's box and every
     /// divider's strip. What the bounds effect and the view both follow.
     layout: Memo<TreeLayout>,
@@ -166,6 +190,7 @@ impl ReaderHost {
 
         let slot_size = RwSignal::new((0.0, 0.0));
         let tree = RwSignal::new(PaneTree::new());
+        let drag = RwSignal::new(DragSession::Idle);
         let layout = Memo::new(move |_| {
             let (width, height) = slot_size.get();
             tree.with(|tree| tree.layout(PaneBounds::filling(width, height)))
@@ -179,6 +204,7 @@ impl ReaderHost {
             motion,
             slot_size,
             tree,
+            drag,
             layout,
             pending_ratio: StoredValue::new(None),
             classify,
@@ -188,6 +214,7 @@ impl ReaderHost {
         host.install_bounds();
         host.install_suspension();
         host.install_reports();
+        host.install_drag();
 
         // The workspace as the diagnostics surface reports it. The probe
         // reads the manager's plain state, never the arena — and holds it
@@ -201,7 +228,7 @@ impl ReaderHost {
         crate::diagnostics::install_host_probe(move || {
             let shared = probe.as_ref()?.upgrade()?;
             let state = shared.try_borrow().ok()?;
-            Some(snapshot_of(&state, layout_of(tree)))
+            Some(snapshot_of(&state, layout_of(tree), drag_phase(drag)))
         });
         host
     }
@@ -278,12 +305,16 @@ impl ReaderHost {
     /// Re-lay the tree NOW and hand the boxes out: a pane placed by an open
     /// has its box before its view mounts.
     fn relayout_now(&self) {
-        let rect = self.slot_rect();
-        let layout = self
-            .tree
-            .try_with_untracked(|tree| tree.layout(rect))
-            .unwrap_or_default();
+        let layout = self.layout_now();
         self.hand_out_bounds(&layout);
+    }
+
+    /// The tree laid out over the slot as measured now (untracked).
+    fn layout_now(&self) -> TreeLayout {
+        let rect = self.slot_rect();
+        self.tree
+            .try_with_untracked(|tree| tree.layout(rect))
+            .unwrap_or_default()
     }
 
     /// The workspace slot as a rect at the origin (the tree's coordinates).
@@ -425,24 +456,52 @@ impl ReaderHost {
             open: Callback::new(move |request: OpenRequest| {
                 let target = match request.placement {
                     Placement::Here => OpenTarget::Pane(id),
-                    Placement::Beside(axis) => OpenTarget::Beside { of: id, axis },
+                    Placement::Beside(axis) => OpenTarget::Split {
+                        of: id,
+                        axis,
+                        side: Side::After,
+                    },
                 };
-                if let Err(error) = host.open_document(request.launch, target) {
-                    leptos::logging::warn!("[reader] the workspace refused an open: {error:?}");
-                    let message = match error {
-                        PaneError::WorkspaceFull => {
-                            format!("The workspace holds at most {MAX_PANES} panes.")
-                        }
-                        _ => "That document could not be placed.".to_string(),
-                    };
-                    host.session
-                        .ui
-                        .toast
-                        .set(Some(app_state::state::Toast::new(message)));
+                let opened = host.in_session(|| host.open_document(request.launch, target));
+                if let Some(Err(error)) = opened {
+                    host.refused(error);
                 }
             }),
             can_split: Signal::derive(move || manager.placed().len() < MAX_PANES),
         }
+    }
+
+    /// Run `work` inside the session's root owner ([`HostSession::enter`]);
+    /// `None` when the session is gone and nothing ran.
+    fn in_session<R>(&self, work: impl FnOnce() -> R) -> Option<R> {
+        let mut work = Some(work);
+        let mut out = None;
+        (self.session.enter)(&mut || {
+            if let Some(work) = work.take() {
+                out = Some(work());
+            }
+        });
+        out
+    }
+
+    /// Say why the workspace refused a placement: the console for the
+    /// record, a toast for the user.
+    fn refused(&self, error: PaneError) {
+        leptos::logging::warn!("[reader] the workspace refused an open: {error:?}");
+        let message = match error {
+            PaneError::WorkspaceFull => {
+                format!("The workspace holds at most {MAX_PANES} panes.")
+            }
+            PaneError::Layout(tree::TreeError::NoRoom(_)) => {
+                "There is no room to split this pane.".to_string()
+            }
+            _ => "That document could not be placed.".to_string(),
+        };
+        let _ = self
+            .session
+            .ui
+            .toast
+            .try_set(Some(app_state::state::Toast::new(message)));
     }
 
     /// The workspace's first pane, for `launch` (none: an empty pane
@@ -507,7 +566,7 @@ impl ReaderHost {
     /// * In place ([`OpenTarget::Pane`], or the active pane): the pane keeps
     ///   its id and replaces its document session — the one per-pane
     ///   document change; no other pane is touched.
-    /// * Beside: a NEW pane with its own session, split off the named one;
+    /// * Split: a NEW pane with its own session, split off the named one;
     ///   it takes focus. Transactional: a refused placement leaves the
     ///   workspace as it was. A document that then fails to load leaves the
     ///   new pane showing its error, closable like any other.
@@ -522,13 +581,14 @@ impl ReaderHost {
                 None => self.create_root(Some(launch)),
             },
             OpenTarget::Pane(id) => self.open_in(id, launch),
-            OpenTarget::Beside { of, axis } => {
+            OpenTarget::Split { of, axis, side } => {
                 let known = self.tree.try_with_untracked(|tree| tree.contains(of));
                 if known != Some(true) {
                     return Err(PaneError::Layout(tree::TreeError::UnknownPane(of)));
                 }
+                commands::check_room(&self.layout_now(), of, axis)?;
                 self.create_placed(Some(launch), |tree, id| {
-                    tree.split(of, axis, Side::After, id).map(|_| ())
+                    tree.split(of, axis, side, id).map(|_| ())
                 })
             }
         }
@@ -596,6 +656,10 @@ impl ReaderHost {
     /// observable), the host refuses new panes from here. Idempotent. The
     /// panes' async tails wait in [`Self::take_teardown`].
     pub fn dispose(&self) {
+        // No drag outlives the workspace: whatever was in flight ends here,
+        // with no drop. Untracked — the view is being torn down, and the
+        // listeners go with the owner.
+        self.drag.try_update_untracked(|session| session.cancel());
         self.manager.dispose_all();
         // The layout lets go of the panes with the manager. Untracked: the
         // workspace view is being torn down, not re-laid out.
@@ -610,19 +674,376 @@ impl ReaderHost {
     pub fn take_teardown(&self) -> contract::PaneTeardown {
         let shared = self.manager.shared();
         let tails = self.manager.take_teardown();
+        // The drag as the dispose left it, read now, while the session's
+        // arena still holds it (the settled snapshot outlives the session):
+        // proof that no drag outlived the workspace, not an assumption.
+        let drag = drag_phase(self.drag);
         Box::pin(async move {
             tails.await;
             let last = shared.as_ref().and_then(|shared| {
                 shared
                     .try_borrow()
                     .ok()
-                    .map(|state| snapshot_of(&state, None))
+                    .map(|state| snapshot_of(&state, None, drag))
             });
             if let Some(last) = last {
                 crate::diagnostics::settle_host_probe(last);
             }
         })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Document drag and drop
+// ---------------------------------------------------------------------------
+
+impl ReaderHost {
+    /// The drag session's lifetime. While a drag is live, ONE window listener
+    /// set exists — Escape (capture phase, so no pane shortcut sees it) and
+    /// the window losing focus, both cancelling — installed when the drag
+    /// goes live and removed when it ends, or with the host's owner. A drag
+    /// also ends with no drop when the frame leaves the screen (a route
+    /// transition) or when the pane it was lifted from goes away.
+    fn install_drag(&self) {
+        let host = *self;
+        let live = Memo::new(move |_| host.drag.with(DragSession::is_live));
+        Effect::new(move |_| {
+            if live.get() {
+                install_drag_listeners(host);
+            }
+        });
+        let source = Memo::new(move |_| host.drag.with(DragSession::source_pane));
+        Effect::new(move |_| {
+            let on_screen = host.frame_active.try_get().unwrap_or(true);
+            let placed = host.manager.placed();
+            let gone = source.get().is_some_and(|pane| !placed.contains(&pane));
+            if !on_screen || gone {
+                untrack(|| host.cancel_drag());
+            }
+        });
+    }
+
+    /// The pending drop's preview (tracked; `None` while nothing is aimed).
+    pub fn drag_preview(&self) -> Option<drag::Preview> {
+        self.drag.try_with(DragSession::preview).flatten()
+    }
+
+    /// A drag is live (untracked).
+    pub fn drag_live(&self) -> bool {
+        self.drag
+            .try_with_untracked(DragSession::is_live)
+            .unwrap_or(false)
+    }
+
+    /// A press on pane `id`'s drag handle, at client `at`. Arms only: the
+    /// geometry is measured once the pointer passes the threshold.
+    pub fn drag_press(&self, id: PaneId, at: (f64, f64)) -> bool {
+        let Some(source) = self.pane_source(id) else {
+            return false;
+        };
+        self.drag
+            .try_maybe_update(|session| {
+                let armed = session.arm(source, at);
+                (armed, armed)
+            })
+            .unwrap_or(false)
+    }
+
+    /// The pointer of a live drag moved to client `at`. Subscribers hear of
+    /// it only when the shown target (or the phase) changed.
+    pub fn drag_move(&self, at: (f64, f64)) {
+        let host = *self;
+        self.drag.try_maybe_update(|session| {
+            let changed = session.moved(at, || host.measure_geometry());
+            (changed, ())
+        });
+    }
+
+    /// The pointer was released (at client `at`, when it has a position):
+    /// the drag ends, and a drop over a target runs as a workspace command.
+    pub fn drag_release(&self, at: Option<(f64, f64)>) {
+        let intent = self
+            .drag
+            .try_maybe_update(|session| {
+                let was = session.is_live();
+                (was, session.release(at))
+            })
+            .flatten();
+        if let Some(intent) = intent {
+            self.commit_drop(intent, None);
+        }
+    }
+
+    /// End the drag with no drop. Returns whether one was live.
+    pub fn cancel_drag(&self) -> bool {
+        self.drag
+            .try_maybe_update(|session| {
+                let was = session.cancel();
+                (was, was)
+            })
+            .unwrap_or(false)
+    }
+
+    /// The keyboard's placement from pane `id`'s drag handle: a drag that
+    /// starts already aimed at the first split the pane offers.
+    pub fn drag_keyboard_start(&self, id: PaneId) -> bool {
+        let Some(source) = self.pane_source(id) else {
+            return false;
+        };
+        let Some(geometry) = self.measure_geometry() else {
+            return false;
+        };
+        self.drag
+            .try_maybe_update(|session| {
+                if !session.start(source, geometry) {
+                    return (false, false);
+                }
+                let _ = drop_target::Edge::PRIORITY
+                    .into_iter()
+                    .find(|edge| session.select_edge(*edge));
+                (true, true)
+            })
+            .unwrap_or(false)
+    }
+
+    /// The keyboard's step: aim at `edge` of the pane currently aimed at.
+    pub fn drag_keyboard_edge(&self, edge: drop_target::Edge) {
+        self.drag.try_maybe_update(|session| {
+            let changed = session.select_edge(edge);
+            (changed, ())
+        });
+    }
+
+    /// A drag step the Shell relays (a document it carried over from the
+    /// library). The reader runs the SAME session: its own geometry, its
+    /// own targets, its own command.
+    pub fn document_drag(&self, event: DocumentDragEvent) {
+        match event {
+            DocumentDragEvent::Begin { source, x, y } => {
+                let descriptor = *source;
+                let source = DocumentDragSource {
+                    document: DocumentId::from_launch(
+                        descriptor.book_id.as_deref(),
+                        &descriptor.path,
+                    ),
+                    format: (self.classify)(&descriptor.path),
+                    label: descriptor.label.clone(),
+                    origin: DragOrigin::Library(descriptor),
+                };
+                let Some(geometry) = self.measure_geometry() else {
+                    return;
+                };
+                self.drag.try_maybe_update(|session| {
+                    session.cancel();
+                    session.start(source, geometry);
+                    session.moved((x, y), || None);
+                    (true, ())
+                });
+            }
+            DocumentDragEvent::Over { x, y } => self.drag_move((x, y)),
+            DocumentDragEvent::Drop { x, y, launch } => {
+                let intent = self
+                    .drag
+                    .try_maybe_update(|session| {
+                        let was = session.is_live();
+                        (was, session.release(Some((x, y))))
+                    })
+                    .flatten();
+                match intent {
+                    Some(intent) => self.commit_drop(intent, Some(*launch)),
+                    None => self.carried_drag_abandoned(),
+                }
+            }
+            DocumentDragEvent::Cancel => {
+                self.cancel_drag();
+                self.carried_drag_abandoned();
+            }
+        }
+    }
+
+    /// A drag the Shell carried here ended with nothing dropped. A workspace
+    /// that shows no document was revealed for that drag alone: there is
+    /// nothing to read here, so it goes back to the shelf (the Shell takes
+    /// the library session it kept back).
+    fn carried_drag_abandoned(&self) {
+        let reading = self
+            .manager
+            .live_panes()
+            .iter()
+            .any(|pane| pane.document().is_some());
+        if !reading {
+            self.return_to_library();
+        }
+    }
+
+    /// Carry out a drop through the one workspace command.
+    fn commit_drop(&self, intent: DropIntent, resolved: Option<LaunchDocument>) {
+        let DropIntent { source, target } = intent;
+        let command = WorkspaceCommand::OpenInDropTarget { source, target };
+        if let Some(Err(error)) = self.in_session(|| self.run(command, resolved)) {
+            self.refused(error);
+        }
+    }
+
+    /// Run a workspace command. The drop is validated against the workspace
+    /// as it is NOW ([`commands::plan`]; a refusal changes nothing), the
+    /// source is resolved through the established open path — a pane's
+    /// "view again" launch, or the launch the Shell's store resolved for a
+    /// library row (`resolved`) — and the placement is the host's one
+    /// placement path: the manager creates the pane (it takes focus), the
+    /// tree places it, every pane gets its box.
+    pub fn run(
+        &self,
+        command: WorkspaceCommand,
+        resolved: Option<LaunchDocument>,
+    ) -> Result<PaneId, PaneError> {
+        let WorkspaceCommand::OpenInDropTarget { source, target } = command;
+        let layout = self.layout_now();
+        let live = untrack(|| self.manager.placed().len());
+        let plan = self
+            .tree
+            .try_with_untracked(|tree| {
+                commands::plan(target, tree, &layout, live, |id| self.pane_is_empty(id))
+            })
+            .unwrap_or(Err(PaneError::HostDisposed))?;
+        let launch = self.resolve_source(&source, resolved)?;
+        match plan {
+            DropPlan::Split { of, axis, side } => {
+                self.open_document(launch, OpenTarget::Split { of, axis, side })
+            }
+            DropPlan::Here { pane } => self.open_document(launch, OpenTarget::Pane(pane)),
+        }
+    }
+
+    /// The dragged document as a launch.
+    fn resolve_source(
+        &self,
+        source: &DocumentDragSource,
+        resolved: Option<LaunchDocument>,
+    ) -> Result<LaunchDocument, PaneError> {
+        match &source.origin {
+            DragOrigin::Pane(id) => self
+                .manager
+                .pane(*id)
+                .and_then(|pane| pane.duplicate_launch())
+                .ok_or(PaneError::Gone(*id)),
+            DragOrigin::Library(descriptor) => Ok(resolved.unwrap_or_else(|| LaunchDocument {
+                book_id: descriptor.book_id.clone(),
+                path: descriptor.path.clone(),
+                resume_page: 1,
+                saved_fraction: None,
+                blend_override: false,
+                cover_data_url: None,
+                display_name: Some(descriptor.label.clone()),
+            })),
+        }
+    }
+
+    /// Pane `id` holds no document (a warm reader's empty root).
+    fn pane_is_empty(&self, id: PaneId) -> bool {
+        self.manager
+            .pane(id)
+            .is_none_or(|pane| pane.document().is_none())
+    }
+
+    /// Pane `id`'s document as a drag source (none while it has none).
+    fn pane_source(&self, id: PaneId) -> Option<DocumentDragSource> {
+        let pane = self.manager.pane(id)?;
+        let document = pane.document()?;
+        let format = pane.format();
+        Some(DocumentDragSource {
+            document: Some(document),
+            origin: DragOrigin::Pane(id),
+            format,
+            label: drag::pane_source_label(format),
+        })
+    }
+
+    /// The drag's one measurement: the workspace slot's client rect, read
+    /// from the DOM here and nowhere else, and every placed pane's box from
+    /// the layout the panes are drawn at.
+    fn measure_geometry(&self) -> Option<DropGeometry> {
+        let slot = web_sys::window()?
+            .document()?
+            .get_element_by_id(app_chrome::hooks::dom::VIEWER_SLOT_ID)?;
+        let rect = slot.get_bounding_client_rect();
+        if rect.width() <= 0.0 || rect.height() <= 0.0 {
+            return None;
+        }
+        let layout = self.layout.try_get_untracked()?;
+        let panes = layout
+            .panes
+            .iter()
+            .filter_map(|(id, bounds)| {
+                let pane = self.manager.pane(*id)?;
+                Some(PaneGeometry {
+                    pane: *id,
+                    rect: *bounds,
+                    format: pane.format(),
+                    empty: pane.document().is_none(),
+                })
+            })
+            .collect();
+        Some(DropGeometry {
+            workspace: PaneBounds {
+                x: rect.left(),
+                y: rect.top(),
+                width: rect.width(),
+                height: rect.height(),
+            },
+            panes,
+            can_add: untrack(|| self.manager.placed().len()) < MAX_PANES,
+        })
+    }
+}
+
+/// The live drag's window listeners (see [`ReaderHost::install_drag`]):
+/// added now, removed by the calling effect's cleanup. The closures park in
+/// owner-scoped storage (a cleanup must be `Send + Sync`, a `Closure` is
+/// neither) and hold only the host's Copy handles.
+fn install_drag_listeners(host: ReaderHost) {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::closure::Closure;
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let on_key =
+        Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |event: web_sys::KeyboardEvent| {
+            if event.key() == "Escape" && host.cancel_drag() {
+                event.prevent_default();
+                event.stop_immediate_propagation();
+            }
+        });
+    let on_blur = Closure::<dyn Fn()>::new(move || {
+        host.cancel_drag();
+    });
+    let _ = window.add_event_listener_with_callback_and_bool(
+        "keydown",
+        on_key.as_ref().unchecked_ref(),
+        true,
+    );
+    let _ = window.add_event_listener_with_callback("blur", on_blur.as_ref().unchecked_ref());
+    let parked = StoredValue::new_local(Some((on_key, on_blur)));
+    on_cleanup(move || {
+        let Some(Some((on_key, on_blur))) = parked.try_update_value(Option::take) else {
+            return;
+        };
+        if let Some(window) = web_sys::window() {
+            let _ = window.remove_event_listener_with_callback_and_bool(
+                "keydown",
+                on_key.as_ref().unchecked_ref(),
+                true,
+            );
+            let _ = window
+                .remove_event_listener_with_callback("blur", on_blur.as_ref().unchecked_ref());
+        }
+    });
+}
+
+/// The document as a drag reports it.
+fn drag_phase(drag: RwSignal<DragSession>) -> &'static str {
+    drag.try_with_untracked(DragSession::phase)
+        .unwrap_or("idle")
 }
 
 /// The document identity and address a launch names, as data.
@@ -655,6 +1076,9 @@ pub struct HostSnapshot {
     pub panes: Vec<PaneSnapshot>,
     /// Every pane this host ever created.
     pub panes_created: usize,
+    /// The document drag session's phase (`idle` whenever no drag is live;
+    /// always `idle` once the workspace is gone).
+    pub drag: &'static str,
 }
 
 /// One pane in the snapshot.
@@ -681,7 +1105,11 @@ fn layout_of(tree: RwSignal<PaneTree>) -> Option<LayoutNode> {
         .flatten()
 }
 
-fn snapshot_of(state: &manager::ManagerState, layout: Option<LayoutNode>) -> HostSnapshot {
+fn snapshot_of(
+    state: &manager::ManagerState,
+    layout: Option<LayoutNode>,
+    drag: &'static str,
+) -> HostSnapshot {
     let core = &state.core;
     let mut panes: Vec<PaneSnapshot> = Vec::new();
     let listed = core.live().iter().copied().chain(core.disposing());
@@ -718,5 +1146,6 @@ fn snapshot_of(state: &manager::ManagerState, layout: Option<LayoutNode>) -> Hos
         layout,
         panes,
         panes_created: core.created(),
+        drag,
     }
 }

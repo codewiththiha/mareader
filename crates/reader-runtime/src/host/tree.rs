@@ -227,7 +227,24 @@ impl LayoutNode {
 
 /// Split `rect` along `axis` at `ratio`, in whole pixels: the first side is
 /// the rounded share, the second everything left, so the two tile the rect
-/// with no gap and no overlap at any size.
+/// with no gap and no overlap at any size. Public for the drop preview: the
+/// box a preview draws is the box this lays out, never a second rounding.
+pub fn split_rects(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds, PaneBounds) {
+    divide(rect, axis, ratio)
+}
+
+/// The layout policy's answer to "may this pane be split along `axis`": a
+/// fresh split starts [`EVEN`], and both halves must keep [`MIN_PANE_PX`]
+/// along the axis. Measured in the boxes the layout itself would produce.
+pub fn split_fits(rect: PaneBounds, axis: SplitAxis) -> bool {
+    let (first, second) = divide(rect, axis, EVEN);
+    let extent = |b: PaneBounds| match axis {
+        SplitAxis::Horizontal => b.width,
+        SplitAxis::Vertical => b.height,
+    };
+    extent(first) >= MIN_PANE_PX && extent(second) >= MIN_PANE_PX
+}
+
 fn divide(rect: PaneBounds, axis: SplitAxis, ratio: f64) -> (PaneBounds, PaneBounds) {
     match axis {
         SplitAxis::Horizontal => {
@@ -301,6 +318,12 @@ pub enum TreeError {
     UnknownSplit(SplitId),
     /// A ratio that is not a finite number.
     InvalidRatio,
+    /// The layout policy refused a split: one half of the pane would be
+    /// narrower (or shorter) than [`MIN_PANE_PX`] ([`split_fits`]).
+    NoRoom(PaneId),
+    /// A drop asked to open in a pane that already shows a document (only
+    /// an empty pane takes a document in place from a drop).
+    Occupied(PaneId),
 }
 
 impl std::fmt::Display for TreeError {
@@ -311,6 +334,8 @@ impl std::fmt::Display for TreeError {
             TreeError::DuplicatePane(id) => write!(f, "{id} is already in the workspace"),
             TreeError::UnknownSplit(id) => write!(f, "split-{} does not exist", id.get()),
             TreeError::InvalidRatio => write!(f, "a split ratio must be a finite number"),
+            TreeError::NoRoom(id) => write!(f, "{id} has no room for another pane"),
+            TreeError::Occupied(id) => write!(f, "{id} already shows a document"),
         }
     }
 }

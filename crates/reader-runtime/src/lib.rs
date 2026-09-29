@@ -198,6 +198,7 @@ pub fn start_session(
                     ui,
                     api,
                     session_id: id,
+                    enter: enter_session,
                 },
                 crate::pane::document::factory(),
                 crate::pane::document::classify,
@@ -330,6 +331,18 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     promise
 }
 
+/// Run `work` inside the live session's root owner, or not at all once the
+/// session is gone — the host's entry for work that begins in an event
+/// handler, where no owner is current ([`host::HostSession::enter`]). The
+/// owner handle is cloned out first: the cell is not borrowed while `work`
+/// runs.
+fn enter_session(work: &mut dyn FnMut()) {
+    let owner = LIVE_SESSION.with(|c| c.borrow().as_ref().map(|live| live.owner.clone()));
+    if let Some(owner) = owner {
+        owner.with(work);
+    }
+}
+
 /// An in-session command from the Shell: open a document inside the live
 /// session — a drop or a dialog, and the launch a warm reader is handed when
 /// it is promoted. The HOST routes it: into its active pane, in place
@@ -354,6 +367,20 @@ pub fn command(id: u32, cmd: runtime_contract::boundary::LaunchDocument) {
     if let Err(err) = opened {
         web_sys::console::warn_1(&format!("[reader] open refused: {err:?}").into());
     }
+}
+
+/// A drag step from the Shell: a library document it carried over to this
+/// reader. The host runs the drag against its own workspace; nothing of the
+/// library is behind it but the descriptor.
+pub fn document_drag(id: u32, event: runtime_contract::protocol::DocumentDragEvent) {
+    let live = SESSION.with(|s| s.borrow().as_ref().filter(|x| x.id == id).map(|_| ()));
+    if live.is_none() {
+        return;
+    }
+    let Some(live) = LIVE_SESSION.with(|c| c.borrow().clone()) else {
+        return;
+    };
+    live.owner.with(|| live.host.document_drag(event));
 }
 
 fn take_dispose_resolver() -> (js_sys::Promise, Option<js_sys::Function>) {
@@ -446,13 +473,15 @@ fn install_open_in_hook() {
         let active = untrack(|| live.host.manager().active());
         let target = match (target.as_str(), active) {
             ("active", _) => host::OpenTarget::Active,
-            ("right", Some(of)) => host::OpenTarget::Beside {
+            ("right", Some(of)) => host::OpenTarget::Split {
                 of,
                 axis: host::tree::SplitAxis::Horizontal,
+                side: host::tree::Side::After,
             },
-            ("down", Some(of)) => host::OpenTarget::Beside {
+            ("down", Some(of)) => host::OpenTarget::Split {
                 of,
                 axis: host::tree::SplitAxis::Vertical,
+                side: host::tree::Side::After,
             },
             _ => return false,
         };

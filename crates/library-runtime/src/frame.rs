@@ -17,9 +17,10 @@ use std::rc::Rc;
 
 use frame_transport::wasm::PortWire;
 use frame_transport::{PendingResolves, PortShellApi};
+use runtime_contract::boundary::DocumentDragDescriptor;
 #[cfg(target_arch = "wasm32")]
 use runtime_contract::protocol::BootStage;
-use runtime_contract::protocol::RuntimeFrame;
+use runtime_contract::protocol::{DragPointerPhase, RuntimeFrame};
 #[cfg(target_arch = "wasm32")]
 use runtime_contract::protocol::{RuntimeKind, ShellEnvelope, ShellFrame};
 use wasm_bindgen::JsCast;
@@ -67,6 +68,26 @@ pub fn with_api<R>(f: impl FnOnce(&PortShellApi<PortWire>) -> R) -> Option<R> {
 /// One outgoing message, for the boot's own stage reporting below.
 fn emit(body: RuntimeFrame) {
     with_api(|api| api.emit(body));
+}
+
+/// Hand a held book to the Shell: the pointer entered the shelf's "Open in
+/// Reader" zone at client `(x, y)`. From here the Shell owns the drag; the
+/// library only forwards the pointer it still receives
+/// ([`reader_drag_pointer`]). The descriptor is data — no runtime object of
+/// either side crosses.
+pub fn begin_reader_drag(source: DocumentDragDescriptor, x: f64, y: f64) {
+    emit(RuntimeFrame::BeginDocumentDrag {
+        source: Box::new(source),
+        x,
+        y,
+    });
+}
+
+/// The pointer of a drag the Shell owns, as this frame still receives it
+/// (the press began here, so the browser keeps routing it here), in this
+/// frame's client coordinates.
+pub fn reader_drag_pointer(x: f64, y: f64, phase: DragPointerPhase) {
+    emit(RuntimeFrame::DocumentDragPointer { x, y, phase });
 }
 
 /// How often the shelf repeats its intent hint at most. A pointer crossing
@@ -242,11 +263,13 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         emit(RuntimeFrame::DisposeComplete);
                     }
                 }
-                ShellFrame::Launch { .. } | ShellFrame::ResolveLaunchAnswer { .. } => {
-                    // Neither means anything to the shelf: a document launch
-                    // is the reader's command, and the library never asks
-                    // the Shell to resolve a launch. Dropped by the
-                    // protocol, not by accident.
+                ShellFrame::Launch { .. }
+                | ShellFrame::ResolveLaunchAnswer { .. }
+                | ShellFrame::DocumentDrag { .. } => {
+                    // None means anything to the shelf: a document launch
+                    // and a carried drag's steps are the reader's, and the
+                    // library never asks the Shell to resolve a launch.
+                    // Dropped by the protocol, not by accident.
                 }
             }
         },

@@ -168,6 +168,27 @@ impl DocumentPane {
     }
 }
 
+/// The launch that shows `ctx`'s document again, at the page the pane is on:
+/// the Split menu's "beside" and a drag lifted from the pane both open this
+/// in a NEW pane, which runs its own session. `None` while the pane holds no
+/// document.
+pub(crate) fn view_again(ctx: ReaderContext) -> Option<LaunchDocument> {
+    let mut launch = ctx.launch.try_get_untracked()?;
+    if launch.path.is_empty() {
+        return None;
+    }
+    launch.resume_page = ctx
+        .reader
+        .viewer
+        .page
+        .try_get_untracked()
+        .unwrap_or(1)
+        .max(1);
+    launch.saved_fraction = None;
+    launch.blend_override = false;
+    Some(launch)
+}
+
 /// A launch with no document, for a pane waiting for one.
 fn empty_launch() -> LaunchDocument {
     LaunchDocument {
@@ -361,6 +382,10 @@ impl PaneRuntime for DocumentPane {
         Ok(())
     }
 
+    fn duplicate_launch(&self) -> Option<LaunchDocument> {
+        view_again(self.ctx)
+    }
+
     fn resources(&self) -> PaneResourceCounts {
         PaneResourceCounts {
             virtualizers: self.ctx.pane.virtualizer_count(),
@@ -396,7 +421,14 @@ impl PaneRuntime for DocumentPane {
     ///    observer, timer and signal the pane installed is released NOW,
     ///    with its view's child owners — and the per-pane memos (the gloss
     ///    spot memo, the measurement inbox) with them: they are the pane's
-    ///    state, not thread-locals a recycled frame would carry over;
+    ///    state, not thread-locals a recycled frame would carry over.
+    ///    The owner is PAUSED first: a render effect lives with its mounted
+    ///    view, not with the owner, and the pane's view stays mounted in the
+    ///    host's slot until the host's next render. One the teardown above
+    ///    notified (a closed session clears what the view reads) would
+    ///    still run then, against the purged arena; paused, it never runs
+    ///    again. A whole-reader dispose unmounts first; a single pane's
+    ///    close, with the workspace living on, is the case this covers;
     /// 5. the tail: the session's release awaited, the virtualizers'
     ///    final dispose, the completion reported, and the pane's handle slot
     ///    released (its gates read `Disposed` from then).
@@ -427,6 +459,7 @@ impl PaneRuntime for DocumentPane {
         // (3)
         let virtualizers = handle.take_virtualizers();
         // (4)
+        self.owner.pause();
         self.owner.cleanup();
         crate::diagnostics::note_pane_dispose();
         // (5)

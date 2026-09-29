@@ -165,6 +165,20 @@ html:not([data-base]) {
   z-index: 1;
 }
 
+/* A document drag the Shell carries from the shelf to the reader
+   (src/app/drag.rs): a page-wide layer over both frames for the drag's
+   length. It catches the pointer when the browser stops routing it to the
+   shelf frame, and keeps the revealed reader's controls from reacting to a
+   pointer that belongs to the drag. Transparent: the reader draws the
+   drop preview. */
+.drag-shield {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drag-overlay);
+  cursor: grabbing;
+  touch-action: none;
+}
+
 /* The Shell's cover-bake page (src/app/bake.rs): a child document that
    loads pdf.js alone and renders shelf covers while the shelf lacks them. It
    sits on <body>, outside the runtime host, and is never shown. Hidden the

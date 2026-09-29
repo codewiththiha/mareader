@@ -7,6 +7,7 @@
 pub(crate) mod bake;
 mod boot;
 mod bootstrap;
+pub(crate) mod drag;
 pub(crate) mod frame;
 pub(crate) mod manager;
 

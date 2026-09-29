@@ -30,6 +30,22 @@ pub mod frame {
     /// Off wasm there is no Shell to warn: the shelf's intent hint goes
     /// nowhere (the host lanes render the grid without a reader to boot).
     pub fn expect_reader() {}
+
+    /// Off wasm there is no Shell to hand a drag to.
+    pub fn begin_reader_drag(
+        _source: runtime_contract::boundary::DocumentDragDescriptor,
+        _x: f64,
+        _y: f64,
+    ) {
+    }
+
+    /// Off wasm there is no Shell drag to forward to.
+    pub fn reader_drag_pointer(
+        _x: f64,
+        _y: f64,
+        _phase: runtime_contract::protocol::DragPointerPhase,
+    ) {
+    }
 }
 pub mod services;
 pub mod state;

@@ -800,6 +800,9 @@ impl RuntimeManager {
                 FrameEvent::ExpectReader => {
                     manager.expect_reader(generation);
                 }
+                FrameEvent::DocumentDrag(report) => {
+                    crate::app::drag::on_frame(&manager, generation, report);
+                }
                 FrameEvent::Failed { stage, cause } => {
                     let Some(driver) = crate::app::frame::lookup(generation) else {
                         return;
@@ -1470,7 +1473,26 @@ impl RuntimeManager {
         // A warm boot of this kind may be waiting on its delay: the frame
         // just left replaces it.
         self.abandon_warm_timer();
-        let timer = self.handle().and_then(|manager| {
+        let timer = self.arm_recycle_timer(lane);
+        *self.recycle.lock().unwrap() = Some(Recycle {
+            lane,
+            phase: RecyclePhase::Pending,
+            timer,
+        });
+        if timer.is_none() {
+            // No timer (no window): recycle on the spot rather than never.
+            if let Some(manager) = self.handle() {
+                wasm_bindgen_futures::spawn_local(async move {
+                    manager.run_recycle(lane).await;
+                });
+            }
+        }
+    }
+
+    /// The timer that starts a kept frame's disposal after
+    /// [`RECYCLE_DELAY_MS`] (`None` when there is no window to time it).
+    fn arm_recycle_timer(&self, lane: WarmLane) -> Option<i32> {
+        self.handle().and_then(|manager| {
             let window = web_sys::window()?;
             let tick = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
                 let manager = manager.clone();
@@ -1486,20 +1508,7 @@ impl RuntimeManager {
                 .ok()?;
             tick.into_js_value();
             Some(id)
-        });
-        *self.recycle.lock().unwrap() = Some(Recycle {
-            lane,
-            phase: RecyclePhase::Pending,
-            timer,
-        });
-        if timer.is_none() {
-            // No timer (no window): recycle on the spot rather than never.
-            if let Some(manager) = self.handle() {
-                wasm_bindgen_futures::spawn_local(async move {
-                    manager.run_recycle(lane).await;
-                });
-            }
-        }
+        })
     }
 
     fn recycle_phase(&self, generation: u64) -> Option<RecyclePhase> {
@@ -1686,6 +1695,99 @@ fn wake_recycle_waiters() {
     let waiters = RECYCLE_WAITERS.with(|w| std::mem::take(&mut *w.borrow_mut()));
     for resolve in waiters {
         let _ = resolve.call0(&JsValue::NULL);
+    }
+}
+
+// ---------------------------------------------------------------------
+// A document drag carried from the shelf to the reader (`crate::app::drag`)
+// ---------------------------------------------------------------------
+
+impl RuntimeManager {
+    /// The generation of the shelf on screen, if the shelf is on screen.
+    pub(crate) fn active_library(&self) -> Option<u64> {
+        if self.active() != Some(ActiveRuntime::Library) {
+            return None;
+        }
+        self.live_driver().map(|driver| driver.generation())
+    }
+
+    /// Put the reader on screen for a drag the Shell carries, with no
+    /// document: the drop decides what it opens. Always a REVEAL — the shelf
+    /// the drag came from must outlive the transition (its session still
+    /// forwards the pointer), and a cold start disposes the runtime on
+    /// screen first. So a reader the shelf's intent never booted is booted
+    /// here, warm, behind the shelf, before the promotion. `None` when no
+    /// reader came on screen.
+    pub(crate) async fn reveal_reader_for_drag(&self) -> Option<Rc<Driver>> {
+        if self.warm_lane_for(RuntimeName::Reader).is_none() {
+            self.schedule_warm(RuntimeName::Reader, 0);
+        }
+        if let Some(lane) = self
+            .warming_lane()
+            .filter(|lane| lane.kind == RuntimeName::Reader)
+        {
+            self.abandon_warm_timer();
+            self.run_warm(lane).await;
+        }
+        navigate("/reader");
+        self.start_serialized(RuntimeName::Reader, None).await;
+        if self.active() != Some(ActiveRuntime::Reader) {
+            return None;
+        }
+        self.live_driver()
+    }
+
+    /// Keep the shelf a drag came from intact while the drag lives: its
+    /// recycle stays `Pending` with no timer, so its session (and its
+    /// pointer forwarding) outlives [`RECYCLE_DELAY_MS`].
+    pub(crate) fn hold_recycle(&self, generation: u64) {
+        let timer = {
+            let mut recycle = self.recycle.lock().unwrap();
+            match recycle.as_mut() {
+                Some(r) if r.lane.generation == generation && r.phase == RecyclePhase::Pending => {
+                    r.timer.take()
+                }
+                _ => None,
+            }
+        };
+        if let (Some(id), Some(window)) = (timer, web_sys::window()) {
+            window.clear_timeout_with_handle(id);
+        }
+    }
+
+    /// The drag is over: a held recycle runs its course again, from a full
+    /// delay (a shelf the user heads straight back to is still taken back).
+    pub(crate) fn resume_recycle(&self, generation: u64) {
+        let held = self
+            .recycle
+            .lock()
+            .unwrap()
+            .filter(|r| {
+                r.lane.generation == generation
+                    && r.phase == RecyclePhase::Pending
+                    && r.timer.is_none()
+            })
+            .map(|r| r.lane);
+        let Some(lane) = held else {
+            return;
+        };
+        let timer = self.arm_recycle_timer(lane);
+        let mut recycle = self.recycle.lock().unwrap();
+        match recycle.as_mut() {
+            Some(r) if r.lane == lane && r.phase == RecyclePhase::Pending => r.timer = timer,
+            _ => {
+                drop(recycle);
+                if let (Some(id), Some(window)) = (timer, web_sys::window()) {
+                    window.clear_timeout_with_handle(id);
+                }
+            }
+        }
+    }
+
+    /// A carried drag was dropped on the reader `generation`: the session
+    /// was handed a document, exactly as a launch hands one.
+    pub(crate) fn note_drag_launch(&self, generation: u64) {
+        self.note_launch(Some(generation));
     }
 }
 

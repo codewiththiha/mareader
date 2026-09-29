@@ -1,0 +1,16 @@
+Plain Notes
+
+A short plain-text document the browser suite opens as a third pane, beside
+a PDF and a Markdown document, so one workspace runs three different format
+sessions at once.
+
+Why it exists
+
+Disposing the reader must release every pane's owner, whatever the pane
+shows. This file is the plain-text one: no headings, no markup, just lines.
+
+What it contains
+
+A few paragraphs of ordinary text, wrapped at a comfortable width, and
+nothing else. It is small on purpose: the suite measures lifecycles, not
+rendering.

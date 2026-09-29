@@ -12,6 +12,8 @@ use wasm_bindgen::JsCast;
 
 use library_core::book::{Row, find_row};
 use library_core::shelf::{ALL_SHELF, Shelf, can_nest, find};
+use runtime_contract::boundary::DocumentDragDescriptor;
+use runtime_contract::protocol::DragPointerPhase;
 
 use super::effect::{
     Band, DropEffect, DropQuery, FoldPreview, drop_effect, fold_items, fold_preview,
@@ -66,6 +68,11 @@ pub struct SinkSpot {
     pub y: f64,
 }
 
+/// The width of the shelf's "Open in Reader" zone along the window's right
+/// edge — the drag layer's strip (`.lib-drag-reader-zone`) is drawn at the
+/// same width.
+pub const READER_ZONE_PX: f64 = 48.0;
+
 #[derive(Clone, Copy)]
 pub struct DragController {
     session: RwSignal<bool>,
@@ -83,6 +90,10 @@ pub struct DragController {
     /// Separate from [`Self::hot`]: the dwell's timer is an effect on this
     /// signal, and its cleanup is what clears the timer that was counting.
     dwell_target: RwSignal<Option<DropTargetId>>,
+    /// A held book was handed to the Shell (it entered the "Open in Reader"
+    /// zone): the organizing drag is over, and until the pointer is let go
+    /// this frame only forwards the pointer it still receives.
+    handed: RwSignal<bool>,
     pub registry: DropTargetRegistry,
     state: crate::context::LibraryContext,
 }
@@ -100,6 +111,7 @@ impl DragController {
             sink_rect: RwSignal::new(None),
             dwell: RwSignal::new(false),
             dwell_target: RwSignal::new(None),
+            handed: RwSignal::new(false),
             registry: DropTargetRegistry::new(),
             state,
         };
@@ -107,6 +119,7 @@ impl DragController {
         this.bind_session();
         this.bind_dwells();
         this.bind_escape();
+        this.bind_handoff();
         this
     }
 
@@ -216,6 +229,100 @@ impl DragController {
             }
         });
         on_cleanup(move || handle.remove());
+    }
+
+    /// While a drag is handed to the Shell, one listener set forwards the
+    /// pointer this frame still receives — the press began here, so the
+    /// browser keeps routing it here even with the frame off screen — until
+    /// the release, a cancellation, Escape or the window losing focus.
+    fn bind_handoff(&self) {
+        let this = *self;
+        Effect::new(move |_| {
+            if !this.handed.get() {
+                return;
+            }
+            let at = |ev: &web_sys::Event| {
+                let at = ev.unchecked_ref::<web_sys::MouseEvent>();
+                (f64::from(at.client_x()), f64::from(at.client_y()))
+            };
+            let finish = move |x: f64, y: f64, phase: DragPointerPhase| {
+                crate::frame::reader_drag_pointer(x, y, phase);
+                let _ = this.handed.try_set(false);
+            };
+            let moved = window_event_listener_untyped("pointermove", move |ev: web_sys::Event| {
+                let (x, y) = at(&ev);
+                crate::frame::reader_drag_pointer(x, y, DragPointerPhase::Move);
+            });
+            let released = window_event_listener_untyped("pointerup", move |ev: web_sys::Event| {
+                let (x, y) = at(&ev);
+                finish(x, y, DragPointerPhase::Release);
+            });
+            let taken = window_event_listener_untyped("pointercancel", move |_| {
+                finish(0.0, 0.0, DragPointerPhase::Cancel);
+            });
+            let escaped = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
+                if let Ok(key) = ev.dyn_into::<web_sys::KeyboardEvent>()
+                    && key.key() == "Escape"
+                {
+                    finish(0.0, 0.0, DragPointerPhase::Cancel);
+                }
+            });
+            let blurred = window_event_listener_untyped("blur", move |_| {
+                finish(0.0, 0.0, DragPointerPhase::Cancel);
+            });
+            on_cleanup(move || {
+                moved.remove();
+                released.remove();
+                taken.remove();
+                escaped.remove();
+                blurred.remove();
+            });
+        });
+    }
+
+    /// The held book as the Shell may carry it to the reader: only in a
+    /// hosted shelf, only a hold of exactly one book (no folders) whose row
+    /// is a book on disk. Data only — the row's id, address and title.
+    fn reader_descriptor(&self) -> Option<DocumentDragDescriptor> {
+        if !matches!(self.state.api, crate::context::ApiHandle::Frame) {
+            return None;
+        }
+        let held = self.payload.get_untracked()?;
+        let [id] = held.books.as_slice() else {
+            return None;
+        };
+        if !held.folders.is_empty() {
+            return None;
+        }
+        self.state.library.books.with_untracked(|rows| {
+            let book = find_row(rows, id)?.book()?;
+            (!book.missing).then(|| DocumentDragDescriptor {
+                book_id: Some(book.id.clone()),
+                path: book.path().to_string(),
+                label: book.title(),
+            })
+        })
+    }
+
+    /// The drag layer shows the "Open in Reader" zone (tracked).
+    pub fn offers_reader(&self) -> Signal<bool> {
+        let this = *self;
+        Signal::derive(move || {
+            this.session.get() && {
+                this.payload.track();
+                this.state.library.books.track();
+                this.reader_descriptor().is_some()
+            }
+        })
+    }
+
+    /// The pointer entered the zone with a book the reader can take: the
+    /// Shell takes the drag over, and the organizing drag ends without
+    /// committing anything.
+    fn hand_to_reader(&self, source: DocumentDragDescriptor, x: f64, y: f64) {
+        crate::frame::begin_reader_drag(source, x, y);
+        self.end(false);
+        self.handed.set(true);
     }
 
     pub fn begin(&self, payload: DragPayload, x: f64, y: f64) {
@@ -382,6 +489,13 @@ impl DragController {
     }
 
     fn on_move(&self, x: f64, y: f64) {
+        let in_zone = web_sys::window()
+            .and_then(|w| w.inner_width().ok())
+            .and_then(|width| width.as_f64())
+            .is_some_and(|width| x >= width - READER_ZONE_PX);
+        if in_zone && let Some(source) = self.reader_descriptor() {
+            return self.hand_to_reader(source, x, y);
+        }
         // Parked on a crumb, the ghost reads the target, not the hand: one
         // cached rect test and a return. The first move that leaves the box
         // resumes the follow.
