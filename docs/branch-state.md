@@ -40,6 +40,29 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   are handed to the engine as ELEMENTS when the page registers (pinned to
   its session), and every canvas the engine sweeps carries
   `data-engine-sid`, so page-numbered ids in two panes never cross.
+- A full-page raster is MAIN-THREAD work — pdf.js draws into the canvas
+  synchronously; only parsing/decoding runs in pdf.js's worker — so the page
+  lane's concurrency cap is realm-wide (`REALM_PAGE_LIMIT` = 2 in
+  `state.ts`): at most two rasters in flight across ALL sessions. Four panes
+  re-theming or rasterising together pace as one progressive sweep instead
+  of stacking eight concurrent stalls; a reading pane alone keeps its two
+  slots. The per-session queues and their teardown drain are unchanged, and
+  the theme re-render paths (`rerenderLivePages`, `preparePagesForScrub`,
+  the scrub settle) ride the lane instead of bypassing it. The bake's pixel
+  readback runs in the bake worker (a transferred `ImageBitmap` read through
+  the worker's own canvas), so a theme change pays no main-thread
+  `getImageData`; the inline kernel stays the no-worker fallback, and a
+  dead worker degrades one frame, not the page. `unregisterPage` no longer
+  sweeps the document: a window move unmounts pages constantly, and the
+  sweep belongs to quiescence (the render cadence, the idle timer, the
+  reader's scroll-idle sweep).
+- The strip's fling gate exempts a page inside — or within 160 px of — the
+  pane's visible viewport, from the virtualizer's OWN model
+  (`in_view_signal` in `formats/pdf/strip.rs`): a page the reader is looking
+  at rasterises even while the strip still moves instead of sitting blurry
+  on its upscaled thumbnail, and overscan pages a fling sweeps past keep
+  waiting for the settle. The lane's realm cap and generation guards keep
+  that from stacking rasters.
 - Inside the reader frame: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's
