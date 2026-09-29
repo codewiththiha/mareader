@@ -40,26 +40,6 @@ pub struct PageMetrics {
 }
 
 impl PageMetrics {
-    /// Back to "no pages". Called by [`super::DocumentState::reset`] and by
-    /// nothing else: the two vectors must move together, or a strip lays out
-    /// against heights from the book that was just closed.
-    ///
-    /// Every field is bound with no `..` rest, so a field added to the struct is
-    /// a compile error here rather than a value carried over from the document
-    /// just closed. The handles are `Copy`, so this binds the signals the
-    /// struct already holds; `Self::default()` would allocate a fresh arena node
-    /// per field on every close and leak them.
-    pub fn reset(&self) {
-        let Self {
-            page1_size,
-            intrinsic,
-            css_heights,
-        } = *self;
-        page1_size.set(None);
-        intrinsic.set(Vec::new());
-        css_heights.set(Vec::new());
-    }
-
     /// Whether the laid-out heights already are `sizes`, within
     /// [`HEIGHT_EPSILON`]. The write guard every writer of `css_heights` owes
     /// the virtualizers' geometry epoch: a write that changes nothing still

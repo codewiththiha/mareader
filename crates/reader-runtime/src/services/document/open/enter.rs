@@ -50,8 +50,8 @@ pub(super) struct DocumentIdentity {
 /// when that happens.
 ///
 /// The previous book's chapters are cleared with the identity — a mid-read
-/// open never passes through `close_document`'s reset, so the old tree would
-/// otherwise show while the new one resolves.
+/// open replaces the document inside a live pane, whose state is not torn
+/// down, so the old tree would otherwise show while the new one resolves.
 pub(super) fn identity(ctx: &ReaderContext, doc: DocumentIdentity) {
     let document = &ctx.reader.document;
     document.format.set(doc.format);

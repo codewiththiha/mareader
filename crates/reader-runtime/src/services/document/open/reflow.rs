@@ -1,8 +1,9 @@
 //! Opening a reflowable document — plain text, Markdown, and whatever joins
 //! them later.
 //!
-//! The shape mirrors the PDF open (claim the pane's generation, read, install
-//! the document's own session, seed, flip the status), but the content never
+//! The shape mirrors the PDF open (claim the pane's generation, replace the
+//! pane's document with this one's own session and await the old one's
+//! release, read, seed, flip the status), but the content never
 //! touches the pdf.js engine: the file is read
 //! through the shell's `read_file_text` command and handed to its format's
 //! parser. From here a text document and a PDF are the same object — pages of
@@ -74,9 +75,10 @@ async fn read_file_text(path: &str) -> Result<String, String> {
         .ok_or_else(|| "read_file_text returned no text".to_string())
 }
 
-/// Shared open flow for the reflowable formats: read the file, parse it with
-/// the format's own parser, and populate the whole app state. Mirrors
-/// [`super::open_pdf`]'s tail, generation checks and all.
+/// Shared open flow for the reflowable formats: replace the pane's document,
+/// read the file, parse it with the format's own parser, and populate the
+/// whole app state. Mirrors [`super::open_pdf`]: the same replace-then-load
+/// order, the same generation checks, the same abandon on failure.
 pub(super) fn open_reflowable(
     state: crate::context::ReaderContext,
     path: String,
@@ -85,28 +87,56 @@ pub(super) fn open_reflowable(
     saved_fraction: Option<f64>,
     stamp: u64,
 ) {
+    if !state.pane.admits_work() {
+        return;
+    }
+    // This document's own session becomes the pane's document owner through
+    // the pane's one replace path, before the file is read: the session it
+    // replaces — a PDF's engine session (its book, rasters, lanes and paper)
+    // or the previous text document's (which releases the pane's reflow
+    // content on the spot) — is disposed here, so the new text is never
+    // read and parsed while the old document still sits in memory. The
+    // retained PDF search index goes too: this format searches its own
+    // blocks, and a closed PDF's extracted text must not sit in the wasm
+    // heap while a text book is open.
+    let reflow = state.reader.document.content.reflow;
+    let session = match format {
+        Format::Markdown => FormatSession::Markdown(MdSession::new(&path, reflow)),
+        _ => FormatSession::Text(TxtSession::new(&path, reflow)),
+    };
+    let release = state.pane.replace_document(session);
+    pdf_engine::session::drop_retained_search();
     spawn_local(async move {
+        // THIS pane's previous document is released before the new one
+        // loads; no other pane's session is awaited.
+        release.settled().await;
+        if !state.pane.owns_generation(stamp) {
+            return;
+        }
         let raw = match read_file_text(&path).await {
             Ok(raw) => raw,
             Err(message) => {
                 if state.pane.owns_generation(stamp) {
-                    super::fail(state, message);
+                    super::abandon(state, message);
                 }
                 return;
             }
         };
-        // The read finished — but a second open (or a close) may have taken
-        // the document state over while it worked.
+        // The read finished — but a second open (or the pane's dispose) may
+        // have taken the document over while it worked.
         if !state.pane.owns_generation(stamp) {
             return;
         }
         let parsed = parse(format, &raw);
+        // The blocks own their text; the file's bytes are not needed past
+        // the parse, and holding both doubles the open's peak.
+        drop(raw);
         if parsed.blocks.is_empty() {
-            super::fail(state, "This file has no readable text.".to_string());
+            super::abandon(state, "This file has no readable text.".to_string());
             return;
         }
-        // Everything below is synchronous, and the session was just checked,
-        // so no tail of this flow can outlive its stamp.
+        // Everything below is synchronous, and the generation was just
+        // checked, so no tail of this flow can outlive its stamp.
         ready(state, path, format, parsed, saved_page, saved_fraction);
     });
 }
@@ -151,8 +181,7 @@ fn parse(format: Format, raw: &str) -> Parsed {
 ///
 /// The steps shared with the PDF tail are [`super::enter`]'s, so the two
 /// cannot drift on what "open" means. What is left here is the reflowable
-/// half of the seeding: release the engine, publish the blocks, estimate the
-/// cut.
+/// half of the seeding: publish the blocks, estimate the cut.
 fn ready(
     state: crate::context::ReaderContext,
     path: String,
@@ -196,24 +225,9 @@ fn ready(
         },
     );
 
-    // This document's own session: a fresh `MdSession`/`TxtSession` becomes
-    // the pane's document owner, and the session it replaces is disposed on
-    // the spot — a PDF's engine session (its book, rasters, lanes and paper
-    // go with it; the teardown runs detached) or the previous text
-    // document's (which releases the pane's reflow content, synchronously,
-    // before this one's is written below). The retained PDF search index is
-    // dropped too: this format searches its own blocks, and a closed PDF's
-    // extracted text must not sit in the wasm heap while a text book is
-    // open.
-    let reflow = state.reader.document.content.reflow;
-    let session = match format {
-        Format::Markdown => FormatSession::Markdown(MdSession::new(&path, reflow)),
-        _ => FormatSession::Text(TxtSession::new(&path, reflow)),
-    };
-    state.pane.install_session(session).dispose_detached();
-    pdf_engine::session::drop_retained_search();
-
-    // The other pipeline's model is released at the same moment, and this
+    // The content is already empty (the replace at the door released any
+    // previous text document's); the reset is the guarantee that nothing a
+    // stale tail wrote in between survives into this document. Then this
     // document's gloss highlights are loaded before anything mounts — exactly
     // where the PDF open loads them, so the first paint already carries them.
     // A reflowable mark is a block and a character range, so it is

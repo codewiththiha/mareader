@@ -85,6 +85,22 @@ function getBakeWorker(): Worker | null {
   return bakeWorker;
 }
 
+/** Terminate the bake worker once nothing can ask it for work: the realm's
+ *  last document session is gone. The worker is stateless (every buffer is
+ *  transferred in and back out), so this releases only its thread and
+ *  isolate — memory a reader realm left behind the shelf would otherwise
+ *  keep with no document open — and the next bake starts a fresh one
+ *  (`getBakeWorker`). A bake still in flight keeps it: its reply is owed. */
+export function releaseBakeWorker(): void {
+  if (!bakeWorker || pendingBakes.size > 0) return;
+  try {
+    bakeWorker.terminate();
+  } catch (_) {
+    /* already gone */
+  }
+  bakeWorker = undefined;
+}
+
 /** Run the pixel loop in the worker, transferring the buffer. The caller's
  *  `data` is detached on return — it must be discarded, not reused. */
 function workerApply(

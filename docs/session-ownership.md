@@ -46,19 +46,24 @@ frame.rs on_init -> ReaderHost::new -> PaneManager::create -> DocumentPane::crea
 Launch -> open_with_launch                      pane.claim_generation()
   PDF  -> open_pdf
            PdfSession::create()                 the ONLY creation site
-           pane.install_session(Pdf)            replaced session .dispose(), awaited before the new open
-           pane.pdf().open(path)                -> PdfSession::open -> PDFReader.open(sid, …)
+           pane.replace_document(Pdf)           replaced session disposed HERE -> Retiring
+           retiring.settled().await             THIS pane's old document released first
+           owns_generation? -> pane.pdf().open(path) -> PdfSession::open -> PDFReader.open(sid, …)
            owns_generation? -> seed: configure_session, pane.pdf().paper_document_open
                               outline / cover / warm-up: pane.pdf().* + owns_generation
-  MD/TXT -> open_reflowable (read + parse, owns_generation)
-           pane.install_session(Markdown|Text)  replaced session disposed (content reset)
+           failure -> pane.abandon_document()   the half-opened session goes too
+  MD/TXT -> open_reflowable
+           pane.replace_document(Markdown|Text) replaced session disposed HERE -> Retiring
            drop_retained_search()
+           retiring.settled().await; owns_generation? -> read + parse (raw text dropped
+                                                 after the parse); failure -> abandon_document()
 Page canvas / thumbnail cell: MountedPdf::bind() at mount
            -> register_page / render_page / blit_thumb / render_thumb / cancel_* on THAT session
 Search, sweeps, prefetch, zoom, mode flip, blend geometry: state.pane.pdf().*
 Pane lifecycle: Suspended -> suspend_prefetches; Ready -> present + resume_prefetches
+Pane leave:   prepare_leave -> pane.quiesce()   (the session stops its own in-flight work)
 Pane dispose: end_document() = claim_generation + take_session().dispose()
-           MD/TXT disposed synchronously; PDF teardown awaited in the tail
+           the returned Retiring awaited in the tail (settled already for MD/TXT)
            (paper invalidated, search retained, PDFReader.destroySession(sid))
 ReaderRuntime dispose -> PaneManager::dispose_all -> every pane's dispose (above)
 ```
@@ -67,6 +72,28 @@ There is no compatibility adapter: the pre-session free functions
 (`pdf_engine::api::{open, render_page, …}`, `backdrop::{document_open, …}`)
 are deleted, and `tools/check-session-ownership.mjs` keeps them from
 returning.
+
+## Replacing a document: one path, per pane
+
+Every way a document ends goes through `FormatSession::dispose(self) ->
+Retiring` (`crates/reader-runtime/src/pane/session.rs`), whatever the format
+or view mode:
+
+- **at the call** the session refuses every operation: a Markdown/text
+  session has already released the pane's reflow content; a PDF session has
+  stopped accepting, invalidated its paper and retained its search index;
+- **`Retiring`** is only what is still in flight — a PDF's engine teardown
+  (document, pdf.js worker, rasters, caches). It is settled at once for a
+  reflowable session and for an empty pane.
+
+Its three callers decide when that memory must be back:
+`replace_document` (the next open in the SAME pane awaits it before
+loading), `abandon_document` (a failed open detaches it), and `end_document`
+(the pane's dispose awaits it in its tail). Awaiting it never waits on
+another pane's session, and nothing serializes panes realm-wide, so split
+panes open, replace and close independently. `tools/check-session-ownership.mjs`
+keeps the slot's raw moves (`install_session`, `take_session`) inside
+`PaneHandle`.
 
 ## Inventory
 
@@ -162,8 +189,9 @@ when:
    error/stats types) — document work goes through `pane.pdf()`;
 2. reader code names a `pdf_engine::backdrop` function other than the
    `pending_samples` gauge;
-3. `PdfSession::create` appears outside `services/document/open/mod.rs`, or
-   `install_session` outside the open flow;
+3. `PdfSession::create` appears outside `services/document/open/mod.rs`,
+   `replace_document` outside the open flow, or `install_session` /
+   `take_session` outside `PaneHandle`;
 4. `current_epoch` appears outside diagnostics — async stamps are per pane;
 5. a legacy ownership name returns (`note_document_session`,
    `session::claim`/`owns`, `scope_to_document`, `document_close`,

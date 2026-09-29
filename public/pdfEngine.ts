@@ -53,6 +53,7 @@ import {
 } from "./engine/search";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline } from "./engine/theme/pipeline";
+import { releaseBakeWorker } from "./engine/theme/bake";
 import { publishBakedPaper, watchPaperTokens } from "./engine/theme/paper";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
@@ -176,6 +177,10 @@ async function destroySession(sid: Sid): Promise<void> {
     disposeScratch();
     if (hadDocument) lifecycleEvent("pdf_session:dispose_complete");
     finishRetire(s);
+    // The realm's last document session is gone (none live, none draining):
+    // the shared bake worker has nobody left to bake for. Realm-shared by
+    // design while documents exist — never while none do.
+    if (registryCounts().live === 0) releaseBakeWorker();
   }
 }
 

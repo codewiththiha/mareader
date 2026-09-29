@@ -15,7 +15,7 @@ use leptos::prelude::*;
 
 use crate::host::model::{PaneId, PaneLifecycle};
 use crate::pane::engine::PdfPane;
-use crate::pane::session::FormatSession;
+use crate::pane::session::{FormatSession, Retiring};
 use crate::runtime::ReaderRuntime;
 
 /// Everything a pane owns that must die with it and is not a reactive
@@ -142,10 +142,10 @@ impl PaneHandle {
     }
 
     /// Install `session` as the pane's document owner and return the one it
-    /// replaces (the caller disposes it — a PDF open awaits the teardown
-    /// before loading, a text open detaches it, the pane's dispose awaits
-    /// it). Refused (returns `session` back as the
-    /// "replaced" one, so it is disposed at once) when the slot is gone.
+    /// replaces, undisposed — the building block of [`Self::replace_document`]
+    /// (production goes through that; the tests drive this directly).
+    /// Refused (returns `session` back as the "replaced" one, so it is
+    /// disposed at once) when the slot is gone.
     pub(crate) fn install_session(&self, session: FormatSession) -> FormatSession {
         let mut incoming = Some(session);
         let replaced = self.cell.try_update_value(|cell| {
@@ -155,6 +155,34 @@ impl PaneHandle {
             Some(previous) => previous,
             None => incoming.unwrap_or_default(),
         }
+    }
+
+    /// The ONE way this pane changes documents, for every format: `next`
+    /// becomes the pane's document owner and the session it replaces is
+    /// disposed on the spot (from this line nothing reaches it through the
+    /// pane, and it refuses every call). Its release — a PDF's document,
+    /// worker, rasters and caches — comes back as a [`Retiring`] the open
+    /// awaits BEFORE it loads, so this pane never holds two documents at
+    /// once.
+    ///
+    /// Scoped to THIS pane: another pane's session is never disposed,
+    /// awaited or delayed by it. A pane with no document yet (a fresh split
+    /// pane) gets an already-settled `Retiring` and loads at once.
+    pub(crate) fn replace_document(&self, next: FormatSession) -> Retiring {
+        self.install_session(next).dispose()
+    }
+
+    /// A failed open: the session it installed owns nothing worth keeping,
+    /// so the pane goes back to holding no document. Returns the release.
+    pub(crate) fn abandon_document(&self) -> Retiring {
+        self.take_session().dispose()
+    }
+
+    /// Stop the pane's in-flight document work without ending the document
+    /// (the pane is about to leave; its dispose follows). Format-agnostic:
+    /// the session decides what it has in flight.
+    pub(crate) fn quiesce(&self) {
+        let _ = self.cell.try_with_value(|cell| cell.session.quiesce());
     }
 
     /// Take the pane's session out of the slot (the dispose). From here no
@@ -176,14 +204,11 @@ impl PaneHandle {
 
     /// The pane's document ends — its dispose. The generation is claimed
     /// first (an open still in flight can no longer land), then the format
-    /// session is taken out of the slot and disposed: a Markdown/text
-    /// session right here, synchronously; a PDF session's engine teardown
-    /// is returned for the caller's tail to await. From this call on,
-    /// nothing reaches the session through the pane. Returns the generation
-    /// it claimed.
-    pub(crate) fn end_document(
-        &self,
-    ) -> (u64, Option<impl std::future::Future<Output = ()> + use<>>) {
+    /// session is taken out of the slot and disposed; what is still in
+    /// flight (a PDF's engine teardown) is the returned [`Retiring`], for
+    /// the caller's tail to await. From this call on, nothing reaches the
+    /// session through the pane. Returns the generation it claimed.
+    pub(crate) fn end_document(&self) -> (u64, Retiring) {
         let generation = self.claim_generation();
         (generation, self.take_session().dispose())
     }
@@ -372,7 +397,7 @@ mod tests {
             let next = PdfSession::create();
             let replaced = a.install_session(FormatSession::Pdf(next.clone()));
             assert!(replaced.pdf().is_some_and(|s| s.same(&sa)));
-            replaced.dispose_detached_for_tests();
+            replaced.dispose().settle_for_tests();
             assert!(!sa.is_live());
             assert!(
                 !a.holds_pdf(&sa),
@@ -423,7 +448,11 @@ mod tests {
             b.install_session(FormatSession::Text(txt.clone()));
             let b_id = b.reflow_session().expect("B holds a text session");
             let (_, teardown) = a.end_document();
-            block_on(teardown.expect("a PDF teardown is the tail's to await"));
+            assert!(
+                teardown.is_pending(),
+                "a PDF teardown is the tail's to await"
+            );
+            block_on(teardown.settled());
             assert!(!pdf.is_live());
             assert!(!a.holds_document_session());
             assert!(txt.is_live());
@@ -450,7 +479,7 @@ mod tests {
             let page_a = pane.pdf_for(Some(&a));
             // Close A.
             let (_, teardown) = pane.end_document();
-            block_on(teardown.expect("PDF teardown"));
+            block_on(teardown.settled());
             // Open B.
             let open_b = pane.claim_generation();
             let b = PdfSession::create();
@@ -473,6 +502,89 @@ mod tests {
             assert!(late.search("anything").is_none());
             assert!(b.is_live() && pane.holds_pdf(&b));
             assert!(pane.pdf().session().is_some_and(|s| s.same(&b)));
+        });
+    }
+
+    /// Replacing a document is scoped to the pane doing it: the replaced
+    /// session refuses from the call on (before its release is awaited),
+    /// and the other pane's session is never disposed, awaited or touched —
+    /// split panes open documents concurrently.
+    #[test]
+    fn a_replace_disposes_only_that_panes_session() {
+        use crate::pane::session::FormatSession;
+        use pdf_engine::PdfSession;
+        let owner = Owner::new();
+        owner.with(|| {
+            let (a, b) = two_handles();
+            let sa = PdfSession::create();
+            let sb = PdfSession::create();
+            a.install_session(FormatSession::Pdf(sa.clone()));
+            b.install_session(FormatSession::Pdf(sb.clone()));
+            let next = PdfSession::create();
+            let release = a.replace_document(FormatSession::Pdf(next.clone()));
+            assert!(!sa.is_live(), "refused at the replace, not at the await");
+            assert!(release.is_pending(), "the engine teardown is awaited");
+            assert!(a.holds_pdf(&next));
+            assert!(sb.is_live() && b.holds_pdf(&sb), "B is untouched");
+            release.settle_for_tests();
+            assert!(sb.is_live() && b.holds_pdf(&sb));
+        });
+    }
+
+    /// A pane with no document yet — a fresh split pane — has nothing to
+    /// wait for.
+    #[test]
+    fn a_fresh_pane_loads_without_waiting() {
+        use crate::pane::session::FormatSession;
+        use pdf_engine::PdfSession;
+        let owner = Owner::new();
+        owner.with(|| {
+            let (a, _) = two_handles();
+            let first = PdfSession::create();
+            let release = a.replace_document(FormatSession::Pdf(first));
+            assert!(!release.is_pending());
+        });
+    }
+
+    /// Every format ends through the same replace: a text document's
+    /// content is released synchronously, before the next document loads.
+    #[test]
+    fn a_replaced_text_document_releases_its_content_at_once() {
+        use crate::pane::session::{FormatSession, MdSession};
+        use crate::state::document::reflow::ReflowContent;
+        use pdf_engine::PdfSession;
+        use std::sync::Arc;
+        let owner = Owner::new();
+        owner.with(|| {
+            let (a, _) = two_handles();
+            let reflow = ReflowContent::default();
+            let md = MdSession::new("/a.md", reflow);
+            a.install_session(FormatSession::Markdown(md.clone()));
+            reflow.heights.set(Arc::new(vec![120.0; 64]));
+            let next = PdfSession::create();
+            let release = a.replace_document(FormatSession::Pdf(next));
+            assert!(!md.is_live());
+            assert!(!release.is_pending());
+            assert!(reflow.heights.get_untracked().is_empty());
+        });
+    }
+
+    /// A failed open leaves the pane with no document at all — never the
+    /// previous one behind an error, and never the half-opened one.
+    #[test]
+    fn an_abandoned_open_leaves_no_document() {
+        use crate::pane::session::{FormatSession, TxtSession};
+        use crate::state::document::reflow::ReflowContent;
+        let owner = Owner::new();
+        owner.with(|| {
+            let (a, _) = two_handles();
+            let txt = TxtSession::new("/b.txt", ReflowContent::default());
+            a.replace_document(FormatSession::Text(txt.clone()))
+                .settle_for_tests();
+            a.abandon_document().settle_for_tests();
+            assert!(!txt.is_live());
+            assert!(!a.holds_document_session());
+            assert!(a.reflow_session().is_none());
         });
     }
 }

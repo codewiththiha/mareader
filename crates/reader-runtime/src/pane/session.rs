@@ -135,8 +135,6 @@ impl FormatSession {
         }
     }
 
-    /// Whether async work started for the reflow session `id` may still
-    /// commit into this pane.
     /// The live reflowable session's id, if this is one.
     pub(crate) fn reflow_id(&self) -> Option<u64> {
         match self {
@@ -146,6 +144,8 @@ impl FormatSession {
         }
     }
 
+    /// Whether async work started for the reflow session `id` may still
+    /// commit into this pane.
     pub(crate) fn admits_reflow(&self, id: u64) -> bool {
         match self {
             Self::Markdown(s) => s.is_live() && s.id() == id,
@@ -154,42 +154,92 @@ impl FormatSession {
         }
     }
 
-    /// Dispose the session. The reflowable half is synchronous (it only
-    /// stops accepting and releases pane content); the PDF half awaits the
-    /// engine's teardown, so it is returned as a future for the caller to
-    /// await (the pane's disposal tail, a PDF open replacing it) or
-    /// detach (a session a text open or a failed open replaced).
-    pub(crate) fn dispose(self) -> Option<impl std::future::Future<Output = ()>> {
+    /// Stop the session's in-flight work without ending it — the pane is
+    /// about to leave, and its dispose follows over the boundary. A PDF's
+    /// page renders are cancelled; a reflowable session has no background
+    /// work of its own to stop (its measurement flushes and open tails are
+    /// refused once it ends).
+    pub(crate) fn quiesce(&self) {
+        if let Self::Pdf(s) = self {
+            s.cancel_page_renders();
+        }
+    }
+
+    /// Dispose the session, whatever its format: from THIS call it refuses
+    /// every operation (a reflowable session has already released the
+    /// pane's content; a PDF session has stopped accepting and advanced its
+    /// invalidation). What is still in flight — a PDF's engine teardown:
+    /// document, worker, rasters, caches — is the returned [`Retiring`].
+    pub(crate) fn dispose(self) -> Retiring {
         match self {
-            Self::None => None,
+            Self::None => Retiring::settled_now(),
             Self::Markdown(s) => {
                 s.dispose();
-                None
+                Retiring::settled_now()
             }
             Self::Text(s) => {
                 s.dispose();
-                None
+                Retiring::settled_now()
             }
-            Self::Pdf(s) => Some(async move { s.dispose().await }),
+            Self::Pdf(s) => Retiring::pending(Box::pin(s.dispose())),
+        }
+    }
+}
+
+/// A document session's release, still in flight after its dispose.
+///
+/// One type for every format and every way a document ends — replaced by
+/// the next open in the same pane, abandoned by a failed open, or ended by
+/// the pane's dispose — so the policy of WHEN the memory must be back is
+/// the caller's, never a per-format special case:
+///
+/// - an open in the SAME pane awaits it before loading
+///   ([`crate::pane::handle::PaneHandle::replace_document`]): a pane never
+///   holds two documents at once;
+/// - the pane's dispose awaits it in its tail;
+/// - anything that no longer waits on it detaches it.
+///
+/// It is scoped to the one session it came from: awaiting it never waits on
+/// another pane's document, so panes open, replace and close concurrently
+/// (split mode opens several documents at once, and none of them is killed
+/// or delayed by another's open).
+#[must_use = "await the release, or detach it; dropping it defers the engine teardown to the drop net"]
+pub(crate) struct Retiring(Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>>);
+
+impl Retiring {
+    fn settled_now() -> Self {
+        Self(None)
+    }
+
+    fn pending(release: std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>) -> Self {
+        Self(Some(release))
+    }
+
+    /// Wait until the session's resources are released.
+    pub(crate) async fn settled(self) {
+        if let Some(release) = self.0 {
+            release.await;
         }
     }
 
-    /// Dispose without waiting: a replaced session's engine teardown runs
-    /// detached (it no longer owns anything the pane shows, and every call
-    /// it could receive is already refused).
-    pub(crate) fn dispose_detached(self) {
-        if let Some(teardown) = self.dispose() {
-            wasm_bindgen_futures::spawn_local(teardown);
+    /// Let the release finish on its own: nothing waits for it.
+    pub(crate) fn detach(self) {
+        if let Some(release) = self.0 {
+            wasm_bindgen_futures::spawn_local(release);
         }
     }
 
-    /// [`Self::dispose_detached`] for the host tests, which have no
-    /// `spawn_local`: the teardown is driven to completion in place.
+    /// Whether anything is still in flight (tests only: the callers never
+    /// branch on it — they await or detach).
     #[cfg(test)]
-    pub(crate) fn dispose_detached_for_tests(self) {
-        if let Some(teardown) = self.dispose() {
-            tests::block_on(teardown);
-        }
+    pub(crate) fn is_pending(&self) -> bool {
+        self.0.is_some()
+    }
+
+    /// [`Self::settled`] for the host tests, which have no executor.
+    #[cfg(test)]
+    pub(crate) fn settle_for_tests(self) {
+        tests::block_on(self.settled());
     }
 }
 
@@ -213,7 +263,7 @@ pub(crate) mod tests {
             let pane_b = FormatSession::Text(txt.clone());
             assert!(pane_a.admits_reflow(md.id()));
             assert!(!pane_a.admits_reflow(txt.id()));
-            assert!(pane_a.clone().dispose().is_none());
+            assert!(!pane_a.clone().dispose().is_pending());
             assert!(!md.is_live());
             assert!(!pane_a.admits_reflow(md.id()));
             // Disposing one pane's session leaves the other's alive.
@@ -231,9 +281,11 @@ pub(crate) mod tests {
             let txt = TxtSession::new("/b.txt", reflow());
             let pdf_pane = FormatSession::Pdf(pdf.clone());
             let text_pane = FormatSession::Text(txt.clone());
-            if let Some(teardown) = pdf_pane.dispose() {
-                block_on(teardown);
-            }
+            let release = pdf_pane.dispose();
+            // Refused from the dispose call, before the release is awaited.
+            assert!(!pdf.is_live());
+            assert!(release.is_pending());
+            release.settle_for_tests();
             assert!(!pdf.is_live());
             assert!(text_pane.is_live());
         });

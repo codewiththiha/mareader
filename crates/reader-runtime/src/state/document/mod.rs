@@ -20,8 +20,13 @@
 //! ones that only wanted its title. The format is already the tag that says
 //! which half is live; a second one in the state could only disagree with it.
 //!
-//! A field added here is reset by [`DocumentState::reset`] and by nothing else,
-//! which is the invariant that keeps a close from leaking the last book.
+//! Lifetime: this is the PANE's state, so a close releases all of it at once
+//! with the pane's owner (every signal here is an arena node of that owner).
+//! Within a live pane, a new document replaces it field by field: the
+//! reflowable content is released by the text session's dispose
+//! (`crate::pane::session`), the PDF's heavy state lives in its engine
+//! session, and the page metrics and identity are rewritten by the next
+//! document's seed.
 
 pub mod page_metrics;
 pub mod reflow;
@@ -88,16 +93,6 @@ pub struct DocumentContent {
     pub reflow: ReflowContent,
 }
 
-impl DocumentContent {
-    /// Back to "no document" for both pipelines. A format's content is
-    /// released whenever the OTHER format takes the reader over, which is why
-    /// the two halves reset together rather than at their own open.
-    pub fn reset(&self) {
-        self.metrics.reset();
-        self.reflow.reset();
-    }
-}
-
 /// What a reflowable re-cut tells the document: how many pages it now has,
 /// how big each one is, and which page the reader lands on.
 ///
@@ -138,40 +133,6 @@ impl Default for DocumentState {
 }
 
 impl DocumentState {
-    /// Back to the no-document state. Every field the open flow writes is
-    /// reset here, so a field added to the struct cannot be silently
-    /// forgotten by close_document.
-    ///
-    /// The handles are `Copy`, so this binds the signals the struct already
-    /// holds; `Self::default()` would allocate a fresh arena node per field on
-    /// every close and leak them.
-    pub fn reset(&self) {
-        let Self {
-            status,
-            format,
-            error,
-            path,
-            book_id,
-            title,
-            author,
-            num_pages,
-            outline,
-            outline_pending,
-            content,
-        } = *self;
-        status.set(DocStatus::Idle);
-        format.set(Format::default());
-        error.set(None);
-        path.set(None);
-        book_id.set(None);
-        title.set(None);
-        author.set(None);
-        num_pages.set(0);
-        outline.set(Arc::new(Vec::new()));
-        outline_pending.set(false);
-        content.reset();
-    }
-
     /// Height-over-width aspect of page 1 (tracked read). Every
     /// fixed-geometry surface that sizes itself against the first sheet goes
     /// through here, so the fallback policy lives in exactly one place.
@@ -289,26 +250,5 @@ mod tests {
             })),
             DEFAULT_PAGE_ASPECT
         );
-    }
-
-    #[test]
-    fn a_reset_releases_both_halves() {
-        // One reset, both pipelines: a close cannot leave the previous
-        // book's page sizes behind while the next document is measured.
-        let state = DocumentState::default();
-        state.book_id.set(Some("b1".to_string()));
-        state.content.metrics.css_heights.set(vec![792.0]);
-        state.content.reflow.heights.set(Arc::new(vec![40.0]));
-        state.num_pages.set(3);
-        state.reset();
-        assert!(state.content.metrics.css_heights.get_untracked().is_empty());
-        assert!(state.content.reflow.heights.get_untracked().is_empty());
-        assert_eq!(state.num_pages.get_untracked(), 0);
-        assert_eq!(
-            state.book_id.get_untracked(),
-            None,
-            "a close cannot leave the last book's row named"
-        );
-        assert!(state.content.metrics.page1_size.get_untracked().is_none());
     }
 }

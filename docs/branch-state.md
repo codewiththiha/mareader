@@ -305,7 +305,16 @@ deliberately rather than discovering it:
   generation mint, reflow session ids), the appearance broadcast and its
   scrub window, the content-keyed retained search index (`RETAINED`), the
   pdf.js module, canvas pool, LUT/pipeline caches and bake worker, and the
-  diagnostics gauges. The reasons are in `docs/session-ownership.md`.
+  diagnostics gauges. The reasons are in `docs/session-ownership.md`. The
+  canvas pool drains and the bake worker terminates once the realm's last
+  engine session is retired, so a reader frame kept warm behind the shelf
+  holds neither.
+- **Document replacement is per pane.** `PaneHandle::replace_document` is
+  the one way a pane changes documents (every format, every view mode): the
+  replaced session is disposed at the call, and its release (`Retiring`) is
+  awaited by THAT pane's open only. A fresh pane has nothing to wait for;
+  no open awaits or disposes another pane's document, so split mode can
+  open several documents at once without a realm-wide lock.
 
 ## Known follow-ups (do not silently expand scope)
 

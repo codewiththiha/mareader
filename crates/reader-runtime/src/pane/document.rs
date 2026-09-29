@@ -364,12 +364,14 @@ impl PaneRuntime for DocumentPane {
     /// 1. the durable read point, written while the pane's state still
     ///    exists (the Shell owns the library blob);
     /// 2. the pane's document generation claimed (an open still in flight
-    ///    can no longer land) and its format session taken out of the pane:
-    ///    from here nothing reaches that session through the pane. A
-    ///    Markdown/text session is disposed on the spot; a PDF session's
-    ///    teardown (paper invalidated, search retained, the engine session
-    ///    destroyed — its rasters, lanes, workers and page registrations
-    ///    with it) is handed to the tail;
+    ///    can no longer land) and its format session taken out of the pane
+    ///    and disposed — the same dispose every format and every view mode
+    ///    ends through: from here the session refuses every call (a
+    ///    Markdown/text session has already released its content; a PDF
+    ///    session has stopped accepting, invalidated its paper and retained
+    ///    its search index), and what is still in flight — the PDF engine
+    ///    session's destroy, its rasters, lanes, workers and page
+    ///    registrations with it — is the `Retiring` handed to the tail;
     /// 3. the virtualizers taken out of the registry — from here the tail
     ///    alone owns them;
     /// 4. the pane's owner cleaned up: every effect, listener (the keyboard
@@ -378,7 +380,7 @@ impl PaneRuntime for DocumentPane {
     ///    with its view's child owners — and the per-pane memos (the gloss
     ///    spot memo, the measurement inbox) with them: they are the pane's
     ///    state, not thread-locals a recycled frame would carry over;
-    /// 5. the tail: the PDF session's teardown awaited, the virtualizers'
+    /// 5. the tail: the session's release awaited, the virtualizers'
     ///    final dispose, the completion reported, and the pane's handle slot
     ///    released (its gates read `Disposed` from then).
     ///
@@ -412,9 +414,7 @@ impl PaneRuntime for DocumentPane {
         crate::diagnostics::note_pane_dispose();
         // (5)
         Box::pin(async move {
-            if let Some(teardown) = teardown {
-                teardown.await;
-            }
+            teardown.settled().await;
             for v in virtualizers {
                 v.dispose();
             }

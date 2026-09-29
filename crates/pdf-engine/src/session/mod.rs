@@ -68,10 +68,12 @@ struct Inner {
 
 impl Drop for Inner {
     /// The safety net for a session dropped without `dispose` (an owner
-    /// swept by its arena). The engine side must still be released; nothing
-    /// can await here, so the destroy runs detached.
+    /// swept by its arena), or whose dispose future was dropped before it
+    /// finished (`Disposing`). The engine side must still be released;
+    /// nothing can await here, so the destroy runs detached (the engine
+    /// ignores a sid it already forgot).
     fn drop(&mut self) {
-        if self.state.get() == State::Live && self.registered && bridge::has_pdf_reader() {
+        if self.state.get() != State::Disposed && self.registered && bridge::has_pdf_reader() {
             let sid = self.sid;
             wasm_bindgen_futures::spawn_local(async move {
                 let _ = bridge::destroy_session(sid).await;
@@ -448,26 +450,35 @@ impl PdfSession {
 
     // --- Teardown -------------------------------------------------------
 
-    /// Tear the session down. Idempotent; resolves once the engine side is
-    /// gone (never on a timer).
+    /// Tear the session down. Idempotent; the returned future resolves once
+    /// the engine side is gone (never on a timer).
     ///
-    /// Order: stop accepting (the state leaves `Live`, so every op above
-    /// refuses) → advance invalidation (the paper epoch; in-flight samples
-    /// are forgotten) → retain the search index for a same-book reopen →
-    /// the engine's own teardown (cancel lanes and prefetches, destroy the
-    /// document and its worker, clear the page registry and caches, forget
-    /// the sid) → `Disposed`.
-    pub async fn dispose(&self) {
-        if self.inner.state.get() != State::Live {
-            return;
+    /// The session stops being usable AT THIS CALL, not at the future's
+    /// first poll: the state leaves `Live` (every op above refuses), the
+    /// invalidation advances (the paper epoch; in-flight samples are
+    /// forgotten) and the search index is retained for a same-book reopen
+    /// before this returns. The future is only the engine's own teardown
+    /// (cancel lanes and prefetches, destroy the document and its worker,
+    /// clear the page registry and caches, forget the sid) → `Disposed`.
+    /// A future dropped unpolled still releases the engine: the `Inner`
+    /// drop net covers a `Disposing` session too.
+    pub fn dispose(&self) -> impl std::future::Future<Output = ()> + use<> {
+        let begun = self.inner.state.get() == State::Live;
+        if begun {
+            self.inner.state.set(State::Disposing);
+            self.with_paper(|p| p.invalidate());
+            self.with_search(|s| search::retain(std::mem::take(s)));
         }
-        self.inner.state.set(State::Disposing);
-        self.with_paper(|p| p.invalidate());
-        self.with_search(|s| search::retain(std::mem::take(s)));
-        if self.inner.registered && bridge::has_pdf_reader() {
-            let _ = bridge::destroy_session(self.inner.sid).await;
+        let inner = self.inner.clone();
+        async move {
+            if !begun {
+                return;
+            }
+            if inner.registered && bridge::has_pdf_reader() {
+                let _ = bridge::destroy_session(inner.sid).await;
+            }
+            inner.state.set(State::Disposed);
         }
-        self.inner.state.set(State::Disposed);
     }
 }
 
@@ -512,6 +523,18 @@ mod tests {
         assert!(block_on(s.outline()).unwrap().is_empty());
         // A second dispose is a no-op, not a second teardown.
         block_on(s.dispose());
+        assert!(!s.is_live());
+    }
+
+    #[test]
+    fn a_session_stops_accepting_at_the_dispose_call() {
+        let s = PdfSession::create();
+        let teardown = s.dispose();
+        // Not polled yet: the session already refuses.
+        assert!(!s.is_live());
+        let opened = block_on(s.open("/shelf/book.pdf"));
+        assert_eq!(opened.err().map(|e| e.name).as_deref(), Some("no_session"));
+        block_on(teardown);
         assert!(!s.is_live());
     }
 

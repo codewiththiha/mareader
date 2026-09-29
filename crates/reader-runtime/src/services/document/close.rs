@@ -10,7 +10,8 @@
 
 use runtime_contract::boundary::ShellApi;
 
-/// Write the pane's durable reading point and stop its in-flight raster work.
+/// Write the pane's durable reading point and stop its in-flight document
+/// work, whatever the format.
 ///
 /// The durable write happens HERE, inside the live session, through the
 /// boundary: the Shell owns the library blob, and this session is about to
@@ -25,6 +26,7 @@ pub fn prepare_leave(ctx: &crate::context::ReaderContext) {
     // over the frame channel — hops during which a live page render could
     // finish as if leaving had interrupted nothing. Cancelling is the first
     // act of teardown; the pane's dispose still owns the session's destroy.
-    // THIS pane's session only.
-    ctx.pane.pdf().cancel_page_renders();
+    // THIS pane's session only, and the session decides what it has in
+    // flight (a PDF's page renders; nothing for a text document).
+    ctx.pane.quiesce();
 }

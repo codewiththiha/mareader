@@ -173,28 +173,25 @@ fn open_pdf(ctx: crate::context::ReaderContext, path: String, saved_page: u32, s
     if !ctx.pane.admits_work() {
         return;
     }
-    // One document, one session. The replaced session — a PDF's engine
-    // session or a text document's — is disposed right here: from this line
-    // nothing of the previous document is reachable through the pane, and a
-    // tail still running for it finds its generation stale and its session
-    // dead.
-    let previous = ctx
+    // One document, one session, through the pane's one replace path (the
+    // same every format takes): the replaced session — a PDF's engine
+    // session or a text document's — is disposed right here, so from this
+    // line nothing of the previous document is reachable through the pane,
+    // and a tail still running for it finds its generation stale and its
+    // session dead.
+    let release = ctx
         .pane
-        .install_session(FormatSession::Pdf(pdf_engine::PdfSession::create()));
-    let retiring = previous.dispose();
+        .replace_document(FormatSession::Pdf(pdf_engine::PdfSession::create()));
     let pdf = ctx.pane.pdf();
     spawn_local(async move {
-        // The replaced document is DESTROYED before this one loads — its
-        // pdf.js document, worker, rasters and caches — as the engine's
-        // old global `open` did with its destroy-first. Detached, the two
-        // overlapped: every book-to-book open held two documents and two
-        // workers at once, and the old one's memory came back only when its
-        // teardown and a GC eventually got to it.
-        if let Some(teardown) = retiring {
-            teardown.await;
-        }
+        // The replaced document is RELEASED before this one loads — its
+        // pdf.js document, worker, rasters and caches — so the pane never
+        // holds two documents at once. THIS pane's previous document only:
+        // no other pane's session is awaited, so split panes still open
+        // concurrently.
+        release.settled().await;
         // Superseded while the old document went: whoever took the pane
-        // over disposes this (never opened) session.
+        // over disposed this (never opened) session.
         if !ctx.pane.owns_generation(stamp) {
             return;
         }
@@ -209,12 +206,7 @@ fn open_pdf(ctx: crate::context::ReaderContext, path: String, saved_page: u32, s
         }
         match opened {
             Ok(open) => ready(ctx, path, open, saved_page, stamp),
-            Err(e) => {
-                // A session whose document never opened owns nothing worth
-                // keeping: the pane goes back to holding no document.
-                ctx.pane.take_session().dispose_detached();
-                fail(ctx, e.message)
-            }
+            Err(e) => abandon(ctx, e.message),
         }
     });
 }
@@ -271,6 +263,15 @@ fn ready(
 }
 
 /// The document did not open: surface it on the status bar and as a toast.
+/// An open that failed after it installed its session: that session owns
+/// nothing worth keeping, so the pane goes back to holding no document —
+/// never the half-opened one, and (the replace already released it) never
+/// the previous one behind the error. Every format fails through here.
+pub(super) fn abandon(ctx: crate::context::ReaderContext, message: String) {
+    ctx.pane.abandon_document().detach();
+    fail(ctx, message);
+}
+
 fn fail(ctx: crate::context::ReaderContext, message: String) {
     web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
         "[reader] open failed: {message}"

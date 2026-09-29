@@ -79,9 +79,7 @@ impl PaneRuntime for SessionPane {
         let (_, teardown) = self.handle.end_document();
         let handle = self.handle;
         Box::pin(async move {
-            if let Some(teardown) = teardown {
-                teardown.await;
-            }
+            teardown.settled().await;
             handle.release();
         })
     }

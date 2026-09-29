@@ -15,8 +15,11 @@
 //      `pdf_engine::backdrop` function except the realm's in-flight sample
 //      gauge (diagnostics).
 //   3. Sessions are created and installed by the open flow only: a
-//      `PdfSession::create` or `install_session` anywhere else would be a
-//      second owner for a pane's document.
+//      `PdfSession::create` or `replace_document` anywhere else would be a
+//      second owner for a pane's document. The slot's raw moves
+//      (`install_session`, `take_session`) stay inside the pane handle, so
+//      every document change goes through its replace / abandon / end —
+//      the one dispose path every format and view mode shares.
 //   4. Async ownership stamps are per pane (`claim_generation` /
 //      `owns_generation`); the realm-wide epoch is a diagnostics label and
 //      appears nowhere else.
@@ -56,11 +59,12 @@ const BACKDROP_REALM = new Set(["pending_samples"]);
 
 /** Rule 3: where sessions may be created / installed (production code). */
 const CREATE_SITES = new Set(["services/document/open/mod.rs"]);
-const INSTALL_SITES = new Set([
+const REPLACE_SITES = new Set([
   "services/document/open/mod.rs",
   "services/document/open/reflow.rs",
   "pane/handle.rs", // the definition
 ]);
+const SLOT_SITES = new Set(["pane/handle.rs"]);
 
 /** Rule 4: the diagnostics epoch's only readers. */
 const EPOCH_SITES = new Set(["diagnostics.rs", "services/document/session.rs"]);
@@ -171,8 +175,11 @@ for (const file of runtimeFiles) {
     if (/\bPdfSession::create\b/.test(line) && !CREATE_SITES.has(rel)) {
       fail(file, i, "a PdfSession is created by the open flow only (services/document/open/mod.rs)", line);
     }
-    if (/\binstall_session\s*\(/.test(line) && !INSTALL_SITES.has(rel)) {
-      fail(file, i, "a pane's session is installed by the open flow only", line);
+    if (/\breplace_document\s*\(/.test(line) && !REPLACE_SITES.has(rel)) {
+      fail(file, i, "a pane's document is replaced by the open flow only", line);
+    }
+    if (/\b(install_session|take_session)\s*\(/.test(line) && !SLOT_SITES.has(rel)) {
+      fail(file, i, "the session slot moves inside PaneHandle only (replace_document / abandon_document / end_document)", line);
     }
     if (/\bcurrent_epoch\b/.test(line) && !EPOCH_SITES.has(rel)) {
       fail(file, i, "async ownership is per pane (claim_generation/owns_generation), not the realm epoch", line);
