@@ -24,6 +24,13 @@
 // republishes on this window, exactly as in the reader frame.
 
 import { coverDataUrl } from "./engine/loader";
+import { EngineSession } from "./engine/state";
+
+/** Each ask renders in its own throwaway engine session: the cover's
+ *  loading task (and its worker) is counted on, and destroyed inside, the
+ *  one call — nothing outlives the answer, and no two asks share state.
+ *  The page has no facade, so these sessions are never registered. */
+let nextBakeSid = 1;
 
 type Ask = { kind: "mareader.bake"; id: number; path: string; width: number };
 
@@ -45,7 +52,7 @@ async function bake(target: Window, ask: Ask): Promise<void> {
   const width = typeof ask.width === "number" && ask.width > 0 ? ask.width : 240;
   let answer: Record<string, unknown>;
   try {
-    const result = await coverDataUrl(ask.path, width);
+    const result = await coverDataUrl(new EngineSession(nextBakeSid++), ask.path, width);
     answer = result.ok
       ? {
           kind: "mareader.baked",

@@ -36,7 +36,6 @@ use leptos::task::spawn_local;
 use pdf_core::pixel_grid::snap_px;
 
 use leptos::prelude::Signal;
-use pdf_engine::api as engine;
 use reader_core::appearance::TextureMode;
 
 /// The gloss overlay inputs a page host renders when the document carries
@@ -171,6 +170,12 @@ pub fn PdfPageCanvas(
         }
     };
 
+    // The PDF session this page belongs to: the pane's session at mount
+    // (see `MountedPdf`). Every engine call below goes through it, so a page
+    // mounted for one document never reaches another.
+    let mounted = crate::pane::engine::MountedPdf::bind();
+    let pdf = move || mounted.pdf();
+
     let registered = Rc::new(Cell::new(false));
     // PAINTED FLAG. True after a successful render; false after a
     // cancelled/error render (which leaves the canvas wiped by pdf.js's
@@ -204,7 +209,7 @@ pub fn PdfPageCanvas(
     let disposed = StoredValue::new_local(false);
     on_cleanup(move || {
         let _ = disposed.try_set_value(true);
-        engine::unregister_page(&cid);
+        pdf().unregister_page(&cid);
     });
 
     // Register after this view is flushed to the DOM. The render effect can
@@ -227,7 +232,7 @@ pub fn PdfPageCanvas(
             "PdfPageCanvas canvas must be in the DOM before register_page"
         );
         if !registered_boot.get() {
-            engine::register_page(page, &cid_boot, Some(&hid_boot));
+            pdf().register_page(page, &cid_boot, Some(&hid_boot));
             registered_boot.set(true);
         }
     });
@@ -317,7 +322,7 @@ pub fn PdfPageCanvas(
             if has_geo {
                 return; // stretch effect owns it
             }
-            if engine::blit_thumb(&cid_effect, page) {
+            if pdf().blit_thumb(&cid_effect, page) {
                 return; // cached thumbnail is fine
             }
             // A sidebar slide (fit-driven) is NOT a zoom gesture: the display
@@ -378,7 +383,7 @@ pub fn PdfPageCanvas(
         // the same one the cold first paint uses.
         if !painted.get() && settled.as_ref().is_some_and(|s| !s.get()) {
             if !(gw > 0.0 && gh > 0.0) {
-                engine::blit_thumb(&cid_effect, page);
+                pdf().blit_thumb(&cid_effect, page);
             }
             return;
         }
@@ -427,9 +432,13 @@ pub fn PdfPageCanvas(
         // instead of flashing white until the render lands. No-op when nothing
         // is cached, and immediately overwritten by the real bitmap.
         if !(lw > 0.0 && lh > 0.0) {
-            engine::blit_thumb(&cid, page_no);
+            pdf().blit_thumb(&cid, page_no);
         }
 
+        // The session view this render runs through, captured BEFORE the
+        // await: the render, the registration it may need and the paper
+        // frame drain all reach the same session.
+        let pdf_async = pdf();
         spawn_local(async move {
             // A render can outlive its component: `<For>` unmounts a page that
             // scrolled out of the window while its rasterisation is still in
@@ -442,10 +451,13 @@ pub fn PdfPageCanvas(
             // the element is gone and the engine already dropped the
             // registration.
             if !do_register.get() {
-                engine::register_page(page_no, &cid, Some(&hid));
+                pdf_async.register_page(page_no, &cid, Some(&hid));
                 do_register.set(true);
             }
-            match engine::render_page(&cid, s, rt).await {
+            // A render whose session died resolves `no_session` (the engine
+            // refuses retired sids, and the session re-checks itself after
+            // the await), so nothing below commits into a replaced document.
+            match pdf_async.render_page(&cid, s, rt).await {
                 Ok(r) => {
                     // Unmounted mid-render: the owner's signals are gone, and
                     // there is no host left to size.
@@ -500,9 +512,9 @@ pub fn PdfPageCanvas(
                     let (sw, sh) = (snap_px(r.width), snap_px(r.height));
                     // The engine stashed this render's raw frame (the one
                     // pipeline moment the page's own paper is unbaked); hand
-                    // it to the paper session — every colour decision it
-                    // feeds lives in the pdf-paper crate.
-                    pdf_engine::backdrop::live_frame(&cid);
+                    // it to the session's paper state machine — every colour
+                    // decision it feeds lives in the pdf-paper crate.
+                    pdf_async.paper_live_frame(&cid);
                     if let Some(host) = host_element(host_ref) {
                         // Note: cannot use host.style() (tachys ElementExt::style shadows
                         // web_sys' inherent method); set the inline style attribute directly.

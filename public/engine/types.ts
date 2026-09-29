@@ -228,6 +228,8 @@ export type Stats = {
 export type RenderTracePhase = "start" | "complete" | "cancel" | "fail";
 
 export type RenderTraceEntry = {
+  /** The session whose page the raster belongs to. */
+  sid: number;
   /** The measurement generation the raster belongs to. */
   gen: number;
   /** The page number the engine started rasterizing. */
@@ -236,85 +238,119 @@ export type RenderTraceEntry = {
   t: number;
 };
 
+/** A session id: minted by the Rust `PdfSession` that owns the session,
+ *  registered once with `createSession`, never reused. Every document call
+ *  names one; a call naming an unknown (or retired) sid does nothing — the
+ *  async ones resolve `{ok:false, error:{name:"no_session"}}`. */
+export type Sid = number;
+
+/** The realm aggregate `stats()` adds to the per-session shape: how many
+ *  sessions the registry holds and has retired. */
+export type AggregateStats = Stats & { sessionsLive: number; sessionsRetired: number };
+
 export type PDFReaderApi = {
   version: () => string;
   /** Begin a render-trace measurement generation (the Phase 0 fast-jump
    *  page-identity proof): every raster started from now carries the
-   *  returned id. */
+   *  returned id. Diagnostics only — entries carry their `sid`. */
   beginRenderGeneration: () => number;
   /** A bounded copy of the engine's render trace, oldest first. */
   renderTrace: () => RenderTraceEntry[];
-  open: (path: string) => Promise<OpenResult>;
-  resolveOutline: () => Promise<OutlineResult>;
-  destroy: () => Promise<void>;
   /** Turn the engine's lifecycle event narration on/off (dev diagnostics;
    *  the counters in stats() are always live). */
   setLifecycleLog: (on: boolean) => void;
-  registerPage: (page: number, canvasId: string, hostId?: string) => void;
-  unregisterPage: (canvasId: string) => void;
-  cancelPage: (canvasId: string) => void;
-  /** Cancel every in-flight page render — the close path's first act, so
-   *  leaving interrupts raster work instead of racing the frame channel. */
-  cancelPageRenders: () => void;
+
+  // --- Session lifecycle ---------------------------------------------------
+  /** Register session `sid` (false if the sid is not new). */
+  createSession: (sid: Sid) => boolean;
+  /** Tear the session down — cancel its work, destroy its document and its
+   *  pdf.js worker, release its surfaces — and retire the sid. Idempotent;
+   *  other sessions are untouched. */
+  destroySession: (sid: Sid) => Promise<void>;
+  /** Make `sid`'s paper the root backdrop's (the host's choice; by default
+   *  the latest document to open presents). */
+  presentSession: (sid: Sid) => void;
+  /** The live sids, in creation order (diagnostics). */
+  sessions: () => Sid[];
+
+  // --- Document (all session-scoped) ---------------------------------------
+  open: (sid: Sid, path: string) => Promise<OpenResult>;
+  resolveOutline: (sid: Sid) => Promise<OutlineResult>;
+  registerPage: (sid: Sid, page: number, canvasId: string, hostId?: string) => void;
+  unregisterPage: (sid: Sid, canvasId: string) => void;
+  cancelPage: (sid: Sid, canvasId: string) => void;
+  /** Cancel every in-flight page render of the session — the close path's
+   *  first act, so leaving interrupts raster work instead of racing the
+   *  frame channel. */
+  cancelPageRenders: (sid: Sid) => void;
   /** The work-stop half of a close intent: every in-flight and queued job
-   *  for the current document — page renders, thumbnail rasters, prefetch
-   *  awaits — stops in the click's own task, the cancel a boundary-crossing
-   *  teardown cannot make in time. The session survives; the one teardown
-   *  stays destroy's and shares the same idempotent sweep. Repeating it is
-   *  a no-op, and with no document it counts nothing. */
-  quiesce: () => void;
+   *  of the session — page renders, thumbnail rasters, prefetch awaits —
+   *  stops in the click's own task. The session survives; the one teardown
+   *  stays destroySession's and shares the same idempotent sweep. */
+  quiesce: (sid: Sid) => void;
   renderPage: (
+    sid: Sid,
     canvasId: string,
     scale: number,
     renderText: boolean
   ) => Promise<RenderResult>;
   renderThumb: (
+    sid: Sid,
     canvasId: string,
     page: number,
     scale: number
   ) => Promise<ThumbResult>;
-  cancelThumb: (canvasId: string) => void;
-  hasThumb: (page: number, scale: number) => boolean;
-  blitThumb: (canvasId: string, page: number) => boolean;
-  coverDataUrl: (path: string, maxWidth?: number) => Promise<CoverResult>;
-  stats: () => Stats;
+  cancelThumb: (sid: Sid, canvasId: string) => void;
+  hasThumb: (sid: Sid, page: number, scale: number) => boolean;
+  blitThumb: (sid: Sid, canvasId: string, page: number) => boolean;
+  coverDataUrl: (sid: Sid, path: string, maxWidth?: number) => Promise<CoverResult>;
   /** Extract one page's text runs for the Rust search index. */
-  extractPageText: (page: number) => Promise<
+  extractPageText: (sid: Sid, page: number) => Promise<
     | (Ok<{ page: number; items: { str: string; x: number; y: number; w: number; h: number }[] }>)
     | Err
   >;
-  /** Publish the active query so mounted text layers repaint highlights. */
-  setSearchContext: (query: string) => void;
-  setActiveMatch: (page: number, index: number) => void;
-  clearHighlights: () => void;
-  refreshTheme: () => Promise<void>;
-  /** Enter/leave the scrub window's real-time compositing: raw rasters under
-   * the live CSS filter + blend, re-baked on exit. */
-  setScrubMode: (on: boolean) => Promise<void>;
-  /** Whether the appearance popover is open. Rendered pages retain their
-   * unbaked raws while it is, so the session's first tint drag blits
-   * instead of re-rendering; closing arms the idle tail that frees them. */
-  setAppearanceMenuOpen: (on: boolean) => void;
-  /** Publish (or, with "", clear) `--pdf-paper`. */
-  setPaper: (hex: string) => void;
-  /** The Rust paper session's blend switch — gates stashPaperFrame so idle
+  /** Publish the active query so the session's text layers repaint. */
+  setSearchContext: (sid: Sid, query: string) => void;
+  setActiveMatch: (sid: Sid, page: number, index: number) => void;
+  clearHighlights: (sid: Sid) => void;
+  /** Record the session's paper (or, with "", clear it); the root
+   *  `--pdf-paper` follows only for the publishing session. */
+  setPaper: (sid: Sid, hex: string) => void;
+  /** The session's paper blend switch — gates stashPaperFrame so idle
    * renders cost nothing on the paper pipeline. */
-  setPaperActive: (on: boolean) => void;
-  takePaperFrame: (canvasId: string) => (PaperFrame & { ok: true }) | null;
-  samplePaperPage: (page: number) => Promise<
+  setPaperActive: (sid: Sid, on: boolean) => void;
+  takePaperFrame: (sid: Sid, canvasId: string) => (PaperFrame & { ok: true }) | null;
+  samplePaperPage: (sid: Sid, page: number) => Promise<
     | (PaperFrame & { ok: true })
     | { ok: true }
   >;
-  sweep: () => void;
-  /** Drop the `.page-snapshot` scrub covers the live page hosts still carry,
-   *  zeroing their backing stores: a cover whose render was superseded or
-   *  never landed would otherwise keep a full-page raster alive until the
-   *  host unmounts. */
-  sweepSnapshots: () => void;
-  prefetchThumb: (page: number, scale: number) => Promise<void>;
-  /** The reader left the screen with its document still loaded: abandon
-   *  queued/in-flight idle prefetches (they settle as drops) and refuse new
-   *  ones until `resumePrefetches`. */
-  suspendPrefetches: () => void;
-  resumePrefetches: () => void;
+  sweep: (sid: Sid) => void;
+  /** Drop the `.page-snapshot` scrub covers the session's page hosts still
+   *  carry, zeroing their backing stores. */
+  sweepSnapshots: (sid: Sid) => void;
+  prefetchThumb: (sid: Sid, page: number, scale: number) => Promise<void>;
+  /** The session's pane left the screen with its document still loaded:
+   *  abandon its queued/in-flight idle prefetches (they settle as drops)
+   *  and refuse new ones until `resumePrefetches`. */
+  suspendPrefetches: (sid: Sid) => void;
+  resumePrefetches: (sid: Sid) => void;
+  /** One session's gauges and counters (null for an unknown sid). */
+  sessionStats: (sid: Sid) => Stats | null;
+
+  // --- Realm (no document identity) ----------------------------------------
+  /** Realm aggregate: gauges summed over live sessions, counters over live
+   *  and retired ones — the teardown baseline's view. */
+  stats: () => AggregateStats;
+  /** Appearance broadcast: every live session re-bakes its own rasters
+   *  against the new global appearance. */
+  refreshTheme: () => Promise<void>;
+  /** Enter/leave the scrub window's real-time compositing on every live
+   * session: raw rasters under the live CSS filter + blend, re-baked on
+   * exit. */
+  setScrubMode: (on: boolean) => Promise<void>;
+  /** Whether the appearance popover is open. Rendered pages retain their
+   * unbaked raws while it is, so the first tint drag blits instead of
+   * re-rendering; closing arms the idle tail that frees them. */
+  setAppearanceMenuOpen: (on: boolean) => void;
 };
+

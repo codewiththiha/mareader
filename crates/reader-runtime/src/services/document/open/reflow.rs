@@ -1,8 +1,9 @@
 //! Opening a reflowable document — plain text, Markdown, and whatever joins
 //! them later.
 //!
-//! The shape mirrors the PDF open (claim the session, read, seed, flip the
-//! status), but the content never touches the pdf.js engine: the file is read
+//! The shape mirrors the PDF open (claim the pane's generation, read, install
+//! the document's own session, seed, flip the status), but the content never
+//! touches the pdf.js engine: the file is read
 //! through the shell's `read_file_text` command and handed to its format's
 //! parser. From here a text document and a PDF are the same object — pages of
 //! the same A4 sheet through the same scale pipeline — and the one difference
@@ -39,7 +40,7 @@ use reflow_core::pager::estimate_heights;
 use crate::state::document::reflow::estimate_metrics;
 use runtime_contract::boundary::ShellApi;
 
-use super::session;
+use crate::pane::session::{FormatSession, MdSession, TxtSession};
 
 /// What a format contributes to an open: its parsed blocks, what to call the
 /// document, and the headings its outline will be built from.
@@ -75,7 +76,7 @@ async fn read_file_text(path: &str) -> Result<String, String> {
 
 /// Shared open flow for the reflowable formats: read the file, parse it with
 /// the format's own parser, and populate the whole app state. Mirrors
-/// [`super::open_pdf`]'s tail, session stamp and all.
+/// [`super::open_pdf`]'s tail, generation checks and all.
 pub(super) fn open_reflowable(
     state: crate::context::ReaderContext,
     path: String,
@@ -88,7 +89,7 @@ pub(super) fn open_reflowable(
         let raw = match read_file_text(&path).await {
             Ok(raw) => raw,
             Err(message) => {
-                if session::owns(stamp) {
+                if state.pane.owns_generation(stamp) {
                     super::fail(state, message);
                 }
                 return;
@@ -96,7 +97,7 @@ pub(super) fn open_reflowable(
         };
         // The read finished — but a second open (or a close) may have taken
         // the document state over while it worked.
-        if !session::owns(stamp) {
+        if !state.pane.owns_generation(stamp) {
             return;
         }
         let parsed = parse(format, &raw);
@@ -195,21 +196,22 @@ fn ready(
         },
     );
 
-    // A text document opening over a PDF: release the engine's book and its
-    // paper session — neither has any part in what follows. The retained
-    // search index goes with them: this format searches its own blocks, and
-    // a closed PDF's extracted text must not sit in the wasm heap while a
-    // text book is open.
-    // Through the PANE's engine handle: the one teardown path a pane's
-    // document session has, whether the pane is closing or only changing
-    // format.
-    let pdf = state.pane.pdf();
-    spawn_local(async move {
-        pdf.destroy().await;
-    });
-    state.pane.note_document_session(false);
-    pdf_engine::api::scope_to_document(None, "", 0);
-    pdf_engine::backdrop::document_close();
+    // This document's own session: a fresh `MdSession`/`TxtSession` becomes
+    // the pane's document owner, and the session it replaces is disposed on
+    // the spot — a PDF's engine session (its book, rasters, lanes and paper
+    // go with it; the teardown runs detached) or the previous text
+    // document's (which releases the pane's reflow content, synchronously,
+    // before this one's is written below). The retained PDF search index is
+    // dropped too: this format searches its own blocks, and a closed PDF's
+    // extracted text must not sit in the wasm heap while a text book is
+    // open.
+    let reflow = state.reader.document.content.reflow;
+    let session = match format {
+        Format::Markdown => FormatSession::Markdown(MdSession::new(&path, reflow)),
+        _ => FormatSession::Text(TxtSession::new(&path, reflow)),
+    };
+    state.pane.install_session(session).dispose_detached();
+    pdf_engine::session::drop_retained_search();
 
     // The other pipeline's model is released at the same moment, and this
     // document's gloss highlights are loaded before anything mounts — exactly

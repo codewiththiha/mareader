@@ -1,18 +1,17 @@
-//! Typed wrappers over the JS engine (window.PDFReader). This is the ONLY
-//! module that calls engine functions; views and effects never touch
-//! wasm-bindgen types.
+//! The realm-level half of the engine surface, plus the envelope parser
+//! every engine call shares. Views and effects never touch wasm-bindgen
+//! types.
+//!
+//! Document work is NOT here: every call that touches a document goes
+//! through the [`crate::session::PdfSession`] that owns it. What remains is
+//! what names no document — the appearance broadcast ([`theme`]: each live
+//! session re-derives its own raster theme), the diagnostics read side
+//! ([`diagnostics`]), and the paper frame parser ([`paper`]) the session's
+//! paper state machine reads through.
 //!
 //! Every engine fn resolves to `{ok:true, ...}` or
 //! `{ok:false, error:{name,message}}`; we check `ok` here and surface a
 //! `Result<T, EngineError>`.
-//!
-//! One focused module per surface: [`document`] (open / outline / destroy /
-//! covers), [`render`] (page registration, live renders,
-//! thumbnails), [`search`] (the Rust-owned full-text index + engine-side
-//! painting), [`paper`] (the paper session's pixel plumbing), [`theme`]
-//! (re-bake / scrub mode / advisory sweeps). Window chrome, the native
-//! open-file dialog and the AI kickoff are not engine surfaces — they live
-//! in the `app-chrome` and `ai-core` crates.
 //!
 //! [`resolve`] and the hoisted property keys live here: the one parser for the
 //! `{ok,...}` envelope and the hottest allocations in the crate, shared rather
@@ -23,23 +22,12 @@ use std::thread::LocalKey;
 use wasm_bindgen::JsValue;
 
 pub mod diagnostics;
-pub mod document;
 pub mod paper;
-pub mod render;
-pub mod search;
 pub mod theme;
 
 pub use diagnostics::{EngineStats, engine_stats, set_lifecycle_log};
-pub use document::{cover_data_url, destroy, open, outline};
-pub use paper::{PaperFrame, sample_paper_page, set_paper, set_paper_active, take_paper_frame};
-pub use render::{
-    blit_thumb, cancel_page_renders, cancel_thumb, has_thumb, prefetch_thumb, register_page,
-    render_page, render_thumb, resume_prefetches, suspend_prefetches, unregister_page,
-};
-pub use search::{
-    build_search_index, clear_highlights, scope_to_document, search, set_active_match,
-};
-pub use theme::{refresh_theme, set_appearance_menu_open, set_scrub_mode, sweep, sweep_snapshots};
+pub use paper::PaperFrame;
+pub use theme::{refresh_theme, set_appearance_menu_open, set_scrub_mode};
 
 /// Error returned by any engine call: the engine-side error `name` and
 /// `message`, or a local failure to parse/communicate.

@@ -1,26 +1,18 @@
-import {
-  FakeCtx,
-  PDFReader,
-  assertClose,
-  expectedBakePixel,
-  fakeComputed,
-  setFakeComputed,
-  getEl,
-} from "./harness.js";
+import { FakeCtx, PDFReader, assertClose, expectedBakePixel, fakeComputed, setFakeComputed, getEl, R } from "./harness.js";
 
 export async function run(): Promise<void> {
   // Thumbnails.
-  const t = await PDFReader.renderThumb("thumb-1", 1, 0.25);
+  const t = await R.renderThumb("thumb-1", 1, 0.25);
   if (!t.ok) throw new Error("thumb failed: " + JSON.stringify(t));
   console.log("thumb ok:", t.width, t.height);
   // A cache hit is asked about the way the app asks: the synchronous probe a
   // cell reads while it is still being built. The render promise's old
   // `cached` flag arrived after the cell's first frame was composited and so
   // could never do the job its doc claimed.
-  if (!PDFReader.hasThumb(1, 0.25)) throw new Error("thumb not cached after render");
-  const t2 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
+  if (!R.hasThumb(1, 0.25)) throw new Error("thumb not cached after render");
+  const t2 = await R.renderThumb("thumb-1", 1, 0.25);
   if (!t2.ok) throw new Error("thumb cache hit failed: " + JSON.stringify(t2));
-  if (!PDFReader.hasThumb(1, 0.25)) throw new Error("thumb cache lost after hit");
+  if (!R.hasThumb(1, 0.25)) throw new Error("thumb cache lost after hit");
   console.log("thumb cache hit ok");
 
   // A theme change must blit the NEW bake onto the LIVE thumb canvas
@@ -46,16 +38,16 @@ export async function run(): Promise<void> {
   console.log("live thumb refreshTheme ok:", Array.from(liveThumbPx).slice(0, 3));
 
   // A theme change marks cached thumbs STALE.
-  PDFReader.cancelThumb("thumb-1");
+  R.cancelThumb("thumb-1");
   setFakeComputed({ "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)", "--canvas-blend": "soft-light" });
   await PDFReader.refreshTheme();
-  const t3 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
+  const t3 = await R.renderThumb("thumb-1", 1, 0.25);
   if (!t3.ok) throw new Error("thumb after theme change failed: " + JSON.stringify(t3));
   // The theme change staled the cached entry; the re-render above must have
   // refreshed it, and the next one must hit.
-  if (!PDFReader.hasThumb(1, 0.25)) throw new Error("thumb cache not refreshed after theme change");
-  const t4 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
+  if (!R.hasThumb(1, 0.25)) throw new Error("thumb cache not refreshed after theme change");
+  const t4 = await R.renderThumb("thumb-1", 1, 0.25);
   if (!t4.ok) throw new Error("thumb cache hit after theme change failed, got " + JSON.stringify(t4));
-  if (!PDFReader.hasThumb(1, 0.25)) throw new Error("thumb cache lost after theme change");
+  if (!R.hasThumb(1, 0.25)) throw new Error("thumb cache lost after theme change");
   console.log("lazy thumb re-bake ok");
 }

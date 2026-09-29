@@ -77,6 +77,7 @@ impl ZoomController {
         // postpones the reset instead of queueing a second one.
         let v = actuator.vertical.clone();
         let hv = actuator.horizontal.clone();
+        let pane = state.pane;
         let grace_v = v.clone();
         let grace_hv = hv.clone();
         let grace = use_debounce(
@@ -97,8 +98,9 @@ impl ZoomController {
                 // so a settled zoom stops holding its peak surfaces — the
                 // webview's footprint latches onto the highest water the
                 // session reached.
-                pdf_engine::api::sweep();
-                pdf_engine::api::sweep_snapshots();
+                let pdf = pane.pdf();
+                pdf.sweep();
+                pdf.sweep_snapshots();
             },
         );
         Effect::new(move |_| {
@@ -252,8 +254,9 @@ pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     // itself puts none up (renders swap in one blit), but a cover stranded by
     // a scrub would otherwise sit on a full-page surface until its host's
     // next completion.
-    pdf_engine::api::sweep();
-    pdf_engine::api::sweep_snapshots();
+    let pdf = state.pane.pdf();
+    pdf.sweep();
+    pdf.sweep_snapshots();
     // The heap probe at the commit: a zoom is JS-side surfaces, not wasm, so
     // this line should read FLAT across a session's zooms — the control that
     // makes a climb at open or at an index build legible as the ratchet it is.

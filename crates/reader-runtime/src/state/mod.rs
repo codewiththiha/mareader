@@ -49,8 +49,12 @@ pub type TypographySignal = leptos::prelude::Memo<TextSettings>;
 /// The reader's slice of app state: everything the format components and the
 /// reader effects read/write. Sidebar/UI chrome is deliberately NOT here — it
 /// is app chrome state, passed in explicitly where the reader needs it.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct ReaderState {
+    /// The pane this state belongs to: its lifecycle gate and its document
+    /// session (`pane.pdf()` — the ONLY way reader code reaches the PDF
+    /// engine, so a call always lands on this pane's own session).
+    pub pane: crate::pane::handle::PaneHandle,
     pub document: DocumentState,
     pub viewer: ViewerSignals,
     pub search: SearchState,
@@ -66,6 +70,20 @@ pub struct ReaderState {
 }
 
 impl ReaderState {
+    /// A pane's fresh reader state.
+    pub fn new(pane: crate::pane::handle::PaneHandle) -> Self {
+        Self {
+            pane,
+            document: DocumentState::default(),
+            viewer: ViewerSignals::default(),
+            search: SearchState::default(),
+            ai_selection: AiSelectionState::default(),
+            gloss: GlossState::default(),
+            dom: crate::pane::dom::PaneDom::default(),
+            measure: crate::effects::reader::reflow_measure::MeasureInbox::default(),
+        }
+    }
+
     /// True while a reflowable document (plain text, Markdown) is open.
     /// TRACKED: a document of the other kind swapping in re-renders the
     /// caller, so a page host, a `<Show>` and a disabled settings row all

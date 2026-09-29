@@ -32,22 +32,22 @@ phases replace. The inventory below is what exists now.
 
 | Resource | Owner today | Created | Released |
 | --- | --- | --- | --- |
-| Document session (pdf.js proxy, loading task, page surfaces, thumb cache, search highlight state) | `public/engine/state.ts` `session` — one module-global `EngineSession` per webview | `open()` in `public/engine/loader.ts` | `destroy()` in `public/pdfEngine.ts` (called by `close_document` and by the next open) |
+| Document session (pdf.js proxy, loading task, page surfaces, thumb cache, search highlight state) | the pane's `PdfSession` (`crates/pdf-engine/src/session/mod.rs`) → one `EngineSession` per sid in the engine's registry (`public/engine/state.ts`); a fresh session per opened document | `PdfSession::create` in the open flow, then `open(sid, path)` | `destroySession(sid)` — the pane's dispose (awaited) or the next open replacing it (detached); see `docs/session-ownership.md` |
 | pdf.js worker | Created inside `getDocument` per `LoadingTask`; the task is the handle | `openTask()` / `coverDataUrl()` own-task | `destroyTask()` — the single choke point for `task.destroy()` |
 | pdf.js module | `globalThis.pdfjsLib`, loaded by `ensurePdfjs()` in `public/engine/loader.ts` on the first PDF open (the Shell's bake page loads it with a script tag) | first `getDocument` | with the frame: a warm reader idle behind the shelf is evicted (`WARM_READER_IDLE_MS`), and the module goes with its realm |
-| Page render tasks | `PageState.renderTask` on the engine session, one bounded lane (`PAGE_RENDER_LIMIT = 2`) | `renderPageInternal` | cancel-on-supersede, `unregisterPage`, `destroy` |
-| Page hosts (canvas + host registration) | `session.stateByCanvasId`, keyed by canvas id | `registerPage` (Rust: `src/components/formats/pdf/canvas.rs`) | `unregisterPage` (component `on_cleanup`), `destroy` |
-| Thumbnails | `session.thumbCache` (LRU ≤ 16 pairs), `thumbTasks`, thumb lane | `renderThumb`/`prefetchThumb` | LRU eviction, `destroy` |
-| Rust search index | `crates/pdf-engine/src/api/search.rs` thread-local — DELIBERATELY retained across close, keyed by content fingerprint | first search of a document | dropped when a DIFFERENT fingerprint is opened (`scope_to_document`), or with the frame when an idle warm reader is evicted |
+| Page render tasks | `PageState.renderTask` on the owning engine session, one bounded lane per session (`PAGE_RENDER_LIMIT = 2`) | `renderPageInternal` | cancel-on-supersede, `unregisterPage`, `destroySession` |
+| Page hosts (canvas + host registration) | the session's `stateByCanvasId`, keyed by canvas id | `registerPage(sid, …)` through the canvas's `MountedPdf` (`crates/reader-runtime/src/components/formats/pdf/canvas.rs`) | `unregisterPage` (component `on_cleanup`), `destroySession` |
+| Thumbnails | the session's `thumbCache` (LRU ≤ 16 pairs), `thumbTasks`, thumb lane | `renderThumb`/`prefetchThumb` | LRU eviction, `destroySession` |
+| Rust search index | the `PdfSession`'s search scope (`crates/pdf-engine/src/session/search.rs`); at the session's dispose it moves to the one-entry `RETAINED` cache, keyed by content fingerprint + page count | first search of a document | a session opening the SAME content adopts it; a different document replaces it; `drop_retained_search()` when a reflowable document opens; with the frame when an idle warm reader is evicted |
 | Reflow spot memo | the PANE's `GlossState.spots` (`crates/reader-runtime/src/state/gloss.rs` `SpotMemo`, capped), read through `reflow_anchor::parse_spot` | first mark resolve | `GlossState::reset` per document; dropped with the pane's reactive owner at its dispose — no thread-local, so a recycled frame carries nothing over |
-| Look-ahead (paper colour) | `crates/pdf-engine/src/backdrop/mod.rs` thread-local `Session` (`sampling` set + per-area palettes); tasks via `spawn_engine` | `document_open` / scroll ticks | `document_close` resets state; epoch token invalidates in-flight samples; in-flight count exposed as `backdrop::pending_samples()` (snapshot's `lookaheadSamplesActive`) |
-| Thumbnail prefetch/warmup | `src/services/document/open/warmup.rs` fires a bounded timer; the ENGINE owns the work: each prefetch queues in the bounded thumbnail lane under the document's lane epoch | after open settles | teardown cancels in-flight prefetch tasks (registered under `prefetch-<page>` ids) and the epoch drops queued/awaited ones — never filed into the next document; lifecycle visible in `stats()` |
+| Look-ahead (paper colour) | the `PdfSession`'s paper state machine (`crates/pdf-engine/src/backdrop/mod.rs`: `sampling` set + per-area palettes); tasks via `spawn_engine` hold their session | `paper_document_open` / scroll ticks | the session's dispose invalidates it; the session epoch + liveness drop in-flight samples; the realm in-flight count is `backdrop::pending_samples()` (snapshot's `lookaheadSamplesActive`) |
+| Thumbnail prefetch/warmup | `crates/reader-runtime/src/services/document/open/warmup.rs` fires a bounded timer bound to the pane's session and generation; each prefetch queues in THAT session's bounded thumbnail lane | after open settles | the session's teardown cancels in-flight prefetch tasks and drops queued/awaited ones — a disposed session can never file into the next; lifecycle visible in `stats()` |
 | Virtualizers (page strips, stream, thumbs grid) | `virtual_list_leptos::Virtualizer` handles held by components; bindings (listeners, ResizeObserver, timers) inside `VirtualizerInner` | `use_virtualizer` | `dispose()` via the hook's `on_cleanup` |
 | Virtualizer measurement store | `DocumentState.content.metrics.css_heights` / `intrinsic` (app signals) | open seeds | `DocumentState::reset` |
 | Reader reactive state | `AppState.reader` (`src/state/reader/*`) — app-lifetime signals, reset per close | bootstrap | reset by `close_document` (`DocumentState::reset`, `viewer.reset_position`, `search.reset`, `gloss.reset`, `ai_selection.reset`) |
 | Gloss marks (in-memory) | the PANE's `GlossState.marks`; the durable copy per row id is written by the Shell (`ShellApi::save_gloss` → `storage::persist_encoded_gloss`) | open loads (a read) | `close_document` drops the copy (disk copy persists by design) |
 | Covers | `AppState.library.covers` + `services/library/covers.rs` cache (quota-capped) | import / open tail | persists across sessions by design (library state) |
-| Backdrop publication | `--pdf-paper` custom property on `<html>` + `pdf_engine::backdrop` published colour | paper session | `document_close` / `destroy()` republish to theme paper |
+| Backdrop publication | `--pdf-paper` custom property on `<html>`, written only by the PRESENTING session (latest opened, or `presentSession` — a pane going Ready presents) | the session's paper state machine | a destroyed publisher clears it |
 | Theme bake worker | `public/bake.worker.ts` — module-level worker per bake, created/terminated by the bake pipeline | bake start | pipeline end |
 | App overlays, toasts, sidebar | `AppState.ui` | bootstrap | app lifetime (correct — shell chrome) |
 
@@ -56,12 +56,16 @@ phases replace. The inventory below is what exists now.
 These outlive every component and are the reasons a route change alone can
 never release reader resources:
 
-1. `public/engine/state.ts` `session` — the engine's one session object.
-2. `src/services/document/session.rs` `SESSION` — the open/close claim stamp
-   (also the diagnostics disposal epoch).
-3. `crates/pdf-engine/src/api/search.rs` thread-local index + fingerprint
-   scope — retained across close BY DESIGN (reopen adopts it).
-4. `crates/pdf-engine/src/backdrop/mod.rs` thread-local paper `Session`.
+1. `public/engine/state.ts` session REGISTRY — one `EngineSession` per live
+   sid, each owned by a pane's `PdfSession` and destroyed with it; the
+   registry itself holds no document once every session is retired.
+2. `crates/reader-runtime/src/services/document/session.rs` — the realm's
+   generation MINT only (ids never reused; also the diagnostics disposal
+   epoch). Ownership stamps are per pane (`PaneHandle::claim_generation`).
+3. `crates/pdf-engine/src/session/search.rs` `RETAINED` — one retained
+   search index, BY DESIGN (a reopen of the same bytes adopts it).
+4. `crates/pdf-engine/src/backdrop/mod.rs` `SAMPLES_IN_FLIGHT` — a gauge;
+   the paper state machine itself is per session.
 5. `src/effects/app/library.rs`, `src/effects/appearance/mod.rs`
    thread-locals — app-lifetime effect bookkeeping (debounce cells). The
    reflow measurement queue is the pane's own now (`ReaderState.measure`,
@@ -77,9 +81,10 @@ never release reader resources:
    reflow spot memo that used to sit beside it is per pane now (row above).
 8. `crates/app-chrome/src/floating/dismiss.rs` — topmost-overlay registry
    (shell scope).
-9. `public/pdfEngine.ts` module state: `themeChain` promise, the
-   `pagehide`/`visibilitychange` listeners, `watchPaperTokens` mutation
-   observer — installed once at bundle evaluation, never removed.
+9. `public/pdfEngine.ts` module state: the `pagehide`/`visibilitychange`
+   listeners (they walk every live session) and the `watchPaperTokens`
+   mutation observer — installed once at bundle evaluation, never removed.
+   The theme chain is per session now.
 10. `src/memory.rs` probe + the new diagnostics counters
     (`src/diagnostics.rs`) — instrumentation is itself app-lifetime (bounded,
     numeric, and deliberately so).
@@ -116,7 +121,10 @@ route change itself:
 - Virtualizer rAF coalescing and retention timer: owned by
   `VirtualizerInner`, cleared in `dispose()`.
 
-## The disposal sequence as it exists today
+## The disposal sequence as it existed at Phase 0
+
+Kept as the Phase 0 record. The current sequence is the pane's dispose
+("Disposal" below) ending its `PdfSession` — see `docs/session-ownership.md`.
 
 ```text
 close_document (services/document/close.rs)
@@ -347,21 +355,25 @@ responsibilities moved to exactly one owner:
   off screen every placed pane is `Suspended` (document kept, no new work);
   back on screen they resume. A pane that becomes ready off screen is parked
   at once; `ReaderHost::open` resumes a parked pane for the command. The
-  pane mirrors the lifecycle into the engine's thumbnail prefetch switch.
+  pane mirrors the lifecycle into ITS session's thumbnail prefetch switch
+  (and a pane going Ready presents its session's paper).
 - **Workspace commands.** A pane's open (Cmd/Ctrl+O, the frame's resolved
   open) goes to the host through `PaneEnv::open` → `ReaderHost::open`;
   Escape closes the rail through the host's `ShellController`, never by
   writing the sidebar store.
-- **Resources** (`pane/handle.rs::PaneResources`, in the host's arena so it
+- **Resources** (`pane/handle.rs::PaneCell`, in the host's arena so it
   outlives the pane's owner mid-dispose): the virtualizers (including the
-  reflow stream's and the thumbnail rail's) and the engine document
-  session. Render work, prefetch and look-ahead are the engine's, reached
-  only through the pane's `PdfSessionHandle` and released by its destroy
-  and sweeps; listeners, observers and timers live in the pane's owner.
-- **Disposal** is the pane's `dispose`: read point → claim → paper close →
-  virtualizers taken → owner cleanup (sync; the per-pane memos go with it)
-  → tail (destroy,
-  sweeps, virtualizer dispose, completion). The host's workspace disposal
+  reflow stream's and the thumbnail rail's) and the pane's document
+  session — `FormatSession::{Pdf(PdfSession), Markdown(MdSession),
+  Text(TxtSession)}`, one per opened document. Render work, prefetch,
+  thumbnails, page registration and look-ahead belong to the `PdfSession`,
+  reached only through `pane.pdf()` / `MountedPdf` and released by its
+  dispose; listeners, observers and timers live in the pane's owner.
+- **Disposal** is the pane's `dispose`: read point → `end_document`
+  (generation claimed, session taken out; Markdown/text disposed on the
+  spot) → virtualizers taken → owner cleanup (sync; the per-pane memos go
+  with it) → tail (the PDF session's teardown awaited, virtualizer
+  dispose, completion). The host's workspace disposal
   runs it for every pane while the session is alive; the runtime awaits
   the tails.
 - **Lifetime (what keeps memory alive).** The session's reactive owner is
@@ -373,8 +385,8 @@ responsibilities moved to exactly one owner:
   refuses (`PaneError::Unowned`) outside one — so the unmount alone
   releases the whole tree even if the explicit disposal never ran. The
   manager drops a pane object the moment its `dispose` returns; the tail
-  captures only the engine handle, the virtualizers, the stamp and the
-  pane handle, and releases the handle's arena slot when it finishes. The
+  captures only the session's teardown, the virtualizers, the generation
+  and the pane handle, and releases the handle's arena slot when it finishes. The
   diagnostics host probe holds the manager state weakly and is settled
   into a plain final snapshot at the end of the teardown, so a recycled
   frame keeps nothing of its last host between sessions.
@@ -385,14 +397,16 @@ responsibilities moved to exactly one owner:
   names a `storage::` function that is not on its read allowlist or reloads
   the window itself — durable writes and the window are the Shell's.
 
-Still module-global and therefore Phase 4's: the JS PDF engine session
-(`public/engine/state.ts`, one document per realm) and its prefetch switch,
-the look-ahead paper session, the disposal epoch (`services::document::session`),
-the search index, and the engine-side counters a pane's
-`PaneResourceCounts` cannot yet attribute to one pane (renders, prefetches,
-look-ahead samples — realm totals in the diagnostics `engine` block). With
-one pane per session they are exactly as scoped as before; a second
-concurrent pane needs session-scoped engines first. Session-level by
+Session-scoped since Phase 4 (`docs/session-ownership.md`): the PDF
+engine's document state, lanes, caches, page registry, raster theme, paper
+state machine and search scope are each owned by one pane's `PdfSession`,
+Markdown/TXT documents by an `MdSession`/`TxtSession`, and async stamps by
+the pane's generation. Realm-wide by design: id mints, the appearance
+broadcast, the retained search index (content-keyed), code and allocation
+caches, and the diagnostics totals (renders, prefetches, look-ahead samples
+— summed across sessions in the diagnostics `engine` block, per session in
+`sessionStats`). Element ids are still resolved realm-wide; pane-unique DOM
+ids are Phase 5's prerequisite. Session-level by
 design, not pane state: the frame's port and parked opens (`frame.rs`), the
 live-session record (`lib.rs`), the diagnostics probes, and the host's
 `#viewer-slot` measurement.

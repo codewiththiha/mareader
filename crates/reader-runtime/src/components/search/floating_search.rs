@@ -79,11 +79,12 @@ pub fn FloatingSearch(
         let started = search_gen.get_untracked();
         // A close can dispose the reader's signals while the run is still
         // going (wasm spawn_local runs to completion); reading them here
-        // would panic the wasm, so the document stamp stands the tail down.
-        let epoch = crate::services::document::session::current_epoch();
+        // would panic the wasm, so the pane's document generation stands the
+        // tail down (per pane: another pane's open does not).
+        let epoch = state.pane.generation();
         spawn_local(async move {
             run_search(state).await;
-            if crate::services::document::session::current_epoch() != epoch {
+            if !state.pane.owns_generation(epoch) {
                 return;
             }
             if search_gen.get_untracked() != started || state.search.query.get_untracked() != q {

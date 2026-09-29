@@ -1,0 +1,246 @@
+// Two sessions in one realm: the engine-level half of the session-ownership
+// tests (docs/session-ownership.md). Every document call names its session;
+// these scenarios prove that naming is real isolation, not a label:
+//
+//   * two sessions render, prefetch and thumbnail side by side, and
+//     destroying one leaves the other fully usable;
+//   * a retired sid is refused everywhere — async calls resolve
+//     `no_session`, sync calls are no-ops — and can never be registered
+//     again (sids are monotonic);
+//   * work in flight when its session dies settles into THAT session's
+//     accounting and never lands in a session created afterwards;
+//   * an open racing its session's destroy resolves `no_session` and still
+//     tears its loading task (and worker) down;
+//   * one realm-level appearance change reaches every live session, and the
+//     root backdrop paper follows the publishing session only.
+//
+// The scenario ends with every session it made retired, so the teardown
+// baseline after it still proves the realm drains to zero.
+
+import {
+  FakeCtx,
+  PDFReader,
+  assertClose,
+  bind,
+  expectedBakePixel,
+  fakeComputed,
+  getEl,
+  isScrubActive,
+  newSession,
+  setFakeComputed,
+  type BoundReader,
+} from "./harness.js";
+
+function firstPixel(id: string): number[] {
+  const cv = getEl(id) as unknown as { _ctx: FakeCtx };
+  return Array.from(cv._ctx.getImageData(0, 0, 1, 1).data).slice(0, 3);
+}
+
+function paper(): string {
+  const root = getEl("documentElement") as unknown as {
+    style: { getPropertyValue: (name: string) => string };
+  };
+  return root.style.getPropertyValue("--pdf-paper");
+}
+
+function stubHost(id: string): void {
+  const host = getEl(id) as unknown as { querySelector: () => unknown };
+  host.querySelector = () => ({ classList: { toggle() {} } });
+}
+
+async function openIn(sid: number, path: string): Promise<BoundReader> {
+  const opened = await PDFReader.open(sid, path);
+  if (!opened.ok) throw new Error(`open in session ${sid} failed: ${JSON.stringify(opened)}`);
+  return bind(sid);
+}
+
+function assertRefused(name: string, result: { ok: boolean; error?: { name: string } }): void {
+  if (result.ok || result.error?.name !== "no_session") {
+    throw new Error(`${name} on a retired sid must resolve no_session, got ${JSON.stringify(result)}`);
+  }
+}
+
+export async function run(): Promise<void> {
+  const before = PDFReader.stats();
+
+  // --- Independent sessions ------------------------------------------------
+  const sidA = newSession();
+  const sidB = newSession();
+  const A = await openIn(sidA, "/fake/book.pdf");
+  const B = await openIn(sidB, "/fake/blend-book.pdf");
+  const live = PDFReader.sessions();
+  if (!live.includes(sidA) || !live.includes(sidB)) {
+    throw new Error("both sessions must be live, got " + JSON.stringify(live));
+  }
+  // A second document in a session that holds one is refused: a new
+  // document is a new session.
+  const again = await PDFReader.open(sidA, "/fake/book.pdf");
+  if (again.ok || again.error.name !== "session_in_use") {
+    throw new Error("a second open in one session must be refused, got " + JSON.stringify(again));
+  }
+
+  // Each session registers its own pages. (Element ids are still resolved
+  // realm-wide, so two panes need distinct ids — pane-unique DOM ids are a
+  // prerequisite recorded for the multi-pane phase.)
+  stubHost("two-a-pg");
+  stubHost("two-b-pg");
+  A.registerPage(1, "two-a-cv", "two-a-pg");
+  B.registerPage(2, "two-b-cv", "two-b-pg");
+  const [ra, rb] = await Promise.all([
+    A.renderPage("two-a-cv", 1.0, false),
+    B.renderPage("two-b-cv", 1.0, false),
+  ]);
+  if (!ra.ok || !rb.ok) throw new Error("side-by-side renders failed: " + JSON.stringify([ra, rb]));
+  const statsA = PDFReader.sessionStats(sidA);
+  const statsB = PDFReader.sessionStats(sidB);
+  if (!statsA || !statsB || statsA.pages !== 1 || statsB.pages !== 1) {
+    throw new Error("each session must hold exactly its own page: " + JSON.stringify([statsA?.pages, statsB?.pages]));
+  }
+  if (statsA.rendersCompleted < 1 || statsB.rendersCompleted < 1) {
+    throw new Error("each session must count its own renders");
+  }
+  console.log("two sessions ok: side-by-side renders, one page each");
+
+  // Prefetch and thumbnails are per session: suspending A's prefetches
+  // must not hold B's.
+  A.suspendPrefetches();
+  await B.prefetchThumb(3, 0.25);
+  if (!B.hasThumb(3, 0.25)) throw new Error("B's prefetch must land in B's cache");
+  if (A.hasThumb(3, 0.25)) throw new Error("B's prefetch leaked into A's cache");
+  A.resumePrefetches();
+  await A.prefetchThumb(4, 0.25);
+  if (!A.hasThumb(4, 0.25) || B.hasThumb(4, 0.25)) throw new Error("A's prefetch crossed sessions");
+  console.log("independent prefetch ok: suspension and caches are per session");
+
+  // --- Root paper follows the publisher -----------------------------------
+  A.setPaper("#202020");
+  B.setPaper("#f0e0c0");
+  // B opened last, so B publishes.
+  const paperB = paper();
+  PDFReader.presentSession(sidA);
+  const paperA = paper();
+  if (!paperA || !paperB || paperA === paperB) {
+    throw new Error(`presenting must swap the root paper: A=${paperA} B=${paperB}`);
+  }
+  // A non-publisher's paper change leaves the root alone.
+  B.setPaper("#e8e0d0");
+  if (paper() !== paperA) throw new Error("a non-publishing session repainted the root paper");
+  console.log("paper publisher ok: root follows the presented session only");
+
+  // --- One appearance broadcast, every session ----------------------------
+  // Appearance is global; the rasters it is baked into are per session. One
+  // refreshTheme must re-bake BOTH sessions' pages, each on its own chain.
+  const savedTheme = { ...fakeComputed };
+  setFakeComputed({ "--canvas-filter": "none", "--canvas-blend": "multiply", paper: "#ffffff" });
+  await PDFReader.refreshTheme();
+  const rawA = firstPixel("two-a-cv");
+  const rawB = firstPixel("two-b-cv");
+  const darkFilter = "invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02)";
+  setFakeComputed({ "--canvas-filter": darkFilter, "--canvas-blend": "screen", paper: "#131316" });
+  await PDFReader.refreshTheme();
+  const darkPaper = [19, 19, 22];
+  assertClose(
+    new Uint8ClampedArray(firstPixel("two-a-cv")),
+    expectedBakePixel(rawA, darkFilter, "screen", darkPaper),
+    "session A re-baked by the broadcast",
+  );
+  assertClose(
+    new Uint8ClampedArray(firstPixel("two-b-cv")),
+    expectedBakePixel(rawB, darkFilter, "screen", darkPaper),
+    "session B re-baked by the broadcast",
+  );
+  // The scrub window spans every session and the class leaves only once
+  // all of them have settled out of it.
+  await PDFReader.setScrubMode(true);
+  if (!isScrubActive()) throw new Error("scrub must raise the appearance-scrubbing class");
+  await PDFReader.setScrubMode(false);
+  if (isScrubActive()) throw new Error("the class must leave once every session exits the scrub");
+  setFakeComputed(savedTheme);
+  await PDFReader.refreshTheme();
+  console.log("appearance broadcast ok: both sessions re-baked, one scrub window");
+
+  // --- Stale async: work in flight when its session dies ------------------
+  A.registerPage(2, "two-a2-cv", "two-a-pg");
+  const inFlight = A.renderPage("two-a2-cv", 1.0, false);
+  const pagesB = PDFReader.sessionStats(sidB)!.pages;
+  // Independent prefetch across a disposal: both sessions prefetch, A dies
+  // with its prefetch in flight, and B's prefetch still lands — in B.
+  const prefetchA = A.prefetchThumb(5, 0.25);
+  const prefetchB = B.prefetchThumb(5, 0.25);
+  await PDFReader.destroySession(sidA);
+  const late = await inFlight;
+  await Promise.all([prefetchA, prefetchB]);
+  if (!B.hasThumb(5, 0.25)) throw new Error("B's prefetch must survive A's disposal");
+  if (!B.hasThumb(3, 0.25)) throw new Error("A's disposal must not evict B's thumbnails");
+  if (A.hasThumb(5, 0.25)) throw new Error("a disposed session must answer no thumbnails");
+  if (late.ok) throw new Error("a render whose session died must not report success");
+  const sidC = newSession();
+  const C = await openIn(sidC, "/fake/book.pdf");
+  const statsC = PDFReader.sessionStats(sidC)!;
+  if (statsC.pages !== 0 || statsC.rendersCompleted !== 0 || statsC.rendersCancelled !== 0) {
+    throw new Error("a dead session's late settle landed in the next session: " + JSON.stringify(statsC));
+  }
+  if (PDFReader.sessionStats(sidB)!.pages !== pagesB) throw new Error("destroying A touched B's pages");
+  console.log("stale async ok: A's late render settled into A, not C or B");
+
+  // B still works after A's teardown.
+  const rb2 = await B.renderPage("two-b-cv", 1.2, false);
+  if (!rb2.ok) throw new Error("B must keep rendering after A's teardown: " + JSON.stringify(rb2));
+  // A retired publisher cleared the root; B takes it back on present.
+  if (paper() !== "") throw new Error("retiring the publisher must clear the root paper, got " + paper());
+  PDFReader.presentSession(sidB);
+  if (!paper()) throw new Error("presenting B must publish its paper");
+  console.log("survivor ok: B renders and publishes after A is gone");
+
+  // --- A retired sid is refused, and never reused -------------------------
+  assertRefused("open", await PDFReader.open(sidA, "/fake/book.pdf"));
+  assertRefused("renderPage", await A.renderPage("two-a-cv", 1.0, false));
+  assertRefused("renderThumb", await A.renderThumb("two-thumb-cv", 1, 0.25));
+  assertRefused("extractPageText", await A.extractPageText(1));
+  A.registerPage(1, "ghost-cv", "two-a-pg"); // a no-op, not a resurrection
+  if (A.hasThumb(4, 0.25) || A.takePaperFrame("two-a-cv") !== null) {
+    throw new Error("a retired session still answered sync reads");
+  }
+  if (PDFReader.sessionStats(sidA) !== null) throw new Error("a retired sid still reports stats");
+  if (PDFReader.createSession(sidA) || PDFReader.createSession(sidB)) {
+    throw new Error("a used sid must never be registered again");
+  }
+  console.log("retired sid ok: refused everywhere, never re-registered");
+
+  // --- An open racing its session's destroy --------------------------------
+  const sidD = newSession();
+  const pending = PDFReader.open(sidD, "/fake/book.pdf");
+  await PDFReader.destroySession(sidD);
+  const raced = await pending;
+  assertRefused("open raced by destroy", raced);
+  console.log("open/destroy race ok: no_session, task torn down");
+
+  // --- Retire the rest and prove the realm balanced -----------------------
+  C.unregisterPage("none"); // harmless on a live session
+  B.unregisterPage("two-b-cv");
+  await PDFReader.destroySession(sidB);
+  await PDFReader.destroySession(sidC);
+  await PDFReader.destroySession(sidB); // idempotent
+  const after = PDFReader.stats();
+  if (after.sessionsLive !== before.sessionsLive) {
+    throw new Error(`sessions left live: ${after.sessionsLive} (was ${before.sessionsLive})`);
+  }
+  // The scenario runs beside the other scenarios' current session, so the
+  // gauges must return to exactly what they were before it began.
+  const gaugeKeys = ["pages", "thumbs", "thumbTasks", "activeRenders", "pageQueue", "thumbQueue"] as const;
+  for (const key of gaugeKeys) {
+    if (after[key] !== before[key]) {
+      throw new Error(`retired sessions left ${key}=${after[key]} behind (was ${before[key]})`);
+    }
+  }
+  for (const sid of [sidA, sidB, sidC, sidD]) {
+    if (PDFReader.sessions().includes(sid)) throw new Error(`session ${sid} is still live`);
+  }
+  if (after.workersCreated - before.workersCreated !== after.workersTerminated - before.workersTerminated) {
+    throw new Error("a loading task outlived its session (workers unbalanced)");
+  }
+  if (after.sessionsOpened - before.sessionsOpened !== after.sessionsDestroyed - before.sessionsDestroyed) {
+    throw new Error("session open/destroy counts unbalanced");
+  }
+  console.log("two-session teardown ok: realm balanced");
+}

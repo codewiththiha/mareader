@@ -1,6 +1,7 @@
 //! Paper backdrop driver: wires the reader's settings and scroll geometry to
-//! the paper session (`pdf_engine::backdrop`, the state machine over the
-//! `pdf-paper` crate).
+//! the pane's PDF session's paper state machine (`pdf_engine::backdrop`,
+//! over the `pdf-paper` crate) — always THIS pane's session, through
+//! `pane.pdf()`.
 //!
 //! The session owns every COLOUR decision — detection off raw frames, the
 //! per-page palette, the look-ahead. The shell owns the GEOMETRY and reports
@@ -20,12 +21,13 @@
 //! fold in the trailing gap) — the same convention the dominant tracker
 //! uses, so backdrop and page counter always agree on the current page.
 //!
-//! The halves are wired at different levels on purpose: [`paper_settings`] at
-//! the APP root, because the session must know the blend switch and detection
-//! area BEFORE the first document opens (the first book's first frame
-//! publishes only if the session already knows `blend_on`);
-//! [`blend_backdrop`] (geometry) stays with the pane (`crate::pane`), where the
-//! virtualizer's scroll lives.
+//! The halves are wired at different moments on purpose: [`paper_settings`]
+//! at pane creation, re-stating every settings change to whatever session
+//! the pane holds, and [`configure_session`] from the open flow's seed, so a
+//! NEW session knows the blend switch and detection area before its first
+//! frame (the first frame publishes only if the session already knows
+//! `blend_on`); [`blend_backdrop`] (geometry) stays with the pane's mount,
+//! where the virtualizer's scroll lives.
 
 use leptos::prelude::*;
 
@@ -33,32 +35,30 @@ use pdf_paper::{DEFAULT_EDGE_WIDTH, PaperConfig};
 use reader_core::settings::LayoutSettings;
 use reader_core::view::ViewMode;
 
-/// Settings → the session: the blend switch plus the detection area. Sent
-/// whether a document is open or not — the session keeps the configuration
-/// for the next book and idles otherwise.
-///
-/// Wired at the APP root, not the reader: on a fresh launch this runs before
-/// the first `document_open`, so the first book's first frame publishes
-/// against a session that already knows blend is on. Wiring at reader mount
-/// instead is why the first open of a session used to flash the theme paper
-/// first.
+/// Settings → the pane's session: the blend switch plus the detection
+/// area, re-stated on every change. A pane without a PDF session ignores
+/// it; a session created later is configured by the open flow's seed
+/// ([`configure_session`]) before anything can render into it.
 pub fn paper_settings(state: crate::context::ReaderContext) {
     let settings = state.settings;
-    // Publish ONCE, synchronously, before anything is allowed to run. A
-    // Leptos effect's first run is queued, not immediate, and the open flow
-    // this must precede is itself asynchronous — an OS "Open with" launch
-    // hands the backend a path before the webview finishes mounting — so
-    // "installed earlier in the app root" alone does not guarantee this
-    // landed first. A session that does not yet know blend is on drops the
-    // first book's first frame, so the seed does not wait for a flush.
-    publish(settings.with_untracked(|st| st.layout));
-    // ...and then track, for every later change.
-    Effect::new(move |_| publish(settings.with(|st| st.layout)));
+    let pane = state.pane;
+    Effect::new(move |_| {
+        let layout = settings.with(|st| st.layout);
+        configure(&pane.pdf(), layout);
+    });
 }
 
-/// Hand one snapshot of the layout settings to the paper session.
-fn publish(layout: LayoutSettings) {
-    pdf_engine::backdrop::configure(
+/// State the current paper settings to a freshly opened session — from the
+/// seed, synchronously, before the reader mounts, so the document's first
+/// frame lands on a session that already knows whether blend is on.
+pub fn configure_session(state: &crate::context::ReaderContext) {
+    let layout = state.settings.with_untracked(|st| st.layout);
+    configure(&state.pane.pdf(), layout);
+}
+
+/// Hand one snapshot of the layout settings to a session.
+fn configure(pdf: &crate::pane::engine::PdfPane, layout: LayoutSettings) {
+    pdf.paper_configure(
         layout.blend_mode,
         PaperConfig {
             area: layout.blend_area,
@@ -73,6 +73,7 @@ pub fn blend_backdrop(state: crate::context::ReaderContext) {
     let settings = state.settings;
     let viewer = state.reader.viewer;
     let heights = state.reader.document.content.metrics.css_heights;
+    let pane = state.pane;
 
     // The viewport's weighted position along the page ladder. Per scroll
     // tick, and only while blend mode is actually driving a backdrop — the
@@ -96,7 +97,7 @@ pub fn blend_backdrop(state: crate::context::ReaderContext) {
         // report: the position is the page itself, and the backdrop switches
         // with the page turn.
         if viewer.mode.get() != ViewMode::ScrollVertical {
-            pdf_engine::backdrop::position(f64::from(page));
+            pane.pdf().paper_position(f64::from(page));
             return;
         }
         let scroll = viewer.scroll_top.get();
@@ -105,7 +106,8 @@ pub fn blend_backdrop(state: crate::context::ReaderContext) {
         // Borrow, don't clone: this effect runs on every scroll tick while
         // blend is on, and the column can be a thousand heights deep.
         let pos = heights.with(|column| paper_position(column, gap, scroll, viewport_h));
-        pdf_engine::backdrop::position(if pos > 0.0 { pos } else { f64::from(page) });
+        pane.pdf()
+            .paper_position(if pos > 0.0 { pos } else { f64::from(page) });
     });
 }
 

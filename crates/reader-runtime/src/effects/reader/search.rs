@@ -27,7 +27,6 @@ use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use crate::state::ReaderState;
 use app_chrome::TITLE_BAR_H;
-use pdf_engine::api as engine;
 use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
 use reader_core::view::ViewMode;
 
@@ -47,9 +46,11 @@ pub async fn run_search(state: ReaderState) {
     // reader that asked for it is gone (a raced close disposes every signal
     // this tail writes, and writing a disposed signal panics the wasm).
     // spawn_local on wasm runs to completion — owner disposal does not stop
-    // it — so the document stamp is the stand-down: re-checked after every
-    // await, the same rule the open tails keep.
-    let stamp = crate::services::document::session::current_epoch();
+    // it — so the pane's document generation is the stand-down: re-checked
+    // after every await, the same rule the open tails keep. Per pane: a
+    // document opening in ANOTHER pane never stands this run down.
+    let pane = state.pane;
+    let stamp = pane.generation();
     if state.reflowable_now() {
         run_reflow_search(state);
         return;
@@ -57,7 +58,7 @@ pub async fn run_search(state: ReaderState) {
     if !state.search.index_built.get_untracked() {
         // One build at a time. The first search of a big book takes seconds —
         // a worker round trip per page, ~3 pages per turn (see
-        // pdf_engine::api::search::SEARCH_PAGE_CONCURRENCY) — and every
+        // pdf_engine::session::SEARCH_PAGE_CONCURRENCY) — and every
         // keystroke meanwhile fires another run. A second concurrent
         // extraction would be pure wasm churn, the exact heap ratchet the
         // lazy build exists to avoid; the building task queries the LATEST
@@ -69,8 +70,14 @@ pub async fn run_search(state: ReaderState) {
         state.search.building.set(true);
         // The page count comes from the open flow, which alone knows the
         // document size.
-        let built = engine::build_search_index(state.document.num_pages.get_untracked()).await;
-        if crate::services::document::session::current_epoch() != stamp {
+        // The pane's OWN session builds into its own index.
+        let pdf = pane.pdf();
+        let built = pdf
+            .build_search_index(state.document.num_pages.get_untracked())
+            .await;
+        // Every session replacement (an open) and the pane's dispose claim
+        // a new generation, so this one check covers "same session" too.
+        if !pane.owns_generation(stamp) {
             return;
         }
         state.search.building.set(false);
@@ -95,18 +102,19 @@ pub async fn run_search(state: ReaderState) {
         return;
     }
 
-    if crate::services::document::session::current_epoch() != stamp {
+    if !pane.owns_generation(stamp) {
         return;
     }
-    match engine::search(&query).await {
-        Ok(resp) => {
+    let pdf = pane.pdf();
+    match pdf.search(&query) {
+        Some(resp) => {
             state.search.total.set(resp.total);
             state.search.matches.set(resp.matches);
             state.search.active.set(None);
-            engine::set_active_match(0, -1);
+            pdf.set_active_match(0, -1);
         }
-        Err(e) => {
-            web_sys::console::warn_1(&format!("[search] query: {e}").into());
+        None => {
+            web_sys::console::warn_1(&"[search] query: the pane holds no PDF session".into());
         }
     }
 }
@@ -162,7 +170,7 @@ pub fn clear_search(state: ReaderState) {
     // query and the match list below, so there is nothing to clear on the engine
     // side — and the call must not reach an engine that has no document.
     if !state.reflowable_now() {
-        engine::clear_highlights();
+        state.pane.pdf().clear_highlights();
     }
     state.search.total.set(0);
     state.search.matches.set(Vec::new());
@@ -192,7 +200,7 @@ fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) 
     // it paints into the page's text layer. A reflowable document's rows read
     // `search.active` themselves and re-class the box that answers to it.
     if !state.reflowable_now() {
-        engine::set_active_match(m.page, m.index as i32);
+        state.pane.pdf().set_active_match(m.page, m.index as i32);
     }
 
     let mode = state.viewer.mode.get_untracked();

@@ -23,7 +23,6 @@ use crate::host::model::{
     DocumentId, PaneBounds, PaneDescriptor, PaneError, PaneFormat, PaneId, PaneLifecycle,
 };
 use crate::pane::handle::PaneHandle;
-use crate::services::document::session;
 use crate::state::ReaderState;
 use pdf_engine::types::DocStatus;
 use reader_core::format::{Format, format_of};
@@ -104,7 +103,7 @@ impl DocumentPane {
             // create with the pane (the reflow stream's and the thumbnail
             // rail's virtualizers).
             provide_context(handle);
-            let reader = ReaderState::default();
+            let reader = ReaderState::new(handle);
             let launch = RwSignal::new(launch.unwrap_or_else(empty_launch));
             let ctx = ReaderContext {
                 reader,
@@ -127,9 +126,9 @@ impl DocumentPane {
                 search_visible: reader.search.visible.into(),
             };
 
-            // The paper session's blend switch and detection area, sent
-            // BEFORE the first open: the first book's first frame publishes
-            // only if the session already knows `blend_on`.
+            // The paper settings follow every change onto whatever PDF
+            // session the pane holds; each new session is configured by the
+            // open flow's seed before its first frame.
             crate::effects::reader::blend_backdrop::paper_settings(ctx);
 
             // The launch the pane was created for: opened by the pane that
@@ -227,11 +226,18 @@ impl PaneRuntime for DocumentPane {
         // render while the shelf is being revealed — suspending abandons
         // queued and in-flight prefetches, resuming lets them run. A warm
         // session's pane goes Ready then straight to Suspended, so it starts
-        // parked. The engine's prefetch switch is realm-wide until Phase 4
-        // gives each pane its own engine session.
+        // parked. The switch is THIS pane's session's: another pane's
+        // prefetch is untouched. (The view is taken after the lifecycle was
+        // published, so a resume sees the pane already admitting work.)
         match lifecycle {
-            PaneLifecycle::Suspended => pdf_engine::api::suspend_prefetches(),
-            PaneLifecycle::Ready => pdf_engine::api::resume_prefetches(),
+            PaneLifecycle::Suspended => self.ctx.pane.pdf().suspend_prefetches(),
+            PaneLifecycle::Ready => {
+                // The pane in front presents: its session's paper is the one
+                // the root backdrop shows.
+                let pdf = self.ctx.pane.pdf();
+                pdf.present();
+                pdf.resume_prefetches();
+            }
             _ => {}
         }
     }
@@ -357,8 +363,13 @@ impl PaneRuntime for DocumentPane {
     ///
     /// 1. the durable read point, written while the pane's state still
     ///    exists (the Shell owns the library blob);
-    /// 2. the document session claimed (a newer open's stale tail can no
-    ///    longer land) and the paper session closed;
+    /// 2. the pane's document generation claimed (an open still in flight
+    ///    can no longer land) and its format session taken out of the pane:
+    ///    from here nothing reaches that session through the pane. A
+    ///    Markdown/text session is disposed on the spot; a PDF session's
+    ///    teardown (paper invalidated, search retained, the engine session
+    ///    destroyed — its rasters, lanes, workers and page registrations
+    ///    with it) is handed to the tail;
     /// 3. the virtualizers taken out of the registry — from here the tail
     ///    alone owns them;
     /// 4. the pane's owner cleaned up: every effect, listener (the keyboard
@@ -367,12 +378,12 @@ impl PaneRuntime for DocumentPane {
     ///    with its view's child owners — and the per-pane memos (the gloss
     ///    spot memo, the measurement inbox) with them: they are the pane's
     ///    state, not thread-locals a recycled frame would carry over;
-    /// 5. the tail: the engine destroy awaited, the sweeps, the
-    ///    virtualizers' final dispose, the completion reported, and the
-    ///    pane's handle slot released (its gates read `Disposed` from then).
+    /// 5. the tail: the PDF session's teardown awaited, the virtualizers'
+    ///    final dispose, the completion reported, and the pane's handle slot
+    ///    released (its gates read `Disposed` from then).
     ///
-    /// The tail captures only what it still has to release — the engine
-    /// handle, the virtualizers, the stamp, the pane handle (Copy) — never
+    /// The tail captures only what it still has to release — the session's
+    /// teardown, the virtualizers, the generation, the pane handle (Copy) — never
     /// the pane itself: the manager drops the pane object as soon as this
     /// returns, so its owner shell and context map go with the sync half.
     fn dispose(&self) -> PaneTeardown {
@@ -383,38 +394,32 @@ impl PaneRuntime for DocumentPane {
             crate::services::document::flush_read_point(&ctx);
         }
         // (2)
+        let handle = ctx.pane;
         let doc_open = ctx
             .reader
             .document
             .status
             .try_get_untracked()
             .is_some_and(|status| status != DocStatus::Idle);
-        let stamp = doc_open.then(session::claim);
-        if let Some(stamp) = stamp {
-            crate::diagnostics::note_reader_runtime_dispose_begin(stamp);
+        let (generation, teardown) = handle.end_document();
+        if doc_open {
+            crate::diagnostics::note_reader_runtime_dispose_begin(generation);
         }
-        pdf_engine::backdrop::document_close();
         // (3)
-        let handle = ctx.pane;
         let virtualizers = handle.take_virtualizers();
-        let pdf = handle.pdf();
-        let held = handle.holds_document_session();
-        handle.note_document_session(false);
         // (4)
         self.owner.cleanup();
         crate::diagnostics::note_pane_dispose();
         // (5)
         Box::pin(async move {
-            if stamp.is_some() || held {
-                pdf.destroy().await;
-                pdf.sweep();
-                pdf.sweep_snapshots();
+            if let Some(teardown) = teardown {
+                teardown.await;
             }
             for v in virtualizers {
                 v.dispose();
             }
-            if let Some(stamp) = stamp {
-                crate::diagnostics::note_reader_runtime_dispose_complete(stamp);
+            if doc_open {
+                crate::diagnostics::note_reader_runtime_dispose_complete(generation);
                 app_state::memory::log_heap("close");
             }
             handle.release();

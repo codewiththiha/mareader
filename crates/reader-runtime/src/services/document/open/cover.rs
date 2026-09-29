@@ -4,9 +4,6 @@ use leptos::prelude::*;
 use runtime_contract::boundary::ShellApi;
 use wasm_bindgen_futures::spawn_local;
 
-use pdf_engine::api as engine;
-
-use crate::services::document::session;
 use runtime_contract::covers::COVER_WIDTH;
 
 /// Render and hand this book's cover to the Shell, unless the launch already
@@ -19,12 +16,13 @@ pub(super) fn ensure(ctx: &crate::context::ReaderContext, path: String, stamp: u
         return;
     }
     let ctx = *ctx;
+    // Rendered by the pane's OWN session, for its own document.
+    let pdf = ctx.pane.pdf();
     spawn_local(async move {
-        let cover = engine::cover_data_url(&path, COVER_WIDTH).await;
-        // A cover rendered by a superseded attempt is page 1 of whatever the
-        // engine has open NOW, not of the book it was asked for; filing it
-        // under `path` would put the wrong art on the shelf.
-        if !session::owns(stamp) {
+        let cover = pdf.cover_data_url(&path, COVER_WIDTH).await;
+        // A cover finished for a superseded attempt belongs to a document
+        // the pane no longer shows; filing it now could race the winner's.
+        if !ctx.pane.owns_generation(stamp) {
             return;
         }
         let Ok(c) = cover else {

@@ -15,16 +15,19 @@ import type {
   Viewport,
 } from "./types";
 import { NAVIGATE_EVENT } from "./events";
-import { session } from "./state";
+import type { EngineSession } from "./state";
 
-async function destToPage(dest: string | unknown[] | null | undefined): Promise<number | null> {
-  if (!session.pdf || !dest) return null;
+async function destToPage(
+  s: EngineSession,
+  dest: string | unknown[] | null | undefined
+): Promise<number | null> {
+  if (!s.pdf || !dest) return null;
   try {
-    const explicit = typeof dest === "string" ? await session.pdf.getDestination(dest) : dest;
+    const explicit = typeof dest === "string" ? await s.pdf.getDestination(dest) : dest;
     if (!Array.isArray(explicit) || !explicit.length) return null;
     const ref = explicit[0];
     if (typeof ref === "object" && ref !== null) {
-      return (await session.pdf.getPageIndex(ref)) + 1;
+      return (await s.pdf.getPageIndex(ref)) + 1;
     }
     if (Number.isInteger(ref)) return (ref as number) + 1;
     return null;
@@ -45,6 +48,7 @@ function safeExternalUrl(raw: string): string | null {
 }
 
 export async function buildLinkLayer(
+  s: EngineSession,
   st: PageState,
   viewport: Viewport,
   page: PDFPageProxy | null
@@ -54,7 +58,7 @@ export async function buildLinkLayer(
 
   let annots: Annotation[] = [];
   try {
-    const src = page || (await session.pdf!.getPage(st.page));
+    const src = page || (await s.pdf!.getPage(st.page));
     annots = await src.getAnnotations({ intent: "display" });
     if (!page) {
       try { src.cleanup(); } catch (_) { /* ignore */ }
@@ -70,7 +74,7 @@ export async function buildLinkLayer(
     if (!a || a.subtype !== "Link" || !Array.isArray(a.rect)) continue;
 
     const url = safeExternalUrl(a.url ?? "");
-    const linkPage = url ? null : await destToPage(a.dest ?? null);
+    const linkPage = url ? null : await destToPage(s, a.dest ?? null);
     if (!url && !linkPage) continue;
 
     const [x1, y1] = viewport.convertToViewportPoint(a.rect[0]!, a.rect[1]!);

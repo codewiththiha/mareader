@@ -19,7 +19,8 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 1 — explicit runtime/session lifecycle | **done**: `ReaderRuntime` state machine, generations, resource registry, observable disposal (`crates/reader-runtime/src/runtime.rs`) |
 | 2 — Shell / Library / Reader split | **done**: three WASM artifacts, shell-owned iframes with a `MessageChannel` handshake, `frame-transport` crate, dispose-as-a-unit |
 | 3 — Reader Host & panes | **done**: `ReaderHost` + `PaneManager` own the workspace (`crates/reader-runtime/src/host/`), the document pane owns one session (`crates/reader-runtime/src/pane/`); `ReaderPage` removed. Map in `docs/lifecycle-ownership.md` (Phase 3 section); what is still a bridge: [Phase 3 bridges](#phase-3-bridges-what-phase-45-inherit) |
-| 4+ — session-scoped engines, split mode, … | **not started** — waiting on the phase guide |
+| 4 — session-scoped PDF / Markdown / TXT engines | **done**: each pane owns one `FormatSession` per opened document — `PdfSession` (`crates/pdf-engine/src/session/`, one engine session per sid in `public/engine/state.ts`), `MdSession` / `TxtSession` (`crates/reader-runtime/src/pane/session.rs`); async stamps per pane; inventory, call graph and retained realm state in `docs/session-ownership.md`, enforced by `tools/check-session-ownership.mjs`; what Phase 5 inherits: [Phase 4 bridges](#phase-4-bridges-what-phase-5-inherits) |
+| 5+ — split mode, … | **not started** — waiting on the phase guide |
 
 ## Architecture as built (do not re-derive)
 
@@ -30,10 +31,12 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 - Frame roots must carry `h-full w-full`: a mount with `height: auto` gives
   the virtualizer an indefinite viewport and every page mounts at once
   (the "peak N page hosts" browser failure).
-- The PDF engine is still a module-global under `PdfSessionHandle`; true
-  session-scoped engines are Phase 4, not a defect to "fix" opportunistically.
-  Until then production runs exactly ONE pane per reader session, even
-  though the pane manager's API never assumes one.
+- The PDF engine is session-scoped: every document call names a session
+  (`sid`), each pane's `PdfSession` owns one, and reader code reaches it only
+  through `pane.pdf()` / `MountedPdf` (`crates/reader-runtime/src/pane/engine.rs`).
+  Production still runs exactly ONE document pane per reader realm — element
+  ids are resolved realm-wide, so pane-unique DOM ids come first in Phase 5 —
+  even though neither the pane manager nor the engine assumes one.
 - Inside the reader frame: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports) → `PaneManager`
@@ -267,15 +270,10 @@ session, and named here so the later phases replace it deliberately:
   the Shell (`ShellApi::reload`) instead of reloading the frame's own
   document. `tools/check-host-boundary.mjs` fails on any other store write
   or window reload in reader code outside `context.rs`'s `StandaloneApi`.
-- **Phase 4 (session-scoped engines):** the JS PDF engine session is one per
-  realm (`public/engine/state.ts`), so the prefetch switch the pane's
-  lifecycle drives is realm-wide, the diagnostics `engine` counters
-  (renders, prefetches, look-ahead samples) are realm totals that
-  `PaneResourceCounts` cannot attribute (it counts virtualizers and the
-  document session only), the disposal epoch
-  (`crates/reader-runtime/src/services/document/session.rs`) is one claim
-  stamp per realm, and the look-ahead paper session and search index are
-  realm thread-locals.
+- **Phase 4 (session-scoped engines): resolved.** The engine session, its
+  prefetch switch, lanes, caches, page registry, raster theme, paper state
+  machine and search scope are per `PdfSession`; the ownership stamp is the
+  pane's generation. See [Phase 4 bridges](#phase-4-bridges-what-phase-5-inherits).
 - **Phase 5 (split mode):** every pane's box is still the whole
   `#viewer-slot` (the host has one layout); the chrome slots (title,
   view menu, rail, settings) are filled by the ACTIVE pane only; the
@@ -286,6 +284,28 @@ session, and named here so the later phases replace it deliberately:
   the focus request rides bubbling `pointerdown`/`focusin`, so a control
   that stops propagation inside a background pane will need a capture
   listener once two panes are visible.
+
+## Phase 4 bridges (what Phase 5 inherits)
+
+Phase 4 made every document session-owned. What remains realm-wide — each
+safe with one document pane per realm, and listed so split mode replaces it
+deliberately rather than discovering it:
+
+- **Element ids.** The engine resolves a page's canvas and host by id
+  (`getElementById`), and the Rust page/thumbnail ids are page-numbered, not
+  pane-scoped. Two panes in one realm need pane-unique ids first.
+- **Root backdrop.** `--pdf-paper` on `<html>` has one publisher: the
+  presenting session (latest opened, or `presentSession` — a pane going
+  Ready presents). Split mode decides whose paper the shared backdrop shows,
+  or gives each pane its own backdrop.
+- **Diagnostics totals.** The snapshot's `engine` block sums every session
+  (`sessionStats(sid)` has the per-session numbers); `PaneResourceCounts`
+  still reports virtualizers and whether a document session is held.
+- **Realm-shared by design** (not bridges): id mints (`NEXT_SID`, the pane
+  generation mint, reflow session ids), the appearance broadcast and its
+  scrub window, the content-keyed retained search index (`RETAINED`), the
+  pdf.js module, canvas pool, LUT/pipeline caches and bake worker, and the
+  diagnostics gauges. The reasons are in `docs/session-ownership.md`.
 
 ## Known follow-ups (do not silently expand scope)
 

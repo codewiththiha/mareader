@@ -13,7 +13,7 @@ import {
   showBaked,
   showRaw,
 } from "../canvas";
-import { session } from "../state";
+import type { EngineSession } from "../state";
 import { bakeRaster, rasterToCanvas } from "./bake";
 import { pipelineCache, readPipeline } from "./pipeline";
 
@@ -74,8 +74,11 @@ async function snapshotRaster(src: HTMLCanvasElement): Promise<MaybeCanvas> {
   blitInto(clone, src);
   return clone;
 }
-export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas> {
-  if (session.themeScrubActive) {
+export async function ensureEntryCurrent(
+  s: EngineSession,
+  entry: ThumbEntry
+): Promise<MaybeCanvas> {
+  if (s.themeScrubActive) {
     return rasterWidth(entry.display) > 0 ? entry.display : null;
   }
   if (entry.gen === pipelineCache.gen && rasterWidth(entry.display) > 0) {
@@ -116,13 +119,13 @@ export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas
   entry.pending = null;
   return result;
 }
-export function paintAllVisibleThumbs(): void {
+export function paintAllVisibleThumbs(s: EngineSession): void {
   const seen = new Set<string>();
-  for (const [canvasId, { page }] of session.thumbLive) {
+  for (const [canvasId, { page }] of s.thumbLive) {
     seen.add(canvasId);
-    const entry = session.thumbCache.get(page);
+    const entry = s.thumbCache.get(page);
     const live = el(canvasId) as HTMLCanvasElement | null;
-    if (entry && live) paintCached(live, entry);
+    if (entry && live) paintCached(s, live, entry);
   }
   try {
     const nodes = document.querySelectorAll("canvas.thumb-canvas");
@@ -132,20 +135,21 @@ export function paintAllVisibleThumbs(): void {
       const m = /^thumb-(\d+)$/.exec(live.id);
       if (!m || !m[1]) continue;
       const page = parseInt(m[1], 10);
-      const entry = session.thumbCache.get(page);
+      const entry = s.thumbCache.get(page);
       if (!entry) continue;
-      paintCached(live, entry);
-      session.thumbLive.set(live.id, { page });
+      paintCached(s, live, entry);
+      s.thumbLive.set(live.id, { page });
     }
   } catch (_) {
     /* no document */
   }
 }
 export function paintCached(
+  s: EngineSession,
   dst: HTMLCanvasElement | null,
   entry: ThumbEntry | null
 ): { width: number; height: number } | null {
-  const raw = session.themeScrubActive ? thumbRaw(entry) : null;
+  const raw = s.themeScrubActive ? thumbRaw(entry) : null;
   const src = raw ?? thumbSource(entry);
   if (!dst || !src) return null;
   // Raster + tag are swapped by one synchronous primitive. Missing cache

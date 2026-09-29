@@ -52,10 +52,13 @@ const INGEST_EPSILON: f64 = 2.0;
 /// one per frame.
 const INGEST_DEBOUNCE_MS: u64 = 120;
 
-/// The batch a flush lands: the document's identity and the display scale it
-/// was measured against — either changing while reports wait is a reason to
-/// drop them — beside the `(block index, scale-1 height)` reports themselves.
-type PendingBatch = (usize, f64, Vec<(usize, f64)>);
+/// The batch a flush lands: the reflow session it was measured for (the
+/// pane's `MdSession`/`TxtSession` id — minted once, never reused, so a
+/// batch can never be mistaken for the next document's) and the display
+/// scale it was measured against — either changing while reports wait is a
+/// reason to drop them — beside the `(block index, scale-1 height)` reports
+/// themselves.
+type PendingBatch = (u64, f64, Vec<(usize, f64)>);
 
 /// The pane's measurement inbox: the batch the next flush will land and the
 /// flush that lands it. PER PANE, in the pane's arena — two panes measuring
@@ -89,19 +92,19 @@ impl MeasureInbox {
     /// first: the store is the scale-1 truth the estimate seeds, and a zoomed
     /// number written into it would poison every layout that reads it.
     ///
-    /// `doc_id` is the block list's `Arc` pointer (see
-    /// `crate::state::document::reflow::ReflowContent::document_id`): the
-    /// flush drops a batch whose document has since been swapped out.
-    pub fn ingest(&self, doc_id: usize, scale: f64, batch: &[(usize, f64)]) {
+    /// `session` is the pane's reflow session the rows were measured for
+    /// (`PaneHandle::reflow_session`, captured with the measurement): the
+    /// flush drops a batch whose session is no longer the pane's live one.
+    pub fn ingest(&self, session: u64, scale: f64, batch: &[(usize, f64)]) {
         if batch.is_empty() {
             return;
         }
         // `try_`: a frame armed before the pane's dispose reports into an
         // inbox that is already gone, and that report is owed to nobody.
         let parked = self.pending.try_update_value(|pending| {
-            if pending.0 != doc_id || pending.1 != scale {
+            if pending.0 != session || pending.1 != scale {
                 pending.2.clear();
-                pending.0 = doc_id;
+                pending.0 = session;
                 pending.1 = scale;
             }
             pending.2.extend_from_slice(batch);
@@ -198,17 +201,15 @@ pub fn install_reflow_measure(state: crate::context::ReaderContext) {
 
 /// Land the waiting batch in the shared store, then let the cut follow.
 fn flush(state: crate::context::ReaderContext) {
-    let (doc_id, scale, batch) = state.reader.measure.take();
+    let (session, scale, batch) = state.reader.measure.take();
     if batch.is_empty() {
         return;
     }
     let reflow = state.reader.document.content.reflow;
     // The document may have closed or been swapped out between the report
-    // and the debounce firing; either way the batch belongs to nobody now.
-    let current_doc = reflow
-        .blocks
-        .with_untracked(|blocks| Arc::as_ptr(blocks) as usize);
-    if reflow.block_count() == 0 || current_doc != doc_id {
+    // and the debounce firing: its session is disposed (or no longer the
+    // pane's), and the batch belongs to nobody now.
+    if !state.pane.admits_reflow(session) || reflow.block_count() == 0 {
         return;
     }
     let next = reflow

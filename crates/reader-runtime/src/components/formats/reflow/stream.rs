@@ -377,12 +377,9 @@ pub fn ReflowStreamLayout(
                     return;
                 };
                 let scale = state.viewer.zoom.visual_scale();
-                let doc_id = state
-                    .document
-                    .content
-                    .reflow
-                    .blocks
-                    .with_untracked(|blocks| Arc::as_ptr(blocks) as usize);
+                // The rows belong to the pane's reflow session as it stands
+                // at the measurement (see `MeasureInbox::ingest`).
+                let session = state.pane.reflow_session();
                 let children = col.children();
                 let mut batch: Vec<(usize, f64)> = Vec::new();
                 for slot in 0..children.length() {
@@ -411,7 +408,9 @@ pub fn ReflowStreamLayout(
                         }
                     }
                 }
-                state.measure.ingest(doc_id, scale, &batch);
+                if let Some(session) = session {
+                    state.measure.ingest(session, scale, &batch);
+                }
             });
         });
     }

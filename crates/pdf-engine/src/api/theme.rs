@@ -1,9 +1,15 @@
-//! Appearance re-bake / scrub mode and the advisory memory sweep.
+//! The appearance broadcast: re-bake / scrub mode / menu retention.
+//!
+//! Appearance is a GLOBAL setting; the rasters it is baked into are
+//! session-owned. Each call fans out to every live engine session, which
+//! re-derives its OWN raster theme on its own queue — no call here names or
+//! mutates a document. (The advisory sweeps are session calls:
+//! [`crate::session::PdfSession::sweep`].)
 
 use super::guard_pdf_reader;
 use crate::bridge;
 
-/// Re-bake the theme into every raster the engine already holds (mounted
+/// Re-bake the theme into every raster every live session holds (mounted
 /// pages + cached thumbnails). Called by the theme applier right after it
 /// writes the new CSS variables; pages render with the new look without a
 /// pdf.js re-render.
@@ -37,27 +43,4 @@ pub fn set_appearance_menu_open(on: bool) {
         return;
     }
     bridge::set_appearance_menu_open(on);
-}
-
-/// Release rasters/caches the engine no longer needs (advisory
-/// `pdf.cleanup`). Fired when reading work ends: zoom commit, mode flip,
-/// scroll idle — so memory drops immediately instead of waiting for the
-/// engine's own 30s idle sweep.
-pub fn sweep() {
-    if !guard_pdf_reader() {
-        return;
-    }
-    bridge::sweep();
-}
-
-/// Drop the `.page-snapshot` scrub covers the live page hosts still carry,
-/// zeroing their backing stores. Fired alongside [`sweep`] where reading work
-/// ends: a cover whose render was superseded, or never landed, would otherwise
-/// hold a full-page RGBA surface until the host unmounts (the app-side
-/// `remove_snapshots` only clears a host when ITS OWN render completes).
-pub fn sweep_snapshots() {
-    if !guard_pdf_reader() {
-        return;
-    }
-    bridge::sweep_snapshots();
 }

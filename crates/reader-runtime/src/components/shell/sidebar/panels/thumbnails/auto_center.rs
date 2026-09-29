@@ -127,11 +127,17 @@ fn glide_verdict(
 }
 
 /// Warm the thumbnail cache around the page the glide just centered on: the
-/// two before and eight after cover the next flick of scrolling.
-fn prefetch_neighborhood(page: u32) {
+/// two before and eight after cover the next flick of scrolling. Warms THIS
+/// pane's session only, and stops the moment the pane stops holding it (a
+/// reopen, a suspend, the dispose).
+fn prefetch_neighborhood(pane: crate::pane::handle::PaneHandle, page: u32) {
+    let pdf = pane.pdf();
     leptos::task::spawn_local(async move {
         for p in page.saturating_sub(2)..=page + 8 {
-            pdf_engine::api::prefetch_thumb(p, THUMB_SCALE).await;
+            if !pdf.still_current(&pane) {
+                return;
+            }
+            pdf.prefetch_thumb(p, THUMB_SCALE).await;
         }
     });
 }
@@ -246,7 +252,7 @@ fn arm_glide(g: Glide) {
                 };
                 virtualizer.scroll_to_offset(target, mode);
                 let _ = timer.try_set_value(None);
-                prefetch_neighborhood(page);
+                prefetch_neighborhood(state.pane, page);
             }
         }
     });

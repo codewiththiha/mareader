@@ -12,87 +12,52 @@ import {
   thumbRaw,
   thumbSource,
 } from "./theme/thumbnails";
-import { lifecycleEvent, THUMB_CACHE_MAX, session } from "./state";
+import { lifecycleEvent, THUMB_CACHE_MAX } from "./state";
+import type { EngineSession } from "./state";
 // A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
 // raster work, not clicks: queued jobs are invalidated on unmount and cached
 // paths still paint immediately.
 const THUMB_RENDER_LIMIT = 3;
-let thumbActive = 0;
-const thumbQueue: Array<() => void> = [];
-/** Pages with a prefetch in flight. A prefetch is lane work like any other
- *  (it queues, it renders, it lands in the cache), so the same epoch that
- *  invalidates cell renders invalidates it, and the set — like the
- *  generation counters — resets whole at document teardown. */
-const prefetchInFlight = new Set<number>();
-/** Per-canvas-id generation counters, invalidating queued jobs a newer mount
- *  of the same id superseded. Ids are per page (`thumb-{page}`), so the map
- *  grows with the pages a document's sidebar showed — deliberately NOT pruned
- *  per id at cancel time: the counters exist to outlive unmounts, and
- *  deleting an id's entry at cancel would let a still-queued job collide with
- *  a fresh mount's generation 1 and paint the wrong page into the recycled
- *  canvas. The map resets whole at document teardown instead
- *  (`resetThumbLane`), which is safe because the lane's epoch invalidates
- *  every queued job in the same breath. */
-const thumbGeneration = new Map<string, number>();
-/** Whether a document's lane is open for business. Teardown closes it: a
- *  request that straggles in after `resetThumbLane` belongs to the dead
- *  lane and must not reseed the generation bookkeeping the teardown just
- *  cleared (the drained gate reads this map as zero). */
-let thumbLaneOpen = false;
-/** Bumped at document teardown. Queued lane jobs capture it and resolve as
- *  cancelled when they reach the front of the queue under a newer epoch,
- *  instead of racing the next document's mounts for recycled canvas ids. */
-let thumbLaneEpoch = 0;
 
-/** Forget the lane's per-document bookkeeping: every queued job is
- *  invalidated wholesale (the epoch) and the generation counters go with the
- *  canvas ids they were issued for — the next document reissues those ids
- *  from 1, and counters surviving across documents would collide with it.
- *  Called from the engine's destroy. */
-export function resetThumbLane(): void {
-  thumbLaneEpoch += 1;
-  thumbLaneOpen = false;
-  thumbGeneration.clear();
-  prefetchInFlight.clear();
-  // Wake every await that is racing the epoch: teardown just moved it, so
-  // anything waiting for "this prefetch's era ended" must stop now. The
-  // cascade also drains the queue: each waiting job takes its stale-epoch
-  // guard, resolves its caller with a drop, and pumps the next one.
-  const waiters = epochWaiters.splice(0);
+// The lane's state lives on the session (`EngineSession.thumbLane`): one
+// pane's teardown bumps only ITS epoch, one pane's suspend only ITS era.
+
+/** Tear the session's lane down: bump the epoch (every queued job and every
+ *  parked prefetch await sees it), close generation bookkeeping, and pump
+ *  so the queue drains through its own guards. */
+export function resetThumbLane(s: EngineSession): void {
+  const lane = s.thumbLane;
+  lane.epoch += 1;
+  lane.open = false;
+  lane.generation.clear();
+  lane.prefetchInFlight.clear();
+  const waiters = lane.epochWaiters.splice(0);
   for (const wake of waiters) wake();
-  pumpThumbQueue();
+  pumpThumbQueue(s);
 }
 
-/** Bumped when the reader stops being the frame on screen while its
- *  document stays loaded (the Shell keeps a closed reader alive for an
- *  instant reopen). Prefetch is idle-time work for a rail nobody can see
- *  now: every queued or in-flight prefetch captured the old era and settles
- *  as a DROP through the same guards a teardown uses, and new ones are
- *  refused until the reader is shown again. Cell renders are untouched —
- *  the document is still this session's. */
-let prefetchEra = 0;
-let prefetchSuspended = false;
-const eraWaiters: Array<() => void> = [];
-
-/** Abandon every queued and in-flight prefetch and refuse new ones. */
-export function suspendPrefetches(): void {
-  prefetchSuspended = true;
-  prefetchEra += 1;
-  const waiters = eraWaiters.splice(0);
+/** Stop this session's speculative prefetches (its pane is suspended):
+ *  queued prefetches drop, in-flight ones race the era signal. Live
+ *  thumbnail renders are untouched. */
+export function suspendPrefetches(s: EngineSession): void {
+  const lane = s.thumbLane;
+  lane.suspended = true;
+  lane.era += 1;
+  const waiters = lane.eraWaiters.splice(0);
   for (const wake of waiters) wake();
-  pumpThumbQueue();
+  pumpThumbQueue(s);
 }
 
-/** The reader is on screen again: idle prefetch may run. */
-export function resumePrefetches(): void {
-  prefetchSuspended = false;
+export function resumePrefetches(s: EngineSession): void {
+  s.thumbLane.suspended = false;
 }
 
-function eraMovedSignal(era: number): {
+function eraMovedSignal(s: EngineSession, era: number): {
   promise: Promise<void>;
   unsubscribe: () => void;
 } {
-  if (era !== prefetchEra) {
+  const lane = s.thumbLane;
+  if (era !== lane.era) {
     return { promise: Promise.resolve(), unsubscribe: () => {} };
   }
   let resolve!: () => void;
@@ -100,31 +65,22 @@ function eraMovedSignal(era: number): {
     resolve = r;
   });
   const waiter = () => resolve();
-  eraWaiters.push(waiter);
+  lane.eraWaiters.push(waiter);
   return {
     promise,
     unsubscribe: () => {
-      const at = eraWaiters.indexOf(waiter);
-      if (at >= 0) eraWaiters.splice(at, 1);
+      const at = lane.eraWaiters.indexOf(waiter);
+      if (at >= 0) lane.eraWaiters.splice(at, 1);
     },
   };
 }
 
-/// A cancellable "the epoch moved past `epoch`" signal. A pdf.js task
-/// created inside the destroy window — after the cancel sweep, before the
-/// document nulls — sits on a worker that will never answer, and its
-/// promise never settles on its own; the epoch is the truthful "give up"
-/// signal every in-flight await can race against. Every subscriber gets an
-/// unsubscribe, because a prefetch that settles normally (the usual case)
-/// must remove its waiter rather than park a resolver here for the
-/// document's lifetime.
-const epochWaiters: Array<() => void> = [];
-
-function epochMovedSignal(epoch: number): {
+function epochMovedSignal(s: EngineSession, epoch: number): {
   promise: Promise<void>;
   unsubscribe: () => void;
 } {
-  if (epoch !== thumbLaneEpoch) {
+  const lane = s.thumbLane;
+  if (epoch !== lane.epoch) {
     return { promise: Promise.resolve(), unsubscribe: () => {} };
   }
   let resolve!: () => void;
@@ -132,82 +88,81 @@ function epochMovedSignal(epoch: number): {
     resolve = r;
   });
   const waiter = () => resolve();
-  epochWaiters.push(waiter);
+  lane.epochWaiters.push(waiter);
   return {
     promise,
     unsubscribe: () => {
-      const at = epochWaiters.indexOf(waiter);
-      if (at >= 0) epochWaiters.splice(at, 1);
+      const at = lane.epochWaiters.indexOf(waiter);
+      if (at >= 0) lane.epochWaiters.splice(at, 1);
     },
   };
 }
 
-/// The thumbnail lane's gauges for the stats surface (queue depth, active
-/// slots): the teardown baseline requires an EMPTY lane, not merely one
-/// whose jobs are no longer running.
-export function thumbLaneGauge(): { thumbQueue: number; thumbActive: number } {
-  return { thumbQueue: thumbQueue.length, thumbActive: thumbActive };
+export function thumbLaneGauge(s: EngineSession): { thumbQueue: number; thumbActive: number } {
+  return { thumbQueue: s.thumbLane.queue.length, thumbActive: s.thumbLane.active };
 }
 
 /** The generation map's size for the stats surface: per-canvas bookkeeping
  *  the lane keeps until document teardown. The baseline measures it so a
  *  long scrolling session cannot grow it unseen. */
-export function thumbGenerationSize(): number {
-  return thumbGeneration.size;
+export function thumbGenerationSize(s: EngineSession): number {
+  return s.thumbLane.generation.size;
 }
 
 /** A document's lane is open again: generation bookkeeping records anew. */
-export function beginThumbLane(): void {
-  thumbLaneOpen = true;
+export function beginThumbLane(s: EngineSession): void {
+  s.thumbLane.open = true;
 }
 
-function nextThumbGeneration(canvasId: string): number {
-  if (!thumbLaneOpen) return 0;
-  const next = (thumbGeneration.get(canvasId) ?? 0) + 1;
-  thumbGeneration.set(canvasId, next);
+function nextThumbGeneration(s: EngineSession, canvasId: string): number {
+  const lane = s.thumbLane;
+  if (!lane.open) return 0;
+  const next = (lane.generation.get(canvasId) ?? 0) + 1;
+  lane.generation.set(canvasId, next);
   return next;
 }
 
-function pumpThumbQueue(): void {
-  while (thumbActive < THUMB_RENDER_LIMIT && thumbQueue.length > 0) {
-    const next = thumbQueue.shift();
+function pumpThumbQueue(s: EngineSession): void {
+  const lane = s.thumbLane;
+  while (lane.active < THUMB_RENDER_LIMIT && lane.queue.length > 0) {
+    const next = lane.queue.shift();
     if (!next) return;
-    thumbActive += 1;
+    lane.active += 1;
     next();
   }
 }
 /** Insert a thumbnail entry into the cache, releasing any previous entry for
  *  the page and evicting the LRU entry if the cache is full. */
-function cachePut(page: number, entry: ThumbEntry): void {
-  if (session.thumbCache.has(page)) {
-    const prev = session.thumbCache.get(page);
-    session.thumbCache.delete(page);
-    if (prev && prev !== entry) session.releaseThumbEntry(prev);
+function cachePut(s: EngineSession, page: number, entry: ThumbEntry): void {
+  if (s.thumbCache.has(page)) {
+    const prev = s.thumbCache.get(page);
+    s.thumbCache.delete(page);
+    if (prev && prev !== entry) s.releaseThumbEntry(prev);
   }
-  session.thumbCache.set(page, entry);
-  while (session.thumbCache.size > THUMB_CACHE_MAX) {
-    const oldest = session.thumbCache.keys().next();
+  s.thumbCache.set(page, entry);
+  while (s.thumbCache.size > THUMB_CACHE_MAX) {
+    const oldest = s.thumbCache.keys().next();
     if (oldest.done || oldest.value === undefined) break;
-    const oldEntry = session.thumbCache.get(oldest.value);
-    session.thumbCache.delete(oldest.value);
-    if (oldEntry && oldEntry !== entry) session.releaseThumbEntry(oldEntry);
+    const oldEntry = s.thumbCache.get(oldest.value);
+    s.thumbCache.delete(oldest.value);
+    if (oldEntry && oldEntry !== entry) s.releaseThumbEntry(oldEntry);
   }
 }
 
-export function hasThumb(page: number, scale: number): boolean {
-  const hit = session.thumbCache.get(page);
+export function hasThumb(s: EngineSession, page: number, scale: number): boolean {
+  const hit = s.thumbCache.get(page);
   return (
     !!hit &&
     Math.abs(hit.scale - scale) < 1e-9 &&
-    (session.themeScrubActive || hit.gen === pipelineCache.gen || !!hit.raw)
+    (s.themeScrubActive || hit.gen === pipelineCache.gen || !!hit.raw)
   );
 }
 
-export function blitThumb(canvasId: string, page: number): boolean {
+export function blitThumb(s: EngineSession, canvasId: string, page: number): boolean {
   const dst = el(canvasId) as HTMLCanvasElement | null;
-  const entry = session.thumbCache.get(page);
+  const entry = s.thumbCache.get(page);
   if (!dst || !entry) return false;
-  const raw = session.themeScrubActive ? thumbRaw(entry) : null;
+  const raw = s.themeScrubActive ? thumbRaw(entry) : null;
   const src = raw ?? thumbSource(entry);
   if (!src) return false;
   return raw
@@ -216,94 +171,97 @@ export function blitThumb(canvasId: string, page: number): boolean {
 }
 
 export async function renderThumb(
+  s: EngineSession,
   canvasId: string,
   page: number,
   scale: number
 ): Promise<ThumbResult> {
   // A new mount supersedes any queued request for the same recycled canvas id.
-  const generation = nextThumbGeneration(canvasId);
-  session.thumbCancelled.delete(canvasId);
+  const generation = nextThumbGeneration(s, canvasId);
+  s.thumbCancelled.delete(canvasId);
 
   // Cache hits are synchronous blits or a small display refresh; they do not
   // create pdf.js raster work and should never wait behind cold renders.
-  if (hasThumb(page, scale)) {
+  if (hasThumb(s, page, scale)) {
     try {
-      return await renderThumbInternal(canvasId, page, scale);
+      return await renderThumbInternal(s, canvasId, page, scale);
     } catch (e) {
       return failFrom(e);
     }
   }
 
   return await new Promise<ThumbResult>((resolve) => {
-    const epoch = thumbLaneEpoch;
-    thumbQueue.push(() => {
+    const lane = s.thumbLane;
+    const epoch = lane.epoch;
+    lane.queue.push(() => {
       const finish = () => {
-        thumbActive -= 1;
-        pumpThumbQueue();
+        lane.active -= 1;
+        pumpThumbQueue(s);
       };
       // The cell disappeared, a newer mount re-used this id, or the document
       // was torn down while the job waited, before the job reached the front
       // of the queue. Drop it without touching pdf.js.
       if (
-        epoch !== thumbLaneEpoch
-        || session.thumbCancelled.has(canvasId)
-        || thumbGeneration.get(canvasId) !== generation
+        epoch !== lane.epoch
+        || s.thumbCancelled.has(canvasId)
+        || lane.generation.get(canvasId) !== generation
       ) {
         resolve(fail("cancelled", "Thumbnail render cancelled"));
         finish();
         return;
       }
-      renderThumbInternal(canvasId, page, scale)
+      renderThumbInternal(s, canvasId, page, scale)
         .then(resolve)
         .catch((e: unknown) => {
           resolve(failFrom(e));
         })
         .finally(finish);
     });
-    pumpThumbQueue();
+    pumpThumbQueue(s);
   });
 }
 
 async function renderThumbInternal(
+  s: EngineSession,
   canvasId: string,
   page: number,
   scale: number
 ): Promise<ThumbResult> {
   const canvas = el(canvasId) as HTMLCanvasElement | null;
   if (!canvas) return fail("no_canvas", "No canvas: " + canvasId);
-  if (!session.pdf) return fail("no_document", "No document open");
+  if (!s.pdf) return fail("no_document", "No document open");
 
-  const hit = session.thumbCache.get(page);
+  const hit = s.thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) {
-    if (session.themeScrubActive) {
+    if (s.themeScrubActive) {
       if (showRaw(canvas, thumbRaw(hit), "thumb-raw")) {
-        cachePut(page, hit);
-        session.thumbLive.set(canvasId, { page });
+        cachePut(s, page, hit);
+        s.thumbLive.set(canvasId, { page });
         return { ok: true, width: hit.cssW, height: hit.cssH, scale };
       }
     } else if (hit.gen === pipelineCache.gen) {
-      const size = paintCached(canvas, hit);
+      const size = paintCached(s, canvas, hit);
       if (size) {
-        cachePut(page, hit);
-        session.thumbLive.set(canvasId, { page });
+        cachePut(s, page, hit);
+        s.thumbLive.set(canvasId, { page });
         return { ok: true, width: size.width, height: size.height, scale };
       }
-    } else if (await ensureEntryCurrent(hit)) {
-      const size = paintCached(canvas, hit);
+    } else if (await ensureEntryCurrent(s, hit)) {
+      const size = paintCached(s, canvas, hit);
       if (size) {
-        cachePut(page, hit);
-        session.thumbLive.set(canvasId, { page });
+        cachePut(s, page, hit);
+        s.thumbLive.set(canvasId, { page });
         return { ok: true, width: size.width, height: size.height, scale };
       }
     }
   }
 
-  try { const t = session.thumbTasks.get(canvasId); if (t) t.cancel(); } catch (_) { /* ignore */ }
-  session.thumbTasks.delete(canvasId);
-  session.thumbCancelled.delete(canvasId);
+  try { const t = s.thumbTasks.get(canvasId); if (t) t.cancel(); } catch (_) { /* ignore */ }
+  s.thumbTasks.delete(canvasId);
+  s.thumbCancelled.delete(canvasId);
 
   try {
-    const pg = await session.pdf.getPage(page);
+    const pg = await s.pdf.getPage(page);
     const viewport = pg.getViewport({ scale });
     const out = 1;
     const cssW = Math.floor(viewport.width);
@@ -315,11 +273,11 @@ async function renderThumbInternal(
     const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 
     const task = pg.render({ canvasContext: ctx, viewport, transform });
-    session.thumbTasks.set(canvasId, task);
+    s.thumbTasks.set(canvasId, task);
     try {
       await task.promise;
     } catch (e) {
-      session.thumbTasks.delete(canvasId);
+      s.thumbTasks.delete(canvasId);
       releaseCanvas(off);
       try { pg.cleanup(); } catch (_) { /* ignore */ }
       if ((e as { name?: string }).name === "RenderingCancelledException") {
@@ -327,7 +285,7 @@ async function renderThumbInternal(
       }
       return failFrom(e);
     }
-    session.thumbTasks.delete(canvasId);
+    s.thumbTasks.delete(canvasId);
     pg.cleanup();
 
     // Keep `off` as the unbaked raw for every later theme rebake. Never
@@ -335,7 +293,7 @@ async function renderThumbInternal(
     // createImageBitmap used to zero the only unthemed copy, so a theme
     // change could not update visible thumbs until a full pdf.js re-render.
     const raw = off;
-    let display: MaybeCanvas = session.themeScrubActive ? raw : await bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = s.themeScrubActive ? raw : await bakeRaster(raw, readPipeline());
     if (display === raw) {
       if (typeof createImageBitmap === "function") {
         try {
@@ -353,37 +311,37 @@ async function renderThumbInternal(
       cssW,
       cssH,
       scale,
-      gen: session.themeScrubActive ? -1 : pipelineCache.gen,
+      gen: s.themeScrubActive ? -1 : pipelineCache.gen,
       pending: null,
     };
-    cachePut(page, entry);
+    cachePut(s, page, entry);
 
-    if (!session.thumbCancelled.has(canvasId)) {
+    if (!s.thumbCancelled.has(canvasId)) {
       const live = el(canvasId) as HTMLCanvasElement | null;
       if (live) {
-        session.thumbLive.set(canvasId, { page });
-        paintCached(live, entry);
+        s.thumbLive.set(canvasId, { page });
+        paintCached(s, live, entry);
       }
     }
-    session.thumbCancelled.delete(canvasId);
+    s.thumbCancelled.delete(canvasId);
 
     return { ok: true, width: cssW, height: cssH, scale };
   } catch (e) {
-    session.thumbTasks.delete(canvasId);
+    s.thumbTasks.delete(canvasId);
     return failFrom(e);
   }
 }
 
-export function cancelThumb(canvasId: string): void {
+export function cancelThumb(s: EngineSession, canvasId: string): void {
   // Invalidate a queued job as well as cancelling an active pdf.js task.
-  nextThumbGeneration(canvasId);
-  const task = session.thumbTasks.get(canvasId);
+  nextThumbGeneration(s, canvasId);
+  const task = s.thumbTasks.get(canvasId);
   if (task) {
     try { task.cancel(); } catch (_) { /* ignore */ }
-    session.thumbTasks.delete(canvasId);
+    s.thumbTasks.delete(canvasId);
   }
-  session.thumbCancelled.add(canvasId);
-  session.thumbLive.delete(canvasId);
+  s.thumbCancelled.add(canvasId);
+  s.thumbLive.delete(canvasId);
   releaseCanvas(el(canvasId) as HTMLCanvasElement | null);
 }
 
@@ -401,57 +359,58 @@ export function cancelThumb(canvasId: string): void {
  *  lifecycle is visible in `stats()` (activePrefetches plus the
  *  started/completed/dropped trio), so the reader's disposal baseline can
  *  prove no prefetch work outlived the document. */
-export async function prefetchThumb(page: number, scale: number): Promise<void> {
-  if (!session.pdf) return;
-  const hit = session.thumbCache.get(page);
+export async function prefetchThumb(s: EngineSession, page: number, scale: number): Promise<void> {
+  if (!s.pdf) return;
+  const hit = s.thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) return;
-  if (prefetchInFlight.has(page)) return;
-  if (prefetchSuspended) return;
-  const epoch = thumbLaneEpoch;
-  const era = prefetchEra;
-  prefetchInFlight.add(page);
-  session.prefetchesStarted += 1;
-  session.prefetchesActive += 1;
+  const lane = s.thumbLane;
+  if (lane.prefetchInFlight.has(page)) return;
+  if (lane.suspended) return;
+  const epoch = lane.epoch;
+  const era = lane.era;
+  lane.prefetchInFlight.add(page);
+  s.prefetchesStarted += 1;
+  s.prefetchesActive += 1;
   lifecycleEvent("thumb_prefetch:start");
   try {
     await new Promise<void>((resolve) => {
-      thumbQueue.push(() => {
+      lane.queue.push(() => {
         const finish = () => {
-          thumbActive -= 1;
-          pumpThumbQueue();
+          lane.active -= 1;
+          pumpThumbQueue(s);
         };
         // The document was torn down (or replaced) while this prefetch
         // waited for a lane slot. Drop it without touching pdf.js — the
         // same guard a queued cell render gets.
-        if (epoch !== thumbLaneEpoch || era !== prefetchEra || !session.pdf) {
-          session.prefetchesDropped += 1;
+        if (epoch !== lane.epoch || era !== lane.era || !s.pdf || s.disposed) {
+          s.prefetchesDropped += 1;
           lifecycleEvent("thumb_prefetch:drop");
           resolve();
           finish();
           return;
         }
-        prefetchThumbInternal(page, scale, epoch, era)
+        prefetchThumbInternal(s, page, scale, epoch, era)
           .then((landed) => {
             if (landed) {
-              session.prefetchesCompleted += 1;
+              s.prefetchesCompleted += 1;
               lifecycleEvent("thumb_prefetch:complete");
             } else {
-              session.prefetchesDropped += 1;
+              s.prefetchesDropped += 1;
               lifecycleEvent("thumb_prefetch:drop");
             }
           })
           .catch(() => {
-            session.prefetchesDropped += 1;
+            s.prefetchesDropped += 1;
             lifecycleEvent("thumb_prefetch:drop");
           })
           .finally(finish)
           .finally(resolve);
       });
-      pumpThumbQueue();
+      pumpThumbQueue(s);
     });
   } finally {
-    prefetchInFlight.delete(page);
-    session.prefetchesActive -= 1;
+    lane.prefetchInFlight.delete(page);
+    s.prefetchesActive -= 1;
   }
 }
 
@@ -461,13 +420,13 @@ export async function prefetchThumb(page: number, scale: number): Promise<void> 
 /// document-gone half covers the destroy window the epoch alone cannot
 /// see: a prefetch enqueued into the NEW epoch, onto a worker whose death
 /// is already underway, awaiting a promise it will never see settle.
-function prefetchWorldEnded(epoch: number, era: number): {
+function prefetchWorldEnded(s: EngineSession, epoch: number, era: number): {
   promise: Promise<void>;
   unsubscribe: () => void;
 } {
-  const epochSignal = epochMovedSignal(epoch);
-  const eraSignal = eraMovedSignal(era);
-  const goneSignal = session.documentGoneSignal();
+  const epochSignal = epochMovedSignal(s, epoch);
+  const eraSignal = eraMovedSignal(s, era);
+  const goneSignal = s.documentGoneSignal();
   const promise = Promise.race([epochSignal.promise, eraSignal.promise, goneSignal.promise]);
   let done = false;
   return {
@@ -485,20 +444,22 @@ function prefetchWorldEnded(epoch: number, era: number): {
 /** The lane-slot half of a prefetch: render offscreen, bake, cache. Resolves
  *  `true` only when the entry landed in THIS document's cache; every stale
  *  or failed path cleans up after itself and resolves `false`. The pdf.js
- *  task rides `session.thumbTasks` under a synthetic id, so `destroy`'s
+ *  task rides `s.thumbTasks` under a synthetic id, so `destroySession`'s
  *  cancel-everything sweep reaches it and `stats().thumbTasks` counts it. */
 async function prefetchThumbInternal(
+  s: EngineSession,
   page: number,
   scale: number,
   epoch: number,
   era: number
 ): Promise<boolean> {
   const taskId = `prefetch-${page}`;
-  const stale = () => epoch !== thumbLaneEpoch || era !== prefetchEra || !session.pdf;
-  const dying = prefetchWorldEnded(epoch, era);
+  const stale = () =>
+    epoch !== s.thumbLane.epoch || era !== s.thumbLane.era || !s.pdf || s.disposed;
+  const dying = prefetchWorldEnded(s, epoch, era);
   try {
     const pg = await Promise.race([
-      session.pdf!.getPage(page),
+      s.pdf!.getPage(page),
       dying.promise.then(() => null),
     ]);
     if (!pg || stale()) {
@@ -513,8 +474,8 @@ async function prefetchThumbInternal(
     }
     const { canvas: off, ctx } = made;
     const task = pg.render({ canvasContext: ctx, viewport });
-    session.thumbTasks.set(taskId, task);
-    const rendering = prefetchWorldEnded(epoch, era);
+    s.thumbTasks.set(taskId, task);
+    const rendering = prefetchWorldEnded(s, epoch, era);
     let rendered = true;
     let epochMoved = false;
     try {
@@ -529,7 +490,7 @@ async function prefetchThumbInternal(
       // cancellation arrays for the rest of the document's lifetime.
       rendering.unsubscribe();
     }
-    session.thumbTasks.delete(taskId);
+    s.thumbTasks.delete(taskId);
     if (epochMoved) {
       // The teardown sweep had already run when this task was created, so
       // the cancel-everything pass never reached it — cancel it here, or it
@@ -543,7 +504,7 @@ async function prefetchThumbInternal(
     }
     pg.cleanup();
     const raw = off;
-    let display: MaybeCanvas = session.themeScrubActive ? raw : await bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = s.themeScrubActive ? raw : await bakeRaster(raw, readPipeline());
     if (display !== raw) display = await cacheDisplay({ display });
     // The epoch check AGAIN: a bake can wait on the theme queue, and a
     // document swap in that window must not file this book's colours into
@@ -552,12 +513,12 @@ async function prefetchThumbInternal(
       releaseCanvas(off);
       return false;
     }
-    cachePut(page, { raw, display, cssW: Math.floor(viewport.width),
+    cachePut(s, page, { raw, display, cssW: Math.floor(viewport.width),
                      cssH: Math.floor(viewport.height), scale,
-                     gen: session.themeScrubActive ? -1 : pipelineCache.gen, pending: null });
+                     gen: s.themeScrubActive ? -1 : pipelineCache.gen, pending: null });
     return true;
   } catch (_) {
-    session.thumbTasks.delete(taskId);
+    s.thumbTasks.delete(taskId);
     return false;
   } finally {
     dying.unsubscribe();

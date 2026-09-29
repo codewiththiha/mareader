@@ -1,7 +1,7 @@
-import { PDFReader, fakeWindow } from "./harness.js";
+import { fakeWindow, R, openDoc } from "./harness.js";
 
 export async function run(): Promise<void> {
-  const opened = await PDFReader.open("/fake/book.pdf");
+  const opened = await openDoc("/fake/book.pdf");
   if (!opened.ok) throw new Error("open failed: " + JSON.stringify(opened));
   console.log("open ok:", opened.numPages, "pages");
   // The open payload carries the document's PERMANENT content fingerprint —
@@ -16,7 +16,7 @@ export async function run(): Promise<void> {
   if (opened.outline.length !== 0) {
     throw new Error("open must not resolve the outline, got " + opened.outline.length);
   }
-  const outline = await PDFReader.resolveOutline();
+  const outline = await R.resolveOutline();
   if (!outline.ok || outline.outline.length !== 0) {
     throw new Error("resolveOutline failed: " + JSON.stringify(outline));
   }

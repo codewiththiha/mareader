@@ -22,7 +22,6 @@ use wasm_bindgen::JsCast;
 
 use crate::state::ReaderState;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
-use pdf_engine::api as engine;
 
 use super::geometry::{CELL_W, THUMB_SCALE};
 
@@ -140,7 +139,13 @@ pub fn ThumbCell(
     // view, most visible on the 2nd row from the scroll edge (buffer row 1
     // mounts off-screen) and on both its columns, since both cells remount in
     // the same row node. A cached cell now has no cover state to animate.
-    let starts_cached = engine::has_thumb(page, THUMB_SCALE);
+    //
+    // The cell is bound to its pane's PDF session at mount (`MountedPdf`):
+    // the probe, the render and the cleanup's cancel all reach that one
+    // session's thumbnail cache — never another pane's, never the next
+    // document's.
+    let mounted = crate::pane::engine::MountedPdf::bind();
+    let starts_cached = mounted.pdf().has_thumb(page, THUMB_SCALE);
     let loaded = RwSignal::new(starts_cached);
     // A NodeRef onto the cover (the timer removes the pulse class from the
     // real DOM node). The pending removal is parked in a scope-owned timer
@@ -184,7 +189,7 @@ pub fn ThumbCell(
         // flows through the machine.
         let current = ThumbRenderState::from_u8(render_cleanup.load(Ordering::Relaxed));
         render_cleanup.store(current.unmount().as_u8(), Ordering::Relaxed);
-        engine::cancel_thumb(&cid_cleanup);
+        mounted.pdf().cancel_thumb(&cid_cleanup);
         // WKWebView does not release a canvas backing store on DOM removal
         // alone — every close/open cycle would otherwise leak a batch of
         // IOSurfaces until GC gets around to it. Zero the backing store so
@@ -226,11 +231,12 @@ pub fn ThumbCell(
             let gen_async = doc_gen.clone();
             let bound_async = bound_render.clone();
             let render_async = render.clone();
+            let pdf = mounted.pdf();
             spawn_local(async move {
                 if let Ok(mut guard) = bound_async.lock() {
                     guard.insert(page);
                 }
-                let result = engine::render_thumb(&cid2, page, THUMB_SCALE).await;
+                let result = pdf.render_thumb(&cid2, page, THUMB_SCALE).await;
                 // The cell may have unmounted (or the document changed) while
                 // the render was in flight: `Unmounted` is terminal, and the
                 // generation double-guard keeps a stale paint out of a fresh

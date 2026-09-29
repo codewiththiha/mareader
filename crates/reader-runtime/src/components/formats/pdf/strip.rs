@@ -109,9 +109,9 @@ pub fn PdfPageStrip(
     // The report rides a render COMPLETION, which can outlive the strip: a
     // close during active rendering resolves the task after the virtualizers
     // are disposed, and a report into them reads a disposed `range`. The
-    // session stamp is the liveness check — a close or swap claims a new
-    // epoch, so a report from the old document's render era is dropped.
-    // The report's true liveness oracle. The epoch stamp drops reports from
+    // pane's document generation is the liveness check — a close or swap
+    // claims a new one, so a report from the old document's render era is
+    // dropped. The report's true liveness oracle. The generation drops reports from
     // a *stale document era*, but a report from the CURRENT era can still
     // land after the strip's owner purged its signals (a close during active
     // rendering resolves a queued completion into the torn-down strip): the
@@ -125,7 +125,10 @@ pub fn PdfPageStrip(
             let _ = report_alive.try_set_value(false);
         }
     });
-    let report_epoch = crate::services::document::session::current_epoch();
+    // The pane's document generation this strip reports for: a report from
+    // an earlier document of THIS pane stands down (another pane's open
+    // never moves it).
+    let report_epoch = state.pane.generation();
     let on_geometry = match axis {
         Axis::Vertical => {
             Callback::new(move |(page, _w, height): (u32, f64, f64)| {
@@ -149,7 +152,7 @@ pub fn PdfPageStrip(
                 let Some(gap) = state.viewer.page_gap.try_get_untracked() else {
                     return;
                 };
-                if crate::services::document::session::current_epoch() != report_epoch {
+                if !state.pane.owns_generation(report_epoch) {
                     return;
                 }
                 if state.viewer.try_zooming_now() != Some(false) {
@@ -189,7 +192,7 @@ pub fn PdfPageStrip(
                 let Some(m) = state.viewer.page_margin.try_get_untracked() else {
                     return;
                 };
-                if crate::services::document::session::current_epoch() != report_epoch {
+                if !state.pane.owns_generation(report_epoch) {
                     return;
                 }
                 if state.viewer.try_zooming_now() != Some(false) {

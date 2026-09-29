@@ -214,8 +214,9 @@ pub(crate) fn use_reader_virtualizers(
     // pinned until the 30s idle timer. Sweep the moment scrolling settles
     // instead — both virtualizers, registered once (the views rebind the
     // SAME shared virtualizer on every mode flip).
-    virtualizer.on_scroll_idle(pdf_engine::api::sweep);
-    h_virtualizer.on_scroll_idle(pdf_engine::api::sweep);
+    // Each sweep reaches THIS pane's session only.
+    virtualizer.on_scroll_idle(move || pane.pdf().sweep());
+    h_virtualizer.on_scroll_idle(move || pane.pdf().sweep());
 
     // The strips join the diagnostics registry while they live: a snapshot
     // reads its window and zombie counts from here, and the reader's own

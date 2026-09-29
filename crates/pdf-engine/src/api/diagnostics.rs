@@ -1,12 +1,14 @@
 //! Engine lifecycle/resource counters: the diagnostics snapshot's engine
 //! half.
 //!
-//! The counters themselves live where the resources live — the engine session
-//! (`public/engine/state.ts`) bumps them on the open/teardown paths that
-//! actually create or release the document, the pdf.js worker, and page
-//! renders. This module is the read side: a typed projection of the engine's
-//! `stats()` facade member, plus the opt-in switch for the engine's
-//! event narration.
+//! The counters themselves live where the resources live — each engine
+//! session (`public/engine/state.ts`) bumps them on the open/teardown paths
+//! that actually create or release its document, its pdf.js worker, and its
+//! page renders, and every bump lands in the realm totals too. This module
+//! is the read side: a typed projection of the engine's aggregate `stats()`
+//! (every session's gauges summed, the realm counter totals) — one
+//! session's own numbers are [`crate::session::PdfSession::stats`] — plus
+//! the opt-in switch for the engine's event narration.
 //!
 //! Host builds have no engine to read: [`engine_stats`] answers `None` there
 //! (the guard short-circuits before any wasm-bindgen import runs), which is
@@ -121,6 +123,13 @@ pub struct EngineStats {
     /// of requiring zero.
     #[serde(default)]
     pub pooled_intermediate_bytes_est: u64,
+    /// Engine sessions still held (live, or draining their teardown). The
+    /// aggregate only; one session's own snapshot reports 0.
+    #[serde(default)]
+    pub sessions_live: u32,
+    /// Engine sessions fully retired over the realm's life.
+    #[serde(default)]
+    pub sessions_retired: u64,
 }
 
 impl EngineStats {
@@ -144,6 +153,7 @@ impl EngineStats {
             && self.thumb_generation_size == 0
             && !self.has_document
             && !self.has_loading_task
+            && self.sessions_live == 0
             && self.sessions_opened == self.sessions_destroyed
             && self.workers_created == self.workers_terminated
             && self.renders_started
@@ -162,7 +172,7 @@ pub fn engine_stats() -> Option<EngineStats> {
     let mut stats: EngineStats = serde_wasm_bindgen::from_value(crate::bridge::stats()).ok()?;
     // The build gauge lives on the Rust side of the bridge (the extraction
     // loop is wasm), so it is folded in here rather than counted in JS.
-    stats.search_active = super::search::search_build_active();
+    stats.search_active = crate::session::search::search_build_active();
     Some(stats)
 }
 

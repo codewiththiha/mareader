@@ -284,6 +284,11 @@ async function openBook(url) {
     s.host?.panes?.[0]?.lifecycle === "ready");
   assertHostWorkspace(s, "open");
   await assertPaneBox(s, "open");
+  // Session ownership: the one pane owns exactly one engine session — its
+  // PdfSession's — and nothing else in the realm holds a document.
+  if (s.engine.sessionsLive !== 1) {
+    throw new Error(`[open] ${s.engine.sessionsLive} live engine sessions, expected the pane's one`);
+  }
   return s;
 }
 
@@ -433,6 +438,11 @@ function assertDrained(s, label, expectedEpoch = 2) {
   }
   if (s.engine.sessionsOpened !== s.engine.sessionsDestroyed) {
     throw new Error(`[${label}] session counters unbalanced`);
+  }
+  // Every pane's PdfSession was disposed with its pane: no engine session is
+  // left registered in the realm.
+  if (s.engine.sessionsLive !== 0) {
+    throw new Error(`[${label}] ${s.engine.sessionsLive} engine sessions still live after the dispose`);
   }
   if (s.engine.workersCreated !== s.engine.workersTerminated) {
     throw new Error(`[${label}] worker counters unbalanced (teardown not awaited?)`);

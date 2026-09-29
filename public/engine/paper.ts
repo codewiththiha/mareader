@@ -13,7 +13,7 @@
 // and none while blend mode is off, the common case (the session gates the
 // stash from the Rust side, setPaperActive).
 
-import { session } from "./state";
+import type { EngineSession } from "./state";
 import type { PaperFrame } from "./types";
 import { releaseCanvas } from "./canvas";
 import { publishBakedPaper } from "./theme/paper";
@@ -28,17 +28,16 @@ const SAMPLE_EDGE = 96;
  * valve, not a working set. */
 const STASH_MAX = 8;
 
-const stash = new Map<string, PaperFrame>();
-
-/** Whether the Rust paper session wants frames. Defaults to true so a pure
- * JS consumer sees the old behaviour; `paper::configure` flips it with the
- * blend switch, because stashing a ≤96px downscale + readback per render for
- * a session that will ignore every frame is pure waste. */
-let active = true;
+// The stash and its switch live on the session (`paperStash`,
+// `paperActive`): one pane's frames are its own paper session's answer and
+// never another's. `paperActive` defaults to true so a pure JS consumer sees
+// the old behaviour; the Rust paper session flips it with the blend switch,
+// because stashing a ≤96px downscale + readback per render for a session
+// that will ignore every frame is pure waste.
 
 /** The Rust session's word for "blend mode is on" — gates stashPaperFrame. */
-export function setPaperActive(on: boolean): void {
-  active = !!on;
+export function setPaperActive(s: EngineSession, on: boolean): void {
+  s.paperActive = !!on;
 }
 
 /** One scratch canvas for every downscale, reused across renders: a live
@@ -72,15 +71,17 @@ function downscale(src: HTMLCanvasElement): PaperFrame | null {
  * the renderer's raw-pixel moment, before the theme bake touches it. A no-op
  * while the session has blend mode off (see setPaperActive). */
 export function stashPaperFrame(
+  s: EngineSession,
   canvasId: string,
   page: number,
   src: HTMLCanvasElement | null,
 ): void {
-  if (!active) return;
+  if (!s.paperActive) return;
   if (!src || src.width < 8 || src.height < 8) return;
   const frame = downscale(src);
   if (!frame) return;
   frame.page = page;
+  const stash = s.paperStash;
   stash.delete(canvasId); // re-insert at the end = most recent
   stash.set(canvasId, frame);
   while (stash.size > STASH_MAX) {
@@ -94,10 +95,11 @@ export function stashPaperFrame(
  * stash is consumed exactly once: a frame is one render's answer, not a
  * standing fact about the canvas. */
 export function takePaperFrame(
+  s: EngineSession,
   canvasId: string,
 ): { ok: true; page: number; width: number; height: number; data: Uint8ClampedArray } | null {
-  const frame = stash.get(canvasId) ?? null;
-  stash.delete(canvasId);
+  const frame = s.paperStash.get(canvasId) ?? null;
+  s.paperStash.delete(canvasId);
   return frame ? { ok: true, ...frame } : null;
 }
 
@@ -107,8 +109,8 @@ export function takePaperFrame(
  *  backdrop cannot re-derive this colour with the compositor — its pages
  *  already carry the themed result — so the pre-themed paper rides out
  *  with it, in the same write. */
-export function setPaper(hex: string): void {
-  session.setDetectedPaper(hex ? hex : null);
+export function setPaper(s: EngineSession, hex: string): void {
+  s.setDetectedPaper(hex ? hex : null);
   publishBakedPaper();
 }
 
@@ -116,11 +118,11 @@ export function setPaper(hex: string): void {
  * promise resolves only after a macrotask yield, so a burst of samples
  * leaves live renders their turn. `{ok:true}` with no frame = the page had
  * no answer (the caller skips it). */
-export async function samplePaperPage(page: number): Promise<
+export async function samplePaperPage(s: EngineSession, page: number): Promise<
   | { ok: true; page: number; width: number; height: number; data: Uint8ClampedArray }
   | { ok: true }
 > {
-  const doc = session.pdf;
+  const doc = s.pdf;
   if (!doc || page < 1) return { ok: true };
   try {
     const p = await doc.getPage(page);
@@ -164,6 +166,6 @@ export async function samplePaperPage(page: number): Promise<
 /** A new document: drop the previous book's undrained frames. Also the
  * teardown path — nothing here outlives the book (the Rust session holds
  * the decisions). */
-export function resetPaperForDocument(): void {
-  stash.clear();
+export function resetPaperForDocument(s: EngineSession): void {
+  s.paperStash.clear();
 }

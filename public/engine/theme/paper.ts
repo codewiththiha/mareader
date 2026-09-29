@@ -6,7 +6,7 @@ import type { PaperInfo, PipelineCache } from "../types";
 import { acquireScratch, releaseScratch } from "../canvas";
 import { applyFilterToData } from "./filterKernel";
 import { readPipeline } from "./pipeline";
-import { session } from "../state";
+import { paperPublisher } from "../state";
 
 export function paperInfo(pipeline: PipelineCache): PaperInfo {
   if (pipeline.paperInfo) return pipeline.paperInfo;
@@ -86,7 +86,8 @@ function toPaperHex(rgb: [number, number, number]): string {
  *  in: the overlay rides over this colour, on the page and (through the
  *  page's own bleed) on the gutter alike. */
 function themedPaperHex(pipeline: PipelineCache): string | null {
-  const raw = session.detectedPaper;
+  // The root backdrop shows ONE session's paper: the publisher's.
+  const raw = paperPublisher()?.detectedPaper ?? null;
   if (!raw) return null;
   const rgb = parsePaperHex(raw);
   if (!rgb) return raw; // not a shape we can re-theme: keep what we have

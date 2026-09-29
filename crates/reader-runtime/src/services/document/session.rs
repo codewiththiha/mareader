@@ -1,42 +1,39 @@
-//! Which open attempt currently owns the app's document state.
+//! The realm's document-generation mint, and the diagnostics epoch it
+//! doubles as.
 //!
 //! Opening is asynchronous in several hops — the engine's `open`, the outline
 //! resolve, the cover render — and nothing stops a reader from picking a
 //! second book mid-flight. Without an owner, the loser of that race still runs
 //! its tail: it writes `num_pages`, `page1_size` and the size stores for a
 //! book no longer open, seeds the zoom for the wrong page size, and flips
-//! `status` to `Ready` after the winner did — resuming the new book at the old
-//! one's page.
+//! `status` to `Ready` after the winner did.
 //!
-//! So every attempt takes a stamp before it starts and re-checks it after each
-//! await. Taking a stamp also invalidates whoever held it before, which is why
-//! closing takes one too: a close landing mid-open must not be undone by the
-//! open's tail two frames later.
+//! So every attempt claims a generation before it starts and re-checks it
+//! after each await. The generation is PER PANE
+//! ([`crate::pane::handle::PaneHandle::claim_generation`] /
+//! [`owns_generation`](crate::pane::handle::PaneHandle::owns_generation)):
+//! a later open or the dispose of THE SAME pane stales an attempt, another
+//! pane's open never does. This module only mints the numbers — monotonic
+//! for the realm's life, so a generation is never reused by any pane — and
+//! reports the latest one as the diagnostics epoch.
 //!
 //! Relaxed ordering throughout: the webview is single-threaded, so the counter
 //! only needs to be monotonic, never synchronising.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-static SESSION: AtomicU64 = AtomicU64::new(0);
+static MINT: AtomicU64 = AtomicU64::new(0);
 
-/// Claim the document state for a new attempt (an open or a close) and return
-/// its stamp. Every earlier stamp is stale from here on.
-pub(crate) fn claim() -> u64 {
-    SESSION.fetch_add(1, Ordering::Relaxed) + 1
+/// A fresh document generation, never handed out before.
+pub(crate) fn next_generation() -> u64 {
+    MINT.fetch_add(1, Ordering::Relaxed) + 1
 }
 
-/// Whether `stamp` still owns the document state — false once a later open or
-/// close has claimed it.
-pub(crate) fn owns(stamp: u64) -> bool {
-    SESSION.load(Ordering::Relaxed) == stamp
-}
-
-/// The current stamp, as a diagnostics epoch: it moves on every open and
-/// close, so a snapshot can be attributed to a moment in the lifecycle, and
-/// two snapshots taken either side of a close can never be confused.
+/// The latest generation minted, as a diagnostics epoch: it moves on every
+/// open and dispose in any pane, so a snapshot can be attributed to a
+/// moment in the lifecycle. NOT an ownership check — that is the pane's.
 pub(crate) fn current_epoch() -> u64 {
-    SESSION.load(Ordering::Relaxed)
+    MINT.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]
@@ -44,19 +41,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_later_claim_supersedes_every_earlier_one() {
-        let first = claim();
-        assert!(owns(first));
-        let second = claim();
-        assert!(owns(second));
-        assert!(!owns(first), "the superseded attempt must stand down");
-    }
-
-    #[test]
-    fn stamps_never_repeat() {
-        let a = claim();
-        let b = claim();
-        let c = claim();
+    fn generations_never_repeat() {
+        let a = next_generation();
+        let b = next_generation();
+        let c = next_generation();
         assert!(a < b && b < c);
+        assert!(current_epoch() >= c);
     }
 }

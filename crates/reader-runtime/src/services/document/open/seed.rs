@@ -50,10 +50,13 @@ pub(super) fn seed(
     // (the stream mounts while `reflow.blocks` is a document).
     state.reader.document.content.reflow.reset();
     state.reader.document.num_pages.set(num_pages);
-    // The paper session resets for the new book — synchronously, while the
-    // status is still `Opening` and nothing is mounted, so the previous
-    // book's backdrop colour is gone before the reader's first frame.
-    pdf_engine::backdrop::document_open(path, num_pages);
+    // The new session's paper state machine is configured, then opened for
+    // the book — synchronously, while the status is still `Opening` and
+    // nothing is mounted. Configure FIRST: the document's first frame only
+    // publishes if the session already knows blend is on. The session is
+    // new, so no previous book's colour can reach the reader's first frame.
+    crate::effects::reader::blend_backdrop::configure_session(state);
+    state.pane.pdf().paper_document_open(path, num_pages);
     state
         .reader
         .document

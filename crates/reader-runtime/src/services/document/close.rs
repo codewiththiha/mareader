@@ -24,6 +24,7 @@ pub fn prepare_leave(ctx: &crate::context::ReaderContext) {
     // the navigate command crosses to the Shell and the dispose comes back
     // over the frame channel — hops during which a live page render could
     // finish as if leaving had interrupted nothing. Cancelling is the first
-    // act of teardown; the pane's dispose still owns the engine destroy.
-    pdf_engine::api::cancel_page_renders();
+    // act of teardown; the pane's dispose still owns the session's destroy.
+    // THIS pane's session only.
+    ctx.pane.pdf().cancel_page_renders();
 }

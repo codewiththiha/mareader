@@ -1,16 +1,25 @@
 // window.PDFReader facade. The implementation lives in public/engine/*
 // (loader, renderer, thumbnails, search, theme); this file wires the public
-// API and document teardown. Compiled to public/pdfEngine.js and loaded by
+// API and session teardown. Compiled to public/pdfEngine.js and loaded by
 // the browser as an ES module.
+//
+// The facade holds NO document. Every document call names a session id
+// (`sid`) minted by the Rust `PdfSession` that owns the session; the
+// registry in engine/state.ts is the only way from a sid to its state, and
+// an unknown or retired sid resolves to nothing. The realm-level calls that
+// remain carry no document identity: the appearance broadcast (each live
+// session re-derives its OWN raster theme), diagnostics, and the aggregate
+// stats. docs/session-ownership.md is the ownership record.
 
 export {};
 
-import type { PDFReaderApi, Stats } from "./engine/types";
+import type { AggregateStats, PDFReaderApi, Sid, Stats } from "./engine/types";
 import {
   disposeScratch,
   pooledIntermediateBytesEstimate,
   releaseCanvas,
 } from "./engine/canvas";
+import { fail } from "./engine/errors";
 import { coverDataUrl, destroyTask, open, resolveOutline } from "./engine/loader";
 import {
   beginRenderGeneration,
@@ -54,20 +63,28 @@ import {
   takePaperFrame,
 } from "./engine/paper";
 import {
+  beginRetire,
+
+  createSession,
   ENGINE_VERSION,
+  finishRetire,
+  heldSessions,
   lifecycleEvent,
-  session,
+  liveSessions,
+  realmCounters,
+  registryCounts,
+  sessionFor,
   setLifecycleLog,
+  setPaperPublisher,
   THUMB_CACHE_MAX,
 } from "./engine/state";
+import type { CounterKey, EngineSession } from "./engine/state";
 
 declare global {
   interface Window {
     pdfjsLib: unknown;
   }
-  // eslint-disable-next-line no-var
   var pdfjsLib: unknown;
-  // eslint-disable-next-line no-var
   var __TAURI__:
     | {
         core: {
@@ -76,258 +93,258 @@ declare global {
         };
       }
     | undefined;
-  // eslint-disable-next-line no-var
   var PDFReader: PDFReaderApi;
 }
 
-/** Cancel and release every live page surface. Shared by `destroy` and the
- *  `pagehide` handler: both must stop in-flight renders and free the surfaces,
- *  and only one of them goes on to null the document out. */
-function cancelAndReleasePages(): void {
-  for (const st of session.stateByCanvasId.values()) {
+/** The envelope every session-scoped async call resolves when its sid names
+ *  no live session — a stale caller, never an engine fault. */
+function noSession(): { ok: false; error: { name: string; message: string } } {
+  return fail("no_session", "No live PDF session with this id");
+}
+
+/** Cancel and release every live page surface of `s`. Shared by
+ *  `destroySession`, `quiesce` and the pagehide release. */
+function cancelAndReleasePages(s: EngineSession): void {
+  for (const st of s.stateByCanvasId.values()) {
     st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
     try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }
-    // A queued render's rAF is deliberately NOT cancelled: the callback's
-    // dead-state guard resolves the caller with a drop. Cancelling here
-    // would orphan that promise — an await that never settles, for a job
-    // the counters never even saw.
-    session.releasePageSurfaces(st);
+    s.releasePageSurfaces(st);
   }
 }
 
-/** The close intent's work-stop half: every in-flight and queued job for
- *  the current document stops in the CALLER's own task, counted exactly as
- *  a teardown counts it — while the session itself survives. Document,
- *  worker, caches and page states stay owned by the one teardown path
- *  (destroy), which the disposal runs later; every step here is idempotent,
- *  so a destroy that follows a quiesce cancels nothing twice and counts
- *  nothing twice. Repeating a quiesce is a no-op sweep, and with no
- *  document open it counts nothing at all. */
-function quiesce(): void {
-  if (session.pdf === null) return;
+/** The close intent's work-stop half for ONE session: every in-flight and
+ *  queued job — page renders, thumbnail rasters, prefetch awaits — stops in
+ *  the caller's task. The session survives; destroySession stays the one
+ *  teardown and repeats this sweep idempotently. */
+function quiesce(s: EngineSession): void {
+  if (s.pdf === null) return;
   lifecycleEvent("pdf_session:quiesce");
-  // Wake every in-flight prefetch await now (the same first act of dying
-  // `destroy` runs): none of them may step onto the worker after the
-  // close intent, and their active slots must drain as drops.
-  session.noteDocumentGone();
-  // The idle sweeper's timer would outlive the close intent; the teardown
-  // clears it again, idempotently.
-  session.clearIdleTimer();
-  cancelAndReleasePages();
-  // Every state is dead now: the drain cascade resolves each queued job
-  // as a drop instead of letting it start a fresh render after the intent.
-  drainPageLane();
-  for (const task of session.thumbTasks.values()) {
+  s.noteDocumentGone();
+  s.clearIdleTimer();
+  cancelAndReleasePages(s);
+  drainPageLane(s);
+  for (const task of s.thumbTasks.values()) {
     try { task.cancel(); } catch (_) { /* ignore */ }
   }
-  session.thumbTasks.clear();
-  // The epoch invalidates the queued thumb jobs and wakes the epoch's
-  // waiters as drops; destroy resets the lane again, idempotently.
-  resetThumbLane();
+  s.thumbTasks.clear();
+  resetThumbLane(s);
 }
 
-async function destroy(): Promise<void> {
-  // A dispose is only a session dispose when a session is actually here:
-  // open() runs destroy() as its first act, and that call disposes nothing.
-  const hadSession = session.pdf !== null;
-  if (hadSession) {
-    session.sessionsDestroyed += 1;
-    // First act of dying: wake every in-flight prefetch await so none of
-    // them can step onto the worker during its death throes (a task born
-    // in this window would await a promise the destroyed worker never
-    // settles, and its active-prefetch slot would never drain).
-    session.noteDocumentGone();
-    // The idle sweeper belongs to the dying document: leaving it armed lets
-    // a timer fire over the NEXT document thirty seconds later.
-    session.clearIdleTimer();
+/** Tear ONE session down, in the order the ownership rules require:
+ *  stop accepting (the sid stops resolving) → advance invalidation
+ *  (`disposed`, the document-gone signal, the lane epoch) → cancel active
+ *  work → destroy the document and its pdf.js worker → clear the page
+ *  registry → clear cache references → forget the session. Other sessions
+ *  are untouched; no timeout decides when this is done. */
+async function destroySession(sid: Sid): Promise<void> {
+  const s = sessionFor(sid);
+  if (!s || !beginRetire(s)) return;
+  const hadDocument = s.pdf !== null;
+  if (hadDocument) {
+    s.sessionsDestroyed += 1;
     lifecycleEvent("pdf_session:dispose_begin");
   }
+  s.noteDocumentGone();
+  s.clearIdleTimer();
   try {
-    // The advisory worker cleanup, run while the document is still alive:
-    // pdf.cleanup() drops the resolved-page and font caches pdf.js holds for
-    // it. Nothing after this point can — the teardown below nulls the
-    // document and fires the worker's death, so a shelf-side sweep() arriving
-    // after destroy resolves finds no document to clean.
-    session.sweepPdf();
-    cancelAndReleasePages();
-    // Every state is dead now: the drain cascade resolves each queued job
-    // as a drop instead of leaving the closures (and their callers'
-    // resolvers) parked in the array across the dispose.
-    drainPageLane();
-    session.stateByCanvasId.clear();
-    for (const task of session.thumbTasks.values()) {
+    s.sweepPdf();
+    cancelAndReleasePages(s);
+    drainPageLane(s);
+    s.stateByCanvasId.clear();
+    for (const task of s.thumbTasks.values()) {
       try { task.cancel(); } catch (_) { /* ignore */ }
     }
-    session.thumbTasks.clear();
-    session.thumbCancelled.clear();
-    session.thumbLive.clear();
-    // The lane's queued jobs and per-id generation counters belong to this
-    // document: the epoch invalidates the queue, and the counters go with it
-    // so the next document's recycled `thumb-{page}` ids start clean.
-    resetThumbLane();
-    for (const entry of session.thumbCache.values()) session.releaseThumbEntry(entry);
-    session.thumbCache.clear();
-    session.setSearchQuery("");
-    session.setActiveMatchValue(null);
-    if (session.loadingTask) {
-      // Guarded behind a WeakSet in loader.ts: open's own timeout may be
-      // destroying the same task right now, and a second destroy() on a
-      // pdf.js LoadingTask double-frees the worker.
-      //
-      // AWAITED, not fire-and-forget: the reader's dispose-complete marker
-      // fires after this resolves, and it must mean "the worker is dead",
-      // not "worker death was scheduled". The close tail already runs in
-      // its own background task, so the wait costs the UI nothing; the
-      // open flow's own pre-destroy gains the same truth for free, still
-      // bounded by the open timeout behind it.
-      const lt = session.loadingTask;
-      session.setLoadingTask(null);
-      await destroyTask(lt);
-    }
+    s.thumbTasks.clear();
+    s.thumbCancelled.clear();
+    s.thumbLive.clear();
+    resetThumbLane(s);
+    for (const entry of s.thumbCache.values()) s.releaseThumbEntry(entry);
+    s.thumbCache.clear();
+    s.setSearchQuery("");
+    s.setActiveMatchValue(null);
+    s.scrub.entrySnapshots.clear();
+    s.scrub.entryPrepare = null;
+    if (s.loadingTask) await destroyTask(s, s.loadingTask);
   } finally {
-    // Teardown always completes: a release that throws must not skip the
-    // document null-out, or the next open() sees a half-dead session.
-    //
-    // The sweeper is cleared HERE as well as at the top: a render already
-    // past its last dead-check can arm it while the worker is being torn
-    // down, and the baseline this close is judged by counts the timer.
-    session.clearIdleTimer();
-    session.setPdf(null);
-    session.setNumPages(0);
-    session.setCurrentPath(null);
-    resetPaperForDocument();
-    // The document's paper goes with it: setPdf's null-out cleared
-    // --pdf-paper, and the backdrop's pre-themed twin must not outlive the
-    // book it was themed for.
+    s.clearIdleTimer();
+    s.setPdf(null);
+    s.setNumPages(0);
+    s.setCurrentPath(null);
+    resetPaperForDocument(s);
     publishBakedPaper();
     disposeScratch();
-    if (hadSession) lifecycleEvent("pdf_session:dispose_complete");
+    if (hadDocument) lifecycleEvent("pdf_session:dispose_complete");
+    finishRetire(s);
   }
 }
 
-(globalThis as unknown as { __pdfDestroy?: () => Promise<void> }).__pdfDestroy = destroy;
+// ---------------------------------------------------------------------------
+// The appearance broadcast. Appearance is a global setting; the rasters it
+// is baked into are session-owned, so a change enqueues on EVERY live
+// session's own theme chain. Rust invokes these fire-and-forget, so each
+// session's mutations ride one promise chain: a pause in a tint drag cannot
+// interleave `scrub off -> bake` with a new `scrub on`. A failed mutation is
+// reported but swallowed so it never poisons that session's queue.
 
-// Rust invokes these fire-and-forget, so all mutations ride one promise
-// chain: a pause in a tint drag cannot interleave `scrub off -> bake` with a
-// new `scrub on`. A failed mutation is reported but swallowed so it never
-// poisons the queue and blocks every later appearance change.
-let themeChain: Promise<void> = Promise.resolve();
+/** The appearance state a session created mid-drag (or with the menu open)
+ *  must start in. Global appearance, not document state. */
+let appearanceScrub = false;
+let appearanceMenuOpen = false;
 
-function enqueueTheme(work: () => Promise<void>): Promise<void> {
-  themeChain = themeChain
-    .then(work, work)
+function enqueueTheme(s: EngineSession, work: () => Promise<void>): Promise<void> {
+  const guarded = () => (s.disposed ? Promise.resolve() : work());
+  s.themeChain = s.themeChain
+    .then(guarded, guarded)
     .catch((e: unknown) => {
       const msg = (e as { message?: string })?.message ?? e;
       console.warn("[pdfEngine] theme mutation failed:", msg);
     });
-  return themeChain;
+  return s.themeChain;
 }
 
-async function refreshThemeInternal(): Promise<void> {
-  invalidatePipeline();
-  // A slider commit arrives while scrub owns raw, individually tagged
-  // canvases. Exit performs the single final bake, so do not enqueue a second
-  // rebake (or page rerender) against that same pipeline here. The backdrop's
-  // published paper still settles: the rasters belong to the scrub, but the
-  // token move this was called for — a texture's fold, paper.ts stage three —
-  // is already on the root style.
-  if (session.themeScrubActive) {
+async function refreshSessionTheme(s: EngineSession): Promise<void> {
+  if (s.themeScrubActive) {
     publishBakedPaper();
     return;
   }
-  await rebakeTheme();
-  // Pages without a distinct raw must re-render from pdf.js (never
-  // double-filter). Thumbs were already refreshed in rebakeTheme.
+  await rebakeTheme(s);
   let needsRerender = false;
-  for (const st of session.stateByCanvasId.values()) {
+  for (const st of s.stateByCanvasId.values()) {
     if (!st.dead && st.canvas && (!st.rawCanvas || st.rawCanvas === st.canvas)) {
       needsRerender = true;
       break;
     }
   }
-  if (needsRerender) await rerenderLivePages();
-  // Rebake already updated thumbCache; blit onto every visible sidebar
-  // canvas. If a cache entry lost its unbaked raw, re-render that thumb
-  // from pdf.js the same way live pages do.
+  if (needsRerender) await rerenderLivePages(s);
   const thumbJobs: Promise<unknown>[] = [];
-  for (const [canvasId, { page }] of session.thumbLive) {
-    const entry = session.thumbCache.get(page);
+  for (const [canvasId, { page }] of s.thumbLive) {
+    const entry = s.thumbCache.get(page);
     if (!entry || !entry.display || (entry.display as ImageBitmap).width <= 0) {
-      thumbJobs.push(renderThumb(canvasId, page, entry?.scale || 0.25));
+      thumbJobs.push(renderThumb(s, canvasId, page, entry?.scale || 0.25));
     }
   }
   if (thumbJobs.length) await Promise.all(thumbJobs);
-  paintAllVisibleThumbs();
+  paintAllVisibleThumbs(s);
 }
 
 function refreshTheme(): Promise<void> {
-  return enqueueTheme(refreshThemeInternal);
+  invalidatePipeline();
+  const held = liveSessions();
+  if (held.length === 0) {
+    publishBakedPaper();
+    return Promise.resolve();
+  }
+  return Promise.all(held.map((s) => enqueueTheme(s, () => refreshSessionTheme(s)))).then(
+    () => undefined,
+  );
 }
 
 function setScrubMode(on: boolean): Promise<void> {
-  return enqueueTheme(() => setScrubModeInternal(on));
+  appearanceScrub = on;
+  const root = (() => {
+    try {
+      return document.documentElement;
+    } catch (_) {
+      return null;
+    }
+  })();
+  if (on) root?.classList.add("appearance-scrubbing");
+  const jobs = liveSessions().map((s) => enqueueTheme(s, () => setScrubModeInternal(s, on)));
+  return Promise.all(jobs).then(() => {
+    // The class leaves once every session has settled out of the scrub —
+    // and only if no new scrub began meanwhile.
+    if (!on && !appearanceScrub) root?.classList.remove("appearance-scrubbing");
+  });
 }
 
 // Not enqueued: a retention flag, not a canvas mutation. The theme queue
 // serializes raster swaps; a menu toggle must neither wait behind a bake
 // nor delay one, and setting session state is synchronous anyway.
 function setAppearanceMenuOpen(on: boolean): void {
-  session.setAppearanceMenuOpen(on);
+  appearanceMenuOpen = on;
+  for (const s of liveSessions()) s.setAppearanceMenuOpen(on);
 }
 
-function stats(): Stats {
+// ---------------------------------------------------------------------------
+// Session lifecycle.
+
+function createEngineSession(sid: Sid): boolean {
+  const s = createSession(sid);
+  if (!s) return false;
+  if (appearanceScrub) {
+    s.setThemeScrubActive(true);
+    s.noteScrub();
+  }
+  s.appearanceMenuOpen = appearanceMenuOpen;
+  return true;
+}
+
+async function openInSession(sid: Sid, path: string) {
+  const s = sessionFor(sid);
+  if (!s) return noSession();
+  // A PDF session holds exactly one document: a new document is a new
+  // session (a new sid), so nothing captured against the old one can reach
+  // it.
+  if (s.pdf || s.loadingTask) {
+    return fail("session_in_use", "This PDF session already holds a document");
+  }
+  const result = await open(s, path);
+  if (result.ok && !s.disposed) {
+    // The latest document to open presents its paper on the root backdrop.
+    setPaperPublisher(s);
+    publishBakedPaper();
+  }
+  return result;
+}
+
+function presentSession(sid: Sid): void {
+  const s = sessionFor(sid);
+  if (!s) return;
+  setPaperPublisher(s);
+  publishBakedPaper();
+}
+
+// ---------------------------------------------------------------------------
+// Stats.
+
+/** One session's gauges. The counters come from the caller. */
+function gauges(s: EngineSession): Omit<Stats, CounterKey> {
   let activeRenders = 0;
   let pageCanvasBytes = 0;
   let rawRetentionBytes = 0;
-  for (const st of session.stateByCanvasId.values()) {
+  for (const st of s.stateByCanvasId.values()) {
     if (st.renderTask) activeRenders += 1;
-    // Engine-owned raster estimates: w*h*4 RGBA, by convention. These are
-    // correlation numbers for the baseline (what the engine holds), never a
-    // physical allocation query and never a share of a "total RAM".
     if (st.canvas) pageCanvasBytes += st.canvas.width * st.canvas.height * 4;
     if (st.rawCanvas && st.rawCanvas !== st.canvas) {
       rawRetentionBytes += st.rawCanvas.width * st.rawCanvas.height * 4;
     }
   }
   let thumbnailRasterBytes = 0;
-  for (const t of session.thumbCache.values()) {
+  for (const t of s.thumbCache.values()) {
     for (const c of [t.raw, t.display]) {
       if (c) thumbnailRasterBytes += c.width * c.height * 4;
     }
   }
-  const pageLane = pageLaneGauge();
-  const thumbLane = thumbLaneGauge();
+  const pageLane = pageLaneGauge(s);
+  const thumbLane = thumbLaneGauge(s);
   return {
     pageQueue: pageLane.pageQueue,
     pageActive: pageLane.pageActive,
     thumbQueue: thumbLane.thumbQueue,
     thumbActive: thumbLane.thumbActive,
-    pages: session.stateByCanvasId.size,
-    thumbs: session.thumbCache.size,
+    pages: s.stateByCanvasId.size,
+    thumbs: s.thumbCache.size,
     thumbLimit: THUMB_CACHE_MAX,
-    thumbTasks: session.thumbTasks.size,
+    thumbTasks: s.thumbTasks.size,
     activeRenders,
-    activePrefetches: session.prefetchesActive,
-    hasDocument: session.pdf !== null,
-    hasLoadingTask: session.loadingTask !== null,
-    sessionsOpened: session.sessionsOpened,
-    sessionsDestroyed: session.sessionsDestroyed,
-    workersCreated: session.workersCreated,
-    workersTerminated: session.workersTerminated,
-    rendersStarted: session.rendersStarted,
-    rendersCompleted: session.rendersCompleted,
-    rendersCancelled: session.rendersCancelled,
-    rendersFailed: session.rendersFailed,
-    rendersQueued: session.rendersQueued,
-    rendersDropped: session.rendersDropped,
-    prefetchesStarted: session.prefetchesStarted,
-    prefetchesCompleted: session.prefetchesCompleted,
-    prefetchesDropped: session.prefetchesDropped,
-    documentPages: session.numPages,
-    thumbGenerationSize: thumbGenerationSize(),
-    rawRetentionTimers: session.rawRetentionTimers(),
-    sweepTimerArmed: session.sweepTimerArmed(),
+    activePrefetches: s.prefetchesActive,
+    hasDocument: s.pdf !== null,
+    hasLoadingTask: s.loadingTask !== null,
+    documentPages: s.numPages,
+    thumbGenerationSize: thumbGenerationSize(s),
+    rawRetentionTimers: s.rawRetentionTimers(),
+    sweepTimerArmed: s.sweepTimerArmed(),
     pageCanvasBytesEst: pageCanvasBytes,
     thumbnailRasterBytesEst: thumbnailRasterBytes,
     rawRetentionBytesEst: rawRetentionBytes,
@@ -335,9 +352,78 @@ function stats(): Stats {
   };
 }
 
+function sessionStats(sid: Sid): Stats | null {
+  const s = sessionFor(sid);
+  return s ? { ...gauges(s), ...s.counts } : null;
+}
+
+/** The realm aggregate: gauges summed over live and draining sessions,
+ *  counters over every session that ever lived (realm totals). */
+function stats(): AggregateStats {
+  const out: AggregateStats = {
+    pageQueue: 0,
+    pageActive: 0,
+    thumbQueue: 0,
+    thumbActive: 0,
+    pages: 0,
+    thumbs: 0,
+    thumbLimit: THUMB_CACHE_MAX,
+    thumbTasks: 0,
+    activeRenders: 0,
+    activePrefetches: 0,
+    hasDocument: false,
+    hasLoadingTask: false,
+    documentPages: 0,
+    thumbGenerationSize: 0,
+    rawRetentionTimers: 0,
+    sweepTimerArmed: 0,
+    pageCanvasBytesEst: 0,
+    thumbnailRasterBytesEst: 0,
+    rawRetentionBytesEst: 0,
+    pooledIntermediateBytesEst: pooledIntermediateBytesEstimate(),
+    ...realmCounters,
+    sessionsLive: 0,
+    sessionsRetired: 0,
+  };
+  for (const s of heldSessions()) {
+    const g = gauges(s);
+    out.pageQueue += g.pageQueue;
+    out.pageActive += g.pageActive;
+    out.thumbQueue += g.thumbQueue;
+    out.thumbActive += g.thumbActive;
+    out.pages += g.pages;
+    out.thumbs += g.thumbs;
+    out.thumbTasks += g.thumbTasks;
+    out.activeRenders += g.activeRenders;
+    out.activePrefetches += g.activePrefetches;
+    out.hasDocument = out.hasDocument || g.hasDocument;
+    out.hasLoadingTask = out.hasLoadingTask || g.hasLoadingTask;
+    out.documentPages += g.documentPages;
+    out.thumbGenerationSize += g.thumbGenerationSize;
+    out.rawRetentionTimers += g.rawRetentionTimers;
+    out.sweepTimerArmed += g.sweepTimerArmed;
+    out.pageCanvasBytesEst += g.pageCanvasBytesEst;
+    out.thumbnailRasterBytesEst += g.thumbnailRasterBytesEst;
+    out.rawRetentionBytesEst += g.rawRetentionBytesEst;
+  }
+  const counts = registryCounts();
+  out.sessionsLive = counts.live;
+  out.sessionsRetired = counts.retired;
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Realm-level memory listeners: the window is one, the sessions are many,
+// so each walks every held session.
+
+/** Release every GPU/canvas surface of every session. Registered on
+ *  `pagehide` — the last reliable event before WKWebView tears the
+ *  document down. */
 function releaseAllSurfaces(): void {
-  cancelAndReleasePages();
-  for (const entry of session.thumbCache.values()) session.releaseThumbEntry(entry);
+  for (const s of heldSessions()) {
+    cancelAndReleasePages(s);
+    for (const entry of s.thumbCache.values()) s.releaseThumbEntry(entry);
+  }
   try {
     document.querySelectorAll("canvas").forEach((c) => releaseCanvas(c as HTMLCanvasElement));
   } catch (_) { /* document already torn down */ }
@@ -348,12 +434,12 @@ globalThis.addEventListener("pagehide", releaseAllSurfaces);
 try {
   globalThis.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "hidden") return;
-    // Keep the live baked canvases (so coming back isn't a blank page)
-    // but drop idle raws, scratch, and worker caches.
-    for (const st of session.stateByCanvasId.values()) {
-      if (st.rawCanvas && st.rawCanvas !== st.canvas) {
-        releaseCanvas(st.rawCanvas);
-        st.rawCanvas = null;
+    for (const s of heldSessions()) {
+      for (const st of s.stateByCanvasId.values()) {
+        if (st.rawCanvas && st.rawCanvas !== st.canvas) {
+          releaseCanvas(st.rawCanvas);
+          st.rawCanvas = null;
+        }
       }
     }
     disposeScratch();
@@ -361,6 +447,7 @@ try {
 } catch (_) {
   /* no document */
 }
+
 // The selection tracker is NOT installed here: it is format-agnostic and
 // lives in the reader bundle (public/readerEngine.ts), which index.html loads
 // first. Nothing in this facade depends on it.
@@ -370,52 +457,73 @@ try {
 // per frame and a texture click never reaches the scheduler at all, so the
 // publish rides the mutations instead of waiting to be called. Installed
 // with the other module-lifetime listeners; self-guarded where there is no
-// MutationObserver (the node smoke harness).
+// MutationObserver (the node smoke harness). It republishes the PUBLISHING
+// session's paper (engine/state.ts, setPaperPublisher).
 watchPaperTokens();
+
+// ---------------------------------------------------------------------------
+// The surface. Session-scoped entries resolve their sid first; an unknown
+// sid is a no-op (sync) or a `no_session` envelope (async).
+
+function withSession<T>(sid: Sid, missing: T, run: (s: EngineSession) => T): T {
+  const s = sessionFor(sid);
+  return s ? run(s) : missing;
+}
 
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
   beginRenderGeneration,
   renderTrace: readRenderTrace,
-  open,
-  resolveOutline,
-  destroy,
   setLifecycleLog,
-  registerPage,
-  unregisterPage,
-  cancelPage,
-  cancelPageRenders,
-  quiesce,
-  renderPage,
-  renderThumb,
-  cancelThumb,
-  hasThumb,
-  blitThumb,
-  coverDataUrl,
+
+  createSession: createEngineSession,
+  destroySession,
+  presentSession,
+  sessions: () => liveSessions().map((s) => s.sid),
+
+  open: openInSession,
+  resolveOutline: (sid) =>
+    withSession(sid, Promise.resolve({ ok: true as const, outline: [] }), (s) => resolveOutline(s)),
+  registerPage: (sid, page, canvasId, hostId) =>
+    withSession(sid, undefined, (s) => registerPage(s, page, canvasId, hostId)),
+  unregisterPage: (sid, canvasId) => withSession(sid, undefined, (s) => unregisterPage(s, canvasId)),
+  cancelPage: (sid, canvasId) => withSession(sid, undefined, (s) => cancelPage(s, canvasId)),
+  cancelPageRenders: (sid) => withSession(sid, undefined, (s) => cancelPageRenders(s)),
+  quiesce: (sid) => withSession(sid, undefined, (s) => quiesce(s)),
+  renderPage: (sid, canvasId, scale, renderText) =>
+    withSession(sid, Promise.resolve(noSession()), (s) => renderPage(s, canvasId, scale, renderText)),
+  renderThumb: (sid, canvasId, page, scale) =>
+    withSession(sid, Promise.resolve(noSession()), (s) => renderThumb(s, canvasId, page, scale)),
+  cancelThumb: (sid, canvasId) => withSession(sid, undefined, (s) => cancelThumb(s, canvasId)),
+  hasThumb: (sid, page, scale) => withSession(sid, false, (s) => hasThumb(s, page, scale)),
+  blitThumb: (sid, canvasId, page) => withSession(sid, false, (s) => blitThumb(s, canvasId, page)),
+  coverDataUrl: (sid, path, maxWidth) =>
+    withSession(sid, Promise.resolve(noSession()), (s) => coverDataUrl(s, path, maxWidth)),
+  extractPageText: (sid, page) =>
+    withSession(sid, Promise.resolve(noSession()), (s) => extractPageText(s, page)),
+  setSearchContext: (sid, query) => withSession(sid, undefined, (s) => setSearchContext(s, query)),
+  setActiveMatch: (sid, page, index) =>
+    withSession(sid, undefined, (s) => setActiveMatch(s, page, index)),
+  clearHighlights: (sid) => withSession(sid, undefined, (s) => clearHighlights(s)),
+  setPaper: (sid, hex) => withSession(sid, undefined, (s) => setPaper(s, hex)),
+  setPaperActive: (sid, on) => withSession(sid, undefined, (s) => setPaperActive(s, on)),
+  takePaperFrame: (sid, canvasId) => withSession(sid, null, (s) => takePaperFrame(s, canvasId)),
+  samplePaperPage: (sid, page) =>
+    withSession(sid, Promise.resolve({ ok: true as const }), (s) => samplePaperPage(s, page)),
+  sweep: (sid) => withSession(sid, undefined, (s) => s.sweepPdf()),
+  sweepSnapshots: (sid) => withSession(sid, undefined, (s) => s.sweepSnapshots()),
+  prefetchThumb: (sid, page, scale) =>
+    withSession(sid, Promise.resolve(), (s) => prefetchThumb(s, page, scale)),
+  suspendPrefetches: (sid) => withSession(sid, undefined, (s) => suspendPrefetches(s)),
+  resumePrefetches: (sid) => withSession(sid, undefined, (s) => resumePrefetches(s)),
+  sessionStats,
+
   stats,
-  extractPageText,
-  setSearchContext,
-  setActiveMatch,
-  clearHighlights,
   refreshTheme,
   setScrubMode,
   setAppearanceMenuOpen,
-  setPaper,
-  setPaperActive,
-  takePaperFrame,
-  samplePaperPage,
-  sweep: () => {
-    session.sweepPdf();
-  },
-  sweepSnapshots: () => {
-    session.sweepSnapshots();
-  },
-  prefetchThumb,
-  suspendPrefetches,
-  resumePrefetches,
 } satisfies PDFReaderApi;
 
 // The engine contract is fixed by the Rust bridge: surface integrity beats
 // extensibility, so freeze the object (has_pdf_reader only checks existence).
 Object.freeze(globalThis.PDFReader);
-

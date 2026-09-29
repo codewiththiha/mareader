@@ -5,10 +5,13 @@
 //!   text through the reader's one pipeline), and the [`document::factory`]
 //!   the session's composition root injects into the host.
 //! - [`handle`] — the pane's Copy handle, carried in its
-//!   [`crate::context::ReaderContext`]: identity, lifecycle gate, resource
-//!   registry.
-//! - [`engine`] — the pane's guarded handle onto the engine's document
-//!   session.
+//!   [`crate::context::ReaderContext`]: identity, lifecycle gate, document
+//!   session, document generation, resource registry.
+//! - [`session`] — what a pane's document is owned by: `FormatSession`
+//!   (`PdfSession` / `MdSession` / `TxtSession`), one fresh session per
+//!   opened document.
+//! - [`engine`] — `PdfPane`, the pane's guarded view of its own
+//!   `PdfSession`: every PDF engine call the pane makes goes through it.
 //! - [`dom`] — the pane's root element and host-given box: every lookup a
 //!   pane makes for its own elements runs inside that root.
 //! - `view` — the effects the pane installs and the content it renders in
@@ -16,8 +19,11 @@
 //!
 //! [`PaneRuntime`]: crate::host::contract::PaneRuntime
 
+#[cfg(test)]
+mod cascade_tests;
 pub mod document;
 pub mod dom;
 pub mod engine;
 pub mod handle;
+pub mod session;
 mod view;

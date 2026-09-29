@@ -15,7 +15,8 @@ import { offscreenFor, releaseCanvas } from "./canvas";
 import { errorInfo, fail, failFrom } from "./errors";
 import { resetPaperForDocument } from "./paper";
 import { beginThumbLane } from "./thumbnails";
-import { lifecycleEvent, noteWorkerCreated, session } from "./state";
+import { lifecycleEvent, noteWorkerCreated } from "./state";
+import type { EngineSession } from "./state";
 
 type PdfjsLib = {
   getDocument: (params: Record<string, unknown>) => {
@@ -163,7 +164,10 @@ export async function getDocument(params: Record<string, unknown>) {
 // worker. The WeakSet makes both paths idempotent without keeping tasks alive.
 const destroyedTasks = new WeakSet<LoadingTask>();
 
-export async function destroyTask(task: LoadingTask | null | undefined): Promise<void> {
+export async function destroyTask(
+  s: EngineSession,
+  task: LoadingTask | null | undefined
+): Promise<void> {
   if (!task) return;
   if (destroyedTasks.has(task)) return;
   destroyedTasks.add(task);
@@ -171,8 +175,8 @@ export async function destroyTask(task: LoadingTask | null | undefined): Promise
   // cover render destroys its own task; that must not detach the OPEN
   // document's task from its teardown path — the open task's reference here
   // is the only thing destroy() can later follow to kill its worker.
-  if (session.loadingTask === task) {
-    session.setLoadingTask(null);
+  if (s.loadingTask === task) {
+    s.setLoadingTask(null);
   }
   try {
     await task.destroy();
@@ -182,7 +186,7 @@ export async function destroyTask(task: LoadingTask | null | undefined): Promise
     // Counted only AFTER the worker shutdown round trip resolves — the
     // counter says "terminated" when the worker actually is, which is what
     // the reader's dispose-complete baseline asserts on.
-    session.workersTerminated += 1;
+    s.workersTerminated += 1;
     lifecycleEvent("pdf_worker:terminate");
   }
 }
@@ -216,12 +220,23 @@ const OPEN_TIMEOUT_MSG = "Timed out opening this PDF (pdf.js worker failed to in
 /** The whole of "open a document": one task registered on the session so a
  *  teardown can find it, one ceiling on the worker, and a cleanup that runs if
  *  the ceiling wins. Only the source differs between callers. */
-async function openTask(source: Record<string, unknown>): Promise<PDFDocumentProxy> {
+async function openTask(
+  s: EngineSession,
+  source: Record<string, unknown>
+): Promise<PDFDocumentProxy> {
   const task = await getDocument({ ...BASE_PARAMS, ...source });
-  noteWorkerCreated();
-  session.setLoadingTask(task);
+  noteWorkerCreated(s);
+  // The session may have been destroyed while pdf.js was still loading: its
+  // teardown could not see a task that did not exist yet, so the worker is
+  // this call's to kill — registering it would strand it on a retired
+  // session.
+  if (s.disposed) {
+    await destroyTask(s, task);
+    throw Object.assign(new Error("Session destroyed during open"), { name: "SessionGone" });
+  }
+  s.setLoadingTask(task);
   return await withTimeout(task.promise, OPEN_TIMEOUT_MS, OPEN_TIMEOUT_MSG, () => {
-    void destroyTask(task);
+    void destroyTask(s, task);
   });
 }
 
@@ -320,20 +335,20 @@ async function probeAssetUrl(url: string): Promise<boolean> {
 }
 
 /** A URL pdf.js can Range-request, so the file is never held whole in V8. */
-async function openFromUrl(url: string): Promise<PDFDocumentProxy> {
-  return openTask({ url, disableRange: false, rangeChunkSize: 65536 });
+async function openFromUrl(s: EngineSession, url: string): Promise<PDFDocumentProxy> {
+  return openTask(s, { url, disableRange: false, rangeChunkSize: 65536 });
 }
 
 /** Bytes already in memory (the Tauri IPC path, and the fallback when the asset
  *  protocol misbehaves): there is nothing to range over. */
-async function openFromBytes(bytes: Uint8Array): Promise<PDFDocumentProxy> {
-  return openTask({ data: bytes });
+async function openFromBytes(s: EngineSession, bytes: Uint8Array): Promise<PDFDocumentProxy> {
+  return openTask(s, { data: bytes });
 }
 
-async function openDocument(path: string): Promise<PDFDocumentProxy> {
+async function openDocument(s: EngineSession, path: string): Promise<PDFDocumentProxy> {
   if (isWebServedPath(path)) {
     const url = path.startsWith("samples/") ? "/" + path : path;
-    return await openFromUrl(url);
+    return await openFromUrl(s, url);
   }
 
   // Prefer the asset protocol so pdf.js can Range-request instead of holding
@@ -343,36 +358,44 @@ async function openDocument(path: string): Promise<PDFDocumentProxy> {
   const asset = localAssetUrl(path);
   if (asset && (await probeAssetUrl(asset))) {
     try {
-      return await openFromUrl(asset);
+      return await openFromUrl(s, asset);
     } catch (_) {
       /* bytes fallback */
     }
   }
 
-  return await openFromBytes(await fetchBytes(path));
+  return await openFromBytes(s, await fetchBytes(path));
 }
 
-export async function open(path: string): Promise<OpenResult> {
+/** Open `path` into `s`. The facade hands this a session with no document
+ *  (a PDF session holds exactly one document; a new document is a new
+ *  session), so there is nothing to tear down first. */
+export async function open(s: EngineSession, path: string): Promise<OpenResult> {
   try {
-    const destroy = (globalThis as unknown as { __pdfDestroy?: () => Promise<void> }).__pdfDestroy;
-    if (destroy) await destroy();
-    const doc = await openDocument(path);
-    session.setPdf(doc);
-    session.setNumPages(doc.numPages);
+    const doc = await openDocument(s, path);
+    // Destroyed while the worker was producing the document: the teardown
+    // already destroyed the task (which is what settles `doc` normally),
+    // but a document that won the race must not land on a retired session.
+    if (s.disposed) {
+      await destroyTask(s, s.loadingTask);
+      return fail("no_session", "Session destroyed during open");
+    }
+    s.setPdf(doc);
+    s.setNumPages(doc.numPages);
     // The new document's thumbnail lane is open: generation bookkeeping
     // records from here until this document's teardown clears it.
-    beginThumbLane();
-    session.setCurrentPath(path);
+    beginThumbLane(s);
+    s.setCurrentPath(path);
     // One session per open document: counted only once the document proxy is
     // in place, so a failed or timed-out open never counts a session that
     // never existed (its worker is still counted, because it existed).
-    session.sessionsOpened += 1;
+    s.sessionsOpened += 1;
     lifecycleEvent("pdf_session:create");
     // A new document means a fresh paper-detection budget and palette
     // (engine/paper.ts) — plus, when the cache remembers this book, its
     // colours published right away. Runs after setCurrentPath so the cache
     // can key on the path.
-    resetPaperForDocument();
+    resetPaperForDocument(s);
 
     // Metadata and page 1 are independent worker round trips — asking for
     // them together is one hop off every document open. Metadata failures are
@@ -389,16 +412,16 @@ export async function open(path: string): Promise<OpenResult> {
 
     // Seed every page with page-1's size so open returns immediately.
     // A serial getPage(n) over a long book looked like a permanent hang.
-    const pageHeights: number[] = new Array(session.numPages);
-    const pageWidths: number[] = new Array(session.numPages);
-    for (let i = 0; i < session.numPages; i += 1) {
+    const pageHeights: number[] = new Array(s.numPages);
+    const pageWidths: number[] = new Array(s.numPages);
+    for (let i = 0; i < s.numPages; i += 1) {
       pageHeights[i] = vp.height;
       pageWidths[i] = vp.width;
     }
 
     return {
       ok: true,
-      numPages: session.numPages,
+      numPages: s.numPages,
       title,
       author,
       // The permanent content fingerprint pdf.js derived from these exact
@@ -415,6 +438,9 @@ export async function open(path: string): Promise<OpenResult> {
     };
   } catch (e) {
     const er = e as { name?: string };
+    if (er && er.name === "SessionGone") {
+      return fail("no_session", "Session destroyed during open");
+    }
     if (er && er.name === "PasswordException") {
       return fail("encrypted", "This PDF is password-protected.");
     }
@@ -464,6 +490,7 @@ async function mapWithLimit<T, R>(
 const OUTLINE_CONCURRENCY = 8;
 
 async function resolveOutlineEntry(
+  s: EngineSession,
   it: OutlineItem,
   depth: number,
 ): Promise<{ title: string; page: number; depth: number } | null> {
@@ -472,17 +499,17 @@ async function resolveOutlineEntry(
     if (Array.isArray(it.dest)) {
       const ref = it.dest[0];
       if (ref && typeof ref === "object" && "num" in ref) {
-        const idx = await session.pdf!.getPageIndex(ref);
+        const idx = await s.pdf!.getPageIndex(ref);
         page = idx + 1;
       } else if (typeof ref === "number") {
         page = ref + 1;
       }
     } else if (typeof it.dest === "string") {
-      const d = await session.pdf!.getDestination(it.dest);
+      const d = await s.pdf!.getDestination(it.dest);
       if (d && d[0]) {
         const ref = d[0];
         if (ref && typeof ref === "object" && "num" in ref) {
-          const idx = await session.pdf!.getPageIndex(ref);
+          const idx = await s.pdf!.getPageIndex(ref);
           page = idx + 1;
         }
       }
@@ -495,6 +522,7 @@ async function resolveOutlineEntry(
 }
 
 async function flattenOutline(
+  s: EngineSession,
   items: OutlineItem[] | null | undefined,
   depth: number,
 ): Promise<{ title: string; page: number; depth: number }[]> {
@@ -502,23 +530,23 @@ async function flattenOutline(
   // Siblings resolve concurrently (bounded), then concatenate in document
   // order: the results list must read the way the bookmark tree reads.
   const perSibling = await mapWithLimit(siblings, OUTLINE_CONCURRENCY, async (it) => {
-    const entry = await resolveOutlineEntry(it, depth);
-    const descendants = await flattenOutline(it.items, depth + 1);
+    const entry = await resolveOutlineEntry(s, it, depth);
+    const descendants = await flattenOutline(s, it.items, depth + 1);
     return entry ? [entry, ...descendants] : descendants;
   });
   return perSibling.flat();
 }
 
-export async function resolveOutline(): Promise<{
+export async function resolveOutline(s: EngineSession): Promise<{
   ok: true;
   outline: { title: string; page: number; depth: number }[];
 }> {
-  if (!session.pdf) return { ok: true, outline: [] };
+  if (!s.pdf) return { ok: true, outline: [] };
   try {
     // Race the timer against getOutline() AND flattenOutline(). Awaiting
     // getOutline() first meant a hung outline never started the 4s timeout.
-    const outlinePromise = session.pdf.getOutline().then((items) =>
-      flattenOutline(items, 0),
+    const outlinePromise = s.pdf.getOutline().then((items) =>
+      flattenOutline(s, items, 0),
     );
     const outline = await withTimeout(outlinePromise, 4000, "outline timeout");
     return { ok: true, outline };
@@ -588,15 +616,19 @@ function renderCoverFromPdf(
   });
 }
 
-export async function coverDataUrl(path: string, maxWidth = 240): Promise<CoverResult> {
+export async function coverDataUrl(
+  s: EngineSession,
+  path: string,
+  maxWidth = 240
+): Promise<CoverResult> {
   try {
     if (!path) return fail("no_path", "No path");
     let result: { dataUrl: string; width: number; height: number };
-    if (session.pdf && session.currentPath === path) {
-      result = await renderCoverFromPdf(session.pdf, maxWidth);
+    if (s.pdf && s.currentPath === path) {
+      result = await renderCoverFromPdf(s.pdf, maxWidth);
     } else {
       const task = await getDocument({ ...BASE_PARAMS, data: await fetchBytes(path) });
-      noteWorkerCreated();
+      noteWorkerCreated(s);
       try {
         const doc = await task.promise;
         result = await renderCoverFromPdf(doc, maxWidth);
@@ -604,7 +636,7 @@ export async function coverDataUrl(path: string, maxWidth = 240): Promise<CoverR
         // The cover's own task goes through the shared choke point so the
         // worker counters stay balanced and the session's open task (if a
         // document opened meanwhile) is never mistaken for this one.
-        await destroyTask(task);
+        await destroyTask(s, task);
       }
     }
     return { ok: true, dataUrl: result.dataUrl, width: result.width, height: result.height };

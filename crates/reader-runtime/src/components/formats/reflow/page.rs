@@ -29,8 +29,6 @@
 //! anything: gutter padding is a stylesheet concern, while a raster's gutter is
 //! the spread's gap.
 
-use std::sync::Arc;
-
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -156,9 +154,11 @@ pub fn ReflowPage(
                 if state.viewer.try_zooming_now() != Some(false) {
                     return;
                 }
-                let doc_id = reflow
-                    .blocks
-                    .with_untracked(|blocks| Arc::as_ptr(blocks) as usize);
+                // The rows belong to the pane's reflow session as it stands
+                // at the measurement; no session, nothing to report.
+                let Some(session) = state.pane.reflow_session() else {
+                    return;
+                };
                 let mut batch: Vec<(usize, f64)> = Vec::new();
                 for index in start..end {
                     let Some(row) = state.dom.by_id(&block_row_id(index)) else {
@@ -172,7 +172,7 @@ pub fn ReflowPage(
                         batch.push((index, height / scale));
                     }
                 }
-                state.measure.ingest(doc_id, scale, &batch);
+                state.measure.ingest(session, scale, &batch);
             });
         });
     }

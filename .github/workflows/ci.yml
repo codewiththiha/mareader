@@ -96,6 +96,14 @@ jobs:
       - name: Reader host boundary
         run: node tools/check-host-boundary.mjs
 
+      # Session ownership: every document a pane shows is owned by that
+      # pane's format session. Reader code reaches the engine only through
+      # its pane's session, only the open flow creates/installs sessions,
+      # async stamps are per pane, the bridge is session-first, and the
+      # engine crate holds no unclassified realm state.
+      - name: Session ownership
+        run: node tools/check-session-ownership.mjs
+
   test:
     name: Rust / test
     runs-on: ubuntu-24.04

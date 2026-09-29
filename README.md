@@ -1003,16 +1003,23 @@ release-notes/            one file per version; the release workflow publishes
 never rejects: success is `{ok: true, ...}` and failure is `{ok: false, error: {name, message}}`,
 so the Rust side reads `ok` first and then deserializes.
 
+The engine is session-scoped (see `docs/session-ownership.md`): every document function takes the
+session id (`sid`) first, and each pane's `PdfSession` owns exactly one engine session — its
+document, worker, page registry, render and thumbnail lanes, caches and paper state. A retired or
+unknown sid is refused (`no_session`); only the appearance broadcasts, `version`, `stats` and the
+lifecycle log are realm-wide.
+
 | Function | Purpose |
 |----------|---------|
 | `version` | Engine version string |
-| `open` | Load a document, return page count and intrinsic page sizes (the outline is NOT resolved here — that is `resolveOutline`'s job, so opens stay fast on chapter-heavy books) |
-| `resolveOutline` | Flatten the open document's chapter tree after the reader is up |
-| `destroy` | Tear down the current document |
+| `createSession` / `destroySession` | Register a session under a Rust-minted sid; tear it down with everything it owns (the pane's dispose, or a replaced document) |
+| `presentSession` / `sessions` / `sessionStats` | Name the session whose paper the root backdrop shows; list live sids; one session's counters |
+| `open` | Load a document into its session (one per session), return page count and intrinsic page sizes (the outline is NOT resolved here — that is `resolveOutline`'s job, so opens stay fast on chapter-heavy books) |
+| `resolveOutline` | Flatten the session's chapter tree after the reader is up |
 | `registerPage` / `unregisterPage` | Bind and release a canvas for a page |
 | `cancelPage` | Cancel an in-flight page render |
 | `cancelPageRenders` | Cancel every in-flight page render (the close path's first act) |
-| `quiesce` | Stop every in-flight and queued job for the document without ending the session (the close intent's synchronous half) |
+| `quiesce` | Stop every in-flight and queued job for the session's document without ending the session |
 | `renderPage` | Render one page |
 | `renderThumb` / `cancelThumb` | Thumbnail rendering on a separate, cheaper path |
 | `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |
@@ -1021,7 +1028,9 @@ so the Rust side reads `ok` first and then deserializes.
 | `refreshTheme` / `setScrubMode` / `setAppearanceMenuOpen` | The appearance theme: pre-render (re-bake) it into every canvas, hold the rasters raw under the live CSS filter chain for the length of a slider scrub, and retain those raws while the appearance menu is open so the session's first drag blits instead of re-rendering |
 | `setPaper` / `setPaperActive` / `takePaperFrame` / `samplePaperPage` | The paper session: the backdrop's own raster, handed to and sampled from the pages |
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
-| `stats` | Internal counters, used to assert memory is actually released |
+| `sweep` / `sweepSnapshots` | Release the session's settled rasters and stranded scrub covers |
+| `suspendPrefetches` / `resumePrefetches` | Park and resume the session's idle thumbnail prefetch |
+| `stats` | Realm-wide counters across every session, used to assert memory is actually released |
 
 Load order in `reader.html` is deliberate. The reader bundle goes first because it needs nothing;
 then the engine. Both run before the WebAssembly module, which top-level-awaits its own init: the

@@ -2,8 +2,13 @@
 //! library's own row, and the shared open sequence — one orchestration plus
 //! a module per step ([`seed`], [`shelf`], [`outline`], [`cover`],
 //! [`warmup`]). Every step after the engine's answer is guarded by the
-//! session stamp ([`super::session`]): all of them can outlive the attempt
-//! that started them.
+//! pane's document generation
+//! ([`crate::pane::handle::PaneHandle::owns_generation`]): all of them can
+//! outlive the attempt that started them. Each open gives the pane a NEW
+//! format session ([`crate::pane::session::FormatSession`]) and disposes the
+//! one it replaces — a PDF gets its own engine session, so nothing of the
+//! previous document (rasters, lanes, search, paper) is reachable from the
+//! next.
 //!
 //! [`enter`] is the part the two pipelines share: the identity write, the
 //! gloss marks, the resume clamp, the startup scale and the route flip. A
@@ -27,13 +32,12 @@ use leptos::prelude::*;
 // disposing its owner — leaving the app stuck on "Opening..." forever.
 use wasm_bindgen_futures::spawn_local;
 
-use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 use reader_core::format::{Format, format_of};
 
 use app_state::state::Toast;
 
-use super::session;
+use crate::pane::session::FormatSession;
 
 /// Wire OS-level file opening (double-click / "Open with" / default-app
 /// launch) into the shared open flow. Called once from the app root.
@@ -137,9 +141,10 @@ pub(crate) fn open_with_launch(
     if !ctx.pane.admits_work() {
         return;
     }
-    // Claim the document state for THIS attempt. Every hop below re-checks
-    // the stamp, so a second open's tail cannot write over the winner's.
-    let stamp = session::claim();
+    // Claim the pane's document state for THIS attempt. Every hop below
+    // re-checks the generation, so a second open's tail cannot write over
+    // the winner's. Per pane: another pane's open never stales this one.
+    let stamp = ctx.pane.claim_generation();
     crate::diagnostics::note_reader_runtime_create();
     ctx.reader.document.status.set(DocStatus::Opening);
     ctx.reader.document.error.set(None);
@@ -161,29 +166,41 @@ pub(crate) fn open_with_launch(
     }
 }
 
-/// The PDF tail of the open flow: hand the path to the engine and seed from
+/// The PDF tail of the open flow: a fresh engine session for the document,
+/// installed as the pane's document owner, then the open and the seed from
 /// its answer.
 fn open_pdf(ctx: crate::context::ReaderContext, path: String, saved_page: u32, stamp: u64) {
-    let pdf = ctx.pane.pdf();
-    if !pdf.work_admitted() {
+    if !ctx.pane.admits_work() {
         return;
     }
+    // One document, one session. The replaced session — a PDF's engine
+    // session or a text document's — is disposed right here: from this line
+    // nothing of the previous document is reachable through the pane, and a
+    // tail still running for it finds its generation stale and its session
+    // dead. (Its engine teardown runs detached; it shows nothing any more.)
+    let previous = ctx
+        .pane
+        .install_session(FormatSession::Pdf(pdf_engine::PdfSession::create()));
+    previous.dispose_detached();
+    let pdf = ctx.pane.pdf();
     spawn_local(async move {
         let opened = pdf.open(&path).await;
-        // The engine answered — but a second open (or a close) may have taken
-        // the document state over while it was working. Standing down here is
-        // what keeps the winner's `Ready` from being followed by the loser's.
-        if !session::owns(stamp) {
+        // The engine answered — but a second open (or the pane's dispose)
+        // may have taken the pane's document over while it was working.
+        // Standing down here is what keeps the winner's `Ready` from being
+        // followed by the loser's; the loser's session was disposed by
+        // whoever replaced it.
+        if !ctx.pane.owns_generation(stamp) {
             return;
         }
         match opened {
-            Ok(open) => {
-                // The engine now holds this pane's document: the pane's
-                // dispose owes its destroy.
-                ctx.pane.note_document_session(true);
-                ready(ctx, path, open, saved_page, stamp)
+            Ok(open) => ready(ctx, path, open, saved_page, stamp),
+            Err(e) => {
+                // A session whose document never opened owns nothing worth
+                // keeping: the pane goes back to holding no document.
+                ctx.pane.take_session().dispose_detached();
+                fail(ctx, e.message)
             }
-            Err(e) => fail(ctx, e.message),
         }
     });
 }
@@ -203,9 +220,9 @@ fn ready(
     // status flip the reader owns happens inside `enter_ready`.
     enter::enter_ready(ctx);
 
-    // The engine's own highlight layer belongs to the previous book; the
-    // search reset inside `enter_ready` is the app's half of the same cleanup.
-    engine::clear_highlights();
+    // No engine highlight clear: the previous book's highlight layer went
+    // with its session. The search reset inside `enter_ready` is the app's
+    // half.
 
     outline::resolve(ctx, path.clone(), stamp);
 
@@ -232,7 +249,7 @@ fn ready(
         author: None,
     });
     cover::ensure(&ctx, path, stamp);
-    warmup::prewarm_thumbs(seeded.num_pages, stamp);
+    warmup::prewarm_thumbs(&ctx, seeded.num_pages, stamp);
     // The heap probe's baseline: what the book cost to open, before any
     // reading moves it. The close line is the number to compare this one
     // against — the difference is the session's ratchet.
