@@ -157,7 +157,8 @@ impl FormatSession {
     /// Dispose the session. The reflowable half is synchronous (it only
     /// stops accepting and releases pane content); the PDF half awaits the
     /// engine's teardown, so it is returned as a future for the caller to
-    /// await (the pane's disposal tail) or detach (a replaced session).
+    /// await (the pane's disposal tail, a PDF open replacing it) or
+    /// detach (a session a text open or a failed open replaced).
     pub(crate) fn dispose(self) -> Option<impl std::future::Future<Output = ()>> {
         match self {
             Self::None => None,

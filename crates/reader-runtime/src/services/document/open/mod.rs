@@ -177,13 +177,27 @@ fn open_pdf(ctx: crate::context::ReaderContext, path: String, saved_page: u32, s
     // session or a text document's — is disposed right here: from this line
     // nothing of the previous document is reachable through the pane, and a
     // tail still running for it finds its generation stale and its session
-    // dead. (Its engine teardown runs detached; it shows nothing any more.)
+    // dead.
     let previous = ctx
         .pane
         .install_session(FormatSession::Pdf(pdf_engine::PdfSession::create()));
-    previous.dispose_detached();
+    let retiring = previous.dispose();
     let pdf = ctx.pane.pdf();
     spawn_local(async move {
+        // The replaced document is DESTROYED before this one loads — its
+        // pdf.js document, worker, rasters and caches — as the engine's
+        // old global `open` did with its destroy-first. Detached, the two
+        // overlapped: every book-to-book open held two documents and two
+        // workers at once, and the old one's memory came back only when its
+        // teardown and a GC eventually got to it.
+        if let Some(teardown) = retiring {
+            teardown.await;
+        }
+        // Superseded while the old document went: whoever took the pane
+        // over disposes this (never opened) session.
+        if !ctx.pane.owns_generation(stamp) {
+            return;
+        }
         let opened = pdf.open(&path).await;
         // The engine answered — but a second open (or the pane's dispose)
         // may have taken the pane's document over while it was working.

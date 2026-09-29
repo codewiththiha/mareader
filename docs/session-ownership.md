@@ -46,7 +46,7 @@ frame.rs on_init -> ReaderHost::new -> PaneManager::create -> DocumentPane::crea
 Launch -> open_with_launch                      pane.claim_generation()
   PDF  -> open_pdf
            PdfSession::create()                 the ONLY creation site
-           pane.install_session(Pdf)            replaced session .dispose_detached()
+           pane.install_session(Pdf)            replaced session .dispose(), awaited before the new open
            pane.pdf().open(path)                -> PdfSession::open -> PDFReader.open(sid, …)
            owns_generation? -> seed: configure_session, pane.pdf().paper_document_open
                               outline / cover / warm-up: pane.pdf().* + owns_generation

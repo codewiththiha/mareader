@@ -142,8 +142,9 @@ impl PaneHandle {
     }
 
     /// Install `session` as the pane's document owner and return the one it
-    /// replaces (the caller disposes it — an open detaches the teardown, the
-    /// pane's dispose awaits it). Refused (returns `session` back as the
+    /// replaces (the caller disposes it — a PDF open awaits the teardown
+    /// before loading, a text open detaches it, the pane's dispose awaits
+    /// it). Refused (returns `session` back as the
     /// "replaced" one, so it is disposed at once) when the slot is gone.
     pub(crate) fn install_session(&self, session: FormatSession) -> FormatSession {
         let mut incoming = Some(session);
