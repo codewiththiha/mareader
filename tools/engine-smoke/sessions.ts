@@ -18,12 +18,14 @@
 // baseline after it still proves the realm drains to zero.
 
 import {
+  FakeCanvas,
   FakeCtx,
   PDFReader,
   assertClose,
   bind,
   expectedBakePixel,
   fakeComputed,
+  fakeDocument,
   getEl,
   isScrubActive,
   newSession,
@@ -79,9 +81,7 @@ export async function run(): Promise<void> {
     throw new Error("a second open in one session must be refused, got " + JSON.stringify(again));
   }
 
-  // Each session registers its own pages. (Element ids are still resolved
-  // realm-wide, so two panes need distinct ids — pane-unique DOM ids are a
-  // prerequisite recorded for the multi-pane phase.)
+  // Each session registers its own pages.
   stubHost("two-a-pg");
   stubHost("two-b-pg");
   A.registerPage(1, "two-a-cv", "two-a-pg");
@@ -100,6 +100,28 @@ export async function run(): Promise<void> {
     throw new Error("each session must count its own renders");
   }
   console.log("two sessions ok: side-by-side renders, one page each");
+
+  // Two panes showing the same mode carry the SAME page ids. A page
+  // registered with its own elements is pinned to them: each session paints
+  // its own canvas, and the element a document-wide id lookup would find
+  // (the decoy) is never touched.
+  const twinA = fakeDocument.createElement("canvas") as unknown as FakeCanvas & { width: number };
+  const twinB = fakeDocument.createElement("canvas") as unknown as FakeCanvas & { width: number };
+  const decoy = getEl("twin-cv") as unknown as { width: number };
+  A.registerPage(1, "twin-cv", "twin-pg", twinA as unknown as HTMLCanvasElement, null);
+  B.registerPage(2, "twin-cv", "twin-pg", twinB as unknown as HTMLCanvasElement, null);
+  const [ta, tb] = await Promise.all([
+    A.renderPage("twin-cv", 1.0, false),
+    B.renderPage("twin-cv", 1.0, false),
+  ]);
+  if (!ta.ok || !tb.ok) throw new Error("pinned twin renders failed: " + JSON.stringify([ta, tb]));
+  if (!(twinA.width > 0) || !(twinB.width > 0)) {
+    throw new Error(`each session must paint its own pinned canvas (A ${twinA.width}, B ${twinB.width})`);
+  }
+  if (decoy.width !== 0) throw new Error("a pinned render reached the element the id resolves to in the document");
+  A.unregisterPage("twin-cv");
+  B.unregisterPage("twin-cv");
+  console.log("pinned pages ok: same ids in two sessions, each paints its own element");
 
   // Prefetch and thumbnails are per session: suspending A's prefetches
   // must not hold B's.

@@ -86,6 +86,8 @@ export type PageState = {
   rawCanvas: HTMLCanvasElement | null;
   queueGen: number;
   queueHandle: number;
+  /** Registered with its own elements: never re-resolved by id. */
+  pinned: boolean;
 };
 
 export type ThumbEntry = {
@@ -276,7 +278,18 @@ export type PDFReaderApi = {
   // --- Document (all session-scoped) ---------------------------------------
   open: (sid: Sid, path: string) => Promise<OpenResult>;
   resolveOutline: (sid: Sid) => Promise<OutlineResult>;
-  registerPage: (sid: Sid, page: number, canvasId: string, hostId?: string) => void;
+  /** `canvas`/`host` are the page's OWN elements when the caller holds
+   *  them: the page is then pinned to them and never re-resolved by id — two
+   *  panes in one realm carry the same page ids, and a document-wide lookup
+   *  would answer with whichever pane comes first. */
+  registerPage: (
+    sid: Sid,
+    page: number,
+    canvasId: string,
+    hostId?: string,
+    canvas?: HTMLCanvasElement | null,
+    host?: HTMLElement | null
+  ) => void;
   unregisterPage: (sid: Sid, canvasId: string) => void;
   cancelPage: (sid: Sid, canvasId: string) => void;
   /** Cancel every in-flight page render of the session — the close path's

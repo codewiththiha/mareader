@@ -4,7 +4,7 @@ import type {
   PageState,
   RenderResult,
 } from "./types";
-import { blitInto, el, isSharedScratch, releaseCanvas, releasePooledCanvas, releaseScratch, showBaked } from "./canvas";
+import { blitInto, el, isSharedScratch, sessionEl, releaseCanvas, releasePooledCanvas, releaseScratch, showBaked } from "./canvas";
 import { fail, failFrom } from "./errors";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
@@ -45,6 +45,7 @@ function blankPage(
     rawCanvas: null,
     queueGen: 0,
     queueHandle: 0,
+    pinned: false,
   };
 }
 
@@ -57,7 +58,13 @@ function ensurePage(
   hostIdHint?: string
 ): PageState | null {
   const existing = s.stateByCanvasId.get(canvasId);
-  const canvas = el(canvasId) as HTMLCanvasElement | null;
+  // A page pinned to its own elements answers with them: the id is its key
+  // in THIS session's map, not an address — another pane's page with the
+  // same id is somebody else's canvas.
+  // One whose surfaces were released is gone until its component registers
+  // it again — never re-found by id.
+  if (existing && existing.pinned) return existing.canvas && !existing.dead ? existing : null;
+  const canvas = sessionEl(s.sid, canvasId) as HTMLCanvasElement | null;
   if (existing && existing.canvas && !existing.dead) {
     if (canvas && existing.canvas !== canvas) existing.canvas = canvas;
     return existing;
@@ -87,7 +94,9 @@ export function registerPage(
   s: EngineSession,
   page: number,
   canvasId: string,
-  hostId?: string
+  hostId?: string,
+  canvas?: HTMLCanvasElement | null,
+  host?: HTMLElement | null
 ): void {
   const existing = s.stateByCanvasId.get(canvasId);
   if (existing) {
@@ -98,6 +107,31 @@ export function registerPage(
       cancelAnimationFrame(existing.queueHandle);
       existing.queueHandle = 0;
     }
+  }
+  if (canvas) {
+    // The caller handed over the page's own elements (the reader always
+    // does): pin them. No document-wide lookup can then pick a second
+    // pane's page that happens to carry the same id.
+    const pinnedHost = host ?? null;
+    const textLayerEl = pinnedHost
+      ? (pinnedHost.querySelector(TEXT_LAYER_SELECTOR) as HTMLElement | null)
+      : null;
+    if (existing) {
+      // Re-registered (a remount of the same page): the state keeps what
+      // it holds — its raw raster, viewport and scale — exactly as the id
+      // path's revival does; only the elements are the new ones.
+      existing.dead = false;
+      existing.page = page;
+      existing.canvas = canvas;
+      existing.host = pinnedHost;
+      existing.textLayerEl = textLayerEl;
+      existing.pinned = true;
+      return;
+    }
+    const st = blankPage(page, canvas, pinnedHost, textLayerEl);
+    st.pinned = true;
+    s.stateByCanvasId.set(canvasId, st);
+    return;
   }
   const st = ensurePage(s, canvasId, page, hostId);
   if (!st) {

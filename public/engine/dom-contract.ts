@@ -25,6 +25,12 @@ export const BLOCK_INDEX_ATTR = "data-block-index";
 /** On the AI pill's root: a press here is not a click that clears a selection. */
 export const AI_POPOVER_ATTR = "data-ai-popover";
 
+// The engine session a thumbnail canvas belongs to (its sid). The theme
+// repaint walks the document's thumbnail canvases, and with two PDF panes in
+// one realm a canvas it finds may be another session's: it touches only the
+// ones carrying its own sid.
+export const SESSION_ATTR = "data-engine-sid";
+
 /**
  * The engine only ever branches on `reflow`: a PDF host is the path it has
  * always taken, and the app decides what to do with a `host` value it does

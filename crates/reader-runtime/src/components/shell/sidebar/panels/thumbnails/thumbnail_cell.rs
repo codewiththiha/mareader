@@ -146,6 +146,7 @@ pub fn ThumbCell(
     // document's.
     let mounted = crate::pane::engine::MountedPdf::bind();
     let starts_cached = mounted.pdf().has_thumb(page, THUMB_SCALE);
+    let engine_sid = mounted.sid();
     let loaded = RwSignal::new(starts_cached);
     // A NodeRef onto the cover (the timer removes the pulse class from the
     // real DOM node). The pending removal is parked in a scope-owned timer
@@ -342,9 +343,13 @@ pub fn ThumbCell(
                 class=("ring-line", move || !is_current())
                 style:height=move || format!("{}px", cell_h())
             >
+                // `data-engine-sid` names the session this canvas belongs to:
+                // the engine's theme repaint walks thumbnail canvases in the
+                // document, and must leave another session's alone.
                 <canvas
                     node_ref=canvas_ref
                     id=cid
+                    data-engine-sid=engine_sid
                     class="thumb-canvas absolute inset-0 block h-full w-full"
                     class=("thumb-canvas-blank", move || !loaded.get())
                 />

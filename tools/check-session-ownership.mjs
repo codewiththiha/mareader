@@ -210,23 +210,27 @@ for (const file of engineFiles) {
 {
   let pdfreader = false;
   let count = 0;
-  readFileSync(BRIDGE, "utf8")
-    .split("\n")
-    .forEach((line, i) => {
+  const bridgeLines = readFileSync(BRIDGE, "utf8").split("\n");
+  bridgeLines.forEach((line, i) => {
       if (line.includes("#[wasm_bindgen(")) {
         pdfreader = line.includes('js_namespace = ["window", "PDFReader"]');
         return;
       }
       const m = line.match(/\bpub\s+(?:async\s+)?fn\s+(\w+)\s*\(([^,)]*)/);
       if (!m) return;
+      // rustfmt breaks a long signature after `(`: the first parameter is
+      // then the whole next line.
+      const first = m[2].trim() === "" && /\(\s*$/.test(line)
+        ? (bridgeLines[i + 1] ?? "").replace(/,\s*$/, "")
+        : m[2];
       if (pdfreader) {
         count += 1;
-        if (!BRIDGE_REALM.has(m[1]) && !/^\s*sid\s*:\s*u32\s*$/.test(m[2])) {
+        if (!BRIDGE_REALM.has(m[1]) && !/^\s*sid\s*:\s*u32\s*$/.test(first)) {
           fail(BRIDGE, i, `PDFReader.${m[1]} is document work: its first parameter must be the session (sid: u32)`, line);
         }
       }
       pdfreader = false;
-    });
+  });
   if (count === 0) failures.push(`${relative(ROOT, BRIDGE)}: no PDFReader externs parsed`);
 }
 

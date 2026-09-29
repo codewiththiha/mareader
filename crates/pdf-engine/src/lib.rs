@@ -25,4 +25,4 @@ pub mod session;
 pub mod types;
 
 pub use bridge::{has_pdf_reader, version};
-pub use session::PdfSession;
+pub use session::{PageElements, PdfSession};

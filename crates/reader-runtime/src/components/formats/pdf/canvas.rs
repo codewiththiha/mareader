@@ -91,6 +91,38 @@ impl GlossOverlayProps {
     }
 }
 
+/// Register this page with its session, handing over its OWN canvas and host
+/// so the engine is pinned to them: the ids stay (they key the page in the
+/// session's registry), but two panes showing the same mode carry the same
+/// ids, and a document-wide lookup would answer with the first pane's. No
+/// canvas (the component is already gone): nothing to register.
+fn register_mounted(
+    pdf: &crate::pane::engine::PdfPane,
+    page: u32,
+    canvas_id: &str,
+    host_id: &str,
+    canvas: NodeRef<html::Canvas>,
+    host: NodeRef<html::Div>,
+) {
+    let Some(canvas) = canvas
+        .try_get_untracked()
+        .flatten()
+        .map(web_sys::Element::from)
+    else {
+        return;
+    };
+    let host = host_element(host);
+    pdf.register_page(
+        page,
+        canvas_id,
+        Some(host_id),
+        pdf_engine::PageElements {
+            canvas: &canvas,
+            host: host.as_ref(),
+        },
+    );
+}
+
 #[component]
 pub fn PdfPageCanvas(
     /// 1-based page number this host renders.
@@ -189,8 +221,9 @@ pub fn PdfPageCanvas(
     // The component's own two elements, by reference: the stretch, a
     // render's landing and the cover sweep act on THIS host — never on
     // whatever element in the document answers to its id, which a second
-    // pane's page host carries too. The ids stay: the engine resolves the
-    // canvas and host by them (`register_page`).
+    // pane's page host carries too. The engine gets the same two elements
+    // at registration (`register_mounted`); the ids stay as the page's key
+    // in its session's registry and in the DOM contract.
     let host_ref: NodeRef<html::Div> = NodeRef::new();
     let canvas_ref: NodeRef<html::Canvas> = NodeRef::new();
 
@@ -212,8 +245,8 @@ pub fn PdfPageCanvas(
         pdf().unregister_page(&cid);
     });
 
-    // Register after this view is flushed to the DOM. The render effect can
-    // otherwise call register_page before getElementById sees the canvas.
+    // Register after this view is flushed to the DOM: the registration hands
+    // the engine the canvas element itself, which exists only from then.
     let gloss_host_id = host_id.clone();
     let cid_boot = canvas_id.clone();
     let hid_boot = host_id.clone();
@@ -232,7 +265,7 @@ pub fn PdfPageCanvas(
             "PdfPageCanvas canvas must be in the DOM before register_page"
         );
         if !registered_boot.get() {
-            pdf().register_page(page, &cid_boot, Some(&hid_boot));
+            register_mounted(&pdf(), page, &cid_boot, &hid_boot, canvas_ref, host_ref);
             registered_boot.set(true);
         }
     });
@@ -451,7 +484,7 @@ pub fn PdfPageCanvas(
             // the element is gone and the engine already dropped the
             // registration.
             if !do_register.get() {
-                pdf_async.register_page(page_no, &cid, Some(&hid));
+                register_mounted(&pdf_async, page_no, &cid, &hid, canvas_ref, host_ref);
                 do_register.set(true);
             }
             // A render whose session died resolves `no_session` (the engine
@@ -573,7 +606,10 @@ pub fn PdfPageCanvas(
             data-reader-host=HOST_PDF
             data-host-page=page
         >
-            <canvas node_ref=canvas_ref id=canvas_id />
+            // `data-engine-sid`: whose canvas this is, for the engine's one
+            // lookup that may run before the page registered (the blurry
+            // thumbnail first paint) — another pane's page has this id too.
+            <canvas node_ref=canvas_ref id=canvas_id data-engine-sid=mounted.sid() />
             // Placeholder text layer. The engine REPLACES this node on each
             // text render: it builds the spans in a detached `.textLayer` and
             // swaps it in atomically, so a superseded render's late spans can

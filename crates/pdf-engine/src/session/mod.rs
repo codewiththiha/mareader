@@ -82,6 +82,15 @@ impl Drop for Inner {
     }
 }
 
+/// A page's own elements, handed to [`PdfSession::register_page`] so the
+/// engine paints into THESE and never into whatever element in the document
+/// answers to the page's id — a second pane's page carries the same one.
+#[derive(Clone, Copy)]
+pub struct PageElements<'a> {
+    pub canvas: &'a web_sys::Element,
+    pub host: Option<&'a web_sys::Element>,
+}
+
 /// An open (or opening) PDF document. See the module docs.
 #[derive(Clone)]
 pub struct PdfSession {
@@ -220,10 +229,26 @@ impl PdfSession {
     // --- Pages ----------------------------------------------------------
 
     /// Register a page's canvas with THIS session's page registry.
-    /// `host_id` `None` means the canvas id derives the host id.
-    pub fn register_page(&self, page: u32, canvas_id: &str, host_id: Option<&str>) {
+    /// `host_id` `None` means the canvas id derives the host id. `elements`
+    /// are the page's own canvas and host when the caller holds them: the
+    /// engine then pins the page to them instead of looking the id up in the
+    /// document, where a second pane's page carries the same id.
+    pub fn register_page(
+        &self,
+        page: u32,
+        canvas_id: &str,
+        host_id: Option<&str>,
+        elements: Option<PageElements<'_>>,
+    ) {
         if self.engine() {
-            bridge::register_page(self.inner.sid, page, canvas_id, host_id.unwrap_or(""));
+            bridge::register_page(
+                self.inner.sid,
+                page,
+                canvas_id,
+                host_id.unwrap_or(""),
+                elements.map(|e| e.canvas),
+                elements.and_then(|e| e.host),
+            );
         }
     }
 

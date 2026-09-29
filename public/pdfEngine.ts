@@ -489,8 +489,8 @@ globalThis.PDFReader = {
   open: openInSession,
   resolveOutline: (sid) =>
     withSession(sid, Promise.resolve({ ok: true as const, outline: [] }), (s) => resolveOutline(s)),
-  registerPage: (sid, page, canvasId, hostId) =>
-    withSession(sid, undefined, (s) => registerPage(s, page, canvasId, hostId)),
+  registerPage: (sid, page, canvasId, hostId, canvas, host) =>
+    withSession(sid, undefined, (s) => registerPage(s, page, canvasId, hostId, canvas, host)),
   unregisterPage: (sid, canvasId) => withSession(sid, undefined, (s) => unregisterPage(s, canvasId)),
   cancelPage: (sid, canvasId) => withSession(sid, undefined, (s) => cancelPage(s, canvasId)),
   cancelPageRenders: (sid) => withSession(sid, undefined, (s) => cancelPageRenders(s)),

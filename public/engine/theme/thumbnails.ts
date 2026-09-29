@@ -6,10 +6,11 @@ import type { MaybeCanvas, ThumbEntry } from "../types";
 import {
   acquirePooledCanvas,
   blitInto,
-  el,
   isSharedScratch,
   releasePooledCanvas,
+  ownedBy,
   releaseScratch,
+  sessionEl,
   showBaked,
   showRaw,
 } from "../canvas";
@@ -124,7 +125,7 @@ export function paintAllVisibleThumbs(s: EngineSession): void {
   for (const [canvasId, { page }] of s.thumbLive) {
     seen.add(canvasId);
     const entry = s.thumbCache.get(page);
-    const live = el(canvasId) as HTMLCanvasElement | null;
+    const live = sessionEl(s.sid, canvasId) as HTMLCanvasElement | null;
     if (entry && live) paintCached(s, live, entry);
   }
   try {
@@ -132,6 +133,9 @@ export function paintAllVisibleThumbs(s: EngineSession): void {
     for (let i = 0; i < nodes.length; i += 1) {
       const live = nodes[i] as HTMLCanvasElement;
       if (!live.id || seen.has(live.id)) continue;
+      // Only THIS session's canvases: another pane's rail may share the
+      // document, and its thumbnails are not this cache's to paint.
+      if (!ownedBy(live, s.sid)) continue;
       const m = /^thumb-(\d+)$/.exec(live.id);
       if (!m || !m[1]) continue;
       const page = parseInt(m[1], 10);

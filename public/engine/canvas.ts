@@ -2,6 +2,7 @@
 // bake intermediates so theme changes do not allocate a new full-page
 // RGBA buffer on every page/thumb.
 
+import { SESSION_ATTR } from "./dom-contract";
 import type { MaybeCanvas, Raster } from "./types";
 
 /** Force the browser to drop a canvas backing store. */
@@ -171,4 +172,27 @@ export function showBaked(
 export function el(id: string): HTMLElement | null {
   if (typeof id !== "string" || !id) return null;
   return document.getElementById(id);
+}
+
+/** Whether `node` may be painted by session `sid`: an element that names
+ *  its session (`SESSION_ATTR`) belongs to that one only; one that names
+ *  none is unclaimed. */
+export function ownedBy(node: Element | null, sid: number): boolean {
+  if (!node) return false;
+  const owner = typeof node.getAttribute === "function" ? node.getAttribute(SESSION_ATTR) : null;
+  return owner === null || owner === String(sid);
+}
+
+/** The element with `id` that belongs to session `sid`. Two panes in one
+ *  realm carry the same page and thumbnail ids, so the document's first
+ *  match may be another session's: then the one tagged with this sid is
+ *  looked up explicitly. */
+export function sessionEl(sid: number, id: string): HTMLElement | null {
+  const first = el(id);
+  if (!first || ownedBy(first, sid)) return first;
+  try {
+    return document.querySelector(`[id="${id}"][${SESSION_ATTR}="${sid}"]`) as HTMLElement | null;
+  } catch (_) {
+    return null;
+  }
 }

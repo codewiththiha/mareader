@@ -535,7 +535,14 @@ interface PDFReaderHandle {
   open(sid: number, path: string): Promise<EngineResult<OpenPayload>>;
   resolveOutline(sid: number): Promise<EngineResult<{ outline: unknown[] }>>;
   quiesce(sid: number): void;
-  registerPage(sid: number, page: number, canvasId: string, hostId?: string): void;
+  registerPage(
+    sid: number,
+    page: number,
+    canvasId: string,
+    hostId?: string,
+    canvas?: HTMLCanvasElement | null,
+    host?: HTMLElement | null,
+  ): void;
   prefetchThumb(sid: number, page: number, scale: number): Promise<void>;
   suspendPrefetches(sid: number): void;
   resumePrefetches(sid: number): void;

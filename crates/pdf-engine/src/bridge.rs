@@ -74,9 +74,18 @@ extern "C" {
     /// caller passes primitives, so a virtualized row's mount allocates no
     /// serde payload object. `host_id` is the page host element id, or ""
     /// when the caller has none — the engine treats "" exactly like
-    /// undefined.
+    /// undefined. `canvas`/`host` are the page's own elements when the
+    /// caller holds them: the engine pins the page to them and never
+    /// resolves it by id (two panes in one realm share page ids).
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "registerPage")]
-    pub fn register_page(sid: u32, page: u32, canvas_id: &str, host_id: &str);
+    pub fn register_page(
+        sid: u32,
+        page: u32,
+        canvas_id: &str,
+        host_id: &str,
+        canvas: Option<&web_sys::Element>,
+        host: Option<&web_sys::Element>,
+    );
 
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "unregisterPage")]
     pub fn unregister_page(sid: u32, canvas_id: &str);

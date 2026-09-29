@@ -17,9 +17,9 @@
 //! engine's per-op guards, per session).
 
 use leptos::prelude::{LocalStorage, StoredValue, WithValue, use_context};
-use pdf_engine::PdfSession;
 use pdf_engine::api::EngineError;
 use pdf_engine::types::{CoverResult, OpenResult, OutlineEntry, RenderResult, ThumbResult};
+use pdf_engine::{PageElements, PdfSession};
 use reader_core::search::SearchResponse;
 
 /// See the module docs. Clone, not Copy: it holds a session handle.
@@ -110,9 +110,19 @@ impl PdfPane {
 
     // --- Pages ----------------------------------------------------------
 
-    pub fn register_page(&self, page: u32, canvas_id: &str, host_id: Option<&str>) {
+    /// Register a mounted page WITH its own elements: the engine is pinned
+    /// to them and never looks the id up in the document, where another
+    /// pane's page carries the same one. There is no id-only form on
+    /// purpose.
+    pub fn register_page(
+        &self,
+        page: u32,
+        canvas_id: &str,
+        host_id: Option<&str>,
+        elements: PageElements<'_>,
+    ) {
         if let Some(s) = self.working() {
-            s.register_page(page, canvas_id, host_id);
+            s.register_page(page, canvas_id, host_id, Some(elements));
         }
     }
 
@@ -286,6 +296,15 @@ impl MountedPdf {
             pane,
             session: StoredValue::new_local(session),
         }
+    }
+
+    /// The engine id of the bound session, for the one DOM attribute that
+    /// tells the engine whose element a thumbnail canvas is
+    /// (`data-engine-sid`). `None` when nothing is bound.
+    pub fn sid(&self) -> Option<u32> {
+        self.session
+            .try_with_value(|s| s.as_ref().map(PdfSession::sid))
+            .flatten()
     }
 
     /// The guarded view onto the bound session, with the pane's lifecycle as

@@ -1,7 +1,7 @@
 // LRU thumbnail cache + blit / render.
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
-import { el, offscreenFor, releaseCanvas, showBaked, showRaw } from "./canvas";
+import { offscreenFor, releaseCanvas, sessionEl, showBaked, showRaw } from "./canvas";
 import { fail, failFrom } from "./errors";
 import { bakeRaster } from "./theme/bake";
 import { readPipeline, pipelineCache } from "./theme/pipeline";
@@ -158,8 +158,18 @@ export function hasThumb(s: EngineSession, page: number, scale: number): boolean
   );
 }
 
+/** The canvas `canvasId` names FOR THIS SESSION: a registered page's own
+ *  (pinned) canvas when the id is a page's — the blurry first paint lands
+ *  on page canvases too — otherwise the element with that id this session
+ *  owns. Never another pane's twin. */
+function targetCanvas(s: EngineSession, canvasId: string): HTMLCanvasElement | null {
+  const pageState = s.stateByCanvasId.get(canvasId);
+  if (pageState && pageState.pinned) return pageState.dead ? null : pageState.canvas;
+  return sessionEl(s.sid, canvasId) as HTMLCanvasElement | null;
+}
+
 export function blitThumb(s: EngineSession, canvasId: string, page: number): boolean {
-  const dst = el(canvasId) as HTMLCanvasElement | null;
+  const dst = targetCanvas(s, canvasId);
   const entry = s.thumbCache.get(page);
   if (!dst || !entry) return false;
   const raw = s.themeScrubActive ? thumbRaw(entry) : null;
@@ -227,7 +237,7 @@ async function renderThumbInternal(
   page: number,
   scale: number
 ): Promise<ThumbResult> {
-  const canvas = el(canvasId) as HTMLCanvasElement | null;
+  const canvas = targetCanvas(s, canvasId);
   if (!canvas) return fail("no_canvas", "No canvas: " + canvasId);
   if (!s.pdf) return fail("no_document", "No document open");
 
@@ -317,7 +327,7 @@ async function renderThumbInternal(
     cachePut(s, page, entry);
 
     if (!s.thumbCancelled.has(canvasId)) {
-      const live = el(canvasId) as HTMLCanvasElement | null;
+      const live = targetCanvas(s, canvasId);
       if (live) {
         s.thumbLive.set(canvasId, { page });
         paintCached(s, live, entry);
@@ -342,7 +352,7 @@ export function cancelThumb(s: EngineSession, canvasId: string): void {
   }
   s.thumbCancelled.add(canvasId);
   s.thumbLive.delete(canvasId);
-  releaseCanvas(el(canvasId) as HTMLCanvasElement | null);
+  releaseCanvas(targetCanvas(s, canvasId));
 }
 
 /** Render a page into the cache with no DOM canvas (idle prefetch). A
