@@ -4,10 +4,14 @@
 // strict streaming compile wants — plus the SPA fallback the router expects.
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize, sep } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const DIST = fileURLToPath(new URL("../../dist", import.meta.url));
+// `DIST_DIR` serves another build (a baseline artifact the memory replay
+// compares against); the suite itself always serves dist/.
+const DIST = process.env.DIST_DIR
+  ? resolve(process.env.DIST_DIR)
+  : fileURLToPath(new URL("../../dist", import.meta.url));
 const PORT = Number(process.env.PORT || 8123);
 
 const MIME = {
