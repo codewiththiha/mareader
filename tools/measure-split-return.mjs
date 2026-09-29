@@ -3,7 +3,7 @@
 // docs/route-split-retrospective.md §5.1).
 //
 //   PORT=8123 DIST_DIR=dist node tests/browser/server.mjs &
-//   node tools/measure-split-return.mjs [label] [baseUrl] [--intent]
+//   node tools/measure-split-return.mjs [label] [baseUrl] [--intent] [--webkit]
 //
 // One scenario, end to end, in a fresh browser context: seed the library
 // through `?open=`, boot the library fresh, click the book, split the
@@ -19,13 +19,22 @@
 // the probe's memory fields. The last line is `RESULT {...}`. Absolute PSS
 // varies by ±20 MB between runs; read the deltas within a run and the
 // frame lists.
-import { chromium } from "playwright";
+//
+// `--webkit` runs the same scenario in Playwright's WebKit — JavaScriptCore,
+// the engine the macOS app's WKWebView runs — and sums the PSS of its
+// web content processes instead of Chromium's renderers (`WPEWebProcess`
+// in the headless WPE port Playwright runs on Linux, `WebKitWebProcess` in
+// the GTK port).
+// WebKit offers no forced GC, so its last sample is a settle, not a GC.
+import { chromium, webkit } from "playwright";
 import { readFileSync, readdirSync } from "node:fs";
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const label = args[0] ?? "dist";
 const BASE = args[1] ?? process.env.BASE_URL ?? "http://127.0.0.1:8123";
 const INTENT = process.argv.includes("--intent");
+const WEBKIT = process.argv.includes("--webkit");
+const ENGINE = WEBKIT ? "webkit" : "chromium";
 const BOOK = "/samples/Programming Pearls (2nd Edition) - Jon Bentley.pdf";
 const NEEDLE = "Programming Pearls";
 const SPLITS = [
@@ -35,11 +44,11 @@ const SPLITS = [
 ];
 const IDLE_SAMPLES_S = [0, 2, 5, 10, 20, 30, 45, 62, 70];
 
-const browser = await chromium.launch();
+const browser = await (WEBKIT ? webkit : chromium).launch();
 const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
 const page = await context.newPage();
-const cdp = await context.newCDPSession(page);
-await cdp.send("HeapProfiler.enable");
+const cdp = WEBKIT ? null : await context.newCDPSession(page);
+await cdp?.send("HeapProfiler.enable");
 const t0 = Date.now();
 const consoleLines = [];
 page.on("console", (m) => {
@@ -48,7 +57,8 @@ page.on("console", (m) => {
   consoleLines.push(`+${Date.now() - t0} [${m.type()}] ${t.slice(0, 160)}`);
 });
 
-/** PSS/RSS of every Chromium renderer on the box (one browser runs at a time). */
+/** PSS/RSS of every content process on the box — Chromium's renderers, or
+ *  WebKit's web processes (one browser runs at a time). */
 function rendererMemory() {
   let pss = 0;
   let rss = 0;
@@ -60,7 +70,10 @@ function rendererMemory() {
     } catch {
       continue;
     }
-    if (!cmd.includes("--type=renderer") || !/chrom|headless_shell/.test(cmd)) continue;
+    const content = WEBKIT
+      ? /(WPE|WebKit)WebProcess/.test(cmd)
+      : cmd.includes("--type=renderer") && /chrom|headless_shell/.test(cmd);
+    if (!content) continue;
     try {
       const roll = readFileSync(`/proc/${p}/smaps_rollup`, "utf8");
       const get = (k) => Number((roll.match(new RegExp(`^${k}:\\s+(\\d+) kB`, "m")) ?? [0, 0])[1]) * 1024;
@@ -103,6 +116,19 @@ async function sample(tag) {
     panes: s?.host?.panes?.length ?? null,
     heapHighWaterMB: s?.heapHighWaterBytes != null ? +(s.heapHighWaterBytes / 1048576).toFixed(1) : null,
   };
+  if (row.renderers === 0) {
+    // A page is always loaded, so nothing matched means the matcher is
+    // wrong for this engine — a 0 MB row would read as a result.
+    const seen = new Set();
+    for (const p of readdirSync("/proc").filter((d) => /^\d+$/.test(d))) {
+      try {
+        seen.add(readFileSync(`/proc/${p}/comm`, "utf8").trim());
+      } catch {
+        // gone
+      }
+    }
+    throw new Error(`[${tag}] no ${ENGINE} content process found; processes: ${[...seen].sort().join(" ")}`);
+  }
   console.log(JSON.stringify(row));
   return row;
 }
@@ -137,7 +163,7 @@ const shelfIntent = () =>
     level?.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
   });
 
-const result = { label, base: BASE, intent: INTENT };
+const result = { label, base: BASE, intent: INTENT, engine: ENGINE };
 
 // 1. seed a library with the book (the real path: open from the URL)
 await page.goto(`${BASE}/?blend=1&open=${encodeURIComponent(BOOK)}`, { waitUntil: "domcontentloaded" });
@@ -231,9 +257,9 @@ for (const sec of IDLE_SAMPLES_S) {
 }
 
 // 7. what a GC can still reclaim
-await cdp.send("HeapProfiler.collectGarbage");
+if (cdp) await cdp.send("HeapProfiler.collectGarbage");
 await page.waitForTimeout(1500);
-result.afterGc = await sample("after a forced GC");
+result.afterGc = await sample(cdp ? "after a forced GC" : "after a 1.5 s settle (WebKit has no forced GC)");
 
 console.log(`RESULT ${JSON.stringify(result)}`);
 console.log(`CONSOLE ${JSON.stringify(consoleLines.filter((l) => /mareader\]|evict|forced|panick|error/i.test(l)).slice(0, 40))}`);
