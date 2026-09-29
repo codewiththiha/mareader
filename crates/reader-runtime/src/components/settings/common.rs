@@ -59,6 +59,10 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
             type="button"
             on:click=move |_| tab.set(t)
             aria-pressed=move || (active.get() == t).to_string()
+            // An inactive tab is its icon alone: the name is what a screen
+            // reader (and a hover) gets instead.
+            aria-label=label
+            title=label
             class=class
         >
             <Icon name=icon size=17 />

@@ -856,7 +856,7 @@ impl ReaderHost {
         let target = match (how, self.manager.active_untracked()) {
             (library::OpenHow::Beside, Some(of)) if !self.pane_is_empty(of) => OpenTarget::Split {
                 of,
-                axis: SplitAxis::Horizontal,
+                axis: library::beside_axis(self.manager.bounds_untracked(of)),
                 side: Side::After,
             },
             _ => OpenTarget::Active,

@@ -2473,7 +2473,7 @@ async function rowBox(needle) {
   return page.evaluate(([sel, needle]) => {
     const f = document.querySelector(sel);
     const el = [...(f?.contentDocument?.querySelectorAll("[data-lib-file]") ?? [])]
-      .find((n) => (n.textContent ?? "").includes(needle));
+      .find((n) => n.dataset.libFile === needle || (n.textContent ?? "").includes(needle));
     if (!el) return null;
     el.scrollIntoView({ block: "nearest" });
     const fr = f.getBoundingClientRect();
@@ -2503,6 +2503,61 @@ async function liftRow(needle, to) {
     await page.mouse.move(from.x + ((to.x - from.x) * step) / steps, from.y + ((to.y - from.y) * step) / steps);
   }
   return from;
+}
+
+/** A plain click (the real mouse, no movement) on the row naming `needle`
+ *  (its name, or its path exactly). */
+async function clickRow(needle) {
+  const box = await rowBox(needle);
+  if (!box) throw new Error(`the Library panel has no row for ${needle}`);
+  await page.mouse.click(box.x + Math.min(48, box.width / 2), box.y + box.height / 2);
+}
+
+/** Click `selector` in the active frame once it exists. */
+async function frameClick(selector, label, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await page.evaluate(([sel, inner]) => {
+    const el = document.querySelector(sel)?.contentDocument?.querySelector(inner);
+    if (!el) return false;
+    el.click();
+    return true;
+  }, [activeFrame, selector]))) {
+    if (Date.now() > deadline) throw new Error(`[${label}] ${selector} never appeared`);
+    await page.waitForTimeout(100);
+  }
+}
+
+/** Settings → Workspace → the row-click choice, then close the modal. */
+async function chooseLibraryClick(choice) {
+  const label = `settings: library click ${choice}`;
+  await frameClick('button[title="Reader settings"]', label);
+  await frameClick('button[aria-label="Workspace"]', label);
+  await frameClick(`[data-setting="library-click"] [data-choice="${choice}"]`, label);
+  const deadline = Date.now() + 5_000;
+  while ((await page.evaluate(([sel, choice]) =>
+    document.querySelector(sel)?.contentDocument
+      ?.querySelector(`[data-setting="library-click"] [data-choice="${choice}"]`)
+      ?.getAttribute("aria-checked"), [activeFrame, choice])) !== "true") {
+    if (Date.now() > deadline) throw new Error(`[${label}] the choice never took`);
+    await page.waitForTimeout(50);
+  }
+  // Close it, and wait for the dialog itself to be gone: a sheet still
+  // fading out would take the next click meant for the rail.
+  const dialogUp = () => page.evaluate((sel) =>
+    !!document.querySelector(sel)?.contentDocument?.querySelector('[role="dialog"][aria-label="Reader settings"]'), activeFrame);
+  await page.evaluate((sel) => document.querySelector(sel).contentWindow.focus(), activeFrame);
+  await page.keyboard.press("Escape");
+  for (const [attempt, last] of [["escape", false], ["close button", true]]) {
+    const until = Date.now() + 4_000;
+    while (await dialogUp()) {
+      if (Date.now() > until) break;
+      await page.waitForTimeout(50);
+    }
+    if (!(await dialogUp())) break;
+    if (last) throw new Error(`[${label}] the settings modal never closed (tried ${attempt})`);
+    await frameClick('[role="dialog"][aria-label="Reader settings"] button[title="Close"]', label, 2_000);
+  }
+  await page.waitForTimeout(150);
 }
 
 /** Nothing about the workspace changed, and no drag is left behind. */
@@ -2621,13 +2676,52 @@ const everyReady = (s, n) => s.host?.panes?.length === n &&
     throw new Error("[click] the other pane changed");
   }
 
+  // The row-click setting, changed where a user changes it (Settings →
+  // Workspace). "Open as a new split": a file that is not open gets a new
+  // pane beside the focused one — BELOW it here, since beside the docked
+  // rail the column has no room for another side split. "Do nothing": a
+  // click is ignored, even on a file that is open in another pane.
+  const others = (await libraryPanel()).files.filter((f) =>
+    !/Split Notes|Programming Pearls/.test(`${f.name} ${f.path}`));
+  if (others.length === 0) throw new Error("[click] the library holds no third file to open");
+  await chooseLibraryClick("split");
+  const beforeSplitClick = await snap();
+  await clickRow(others[0].path);
+  // On a failure, say what the click left behind: whether a pane was made
+  // at all, and in what state.
+  const splitClick = await waitForSettledLayout("click: a new split beside the focused pane", (s) => everyReady(s, 3), 45_000)
+    .catch(async (error) => {
+      const now = await snap();
+      throw new Error(`${error.message}\n  clicked ${JSON.stringify(others[0])} of ${JSON.stringify(others.map((f) => f.path))}` +
+        `\n  panes created ${beforeSplitClick.host.panesCreated} -> ${now?.host?.panesCreated}, active ${now?.host?.activePane}, drag ${now?.host?.drag}` +
+        `\n  panes ${JSON.stringify(now?.host?.panes?.map((p) => ({ id: p.paneId, format: p.format, lifecycle: p.lifecycle, bounds: p.bounds })))}` +
+        `\n  docStatus ${now?.docStatus} ${now?.docError ?? ""}` +
+        `\n  errors ${JSON.stringify(errorLog.slice(-6))}` +
+        `\n  stage log ${JSON.stringify(huntLog.filter((l) => l.startsWith(`[${currentStage}]`) && !/integrity|willReadFrequently/.test(l)).slice(-20))}`);
+    });
+  const clicked = splitClick.host.panes.find((p) => p.paneId !== first.paneId && p.paneId !== second.paneId);
+  const firstAfter = splitClick.host.panes.find((p) => p.paneId === first.paneId);
+  if (splitClick.host.activePane !== clicked.paneId) throw new Error(`[click] the split's pane did not take focus (${splitClick.host.activePane})`);
+  // Beside the focused pane: to its right when a side split fits, else below
+  // it (the column beside the docked rail may be too narrow).
+  const rightOf = Math.abs(clicked.bounds.x - (firstAfter.bounds.x + firstAfter.bounds.width)) <= 2 && Math.abs(clicked.bounds.y - firstAfter.bounds.y) <= 2;
+  const below = Math.abs(clicked.bounds.y - (firstAfter.bounds.y + firstAfter.bounds.height)) <= 2 && Math.abs(clicked.bounds.x - firstAfter.bounds.x) <= 2;
+  if (!rightOf && !below) {
+    throw new Error(`[click] the split is not beside the focused pane: ${JSON.stringify([firstAfter.bounds, clicked.bounds])}`);
+  }
+  await chooseLibraryClick("dragonly");
+  await clickRow("Split Notes");
+  await page.waitForTimeout(600);
+  const ignored = await snap();
+  if (ignored.host.activePane !== clicked.paneId || ignored.host.panesCreated !== splitClick.host.panesCreated) {
+    throw new Error(`[click] "Do nothing" acted on a click (active ${ignored.host.activePane})`);
+  }
+  await chooseLibraryClick("replace");
+
   // A full workspace offers nothing: with a fourth pane (MAX_PANES) a drag
   // finds no target over any pane, and its release changes nothing. Beside
-  // the docked rail both columns are too narrow for another side split, so
-  // each column is split down: the first (focused) one, then — focused from
-  // its tab — the second.
-  if ((await openIn(SPLIT_NOTES, "down")) !== true) throw new Error("[drag] the host refused a pane below the first");
-  await waitForSettledLayout("drag: three panes", (s) => everyReady(s, 3), 30_000);
+  // the docked rail the columns are too narrow for another side split, so
+  // the second column — focused from its tab — is split down.
   await page.evaluate(([sel, id]) => {
     document.querySelector(sel)?.contentDocument?.querySelector(`[data-open-tab="${id}"] [role="tab"]`)?.click();
   }, [activeFrame, second.paneId]);

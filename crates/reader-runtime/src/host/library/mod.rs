@@ -31,7 +31,8 @@ use library_core::book::{Book, Row};
 use library_core::shelf::{ALL_SHELF, Shelf, members_of};
 
 use super::ReaderHost;
-use super::model::{PaneFormat, PaneId};
+use super::model::{PaneBounds, PaneFormat, PaneId};
+use super::tree::{SplitAxis, split_fits};
 
 /// One file row: a book the library holds, or a link to one (shown under
 /// the link's name, opening the book it points at).
@@ -256,6 +257,25 @@ pub enum OpenHow {
     Beside,
 }
 
+/// The axis a row opened "beside" the focused pane splits it along: to the
+/// right when that leaves both halves usable, else below when that does
+/// (a narrow column beside the docked rail still takes a split), else to
+/// the right so the layout's own "no room" refusal is what the user hears.
+/// A pane not measured yet splits right: nothing to judge it by.
+pub fn beside_axis(bounds: Option<PaneBounds>) -> SplitAxis {
+    match bounds {
+        Some(b)
+            if b.width > 0.0
+                && b.height > 0.0
+                && !split_fits(b, SplitAxis::Horizontal)
+                && split_fits(b, SplitAxis::Vertical) =>
+        {
+            SplitAxis::Vertical
+        }
+        _ => SplitAxis::Horizontal,
+    }
+}
+
 /// One open pane, as the tabs strip lists it: its id and what its document
 /// is called (the strip reads the active id and the format itself, so a
 /// focus change restyles a tab rather than rebuilding it).
@@ -473,6 +493,24 @@ mod tests {
         blob.shelves.push(shelf("y", "Y", &[], Some("x")));
         let tree = LibraryTree::from_blob(&blob);
         assert_eq!(tree.root.folders.len(), 2);
+    }
+
+    #[test]
+    fn beside_splits_right_then_down_when_right_has_no_room() {
+        let bounds = |width, height| {
+            Some(PaneBounds {
+                x: 0.0,
+                y: 0.0,
+                width,
+                height,
+            })
+        };
+        assert_eq!(beside_axis(bounds(900.0, 800.0)), SplitAxis::Horizontal);
+        assert_eq!(beside_axis(bounds(360.0, 800.0)), SplitAxis::Vertical);
+        // No room either way: right, so the layout's refusal speaks.
+        assert_eq!(beside_axis(bounds(360.0, 300.0)), SplitAxis::Horizontal);
+        assert_eq!(beside_axis(None), SplitAxis::Horizontal);
+        assert_eq!(beside_axis(bounds(0.0, 0.0)), SplitAxis::Horizontal);
     }
 
     #[test]
