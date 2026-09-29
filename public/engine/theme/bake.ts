@@ -126,6 +126,33 @@ function workerApply(
   });
 }
 
+/** Run the pixel loop in the worker WITHOUT a main-thread pixel readback:
+ *  the raster crosses as an ImageBitmap (an off-thread copy, no
+ *  synchronous GPU→CPU sync on this thread), and the worker reads, filters
+ *  and returns the pixels from its own canvas. */
+function workerApplyBitmap(
+  bitmap: ImageBitmap,
+  w: number,
+  h: number,
+  filter: string,
+): Promise<Uint8ClampedArray> {
+  return new Promise((resolve, reject) => {
+    const worker = getBakeWorker();
+    if (!worker) {
+      reject(new Error("no bake worker"));
+      return;
+    }
+    const id = ++bakeSeq;
+    pendingBakes.set(id, { resolve, reject });
+    try {
+      worker.postMessage({ id, w, h, filter, bitmap }, [bitmap]);
+    } catch (e) {
+      pendingBakes.delete(id);
+      reject(e);
+    }
+  });
+}
+
 async function applyFilterPixels(
   src: HTMLCanvasElement,
   filterString: string,
@@ -134,37 +161,10 @@ async function applyFilterPixels(
 
   const w = src.width;
   const h = src.height;
-  const sctx = src.getContext("2d");
-  let img: ImageData | null | undefined;
-  try {
-    img = sctx && sctx.getImageData(0, 0, w, h);
-  } catch (_) {
-    return src;
-  }
+  if (!(w > 0) || !(h > 0)) return src;
+
+  const img = await filterPixelsFor(src, w, h, filterString);
   if (!img) return src;
-
-  let changed = false;
-  const worker = getBakeWorker();
-  if (worker) {
-    try {
-      const back = await workerApply(img.data, w, h, filterString);
-      // `img.data` was transferred: build a fresh ImageData over the reply.
-      img = new ImageData(back, w, h);
-      changed = true;
-    } catch (_) {
-      // The worker vanished mid-flight (its onerror already rejected this
-      // promise) and the transferred pixels are gone: degrade to the
-      // unfiltered raster for this frame only — the page still renders. The
-      // failure is permanent (bakeWorkerFailed), so the next bake goes
-      // through the inline kernel.
-      return src;
-    }
-  } else {
-    changed = applyFilterToData(img.data, w, h, filterString);
-  }
-
-  if (!changed) return src;
-  if (src.width === 0 || src.height === 0) return src;
 
   // Always write to a scratch copy: mutating `src` in place destroyed the
   // unbaked thumbnail raw, so the next theme change double-filtered and live
@@ -174,6 +174,65 @@ async function applyFilterPixels(
   if (!octx) return src;
   octx.putImageData(img, 0, 0);
   return out;
+}
+
+/** The FILTERED pixels of `src`, or null when nothing changes: the pixels
+ *  cannot be read at all, or the inline kernel found the filter an identity
+ *  on them. Three readback paths, most off-thread first:
+ *  1. the worker reads them from a transferred ImageBitmap — the main
+ *     thread pays no synchronous GPU->CPU sync, which a getImageData there
+ *     would force once per page (the visible hitch of a multi-pane theme
+ *     change);
+ *  2. a worker exists but createImageBitmap does not: the legacy buffer
+ *     transfer (main-thread readback, worker-side loop);
+ *  3. no worker: the inline kernel (the Node harness's tested reference). */
+async function filterPixelsFor(
+  src: HTMLCanvasElement,
+  w: number,
+  h: number,
+  filterString: string,
+): Promise<ImageData | null> {
+  const worker = getBakeWorker();
+
+  if (worker && typeof createImageBitmap === "function") {
+    let bitmap: ImageBitmap | null = null;
+    try {
+      bitmap = await createImageBitmap(src);
+      const back = await workerApplyBitmap(bitmap, w, h, filterString);
+      return new ImageData(back, w, h);
+    } catch (_) {
+      // The bitmap or the worker failed mid-flight: fall through to the
+      // readback below — the page still gets its theme.
+      try { bitmap?.close(); } catch (_) { /* already closed */ }
+    }
+  }
+
+  let img: ImageData | null | undefined;
+  try {
+    const sctx = src.getContext("2d");
+    img = sctx && sctx.getImageData(0, 0, w, h);
+  } catch (_) {
+    return null;
+  }
+  if (!img) return null;
+
+  if (worker) {
+    try {
+      // `img.data` is detached by the transfer: the reply gets a fresh
+      // ImageData.
+      const back = await workerApply(img.data, w, h, filterString);
+      return new ImageData(back, w, h);
+    } catch (_) {
+      // The worker vanished mid-flight (its onerror already rejected this
+      // promise) and the transferred pixels are gone: degrade to the
+      // unfiltered raster for this frame only — the page still renders.
+      // The failure is permanent (bakeWorkerFailed), so the next bake goes
+      // through the inline kernel.
+      return null;
+    }
+  }
+
+  return applyFilterToData(img.data, w, h, filterString) ? img : null;
 }
 
 export function rasterToCanvas(src: HTMLCanvasElement | ImageBitmap): {
