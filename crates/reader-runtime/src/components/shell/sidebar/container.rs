@@ -27,7 +27,7 @@
 //! costs one raster pass because a follow holds its commit until the
 //! container goes quiet.
 //!
-//! Tab switches (Thumbs ↔ Outline) still use `invisible` on the inactive
+//! Tab switches (Thumbs ↔ Outline ↔ Library) still use `invisible` on the inactive
 //! panel so the virtualization window stays engine-bound and a switch back
 //! is instant. `hidden` (`display:none`) is still forbidden: its height
 //! collapse would re-evict the window and re-render every thumb.
@@ -73,7 +73,7 @@ pub fn SidebarShell(
         <aside
             class="sidebar-aside flex h-full shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-300 ease-in-out"
             class=("w-72", move || {
-                overlay.get() || matches!(mode.get(), SidebarMode::Thumbs | SidebarMode::Outline)
+                overlay.get() || mode.get() != SidebarMode::None
             })
             class=("w-0", move || !overlay.get() && mode.get() == SidebarMode::None)
             class=("border-r-0", move || !overlay.get() && mode.get() == SidebarMode::None)

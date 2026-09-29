@@ -171,10 +171,6 @@ pub enum FrameEvent {
     /// shelf. A hint about the FUTURE, not a fact about this frame, which
     /// is why it is not boundary vocabulary.
     ExpectReader,
-    /// A document drag the shelf handed to the Shell, or its pointer (the
-    /// Shell's drag session, `crate::app::drag`). A gesture in flight, not
-    /// durable state: not boundary vocabulary either.
-    DocumentDrag(crate::app::drag::DragReport),
     Boundary(FrameVocabulary),
     /// A message whose generation is not this frame's — kept for the
     /// diagnostics ledger, never applied (§35).
@@ -470,14 +466,6 @@ impl Driver {
 
     pub fn slot(&self) -> FrameSlot {
         self.slot.get()
-    }
-
-    /// The frame's top-left corner in the page's client coordinates: what
-    /// turns a pointer position in this frame's document into the page's,
-    /// and back.
-    pub fn client_origin(&self) -> (f64, f64) {
-        let rect = self.iframe.get_bounding_client_rect();
-        (rect.left(), rect.top())
     }
 
     /// True once this frame has answered `Ready` — the question a promotion
@@ -817,16 +805,6 @@ impl Driver {
             }
             RuntimeFrame::ExpectReader => {
                 self.report(FrameEvent::ExpectReader);
-            }
-            RuntimeFrame::BeginDocumentDrag { source, x, y } => {
-                self.report(FrameEvent::DocumentDrag(
-                    crate::app::drag::DragReport::Begin { source, x, y },
-                ));
-            }
-            RuntimeFrame::DocumentDragPointer { x, y, phase } => {
-                self.report(FrameEvent::DocumentDrag(
-                    crate::app::drag::DragReport::Pointer { x, y, phase },
-                ));
             }
             RuntimeFrame::DocStatus { report } => {
                 self.report(FrameEvent::Boundary(FrameVocabulary::DocStatus(Box::new(

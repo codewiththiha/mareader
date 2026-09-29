@@ -33,6 +33,8 @@ pub(crate) enum Tab {
     /// Hosted only while a reflowable (TXT/Markdown) document is open —
     /// PDFs carry none of the type it controls (see `modal`).
     Fonts,
+    /// The split workspace: what a Library panel click does.
+    Workspace,
 }
 
 #[component]

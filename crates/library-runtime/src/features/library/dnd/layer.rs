@@ -24,7 +24,6 @@ pub(crate) fn DragLayer() -> impl IntoView {
     let at = ctrl.pointer();
     let sunk = ctrl.sink();
     let several = Signal::derive(move || count.get() > 1);
-    let offers_reader = ctrl.offers_reader();
     // One signal for the whole sunk state — anchor, scale and transition —
     // because they are one fact: a separate "is animating" flag could
     // disagree on exactly the frame that matters.
@@ -39,14 +38,6 @@ pub(crate) fn DragLayer() -> impl IntoView {
 
     view! {
         <Portal>
-            // The way out of the shelf for one held book: past this strip the
-            // Shell carries the drag on to the reader
-            // (`DragController::hand_to_reader`).
-            <Show when=move || offers_reader.get() fallback=|| ()>
-                <div class="lib-drag-reader-zone" data-reader-zone="" aria-hidden="true">
-                    <span>"Open in Reader"</span>
-                </div>
-            </Show>
             <Show when=move || live.get() fallback=|| ()>
                 <div
                     class="lib-drag-layer"

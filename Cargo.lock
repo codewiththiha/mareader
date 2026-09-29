@@ -3515,6 +3515,7 @@ dependencies = [
  "js-sys",
  "leptos",
  "leptos-md",
+ "library-core",
  "md-core",
  "pdf-core",
  "pdf-engine",

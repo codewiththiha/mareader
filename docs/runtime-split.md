@@ -282,19 +282,13 @@ Ready verdict admits it to the Shell's frame registry: the baker keys the
 ask on the frame generation, boots the page at once, starts the bake when
 the frame is admitted, and prunes the ask if the frame is torn down first.
 
-A shelf book carried into the reader is the one drag that crosses runtimes,
-and it is a logical drag owned by the Shell (`src/app/drag.rs`), never a DOM
-drag between frames. The shelf's "Open in Reader" zone sends
-`RuntimeFrame::BeginDocumentDrag { source, x, y }` — a
-`DocumentDragDescriptor` (row id, address, label: data only, no
-pane, signal or DOM) — and then relays its window's pointer as
-`RuntimeFrame::DocumentDragPointer { x, y, phase: Move | Release | Cancel }`
-until the drag ends (a page-wide `.drag-shield` takes over if the shelf's
-frame stops delivering). The Shell reveals the reader and forwards
-`ShellFrame::DocumentDrag { event: Begin | Over | Drop { launch } | Cancel }`
-in the reader frame's coordinates; `Drop` carries the launch the Shell's
-store resolved for the row. The reader runs its own drag session against its
-own workspace geometry; neither runtime reaches into the other.
+No drag crosses runtimes. A split is dragged inside the reader, from its
+own Library panel. A file dragged in from the OS is an import, handled by
+the Shell only while the library is on screen: the Shell's
+`tauri://drag-drop` listener (`src/services/import_drop.rs`) filters the
+paths to the formats the app opens and sends the live library frame
+`ShellFrame::ImportFiles { paths }`, which imports them onto the shelf it
+shows. The reader ignores that frame.
 
 Standalone pages install a storage-backed shell substitute so the same
 entry code runs unhosted; the trait keeps exactly these two implementations

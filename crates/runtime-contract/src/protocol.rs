@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::boundary::{DocStatusReport, DocumentDragDescriptor, LaunchDocument, ReadPoint};
+use crate::boundary::{DocStatusReport, LaunchDocument, ReadPoint};
 use crate::covers::CoverImage;
 
 /// Which runtime occupies a frame. The Shell keeps at most one ACTIVE frame
@@ -121,45 +121,12 @@ pub enum ShellFrame {
         request: u64,
         document: Option<Box<LaunchDocument>>,
     },
-    /// A document drag the Shell owns, relayed to the reader on screen in
-    /// the READER frame's coordinates (see [`DocumentDragEvent`]).
-    DocumentDrag { event: DocumentDragEvent },
-}
-
-/// One step of a Shell-owned document drag, as the reader receives it. The
-/// Shell owns the session across the runtime switch (the library that
-/// started it is no longer on screen); the reader owns the workspace
-/// geometry and the drop's meaning.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum DocumentDragEvent {
-    /// The drag arrives: what is carried, and where the pointer is.
-    Begin {
-        source: Box<DocumentDragDescriptor>,
-        x: f64,
-        y: f64,
-    },
-    /// The pointer moved.
-    Over { x: f64, y: f64 },
-    /// The pointer was released here. `launch` is the dragged document as
-    /// the Shell's store resolves it (row, resume point, cover) — the one
-    /// resolution in-session opens use — sent once, at the drop.
-    Drop {
-        x: f64,
-        y: f64,
-        launch: Box<LaunchDocument>,
-    },
-    /// The drag ended without a drop (Escape, a cancelled pointer).
-    Cancel,
-}
-
-/// How a forwarded pointer event ends (or does not end) a document drag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DragPointerPhase {
-    Move,
-    Release,
-    Cancel,
+    /// Files dropped on the window from the OS while the LIBRARY is the
+    /// runtime on screen: the shelf imports them where it is looking. The
+    /// Shell's one drop listener sends it to the library only — a drop over
+    /// the reader is nothing — and the paths are already filtered to the
+    /// formats the app opens.
+    ImportFiles { paths: Vec<String> },
 }
 
 /// Every runtime → Shell message, wrapped in the frame generation. The Shell
@@ -228,23 +195,6 @@ pub enum RuntimeFrame {
     /// The one query the bridge answered synchronously becomes a
     /// request/answer pair over the port; `request` matches the answer.
     ResolveLaunch { request: u64, path: String },
-    /// Library → Shell: a held book entered the shelf's "Open in Reader"
-    /// zone. The library's own drag has ended (nothing was filed); the Shell
-    /// takes the drag over — reveals the reader and relays the pointer to it
-    /// — with this descriptor as the whole payload. `x`/`y` are the sender
-    /// frame's client coordinates.
-    BeginDocumentDrag {
-        source: Box<DocumentDragDescriptor>,
-        x: f64,
-        y: f64,
-    },
-    /// The pointer of a drag the Shell took over, still delivered to the
-    /// frame the press began in: forwarded, in that frame's coordinates.
-    DocumentDragPointer {
-        x: f64,
-        y: f64,
-        phase: DragPointerPhase,
-    },
 }
 
 /// The Shell's runtime error record (§11): visible in the error state,
@@ -418,80 +368,6 @@ mod tests {
         assert_eq!(
             json,
             r#"{"runtime":"reader","generation":18,"stage":"initialized","cause":"wasm failed to initialize"}"#
-        );
-    }
-
-    #[test]
-    fn a_document_drag_crosses_as_a_descriptor_and_pointer_steps() {
-        let source = DocumentDragDescriptor {
-            book_id: Some("b1".to_string()),
-            path: "/books/a.md".to_string(),
-            label: "Notes".to_string(),
-        };
-        let begin = RuntimeEnvelope {
-            generation: 4,
-            body: RuntimeFrame::BeginDocumentDrag {
-                source: Box::new(source.clone()),
-                x: 1190.0,
-                y: 300.5,
-            },
-        };
-        let json = serde_json::to_string(&begin).unwrap();
-        assert_eq!(
-            json,
-            r#"{"generation":4,"kind":"beginDocumentDrag","source":{"bookId":"b1","path":"/books/a.md","label":"Notes"},"x":1190.0,"y":300.5}"#
-        );
-        assert_eq!(
-            serde_json::from_str::<RuntimeEnvelope>(&json).unwrap(),
-            begin
-        );
-
-        let pointer = RuntimeEnvelope {
-            generation: 4,
-            body: RuntimeFrame::DocumentDragPointer {
-                x: 10.0,
-                y: 20.0,
-                phase: DragPointerPhase::Release,
-            },
-        };
-        let json = serde_json::to_string(&pointer).unwrap();
-        assert_eq!(
-            json,
-            r#"{"generation":4,"kind":"documentDragPointer","x":10.0,"y":20.0,"phase":"release"}"#
-        );
-        assert_eq!(
-            serde_json::from_str::<RuntimeEnvelope>(&json).unwrap(),
-            pointer
-        );
-
-        // Shell → reader: every step of the relayed session round-trips.
-        for event in [
-            DocumentDragEvent::Begin {
-                source: Box::new(source),
-                x: 5.0,
-                y: 6.0,
-            },
-            DocumentDragEvent::Over { x: 7.0, y: 8.0 },
-            DocumentDragEvent::Cancel,
-        ] {
-            let env = ShellEnvelope {
-                generation: 9,
-                nonce: "n".to_string(),
-                body: ShellFrame::DocumentDrag { event },
-            };
-            let json = serde_json::to_string(&env).unwrap();
-            assert_eq!(serde_json::from_str::<ShellEnvelope>(&json).unwrap(), env);
-        }
-        let over = ShellEnvelope {
-            generation: 9,
-            nonce: "n".to_string(),
-            body: ShellFrame::DocumentDrag {
-                event: DocumentDragEvent::Over { x: 7.0, y: 8.0 },
-            },
-        };
-        assert_eq!(
-            serde_json::to_string(&over).unwrap(),
-            r#"{"generation":9,"nonce":"n","kind":"documentDrag","event":{"type":"over","x":7.0,"y":8.0}}"#
         );
     }
 }

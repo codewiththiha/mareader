@@ -369,20 +369,6 @@ pub fn command(id: u32, cmd: runtime_contract::boundary::LaunchDocument) {
     }
 }
 
-/// A drag step from the Shell: a library document it carried over to this
-/// reader. The host runs the drag against its own workspace; nothing of the
-/// library is behind it but the descriptor.
-pub fn document_drag(id: u32, event: runtime_contract::protocol::DocumentDragEvent) {
-    let live = SESSION.with(|s| s.borrow().as_ref().filter(|x| x.id == id).map(|_| ()));
-    if live.is_none() {
-        return;
-    }
-    let Some(live) = LIVE_SESSION.with(|c| c.borrow().clone()) else {
-        return;
-    };
-    live.owner.with(|| live.host.document_drag(event));
-}
-
 fn take_dispose_resolver() -> (js_sys::Promise, Option<js_sys::Function>) {
     let mut resolve_fn: Option<js_sys::Function> = None;
     let mut executor = |resolve: js_sys::Function, _reject: js_sys::Function| {

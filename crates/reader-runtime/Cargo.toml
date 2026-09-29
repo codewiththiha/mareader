@@ -20,6 +20,7 @@ frame-transport = { path = "../frame-transport" }
 js-sys = "0.3"
 leptos = { version = "0.8", features = ["csr"] }
 leptos-md = "0.1"
+library-core = { path = "../library-core" }
 md-core = { path = "../md-core" }
 pdf-core = { path = "../pdf-core" }
 pdf-engine = { path = "../pdf-engine" }
@@ -42,7 +43,7 @@ web-sys = { version = "0.3", features = [
   "Window", "Document", "Element", "HtmlElement", "HtmlDivElement",
   "HtmlCanvasElement", "HtmlInputElement", "HtmlButtonElement",
   "HtmlSelectElement", "Node", "NodeList", "HtmlCollection", "DomTokenList",
-  "CssStyleDeclaration", "CanvasRenderingContext2d", "Event", "MouseEvent",
+  "CssStyleDeclaration", "CanvasRenderingContext2d", "Event", "UiEvent", "MouseEvent", "PointerEvent",
   "KeyboardEvent", "FocusOptions", "WheelEvent", "ResizeObserver",
   "ResizeObserverEntry", "DomRect", "DomRectList", "Selection", "Range",
   "Text", "Location", "UrlSearchParams", "Storage", "Performance",
@@ -50,3 +51,8 @@ web-sys = { version = "0.3", features = [
   "AddEventListenerOptions", "EventTarget", "HtmlDocument", "Navigator",
   "VisibilityState", "HtmlIFrameElement", "MessageEvent", "Worker",
 ] }
+
+[dev-dependencies]
+# The fixture builders (`library_core::testkit`) the Library panel's tree
+# tests build a library with. Dev-only: never in a release graph.
+library-core = { path = "../library-core", features = ["test-util"] }

@@ -1,7 +1,7 @@
 //! The reader settings modal and its tabs: `modal` is the shell (the tab
 //! strip, the close affordance, the Escape handler), `common` is what the
-//! tabs share, and `layout` / `theme` / `animations` / `fonts` are the tabs
-//! themselves. `theme` composes sections rather than owning them: the AI's
+//! tabs share, and `layout` / `theme` / `animations` / `fonts` /
+//! `workspace` are the tabs themselves. `theme` composes sections rather than owning them: the AI's
 //! appearance knobs live in `crate::components::ai::settings`, and `paper`
 //! holds the raster-only sections it mounts.
 //!
@@ -27,3 +27,4 @@ pub(crate) mod layout;
 pub mod modal;
 pub(crate) mod paper;
 pub(crate) mod theme;
+pub(crate) mod workspace;

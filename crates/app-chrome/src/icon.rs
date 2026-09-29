@@ -66,6 +66,9 @@ pub enum IconName {
     /// wears a line across it because that one opens a book; this one is the
     /// directory itself, and the two rows sit in the same menu.
     Folder,
+    /// A plain document sheet with a folded corner — a file row in the
+    /// reader rail's Library panel, beside the format badge that names it.
+    File,
     /// An open eye — the row that turns a folder's watch ON: the library looking
     /// at a directory, which is the whole of what watching one is. A pair with
     /// [`IconName::EyeOff`] rather than one glyph on a flipping label, because
@@ -155,6 +158,10 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Folder => (
             "0 0 24 24",
             "<path d='M2 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/>",
+        ),
+        IconName::File => (
+            "0 0 24 24",
+            "<path d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/><path d='M14 3v5h5'/>",
         ),
         IconName::Eye => (
             "0 0 24 24",

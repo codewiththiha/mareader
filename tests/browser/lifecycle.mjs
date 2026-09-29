@@ -2347,18 +2347,18 @@ async function paneEntries() {
   console.log(`split workspace: PDF | Markdown, divider ratio ${afterDrag.split.ratio}, closed the PDF, the Markdown pane read on`);
 }
 
-// --- Stage 14: document drag and drop -------------------------------------
+// --- Stage 14: the Library panel, the one split-drag source --------------
 currentStage = "stage14-drag-drop";
-// The production drag: a pane's drag handle carries a copy of its document
-// to a split of the REAL workspace (the host measures its slot and its
-// panes), the preview is geometry only (nothing opens until the drop), and
-// the drop is the host's one workspace command — the pane it creates takes
-// focus. Escape, the keyboard's own placement and a release outside the
-// workspace change nothing. Then the Shell-carried drag: a book held on the
-// shelf enters its "Open in Reader" zone, the Shell reveals the (empty,
-// warm) reader and relays the pointer, and the drop opens the book in the
-// reader's workspace. A light Markdown fixture throughout: this proves the
-// drag, not a PDF's render timing.
+// The production drag: a file row of the reader's Library panel (the rail's
+// third tab, a compact tree of the library) carries its file to a split of
+// the REAL workspace — the host measures its slot and its panes, the
+// preview is geometry only (nothing opens until the drop), and the drop is
+// the host's one workspace command, whose pane takes focus. Escape, a
+// release back over the rail and a full workspace change nothing. The same
+// panel lists the open panes once there is more than one (a click focuses,
+// × closes), and a plain click on a row opens the file in the focused pane
+// (the default of the tree-click setting). A light Markdown fixture
+// throughout: this proves the drag, not a PDF's render timing.
 
 /** A light document opened from the URL, in one ready pane. */
 async function openLight(path) {
@@ -2407,27 +2407,102 @@ async function waitPreview(label, predicate, timeoutMs = 10_000) {
   throw new Error(`[${label}] the preview never matched: ${JSON.stringify(last)}`);
 }
 
-/** Press pane `id`'s drag handle with the real mouse and carry the pointer
- *  to `to` (page coordinates) in steps. The button stays down. */
-async function liftPane(id, to) {
-  const grip = await frameBox(`[data-pane-grip="${id}"] button`);
-  if (!grip) throw new Error(`pane ${id} has no drag handle`);
-  const from = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
-  // The handle must be what a press there hits: anything painted over it
-  // would swallow the drag before it began.
-  const hit = await page.evaluate(([sel, id, x, y]) => {
+/** What the Library panel shows: its file rows and its open-pane tabs
+ *  (`null` while the panel is not the rail's shown tab). */
+async function libraryPanel() {
+  return page.evaluate((sel) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const panel = doc?.querySelector("[data-library-panel]");
+    if (!panel || panel.closest(".invisible") || panel.getBoundingClientRect().width === 0) return null;
+    return {
+      files: [...panel.querySelectorAll("[data-lib-file]")].map((el) => ({
+        path: el.dataset.libFile,
+        name: (el.textContent ?? "").trim(),
+      })),
+      tabs: [...panel.querySelectorAll("[data-open-tab]")].map((el) => ({
+        pane: Number(el.dataset.openTab),
+        selected: el.querySelector('[role="tab"]')?.getAttribute("aria-selected") === "true",
+      })),
+    };
+  }, activeFrame);
+}
+
+async function waitPanel(label, predicate, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await libraryPanel();
+    if (last && predicate(last)) return last;
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`[${label}] the Library panel never matched: ${JSON.stringify(last)}`);
+}
+
+/** Open the rail on its Library tab. The title bar's toggle sits under the
+ *  window drag region (a plain browser swallows a hit-tested click there),
+ *  so both clicks are dispatched on the buttons: the same handlers. */
+async function openLibraryPanel(label, needles) {
+  await page.evaluate((sel) => {
+    document.querySelector(sel)?.contentDocument?.querySelector('button[title="Toggle sidebar"]')?.click();
+  }, activeFrame);
+  const deadline = Date.now() + 10_000;
+  while (!(await page.evaluate((sel) => {
+    const btn = document.querySelector(sel)?.contentDocument?.querySelector('button[title="Library"]');
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }, activeFrame))) {
+    if (Date.now() > deadline) throw new Error(`[${label}] the rail shows no Library tab`);
+    await page.waitForTimeout(100);
+  }
+  const panel = await waitPanel(`${label}: the tree lists the fixtures`, (p) =>
+    needles.every((n) => p.files.some((f) => f.name.includes(n))), 15_000);
+  // The rail slides in: let its rows stop moving before anything aims at them.
+  let before = await rowBox(needles[0]);
+  for (let i = 0; i < 40; i += 1) {
+    await page.waitForTimeout(100);
+    const now = await rowBox(needles[0]);
+    if (now && before && Math.abs(now.x - before.x) < 0.5 && Math.abs(now.y - before.y) < 0.5) break;
+    before = now;
+  }
+  return panel;
+}
+
+/** The Library panel row naming `needle`, boxed in PAGE coordinates. */
+async function rowBox(needle) {
+  return page.evaluate(([sel, needle]) => {
+    const f = document.querySelector(sel);
+    const el = [...(f?.contentDocument?.querySelectorAll("[data-lib-file]") ?? [])]
+      .find((n) => (n.textContent ?? "").includes(needle));
+    if (!el) return null;
+    el.scrollIntoView({ block: "nearest" });
+    const fr = f.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return { x: fr.left + r.left, y: fr.top + r.top, width: r.width, height: r.height };
+  }, [activeFrame, needle]);
+}
+
+/** Press the Library row naming `needle` with the real mouse and carry the
+ *  pointer to `to` (page coordinates) in steps. The button stays down. */
+async function liftRow(needle, to) {
+  const box = await rowBox(needle);
+  if (!box) throw new Error(`the Library panel has no row for ${needle}`);
+  const from = { x: box.x + Math.min(48, box.width / 2), y: box.y + box.height / 2 };
+  // The row must be what a press there hits.
+  const hit = await page.evaluate(([sel, x, y]) => {
     const f = document.querySelector(sel);
     const fr = f.getBoundingClientRect();
     const el = f.contentDocument.elementFromPoint(x - fr.left, y - fr.top);
-    return el?.closest(`[data-pane-grip="${id}"]`) ? null : (el?.outerHTML ?? "nothing").slice(0, 160);
-  }, [activeFrame, id, from.x, from.y]);
-  if (hit) throw new Error(`pane ${id}'s drag handle is covered by ${hit}`);
+    return el?.closest("[data-lib-file]") ? null : (el?.outerHTML ?? "nothing").slice(0, 160);
+  }, [activeFrame, from.x, from.y]);
+  if (hit) throw new Error(`the ${needle} row is covered by ${hit}`);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  const steps = 12;
+  const steps = 14;
   for (let step = 1; step <= steps; step += 1) {
     await page.mouse.move(from.x + ((to.x - from.x) * step) / steps, from.y + ((to.y - from.y) * step) / steps);
   }
+  return from;
 }
 
 /** Nothing about the workspace changed, and no drag is left behind. */
@@ -2438,45 +2513,55 @@ function assertUnchanged(s, before, label) {
   if (s.host.drag !== "idle") throw new Error(`[${label}] the drag session is ${s.host.drag}`);
 }
 
+const everyReady = (s, n) => s.host?.panes?.length === n &&
+  s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true);
+
 {
   const panicsBefore = panicCount;
   const one = await openLight(SPLIT_NOTES);
   const first = one.host.panes[0];
   if (one.host.drag !== "idle") throw new Error(`[drag] a fresh workspace reports drag ${one.host.drag}`);
+  const opened = await openLibraryPanel("drag", ["Split Notes", "Programming Pearls"]);
+  // One pane: no tabs strip.
+  if (opened.tabs.length !== 0) throw new Error(`[drag] one pane shows ${opened.tabs.length} open tabs`);
 
   // Right: into the pane's right tenth, halfway down.
   const firstBox = await frameBox(`[data-pane-id="${first.paneId}"]`);
-  await liftPane(first.paneId, { x: firstBox.x + firstBox.width * 0.92, y: firstBox.y + firstBox.height * 0.5 });
+  await liftRow("Split Notes", { x: firstBox.x + firstBox.width * 0.92, y: firstBox.y + firstBox.height * 0.5 });
   const right = await waitPreview("drag: the right-edge preview", (p) => p?.word === "right" && p.pane === first.paneId);
   if (!right.announced.includes("split right")) throw new Error(`[drag] the live region says ${JSON.stringify(right.announced)}`);
+  if (!right.label.includes("Split Notes")) throw new Error(`[drag] the preview names ${JSON.stringify(right.label)}`);
   const during = await snap();
   if (during.host.drag !== "overTarget") throw new Error(`[drag] mid-drag phase ${during.host.drag}`);
   if (during.host.panes.length !== 1 || during.host.panesCreated !== one.host.panesCreated) {
     throw new Error("[drag] something opened before the drop");
   }
   await page.mouse.up();
-  const two = await waitForSettledLayout("drag: dropped on the right", (s) =>
-    s.host?.panes?.length === 2 &&
-    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 30_000);
+  const two = await waitForSettledLayout("drag: dropped on the right", (s) => everyReady(s, 2), 30_000);
   const second = two.host.panes.find((p) => p.paneId !== first.paneId);
   if (two.host.activePane !== second.paneId || !second.focused) throw new Error(`[drag] the dropped pane did not take focus (${two.host.activePane})`);
   if (two.host.layout?.split?.axis !== "horizontal" || layoutLeaves(two.host.layout).join() !== `${first.paneId},${second.paneId}`) {
     throw new Error(`[drag] a right drop laid out ${JSON.stringify(two.host.layout)}`);
   }
-  // The same document in two panes: a new pane of its own, not a move.
-  if (second.format !== "markdown" || second.documentId !== first.documentId) throw new Error(`[drag] the new pane shows ${second.format} ${second.documentId}`);
+  // The row's file in a pane of its own, not a move. (Its document id is the
+  // library row's; the URL open that seeded the first pane names the path.)
+  if (second.format !== "markdown" || !second.documentId) throw new Error(`[drag] the new pane shows ${second.format} ${second.documentId}`);
   if (two.host.drag !== "idle" || (await dropPreview()) !== null) throw new Error("[drag] the drag outlived its drop");
   await assertPaneBox(two, "drag: first", two.host.panes.find((p) => p.paneId === first.paneId));
   await assertPaneBox(two, "drag: second", second);
+  // Two panes: the tabs strip lists both, the focused one selected.
+  const tabsTwo = await waitPanel("drag: the open tabs", (p) => p.tabs.length === 2);
+  if (tabsTwo.tabs.map((t) => t.pane).join() !== `${first.paneId},${second.paneId}` ||
+      tabsTwo.tabs.find((t) => t.selected)?.pane !== second.paneId) {
+    throw new Error(`[drag] the open tabs are ${JSON.stringify(tabsTwo.tabs)}`);
+  }
 
   // Bottom of the new pane: a nested split.
   const secondBox = await frameBox(`[data-pane-id="${second.paneId}"]`);
-  await liftPane(second.paneId, { x: secondBox.x + secondBox.width * 0.5, y: secondBox.y + secondBox.height * 0.93 });
+  await liftRow("Split Notes", { x: secondBox.x + secondBox.width * 0.5, y: secondBox.y + secondBox.height * 0.93 });
   await waitPreview("drag: the bottom-edge preview", (p) => p?.word === "bottom" && p.pane === second.paneId);
   await page.mouse.up();
-  const three = await waitForSettledLayout("drag: dropped at the bottom", (s) =>
-    s.host?.panes?.length === 3 &&
-    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 30_000);
+  const three = await waitForSettledLayout("drag: dropped at the bottom", (s) => everyReady(s, 3), 30_000);
   const third = three.host.panes.find((p) => p.paneId !== first.paneId && p.paneId !== second.paneId);
   if (three.host.activePane !== third.paneId) throw new Error(`[drag] the second drop's pane did not take focus (${three.host.activePane})`);
   const nested = three.host.layout?.split?.second?.split;
@@ -2485,41 +2570,72 @@ function assertUnchanged(s, before, label) {
     throw new Error(`[drag] a bottom drop laid out ${JSON.stringify(three.host.layout)}`);
   }
 
-  // The keyboard's placement: Enter aims at the first offered split, an
-  // arrow key moves it, Escape ends it with nothing changed.
-  await page.evaluate(([sel, id]) => {
-    const f = document.querySelector(sel);
-    f.contentWindow.focus();
-    f.contentDocument.querySelector(`[data-pane-grip="${id}"] button`).focus();
-  }, [activeFrame, third.paneId]);
-  await page.keyboard.press("Enter");
-  await waitPreview("drag: the keyboard placement starts", (p) => p?.word === "right" && p.pane === third.paneId);
-  await page.keyboard.press("ArrowLeft");
-  await waitPreview("drag: an arrow key moves it", (p) => p?.word === "left" && p.pane === third.paneId);
-  await page.keyboard.press("Escape");
-  await waitPreview("drag: Escape clears the keyboard placement", (p) => p === null);
-  assertUnchanged(await snap(), three, "drag: keyboard escape");
-
-  // Escape mid pointer drag: the preview goes, the release does nothing.
-  await liftPane(first.paneId, { x: firstBox.x + firstBox.width * 0.1, y: firstBox.y + firstBox.height * 0.5 });
-  await waitPreview("drag: a pointer drag before Escape", (p) => p?.pane === first.paneId);
+  // Escape mid drag: the preview goes, the release does nothing. Aimed at
+  // the first pane's bottom as it is now: beside the docked rail and two
+  // splits it is too narrow for a side split, which is correctly not
+  // offered.
+  const firstNow = await frameBox(`[data-pane-id="${first.paneId}"]`);
+  const firstBottom = { x: firstNow.x + firstNow.width * 0.5, y: firstNow.y + firstNow.height * 0.93 };
+  await liftRow("Split Notes", firstBottom);
+  await waitPreview("drag: a drag before Escape", (p) => p?.pane === first.paneId);
   await page.evaluate((sel) => document.querySelector(sel).contentWindow.focus(), activeFrame);
   await page.keyboard.press("Escape");
-  await waitPreview("drag: Escape clears the pointer drag", (p) => p === null);
+  await waitPreview("drag: Escape clears the drag", (p) => p === null);
   await page.mouse.up();
   await page.waitForTimeout(300);
-  assertUnchanged(await snap(), three, "drag: pointer escape");
+  assertUnchanged(await snap(), three, "drag: escape");
+
+  // Carried out and brought back over the rail: nothing opens.
+  const home = await liftRow("Split Notes", firstBottom);
+  await waitPreview("drag: a drag over the workspace", (p) => p !== null);
+  await page.mouse.move(home.x, home.y, { steps: 10 });
+  await waitPreview("drag: back over the rail, no target", (p) => p === null);
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  assertUnchanged(await snap(), three, "drag: released over the rail");
+
+  // The tabs: a click focuses its pane, × closes it.
+  await page.evaluate(([sel, id]) => {
+    document.querySelector(sel)?.contentDocument?.querySelector(`[data-open-tab="${id}"] [role="tab"]`)?.click();
+  }, [activeFrame, first.paneId]);
+  await waitFor("tabs: the first pane focused", (s) => s.host?.activePane === first.paneId, 10_000);
+  await page.evaluate(([sel, id]) => {
+    const btn = document.querySelector(sel)?.contentDocument?.querySelector(`[data-open-tab-close="${id}"]`);
+    if (!btn) throw new Error(`tab ${id} has no close control`);
+    btn.click();
+  }, [activeFrame, third.paneId]);
+  const closedTab = await waitForSettledLayout("tabs: × closed the third pane", (s) =>
+    s.host?.panes?.length === 2 && !s.host.panes.some((p) => p.paneId === third.paneId), 20_000);
+  if (closedTab.host.activePane !== first.paneId) throw new Error(`[tabs] closing a background tab moved focus to ${closedTab.host.activePane}`);
+  await waitPanel("tabs: the strip follows the close", (p) => p.tabs.length === 2 &&
+    p.tabs.every((t) => t.pane !== third.paneId));
+
+  // A plain click on a row opens it in the focused pane (the default).
+  const pearlsBox = await rowBox("Programming Pearls");
+  await page.mouse.click(pearlsBox.x + Math.min(48, pearlsBox.width / 2), pearlsBox.y + pearlsBox.height / 2);
+  const replaced = await waitForSettledLayout("click: the focused pane shows the PDF", (s) =>
+    everyReady(s, 2) && s.host.panes.find((p) => p.paneId === first.paneId)?.format === "pdf" &&
+    s.engine?.sessionsLive === 1, 45_000);
+  if (replaced.host.panesCreated !== closedTab.host.panesCreated) throw new Error("[click] a click created a pane instead of replacing");
+  if (replaced.host.panes.find((p) => p.paneId === second.paneId)?.format !== "markdown") {
+    throw new Error("[click] the other pane changed");
+  }
 
   // A full workspace offers nothing: with a fourth pane (MAX_PANES) a drag
-  // finds no target over any pane, and its release changes nothing. (A
-  // point outside the workspace is the pure geometry tests' case: the slot
-  // fills the frame, under the floating title bar too.)
-  if ((await openIn(SPLIT_NOTES, "right")) !== true) throw new Error("[drag] the host refused a fourth pane");
-  const four = await waitForSettledLayout("drag: a full workspace", (s) =>
-    s.host?.panes?.length === 4 &&
-    s.host.panes.every((p) => p.lifecycle === "ready" && p.resources?.documentSession === true), 30_000);
+  // finds no target over any pane, and its release changes nothing. Beside
+  // the docked rail both columns are too narrow for another side split, so
+  // each column is split down: the first (focused) one, then — focused from
+  // its tab — the second.
+  if ((await openIn(SPLIT_NOTES, "down")) !== true) throw new Error("[drag] the host refused a pane below the first");
+  await waitForSettledLayout("drag: three panes", (s) => everyReady(s, 3), 30_000);
+  await page.evaluate(([sel, id]) => {
+    document.querySelector(sel)?.contentDocument?.querySelector(`[data-open-tab="${id}"] [role="tab"]`)?.click();
+  }, [activeFrame, second.paneId]);
+  await waitFor("tabs: the second pane focused", (s) => s.host?.activePane === second.paneId, 10_000);
+  if ((await openIn(SPLIT_NOTES, "down")) !== true) throw new Error("[drag] the host refused a pane below the second");
+  const four = await waitForSettledLayout("drag: a full workspace", (s) => everyReady(s, 4), 30_000);
   const leftBox = await frameBox(`[data-pane-id="${first.paneId}"]`);
-  await liftPane(first.paneId, { x: leftBox.x + leftBox.width * 0.92, y: leftBox.y + leftBox.height * 0.5 });
+  await liftRow("Split Notes", { x: leftBox.x + leftBox.width * 0.92, y: leftBox.y + leftBox.height * 0.5 });
   await page.waitForTimeout(300);
   const full = await snap();
   if ((await dropPreview()) !== null || full.host.drag !== "overWorkspace") {
@@ -2534,79 +2650,21 @@ function assertUnchanged(s, before, label) {
     panes: three.host.panes.map((p) => ({ paneId: p.paneId, bounds: p.bounds })),
     layout: three.host.layout,
     focusedAfterDrops: [two.host.activePane, three.host.activePane],
+    tabsAfterClose: closedTab.host.panes.map((p) => p.paneId),
+    clickReplaced: replaced.host.panes.find((p) => p.paneId === first.paneId)?.format,
   };
   // The reader disposed mid-drag: the button is still down, the session
   // live, when the workspace goes — and the disposed host reports no drag.
-  await liftPane(first.paneId, { x: leftBox.x + leftBox.width * 0.5, y: leftBox.y + leftBox.height * 0.5 });
+  await liftRow("Split Notes", { x: leftBox.x + leftBox.width * 0.5, y: leftBox.y + leftBox.height * 0.5 });
   await page.waitForTimeout(200);
   const held = await snap();
   if (held.host.drag === "idle") throw new Error("[drag] the drag before the dispose never went live");
-  // Eight mints: four opens (the URL's, two drops, the fourth pane), four
-  // pane disposes.
-  const disposed = await closeAndWaitBaseline("drag and drop", false, 8);
+  // One mint per open and per pane dispose: what the live workspace has
+  // claimed so far, plus one for each pane the close disposes.
+  const disposed = await closeAndWaitBaseline("drag and drop", false, held.disposalEpoch + held.host.panes.length);
   await page.mouse.up();
   if (disposed.host.drag !== "idle") throw new Error(`[drag] the disposed host still reports drag ${disposed.host.drag}`);
-  console.log(`drag and drop: right and nested bottom drops, keyboard placement; Escape and a full workspace left the tree alone; a dispose mid-drag (${held.host.drag}) left drag ${disposed.host.drag}`);
-}
-
-// The Shell-carried drag, from the shelf into the revealed reader.
-{
-  const panicsBefore = panicCount;
-  const vp = page.viewportSize();
-  /** Hold the "Split Notes" card and carry it into the shelf's "Open in
-   *  Reader" zone; returns once the reader is on screen. */
-  async function carryToReader(label) {
-    await waitFor(`${label}: the shelf`, (x) => x.bootState === "library", 45_000);
-    await signalShelfIntent(label);
-    await waitForWarm(label);
-    const card = page.frameLocator(activeFrame).locator(".book-title", { hasText: "Split Notes" }).first();
-    await card.scrollIntoViewIfNeeded({ timeout: 10_000 });
-    const box = await card.boundingBox();
-    if (!box) throw new Error(`[${label}] the Split Notes card has no box`);
-    const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
-    const to = { x: vp.width - 8, y: from.y };
-    for (let step = 1; step <= 16; step += 1) {
-      await page.mouse.move(from.x + ((to.x - from.x) * step) / 16, from.y);
-    }
-    return waitFor(`${label}: the reader came on screen for the drag`, (x) =>
-      x.bootState === "reader" && x.readerRuntimeLive === true && x.host?.lifecycle === "live", 30_000);
-  }
-
-  const revealed = await carryToReader("handoff");
-  if (revealed.host.panes.some((p) => p.resources?.documentSession)) throw new Error("[handoff] the revealed reader already shows a document");
-  await page.mouse.move(vp.width / 2, vp.height / 2, { steps: 8 });
-  const here = await waitPreview("handoff: the empty workspace offers itself", (p) => p?.word === "here");
-  const aimed = await snap();
-  if (aimed.host.drag !== "overTarget" || aimed.host.panesCreated !== revealed.host.panesCreated) {
-    throw new Error(`[handoff] mid-drag ${aimed.host.drag}, ${aimed.host.panesCreated} panes created`);
-  }
-  await page.mouse.up();
-  const dropped = await waitFor("handoff: the carried book opened in the reader", (s) =>
-    s.host?.panes?.length === 1 && s.host.panes[0].format === "markdown" &&
-    s.host.panes[0].lifecycle === "ready" && s.host.panes[0].resources?.documentSession === true, 30_000);
-  const pane = dropped.host.panes[0];
-  if (pane.paneId !== here.pane || !pane.focused || dropped.host.drag !== "idle") {
-    throw new Error(`[handoff] the drop landed in ${pane.paneId} (preview ${here.pane}), focused ${pane.focused}, drag ${dropped.host.drag}`);
-  }
-  if ((await page.evaluate(() => document.querySelectorAll("[data-drag-shield]").length)) !== 0) {
-    throw new Error("[handoff] the Shell's drag shield outlived the drag");
-  }
-
-  // Cancelled: Escape, then the release — the reader it revealed for the
-  // drag has nothing to show and hands the window back to the shelf.
-  await clickCloseNow();
-  await carryToReader("handoff cancel");
-  await page.keyboard.press("Escape");
-  await page.mouse.up();
-  const back = await waitFor("handoff cancel: back on the shelf", (x) => x.bootState === "library", 30_000);
-  if ((await page.evaluate(() => document.querySelectorAll("[data-drag-shield]").length)) !== 0) {
-    throw new Error("[handoff cancel] the Shell's drag shield outlived the drag");
-  }
-  assertNoNewPanics("shelf to reader drag", panicsBefore);
-  summary.shelfDrag = { droppedPane: pane.paneId, format: pane.format, cancelledTo: back.bootState };
-  console.log("shelf to reader drag: the Shell carried the book into the empty reader; a cancelled carry went back to the shelf");
+  console.log(`drag and drop: Library rows dropped right and nested bottom; Escape, a release over the rail and a full workspace left the tree alone; tabs focus and close; a click replaced the focused pane; a dispose mid-drag (${held.host.drag}) left drag ${disposed.host.drag}`);
 }
 
 // --- Stage 15: split workspace memory and lifecycle -----------------------

@@ -9,10 +9,10 @@
 //! split.
 //!
 //! The workspace-level overlays are the host's too, never a pane's: the
-//! active pane's focus outline, each pane's close control and drag handle,
-//! the dividers (§22), and a drag's drop preview — a box drawn from the
-//! drag's measured geometry, never a render and never an open. A pane's own overlays (its find bar, its selection pill, its
-//! gloss menus) stay inside its content.
+//! active pane's focus outline, each pane's close control, the dividers
+//! (§22), and a drag's drop preview — a box drawn from the drag's measured
+//! geometry, never a render and never an open. A pane's own overlays (its
+//! find bar, its selection pill, its gloss menus) stay inside its content.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -20,7 +20,6 @@ use wasm_bindgen::JsCast;
 
 use super::ReaderHost;
 use super::contract::{ChromeSlot, PaneSite};
-use super::drop_target::Edge;
 use super::manager::PaneManager;
 use super::model::PaneId;
 use super::tree::{PaneTree, SplitAxis, SplitId};
@@ -180,15 +179,6 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                         )
                     />
                 </Show>
-                // Drag a copy of THIS pane's document to a new pane (only
-                // while it shows one). The document's address is read
-                // untracked, so the load status is what re-asks.
-                <Show when=move || {
-                    manager.pane(id).is_some_and(|pane| {
-                        pane.surface().status.track();
-                        pane.document().is_some()
-                    })
-                }>{move || grip_view(host, id, under_bar)}</Show>
                 // Close THIS pane (with more than one: the last pane closes
                 // with the reader, through the Library button).
                 <Show when=split>
@@ -296,88 +286,6 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
     }
 }
 
-/// Pane `id`'s drag handle. A mouse or pen press arms a drag of a copy of
-/// the pane's document; past the shared threshold the drag is live, and the
-/// preview follows the pointer (pointer capture keeps every move on the
-/// handle, wherever the pointer goes). Touch never drags. From the keyboard:
-/// Enter or Space starts a placement aimed at the first split the pane
-/// offers, the arrow keys choose the side, Enter or Space drops, Escape
-/// cancels (the host's window listener).
-fn grip_view(host: ReaderHost, id: PaneId, under_bar: Signal<bool>) -> impl IntoView {
-    view! {
-        <div
-            data-pane-grip=id.get()
-            class=move || {
-                format!(
-                    "absolute left-2 {} opacity-0 transition-opacity motion-reduce:transition-none \
-                     group-hover:opacity-100 focus-within:opacity-100 {}",
-                    if under_bar.get() { "top-14" } else { "top-2" },
-                    layers::CONTROLS,
-                )
-            }
-        >
-            <button
-                type="button"
-                class="flex h-7 w-7 cursor-grab touch-none select-none items-center justify-center \
-                       rounded-md text-muted hover:bg-line active:cursor-grabbing"
-                title="Drag to open this document in a new pane"
-                aria-label="Open this document in a new pane: Enter to start, arrow keys \
-                            to choose a side, Enter to drop, Escape to cancel"
-                on:pointerdown=move |ev| {
-                    if ev.button() != 0 || ev.pointer_type() == "touch" {
-                        return;
-                    }
-                    ev.prevent_default();
-                    ev.stop_propagation();
-                    if host.drag_press(id, (f64::from(ev.client_x()), f64::from(ev.client_y())))
-                        && let Some(target) = ev.current_target()
-                        && let Ok(el) = target.dyn_into::<web_sys::Element>()
-                    {
-                        let _ = el.set_pointer_capture(ev.pointer_id());
-                    }
-                }
-                on:pointermove=move |ev| {
-                    if host.drag_live() {
-                        host.drag_move((f64::from(ev.client_x()), f64::from(ev.client_y())));
-                    }
-                }
-                on:pointerup=move |ev| {
-                    if host.drag_live() {
-                        host.drag_release(Some((f64::from(ev.client_x()), f64::from(ev.client_y()))));
-                    }
-                }
-                on:pointercancel=move |_| {
-                    host.cancel_drag();
-                }
-                on:keydown=move |ev| {
-                    let edge = match ev.key().as_str() {
-                        "Enter" | " " => {
-                            ev.prevent_default();
-                            if host.drag_live() {
-                                host.drag_release(None);
-                            } else {
-                                host.drag_keyboard_start(id);
-                            }
-                            return;
-                        }
-                        "ArrowLeft" => Edge::Left,
-                        "ArrowRight" => Edge::Right,
-                        "ArrowUp" => Edge::Top,
-                        "ArrowDown" => Edge::Bottom,
-                        _ => return,
-                    };
-                    if host.drag_live() {
-                        ev.prevent_default();
-                        host.drag_keyboard_edge(edge);
-                    }
-                }
-            >
-                <Icon name=IconName::Layout size=14 />
-            </button>
-        </div>
-    }
-}
-
 /// The pending drop: the box the dropped document will occupy, and what
 /// the drop does. Pure geometry — nothing is opened or rendered for it —
 /// and it never takes a pointer. Reduced motion drops its glide.
@@ -399,7 +307,10 @@ fn preview_view(preview: super::drag::Preview) -> impl IntoView {
             style:width=format!("{}px", rect.width)
             style:height=format!("{}px", rect.height)
         >
-            {preview.label}
+            <div class="flex max-w-[80%] flex-col items-center gap-0.5 rounded-md bg-surface/85 px-3 py-1.5 text-center shadow-sm">
+                <span class="max-w-full truncate">{preview.name}</span>
+                <span class="text-xs font-normal text-muted">{preview.label}</span>
+            </div>
         </div>
     }
 }

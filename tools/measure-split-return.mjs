@@ -153,11 +153,21 @@ result.libraryAtRest = await sample("library at rest (fresh boot, before any rea
 // 3. open the book from the shelf
 await shelfIntent();
 await page.waitForTimeout(1500);
-await inActive((doc, needle) => {
-  const el = [...(doc?.querySelectorAll(".book-title") ?? [])].find((n) => (n.textContent ?? "").includes(needle));
-  if (!el) throw new Error("book row not found");
-  el.click();
-}, NEEDLE);
+// A real click first, as the lifecycle suite's `clickBook` does: the card
+// opens on the pointer sequence, which a bare `el.click()` does not carry.
+try {
+  await page
+    .frameLocator('iframe.runtime-frame[data-mareader-slot="active"]')
+    .locator(`.book-title[title*="${NEEDLE}"]`)
+    .first()
+    .click({ timeout: 5_000 });
+} catch {
+  await inActive((doc, needle) => {
+    const el = [...(doc?.querySelectorAll(".book-title") ?? [])].find((n) => (n.textContent ?? "").includes(needle));
+    if (!el) throw new Error("book row not found");
+    el.click();
+  }, NEEDLE);
+}
 await waitFor("document rendered", (s) => s.bootState === "reader" && s.engine?.hasDocument && (s.engine?.rendersCompleted ?? 0) >= 1);
 await page.waitForTimeout(1000);
 

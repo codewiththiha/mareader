@@ -54,6 +54,7 @@ impl PaneRuntime for SessionPane {
             page: Signal::stored(1),
             reflowable: Signal::stored(false),
             search_visible: Signal::stored(false),
+            name: Signal::stored(String::new()),
         }
     }
     fn mount(&self, _bounds: PaneBounds, _site: PaneSite) -> AnyView {

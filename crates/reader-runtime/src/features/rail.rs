@@ -22,6 +22,7 @@ use crate::components::shell::sidebar::header::SidebarHeader;
 use crate::components::shell::sidebar::panels::outline::view::SidebarOutline;
 use crate::components::shell::sidebar::panels::thumbnails::view::SidebarThumbs;
 use crate::components::shell::sidebar::switcher::PanelSwitcher;
+use crate::host::library::LibraryPanel;
 use app_state::SidebarMode;
 use app_ui::components::shell::controller::ShellController;
 
@@ -45,6 +46,10 @@ pub(crate) fn ReaderRail(
         }
     });
     let thumbs_visible = Signal::derive(move || !vs.reflowable());
+    // The workspace's Library panel, when a host provides one: the host
+    // owns it (its tree and open folders outlive this rail, which remounts
+    // with the active pane); the rail only gives it a slot and a toggle.
+    let library = use_context::<LibraryPanel>();
 
     view! {
         <SidebarShell
@@ -72,12 +77,28 @@ pub(crate) fn ReaderRail(
                     outro=shell.panel_outro()
                     intro=shell.panel_intro()
                 />
+                {library.map(|panel| {
+                    let shown = shell.panel_shown(SidebarMode::Library);
+                    let outro = shell.panel_outro();
+                    let intro = shell.panel_intro();
+                    view! {
+                        <div
+                            class="sidebar-panel absolute inset-0 flex flex-col"
+                            class=("invisible", move || !shown.get())
+                            class=("is-outro", move || outro.get())
+                            class=("is-intro", move || intro.get())
+                        >
+                            {panel.view(shown)}
+                        </div>
+                    }
+                })}
             }
             footer=move || view! {
                 <PanelSwitcher
                     mode=sidebar
                     thumbs_active=shell.panel_active(SidebarMode::Thumbs)
                     outline_active=shell.panel_active(SidebarMode::Outline)
+                    library_active=library.map(|_| shell.panel_active(SidebarMode::Library))
                     on_reveal=request_reveal_active
                     thumbs_visible=thumbs_visible
                 />

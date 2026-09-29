@@ -30,22 +30,6 @@ pub mod frame {
     /// Off wasm there is no Shell to warn: the shelf's intent hint goes
     /// nowhere (the host lanes render the grid without a reader to boot).
     pub fn expect_reader() {}
-
-    /// Off wasm there is no Shell to hand a drag to.
-    pub fn begin_reader_drag(
-        _source: runtime_contract::boundary::DocumentDragDescriptor,
-        _x: f64,
-        _y: f64,
-    ) {
-    }
-
-    /// Off wasm there is no Shell drag to forward to.
-    pub fn reader_drag_pointer(
-        _x: f64,
-        _y: f64,
-        _phase: runtime_contract::protocol::DragPointerPhase,
-    ) {
-    }
 }
 pub mod services;
 pub mod state;
@@ -148,6 +132,9 @@ pub enum LibraryCommand {
     /// Promoted from warm to visible: re-read the durable state this session
     /// seeded at boot and has not looked at since.
     Refresh,
+    /// Files dropped on the window from the OS: imported onto the shelf on
+    /// screen, exactly as the Add menu's picker would.
+    ImportFiles { paths: Vec<String> },
 }
 
 /// Re-read the store into the live session's signals.
@@ -253,6 +240,11 @@ pub fn command(id: u32, cmd: LibraryCommand) {
                 services::covers::on_baked(ctx, path, image.map(|image| *image));
             }
             LibraryCommand::Refresh => refresh(ctx),
+            LibraryCommand::ImportFiles { paths } => {
+                let shelf = ctx.library.shelf.get_untracked();
+                let target = (shelf != library_core::shelf::ALL_SHELF).then_some(shelf);
+                services::import_files(ctx, paths, target);
+            }
         }
     }
 }

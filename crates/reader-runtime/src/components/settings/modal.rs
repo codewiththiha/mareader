@@ -1,6 +1,6 @@
 //! Centered reader settings modal: the tab strip and the body that hosts one tab
-//! at a time. The tabs live in `layout`, `theme`, `animations` and `fonts`, and
-//! the SET of them is not fixed — see `shown`.
+//! at a time. The tabs live in `layout`, `theme`, `animations`, `fonts` and
+//! `workspace`, and the SET of them is not fixed — see `shown`.
 //!
 //! The backdrop, the panel, the overlay lane and the Escape rule are
 //! [`ModalShell`]'s, which is what every other sheet in the app rides: one
@@ -21,6 +21,7 @@ use crate::components::settings::common::{Tab, TabButton};
 use crate::components::settings::fonts::FontsTab;
 use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
+use crate::components::settings::workspace::WorkspaceTab;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use app_ui::components::primitives::overlay::modal_shell::ModalShell;
@@ -91,6 +92,13 @@ pub fn SettingsModal(
                                     label="Fonts"
                                 />
                             </Show>
+                            <TabButton
+                                tab=tab
+                                active=shown
+                                t=Tab::Workspace
+                                icon=IconName::SplitRight
+                                label="Workspace"
+                            />
                             <div class="ml-auto">
                                 <IconButton
                                     icon=IconName::Close
@@ -108,6 +116,9 @@ pub fn SettingsModal(
                                     view! { <AnimationsTab state=state /> }.into_any()
                                 }
                                 Tab::Fonts => view! { <FontsTab state=state /> }.into_any(),
+                                Tab::Workspace => {
+                                    view! { <WorkspaceTab state=state /> }.into_any()
+                                }
                             }}
                         </div>
                     </>

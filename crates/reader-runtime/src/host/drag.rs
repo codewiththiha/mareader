@@ -5,42 +5,39 @@
 //! and a drop is handed to the command layer ([`super::commands`]), which
 //! alone mutates the workspace.
 //!
+//! The one source is a file row of the rail's Library panel
+//! ([`super::library`]): a document the persisted library names, dragged
+//! onto the workspace to open it in a split. A drag from outside the window
+//! (a file from the OS) is never one of these — that is the library route's
+//! import, and it never reaches the reader.
+//!
 //! ```text
 //! Idle ─arm─▶ Arming ─(threshold)─▶ Dragging{target} ─release─▶ Idle + DropIntent
-//!   └────────────start (keyboard, Shell relay)──▶ Dragging     └cancel─▶ Idle
+//!                                                    └cancel─▶ Idle
 //! ```
 //!
 //! `Arming` does no work at all: the geometry is measured when the pointer
 //! crosses the threshold, never before, so a press that stays a click costs
 //! nothing and changes nothing.
 
-use runtime_contract::boundary::DocumentDragDescriptor;
-
-use super::drop_target::{DropTarget, Edge, format_label};
+use super::drop_target::DropTarget;
 use super::geometry::DropGeometry;
-use super::model::{DocumentId, PaneBounds, PaneFormat, PaneId};
+use super::model::{DocumentId, PaneBounds, PaneFormat};
 
 /// The repository's one drag threshold (`app_ui`'s draggable item): a press
 /// that moves this far or less is still a click.
 pub use app_ui::components::primitives::interactions::draggable_item::DRAG_THRESHOLD_PX;
 
-/// Where a dragged document came from. The payload identifies the resource;
-/// the command layer resolves it through the established open path.
-#[derive(Clone, Debug, PartialEq)]
-pub enum DragOrigin {
-    /// A pane in this workspace: the drop opens ANOTHER view of its document
-    /// in a new pane. The source pane is never touched (no session moves).
-    Pane(PaneId),
-    /// A library row the Shell carried across the runtime switch.
-    Library(DocumentDragDescriptor),
-}
-
-/// The dragged document, as the host reasons about it.
+/// The dragged document: an address the persisted library names, as data.
+/// The command layer resolves it through the established open path.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DocumentDragSource {
     pub document: Option<DocumentId>,
-    pub origin: DragOrigin,
+    /// The library row the drag started on.
+    pub book_id: Option<String>,
+    pub path: String,
     pub format: PaneFormat,
+    /// What the user sees the document called (the row's title).
     pub label: String,
 }
 
@@ -105,14 +102,6 @@ impl DragSession {
         }
     }
 
-    /// The pane the drag was lifted from, if it was lifted from one.
-    pub fn source_pane(&self) -> Option<PaneId> {
-        match self.source()?.origin {
-            DragOrigin::Pane(pane) => Some(pane),
-            DragOrigin::Library(_) => None,
-        }
-    }
-
     pub fn target(&self) -> Option<DropTarget> {
         match self {
             DragSession::Dragging { target, .. } => *target,
@@ -130,8 +119,9 @@ impl DragSession {
         true
     }
 
-    /// A drag that starts already dragging: a keyboard placement, or the
-    /// Shell relaying a drag it took over. Only from `Idle`.
+    /// A drag that starts already dragging, over a measured workspace. Only
+    /// from `Idle`.
+    #[cfg(test)]
     pub fn start(&mut self, source: DocumentDragSource, geometry: DropGeometry) -> bool {
         if self.is_live() {
             return false;
@@ -199,33 +189,6 @@ impl DragSession {
         changed
     }
 
-    /// Select `target` directly (the keyboard's placement). Refused unless
-    /// the drag's geometry offers it.
-    pub fn select(&mut self, next: DropTarget) -> bool {
-        let DragSession::Dragging {
-            geometry, target, ..
-        } = self
-        else {
-            return false;
-        };
-        if !geometry.offers(next) {
-            return false;
-        }
-        let changed = *target != Some(next);
-        *target = Some(next);
-        changed
-    }
-
-    /// The keyboard's step: the split on `edge` of the pane the current
-    /// target is measured against (the source pane before any target).
-    pub fn select_edge(&mut self, edge: Edge) -> bool {
-        let pane = self.target().map(DropTarget::pane).or(self.source_pane());
-        match pane {
-            Some(pane) => self.select(DropTarget::Split { pane, edge }),
-            None => false,
-        }
-    }
-
     /// The pointer was released (at `at`, when the release has a position).
     /// The session is over either way; the intent is the drop to carry out,
     /// `None` for a click (still arming) or a release over no target.
@@ -265,6 +228,7 @@ impl DragSession {
         Some(Preview {
             target: *target,
             rect: target.predicted_rect(pane.rect),
+            name: self.source()?.label.clone(),
             label: target.describe(pane.format),
         })
     }
@@ -275,17 +239,17 @@ impl DragSession {
 pub struct Preview {
     pub target: DropTarget,
     pub rect: PaneBounds,
+    /// The dragged document's name.
+    pub name: String,
+    /// The operation, in words.
     pub label: String,
-}
-
-/// The source label a pane's document is dragged under.
-pub fn pane_source_label(format: PaneFormat) -> String {
-    format_label(format).to_string()
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::drop_target::Edge;
     use super::super::geometry::PaneGeometry;
+    use super::super::model::PaneId;
     use super::*;
 
     fn p(n: u64) -> PaneId {
@@ -295,9 +259,10 @@ mod tests {
     fn source() -> DocumentDragSource {
         DocumentDragSource {
             document: DocumentId::from_launch(None, "/samples/Split Notes.md"),
-            origin: DragOrigin::Pane(p(1)),
+            book_id: None,
+            path: "/samples/Split Notes.md".to_string(),
             format: PaneFormat::Markdown,
-            label: "Markdown".to_string(),
+            label: "Split Notes".to_string(),
         }
     }
 
@@ -442,33 +407,6 @@ mod tests {
     }
 
     #[test]
-    fn the_keyboard_selects_only_offered_edges() {
-        let mut session = DragSession::default();
-        session.start(source(), geometry());
-        assert!(session.select_edge(Edge::Left));
-        assert_eq!(
-            session.target(),
-            Some(DropTarget::Split {
-                pane: p(1),
-                edge: Edge::Left
-            })
-        );
-        // A pane that is not in the geometry is not a target.
-        assert!(!session.select(DropTarget::Split {
-            pane: p(7),
-            edge: Edge::Left
-        }));
-        let intent = session.release(None).expect("Enter drops the selection");
-        assert_eq!(
-            intent.target,
-            DropTarget::Split {
-                pane: p(1),
-                edge: Edge::Left
-            }
-        );
-    }
-
-    #[test]
     fn the_preview_is_the_predicted_box_and_its_words() {
         let mut session = DragSession::default();
         session.start(source(), geometry());
@@ -483,6 +421,7 @@ mod tests {
                 height: 800.0
             }
         );
+        assert_eq!(preview.name, "Split Notes");
         assert_eq!(preview.label, "Drop to split right of Markdown");
         session.cancel();
         assert_eq!(session.preview(), None);

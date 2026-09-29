@@ -21,7 +21,7 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 3 — Reader Host & panes | **done**: `ReaderHost` + `PaneManager` own the workspace (`crates/reader-runtime/src/host/`), the document pane owns one session (`crates/reader-runtime/src/pane/`); `ReaderPage` removed. Map in `docs/lifecycle-ownership.md` (Phase 3 section); what is still a bridge: [Phase 3 bridges](#phase-3-bridges-what-phase-45-inherit) |
 | 4 — session-scoped PDF / Markdown / TXT engines | **done**: each pane owns one `FormatSession` per opened document — `PdfSession` (`crates/pdf-engine/src/session/`, one engine session per sid in `public/engine/state.ts`), `MdSession` / `TxtSession` (`crates/reader-runtime/src/pane/session.rs`); async stamps per pane; inventory, call graph and retained realm state in `docs/session-ownership.md`, enforced by `tools/check-session-ownership.mjs`; what Phase 5 inherits: [Phase 4 bridges](#phase-4-bridges-what-phase-5-inherits) |
 | 5 — production split workspace | **done**: `/reader` runs a `PaneTree` (layout over pane ids only, `crates/reader-runtime/src/host/tree.rs`) under the `ReaderHost`; up to four live panes, each with its own `FormatSession`; `open_document(target)` places a document in a pane or beside it; host-owned dividers, focus outline and per-pane close; see [Phase 5: the split workspace](#phase-5-the-split-workspace) |
-| 6 — smart document drag/drop | **implemented**: a pane's drag handle carries a copy of its document to a split of the real workspace; targets come from the measured slot and pane boxes (`crates/reader-runtime/src/host/{geometry,drop_target,drag,commands}.rs`), the preview is geometry only, a drop is one `WorkspaceCommand`; a shelf book is carried into the reader by the Shell (`src/app/drag.rs`); see [Phase 6: document drag and drop](#phase-6-document-drag-and-drop) |
+| 6 — smart document drag/drop | **implemented**: a file row of the reader's Library panel (the rail's third tab, `crates/reader-runtime/src/host/library/`) is the one split-drag source; targets come from the measured slot and pane boxes (`crates/reader-runtime/src/host/{geometry,drop_target,drag,commands}.rs`), the preview is geometry only, a drop is one `WorkspaceCommand`; OS file drops import into the library while it is on screen (`src/services/import_drop.rs`); see [Phase 6: document drag and drop](#phase-6-document-drag-and-drop) |
 | 7+ — appearance blend, … | **not started** — waiting on the phase guide |
 
 ## Architecture as built (do not re-derive)
@@ -118,6 +118,14 @@ whatever is on screen:
   memory never shrinks, so dropping the frame is the only way to return it.
   The HIGH-WATER mark, not `wasmHeapBytes`: the live heap is low again after
   every close and would keep every frame.
+- A reader whose workspace held a split (the digest's `host.panesCreated`
+  above `READER_RECYCLE_PANES_MAX`, 1) is retired and removed on the way back
+  to the library, never recycled. The Rust heap mark above stays at a couple
+  of MiB whatever is read; what documents grow is beside it (pdf.js and its
+  worker, the engine's arenas, uncompacted canvases), once per pane, and a
+  recycled realm kept it for as long as shelf intent kept it warm. The
+  removal runs behind the library's reveal; the next open reveals a fresh
+  warm reader booted on intent. A single-pane session is still recycled.
 - Module-level state that outlives a session in a recycled frame must be
   reset or released per session (below). The reflow spot memo and the
   reflow measurement queue are no longer module-level at all: they are the
@@ -366,82 +374,81 @@ deliberately rather than discovering it:
 
 ## Phase 6: document drag and drop
 
-- **Sources.** `DocumentDragSource { document, origin, format, label }`
-  (`host/drag.rs`): `origin` is `Pane(id)` (a pane's drag handle,
-  `[data-pane-grip]`) or `Library(DocumentDragDescriptor)` (a shelf book the
-  Shell carried here: row id, address, label — data only). A drop always
-  creates a NEW pane (the same document may show in several panes); no
-  session moves. External (OS) file drops stay unwired (see follow-ups).
+- **One source.** The reader rail's third tab, **Library**
+  (`host/library/`), beside Thumbnails and Outline: a compact tree of the
+  library's folders and files (`LibraryTree::from_blob` over
+  `storage::load_library`, re-read whenever the tab is shown), a name and a
+  format badge per row, no covers. Its file rows are the only thing that
+  starts a split drag: `DocumentDragSource { document, book_id, path,
+  format, label }` (`host/drag.rs`), pressed through window pointer
+  listeners (no DOM `draggable`). A drop always creates a NEW pane (the
+  same document may show in several); no session moves. A Library-row drag
+  never imports anything. Pane drag handles, the keyboard placement, the
+  shelf's "Open in Reader" zone and the Shell's shelf → reader carry were
+  removed.
+- **Open panes.** With more than one pane, the panel's top lists them
+  (`[data-open-tabs]`): a click focuses the pane, × closes it; no drag.
+- **Row click.** A workspace setting (Settings → Workspace,
+  `WorkspaceSettings::library_click`): open in the focused pane (default,
+  `Replace`), open as a new split (`Split`), or nothing (`DragOnly`; the
+  keyboard still opens beside). A file already open is focused, not opened
+  twice. Opening resolves the row's launch synchronously from the store
+  (`storage::resolve_launch`).
 - **Session.** `DragSession` is `Idle → Arming → Dragging`: a press arms,
   the shared `DRAG_THRESHOLD_PX` (6 px) starts the drag, and only then is
   the geometry measured — once per drag. The session stores data only (no
   DOM refs); the drag loop is O(visible panes); subscribers are notified
   only when the shown target changes (`try_maybe_update`), which is also
-  the only time the live region (`[data-drop-announce]`) speaks.
+  the only time the live region (`[data-drop-announce]`) speaks. A release
+  after a drag swallows the row's click.
 - **Geometry and targets.** `DropGeometry` = the workspace slot's client
   rect (read from `#viewer-slot`, nowhere else) + every placed pane's box
   from the layout. Targets: `Split { pane, edge }` for the four edges, and
-  `Here { pane }` only on a pane with no document (a warm reader's empty
-  root — the "open here" target of a reader revealed mid-drag). A split is
-  offered only when both halves keep `MIN_PANE_PX` (`tree::split_fits`,
-  the same `split_rects` rounding the layout uses) and the workspace is
-  under `MAX_PANES`. Scoring is the normalised distance to the edge;
-  draws resolve Right > Bottom > Left > Top; the current target is kept
-  until a rival beats it by `HYSTERESIS` (0.1) or the pointer leaves its
-  pane.
+  `Here { pane }` only on a pane with no document. A split is offered only
+  when both halves keep `MIN_PANE_PX` (`tree::split_fits`, the same
+  `split_rects` rounding the layout uses) and the workspace is under
+  `MAX_PANES`. Scoring is the normalised distance to the edge; draws
+  resolve Right > Bottom > Left > Top; the current target is kept until a
+  rival beats it by `HYSTERESIS` (0.1) or the pointer leaves its pane.
 - **Commit.** A release over a target becomes
   `WorkspaceCommand::OpenInDropTarget`; `ReaderHost::run` re-plans it
   against the workspace as it is now (`commands::plan`: unknown pane,
   occupied `Here`, full workspace and no room are refused with nothing
-  changed), resolves the launch (a pane's `duplicate_launch` — its current
-  page — or the launch the Shell's store resolved for a shelf row) and
-  places it through `open_document` (`Split` / `Pane`), so the manager
-  creates the pane and it takes focus. Work that starts in an event handler
-  runs inside the session's root owner (`HostSession::enter`): Leptos
-  restores no owner in handlers, and `PaneManager::create` refuses to build
-  a pane that would belong to no scope — this also fixed the menu's Split
-  Right / Split Down, which Phase 5 only exercised through the test hook.
+  changed), resolves the row's launch and places it through
+  `open_document` (`Split` / `Pane`), so the manager creates the pane and
+  it takes focus. Work that starts in an event handler runs inside the
+  session's root owner (`HostSession::enter`): Leptos restores no owner in
+  handlers, and `PaneManager::create` refuses to build a pane that would
+  belong to no scope.
 - **Cancel.** Escape (a capture-phase window listener installed only while
   a drag is live), the window losing focus, the frame leaving the screen,
-  the source pane closing, a release outside the workspace, and the
-  ReaderHost's dispose all end the session with the tree unchanged.
-- **Keyboard.** On a focused drag handle: Enter/Space starts a placement
-  aimed at the first offered split, the arrow keys choose the edge,
-  Enter/Space drops, Escape cancels.
-- **Shelf → reader.** While exactly one book is held on a hosted shelf, the
-  drag layer shows an "Open in Reader" strip on the right edge
-  (`READER_ZONE_PX`). Entering it sends `BeginDocumentDrag { source }` and
-  ends the shelf's organizing drag without committing. The Shell owns the
-  drag from there (`src/app/drag.rs`): it reveals the reader — always a
-  reveal, booting a warm reader first if the shelf's intent never did,
-  because a cold start disposes the shelf whose session still forwards the
-  pointer — holds the outgoing shelf's `Pending` recycle for the drag's
-  length, and relays the pointer (`DocumentDragPointer` from the shelf, or
-  its page-wide `.drag-shield`) as `ShellFrame::DocumentDrag { Begin |
-  Over | Drop | Cancel }` in the reader frame's coordinates. The reader
-  runs the same `DragSession` with `DragOrigin::Library`; a drop carries
-  the store-resolved launch. A carry that ends with no drop in an empty
-  reader returns to the shelf, which takes back its kept session.
-- **Fixed on the way (Phase 5 surfaces).** A pane's corner controls (the
-  drag handle, and the per-pane close) sit below the title bar when the
-  pane's top meets it: the bar's root is hit-testable over the whole top
-  48 px, so a top-row pane's close could not be pressed (stage 13 clicks it
-  through the DOM). A single pane's close pauses the pane's owner before
-  cleaning it: its views stay mounted in the host until the next render,
-  and a render effect the closing session had notified then ran against
-  the purged arena — a panic, only on closing a Markdown/text pane while
-  the workspace lives on (the whole-reader dispose unmounts first).
+  a release anywhere but a target, and the ReaderHost's dispose all end
+  the session with the tree unchanged.
+- **OS import drop.** Files dragged in from the OS are imports, never
+  splits, and only while the library is on screen: one Shell listener set
+  (`src/services/import_drop.rs`, Tauri's `tauri://drag-enter|leave|drop`)
+  filters the paths through `reader_core::format`, and
+  `RuntimeManager::import_dropped` hands them to the live library frame as
+  `ShellFrame::ImportFiles`; the library imports them onto the shelf it
+  shows (none on All), as its Add menu would. The Shell paints a dashed
+  "Drop to add to your library" hint over the window while an admissible
+  drag hovers the library. Over the reader the listener does nothing.
+- **Fixed on the way (Phase 5 surfaces).** A pane's per-pane close sits
+  below the title bar when the pane's top meets it: the bar's root is
+  hit-testable over the whole top 48 px. A single pane's close pauses the
+  pane's owner before cleaning it: its views stay mounted in the host until
+  the next render, and a render effect the closing session had notified
+  then ran against the purged arena.
 - **Diagnostics.** `host.drag` is the session phase (`idle`, `arming`,
   `overTarget`, `overWorkspace`, `dragging`).
 - **Browser.** `tests/browser/lifecycle.mjs` stage 14 (Markdown fixture):
-  right drop, nested bottom drop, focus on the new pane, keyboard
-  placement, Escape, and a full workspace (four panes) offering no target
-  and leaving the tree alone on release, then the
-  shelf → reader carry (drop into the empty reader, and a cancelled carry
-  back to the shelf). Stage 15: a PDF kept across three Markdown
-  split/close cycles (same PDF session, pane and virtualizer counts back to
-  the PDF-only baseline), then PDF + Markdown + TXT disposed with every
-  pane owner released.
+  Library rows dropped right and nested bottom, focus on the new pane, the
+  open tabs (focus, ×), a row click replacing the focused pane, Escape, a
+  release back over the rail, a full workspace (four panes) offering no
+  target, and a dispose mid-drag. Stage 15: a PDF kept across three
+  Markdown split/close cycles (same PDF session, pane and virtualizer
+  counts back to the PDF-only baseline), then PDF + Markdown + TXT disposed
+  with every pane owner released.
 
 ## Known follow-ups (do not silently expand scope)
 

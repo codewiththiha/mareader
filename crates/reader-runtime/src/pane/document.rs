@@ -125,6 +125,7 @@ impl DocumentPane {
                 page: reader.viewer.page.into(),
                 reflowable: Signal::derive(move || reader.reflowable()),
                 search_visible: reader.search.visible.into(),
+                name: Signal::derive(move || reader.document.display_name()),
             };
 
             // The paper settings follow every change onto whatever PDF
@@ -169,9 +170,8 @@ impl DocumentPane {
 }
 
 /// The launch that shows `ctx`'s document again, at the page the pane is on:
-/// the Split menu's "beside" and a drag lifted from the pane both open this
-/// in a NEW pane, which runs its own session. `None` while the pane holds no
-/// document.
+/// the Split menu's "beside" opens this in a NEW pane, which runs its own
+/// session. `None` while the pane holds no document.
 pub(crate) fn view_again(ctx: ReaderContext) -> Option<LaunchDocument> {
     let mut launch = ctx.launch.try_get_untracked()?;
     if launch.path.is_empty() {
@@ -380,10 +380,6 @@ impl PaneRuntime for DocumentPane {
             PaneCommand::PrepareLeave => crate::services::document::prepare_leave(&self.ctx),
         }
         Ok(())
-    }
-
-    fn duplicate_launch(&self) -> Option<LaunchDocument> {
-        view_again(self.ctx)
     }
 
     fn resources(&self) -> PaneResourceCounts {

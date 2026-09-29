@@ -7,7 +7,6 @@
 pub(crate) mod bake;
 mod boot;
 mod bootstrap;
-pub(crate) mod drag;
 pub(crate) mod frame;
 pub(crate) mod manager;
 
@@ -23,6 +22,11 @@ pub fn Shell() -> impl IntoView {
     // The OS open handoff: the shell owns the file-event surface (§2) —
     // a drop/dialog lands here and becomes a reader launch.
     crate::services::install_os_open_handling(state.clone());
+
+    // The OS import drop: files dragged in from the OS go to the library,
+    // and only while it is on screen. `drop_hint` is up while such a drag
+    // hovers the window.
+    let drop_hint = crate::services::install_import_drop(state.clone());
 
     // The diagnostics surface: the manager's facts merged with the active
     // runtime's last digest.
@@ -67,5 +71,20 @@ pub fn Shell() -> impl IntoView {
         // to take from `<body>` (html/body are 100% in the shell stylesheet)
         // lives here now (§4: the Shell owns the one target).
         <div id="runtime-host" class="h-full w-full" node_ref=host></div>
+        // Over the frames, never taking a pointer: the drop itself is the
+        // native window's, not the DOM's.
+        <Show when=move || drop_hint.get()>
+            <div
+                data-import-drop=""
+                aria-hidden="true"
+                class="pointer-events-none fixed inset-0 z-50 p-3"
+            >
+                <div class="flex h-full w-full items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-accent/10">
+                    <div class="rounded-xl bg-surface px-4 py-2.5 text-sm font-medium text-ink shadow-lg">
+                        "Drop to add to your library"
+                    </div>
+                </div>
+            </div>
+        </Show>
     }
 }

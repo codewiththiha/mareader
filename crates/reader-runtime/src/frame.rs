@@ -24,7 +24,7 @@ use leptos::prelude::Callable;
 use runtime_contract::boundary::LaunchDocument;
 use runtime_contract::protocol::{BootStage, RuntimeFrame};
 #[cfg(target_arch = "wasm32")]
-use runtime_contract::protocol::{DocumentDragEvent, RuntimeKind, ShellEnvelope, ShellFrame};
+use runtime_contract::protocol::{RuntimeKind, ShellEnvelope, ShellFrame};
 use wasm_bindgen::JsCast;
 
 use crate::context::{ApiHandle, ReaderContext};
@@ -222,16 +222,6 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         crate::command(id, *document);
                     }
                 }
-                ShellFrame::DocumentDrag { event } => {
-                    // A library document the Shell carried here: its Begin
-                    // is this frame's reveal, like a launch's.
-                    if matches!(event, DocumentDragEvent::Begin { .. }) {
-                        app_ui::frame_theme::mark_frame_hidden(false);
-                    }
-                    if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
-                        crate::document_drag(id, event);
-                    }
-                }
                 ShellFrame::Refresh => {
                     // The reader owns the only copy of its document state,
                     // and a warm reader owns none until it is handed a
@@ -259,10 +249,10 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                 ShellFrame::Rearm => {
                     on_rearm(generation);
                 }
-                ShellFrame::CoverBaked { .. } => {
-                    // The shelf's cover answer on the reader's port: covers
-                    // are the Shell's bake frame talking to the library
-                    // frame, and the reader is neither. Dropped by the
+                ShellFrame::CoverBaked { .. } | ShellFrame::ImportFiles { .. } => {
+                    // The shelf's cover answer and the shelf's import on the
+                    // reader's port: both are the library's business, and
+                    // the reader is not the library. Dropped by the
                     // protocol, never silently.
                 }
             }

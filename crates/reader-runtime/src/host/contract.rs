@@ -63,6 +63,9 @@ pub struct PaneSurface {
     pub reflowable: Signal<bool>,
     /// The pane's find bar is open (the title bar holds itself up for it).
     pub search_visible: Signal<bool>,
+    /// What the document is called (the title bar's name): the open-tabs
+    /// strip lists panes by it.
+    pub name: Signal<String>,
 }
 
 /// The chrome regions the HOST places and a pane may fill for its document.
@@ -201,14 +204,6 @@ pub trait PaneRuntime {
 
     /// The pane's own count of what it holds.
     fn resources(&self) -> PaneResourceCounts;
-
-    /// The launch that opens ANOTHER view of this pane's document, at the
-    /// page this pane is on — what a drag lifted from this pane drops into a
-    /// new pane. `None` while the pane holds no document. The pane keeps its
-    /// own session: this is an address, never a session handed over.
-    fn duplicate_launch(&self) -> Option<LaunchDocument> {
-        None
-    }
 
     /// Release everything the pane owns: its document session, its render
     /// and prefetch work, its virtualizers, its listeners, observers and

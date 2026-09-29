@@ -1,4 +1,4 @@
-//! Bottom icon-only rail: Thumbs / Outline panel toggles. Active state is a
+//! Bottom icon-only rail: Thumbs / Outline / Library panel toggles. Active state is a
 //! rounded filled chip, exactly like the reference's bookmark button. Rows
 //! are the shared [`ToggleButton`] primitive (size/shape via `variant_class`).
 
@@ -34,6 +34,9 @@ pub(crate) fn PanelSwitcher(
     mode: RwSignal<SidebarMode>,
     thumbs_active: Signal<bool>,
     outline_active: Signal<bool>,
+    /// The workspace's Library panel toggle; absent where no workspace
+    /// hosts the panel.
+    library_active: Option<Signal<bool>>,
     on_reveal: fn(),
     /// The Thumbs toggle exists only while the engine has pages to thumb —
     /// text documents carry none, so the rail offers Outline alone.
@@ -70,6 +73,14 @@ pub(crate) fn PanelSwitcher(
                     }
                 }
             />
+            {library_active.map(|active| view! {
+                <RailToggle
+                    icon=IconName::Library
+                    title="Library"
+                    active=active
+                    on_click=move || mode.set(SidebarMode::Library)
+                />
+            })}
         </div>
     }
 }

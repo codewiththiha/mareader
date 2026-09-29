@@ -17,6 +17,7 @@ use crate::appearance::presets::{Preset, builtin_presets};
 mod animation;
 mod gloss;
 mod layout;
+mod workspace;
 
 // The reflowable formats' typography SCHEMA lives with the rest of the
 // persisted settings, because the field names are the storage contract, and
@@ -34,6 +35,8 @@ pub use layout::{
     MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
 };
 pub use typography::TextSettings;
+/// The reader workspace's knobs (the Workspace tab).
+pub use workspace::{LibraryClick, WorkspaceSettings};
 
 /// The AI word card's knobs are part of the persisted schema, so the types
 /// live here rather than in `ai-core`, which stays free of anything the
@@ -113,6 +116,10 @@ pub struct Settings {
     /// page. Blobs saved before the text formats existed load the defaults.
     #[serde(default)]
     pub text: TextSettings,
+    /// The reader workspace: what a click in the rail's Library panel does.
+    /// Blobs saved before the panel existed load the default.
+    #[serde(default)]
+    pub workspace: WorkspaceSettings,
 }
 
 impl Default for Settings {
@@ -136,6 +143,7 @@ impl Default for Settings {
             gloss_custom: default_custom_gloss(),
             gloss_density: GlossDensity::default(),
             text: TextSettings::default(),
+            workspace: WorkspaceSettings::default(),
         }
     }
 }

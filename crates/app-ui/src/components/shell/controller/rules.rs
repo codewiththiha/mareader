@@ -50,13 +50,13 @@ pub(super) fn thumbnail_cells_are_live(
 
 /// Whether the thumbnail grid should keep its cells mounted.
 ///
-/// Mounted while Thumbs is showing, while Outline is showing (so a tab
+/// Mounted while Thumbs is showing, while another panel is showing (so a tab
 /// switch does not re-render every thumb), and while the Thumbs panel is
 /// mid-outro. Dropped only once a close from Thumbs has finished — that
 /// is what releases the live canvases without a quick-reopen spike.
 fn thumbs_should_stay_mounted(mode: SidebarMode, collapsing: bool, last: SidebarMode) -> bool {
     match mode {
-        SidebarMode::Thumbs | SidebarMode::Outline => true,
+        SidebarMode::Thumbs | SidebarMode::Outline | SidebarMode::Library => true,
         SidebarMode::None => collapsing && last == SidebarMode::Thumbs,
     }
 }

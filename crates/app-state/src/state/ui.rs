@@ -48,6 +48,9 @@ pub enum SidebarMode {
     None,
     Outline,
     Thumbs,
+    /// The reader workspace's Library panel: the library as a compact tree,
+    /// and the split workspace's open tabs.
+    Library,
 }
 
 /// Which of the reader's motions animate. Projected from the persisted
