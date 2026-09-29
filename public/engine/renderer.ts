@@ -9,7 +9,14 @@ import { fail, failFrom } from "./errors";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
-import { CLEANUP_EVERY, lifecycleEvent, PAGE_MAX_PIXELS } from "./state";
+import {
+  CLEANUP_EVERY,
+  REALM_PAGE_LIMIT,
+  lifecycleEvent,
+  PAGE_MAX_PIXELS,
+  pumpAllLanes,
+  realmLane,
+} from "./state";
 import type { EngineSession } from "./state";
 import {
   hostIdFromCanvasId,
@@ -157,7 +164,13 @@ export function unregisterPage(s: EngineSession, canvasId: string): void {
     s.releasePageSurfaces(st);
   }
   s.stateByCanvasId.delete(canvasId);
-  s.sweepPdf();
+  // Deliberately NO sweepPdf here: a window move unmounts pages constantly,
+  // and every unmount asking the worker to drop document caches would force
+  // a re-parse of the very pages the next scroll remounts — churn paid at
+  // the one moment the reader is moving. The sweep belongs to quiescence,
+  // and three paths still run it there: the render-count cadence
+  // (CLEANUP_EVERY), the session's idle timer, and the reader's
+  // scroll-idle sweep.
 }
 
 export function cancelPage(s: EngineSession, canvasId: string): void {
@@ -522,6 +535,14 @@ async function renderPageNow(
 // hundreds of MB it never handed back. Queued jobs re-check their
 // generation at the front of the lane, so a page that unmounted or was
 // superseded while waiting drops without touching pdf.js.
+//
+// The cap is TWO-LAYERED. PAGE_RENDER_LIMIT bounds one session's in-flight
+// rasters (its own queue, its own teardown drain). REALM_PAGE_LIMIT bounds
+// in-flight rasters across ALL sessions, because a raster is main-thread
+// work wherever it runs: four panes re-theming or scrolling together would
+// otherwise stack four sessions' worth of concurrent rasters into one long
+// frame stall. With the realm cap the panes pace as one progressive sweep;
+// a pane reading alone sees the same two slots it always had.
 const PAGE_RENDER_LIMIT = 2;
 
 /** The page lane's gauges for the stats surface (queue depth, active
@@ -531,19 +552,27 @@ export function pageLaneGauge(s: EngineSession): { pageQueue: number; pageActive
   return { pageQueue: s.pageLane.queue.length, pageActive: s.pageLane.active };
 }
 
+/** This session's page-queue pump for the realm lane's registry: when a
+ *  raster slot frees, every registrant offers its queue head the lane. */
+export function lanePumpFor(s: EngineSession): () => void {
+  return () => pumpPageQueue(s);
+}
+
 /** Drain the queue on teardown: every queued job's guard sees the dead
  *  state, resolves its caller with a drop, and pumps the next — the same
  *  cascade the thumbnail lane's epoch bump runs. Without this, queued
  *  closures (and the promise resolvers they capture) sit in the array
  *  until the FIFO happens to reach them, retaining canvases, scales and
- *  resolvers across the dispose. */
+ *  resolvers across the dispose.
+ *
+ *  A drain is a teardown act, not scheduling: it pops regardless of the
+ *  realm cap, which may be full of ANOTHER session's rasters at the moment
+ *  this session dies. The popped jobs all resolve as drops (their guard
+ *  sees the dead state) and never claim a raster slot, so bypassing the cap
+ *  starts no work — it only empties the queue the baseline requires empty. */
 export function drainPageLane(s: EngineSession): void {
-  pumpPageQueue(s);
-}
-
-function pumpPageQueue(s: EngineSession): void {
   const lane = s.pageLane;
-  while (lane.active < PAGE_RENDER_LIMIT && lane.queue.length > 0) {
+  while (lane.queue.length > 0) {
     const next = lane.queue.shift();
     if (!next) return;
     lane.active += 1;
@@ -551,22 +580,18 @@ function pumpPageQueue(s: EngineSession): void {
   }
 }
 
-async function runLimited<T>(jobs: Array<() => Promise<T>>, limit = 2): Promise<T[]> {
-  const out: T[] = [];
-  let i = 0;
-  const workers = Array.from(
-    { length: Math.min(Math.max(limit, 1), Math.max(jobs.length, 1)) },
-    async () => {
-      while (i < jobs.length) {
-        const idx = i;
-        i += 1;
-        const job = jobs[idx];
-        if (job) out[idx] = await job();
-      }
-    },
-  );
-  await Promise.all(workers);
-  return out;
+function pumpPageQueue(s: EngineSession): void {
+  const lane = s.pageLane;
+  while (
+    lane.active < PAGE_RENDER_LIMIT &&
+    realmLane.active < REALM_PAGE_LIMIT &&
+    lane.queue.length > 0
+  ) {
+    const next = lane.queue.shift();
+    if (!next) return;
+    lane.active += 1;
+    next();
+  }
 }
 
 export async function renderPage(
@@ -607,7 +632,9 @@ export async function renderPage(
           pumpPageQueue(s);
         };
         // The page unmounted, or a newer scale superseded this job, while it
-        // waited for a lane slot. Drop it without touching pdf.js.
+        // waited for a lane slot. Drop it without touching pdf.js — and
+        // without ever holding a realm slot, which is claimed only by work
+        // that actually runs.
         if (st.dead || st.queueGen !== gen) {
           s.rendersDropped += 1;
           lifecycleEvent("render:cancel");
@@ -615,12 +642,19 @@ export async function renderPage(
           finish();
           return;
         }
+        realmLane.active += 1;
         renderPageInternal(s, canvasId, scale, !!renderText)
           .then(resolve)
           .catch((e: unknown) => {
             resolve(failFrom(e));
           })
-          .finally(finish);
+          .finally(() => {
+            realmLane.active -= 1;
+            // A freed slot is every session's chance: re-offer the lane to
+            // each registered queue so the panes pace as one sweep.
+            pumpAllLanes();
+            finish();
+          });
       });
       pumpPageQueue(s);
     });
@@ -631,34 +665,39 @@ export async function renderPage(
  *  without applying CSS filters on already-baked pixels — the scrub entry's
  *  background half. `onRendered` fires per page the moment its raw pixels
  *  have landed and been tagged, in the same turn, so the caller can drop
- *  that page's snapshot cover with no paint in between. */
+ *  that page's snapshot cover with no paint in between. The renders ride
+ *  the page lane (and its realm cap), so a multi-pane scrub queues as one
+ *  paced sweep instead of stacking full-page rasters. */
 export async function preparePagesForScrub(
   s: EngineSession,
   onRendered?: (canvasId: string) => void,
 ): Promise<void> {
-  const jobs: Array<() => Promise<unknown>> = [];
+  const jobs: Array<Promise<unknown>> = [];
   for (const [id, st] of s.stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
     if (st.rawCanvas && st.rawCanvas !== st.canvas) continue;
     if (!st.rawCanvas) {
-      jobs.push(async () => {
-        const rendered = await renderPageInternal(s, id, st.scale || 1, false);
-        // A failed render keeps its cover — settled pixels beat a wiped
-        // canvas — and the caller's final sweep releases it.
-        if (rendered.ok) onRendered?.(id);
-      });
+      jobs.push(
+        renderPage(s, id, st.scale || 1, false).then((rendered) => {
+          // A failed render keeps its cover — settled pixels beat a wiped
+          // canvas — and the caller's final sweep releases it.
+          if (rendered.ok) onRendered?.(id);
+        }),
+      );
     }
   }
-  if (jobs.length) await runLimited(jobs, 2);
+  if (jobs.length) await Promise.all(jobs);
 }
 
 /** Re-render every live page from pdf.js. Used when a theme change arrives
- *  after we have already dropped the raw raster. */
+ *  after we have already dropped the raw raster. Through the page lane, so
+ *  a theme change with several panes open re-renders as one paced sweep
+ *  across the realm instead of one stall per pane in parallel. */
 export async function rerenderLivePages(s: EngineSession): Promise<void> {
-  const jobs: Array<() => Promise<unknown>> = [];
+  const jobs: Array<Promise<unknown>> = [];
   for (const [id, st] of s.stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
-    jobs.push(() => renderPageInternal(s, id, st.scale || 1, !!st.textLayerEl));
+    jobs.push(renderPage(s, id, st.scale || 1, !!st.textLayerEl));
   }
-  await runLimited(jobs, 2);
+  await Promise.all(jobs);
 }

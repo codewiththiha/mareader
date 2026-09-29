@@ -113,6 +113,33 @@ export class PageLane {
   readonly queue: Array<() => void> = [];
 }
 
+/** Full-page rasters are MAIN-THREAD work — pdf.js draws the page into the
+ *  canvas synchronously; only parsing/decoding runs in pdf.js's worker — so
+ *  their concurrency cap is realm-wide, not per session: four panes
+ *  rasterising or re-theming together queue as one paced sweep instead of
+ *  stacking up to eight concurrent stalls on the one thread. A single pane
+ *  sees the same two slots it always had. The per-session QUEUE (and its
+ *  drain on teardown) stays — the realm cap only decides when a queued job
+ *  may start. */
+export const REALM_PAGE_LIMIT = 2;
+export const realmLane = { active: 0 };
+
+/** The page-queue pumps of every session that can hold queued renders. A
+ *  freed realm slot re-offers the lane to each registrant, so a job queued
+ *  behind another session's raster starts the moment a slot opens. */
+const lanePumps = new Set<() => void>();
+
+export function registerLanePump(pump: () => void): () => void {
+  lanePumps.add(pump);
+  return () => {
+    lanePumps.delete(pump);
+  };
+}
+
+export function pumpAllLanes(): void {
+  for (const pump of [...lanePumps]) pump();
+}
+
 /** The thumbnail lane and its prefetch bookkeeping, per session: the lane
  *  epoch (bumped by this session's teardown), the prefetch era (bumped by
  *  this pane's suspend), and the per-canvas generations. */
@@ -151,6 +178,10 @@ export class EngineSession {
   readonly scrub = new ScrubState();
   /** Serialized theme mutations of THIS session's rasters. */
   themeChain: Promise<void> = Promise.resolve();
+  /** The realm lane registry's handle for this session's page-queue pump;
+   *  set when the session registers with the engine, cleared by its
+   *  destroy. Null for a session nobody registered (the host's stubs). */
+  unregisterLanePump: (() => void) | null = null;
 
   /** Raw frames parked for the Rust paper session (engine/paper.ts), and
    *  whether that session wants them (its blend switch). */

@@ -11,7 +11,7 @@ import type { EngineSession } from "../state";
 import { readPipeline } from "./pipeline";
 import { paperInfo, publishBakedPaper } from "./paper";
 import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
-import { preparePagesForScrub, renderPageInternal, rerenderLivePages } from "../renderer";
+import { preparePagesForScrub, renderPage, rerenderLivePages } from "../renderer";
 
 // A Settings commit after a scrub has the same final pipeline the scrub exit
 // just baked. Remember it by value rather than generation: invalidation bumps
@@ -166,7 +166,7 @@ async function settleCanvasTheme(s: EngineSession): Promise<void> {
         await bakeInto(st.canvas, st.rawCanvas, readPipeline(), "canvas-raw");
         s.dropRawIfIdle(st);
       } else {
-        rerender.push(() => renderPageInternal(s, id, st.scale || 1, !!st.textLayerEl));
+        rerender.push(() => renderPage(s, id, st.scale || 1, !!st.textLayerEl));
       }
     }
   }

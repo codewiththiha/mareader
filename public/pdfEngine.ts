@@ -26,6 +26,7 @@ import {
   cancelPage,
   cancelPageRenders,
   drainPageLane,
+  lanePumpFor,
   pageLaneGauge,
   readRenderTrace,
   registerPage,
@@ -65,7 +66,6 @@ import {
 } from "./engine/paper";
 import {
   beginRetire,
-
   createSession,
   ENGINE_VERSION,
   finishRetire,
@@ -73,6 +73,7 @@ import {
   lifecycleEvent,
   liveSessions,
   realmCounters,
+  registerLanePump,
   registryCounts,
   sessionFor,
   setLifecycleLog,
@@ -152,6 +153,12 @@ async function destroySession(sid: Sid): Promise<void> {
     s.sweepPdf();
     cancelAndReleasePages(s);
     drainPageLane(s);
+    // The queue is empty and nothing will queue again (the sid retired):
+    // take this session's pump out of the realm lane's registry.
+    if (s.unregisterLanePump) {
+      s.unregisterLanePump();
+      s.unregisterLanePump = null;
+    }
     s.stateByCanvasId.clear();
     for (const task of s.thumbTasks.values()) {
       try { task.cancel(); } catch (_) { /* ignore */ }
@@ -277,6 +284,11 @@ function setAppearanceMenuOpen(on: boolean): void {
 function createEngineSession(sid: Sid): boolean {
   const s = createSession(sid);
   if (!s) return false;
+  // The realm lane's registry: a freed raster slot re-offers the lane to
+  // this session's queue head, so its pages pace with every other pane's.
+  // Cleared by destroySession — a retired session holds no queue for long
+  // (its drain resolves every job), but the pump must not outlive it.
+  s.unregisterLanePump = registerLanePump(lanePumpFor(s));
   if (appearanceScrub) {
     s.setThemeScrubActive(true);
     s.noteScrub();
