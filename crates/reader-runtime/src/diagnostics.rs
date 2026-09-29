@@ -186,10 +186,16 @@ pub(crate) fn note_reader_runtime_dispose_begin(_stamp: u64) {
 /// open or close claimed the state meanwhile, in which case this dispose's
 /// evidence is stale and the assertion belongs to whoever holds the state
 /// now (a fast close → reopen must not read as a broken baseline).
+///
+/// A pane closed while others read on is not the reader draining: the
+/// reader-wide baseline cannot hold with documents open, so it is asked only
+/// once no pane of a live workspace remains (and on the workspace's own
+/// dispose). Asking it per split close reported a leak that was not one.
 pub(crate) fn note_reader_runtime_dispose_complete(stamp: u64) {
     READER_DISPOSES_COMPLETED.fetch_add(1, Ordering::Relaxed);
     observe_heap();
-    if crate::services::document::session::current_epoch() == stamp {
+    let still_reading = host_probe().is_some_and(|host| host.still_reading());
+    if crate::services::document::session::current_epoch() == stamp && !still_reading {
         assert_dispose_baseline();
     }
     event("reader_runtime:dispose_complete");

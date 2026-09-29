@@ -1054,6 +1054,37 @@ pub struct HostSnapshot {
     pub drag: &'static str,
 }
 
+impl HostSnapshot {
+    /// Whether the workspace still reads something: live, with a pane that
+    /// is not on its way out. A pane's dispose inside such a workspace (one
+    /// split closed, the others open) is not the reader's dispose, and the
+    /// reader-wide drained baseline is not its question.
+    pub fn still_reading(&self) -> bool {
+        still_reading(self.lifecycle, self.panes.iter().map(|pane| pane.lifecycle))
+    }
+}
+
+fn still_reading(host: &str, mut panes: impl Iterator<Item = PaneLifecycle>) -> bool {
+    host == "live"
+        && panes.any(|pane| !matches!(pane, PaneLifecycle::Disposing | PaneLifecycle::Disposed))
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::{PaneLifecycle, still_reading};
+
+    #[test]
+    fn a_pane_closing_beside_a_live_one_is_not_the_reader_draining() {
+        use PaneLifecycle::{Disposed, Disposing, Ready, Suspended};
+        assert!(still_reading("live", [Disposing, Ready].into_iter()));
+        assert!(still_reading("live", [Suspended].into_iter()));
+        assert!(!still_reading("live", [Disposing].into_iter()));
+        assert!(!still_reading("live", [Disposed, Disposing].into_iter()));
+        assert!(!still_reading("live", std::iter::empty()));
+        assert!(!still_reading("disposed", [Ready].into_iter()));
+    }
+}
+
 /// One pane in the snapshot.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
