@@ -8,26 +8,25 @@
 
 use leptos::prelude::*;
 
-use crate::appearance::{AppearanceScrub, preview_appearance};
+use crate::appearance::{AppearanceScrub, ThemeHandle, ThemeScope};
 use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::components::primitives::form::slider::Slider;
 use app_chrome::icon::{Icon, IconName};
-use app_state::ChromeState;
 use reader_core::appearance::TextureMode;
 
 #[component]
-pub fn TextureSection(state: ChromeState) -> impl IntoView {
-    let seed = state.settings.read_untracked().appearance;
+pub fn TextureSection(theme: ThemeHandle) -> impl IntoView {
+    let seed = theme.look.read_untracked();
     let (opacity, set_opacity) = signal(seed.texture_opacity as f64);
     let (tscale, set_tscale) = signal(seed.texture_scale as f64);
 
     Effect::new(move || {
-        let a = state.settings.with(|s| s.appearance);
+        let a = theme.look.get();
         set_opacity.set(a.texture_opacity as f64);
         set_tscale.set(a.texture_scale as f64);
     });
 
-    let current = move || state.settings.with(|s| s.appearance.texture);
+    let current = move || theme.look.with(|a| a.texture);
     let has_texture = move || current() != TextureMode::None;
 
     view! {
@@ -41,9 +40,11 @@ pub fn TextureSection(state: ChromeState) -> impl IntoView {
                         <ToggleButton
                             active=selected
                             on_click=move || {
-                                super::update_appearance(state, move |s| {
-                                    s.appearance.texture = mode;
-                                })
+                                theme
+                                    .commit
+                                    .run((ThemeScope::Routed, Box::new(move |a| {
+                                        a.texture = mode;
+                                    })));
                             }
                             variant_class="flex items-center justify-center gap-1 px-1.5 py-1.5 text-[11px]"
                         >
@@ -78,7 +79,9 @@ pub fn TextureSection(state: ChromeState) -> impl IntoView {
                     }
                     let v = v.round().clamp(0.0, 100.0);
                     set_opacity.set(v);
-                    preview_appearance(state.settings, AppearanceScrub::TextureOpacity(v as u8));
+                    theme
+                        .scrub
+                        .run((ThemeScope::Routed, AppearanceScrub::TextureOpacity(v as u8)));
                 }
                 label="Texture opacity"
             />
@@ -94,7 +97,9 @@ pub fn TextureSection(state: ChromeState) -> impl IntoView {
                     }
                     let v = v.round().clamp(25.0, 400.0);
                     set_tscale.set(v);
-                    preview_appearance(state.settings, AppearanceScrub::TextureScale(v as u16));
+                    theme
+                        .scrub
+                        .run((ThemeScope::Routed, AppearanceScrub::TextureScale(v as u16)));
                 }
                 label="Texture scale"
             />

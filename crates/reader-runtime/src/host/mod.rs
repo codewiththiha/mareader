@@ -38,6 +38,7 @@ pub mod geometry;
 pub mod library;
 pub mod manager;
 pub mod model;
+pub mod theme;
 pub mod tree;
 mod view;
 
@@ -146,6 +147,9 @@ pub struct ReaderHost {
     /// read, which folders are open, where it was scrolled. The host's, so
     /// it survives the rail remounting on an active-pane change.
     library: library::LibraryState,
+    /// The workspace's independent theme state (one look per pane; see
+    /// [`theme`]). The appearance menu routes through its handle.
+    themes: theme::PaneThemes,
 }
 
 impl ReaderHost {
@@ -157,6 +161,9 @@ impl ReaderHost {
         let settings = session.settings;
         let initial = settings.with_untracked(|s| app_state::Motion::from_prefs(&s.animations));
         let motion = RwSignal::new(initial);
+        let themes = theme::PaneThemes::new(RwSignal::new(
+            settings.with_untracked(|s| s.workspace.independent_themes),
+        ));
 
         // What the shared chrome reads about "the reader": the ACTIVE pane's
         // published facts, read through `try_` because a pane's signals die
@@ -234,6 +241,7 @@ impl ReaderHost {
             classify,
             frame_active: app_chrome::hooks::frame_active::use_frame_active(),
             library: library::LibraryState::new(),
+            themes,
         };
         // The Library panel is the host's; the active pane's rail shows it
         // beside its own panels, found through context like the controller.
@@ -280,18 +288,36 @@ impl ReaderHost {
             if host.motion.try_get_untracked().is_some_and(|m| m != next) {
                 host.motion.set(next);
             }
-            let appearance = PaneAppearance { motion: next };
+            // The theme half: the per-pane look map's change token, tracked
+            // alongside settings so an override edit (or the toggle)
+            // re-pushes too. Each pane receives ITS look.
+            host.themes.version().with(|_| ());
+            let global = host.session.settings.with(|s| s.appearance);
             for pane in host.manager.live_panes() {
-                pane.appearance(appearance);
+                pane.appearance(PaneAppearance {
+                    motion: next,
+                    look: host.themes.look_for(pane.id(), global),
+                });
             }
         });
     }
 
-    /// The appearance a pane created now starts with.
-    fn appearance_now(&self) -> PaneAppearance {
+    /// The appearance a pane created now starts with: the motion switches
+    /// plus its seeded look (its own while independent themes are on —
+    /// seeded from the pane in front; `None` otherwise).
+    fn appearance_now(&self, id: PaneId) -> PaneAppearance {
+        let global = self.session.settings.with(|s| s.appearance);
         PaneAppearance {
             motion: self.motion.try_get_untracked().unwrap_or_default(),
+            look: self.themes.look_for(id, global),
         }
+    }
+
+    /// The appearance menu's theme handle: routed edits land on the active
+    /// pane's look while independent themes are on, everything else in
+    /// Settings (see [`theme`]).
+    pub fn theme_handle(&self) -> app_ui::appearance::ThemeHandle {
+        theme::theme_handle(self.themes, self.manager, self.session.settings)
     }
 
     /// Bounds: the host measures its workspace slot, lays the tree out over
@@ -582,8 +608,20 @@ impl ReaderHost {
         let id = self
             .manager
             .create(request, launch, move |id| host.env_for(id))?;
+        // A pane born while independent themes are on takes the look of the
+        // pane in front (its colour is the working one); while off it has
+        // no look of its own and inherits the window theme.
+        if self.themes.independent().get_untracked() {
+            let global = self.session.settings.with(|s| s.appearance);
+            let seed = self
+                .manager
+                .active()
+                .and_then(|active| self.themes.look_for(active, global))
+                .unwrap_or(global);
+            self.themes.seed(id, seed);
+        }
         if let Some(pane) = self.manager.pane(id) {
-            pane.appearance(self.appearance_now());
+            pane.appearance(self.appearance_now(id));
         }
         Ok(id)
     }
@@ -661,6 +699,7 @@ impl ReaderHost {
             .try_update(|tree| tree.remove(id).ok().flatten())
             .flatten();
         self.manager.close(id, successor)?;
+        self.themes.forget(id);
         self.relayout_now();
         Ok(())
     }

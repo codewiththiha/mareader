@@ -366,6 +366,12 @@ impl PaneRuntime for DocumentPane {
         {
             motion.set(appearance.motion);
         }
+        // The pane's own look (independent themes): the pane root repaints
+        // its tokens from this — or removes them, back to inheritance.
+        let look = self.ctx.reader.viewer.look;
+        if look.try_get_untracked() != Some(appearance.look) {
+            look.set(appearance.look);
+        }
     }
 
     fn command(&self, command: PaneCommand) -> Result<(), PaneError> {

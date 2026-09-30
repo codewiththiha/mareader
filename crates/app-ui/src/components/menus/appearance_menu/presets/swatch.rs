@@ -9,26 +9,25 @@
 
 use leptos::prelude::*;
 
-use crate::appearance::cancel_appearance_commit;
+use crate::appearance::{ThemeHandle, ThemeScope, cancel_appearance_commit};
 use app_chrome::icon::{Icon, IconName};
 use app_state::ChromeState;
 use reader_core::appearance::presets::{Preset, is_builtin};
 
 #[component]
-pub(super) fn PresetSwatch(preset: Preset, state: ChromeState) -> impl IntoView {
+pub(super) fn PresetSwatch(
+    preset: Preset,
+    state: ChromeState,
+    theme: ThemeHandle,
+) -> impl IntoView {
     let id = preset.id.clone();
-    let id_for_click = id.clone();
     let name = preset.name.clone();
     let appearance = preset.appearance;
-    let active = {
-        let id = id.clone();
-        move || {
-            state
-                .settings
-                .with(|s| s.active_preset.as_deref() == Some(id.as_str()))
-        }
-    };
-    let active_btn = active.clone();
+    // The highlight is "the edited look IS this preset": true whatever mode
+    // the routing is in — the active pane's look while independent themes
+    // are on, the window's otherwise.
+    let active = move || theme.look.with(|a| *a == appearance);
+    let active_btn = active;
     let name_title = name.clone();
     let deletable = !is_builtin(&id);
     let id_for_delete = id.clone();
@@ -39,15 +38,13 @@ pub(super) fn PresetSwatch(preset: Preset, state: ChromeState) -> impl IntoView 
                 type="button"
                 title=name_title
                 aria-pressed=move || active_btn().to_string()
-                on:click={
-                    let id = id_for_click.clone();
-                    move |_| {
-                        let id = id.clone();
-                        // A preset is an explicit look: drop any in-flight
-                        // slider commit so it cannot overwrite this a beat later.
-                        cancel_appearance_commit();
-                        state.settings.update(|s| s.apply_preset(&id));
-                    }
+                on:click=move |_| {
+                    // A preset is an explicit look: drop any in-flight
+                    // slider commit so it cannot overwrite this a beat later.
+                    cancel_appearance_commit();
+                    theme.commit.run((ThemeScope::Routed, Box::new(move |a| {
+                        *a = appearance;
+                    })));
                 }
                 class=move || {
                     if active() {

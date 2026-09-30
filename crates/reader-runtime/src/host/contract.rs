@@ -92,6 +92,12 @@ pub enum ChromeSlot {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PaneAppearance {
     pub motion: app_state::Motion,
+    /// The pane's own look while independent themes are on: `Some` means the
+    /// pane paints these tokens on its root (base + tint + texture — grain
+    /// stays global) and everything inside resolves to them; `None` means
+    /// pure inheritance from the window's theme (the pane removes any tokens
+    /// it previously owned).
+    pub look: Option<reader_core::appearance::Appearance>,
 }
 
 /// Where the host is placing a pane's view: the shared-chrome context

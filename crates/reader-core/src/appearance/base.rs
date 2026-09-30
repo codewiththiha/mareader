@@ -70,9 +70,10 @@ pub(crate) fn base_tokens(mode: BaseMode) -> BaseTokens {
 impl Appearance {
     /// The base palette for a mode, as `(token, value)` pairs. Mirrors the
     /// `:root[data-base=...]` blocks in styles/tokens.css; used by preset
-    /// thumbnails, which must carry their own look rather than inherit the
-    /// live tokens.
-    pub(crate) fn base_palette(&self) -> [(&'static str, &'static str); 7] {
+    /// thumbnails (which must carry their own look rather than inherit the
+    /// live tokens) and by the per-pane theme paint (a pane root's
+    /// `data-base` cannot re-declare the stylesheet's `:root` tables).
+    pub fn base_palette(&self) -> [(&'static str, &'static str); 7] {
         base_tokens(self.base).entries()
     }
 }

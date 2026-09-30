@@ -170,6 +170,18 @@ pub enum PaintPipeline {
     Chrome,
 }
 
+/// Where a live appearance paint lands. `Window` is the historic target (the
+/// document root — the shared chrome and every inheriting pane); `Pane` is
+/// one pane's own root box, used while independent themes are on.
+pub enum PaintTarget {
+    Window,
+    Pane(web_sys::Element),
+    /// A delegated paint: the same rAF-coalesced slot, run by whoever owns
+    /// the real target (the reader host publishes a pane's look through its
+    /// appearance boundary). The second value is the ink dial.
+    Delegated(Box<dyn Fn(Appearance, f64)>),
+}
+
 thread_local! {
     static PIPELINE: std::cell::Cell<PaintPipeline> =
         const { std::cell::Cell::new(PaintPipeline::Document) };
@@ -189,4 +201,146 @@ pub fn paint_for_pipeline(a: Appearance, ink_contrast: f64) {
         PaintPipeline::Document => paint_appearance_now(a, ink_contrast),
         PaintPipeline::Chrome => paint_chrome_appearance(a),
     }
+}
+
+/// Paint `a` at an explicit target: the window (the shared layer plus both
+/// pipelines' tokens) or one pane's root (its own base + tint + texture
+/// tokens; grain stays on the window and inherits). The pane variant paints
+/// the same COMPUTED values as the window variant — one token pipeline, two
+/// destinations — so a pane's look and the window's look can never resolve
+/// to different maths.
+pub fn paint_into(target: PaintTarget, a: Appearance, ink_contrast: f64) {
+    match target {
+        PaintTarget::Window => paint_for_pipeline(a, ink_contrast),
+        PaintTarget::Pane(el) => paint_pane_appearance(el, a, ink_contrast),
+        PaintTarget::Delegated(paint) => paint(a, ink_contrast),
+    }
+}
+
+/// The per-pane token block: the base palette (`--base-*`, the pane's
+/// `data-base` selector cannot re-declare it — the stylesheet's tables live
+/// on `:root`), the resolved `--color-*` set (tinted when the pane's look
+/// has a tint; plain otherwise, because the window's tint would otherwise
+/// leak in through inheritance), the PDF filter/blend pair, the reflow
+/// palette and the texture dials. Grain is deliberately absent: noise is
+/// the one global dial.
+///
+/// Same cssText discipline as [`paint_appearance_now`]: the owned set is
+/// rebuilt from scratch in one write, and everything else inline on the
+/// pane root — its layout box, the engine's publishes — rides through.
+pub fn paint_pane_appearance(el: web_sys::Element, a: Appearance, ink_contrast: f64) {
+    _ = el.set_attribute("data-base", a.base.as_str());
+    let class = el.class_list();
+    if a.base.is_dark() {
+        _ = class.add_1("dark");
+    } else {
+        _ = class.remove_1("dark");
+    }
+
+    let Ok(style) = el
+        .clone()
+        .dyn_into::<web_sys::HtmlElement>()
+        .map(|h| h.style())
+    else {
+        return;
+    };
+
+    let mut vars: Vec<(String, String)> = Vec::with_capacity(24);
+    for (name, value) in a.base_palette() {
+        vars.push((name.to_string(), value.to_string()));
+    }
+    // The resolved UI set: the tint's overrides when active, the plain base
+    // values otherwise — written unconditionally so an untinted pane in a
+    // tinted window cannot inherit the window's tinted tokens.
+    let overrides = a.ui_overrides();
+    if overrides.is_empty() {
+        for (name, value) in a.base_palette() {
+            let resolved = name.strip_prefix("--base-").unwrap_or(name);
+            vars.push((format!("--color-{resolved}"), value.to_string()));
+        }
+    } else {
+        for (name, value) in overrides {
+            vars.push((name.to_string(), value));
+        }
+    }
+    for (name, value) in crate::appearance::raster::token_vars(&a) {
+        // --canvas-filter/--canvas-blend always apply; token_vars also
+        // repeats the UI overrides, which were just written.
+        if !name.starts_with("--color-") {
+            vars.push((name.to_string(), value));
+        }
+    }
+    for (name, value) in crate::appearance::reflow::token_vars(&a, ink_contrast) {
+        vars.push((name.to_string(), value));
+    }
+    for (name, value) in reader_core::appearance::shared::texture::css_vars(&a) {
+        vars.push((name.to_string(), value));
+    }
+
+    let owned =
+        |name: &str| vars.iter().any(|(n, _)| n == name) || raster::UI_TOKENS.contains(&name);
+    let mut buf = String::with_capacity(768);
+    for decl in style.css_text().split(';') {
+        let Some((name, _)) = decl.split_once(':') else {
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty() || owned(name) {
+            continue;
+        }
+        buf.push_str(decl.trim());
+        buf.push(';');
+    }
+    for (name, value) in &vars {
+        buf.push_str(name);
+        buf.push(':');
+        buf.push_str(value);
+        buf.push(';');
+    }
+    style.set_css_text(&buf);
+}
+
+/// Remove every token a pane paint owns, returning the pane to pure
+/// inheritance from the window's theme. The base attribute and class go
+/// with them.
+pub fn clear_pane_appearance(el: web_sys::Element) {
+    _ = el.remove_attribute("data-base");
+    _ = el.class_list().remove_1("dark");
+    let Ok(style) = el
+        .clone()
+        .dyn_into::<web_sys::HtmlElement>()
+        .map(|h| h.style())
+    else {
+        return;
+    };
+    for name in raster::UI_TOKENS {
+        let _ = style.remove_property(name);
+    }
+    for name in [
+        "--canvas-filter",
+        "--canvas-blend",
+        "--texture-opacity",
+        "--texture-scale-user",
+    ] {
+        let _ = style.remove_property(name);
+    }
+    // The remaining owned sets resolve to known name families: drop them by
+    // pattern from the live declaration list.
+    let mut buf = String::new();
+    for decl in style.css_text().split(';') {
+        let Some((name, _)) = decl.split_once(':') else {
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty()
+            || name.starts_with("--base-")
+            || name.starts_with("--tx-")
+            || name.starts_with("--color-")
+        {
+            continue;
+        }
+        buf.push_str(decl.trim());
+        buf.push(';');
+    }
+    style.set_css_text(&buf);
 }

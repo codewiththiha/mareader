@@ -22,6 +22,11 @@ pub enum LibraryClick {
 #[serde(default, rename_all = "camelCase")]
 pub struct WorkspaceSettings {
     pub library_click: LibraryClick,
+    /// Independent theme per pane (split workspaces): while on, each pane
+    /// shows its own look and the shared chrome keeps the remembered global
+    /// theme. Persisted as the toggle's rest state; the per-pane colours
+    /// themselves are temporary and die with the workspace.
+    pub independent_themes: bool,
 }
 
 #[cfg(test)]
@@ -34,5 +39,6 @@ mod tests {
         assert_eq!(s.library_click, LibraryClick::Replace);
         let s: WorkspaceSettings = serde_json::from_str(r#"{"libraryClick":"dragOnly"}"#).unwrap();
         assert_eq!(s.library_click, LibraryClick::DragOnly);
+        assert!(!s.independent_themes);
     }
 }

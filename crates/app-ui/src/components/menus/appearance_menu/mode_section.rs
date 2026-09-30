@@ -9,7 +9,7 @@
 
 use leptos::prelude::*;
 
-use crate::appearance::{AppearanceScrub, preview_appearance};
+use crate::appearance::{AppearanceScrub, ThemeHandle, ThemeScope};
 use crate::components::menus::appearance_menu::hue_picker::HuePicker;
 use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::components::primitives::form::slider::Slider;
@@ -32,20 +32,23 @@ fn base_icon(b: BaseMode) -> IconName {
 }
 
 #[component]
-pub fn BaseSection(state: ChromeState) -> impl IntoView {
-    let seed = state.settings.read_untracked().appearance;
+pub fn BaseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
+    // The dials show and edit the THEME HANDLE's look: the active pane's
+    // own while independent themes are on, the window's otherwise.
+    let seed = theme.look.read_untracked();
     let (hue, set_hue) = signal(seed.tint_hue as f64);
     let (strength, set_strength) = signal(seed.tint_strength as f64);
 
-    // Mirror external writes (applying a preset) back into the local signals,
-    // or the sliders would keep showing the old look's numbers.
+    // Mirror external writes (applying a preset, another pane's edit) back
+    // into the local signals, or the sliders would keep showing the old
+    // look's numbers.
     Effect::new(move || {
-        let a = state.settings.with(|s| s.appearance);
+        let a = theme.look.get();
         set_hue.set(a.tint_hue as f64);
         set_strength.set(a.tint_strength as f64);
     });
 
-    let current_base = move || state.settings.with(|s| s.appearance.base);
+    let current_base = move || theme.look.with(|a| a.base);
 
     view! {
         <div class="grid grid-cols-3 gap-1">
@@ -60,9 +63,11 @@ pub fn BaseSection(state: ChromeState) -> impl IntoView {
                             on_click=move || {
                                 // Keep the hue the reader was just dialling,
                                 // then switch family.
-                                super::update_appearance(state, move |s| {
-                                    s.appearance.base = b;
-                                })
+                                theme
+                                    .commit
+                                    .run((ThemeScope::Routed, Box::new(move |a| {
+                                        a.base = b;
+                                    })));
                             }
                             title=b.label()
                             variant_class="flex flex-col items-center gap-1 px-2 py-2 text-xs"
@@ -93,10 +98,10 @@ pub fn BaseSection(state: ChromeState) -> impl IntoView {
                         st = 18;
                         set_strength.set(18.0);
                     }
-                    preview_appearance(
-                        state.settings,
+                    theme.scrub.run((
+                        ThemeScope::Routed,
                         AppearanceScrub::Tint { hue: v as u16, strength: st },
-                    );
+                    ));
                 }
             />
         </div>
@@ -114,10 +119,10 @@ pub fn BaseSection(state: ChromeState) -> impl IntoView {
                     // Live hue signal, not Settings: a hue drag may not have
                     // committed yet.
                     let hue = hue.get_untracked().round().clamp(0.0, 359.0) as u16;
-                    preview_appearance(
-                        state.settings,
+                    theme.scrub.run((
+                        ThemeScope::Routed,
                         AppearanceScrub::Tint { hue, strength: v as u8 },
-                    );
+                    ));
                 }
                 label="Strength"
             />

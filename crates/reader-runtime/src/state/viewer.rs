@@ -50,6 +50,11 @@ pub struct ViewerSignals {
     /// projection of the frame's settings (`Motion::from_prefs`, in the
     /// runtime's `lib.rs`); see the type's contract.
     pub motion: RwSignal<Motion>,
+    /// The pane's own appearance look while independent themes are on
+    /// (`None` = inherit the window's theme). Written only by the host's
+    /// appearance boundary push ([`crate::host::contract::PaneAppearance`]);
+    /// the pane root paints it in `crate::pane::view`.
+    pub look: RwSignal<Option<reader_core::appearance::Appearance>>,
     /// True from the moment `page` is seeded for a freshly opened document
     /// until a scrolling strip has anchored itself to that page on mount.
     ///
@@ -121,6 +126,9 @@ impl ViewerSignals {
             container_size: _,
             column_width_pct: _,
             motion: _,
+            // The pane's own theme look: the workspace's, not the document's
+            // — an in-place open keeps the pane's colour.
+            look: _,
         } = *self;
         page.set(1);
         scroll_top.set(0.0);
@@ -198,6 +206,7 @@ impl Default for ViewerSignals {
             page_margin: RwSignal::new(0.0),
             column_width_pct: RwSignal::new(100.0),
             motion: RwSignal::new(Motion::default()),
+            look: RwSignal::new(None),
             awaiting_anchor: RwSignal::new(false),
             anchor_generation: RwSignal::new(0),
             first_paint: RwSignal::new(false),

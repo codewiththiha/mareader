@@ -11,6 +11,7 @@ mod swatch;
 
 use leptos::prelude::*;
 
+use crate::appearance::ThemeHandle;
 use app_state::ChromeState;
 use reader_core::appearance::presets::{group_presets, user_group_names};
 
@@ -18,12 +19,12 @@ use editor::PresetEditor;
 use gallery::PresetGallery;
 
 #[component]
-pub fn PresetSection(state: ChromeState) -> impl IntoView {
+pub fn PresetSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
     let groups = move || state.settings.with(|s| group_presets(&s.all_presets()));
     let existing_groups = move || state.settings.with(|s| user_group_names(&s.user_presets));
 
     view! {
-        <PresetGallery state=state groups=groups />
+        <PresetGallery state=state theme=theme groups=groups />
         <PresetEditor state=state existing_groups=existing_groups />
     }
 }

@@ -152,7 +152,7 @@ impl NoiseMode {
 /// selects the blend FAMILY for texture and grain, and that coupling is
 /// required: multiplying a light tint is a no-op and would render grain
 /// invisible on dark paper.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
     pub base: BaseMode,

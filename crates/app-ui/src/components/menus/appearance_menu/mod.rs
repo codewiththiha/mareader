@@ -34,7 +34,7 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::appearance::{flush_appearance_commit, set_appearance_menu_open};
+use crate::appearance::{ThemeHandle, set_appearance_menu_open};
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::components::primitives::menu::section_label::SectionLabel;
@@ -42,21 +42,12 @@ use crate::components::primitives::menu::separator::Separator;
 use crate::components::shell::controller::ChromeSurface;
 use app_chrome::icon::{Icon, IconName};
 use app_state::ChromeState;
-use reader_core::settings::Settings;
 
-/// A structural appearance change (base mode, texture mode, grain mode):
-/// flush any slider scrub still pending so the values the reader was just
-/// dialling land FIRST, then apply the change and mark the appearance dirty
-/// for rebake/persist. Every section's option buttons go through here — the
-/// flush preamble must not be re-typed per call site, or one forgotten copy
-/// silently drops the reader's in-flight dial.
-pub(crate) fn update_appearance(state: ChromeState, change: impl FnOnce(&mut Settings)) {
-    flush_appearance_commit();
-    state.settings.update(|s| {
-        change(s);
-        s.touch_appearance();
-    });
-}
+// Structural changes go through the theme handle's `commit`, which flushes
+// any pending slider scrub FIRST (the flush preamble must not be re-typed
+// per call site, or one forgotten copy silently drops the reader's in-flight
+// dial) and routes the edit: the active pane's own look while independent
+// themes are on, Settings otherwise.
 
 mod hue_picker;
 mod mode_section;
@@ -78,8 +69,14 @@ pub fn AppearanceMenu(
     /// the reader too, while a reflowable document is the one open.
     #[prop(optional)]
     surface: ChromeSurface,
+    /// The theme this menu edits. The reader host passes its routed handle
+    /// (pane looks behind it); a surface with no workspace uses the window
+    /// theme (Settings) for everything.
+    #[prop(optional)]
+    theme: Option<ThemeHandle>,
 ) -> impl IntoView {
     let open = open.unwrap_or_else(|| RwSignal::new(false));
+    let theme = theme.unwrap_or_else(|| ThemeHandle::for_settings(state.settings));
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
     // The engine's raw-retention gate: while this popover is open, pages
@@ -122,18 +119,18 @@ pub fn AppearanceMenu(
                 class="max-h-[min(70vh,32rem)] overflow-y-auto p-3".to_string()
             >
                 <SectionLabel text="Presets" />
-                <PresetSection state=state />
+                <PresetSection state=state theme=theme />
                 <Separator vertical=false spacing="my-3" />
                 <SectionLabel text="Mode & colour" />
-                <BaseSection state=state />
+                <BaseSection state=state theme=theme />
                 <Show when=move || texture_applies.get()>
                     <Separator vertical=false spacing="my-3" />
                     <SectionLabel text="Page texture" />
-                    <TextureSection state=state />
+                    <TextureSection theme=theme />
                 </Show>
                 <Separator vertical=false spacing="my-3" />
                 <SectionLabel text="Film grain" />
-                <NoiseSection state=state />
+                <NoiseSection state=state theme=theme />
             </MenuPopover>
         </div>
     }

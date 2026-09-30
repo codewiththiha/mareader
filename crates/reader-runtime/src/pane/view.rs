@@ -151,7 +151,7 @@ pub(crate) fn pane_content(
     let stream_live = Signal::derive(move || vs.reflow_streaming());
     let stream_percent = Signal::derive(move || vs.stream_percent());
 
-    view! {
+    let view = view! {
         <div
             node_ref=dom.root_ref()
             // `crate::pane::origin::PANE_ROOT_ATTR`: an event raised inside
@@ -250,5 +250,25 @@ pub(crate) fn pane_content(
             <crate::components::ai::selection_pill::SelectionPill state=state />
             <crate::components::ai::gloss::gloss_ai_popover::GlossAiPopover state=state />
         </div>
-    }
+    };
+
+    // The independent-theme paint: while the host's appearance boundary
+    // hands this pane a look of its own, the pane root carries the look's
+    // tokens (base + tint + texture — grain stays global and inherits);
+    // with `None` the tokens are removed and the pane resolves to the
+    // window theme again. The ink dial is a global text setting, so the
+    // paint tracks it alongside the look. The root exists by the time this
+    // effect first runs (the view above built it).
+    Effect::new(move |_| {
+        let look = vs.viewer.look.get();
+        let ink = state.settings.with(|s| s.text.ink_contrast);
+        if let Some(el) = dom.root() {
+            match look {
+                Some(a) => app_ui::theme_paint::paint_pane_appearance(el, a, ink),
+                None => app_ui::theme_paint::clear_pane_appearance(el),
+            }
+        }
+    });
+
+    view
 }

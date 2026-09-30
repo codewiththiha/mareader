@@ -24,7 +24,72 @@ use reader_core::appearance::Appearance;
 use reader_core::settings::Settings;
 use storage::save_settings;
 
-use crate::theme_paint::paint_for_pipeline;
+use crate::theme_paint::paint_into;
+
+/// The live paint's destination — re-exported for the routed handle's
+/// implementation (the reader host's theme module).
+pub use crate::theme_paint::PaintTarget;
+
+/// The slider patch vocabulary is shared with the theme handle's scrub
+/// callback; re-exported for the menu's dial call sites.
+pub use reader_core::appearance::AppearanceScrub;
+
+/// Where a theme edit goes. `Routed` follows the app's routing rule: while
+/// independent themes are on it edits the ACTIVE pane's own look; while they
+/// are off it edits the window's theme like any other settings change.
+/// `Global` always edits the window's theme — the film grain (noise) dial is
+/// the one dial that stays global.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeScope {
+    Routed,
+    Global,
+}
+
+/// A structural or preset edit: whatever it needs of the appearance, applied
+/// in place (the caller's closure owns the semantics).
+pub type AppearancePatch = Box<dyn FnOnce(&mut Appearance)>;
+
+/// The menu's one door into whichever theme it is editing. The reader host
+/// builds a routed handle (its pane looks live behind it); a surface with no
+/// workspace — the shelf — uses [`ThemeHandle::for_settings`], where both
+/// scopes land in Settings. The dials read `look` (the edit target's current
+/// values) and write through `commit` / `scrub`; `independent` + the theme
+/// toggle ride along so the menu can show and flip it.
+#[derive(Clone, Copy)]
+pub struct ThemeHandle {
+    /// The look the dials currently edit and display.
+    pub look: Signal<Appearance>,
+    pub independent: Signal<bool>,
+    pub set_independent: Callback<bool>,
+    pub commit: Callback<(ThemeScope, AppearancePatch)>,
+    pub scrub: Callback<(ThemeScope, AppearanceScrub)>,
+}
+
+impl ThemeHandle {
+    /// The window-theme handle: every edit is a Settings edit.
+    pub fn for_settings(settings: RwSignal<Settings>) -> Self {
+        let look = Signal::derive(move || settings.with(|s| s.appearance));
+        let commit = Callback::new(move |(scope, patch): (ThemeScope, AppearancePatch)| {
+            let _ = scope;
+            flush_appearance_commit();
+            settings.update(|s| {
+                patch(&mut s.appearance);
+                s.touch_appearance();
+            });
+        });
+        let scrub = Callback::new(move |(scope, patch): (ThemeScope, AppearanceScrub)| {
+            let _ = scope;
+            preview_appearance(settings, patch);
+        });
+        Self {
+            look,
+            independent: Signal::derive(|| false),
+            set_independent: Callback::new(|_| {}),
+            commit,
+            scrub,
+        }
+    }
+}
 
 /// How long after the last slider tick we write Settings. Long enough that a
 /// continuous drag is one write; short enough that a tap still feels instant.
@@ -32,29 +97,14 @@ const COMMIT_MS: u64 = 180;
 /// Persist can wait a beat — last_path and a finished drag both settle here.
 const SAVE_MS: u64 = 350;
 
-/// One field a slider is allowed to live-edit. Structural clicks (preset,
-/// base, texture mode, grain mode) go through `settings.update` directly
-/// and must either flush or cancel a pending scrub first.
-#[derive(Debug, Clone, Copy)]
-pub enum AppearanceScrub {
-    Tint { hue: u16, strength: u8 },
-    TextureOpacity(u8),
-    TextureScale(u16),
-    NoiseIntensity(u8),
+fn apply_scrub(a: &mut Appearance, p: AppearanceScrub) {
+    p.apply(a);
 }
 
-fn apply_scrub(a: &mut Appearance, p: AppearanceScrub) {
-    match p {
-        AppearanceScrub::Tint { hue, strength } => {
-            a.tint_hue = hue;
-            a.tint_strength = strength;
-        }
-        AppearanceScrub::TextureOpacity(v) => a.texture_opacity = v,
-        AppearanceScrub::TextureScale(v) => a.texture_scale = v,
-        AppearanceScrub::NoiseIntensity(v) => a.noise_intensity = v,
-    }
-    a.sanitize();
-}
+/// A slider gesture's settled commit: the patch it landed on, and the sink
+/// that writes it wherever the gesture is editing (Settings, or a pane's
+/// look).
+type CommitPayload = (AppearanceScrub, Box<dyn FnOnce(AppearanceScrub)>);
 
 thread_local! {
     // True while an appearance slider scrub is in flight. The engine then
@@ -100,11 +150,11 @@ pub fn set_appearance_menu_open(on: bool) {
 }
 
 thread_local! {
-    static PAINT_PENDING: Cell<Option<(Appearance, f64)>> = const { Cell::new(None) };
+    static PAINT_PENDING: Cell<Option<(Appearance, f64, PaintTarget)>> = const { Cell::new(None) };
     static PAINT_SCHEDULED: Cell<bool> = const { Cell::new(false) };
     static COMMIT_GEN: Cell<u64> = const { Cell::new(0) };
     static COMMIT_TIMER: RefCell<Option<TimeoutHandle>> = const { RefCell::new(None) };
-    static COMMIT_PAYLOAD: Cell<Option<(RwSignal<Settings>, AppearanceScrub)>> = const { Cell::new(None) };
+    static COMMIT_PAYLOAD: RefCell<Option<CommitPayload>> = const { RefCell::new(None) };
     static SAVE_TIMER: RefCell<Option<TimeoutHandle>> = const { RefCell::new(None) };
 }
 
@@ -113,16 +163,16 @@ thread_local! {
 /// each rewrite is a new WKWebView filter intermediate per visible page.
 /// The ink dial rides along so the text tokens repaint from the same
 /// snapshot the scrub is dialling.
-fn paint_appearance(a: Appearance, ink_contrast: f64) {
-    PAINT_PENDING.with(|p| p.set(Some((a, ink_contrast))));
+fn paint_appearance(a: Appearance, ink_contrast: f64, target: PaintTarget) {
+    PAINT_PENDING.with(|p| p.set(Some((a, ink_contrast, target))));
     if PAINT_SCHEDULED.with(|s| s.get()) {
         return;
     }
     PAINT_SCHEDULED.with(|s| s.set(true));
     request_animation_frame(move || {
         PAINT_SCHEDULED.with(|s| s.set(false));
-        if let Some((a, ic)) = PAINT_PENDING.with(|p| p.take()) {
-            paint_for_pipeline(a, ic);
+        if let Some((a, ic, target)) = PAINT_PENDING.with(|p| p.take()) {
+            paint_into(target, a, ic);
         }
     });
 }
@@ -146,7 +196,7 @@ fn clear_commit_timer() {
 pub fn cancel_appearance_commit() {
     bump_commit_gen();
     clear_commit_timer();
-    COMMIT_PAYLOAD.with(|p| p.set(None));
+    COMMIT_PAYLOAD.with(|p| *p.borrow_mut() = None);
     // The scrub is over even though its timer never fired; restore baked
     // rasters at whatever the variables currently hold.
     leave_scrub();
@@ -157,16 +207,14 @@ pub fn cancel_appearance_commit() {
 /// hue the reader just dialled.
 pub fn flush_appearance_commit() {
     clear_commit_timer();
-    let payload = COMMIT_PAYLOAD.with(|p| p.take());
+    let payload = COMMIT_PAYLOAD.with(|p| p.borrow_mut().take());
     bump_commit_gen();
-    if let Some((settings, patch)) = payload {
+    if let Some((patch, sink)) = payload {
         // Update final values first: the theme effect queues its refresh at
         // those values, then leaving scrub queues behind it and cannot cause a
-        // stale first rebake followed by a second one.
-        settings.update(|s| {
-            apply_scrub(&mut s.appearance, patch);
-            s.touch_appearance();
-        });
+        // stale first rebake followed by a second one. The sink owns where
+        // the settled values land (Settings or a pane's look).
+        sink(patch);
     }
     // A flush ends the gesture whatever it was scrubbing. Gating this on
     // `patch_needs_canvas_scrub` left the engine in scrub mode when a tint
@@ -184,10 +232,19 @@ fn patch_needs_canvas_scrub(p: AppearanceScrub) -> bool {
     matches!(p, AppearanceScrub::Tint { .. })
 }
 
-/// Live-preview a slider: paint CSS this frame, write Settings once the
-/// gesture pauses. Does NOT notify `settings` on the way, so PageCanvas /
-/// presets / localStorage stay quiet for the whole drag.
-pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) {
+/// Live-preview a slider: paint CSS this frame, run the commit sink once the
+/// gesture pauses. The source `current` is what the dial edits (Settings'
+/// appearance, or a pane's look), `target` where the live paint lands, and
+/// `sink` where the settled values are written. Does NOT notify any signal
+/// on the way, so PageCanvas / presets / localStorage stay quiet for the
+/// whole drag.
+pub fn preview_appearance_into(
+    current: Appearance,
+    ink_contrast: f64,
+    target: PaintTarget,
+    patch: AppearanceScrub,
+    sink: Box<dyn FnOnce(AppearanceScrub)>,
+) {
     // The theme variables change every frame from here on; switch the engine
     // to raw rasters + live CSS so the PAGE tracks a tint drag. Overlay
     // sliders (noise / texture) must not enter canvas scrub.
@@ -205,10 +262,9 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
         leave_scrub();
     }
 
-    let mut a = settings.get_untracked().appearance;
-    let ink_contrast = settings.get_untracked().text.ink_contrast;
+    let mut a = current;
     apply_scrub(&mut a, patch);
-    paint_appearance(a, ink_contrast);
+    paint_appearance(a, ink_contrast, target);
     // The page re-colours under the drag through the live CSS pipeline
     // alone — that is what scrub mode exists for. The engine is deliberately
     // NOT told per tick: the bridge crossing (and the serialized no-op it
@@ -219,14 +275,14 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
     // about any of it, its tokens having repainted from CSS all along.
 
     let commit_gen = bump_commit_gen();
-    COMMIT_PAYLOAD.with(|p| p.set(Some((settings, patch))));
+    COMMIT_PAYLOAD.with(|p| *p.borrow_mut() = Some((patch, sink)));
     clear_commit_timer();
     let handle = set_timeout_with_handle(
         move || {
             if COMMIT_GEN.with(|g| g.get()) != commit_gen {
                 return;
             }
-            COMMIT_PAYLOAD.with(|p| p.set(None));
+            let payload = COMMIT_PAYLOAD.with(|p| p.borrow_mut().take());
             // End the gesture before committing it. Leaving scrub clears the
             // flag and queues the one final bake at the settled values; the
             // settings write that follows wakes the theme effect OUTSIDE that
@@ -240,15 +296,33 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
             if patch_needs_canvas_scrub(patch) {
                 leave_scrub();
             }
-            settings.update(|s| {
-                apply_scrub(&mut s.appearance, patch);
-                s.touch_appearance();
-            });
+            if let Some((patch, sink)) = payload {
+                sink(patch);
+            }
         },
         Duration::from_millis(COMMIT_MS),
     )
     .ok();
     COMMIT_TIMER.with(|t| *t.borrow_mut() = handle);
+}
+
+/// The window/Settings case of [`preview_appearance_into`]: the historical
+/// slider entry (and the shelf handle's scrub sink).
+pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) {
+    let current = settings.get_untracked().appearance;
+    let ink_contrast = settings.get_untracked().text.ink_contrast;
+    preview_appearance_into(
+        current,
+        ink_contrast,
+        PaintTarget::Window,
+        patch,
+        Box::new(move |p| {
+            settings.update(|s| {
+                apply_scrub(&mut s.appearance, p);
+                s.touch_appearance();
+            });
+        }),
+    );
 }
 
 /// Debounced Settings persistence. The apply_theme save effect calls this

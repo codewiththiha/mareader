@@ -6,14 +6,17 @@
 
 use leptos::prelude::*;
 
-use crate::appearance::{AppearanceScrub, preview_appearance};
+use crate::appearance::{AppearanceScrub, ThemeHandle, ThemeScope};
 use crate::components::primitives::controls::toggle_button::ToggleButton;
 use crate::components::primitives::form::slider::Slider;
 use app_state::ChromeState;
 use reader_core::appearance::NoiseMode;
 
 #[component]
-pub fn NoiseSection(state: ChromeState) -> impl IntoView {
+pub fn NoiseSection(state: ChromeState, theme: ThemeHandle) -> impl IntoView {
+    // Grain is the one GLOBAL dial whatever the theme routing says: the
+    // noise layer is window-level and every pane inherits it, so its dials
+    // read and write Settings directly (ThemeScope::Global).
     let seed = state.settings.read_untracked().appearance;
     let (intensity, set_intensity) = signal(seed.noise_intensity as f64);
 
@@ -35,14 +38,14 @@ pub fn NoiseSection(state: ChromeState) -> impl IntoView {
                         <ToggleButton
                             active=selected
                             on_click=move || {
-                                super::update_appearance(state, move |s| {
-                                    s.appearance.noise = m;
+                                theme.commit.run((ThemeScope::Global, Box::new(move |a| {
+                                    a.noise = m;
                                     // Turning grain on at 0% shows nothing
                                     // and reads as a dead control.
-                                    if m.is_on() && s.appearance.noise_intensity == 0 {
-                                        s.appearance.noise_intensity = 25;
+                                    if m.is_on() && a.noise_intensity == 0 {
+                                        a.noise_intensity = 25;
                                     }
-                                })
+                                })));
                             }
                             variant_class="px-2 py-1.5 text-xs"
                         >
@@ -66,7 +69,9 @@ pub fn NoiseSection(state: ChromeState) -> impl IntoView {
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 100.0);
                     set_intensity.set(v);
-                    preview_appearance(state.settings, AppearanceScrub::NoiseIntensity(v as u8));
+                    theme
+                        .scrub
+                        .run((ThemeScope::Global, AppearanceScrub::NoiseIntensity(v as u8)));
                 }
                 label="Grain intensity"
             />

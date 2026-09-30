@@ -106,7 +106,7 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
     let right = move || {
         view! {
             {trailing}
-            <AppearanceMenu state=host.chrome />
+            <AppearanceMenu state=host.chrome theme=host.theme_handle() />
         }
     };
     let rail_push = slot_view(host, ChromeSlot::Rail);

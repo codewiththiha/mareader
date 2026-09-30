@@ -25,6 +25,36 @@ pub mod shared;
 
 pub use model::{Appearance, BaseMode, NoiseMode, TextureMode};
 
+/// One field an appearance slider is allowed to live-edit, carried by the
+/// theme handle's scrub callback so both sides of the boundary agree on
+/// which dial is moving (the canvas-scrub gate asks it of a tint). A plain
+/// enum on purpose: this crate stays free of wasm and leptos.
+#[derive(Debug, Clone, Copy)]
+pub enum AppearanceScrub {
+    Tint { hue: u16, strength: u8 },
+    TextureOpacity(u8),
+    TextureScale(u16),
+    NoiseIntensity(u8),
+}
+
+impl AppearanceScrub {
+    /// Apply this patch to an appearance and clamp its ranges. The one
+    /// writer of slider values — a preview paint and its delayed commit
+    /// both land here, so the two can never disagree on a mapping.
+    pub fn apply(self, a: &mut Appearance) {
+        match self {
+            Self::Tint { hue, strength } => {
+                a.tint_hue = hue;
+                a.tint_strength = strength;
+            }
+            Self::TextureOpacity(v) => a.texture_opacity = v,
+            Self::TextureScale(v) => a.texture_scale = v,
+            Self::NoiseIntensity(v) => a.noise_intensity = v,
+        }
+        a.sanitize();
+    }
+}
+
 /// Fixtures the appearance tests share. Every pipeline test starts from the
 /// same [`Appearance`] with only the tint dial set, and every assertion reads
 /// a colour back out of an emitted string — both were written per module (five

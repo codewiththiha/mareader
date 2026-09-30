@@ -2,6 +2,7 @@
 
 use leptos::prelude::*;
 
+use crate::appearance::ThemeHandle;
 use app_state::ChromeState;
 use reader_core::appearance::presets::PresetGroup;
 
@@ -10,6 +11,7 @@ use super::swatch::PresetSwatch;
 #[component]
 pub(super) fn PresetGallery(
     state: ChromeState,
+    theme: ThemeHandle,
     groups: impl Fn() -> Vec<PresetGroup> + Clone + Send + Sync + 'static,
 ) -> impl IntoView {
     view! {
@@ -26,7 +28,7 @@ pub(super) fn PresetGallery(
                             {g
                                 .presets
                                 .iter()
-                                .map(|p| view! { <PresetSwatch preset=p.clone() state=state /> })
+                                .map(|p| view! { <PresetSwatch preset=p.clone() state=state theme=theme /> })
                                 .collect_view()}
                         </div>
                     </div>
