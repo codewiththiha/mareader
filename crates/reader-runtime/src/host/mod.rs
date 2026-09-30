@@ -246,6 +246,10 @@ impl ReaderHost {
         // The Library panel is the host's; the active pane's rail shows it
         // beside its own panels, found through context like the controller.
         provide_context(library::LibraryPanel::new(host));
+        // The theme handle is shared beyond the title bar's menu: the
+        // Settings modal's Workspace tab flips the same toggle, so it is
+        // reached through context like the shell controller.
+        provide_context(host.theme_handle());
         host.install_appearance_boundary();
         host.install_bounds();
         host.install_suspension();

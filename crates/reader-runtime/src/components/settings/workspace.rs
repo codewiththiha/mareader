@@ -1,10 +1,13 @@
-//! The Workspace tab: how the reader's split workspace behaves. Its one knob
-//! is what a click on a file in the rail's Library panel does — a drag onto
-//! the workspace always opens a split, whatever is chosen here.
+//! The Workspace tab: how the reader's split workspace behaves. Two knobs:
+//! what a click on a file in the rail's Library panel does (a drag onto the
+//! workspace always opens a split, whatever is chosen here), and whether
+//! each pane in a split keeps its own theme.
 
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
+use app_ui::appearance::ThemeHandle;
+use app_ui::components::primitives::controls::switch::Switch;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 use reader_core::settings::LibraryClick;
 
@@ -32,6 +35,17 @@ const CHOICES: [(LibraryClick, &str, &str); 3] = [
 pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoView {
     let s = state.settings;
     let current = Signal::derive(move || s.with(|st| st.workspace.library_click));
+    // The host's theme handle flips the live workspace's per-pane looks;
+    // without one (no workspace in this window) the same toggle persists
+    // the setting for the next one.
+    let theme = use_context::<ThemeHandle>().unwrap_or_else(|| ThemeHandle::for_settings(s));
+    let toggle = view! {
+        <Switch
+            checked=theme.independent
+            on_change=theme.set_independent
+            title="Independent theme for each pane"
+        />
+    };
     view! {
         <SectionLabel text="Library panel" />
         <div
@@ -82,5 +96,21 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
             "Dragging a file onto the workspace always opens it in a split. \
              With “Do nothing”, Enter still opens the file beside the focused pane."
         </p>
+
+        <SectionLabel text="Pane themes" />
+        <div
+            class="flex items-center justify-between gap-3 rounded-xl border border-line px-4 py-3"
+            data-setting="independent-themes"
+        >
+            <span class="min-w-0">
+                <span class="block text-sm text-ink">"Independent theme for each"</span>
+                <span class="block text-xs text-muted">
+                    "While a split is open, each pane keeps its own colour. The film grain \
+                     stays shared, the outer chrome keeps the main theme, and the colours \
+                     are temporary."
+                </span>
+            </span>
+            {toggle}
+        </div>
     }
 }

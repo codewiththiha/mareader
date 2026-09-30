@@ -237,11 +237,14 @@ pub(crate) fn theme_handle(
         },
     );
 
+    let panes = Signal::derive(move || manager.placed().len());
+
     app_ui::appearance::ThemeHandle {
         look,
         independent: themes.independent(),
         set_independent,
         commit,
         scrub,
+        panes,
     }
 }

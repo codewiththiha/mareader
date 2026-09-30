@@ -36,6 +36,7 @@ use leptos::prelude::*;
 
 use crate::appearance::{ThemeHandle, set_appearance_menu_open};
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
@@ -77,6 +78,11 @@ pub fn AppearanceMenu(
 ) -> impl IntoView {
     let open = open.unwrap_or_else(|| RwSignal::new(false));
     let theme = theme.unwrap_or_else(|| ThemeHandle::for_settings(state.settings));
+    // The independent-theme toggle appears with the split it serves (two or
+    // more panes) and stands down in a single pane, where per-pane theming
+    // has nothing to distinguish. A named closure: `>=` inside a view
+    // attribute would end at the `>`.
+    let split = move || theme.panes.get() >= 2;
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
     // The engine's raw-retention gate: while this popover is open, pages
@@ -118,6 +124,25 @@ pub fn AppearanceMenu(
                 coordinate_space="toolbar-row"
                 class="max-h-[min(70vh,32rem)] overflow-y-auto p-3".to_string()
             >
+                // The dials below edit whichever look the toggle selects:
+                // the focused pane's own while it is on, the window's
+                // otherwise. Grain stays global either way.
+                <Show when=split>
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="min-w-0">
+                            <span class="block text-sm text-ink">"Independent theme for each"</span>
+                            <span class="block text-xs text-muted">
+                                "Each pane keeps its own colour; grain stays shared."
+                            </span>
+                        </span>
+                        <Switch
+                            checked=theme.independent
+                            on_change=theme.set_independent
+                            title="Independent theme for each pane"
+                        />
+                    </div>
+                    <Separator vertical=false spacing="my-3" />
+                </Show>
                 <SectionLabel text="Presets" />
                 <PresetSection state=state theme=theme />
                 <Separator vertical=false spacing="my-3" />

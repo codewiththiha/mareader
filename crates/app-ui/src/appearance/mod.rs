@@ -63,10 +63,17 @@ pub struct ThemeHandle {
     pub set_independent: Callback<bool>,
     pub commit: Callback<(ThemeScope, AppearancePatch)>,
     pub scrub: Callback<(ThemeScope, AppearanceScrub)>,
+    /// How many panes the workspace shows: the independent-theme toggle
+    /// appears with a split (two or more) and stands down in a single pane,
+    /// where per-pane theming has nothing to distinguish.
+    pub panes: Signal<usize>,
 }
 
 impl ThemeHandle {
-    /// The window-theme handle: every edit is a Settings edit.
+    /// The window-theme handle: every edit is a Settings edit. The
+    /// independent toggle still persists (the Settings row works with or
+    /// without a workspace behind it) — with no panes, there is nothing for
+    /// it to seed.
     pub fn for_settings(settings: RwSignal<Settings>) -> Self {
         let look = Signal::derive(move || settings.with(|s| s.appearance));
         let commit = Callback::new(move |(scope, patch): (ThemeScope, AppearancePatch)| {
@@ -81,12 +88,17 @@ impl ThemeHandle {
             let _ = scope;
             preview_appearance(settings, patch);
         });
+        let set_independent = Callback::new(move |on: bool| {
+            settings.update(|s| s.workspace.independent_themes = on);
+        });
+        let independent = Signal::derive(move || settings.with(|s| s.workspace.independent_themes));
         Self {
             look,
-            independent: Signal::derive(|| false),
-            set_independent: Callback::new(|_| {}),
+            independent,
+            set_independent,
             commit,
             scrub,
+            panes: Signal::derive(|| 1),
         }
     }
 }
