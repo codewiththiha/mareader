@@ -7,9 +7,10 @@ why only the third holds — is `docs/route-split-retrospective.md`.
 
 ## What this branch is
 
-Team 10's migration branch for the runtime split mandated by `AGENTS.md` and
-`wasm-runtime-migration.md`. Base: `main`. Commits follow the conventional
-format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
+Team 10's migration branch for the runtime split (the migration plan itself
+lives in `wasm-runtime-migration.md`; `AGENTS.md` is now branch-agnostic and
+carries no phase plan). Base: `main`. Commits follow the conventional format
+in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 
 ## Migration status
 
@@ -73,7 +74,7 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   back at idle — the regression the dwell removes. The lane's realm cap and
   generation guards keep that from stacking rasters. The full story — the
   gate's history, the regression, the diagnosis playbook — is
-  `docs/fling-gate-retrospective.md`; read it before touching the gate.
+  `docs/memory/fling-gate.md`; read it before touching the gate.
 - Inside the reader frame: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's
@@ -102,6 +103,15 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 - `*_bg.wasm` is wasm-bindgen's file naming (`<name>.js` glue +
   `<name>_bg.wasm` module), not an extra module: there are exactly three —
   shell, library, reader.
+- Memory docs live in `docs/memory/` (index `docs/memory/README.md`):
+  `rules.md` is the binding rule set for new code (frame-scoped release,
+  dwell before expensive work, bounded caches with drains, zero-and-remove
+  for canvases, weak module references, observable teardown); `audit.md`
+  is the 2026-09-30 subsystem audit — every allocation owner checked
+  against the rules, one fix applied (entry snapshots are now zeroed on
+  session teardown, not merely dereferenced); `fling-gate.md` is the
+  churn record. New memory-sensitive code reads `rules.md` first; a new
+  audit updates `audit.md`.
 
 ## Warm slot (why a route switch is no longer a boot)
 

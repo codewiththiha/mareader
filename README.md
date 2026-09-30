@@ -35,6 +35,7 @@ optional paper textures and film grain, all persisted between sessions.
   - [Project layout](#project-layout)
   - [Engine API](#engine-api)
   - [State model](#state-model)
+  - [Documentation](#documentation)
 - [Getting started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
@@ -794,23 +795,33 @@ stays visible.
 |  Tauri v2 shell (Rust)                                       |
 |  native window, file dialog, asset protocol, fullscreen      |
 +-------------------------------------------------------------+
-|  Leptos 0.8 interface (Rust, compiled to WebAssembly)        |
-|  features / components / state / effects, reactive signals   |
+|  Shell (Leptos 0.8 CSR, src/)                                |
+|  routing, library and reader chrome, frame ownership and     |
+|  recycle policy (src/app/frame.rs, src/app/manager.rs)       |
 +-------------------------------------------------------------+
-|  Typed bridge (wasm-bindgen)                                 |
-|  pdf-engine: snake_case Rust mapped to camelCase engine      |
+|  Runtime frames (iframes, one WASM realm each)               |
+|  /library.html  crates/library-runtime                       |
+|  /reader.html   crates/reader-runtime: virtualization, the   |
+|                 strips, pages, zoom, gestures, effects       |
 +-------------------------------------------------------------+
-|  reader bundle (JavaScript, public/readerEngine.js)          |
-|  selection tracking for every format; needs no pdf.js        |
-+-------------------------------------------------------------+
-|  window.PDFReader engine (JavaScript, public/pdfEngine.js)   |
-|  render queue, thumbnail cache, text layer, search index     |
+|  Engine (JavaScript, loaded in the reader frame)             |
+|  window.PDFReader (public/pdfEngine.js): render lanes,       |
+|  thumbnail cache, text layer, search text, bake worker       |
 +-------------------------------------------------------------+
 |  pdf.js 6.2.108, vendored into public/vendor/pdfjs           |
 +-------------------------------------------------------------+
 ```
 
-Pure logic lives in `reader-core`, `pdf-core`, `reflow-core`, `txt-core`, `md-core`,
+Each runtime lives in a shell-owned iframe so its WASM linear memory and JS
+realm can be released by removing the frame — WASM linear memory only grows,
+and a realm keeps every module it has ever loaded. The shell recycles frames
+across route changes (retire instead of reuse when memory warrants, keep one
+warm reader behind the shelf); the design and its measurements are in
+`docs/runtime-split.md` and `docs/route-split-retrospective.md`. The shell
+page itself loads no engine code and no pdf.js.
+
+Pure logic lives in `reader-core`, `pdf-core`, `reflow-core`, `txt-core`,
+`md-core`,
 `ui-geom` and `ai-core` — no DOM and no Leptos — so the view-mode arithmetic, the zoom
 ladder, filename rules, colour conversion, the search index, text typography and pagination,
 settings migration, the floating-panel placement and the AI word-card's geometry and spring
@@ -1049,6 +1060,19 @@ search, the gloss marks and the AI's selection state. Effects subscribe to it ra
 components talking to one another, which keeps ownership of each concern in exactly one place.
 During a zoom, for example, a single system owns the display scale and render scale, and every
 zoom control posts a request to it rather than writing the scale directly.
+
+### Documentation
+
+Deeper records live in `docs/`:
+
+| Document | Contents |
+|----------|----------|
+| `docs/runtime-split.md` | The shell/frame architecture: why each runtime is iframed, the frame lifecycle, the recycle policy |
+| `docs/route-split-retrospective.md` | The frame-lifecycle designs that were measured and the one that shipped |
+| `docs/session-ownership.md` | Ownership table for every engine resource a session holds |
+| `docs/memory/README.md` | Memory documentation index: the binding rules for new code, the subsystem audit, and the fling-gate churn record |
+| `docs/memory-baseline.md` | Instrumentation and the baseline memory numbers |
+| `docs/ci-architecture.md`, `docs/lifecycle-ownership.md` | The CI pipeline and the browser lifecycle assertions |
 
 ---
 
