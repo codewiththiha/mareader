@@ -168,6 +168,11 @@ pub(crate) fn theme_handle(
     };
 
     let look = Signal::derive(move || {
+        // The per-pane map is behind StoredValue/RefCell so it has one owner,
+        // not one signal per pane. Subscribe to its version here as well as in
+        // the host paint boundary: the menu's selected base, hue/strength
+        // dials and active look must follow a focused pane's edit immediately.
+        themes.version().with(|_| ());
         let global = settings.with(|s| s.appearance);
         if themes.independent.get() {
             themes.active_look(manager.active(), global)

@@ -2339,17 +2339,27 @@ async function paneEntries() {
     target.dispatchEvent(new f.contentWindow.PointerEvent("pointerdown", { bubbles: true, composed: true }));
   }, [activeFrame, md.paneId]);
   await waitFor("[pane themes] Markdown pane focused", (s) => s.host?.activePane === md.paneId, 10_000);
+  await page.waitForFunction(([sel]) => !!document.querySelector(sel)?.contentDocument?.querySelector('button[title="Appearance"]'), [activeFrame], { timeout: 10_000 });
   await page.evaluate(([sel, appearance]) => {
     const doc = document.querySelector(sel)?.contentDocument;
     if (!doc?.querySelector('button[title="Dark"]')) doc?.querySelector(appearance)?.click();
-    doc?.querySelector('button[title="Dark"]')?.click();
   }, [activeFrame, appearance]);
+  await page.waitForFunction(([sel]) => !!document.querySelector(sel)?.contentDocument?.querySelector('button[title="Dark"]'), [activeFrame], { timeout: 10_000 });
+  await page.evaluate((sel) => document.querySelector(sel)?.contentDocument?.querySelector('button[title="Dark"]')?.click(), activeFrame);
+  await page.waitForFunction(([sel, id]) => {
+    const root = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-id="${id}"] [data-pane-root]`);
+    return root && getComputedStyle(root).getPropertyValue("--color-paper").trim() !== "#ffffff";
+  }, [activeFrame, md.paneId], { timeout: 10_000 });
   const mdDark = await page.evaluate(([sel, id]) => {
     const doc = document.querySelector(sel)?.contentDocument;
     const root = doc?.querySelector(`[data-pane-id="${id}"] [data-pane-root]`);
     return root ? getComputedStyle(root).getPropertyValue("--color-paper").trim() : "";
   }, [activeFrame, md.paneId]);
-  if (!mdDark || mdDark === "#ffffff") throw new Error(`[pane themes] MD's selected Dark paper did not land: ${mdDark}`);
+  const selectedMdBase = await page.evaluate((sel) =>
+    document.querySelector(sel)?.contentDocument?.querySelector('button[title="Dark"]')?.getAttribute("aria-pressed"), [activeFrame]);
+  if (!mdDark || mdDark === "#ffffff" || selectedMdBase !== "true") {
+    throw new Error(`[pane themes] MD's selected Dark paper/menu state did not land: ${JSON.stringify({ mdDark, selectedMdBase })}`);
+  }
 
   // Deliberately divergent test colours make the ownership contract obvious:
   // shared red on :root, local green on the PDF root, and MD's own dark base.
@@ -2389,11 +2399,18 @@ async function paneEntries() {
       .dispatchEvent(new f.contentWindow.PointerEvent("pointerdown", { bubbles: true, composed: true }));
   }, [activeFrame, pdfPane]);
   await waitFor("[pane themes] PDF pane focused", (s) => s.host?.activePane === pdfPane, 10_000);
+  await page.waitForFunction(([sel]) => !!document.querySelector(sel)?.contentDocument?.querySelector('button[title="Appearance"]'), [activeFrame], { timeout: 10_000 });
   await page.evaluate(([sel, appearance]) => {
     const doc = document.querySelector(sel)?.contentDocument;
     if (!doc?.querySelector('button[title="Dim"]')) doc?.querySelector(appearance)?.click();
-    doc?.querySelector('button[title="Dim"]')?.click();
   }, [activeFrame, appearance]);
+  await page.waitForFunction(([sel]) => !!document.querySelector(sel)?.contentDocument?.querySelector('button[title="Dim"]'), [activeFrame], { timeout: 10_000 });
+  await page.evaluate((sel) => document.querySelector(sel)?.contentDocument?.querySelector('button[title="Dim"]')?.click(), activeFrame);
+  await page.waitForFunction(([sel, pdfId]) => {
+    const root = document.querySelector(sel)?.contentDocument?.querySelector(`[data-pane-id="${pdfId}"] [data-pane-root]`);
+    return root && !!getComputedStyle(root).getPropertyValue("--canvas-filter").trim()
+      && getComputedStyle(root).getPropertyValue("--color-paper").trim() !== "#ffffff";
+  }, [activeFrame, pdfPane], { timeout: 10_000 });
   const pdfLook = await page.evaluate(([sel, pdfId, mdId]) => {
     const doc = document.querySelector(sel)?.contentDocument;
     const pdfRoot = doc?.querySelector(`[data-pane-id="${pdfId}"] [data-pane-root]`);
@@ -2406,9 +2423,34 @@ async function paneEntries() {
       independent: doc.querySelector(".reader-bg").classList.contains("independent-themes"),
     };
   }, [activeFrame, pdfPane, md.paneId]);
-  if (!pdfLook.independent || !pdfLook.pdfFilter || pdfLook.pdfPaper === pdfLook.mdPaper) {
-    throw new Error(`[pane themes] PDF's own look did not diverge from MD: ${JSON.stringify(pdfLook)}`);
+  const selectedPdfBase = await page.evaluate((sel) =>
+    document.querySelector(sel)?.contentDocument?.querySelector('button[title="Dim"]')?.getAttribute("aria-pressed"), [activeFrame]);
+  if (!pdfLook.independent || !pdfLook.pdfFilter || pdfLook.pdfPaper === pdfLook.mdPaper || selectedPdfBase !== "true") {
+    throw new Error(`[pane themes] PDF's own Dim look/menu state did not diverge from MD: ${JSON.stringify({ pdfLook, selectedPdfBase })}`);
   }
+  // Exercise the opposite family in that SAME focused PDF pane. It must be
+  // possible to choose Light for the PDF while the adjacent Markdown remains
+  // Dark; this catches a global base control masquerading as per-pane UI.
+  await page.evaluate((sel) => document.querySelector(sel)?.contentDocument?.querySelector('button[title="Light"]')?.click(), activeFrame);
+  await page.waitForFunction(([sel, pdfId, mdId]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const pdfRoot = doc?.querySelector(`[data-pane-id="${pdfId}"] [data-pane-root]`);
+    const mdRoot = doc?.querySelector(`[data-pane-id="${mdId}"] [data-pane-root]`);
+    return pdfRoot && mdRoot
+      && getComputedStyle(pdfRoot).getPropertyValue("--color-paper").trim() === "#ffffff"
+      && getComputedStyle(mdRoot).getPropertyValue("--color-paper").trim() !== "#ffffff";
+  }, [activeFrame, pdfPane, md.paneId], { timeout: 10_000 });
+  const splitLooks = await page.evaluate(([sel, pdfId, mdId]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const pdfRoot = doc?.querySelector(`[data-pane-id="${pdfId}"] [data-pane-root]`);
+    const mdRoot = doc?.querySelector(`[data-pane-id="${mdId}"] [data-pane-root]`);
+    return {
+      pdf: getComputedStyle(pdfRoot).getPropertyValue("--color-paper").trim(),
+      markdown: getComputedStyle(mdRoot).getPropertyValue("--color-paper").trim(),
+      lightSelected: doc?.querySelector('button[title="Light"]')?.getAttribute("aria-pressed"),
+    };
+  }, [activeFrame, pdfPane, md.paneId]);
+  if (splitLooks.lightSelected !== "true") throw new Error(`[pane themes] the PDF control did not follow the focused pane: ${JSON.stringify(splitLooks)}`);
   // Restore the toggle before the existing split-close lifecycle assertions.
   await page.evaluate(([sel, appearance, selector]) => {
     const doc = document.querySelector(sel)?.contentDocument;
@@ -2417,7 +2459,7 @@ async function paneEntries() {
   }, [activeFrame, appearance, themeSwitch]);
   await page.waitForFunction(([sel]) =>
     !document.querySelector(sel)?.contentDocument?.querySelector(".reader-bg")?.classList.contains("independent-themes"), [activeFrame]);
-  console.log(`[pane themes] independent MD/PDF looks, mixed-format blend isolation: ${JSON.stringify({ mdDark, blendScopes, pdfLook })}`);
+  console.log(`[pane themes] independent MD/PDF looks, mixed-format blend isolation: ${JSON.stringify({ mdDark, blendScopes, pdfLook, splitLooks })}`);
 
   // Close the PDF pane through the host's own control: the Markdown pane
   // keeps its session, takes focus and the whole slot; the PDF's engine

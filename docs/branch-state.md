@@ -23,7 +23,7 @@ in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 4 — session-scoped PDF / Markdown / TXT engines | **done**: each pane owns one `FormatSession` per opened document — `PdfSession` (`crates/pdf-engine/src/session/`, one engine session per sid in `public/engine/state.ts`), `MdSession` / `TxtSession` (`crates/reader-runtime/src/pane/session.rs`); async stamps per pane; inventory, call graph and retained realm state in `docs/session-ownership.md`, enforced by `tools/check-session-ownership.mjs`; what Phase 5 inherits: [Phase 4 bridges](#phase-4-bridges-what-phase-5-inherits) |
 | 5 — production split workspace | **done**: `/reader` runs a `PaneTree` (layout over pane ids only, `crates/reader-runtime/src/host/tree.rs`) under the `ReaderHost`; up to four live panes, each with its own `FormatSession`; `open_document(target)` places a document in a pane or beside it; host-owned dividers, focus outline and per-pane close; see [Phase 5: the split workspace](#phase-5-the-split-workspace) |
 | 6 — smart document drag/drop | **implemented**: a file row of the reader's Library panel (the rail's third tab, `crates/reader-runtime/src/host/library/`) is the one split-drag source; targets come from the measured slot and pane boxes (`crates/reader-runtime/src/host/{geometry,drop_target,drag,commands}.rs`), the preview is geometry only, a drop is one `WorkspaceCommand`; OS file drops import into the library while it is on screen (`src/services/import_drop.rs`); see [Phase 6: document drag and drop](#phase-6-document-drag-and-drop) |
-| 7+ — appearance blend, … | **in progress** — split-mode blend hold + shared paper publisher landed; independent theme toggle is visible in the appearance menu and Settings → Workspace; per-pane look routing and token painting landed. **Root cause fixed in working tree**: PDF engine now pins each session to its pane root and owns an independent pipeline/cache; per-pane PDF paper and blend CSS are isolated from neighboring panes. Engine smoke covers two distinct live PDF pipelines and a one-pane-only rebake; browser split walkthrough + visual proof and CI remain |
+| 7+ — appearance blend, … | **implemented; final Deep CI rerun in progress** — split-mode blend hold + shared paper publisher; visible independent-theme toggle in the appearance menu and Settings → Workspace; per-pane look routing/token paint; per-session PDF bake/cache and local paper publication; independent blend isolates PDF pages, reflow surfaces, shared gutters and chrome. CI green at `9abf667`; Deep CI browser + memory replay running for the final browser assertion update. Desktop (1440×900) and narrow (800×900) split screenshots captured at `/home/user/independent-theme-final-{1440,800}.png` |
 
 ## Architecture as built (do not re-derive)
 
@@ -509,6 +509,51 @@ deliberately rather than discovering it:
   Markdown split/close cycles (same PDF session, pane and virtualizer
   counts back to the PDF-only baseline), then PDF + Markdown + TXT disposed
   with every pane owner released.
+
+## Phase 7: workspace appearance and blend
+
+- **Confirmed DOM contract:** a split does NOT use one physical paper surface.
+  Every pane has its own `[data-pane-root]` box and each PDF page has its own
+  `.pdf-page` host. Ordinary blend mode intentionally paints the latest
+  focused PDF's same `--pdf-paper-baked` value onto each pane root and the
+  outer `.reader-bg`; the common colour creates the visual impression of one
+  shared backdrop. Reflow panes therefore stand on the PDF's paper in ordinary
+  blend mode. The MRU publisher is the shared fallback; focus on MD/TXT holds
+  the last PDF colour instead of clearing it.
+- **Independent mode:** `PaneThemes` owns temporary looks by `PaneId`; global
+  Settings appearance stays remembered, chrome and the outer reader backdrop
+  keep that global look, and noise remains global. The pane painter writes
+  base/tint/filter/reflow/texture tokens onto each pane root. Each PDF session
+  pins its `EngineSession.themeRoot` to the root containing its registered
+  page and owns `themePipeline` (actual-input fingerprint + generation), so
+  page rasters, thumbnails and detected-paper composites use that pane's
+  filter/blend/paper, never whichever pane last painted `<html>`. The MRU
+  publisher still updates the ordinary shared paper; independent CSS selects
+  `--pane-pdf-paper-baked` only inside the corresponding PDF pane.
+- **Blend and native chrome:** ordinary blend repeats one colour across the
+  pane roots. Independent blend keeps each PDF's baked paper local, each
+  reflowable pane's own `--tx-paper`, and the global paper on gaps outside
+  panes. Pane-entry clipping + isolation prevent a PDF's CSS blend/texture
+  from sampling or painting through an adjacent pane; the titlebar glass,
+  native macOS traffic-light region and window-level backdrop remain on the
+  remembered global theme because no pane painter mutates document-root
+  tokens.
+- **Edge/lifetime handling:** active-look reads subscribe to the pane-theme
+  version (the menu selection and dials follow focus/edit changes); engine
+  generation advances only on actual per-session filter/blend/paper changes;
+  renderer landing checks that generation; theme-root observers are per
+  session, weakly keyed, and disconnected at the start of teardown. Root
+  replacement retargets the observer. A texture/grain/ink-only edit does not
+  rebake PDF pixels.
+- **Proof:** `tools/engine-smoke/sessions.ts` renders two live PDFs through
+  distinct pane filters, then changes/rebakes only one and checks distinct
+  local papers while the MRU shared paper follows focus. Browser lifecycle
+  Stage 13 uses real appearance controls on PDF | MD, asserts Dark MD + Dim
+  then Light PDF, and injects divergent paper colours while blend is on to
+  prove the PDF colour cannot recolour MD or shared chrome/gutters. Final
+  Deep CI browser baseline must be green. Manual screenshots are 1440×900
+  and 800×900 (`independent-theme-final-1440.png`,
+  `independent-theme-final-800.png` in the workspace).
 
 ## Known follow-ups (do not silently expand scope)
 
