@@ -37,7 +37,7 @@ function releaseEntrySnapshot(s: EngineSession, canvasId: string): void {
   snap.remove();
 }
 
-function releaseAllEntrySnapshots(s: EngineSession): void {
+export function releaseAllEntrySnapshots(s: EngineSession): void {
   for (const canvasId of [...s.scrub.entrySnapshots.keys()]) releaseEntrySnapshot(s, canvasId);
 }
 

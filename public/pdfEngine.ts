@@ -51,7 +51,7 @@ import {
   setActiveMatch,
   setSearchContext,
 } from "./engine/search";
-import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
+import { rebakeTheme, releaseAllEntrySnapshots, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline } from "./engine/theme/pipeline";
 import { releaseBakeWorker } from "./engine/theme/bake";
 import { publishBakedPaper, watchPaperTokens } from "./engine/theme/paper";
@@ -173,7 +173,11 @@ async function destroySession(sid: Sid): Promise<void> {
     s.thumbCache.clear();
     s.setSearchQuery("");
     s.setActiveMatchValue(null);
-    s.scrub.entrySnapshots.clear();
+    // Zero and remove the entry snapshots, not just the map: a canvas
+    // backing store lingers until GC unless zeroed (WKWebView keeps the
+    // IOSurface on DOM removal alone) — the same rule releaseSnapshots
+    // applies to the zoom masks.
+    releaseAllEntrySnapshots(s);
     s.scrub.entryPrepare = null;
     if (s.loadingTask) await destroyTask(s, s.loadingTask);
   } finally {
