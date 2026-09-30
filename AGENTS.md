@@ -28,46 +28,117 @@ Current architecture, on every branch that has merged it:
 
 ## Session protocol
 
+Do these steps in order at the start of every session:
+
 1. Read this file.
-2. Read the branch's `docs/branch-state.md` if it exists. It records
-   task state and wins over conversation memory and stale summaries.
-3. Prefer the branch's docs over inference. When in doubt, inspect the raw
-   source, tests, and exports rather than commit messages.
+2. Read the branch's `docs/branch-state.md` if it exists. It records task
+   state and MUST be trusted over conversation memory, summaries, and
+   assumptions. When they disagree, the file wins.
+3. Read the docs the branch points to before inferring. Never assume
+   feature completion from commit messages, tags, or PR titles: inspect
+   the raw source, tests, and exports.
 
 ## Standing rules
 
-These apply to every change on every branch.
+These apply to every change on every branch. Each rule states what a
+violation looks like.
 
-1. **Teardown is a first-class concern.** Allocation, cancellation,
-   clearing, worker termination, and frame disposal are reviewable parts of
-   a change, not afterthoughts. Removing a document or closing a pane must
-   release everything that page allocated.
-2. **Read the memory rules before touching memory-sensitive code.**
-   `docs/memory/rules.md` is binding: frame-scoped release, dwell before
-   expensive work, bounded caches with drains, zero-and-remove for canvases,
-   weak references from module state, observable teardown counters.
-3. **Memory claims need measurements.** Record workload, metric,
-   before/after values, and reporting limits. WebKit does not return
-   process memory promptly; the replay harness scrolls once per pane, so
-   motion-path changes need a scroll-heavy workload.
-4. **No legacy path kept as production code.** Feature flags and
-   compatibility switches are for migration periods only; they do not
-   survive their milestone.
-5. **No speculative scaffolding.** Do not add code for tasks not yet
-   started. Do not add TODO/FIXME markers; if work is needed, do it or
-   leave the code as-is.
-6. **Do not weaken invariants.** Never relax test assertions to make them
-   pass. If an invariant blocks the task, say so instead of changing it.
-7. **UI changes need visible proof.** Implement and visually verify in a
-   running browser (desktop-width and narrow), then describe what was
-   checked. Text-only claims of "looks good" are not acceptable.
-8. **Lazy loading is not fresh instantiation.** Reusing an already-loaded
-   module is different from recreating it; do not regress one into the
-   other.
-9. **Do not reintroduce known bugs.** The codebase comments record past
-   regressions (double filtering, raw-canvas lifetime, window-term caps,
-   effect stretch). Read the surrounding comments before changing
-   rendering paths.
+### 1. Teardown is a first-class feature
+
+Every runtime that owns resources MUST have an explicit teardown path.
+Teardown MUST cover the actual resources it owns, including when
+applicable:
+
+- async tasks and stale requests,
+- render queues,
+- prefetch/look-ahead work,
+- PDF loading/document objects,
+- PDF workers,
+- page registrations,
+- canvases/ImageBitmap-like raster resources,
+- thumbnail caches,
+- search/index structures,
+- virtualizers,
+- ResizeObservers and event listeners,
+- timers/idle callbacks,
+- reactive resources and DOM mounts.
+
+A `drop` or component unmount alone is NOT evidence of correct teardown.
+Removing a document or closing a pane MUST release everything that page
+allocated.
+
+### 2. The memory rules are binding
+
+Read `docs/memory/rules.md` before writing code that allocates surfaces,
+caches, timers, or workers. Its rules are enforced exactly as written:
+frame-scoped release, dwell before expensive work, bounded caches with
+drains, zero-and-remove for canvases, weak references from module state,
+observable teardown counters. A new audit result goes into
+`docs/memory/audit.md`; do not leave it only in the pull request.
+
+### 3. Do not claim memory was released without evidence
+
+"The component unmounted" and "the object went out of scope" are not
+memory measurements. For memory-related work, record:
+
+- what was measured,
+- how it was measured,
+- the workload,
+- before/after values,
+- known limitations of browser/Tauri memory reporting.
+
+WebKit does not return process memory promptly, and the shipped replay
+harness scrolls once per pane, so motion-path changes need a scroll-heavy
+workload before their numbers mean anything. The goal is to eliminate
+retained references and active resource ownership; the OS may not return
+memory to the process immediately.
+
+### 4. One authoritative owner per responsibility
+
+Never implement two competing sources of truth. Do not duplicate state in
+two managers. Do not add a compatibility layer that becomes the permanent
+implementation: every temporary bridge MUST have an owner, a removal
+condition, and a tracked follow-up. Do not add an unbounded fallback.
+
+### 5. Preserve product behavior
+
+The reader's virtualization, look-ahead/prerender, retention,
+placeholders, zoom behavior, appearance system, search, selection, and AI
+features are existing product behavior. Do not disable or simplify them
+to make a change compile. Preserve behavior first, then improve its
+ownership and resource accounting.
+
+### 6. Do not weaken invariants
+
+Never relax test assertions to make them pass. Never modify CI workflows
+to make failing checks pass. If an invariant or a workflow blocks the
+task, report the concrete blocker instead of changing it.
+
+### 7. UI changes need visible proof
+
+Implement and visually verify in a running browser at desktop width and
+at narrow width, then describe what was checked. Text-only claims of
+"looks good" are not acceptable.
+
+### 8. Lazy loading is not fresh instantiation
+
+Dynamic import/lazy loading may reuse a cached JavaScript module
+namespace. When true independent state is required, use explicit
+instances/sessions with clear ownership and disposal. Do not regress one
+into the other.
+
+### 9. Do not reintroduce known bugs
+
+The codebase comments record past regressions (double filtering,
+raw-canvas lifetime, window-term caps, effect stretch). Read the
+surrounding comments before changing rendering paths.
+
+### 10. No speculative scaffolding
+
+Do not add code for tasks not yet started. Do not add TODO/FIXME markers;
+if work is needed, do it or leave the code as-is. Do not create a large
+pile of dead scaffolding in anticipation of later work: create the
+contracts the current task can actually exercise.
 
 ## Build and validation
 
@@ -92,6 +163,23 @@ toolchains; heavy compilation happens in CI.
   run for the pushed SHA is green. Docs-only changes may trigger no run
   (`.github/workflows/ci.yml` ignores `docs/**`); verify the filter before
   waiting.
+
+## Testing
+
+Prefer focused tests close to the feature and integration/smoke tests for
+lifecycle boundaries. For runtime work, test at least:
+
+- open -> use -> dispose,
+- dispose during active async work,
+- rapid open/close/reopen,
+- route transition reader -> library,
+- route transition library -> reader,
+- multiple panes when split support is present,
+- stale task/result rejection after disposal.
+
+Run the project's existing checks before inventing new test
+infrastructure. Add new tooling only when it gives a repeatable signal
+for the requirement being implemented.
 
 ## Repository conventions
 
@@ -554,6 +642,20 @@ References:
 - Git commit documentation: https://git-scm.com/docs/git-commit
 - Conventional Commits: https://www.conventionalcommits.org/
 
+## Code quality
+
+- Prefer clear names and small ownership-focused types.
+- Comments MUST explain why, invariants, or non-obvious lifecycle
+  behavior. Do not add comments that restate code.
+- Do not add speculative abstractions "for future use" unless the current
+  task needs them.
+- Do not make fields optional when the domain guarantees their presence.
+- Prefer compiler-enforced invariants over defensive runtime branching.
+- Do not swallow errors merely to keep an old path alive.
+- Keep logging useful. Do not add per-frame, per-page, or per-scroll logs
+  for ordinary operation.
+- Do not add broad error context that only repeats the underlying error.
+
 ## Scope discipline
 
 - Make the smallest change that completes the requested task. No drive-by
@@ -576,3 +678,6 @@ References:
    `docs/memory/`.
 5. The summary reports what changed, what was verified, and any
    limitations.
+6. If a criterion cannot be satisfied, report the concrete blocker. Do
+   not silently revert to an old implementation and do not silently drop
+   the requirement.
