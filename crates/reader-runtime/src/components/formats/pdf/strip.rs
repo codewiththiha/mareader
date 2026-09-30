@@ -382,24 +382,53 @@ fn dormant_signal(
     })
 }
 
-/// Main-axis slack on either side of the viewport within which a page counts
-/// as visible for the page host's fling gate: a visible page rasterises even
-/// while the strip still moves — what the reader is looking at must never
-/// sit on an upscaled thumbnail underlay — while overscan pages a fling is
-/// sweeping past keep waiting for the settle.
+/// Main-axis slack on either side of the viewport within which a page can
+/// count as visible for the page host's fling gate exemption: a visible
+/// page rasterises even while the strip still moves — what the reader is
+/// looking at must never sit on an upscaled thumbnail underlay — while
+/// overscan pages a fling sweeps past keep waiting for the settle.
 const IN_VIEW_MARGIN_PX: f64 = 160.0;
+
+/// How long a page's box must sit inside the band CONTINUOUSLY before it
+/// counts as visible. A fling sweeps a page through the band in tens of
+/// milliseconds; rasterising a page only to scroll away from it is exactly
+/// the full-surface churn the fling gate exists to stop — surfaces created,
+/// painted and discarded every few frames push the webview's resource cache
+/// (and the footprint latched onto it) to a high-water mark that does not
+/// come back down at idle. A page the reader actually lingers on clears the
+/// dwell long before the 150 ms settle would have rendered it anyway, so
+/// crispness while reading is kept and the churn is not. The clock is
+/// `performance.now()` (monotonic) with `Date::now()` as fallback — the
+/// same pair the virtualizer's retention clock uses.
+const IN_VIEW_DWELL_MS: f64 = 120.0;
+
+/// Milliseconds on the monotonic clock (see [`IN_VIEW_DWELL_MS`]).
+fn in_view_now_ms() -> f64 {
+    web_sys::window()
+        .and_then(|w| w.performance())
+        .map(|p| p.now())
+        .unwrap_or_else(js_sys::Date::now)
+}
 
 /// Whether one mounted item is inside (or within [`IN_VIEW_MARGIN_PX`] of)
 /// the scroller's visible window, derived from the virtualizer's OWN model —
 /// the same scroll offset, viewport extent and item offsets the windowing
 /// uses, so it agrees with the layout by construction and needs no observer.
 /// The derived value is a BOOL, so the render effect that reads it re-runs
-/// when the page crosses the boundary, not on every scroll tick.
+/// when the page crosses the boundary, not on every scroll tick. Crossing is
+/// not enough on its own: the page must also DWELL inside the band for
+/// [`IN_VIEW_DWELL_MS`] continuously — the clock restarts on every exit —
+/// so pages a fling sweeps through never count as visible. The derive
+/// re-runs on every dependency change, so continuous scrolling observes the
+/// dwell deadline on the next tick after it passes; a scroll that stops
+/// inside the band simply falls back to the settle, which renders the page
+/// through the same gate it always did.
 fn in_view_signal(
     virtualizer: Virtualizer,
     top: Signal<f64, LocalStorage>,
     size: Signal<f64, LocalStorage>,
 ) -> Signal<bool, LocalStorage> {
+    let dwell_start = std::cell::Cell::<Option<f64>>::new(None);
     Signal::derive_local(move || {
         let scroll = virtualizer.scroll_offset().get();
         let viewport = virtualizer.viewport().get().main;
@@ -408,6 +437,19 @@ fn in_view_signal(
         let _ = virtualizer.total_size().get();
         let start = top.get();
         let span = size.get().max(0.0);
-        start + span >= scroll - IN_VIEW_MARGIN_PX && start <= scroll + viewport + IN_VIEW_MARGIN_PX
+        let inside = start + span >= scroll - IN_VIEW_MARGIN_PX
+            && start <= scroll + viewport + IN_VIEW_MARGIN_PX;
+        if !inside {
+            dwell_start.set(None);
+            return false;
+        }
+        let now = in_view_now_ms();
+        match dwell_start.get() {
+            None => {
+                dwell_start.set(Some(now));
+                false
+            }
+            Some(started_at) => now - started_at >= IN_VIEW_DWELL_MS,
+        }
     })
 }

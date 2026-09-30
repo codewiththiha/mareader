@@ -424,14 +424,20 @@ pub fn PdfPageCanvas(
         // the gate only governs STARTING one, and the underlay blit below is
         // the same one the cold first paint uses.
         //
-        // EXEMPTION: a page inside the pane's visible viewport — per the
-        // virtualizer's own model, `in_view`, read TRACKED so the crossing
-        // itself re-runs this effect — rasterises even while the strip
-        // moves, so what the reader is looking at never sits blurry on an
-        // upscaled thumbnail. The lane paces the starts (its cap is
-        // realm-wide across panes) and its generation guards drop a
-        // superseded raster cheaply, so the churn the gate exists to stop —
-        // rasterising pages the fling is only SWEEPING PAST — stays stopped.
+        // EXEMPTION: a page inside (or within 160 px of) the pane's visible
+        // viewport — per the virtualizer's own model, `in_view`, read
+        // TRACKED so the crossing itself re-runs this effect — rasterises
+        // even while the strip still moves, so what the reader is looking
+        // at never sits blurry on an upscaled thumbnail. The strip's signal
+        // only calls the page visible once it has DWELT in the band
+        // (~120 ms): a fling sweeps a page through in tens of ms, and
+        // rasterising pages the fling is only SWEEPING PAST is the surface
+        // churn this gate exists to stop — it latches the webview's
+        // footprint at its high-water mark and it does not come back at
+        // idle. The lane paces the starts (its cap is realm-wide across
+        // panes) and its generation guards drop a superseded raster
+        // cheaply, so the dwell is the only new raster the moving strip
+        // pays.
         let visible_now = in_view.as_ref().is_none_or(|v| v.get());
         if !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
             if !(gw > 0.0 && gh > 0.0) {

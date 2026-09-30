@@ -66,8 +66,12 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   (`in_view_signal` in `formats/pdf/strip.rs`): a page the reader is looking
   at rasterises even while the strip still moves instead of sitting blurry
   on its upscaled thumbnail, and overscan pages a fling sweeps past keep
-  waiting for the settle. The lane's realm cap and generation guards keep
-  that from stacking rasters.
+  waiting for the settle. "Looking at" means a DWELL: the page must sit in
+  the band ~120 ms continuously (`IN_VIEW_DWELL_MS`), because rasterising
+  the pages a fling only sweeps through is the full-surface churn that
+  latches the webview's footprint at its high-water mark and does not come
+  back at idle — the regression the dwell removes. The lane's realm cap and
+  generation guards keep that from stacking rasters.
 - Inside the reader frame: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's
