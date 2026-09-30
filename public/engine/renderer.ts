@@ -14,7 +14,7 @@ import {
   REALM_PAGE_LIMIT,
   lifecycleEvent,
   PAGE_MAX_PIXELS,
-  pumpAllLanes,
+  pumpLaneRegistrants,
   realmLane,
 } from "./state";
 import type { EngineSession } from "./state";
@@ -552,10 +552,11 @@ export function pageLaneGauge(s: EngineSession): { pageQueue: number; pageActive
   return { pageQueue: s.pageLane.queue.length, pageActive: s.pageLane.active };
 }
 
-/** This session's page-queue pump for the realm lane's registry: when a
- *  raster slot frees, every registrant offers its queue head the lane. */
-export function lanePumpFor(s: EngineSession): () => void {
-  return () => pumpPageQueue(s);
+/** Re-offer every registered session's queue head the lane. The registry
+ *  holds sessions weakly (state.ts), so this walk can never keep a session
+ *  alive; retired or collected ones are pruned as the walk meets them. */
+function pumpAllLanes(): void {
+  pumpLaneRegistrants(pumpPageQueue);
 }
 
 /** Drain the queue on teardown: every queued job's guard sees the dead
@@ -619,7 +620,7 @@ export async function renderPage(
   return await new Promise<RenderResult>((resolve) => {
     st.queueHandle = requestAnimationFrame(() => {
       st.queueHandle = 0;
-      if (st.dead || st.queueGen !== gen) {
+      if (st.dead || s.disposed || st.queueGen !== gen) {
         s.rendersDropped += 1;
         lifecycleEvent("render:cancel");
         resolve(fail("cancelled", "Render cancelled"));
@@ -631,11 +632,11 @@ export async function renderPage(
           s.pageLane.active -= 1;
           pumpPageQueue(s);
         };
-        // The page unmounted, or a newer scale superseded this job, while it
-        // waited for a lane slot. Drop it without touching pdf.js — and
-        // without ever holding a realm slot, which is claimed only by work
-        // that actually runs.
-        if (st.dead || st.queueGen !== gen) {
+        // The page unmounted, a newer scale superseded this job, or the
+        // session retired while it waited for a lane slot. Drop it without
+        // touching pdf.js — and without ever holding a realm slot, which
+        // is claimed only by work that actually runs.
+        if (st.dead || s.disposed || st.queueGen !== gen) {
           s.rendersDropped += 1;
           lifecycleEvent("render:cancel");
           resolve(fail("cancelled", "Render cancelled"));

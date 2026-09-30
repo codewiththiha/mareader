@@ -124,20 +124,35 @@ export class PageLane {
 export const REALM_PAGE_LIMIT = 2;
 export const realmLane = { active: 0 };
 
-/** The page-queue pumps of every session that can hold queued renders. A
- *  freed realm slot re-offers the lane to each registrant, so a job queued
- *  behind another session's raster starts the moment a slot opens. */
-const lanePumps = new Set<() => void>();
+/** Sessions with a page queue a freed realm slot should re-offer the lane
+ *  to. Held by WEAK REFERENCE on purpose: this registry is module state
+ *  that outlives any one session, and a strong handle here would pin the
+ *  whole EngineSession — page surfaces, thumb cache, pdf proxy — past its
+ *  teardown if an unregister were ever skipped. The renderer walks the
+ *  refs and prunes any whose session is gone (collected) or retired
+ *  (`disposed`), so a stale entry cannot even receive a pump. */
+const lanePumpSessions = new Set<WeakRef<EngineSession>>();
 
-export function registerLanePump(pump: () => void): () => void {
-  lanePumps.add(pump);
+export function registerLanePump(s: EngineSession): () => void {
+  const ref = new WeakRef(s);
+  lanePumpSessions.add(ref);
   return () => {
-    lanePumps.delete(pump);
+    lanePumpSessions.delete(ref);
   };
 }
 
-export function pumpAllLanes(): void {
-  for (const pump of [...lanePumps]) pump();
+/** Walk the lane-pump registrants: `pump` every session still alive and
+ *  not yet retired, prune the refs that are not. The renderer supplies the
+ *  pump (its own `pumpPageQueue`); this module must not import it. */
+export function pumpLaneRegistrants(pump: (s: EngineSession) => void): void {
+  for (const ref of [...lanePumpSessions]) {
+    const s = ref.deref();
+    if (!s || s.disposed) {
+      lanePumpSessions.delete(ref);
+      continue;
+    }
+    pump(s);
+  }
 }
 
 /** The thumbnail lane and its prefetch bookkeeping, per session: the lane

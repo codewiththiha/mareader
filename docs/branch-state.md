@@ -48,14 +48,19 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   of stacking eight concurrent stalls; a reading pane alone keeps its two
   slots. The per-session queues and their teardown drain are unchanged, and
   the theme re-render paths (`rerenderLivePages`, `preparePagesForScrub`,
-  the scrub settle) ride the lane instead of bypassing it. The bake's pixel
+  the scrub settle) ride the lane instead of bypassing it. The lane-pump
+  registry holds sessions by `WeakRef` and `destroySession` drops the entry
+  before any other teardown step, so the registry can never pin a session
+  (its surfaces, thumb cache, pdf proxy) past its close. Queued render jobs
+  re-check `disposed` at the rAF edge AND at the front of the lane, so a
+  session that retired while work waited starts nothing. The bake's pixel
   readback runs in the bake worker (a transferred `ImageBitmap` read through
   the worker's own canvas), so a theme change pays no main-thread
   `getImageData`; the inline kernel stays the no-worker fallback, and a
   dead worker degrades one frame, not the page. `unregisterPage` no longer
   sweeps the document: a window move unmounts pages constantly, and the
-  sweep belongs to quiescence (the render cadence, the idle timer, the
-  reader's scroll-idle sweep).
+  sweep belongs to quiescence (the render cadence `CLEANUP_EVERY`, the idle
+  timer, the reader's scroll-idle sweep).
 - The strip's fling gate exempts a page inside — or within 160 px of — the
   pane's visible viewport, from the virtualizer's OWN model
   (`in_view_signal` in `formats/pdf/strip.rs`): a page the reader is looking

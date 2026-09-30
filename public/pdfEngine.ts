@@ -26,7 +26,6 @@ import {
   cancelPage,
   cancelPageRenders,
   drainPageLane,
-  lanePumpFor,
   pageLaneGauge,
   readRenderTrace,
   registerPage,
@@ -142,6 +141,15 @@ function quiesce(s: EngineSession): void {
 async function destroySession(sid: Sid): Promise<void> {
   const s = sessionFor(sid);
   if (!s || !beginRetire(s)) return;
+  // The sid no longer resolves, so nothing can queue again: take this
+  // session out of the realm lane's registry FIRST, before any teardown
+  // step below. The registry holds the session weakly (state.ts), so even
+  // a skipped unregister could not pin it — but a live entry would still
+  // receive pumps during the drain, and teardown leaves nothing behind.
+  if (s.unregisterLanePump) {
+    s.unregisterLanePump();
+    s.unregisterLanePump = null;
+  }
   const hadDocument = s.pdf !== null;
   if (hadDocument) {
     s.sessionsDestroyed += 1;
@@ -153,12 +161,6 @@ async function destroySession(sid: Sid): Promise<void> {
     s.sweepPdf();
     cancelAndReleasePages(s);
     drainPageLane(s);
-    // The queue is empty and nothing will queue again (the sid retired):
-    // take this session's pump out of the realm lane's registry.
-    if (s.unregisterLanePump) {
-      s.unregisterLanePump();
-      s.unregisterLanePump = null;
-    }
     s.stateByCanvasId.clear();
     for (const task of s.thumbTasks.values()) {
       try { task.cancel(); } catch (_) { /* ignore */ }
@@ -286,9 +288,9 @@ function createEngineSession(sid: Sid): boolean {
   if (!s) return false;
   // The realm lane's registry: a freed raster slot re-offers the lane to
   // this session's queue head, so its pages pace with every other pane's.
-  // Cleared by destroySession — a retired session holds no queue for long
-  // (its drain resolves every job), but the pump must not outlive it.
-  s.unregisterLanePump = registerLanePump(lanePumpFor(s));
+  // The registry holds the session WEAKLY and destroySession drops the
+  // entry, so it can never outlive the session.
+  s.unregisterLanePump = registerLanePump(s);
   if (appearanceScrub) {
     s.setThemeScrubActive(true);
     s.noteScrub();
