@@ -355,8 +355,14 @@ deliberately rather than discovering it:
   pane-scoped. Two panes in one realm need pane-unique ids first.
 - **Root backdrop.** `--pdf-paper` on `<html>` has one publisher: the
   presenting session (latest opened, or `presentSession` — a pane going
-  Ready presents). Split mode decides whose paper the shared backdrop shows,
-  or gives each pane its own backdrop.
+  Ready presents). **Split mode (decided):** the workspace stands on the
+  most recently focused PDF's colour — reflowable panes never present, and
+  when the publisher retires the presentation hands over to the most
+  recently presented live session instead of dropping the colour
+  (`state.ts` `presented` MRU, engine smoke "survivor" assertions). A
+  presenting session with nothing detected yet holds the previous colour.
+  Independent per-pane themes are the [Phase 7](#phase-7-workspace)
+  appearance work; the backdrop colour above stays the shared fallback.
 - **Diagnostics totals.** The snapshot's `engine` block sums every session
   (`sessionStats(sid)` has the per-session numbers); `PaneResourceCounts`
   still reports virtualizers and whether a document session is held.
@@ -403,8 +409,10 @@ deliberately rather than discovering it:
 - **Focus.** One active id in the manager. A press or keyboard focus inside
   a pane's entry makes it active (capture phase, host-owned); events that
   bubble to the window are claimed by the pane they came from
-  (`crate::pane::origin`), and only the active pane presents its paper to
-  the shared backdrop. Inactive panes stay shown and live.
+  (`crate::pane::origin`), and a focused PDF pane presents its paper to the
+  shared backdrop — a reflowable pane never presents, so the last focused
+  PDF's colour holds across MD/TXT focus (`PaneRuntime::focus` →
+  `PdfPane::present` is session-only). Inactive panes stay shown and live.
 - **Close.** `close_pane(id)` removes the leaf, closes that pane only
   (`manager.close(id, successor)`), and re-lays out; every other pane keeps
   its session. The last pane closes with the reader.

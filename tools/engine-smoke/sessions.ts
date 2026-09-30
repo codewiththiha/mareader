@@ -190,6 +190,12 @@ export async function run(): Promise<void> {
   const prefetchA = A.prefetchThumb(5, 0.25);
   const prefetchB = B.prefetchThumb(5, 0.25);
   await PDFReader.destroySession(sidA);
+  // Retiring the publisher hands the backdrop to the most recently
+  // presented live session (B) — the split workspace keeps standing on the
+  // colour it was last given instead of dropping it.
+  if (paper() !== "#e8e0d0") {
+    throw new Error("retiring the publisher must fall back to the last presented session's paper, got " + paper());
+  }
   const late = await inFlight;
   await Promise.all([prefetchA, prefetchB]);
   if (!B.hasThumb(5, 0.25)) throw new Error("B's prefetch must survive A's disposal");
@@ -208,10 +214,13 @@ export async function run(): Promise<void> {
   // B still works after A's teardown.
   const rb2 = await B.renderPage("two-b-cv", 1.2, false);
   if (!rb2.ok) throw new Error("B must keep rendering after A's teardown: " + JSON.stringify(rb2));
-  // A retired publisher cleared the root; B takes it back on present.
-  if (paper() !== "") throw new Error("retiring the publisher must clear the root paper, got " + paper());
+  // C's open took the presentation with nothing detected yet — the
+  // backdrop HOLDS B's colour rather than flashing to the theme paper.
+  if (paper() !== "#e8e0d0") {
+    throw new Error("a fresh presentation with no colour must hold the previous paper, got " + paper());
+  }
   PDFReader.presentSession(sidB);
-  if (!paper()) throw new Error("presenting B must publish its paper");
+  if (paper() !== "#e8e0d0") throw new Error("presenting B must publish its paper, got " + paper());
   console.log("survivor ok: B renders and publishes after A is gone");
 
   // --- A retired sid is refused, and never reused -------------------------

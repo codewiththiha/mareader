@@ -157,6 +157,17 @@ pub(crate) fn pane_content(
             // `crate::pane::origin::PANE_ROOT_ATTR`: an event raised inside
             // finds its pane by this.
             data-pane-root=""
+            // The open document's pipeline, tracked: the per-pane paper and
+            // texture rules key off it (styles/components/shell.css,
+            // styles/textures.css). The format lives on the pane root, not
+            // on `:root` — one workspace can show several formats at once,
+            // and the paper is a PANE fact. Reactive on purpose: an in-place
+            // open swaps the pipeline under the same pane.
+            data-format=move || match vs.document.format.get() {
+                reader_core::format::Format::Pdf => "pdf",
+                reader_core::format::Format::Text => "text",
+                reader_core::format::Format::Markdown => "markdown",
+            }
             class="absolute left-0 top-0"
             style:width=move || measured().map_or("100%".to_string(), |(w, _)| format!("{w}px"))
             style:height=move || measured().map_or("100%".to_string(), |(_, h)| format!("{h}px"))

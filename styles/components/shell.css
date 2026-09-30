@@ -135,18 +135,41 @@ body {
    cover below, and the cage for the pages' own stacking contexts (whose
    texture layers paint the gutter in blend mode). Base colour is the
    un-blended app paper: what a raw canvas live-blends against during a
-   baked scrub, and what every non-blend mode shows. */
+   baked scrub, and what every non-blend mode shows — the paper of the
+   GUTTERS between and around panes; each pane paints its own document's
+   paper on its root (PER-PANE PAPER below). */
 .reader-bg {
   position: relative;
   z-index: 0;
   background-color: var(--color-paper);
 }
-/* A reflowable document's page IS the surface: the backdrop paints
-   --tx-paper and the .tx-page hosts are transparent frames (text.css).
-   data-format is set by the appearance effect from the open format. */
-:root[data-format="text"] .reader-bg,
-:root[data-format="markdown"] .reader-bg {
+
+/* PER-PANE PAPER — the paper is a PANE fact, keyed on the pane root's
+   data-format (crates/reader-runtime/src/pane/view.rs): one workspace can
+   show several formats at once, and each pane stands on its own document's
+   paper. A PDF pane stands on the app paper (its page hosts paint their
+   own cards); a reflowable pane's page IS the surface — a transparent
+   frame (text.css) over this paper, its own --tx-paper. --pane-paper
+   names the effective paper so the texture matte (textures.css) fades the
+   pattern toward whatever this rule resolved to. */
+[data-pane-root] {
+  background-color: var(--color-paper);
+  --pane-paper: var(--color-paper);
+}
+[data-pane-root][data-format="text"],
+[data-pane-root][data-format="markdown"] {
   background-color: var(--tx-paper);
+  --pane-paper: var(--tx-paper);
+}
+/* Blend (blend mode on and some pane holds a PDF): the split's shared
+   backdrop colour — the PDF's detected paper through the theme — and every
+   pane in the workspace stands on it, reflowable panes included. Without a
+   PDF in the workspace the class never sets and a reflowable pane keeps
+   its own paper: the colour combination belongs to splits that hold a
+   page colour to detect. */
+.reader-bg.blend [data-pane-root] {
+  background-color: var(--pdf-paper-baked, var(--color-paper));
+  --pane-paper: var(--pdf-paper-baked, var(--color-paper));
 }
 /* BLEND PAPER — the backdrop must equal the canvas background: the PDF's
    own paper run through the theme pipeline. The engine publishes it,
@@ -180,9 +203,9 @@ body {
    (the raw canvas' un-themed blend base) lives in styles/page_host.css. */
 
 /* Reflowable single/two-page modes: drop the scroller's opaque bg-surface
-   utility (correct for PDF gutters) so the --tx-paper backdrop shows
-   through. Scoped to data-format; PDF keeps its surface gutter. */
-:root[data-format="text"] .paginated-scroller,
-:root[data-format="markdown"] .paginated-scroller {
+   utility (correct for PDF gutters) so the pane's paper shows through.
+   Scoped to the pane root's data-format; PDF keeps its surface gutter. */
+[data-format="text"] .paginated-scroller,
+[data-format="markdown"] .paginated-scroller {
   background-color: transparent;
 }

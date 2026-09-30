@@ -229,12 +229,16 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                     // onto the engine's one computed paper colour
                     // (styles/components/shell.css, styles/page_host.css),
                     // killing the fractional-edge rim a second paper colour
-                    // under the canvas used to show. A text/Markdown page is
-                    // its OWN paper (the surface paints --tx-paper), so the
-                    // class must not run for it or a second paper colour
-                    // stacks under the text page.
-                    settings.with(|st| st.layout.blend_mode)
-                        && !host.chrome.reader.reflowable.get()
+                    // under the canvas used to show. The switch is a
+                    // WORKSPACE fact — blend mode exists for raster pages,
+                    // and the colour it publishes is the split's shared
+                    // backdrop: as long as some pane holds a PDF, the
+                    // reflowable panes beside it stand on that PDF's paper
+                    // too (their own paper is per-pane, see the pane root's
+                    // data-format rules), and focusing one — which has no
+                    // page colour to detect — keeps the colour instead of
+                    // dropping the whole workspace back to the theme paper.
+                    settings.with(|st| st.layout.blend_mode) && host.has_pdf()
                 })
             >
                 <div class="relative flex min-h-0 flex-1">

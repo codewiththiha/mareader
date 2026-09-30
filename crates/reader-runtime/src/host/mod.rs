@@ -122,6 +122,9 @@ pub struct ReaderHost {
     slot_size: RwSignal<(f64, f64)>,
     /// The workspace layout: splits and pane ids, nothing heavier.
     tree: RwSignal<PaneTree>,
+    /// Whether SOME pane holds a PDF document (any pane, not just the
+    /// focused one): the workspace-wide blend backdrop's gate.
+    has_pdf: Signal<bool>,
     /// The one document drag session (see [`drag`]): typed data only, no
     /// DOM reference. Idle whenever no drag is live, and cleared by the
     /// workspace's disposal.
@@ -170,6 +173,21 @@ impl ReaderHost {
                 .and_then(|pane| pane.surface().search_visible.try_get())
                 .unwrap_or(false)
         });
+        // The workspace's blend gate: SOME pane holds a PDF document — any
+        // pane, not just the focused one. The blend backdrop colour is
+        // workspace-wide (the PDF's detected paper + the theme), so its
+        // switch is a workspace fact: focusing a reflowable pane (which has
+        // no page colour to detect) must not drop the colour out from under
+        // the PDF beside it.
+        let has_pdf = Signal::derive(move || {
+            manager.placed().iter().any(|id| {
+                manager.pane(*id).is_some_and(|pane| {
+                    let surface = pane.surface();
+                    surface.reflowable.try_get() == Some(false)
+                        && surface.status.try_get().is_some_and(|s| s.holds_document())
+                })
+            })
+        });
         let chrome = app_state::ChromeState {
             settings,
             ui: session.ui,
@@ -209,6 +227,7 @@ impl ReaderHost {
             motion,
             slot_size,
             tree,
+            has_pdf,
             drag,
             layout,
             pending_ratio: StoredValue::new(None),
@@ -649,6 +668,12 @@ impl ReaderHost {
     /// How many panes the workspace shows (tracked).
     pub fn pane_count(&self) -> usize {
         self.manager.placed().len()
+    }
+
+    /// Whether some pane holds a PDF document (tracked): the blend
+    /// backdrop's workspace-wide gate.
+    pub fn has_pdf(&self) -> bool {
+        self.has_pdf.get()
     }
 
     /// The Library button: every pane writes its durable point and stops its

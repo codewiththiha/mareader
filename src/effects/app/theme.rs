@@ -82,11 +82,10 @@ pub fn apply_theme(state: ShellState, appearance: AppearanceSignal) {
         }
     });
 
-    // The reading surface resolves its paper from the OPEN FORMAT
-    // (`data-format` on `<html>`): a READER-session fact, so the session owns
-    // the write and carries it away on disposal. The theme's own durable
-    // writes end here: a settings edit anywhere persists the blob the shell
-    // owns the key for.
+    // The reading surface resolves its paper per PANE (`data-format` on the
+    // pane root, written by the reader runtime itself). The theme's own
+    // durable writes end here: a settings edit anywhere persists the blob
+    // the shell owns the key for.
     Effect::new(move || {
         let settings = state.settings.get_untracked();
         schedule_save(settings);

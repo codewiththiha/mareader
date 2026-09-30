@@ -592,10 +592,10 @@ export function beginRetire(s: EngineSession): boolean {
   s.disposed = true;
   sessions.delete(s.sid);
   draining.add(s);
-  if (publisher === s) {
-    publisher = null;
-    writeRootPaper(null);
-  }
+  // The root paper goes with a presenting session — but only that session:
+  // another open document's colour takes over the backdrop (the split
+  // workspace's focus-blind fallback), and only an empty realm clears it.
+  releasePresentation(s);
   lifecycleEvent("engine_session:dispose_begin");
   return true;
 }
@@ -621,17 +621,57 @@ export function registryCounts(): { live: number; retired: number } {
 /** The session whose paper the root backdrop shows. */
 let publisher: EngineSession | null = null;
 
+/** Presentation recency: the sessions that have presented their paper, most
+ *  recent first. The focus-blind fallback the split workspace needs — when
+ *  the publisher's session goes away while other documents are still open
+ *  (the focus sits on a reflowable pane and cannot present), the backdrop
+ *  falls back to the most recently presented live session's colour instead
+ *  of dropping to the theme paper. Bounded by the live session count;
+ *  entries leave in `beginRetire` and dead ones prune on every fallback. */
+const presented: EngineSession[] = [];
+
 export function paperPublisher(): EngineSession | null {
   return publisher;
 }
 
 /** Make `s` the root-paper publisher (null = nobody) and restate its paper.
  *  The latest document to open presents by default; the host can name a
- *  session explicitly (`presentSession`). */
+ *  session explicitly (`presentSession`). A presentation also records the
+ *  recency the destroy-time fallback walks. */
 export function setPaperPublisher(s: EngineSession | null): void {
   if (s && s.disposed) return;
   publisher = s;
-  writeRootPaper(s ? s.detectedPaper : null);
+  if (s) {
+    const at = presented.indexOf(s);
+    if (at >= 0) presented.splice(at, 1);
+    presented.unshift(s);
+  }
+  // A presenting session with nothing detected yet HOLDS the previous
+  // colour: a fresh open beside a coloured workspace must not flash the
+  // backdrop to the theme paper — the session's first detected colour
+  // lands the swap. A null publisher is deliberate: clear.
+  if (!s) writeRootPaper(null);
+  else if (s.detectedPaper) writeRootPaper(s.detectedPaper);
+}
+
+/** `s` is going away: forget its presentation. When it was presenting, the
+ *  most recently presented live session takes over the backdrop — or the
+ *  paper clears, when no other document is open. Returns the fallback (or
+ *  null) so the caller's `publishBakedPaper` lands on the new publisher. */
+function releasePresentation(s: EngineSession): void {
+  const at = presented.indexOf(s);
+  if (at >= 0) presented.splice(at, 1);
+  if (publisher !== s) return;
+  publisher = null;
+  while (presented.length > 0) {
+    const next = presented[0];
+    if (next && !next.disposed) {
+      setPaperPublisher(next);
+      return;
+    }
+    presented.shift();
+  }
+  writeRootPaper(null);
 }
 
 function writeRootPaper(hex: string | null): void {
