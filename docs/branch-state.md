@@ -71,7 +71,9 @@ format in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   the pages a fling only sweeps through is the full-surface churn that
   latches the webview's footprint at its high-water mark and does not come
   back at idle — the regression the dwell removes. The lane's realm cap and
-  generation guards keep that from stacking rasters.
+  generation guards keep that from stacking rasters. The full story — the
+  gate's history, the regression, the diagnosis playbook — is
+  `docs/fling-gate-retrospective.md`; read it before touching the gate.
 - Inside the reader frame: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's
