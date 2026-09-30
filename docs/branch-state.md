@@ -23,7 +23,7 @@ in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 4 — session-scoped PDF / Markdown / TXT engines | **done**: each pane owns one `FormatSession` per opened document — `PdfSession` (`crates/pdf-engine/src/session/`, one engine session per sid in `public/engine/state.ts`), `MdSession` / `TxtSession` (`crates/reader-runtime/src/pane/session.rs`); async stamps per pane; inventory, call graph and retained realm state in `docs/session-ownership.md`, enforced by `tools/check-session-ownership.mjs`; what Phase 5 inherits: [Phase 4 bridges](#phase-4-bridges-what-phase-5-inherits) |
 | 5 — production split workspace | **done**: `/reader` runs a `PaneTree` (layout over pane ids only, `crates/reader-runtime/src/host/tree.rs`) under the `ReaderHost`; up to four live panes, each with its own `FormatSession`; `open_document(target)` places a document in a pane or beside it; host-owned dividers, focus outline and per-pane close; see [Phase 5: the split workspace](#phase-5-the-split-workspace) |
 | 6 — smart document drag/drop | **implemented**: a file row of the reader's Library panel (the rail's third tab, `crates/reader-runtime/src/host/library/`) is the one split-drag source; targets come from the measured slot and pane boxes (`crates/reader-runtime/src/host/{geometry,drop_target,drag,commands}.rs`), the preview is geometry only, a drop is one `WorkspaceCommand`; OS file drops import into the library while it is on screen (`src/services/import_drop.rs`); see [Phase 6: document drag and drop](#phase-6-document-drag-and-drop) |
-| 7+ — appearance blend, … | **in progress** — split-mode blend hold + per-pane paper landed (Phase 4 bridges); independent theme per pane is live in the appearance menu and Settings → Workspace (per-pane looks, edit routing, pane-token paint); **left**: per-session engine bake so a PDF pane's rasters follow its own look, then the visual proof pass |
+| 7+ — appearance blend, … | **in progress** — split-mode blend hold + shared paper publisher landed; independent theme toggle is visible in the appearance menu and Settings → Workspace; per-pane look routing and token painting landed. **Root cause fixed in working tree**: PDF engine now pins each session to its pane root and owns an independent pipeline/cache; per-pane PDF paper and blend CSS are isolated from neighboring panes. Engine smoke covers two distinct live PDF pipelines and a one-pane-only rebake; browser split walkthrough + visual proof and CI remain |
 
 ## Architecture as built (do not re-derive)
 
@@ -361,19 +361,23 @@ deliberately rather than discovering it:
   recently presented live session instead of dropping the colour
   (`state.ts` `presented` MRU, engine smoke "survivor" assertions). A
   presenting session with nothing detected yet holds the previous colour.
-  Independent per-pane themes are the [Phase 7](#phase-7-workspace)
-  appearance work; the backdrop colour above stays the shared fallback.
+  Independent per-pane themes are in [Phase 7](#phase-7-workspace): each
+  PDF now bakes and publishes its pane-local paper from its own pinned root;
+  the MRU publisher remains the shared fallback only while independent mode
+  is off.
 - **Diagnostics totals.** The snapshot's `engine` block sums every session
   (`sessionStats(sid)` has the per-session numbers); `PaneResourceCounts`
   still reports virtualizers and whether a document session is held.
 - **Realm-shared by design** (not bridges): id mints (`NEXT_SID`, the pane
   generation mint, reflow session ids), the appearance broadcast and its
   scrub window, the content-keyed retained search index (`RETAINED`), the
-  pdf.js module, canvas pool, LUT/pipeline caches and bake worker, and the
-  diagnostics gauges. The reasons are in `docs/session-ownership.md`. The
-  canvas pool drains and the bake worker terminates once the realm's last
-  engine session is retired, so a reader frame kept warm behind the shelf
-  holds neither.
+  pdf.js module, canvas pool, bounded LUT cache and stateless bake worker,
+  and the diagnostics gauges. The reasons are in `docs/session-ownership.md`.
+  Raster pipeline caches are per `EngineSession`, pinned to that session's
+  `[data-pane-root]`; the MRU paper publisher remains the shared fallback
+  only when independent mode is off. The canvas pool drains and the bake
+  worker terminates once the realm's last engine session is retired, so a
+  reader frame kept warm behind the shelf holds neither.
 - **Document replacement is per pane.** `PaneHandle::replace_document` is
   the one way a pane changes documents (every format, every view mode): the
   replaced session is disposed at the call, and its release (`Retiring`) is

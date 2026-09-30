@@ -14,6 +14,7 @@ import type {
   PaperFrame,
   PDFDocumentProxy,
   PageState,
+  PipelineCache,
   RenderTask,
   ThumbEntry,
 } from "./types";
@@ -191,6 +192,17 @@ export class EngineSession {
   readonly pageLane = new PageLane();
   readonly thumbLane = new ThumbLane();
   readonly scrub = new ScrubState();
+  /** Each PDF session bakes against the appearance tokens on its own pane root. */
+  readonly themePipeline: PipelineCache = {
+    token: null,
+    inputs: null,
+    filter: "none",
+    blend: "normal",
+    paperInfo: null,
+    gen: 0,
+  };
+  /** The first registered page pins this session to its pane's appearance root. */
+  themeRoot: HTMLElement | null = null;
   /** Serialized theme mutations of THIS session's rasters. */
   themeChain: Promise<void> = Promise.resolve();
   /** The realm lane registry's handle for this session's page-queue pump;
@@ -345,9 +357,8 @@ export class EngineSession {
     return this.rawTimerCount;
   }
 
-  /** Record this session's paper. The root `--pdf-paper` is one host
-   *  backdrop, so only the publishing session writes it (see
-   *  `setPaperPublisher`); every other session just keeps its value. */
+  /** Record this session's paper. The realm publisher updates the shared
+   *  fallback; pane-local publication is handled by theme/paper.ts. */
   setDetectedPaper(hex: string | null): void {
     this.detectedPaper = hex;
     if (publisher === this) writeRootPaper(hex);
@@ -603,6 +614,10 @@ export function beginRetire(s: EngineSession): boolean {
 /** Step two: the session's resources are released; forget it. */
 export function finishRetire(s: EngineSession): void {
   if (!draining.delete(s)) return;
+  s.themeRoot = null;
+  s.themePipeline.token = null;
+  s.themePipeline.inputs = null;
+  s.themePipeline.paperInfo = null;
   sessionsRetired += 1;
   lifecycleEvent("engine_session:dispose_complete");
 }

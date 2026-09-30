@@ -181,7 +181,11 @@ export class FakeCanvas {
   toDataURL(): string { return "data:image/jpeg;base64,xx"; }
   setAttribute(): void {}
   getAttribute(): string | null { return null; }
-  appendChild<T>(c: T): T { this.children.push(c); return c; }
+  appendChild<T>(c: T): T {
+    this.children.push(c);
+    if (c && typeof c === "object") (c as { parentElement?: unknown }).parentElement = this;
+    return c;
+  }
   replaceChildren(): void {}
   remove(): void {}
   replaceWith(): void {}
@@ -338,14 +342,22 @@ export const fakeWindow: FakeWindow = {
   },
   addEventListener() {},
   dispatchEvent() { return true; },
-  getComputedStyle: (_el) => ({
-    getPropertyValue: (name: string) => {
-      if (name === "--canvas-filter") return fakeComputed["--canvas-filter"] || "none";
-      if (name === "--canvas-blend") return fakeComputed["--canvas-blend"] || "normal";
-      return "";
-    },
-    backgroundColor: fakeComputed.paper || "#ffffff",
-  }),
+  getComputedStyle: (el) => {
+    const node = el as unknown as {
+      _themeComputed?: typeof fakeComputed;
+      parentElement?: { _themeComputed?: typeof fakeComputed } | null;
+    };
+    const scoped = node._themeComputed ?? node.parentElement?._themeComputed ?? fakeComputed;
+    return {
+      getPropertyValue: (name: string) => {
+        if (name === "--canvas-filter") return scoped["--canvas-filter"] || "none";
+        if (name === "--canvas-blend") return scoped["--canvas-blend"] || "normal";
+        if (name === "--color-paper") return scoped.paper || "#ffffff";
+        return "";
+      },
+      backgroundColor: scoped.paper || "#ffffff",
+    };
+  },
   requestAnimationFrame: (fn: () => void) => { setTimeout(fn, 0); return 1; },
   cancelAnimationFrame() {},
   __TAURI__: {

@@ -111,7 +111,7 @@ export function takePaperFrame(
  *  with it, in the same write. */
 export function setPaper(s: EngineSession, hex: string): void {
   s.setDetectedPaper(hex ? hex : null);
-  publishBakedPaper();
+  publishBakedPaper(s);
 }
 
 /** Render `page` offscreen at a tiny scale and hand its frame back. The

@@ -49,13 +49,16 @@
   z-index: 0;
 }
 
-/* BLEND PAPER FLATNESS — the page-host half of the flat-paper contract in
-   components/shell.css: the host carries the SAME computed colour as the
-   backdrop base (--pdf-paper-baked), so a page edge on a fractional device
-   pixel mixes F with F and the 1px rim of un-blended app paper vanishes.
-   Non-blend modes keep --color-paper: neither selector matches them. */
-.reader-bg.blend .pdf-page {
+/* BLEND PAPER FLATNESS — ordinary shared mode carries the MRU publisher's
+   baked paper. Independent mode carries this PDF session's local paper on
+   its pane root. Either way the page host and its corresponding backdrop
+   have identical flat F at fractional edges; non-blend pages keep the local
+   theme paper. */
+.reader-bg.blend:not(.independent-themes) .pdf-page {
   background-color: var(--pdf-paper-baked, var(--color-paper));
+}
+.reader-bg.blend.independent-themes [data-pane-root][data-format="pdf"] .pdf-page {
+  background-color: var(--pane-pdf-paper-baked, var(--color-paper));
 }
 /* A tint scrub exposes raw rasters that live-blend against their base, and
    that blend is only correct over the UN-themed base. The host itself keeps

@@ -5,7 +5,15 @@
 //! name the engine: the same appearance chrome runs inside the library
 //! runtime, whose graph has no raster engine in it.
 
+use leptos::prelude::request_animation_frame;
 use reader_core::appearance::Appearance;
+
+thread_local! {
+    /// Several pane roots can repaint in one reactive flush (notably when
+    /// independent mode seeds a split). One next-frame broadcast reads all
+    /// final pane inputs and avoids queuing N full session walks/re-renders.
+    static PANE_REFRESH_PENDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 
 /// The seven `--color-*` tokens the tint may override. Listed once so they
 /// can be cleared as a set — a stale override left behind when the tint is
@@ -37,6 +45,19 @@ pub fn token_vars(a: &Appearance) -> Vec<(&'static str, String)> {
 /// raster engine — the library answers the same menu with CSS alone.
 pub fn refresh_theme() {
     app_chrome::appearance_hooks::refresh_theme();
+}
+
+/// Refresh after a pane-local token paint. Coalesced to one engine broadcast
+/// per frame so a four-pane enable/edit is one theme transaction, not four.
+pub fn refresh_after_pane_paint() {
+    let schedule = PANE_REFRESH_PENDING.with(|pending| !pending.replace(true));
+    if !schedule {
+        return;
+    }
+    request_animation_frame(|| {
+        PANE_REFRESH_PENDING.with(|pending| pending.set(false));
+        app_chrome::appearance_hooks::refresh_theme();
+    });
 }
 
 /// Enter/leave the scrub window's REAL-TIME COMPOSITING: while a slider drag

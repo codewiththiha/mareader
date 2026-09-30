@@ -224,6 +224,7 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
             // window.
             <div
                 class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
+                class=("independent-themes", move || host.themes.independent().get())
                 class=("blend", move || {
                     // The blend class swaps the backdrop AND the page hosts
                     // onto the engine's one computed paper colour

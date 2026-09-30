@@ -101,7 +101,10 @@ export type ThumbEntry = {
 };
 
 export type PipelineCache = {
+  /** Root/style fingerprint; values are separately compared to ignore engine publications. */
   token: string | null;
+  /** Actual bake inputs for this document session's pane. */
+  inputs: string | null;
   filter: string;
   blend: string;
   paperInfo: PaperInfo | null;

@@ -45,9 +45,41 @@ function paper(): string {
   return root.style.getPropertyValue("--pdf-paper");
 }
 
-function stubHost(id: string): void {
-  const host = getEl(id) as unknown as { querySelector: () => unknown };
+function themeRoot(
+  filter: string,
+  blend: string,
+  paper: string,
+  token: string,
+): ReturnType<typeof getEl> & { _themeComputed: { "--canvas-filter": string; "--canvas-blend": string; paper: string }; _style: string } {
+  const root = getEl("pane-theme-" + token) as ReturnType<typeof getEl> & {
+    _themeComputed: { "--canvas-filter": string; "--canvas-blend": string; paper: string };
+    _style: string;
+  };
+  root._themeComputed = { "--canvas-filter": filter, "--canvas-blend": blend, paper };
+  root._style = token;
+  const localVars = new Map<string, string>();
+  (root as unknown as { style: { setProperty: (name: string, value: string) => void; removeProperty: (name: string) => void; getPropertyValue: (name: string) => string } }).style = {
+    setProperty: (name, value) => { localVars.set(name, value); },
+    removeProperty: (name) => { localVars.delete(name); },
+    getPropertyValue: (name) => localVars.get(name) ?? "",
+  };
+  (root as unknown as { getAttribute: (name: string) => string | null }).getAttribute =
+    (name) => name === "style" ? root._style : null;
+  root.appendChild = <T>(child: T): T => {
+    (root.children as unknown[]).push(child);
+    if (child && typeof child === "object") (child as { parentElement?: unknown }).parentElement = root;
+    return child;
+  };
+  return root;
+}
+
+function stubHost(id: string, root?: ReturnType<typeof getEl>): void {
+  const host = getEl(id) as unknown as {
+    querySelector: () => unknown;
+    closest: (selector: string) => ReturnType<typeof getEl> | null;
+  };
   host.querySelector = () => ({ classList: { toggle() {} } });
+  host.closest = (selector) => selector === "[data-pane-root]" ? (root ?? null) : null;
 }
 
 async function openIn(sid: number, path: string): Promise<BoundReader> {
@@ -81,9 +113,14 @@ export async function run(): Promise<void> {
     throw new Error("a second open in one session must be refused, got " + JSON.stringify(again));
   }
 
-  // Each session registers its own pages.
-  stubHost("two-a-pg");
-  stubHost("two-b-pg");
+  // Each session registers its own pages and pins a distinct appearance
+  // root. The two documents deliberately request opposite bake pipelines:
+  // this catches a realm-global cache that would make both pages use whichever
+  // pane wrote its tokens last.
+  const rootA = themeRoot("none", "normal", "#ffffff", "a-v1");
+  const rootB = themeRoot("invert(1)", "normal", "#000000", "b-v1");
+  stubHost("two-a-pg", rootA);
+  stubHost("two-b-pg", rootB);
   A.registerPage(1, "two-a-cv", "two-a-pg");
   B.registerPage(2, "two-b-cv", "two-b-pg");
   const [ra, rb] = await Promise.all([
@@ -99,7 +136,26 @@ export async function run(): Promise<void> {
   if (statsA.rendersCompleted < 1 || statsB.rendersCompleted < 1) {
     throw new Error("each session must count its own renders");
   }
-  console.log("two sessions ok: side-by-side renders, one page each");
+  await PDFReader.refreshTheme();
+  const pixelA = firstPixel("two-a-cv");
+  const pixelB = firstPixel("two-b-cv");
+  if (pixelA[0] !== 64 || pixelB[0] !== 0) {
+    throw new Error("each PDF must bake through its own pane theme: " + JSON.stringify({ pixelA, pixelB }));
+  }
+  console.log("two sessions ok: distinct pane-root filters bake independently", { pixelA, pixelB });
+
+  // Editing B's pane pipeline must rebake B alone; A's settled raster and
+  // generation remain unchanged even though refreshTheme is a realm broadcast.
+  const rootBNode = rootB as unknown as { _themeComputed: { "--canvas-filter": string; "--canvas-blend": string; paper: string }; _style: string };
+  rootBNode._themeComputed = { "--canvas-filter": "brightness(0.5)", "--canvas-blend": "normal", paper: "#808080" };
+  rootBNode._style = "b-v2";
+  await PDFReader.refreshTheme();
+  const pixelAAfter = firstPixel("two-a-cv");
+  const pixelBAfter = firstPixel("two-b-cv");
+  if (pixelAAfter[0] !== pixelA[0] || pixelBAfter[0] === pixelB[0]) {
+    throw new Error("a pane theme edit must affect only its PDF session: " + JSON.stringify({ pixelAAfter, pixelBAfter }));
+  }
+  console.log("pane theme update ok: B rebaked while A remained unchanged", { pixelAAfter, pixelBAfter });
 
   // Two panes showing the same mode carry the SAME page ids. A page
   // registered with its own elements is pinned to them: each session paints
@@ -137,7 +193,15 @@ export async function run(): Promise<void> {
   // --- Root paper follows the publisher -----------------------------------
   A.setPaper("#202020");
   B.setPaper("#f0e0c0");
-  // B opened last, so B publishes.
+  const panePaper = (root: ReturnType<typeof getEl>): string =>
+    (root as unknown as { style: { getPropertyValue: (name: string) => string } }).style.getPropertyValue("--pane-pdf-paper-baked");
+  const localA = panePaper(rootA);
+  const localB = panePaper(rootB);
+  if (!localA || !localB || localA === localB) {
+    throw new Error(`each PDF session must publish its own baked paper: A=${localA} B=${localB}`);
+  }
+  // B opened last, so B publishes globally while both sessions retain their
+  // own pane-local baked-paper values.
   const paperB = paper();
   PDFReader.presentSession(sidA);
   const paperA = paper();
@@ -147,12 +211,21 @@ export async function run(): Promise<void> {
   // A non-publisher's paper change leaves the root alone.
   B.setPaper("#e8e0d0");
   if (paper() !== paperA) throw new Error("a non-publishing session repainted the root paper");
-  console.log("paper publisher ok: root follows the presented session only");
+  if (panePaper(rootB) === localB) throw new Error("a non-publishing session did not update its own pane paper");
+  console.log("paper publisher ok: shared MRU paper and distinct per-session papers", { localA, localB });
 
   // --- One appearance broadcast, every session ----------------------------
   // Appearance is global; the rasters it is baked into are per session. One
   // refreshTheme must re-bake BOTH sessions' pages, each on its own chain.
   const savedTheme = { ...fakeComputed };
+  // From here the fake pane roots inherit the one global theme, matching the
+  // product with independent mode off. The earlier assertions deliberately
+  // gave them separate pipelines.
+  const followsGlobal = new Proxy({}, {
+    get: (_target, key: string) => (fakeComputed as unknown as Record<string, string | undefined>)[key],
+  }) as typeof fakeComputed;
+  (rootA as unknown as { _themeComputed: typeof fakeComputed })._themeComputed = followsGlobal;
+  (rootB as unknown as { _themeComputed: typeof fakeComputed })._themeComputed = followsGlobal;
   setFakeComputed({ "--canvas-filter": "none", "--canvas-blend": "multiply", paper: "#ffffff" });
   await PDFReader.refreshTheme();
   const rawA = firstPixel("two-a-cv");

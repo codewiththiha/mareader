@@ -76,9 +76,9 @@ function snapshotStragglerPages(s: EngineSession): void {
   }
 }
 
-function pipelineFingerprint(): string {
-  const pipeline = readPipeline();
-  return `${pipeline.filter}|${pipeline.blend}|${paperInfo(pipeline).color}`;
+function pipelineFingerprint(s: EngineSession): string {
+  const pipeline = readPipeline(s);
+  return `${pipeline.filter}|${pipeline.blend}|${paperInfo(pipeline, s.themeRoot).color}`;
 }
 
 // The scrub window repaints the root tokens per tick and the rasters
@@ -95,17 +95,16 @@ function pipelineFingerprint(): string {
 
 export async function rebakeTheme(s: EngineSession, force = false): Promise<void> {
   if (s.themeScrubActive) return;
-  const pipeline = readPipeline();
+  const pipeline = readPipeline(s);
   // The backdrop's pre-themed paper rides on the same filter + paper this
   // rebake burns into the rasters, so it refreshes alongside them. An
   // unchanged fingerprint rewrites the identical value; the detected paper
   // itself publishes from setPaper the moment it moves.
-  publishBakedPaper();
-  const fingerprint = pipelineFingerprint();
+  publishBakedPaper(s);
+  const fingerprint = pipelineFingerprint(s);
   if (!force && fingerprint === s.scrub.lastBakedFingerprint) {
-    // The output is already current even though invalidatePipeline assigned a
-    // new generation. Align cache generations so lazy thumbnail paints do not
-    // schedule the same bake later.
+    // Inputs were already baked for this session. Align the thumbnail entries
+    // so lazy paints do not schedule the same bake later.
     for (const entry of s.thumbCache.values()) {
       if (entry.display) entry.gen = pipeline.gen;
     }
@@ -163,7 +162,7 @@ async function settleCanvasTheme(s: EngineSession): Promise<void> {
       }
     } else if (hasTag) {
       if (st.rawCanvas && st.rawCanvas !== st.canvas) {
-        await bakeInto(st.canvas, st.rawCanvas, readPipeline(), "canvas-raw");
+        await bakeInto(st.canvas, st.rawCanvas, readPipeline(s), "canvas-raw");
         s.dropRawIfIdle(st);
       } else {
         rerender.push(() => renderPage(s, id, st.scale || 1, !!st.textLayerEl));

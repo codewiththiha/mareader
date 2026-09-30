@@ -52,9 +52,9 @@ import {
   setSearchContext,
 } from "./engine/search";
 import { rebakeTheme, releaseAllEntrySnapshots, setScrubModeInternal } from "./engine/theme/scrub";
-import { invalidatePipeline } from "./engine/theme/pipeline";
 import { releaseBakeWorker } from "./engine/theme/bake";
-import { publishBakedPaper, watchPaperTokens } from "./engine/theme/paper";
+import { publishBakedPaper, unobserveThemeRoot, watchPaperTokens } from "./engine/theme/paper";
+import { invalidatePipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   resetPaperForDocument,
@@ -141,6 +141,9 @@ function quiesce(s: EngineSession): void {
 async function destroySession(sid: Sid): Promise<void> {
   const s = sessionFor(sid);
   if (!s || !beginRetire(s)) return;
+  // Disconnect the pane-root observer at the top of teardown, before any
+  // asynchronous worker/document release can fail or await a late task.
+  unobserveThemeRoot(s);
   // The sid no longer resolves, so nothing can queue again: take this
   // session out of the realm lane's registry FIRST, before any teardown
   // step below. The registry holds the session weakly (state.ts), so even
@@ -223,7 +226,7 @@ function enqueueTheme(s: EngineSession, work: () => Promise<void>): Promise<void
 
 async function refreshSessionTheme(s: EngineSession): Promise<void> {
   if (s.themeScrubActive) {
-    publishBakedPaper();
+    publishBakedPaper(s);
     return;
   }
   await rebakeTheme(s);
@@ -247,8 +250,8 @@ async function refreshSessionTheme(s: EngineSession): Promise<void> {
 }
 
 function refreshTheme(): Promise<void> {
-  invalidatePipeline();
   const held = liveSessions();
+  for (const session of held) invalidatePipeline(session);
   if (held.length === 0) {
     publishBakedPaper();
     return Promise.resolve();

@@ -161,15 +161,31 @@ body {
   background-color: var(--tx-paper);
   --pane-paper: var(--tx-paper);
 }
-/* Blend (blend mode on and some pane holds a PDF): the split's shared
-   backdrop colour — the PDF's detected paper through the theme — and every
-   pane in the workspace stands on it, reflowable panes included. Without a
-   PDF in the workspace the class never sets and a reflowable pane keeps
-   its own paper: the colour combination belongs to splits that hold a
-   page colour to detect. */
-.reader-bg.blend [data-pane-root] {
+/* Ordinary blend (blend on, a PDF present, independent mode OFF): the
+   latest focused PDF's detected paper is intentionally repeated across every
+   pane and workspace gutter. The DOM still has a separate paper box per pane;
+   this shared CSS value is the illusion/contract, not one physical backdrop.
+   Independent mode below swaps these rules for one paper per pane. */
+.reader-bg.blend:not(.independent-themes) [data-pane-root] {
   background-color: var(--pdf-paper-baked, var(--color-paper));
   --pane-paper: var(--pdf-paper-baked, var(--color-paper));
+}
+/* Independent mode preserves the same page/gutter blend inside a PDF pane,
+   but never lets that pane's detected paper recolour its neighbours or the
+   workspace gutters. The Rust appearance painter provides each pane's
+   --color-* / --canvas-* tokens; the engine publishes this pane's baked PDF
+   paper on the pane root itself. Isolation keeps CSS blend layers from
+   sampling an adjacent pane's backdrop (including the native macOS window
+   backdrop visible beneath the reader). */
+.reader-bg.independent-themes [data-pane-id] {
+  overflow: hidden;
+}
+.reader-bg.independent-themes [data-pane-root] {
+  isolation: isolate;
+}
+.reader-bg.blend.independent-themes [data-pane-root][data-format="pdf"] {
+  background-color: var(--pane-pdf-paper-baked, var(--color-paper));
+  --pane-paper: var(--pane-pdf-paper-baked, var(--color-paper));
 }
 /* BLEND PAPER — the backdrop must equal the canvas background: the PDF's
    own paper run through the theme pipeline. The engine publishes it,
@@ -188,19 +204,17 @@ body {
    transitions anywhere in this block — a tint scrub repaints it in
    lockstep with the canvases, per tick, through the standing token watch
    in public/engine/theme/paper.ts. */
-.reader-bg.blend {
+.reader-bg.blend:not(.independent-themes) {
   background-color: var(--pdf-paper-baked, var(--color-paper));
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
-/* SCRUB WINDOW — a tint drag repaints the root tokens per frame and the
-   rasters composite live under the CSS filter + blend. The backdrop base
-   stays on --pdf-paper-baked through the window: the standing token watch
-   (public/engine/theme/paper.ts) republishes it per tick (one 1px
-   composite, no raster work), so the flat-paper contract with the page
-   hosts holds mid-drag and a fractional page edge keeps mixing F with F —
-   no seam for the length of the drag. The page hosts' half of the window
-   (the raw canvas' un-themed blend base) lives in styles/page_host.css. */
+/* SCRUB WINDOW — in ordinary shared mode a tint drag repaints the root
+   tokens per frame and the rasters composite live under the CSS filter +
+   blend. The publisher paper stays on --pdf-paper-baked through the window;
+   the token watch republishes it per tick. Independent mode instead keeps
+   each pane root on its own local baked paper. The page-host half of the
+   window (raw canvas' un-themed blend base) lives in page_host.css. */
 
 /* Reflowable single/two-page modes: drop the scroller's opaque bg-surface
    utility (correct for PDF gutters) so the pane's paper shows through.

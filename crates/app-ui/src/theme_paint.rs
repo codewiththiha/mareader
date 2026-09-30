@@ -276,6 +276,28 @@ pub fn paint_pane_appearance(el: web_sys::Element, a: Appearance, ink_contrast: 
     for (name, value) in reader_core::appearance::shared::texture::css_vars(&a) {
         vars.push((name.to_string(), value));
     }
+    // `:root.dark` drives the global grain/texture palette. A pane is not
+    // :root, so independent base changes must carry the equivalent local
+    // stroke/tint/blend tokens; the noise layer itself remains inherited and
+    // global by design.
+    let texture_palette = if a.base.is_dark() {
+        [
+            ("--texture-line", "rgba(255, 255, 255, 0.22)"),
+            ("--texture-paper", "rgba(255, 255, 255, 0.08)"),
+            ("--texture-blend", "screen"),
+        ]
+    } else {
+        [
+            ("--texture-line", "rgba(15, 23, 42, 0.16)"),
+            ("--texture-paper", "rgba(15, 23, 42, 0.05)"),
+            ("--texture-blend", "multiply"),
+        ]
+    };
+    vars.extend(
+        texture_palette
+            .into_iter()
+            .map(|(name, value)| (name.to_string(), value.to_string())),
+    );
 
     let owned =
         |name: &str| vars.iter().any(|(n, _)| n == name) || raster::UI_TOKENS.contains(&name);
@@ -321,6 +343,9 @@ pub fn clear_pane_appearance(el: web_sys::Element) {
         "--canvas-blend",
         "--texture-opacity",
         "--texture-scale-user",
+        "--texture-line",
+        "--texture-paper",
+        "--texture-blend",
     ] {
         let _ = style.remove_property(name);
     }

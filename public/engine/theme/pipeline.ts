@@ -1,38 +1,36 @@
-// Theme pipeline discovery: read the root CSS variables that describe the
-// current appearance and cache them until the root style changes.
+// Per-session theme pipeline discovery. Split panes share the engine realm,
+// but their pane roots may carry distinct base/tint/filter tokens. A cache
+// belongs to the EngineSession (not this module) so one pane's edit never
+// re-bakes another pane against the same global pipeline.
 
+import type { EngineSession } from "../state";
 import type { PipelineCache } from "../types";
 import { paperInfo } from "./paper";
 
-export const pipelineCache: PipelineCache = {
-  token: null,
-  filter: "none",
-  blend: "normal",
-  paperInfo: null,
-  gen: 0,
-};
-export function invalidatePipeline(): void {
-  pipelineCache.token = null;
-  // An explicit invalidation is a real change: the next read re-derives even
-  // if the values look identical (the caller knows something they don't).
-  lastInputs = null;
-  pipelineCache.gen += 1;
+export function invalidatePipeline(s: EngineSession): void {
+  // The caller knows a theme boundary moved. Reset only the cheap token
+  // detector; the per-session generation still advances only if actual bake
+  // inputs changed on the next read.
+  s.themePipeline.token = null;
 }
-// The last VALUES the pipeline was derived from. The root style attribute is
-// only the cheap change detector: it also carries tokens the bake never reads
-// — the engine's own `--pdf-paper` / `--pdf-paper-baked` publications, which
-// change as pages render and the paper is re-detected, most visibly during a
-// zoom. Bumping `gen` on every attribute change made each of those writes
-// look like a new theme: renders already in flight were discarded and
-// re-baked (renderer.ts compares the gen at bake time), the re-bake published
-// the paper again, and the page flickered through a loop of re-renders. So
-// `gen` moves only when an input the bake actually consumes moves.
-let lastInputs: string | null = null;
 
-export function readPipeline(): PipelineCache {
-  const root = document.documentElement;
-  const token = root.getAttribute("style") || "";
-  if (pipelineCache.token === token) return pipelineCache;
+function pipelineRoot(s: EngineSession): HTMLElement | null {
+  return s.themeRoot ?? (typeof document === "undefined" ? null : document.documentElement);
+}
+
+export function readPipeline(s: EngineSession): PipelineCache {
+  const cache = s.themePipeline;
+  const root = pipelineRoot(s);
+  if (!root) return cache;
+  const documentRoot = root.ownerDocument?.documentElement ?? root;
+  const token = [
+    documentRoot.getAttribute("style") || "",
+    documentRoot.getAttribute("class") || "",
+    root === documentRoot ? "" : root.getAttribute("style") || "",
+    root === documentRoot ? "" : root.getAttribute("class") || "",
+  ].join("\u001f");
+  if (cache.token === token) return cache;
+
   let filter = "none";
   let blend = "normal";
   let paper = "";
@@ -44,26 +42,26 @@ export function readPipeline(): PipelineCache {
   } catch (_) {
     /* identity */
   }
-  pipelineCache.token = token;
+  cache.token = token;
   const inputs = `${filter}|${blend}|${paper}`;
-  if (inputs === lastInputs) {
-    // Same theme, different attribute string: nothing the rasters depend on
-    // changed, so every bake in flight (and every cached thumbnail) stays
-    // valid, and the resolved paper can be kept too.
-    return pipelineCache;
-  }
-  lastInputs = inputs;
-  pipelineCache.filter = filter;
-  pipelineCache.blend = blend;
-  pipelineCache.paperInfo = null;
-  pipelineCache.gen += 1;
-  return pipelineCache;
+  if (inputs === cache.inputs) return cache;
+
+  cache.inputs = inputs;
+  cache.filter = filter;
+  cache.blend = blend;
+  cache.paperInfo = null;
+  // Resolve the paper against THIS pane root. The canvas compositing paper
+  // and the PDF's detected paper must be measured in the same CSS scope.
+  paperInfo(cache, root);
+  cache.gen += 1;
+  return cache;
 }
+
 export function pipelineIsIdentity(pipeline: PipelineCache): boolean {
   if (pipeline.filter !== "none") return false;
   if (pipeline.blend === "normal") return true;
   if (pipeline.blend === "multiply") {
-    const rgb = paperInfo(pipeline).rgb;
+    const rgb = pipeline.paperInfo?.rgb ?? [255, 255, 255];
     return rgb[0] === 255 && rgb[1] === 255 && rgb[2] === 255;
   }
   return false;

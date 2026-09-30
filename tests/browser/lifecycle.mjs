@@ -2311,6 +2311,114 @@ async function paneEntries() {
   await assertPaneBox(dragged, "split: dragged pdf", afterDrag.pdf);
   await assertPaneBox(dragged, "split: dragged markdown", afterDrag.md);
 
+  // Independent themes are a real pane-local appearance path, not merely a
+  // per-pane map. Exercise the visible switch and base controls, and emulate
+  // the engine's two published paper scopes while blend is active: the PDF's
+  // local paper must not bleed into the MD pane or the shared workspace base.
+  const appearance = 'button[title="Appearance"]';
+  await page.evaluate(([sel, appearance]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    doc?.querySelector(appearance)?.click();
+  }, [activeFrame, appearance]);
+  const themeSwitch = '[role="switch"][title="Independent theme for each pane"]';
+  const switchReady = await page.evaluate(([sel, selector]) =>
+    !!document.querySelector(sel)?.contentDocument?.querySelector(selector), [activeFrame, themeSwitch]);
+  if (!switchReady) throw new Error("[pane themes] independent switch is missing in a two-pane workspace");
+  await page.evaluate(([sel, selector]) => {
+    document.querySelector(sel)?.contentDocument?.querySelector(selector)?.click();
+  }, [activeFrame, themeSwitch]);
+  await page.waitForFunction(([sel]) =>
+    document.querySelector(sel)?.contentDocument?.querySelector(".reader-bg")?.classList.contains("independent-themes"), [activeFrame]);
+
+  // The new MD pane had focus after the divider interaction/open. Explicitly
+  // request it through the real pane capture path, then choose Dark in the
+  // actual appearance menu.
+  await page.evaluate(([sel, id]) => {
+    const f = document.querySelector(sel);
+    const target = f.contentDocument.querySelector(`[data-pane-id="${id}"] [data-pane-root]`);
+    target.dispatchEvent(new f.contentWindow.PointerEvent("pointerdown", { bubbles: true, composed: true }));
+  }, [activeFrame, md.paneId]);
+  await waitFor("[pane themes] Markdown pane focused", (s) => s.host?.activePane === md.paneId, 10_000);
+  await page.evaluate(([sel, appearance]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    if (!doc?.querySelector('button[title="Dark"]')) doc?.querySelector(appearance)?.click();
+    doc?.querySelector('button[title="Dark"]')?.click();
+  }, [activeFrame, appearance]);
+  const mdDark = await page.evaluate(([sel, id]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const root = doc?.querySelector(`[data-pane-id="${id}"] [data-pane-root]`);
+    return root ? getComputedStyle(root).getPropertyValue("--color-paper").trim() : "";
+  }, [activeFrame, md.paneId]);
+  if (!mdDark || mdDark === "#ffffff") throw new Error(`[pane themes] MD's selected Dark paper did not land: ${mdDark}`);
+
+  // Deliberately divergent test colours make the ownership contract obvious:
+  // shared red on :root, local green on the PDF root, and MD's own dark base.
+  const blendScopes = await page.evaluate(([sel, pdfId, mdId]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const workspace = doc?.querySelector(".reader-bg");
+    const pdfRoot = doc?.querySelector(`[data-pane-id="${pdfId}"] [data-pane-root]`);
+    const mdRoot = doc?.querySelector(`[data-pane-id="${mdId}"] [data-pane-root]`);
+    doc.documentElement.style.setProperty("--pdf-paper-baked", "#d02020");
+    pdfRoot.style.setProperty("--pane-pdf-paper-baked", "#a0c060");
+    workspace.classList.add("blend");
+    return {
+      sharedBackdrop: getComputedStyle(workspace).backgroundColor,
+      pdfPane: getComputedStyle(pdfRoot).backgroundColor,
+      mdPane: getComputedStyle(mdRoot).backgroundColor,
+      localPdf: getComputedStyle(pdfRoot).getPropertyValue("--pane-paper").trim(),
+      localMd: getComputedStyle(mdRoot).getPropertyValue("--pane-paper").trim(),
+    };
+  }, [activeFrame, pdfPane, md.paneId]);
+  if (blendScopes.pdfPane !== "rgb(160, 192, 96)" || blendScopes.mdPane === "rgb(160, 192, 96)" || blendScopes.sharedBackdrop === "rgb(208, 32, 32)") {
+    throw new Error(`[pane themes] blended PDF paper escaped its pane: ${JSON.stringify(blendScopes)}`);
+  }
+  await page.evaluate(([sel]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    doc?.querySelector(".reader-bg")?.classList.remove("blend");
+    doc?.documentElement.style.removeProperty("--pdf-paper-baked");
+    doc?.querySelectorAll("[data-pane-root]").forEach((root) => root.style.removeProperty("--pane-pdf-paper-baked"));
+  }, [activeFrame]);
+
+  // Now theme the PDF itself. This checks that changing the focused PDF
+  // edits its own scoped canvas pipeline, while the adjacent Markdown retains
+  // its distinct look. The engine smoke separately asserts independent pixel
+  // baking for two simultaneously live PDF sessions.
+  await page.evaluate(([sel, id]) => {
+    const f = document.querySelector(sel);
+    f.contentDocument.querySelector(`[data-pane-id="${id}"] [data-pane-root]`)
+      .dispatchEvent(new f.contentWindow.PointerEvent("pointerdown", { bubbles: true, composed: true }));
+  }, [activeFrame, pdfPane]);
+  await waitFor("[pane themes] PDF pane focused", (s) => s.host?.activePane === pdfPane, 10_000);
+  await page.evaluate(([sel, appearance]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    if (!doc?.querySelector('button[title="Dim"]')) doc?.querySelector(appearance)?.click();
+    doc?.querySelector('button[title="Dim"]')?.click();
+  }, [activeFrame, appearance]);
+  const pdfLook = await page.evaluate(([sel, pdfId, mdId]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const pdfRoot = doc?.querySelector(`[data-pane-id="${pdfId}"] [data-pane-root]`);
+    const mdRoot = doc?.querySelector(`[data-pane-id="${mdId}"] [data-pane-root]`);
+    const cs = getComputedStyle(pdfRoot);
+    return {
+      pdfPaper: cs.getPropertyValue("--color-paper").trim(),
+      pdfFilter: cs.getPropertyValue("--canvas-filter").trim(),
+      mdPaper: getComputedStyle(mdRoot).getPropertyValue("--color-paper").trim(),
+      independent: doc.querySelector(".reader-bg").classList.contains("independent-themes"),
+    };
+  }, [activeFrame, pdfPane, md.paneId]);
+  if (!pdfLook.independent || !pdfLook.pdfFilter || pdfLook.pdfPaper === pdfLook.mdPaper) {
+    throw new Error(`[pane themes] PDF's own look did not diverge from MD: ${JSON.stringify(pdfLook)}`);
+  }
+  // Restore the toggle before the existing split-close lifecycle assertions.
+  await page.evaluate(([sel, appearance, selector]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    if (!doc?.querySelector(selector)) doc?.querySelector(appearance)?.click();
+    doc?.querySelector(selector)?.click();
+  }, [activeFrame, appearance, themeSwitch]);
+  await page.waitForFunction(([sel]) =>
+    !document.querySelector(sel)?.contentDocument?.querySelector(".reader-bg")?.classList.contains("independent-themes"), [activeFrame]);
+  console.log(`[pane themes] independent MD/PDF looks, mixed-format blend isolation: ${JSON.stringify({ mdDark, blendScopes, pdfLook })}`);
+
   // Close the PDF pane through the host's own control: the Markdown pane
   // keeps its session, takes focus and the whole slot; the PDF's engine
   // session and every raster it owned go with its pane.

@@ -4,7 +4,7 @@ import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
 import { offscreenFor, releaseCanvas, sessionEl, showBaked, showRaw } from "./canvas";
 import { fail, failFrom } from "./errors";
 import { bakeRaster } from "./theme/bake";
-import { readPipeline, pipelineCache } from "./theme/pipeline";
+import { readPipeline } from "./theme/pipeline";
 import {
   cacheDisplay,
   ensureEntryCurrent,
@@ -154,7 +154,7 @@ export function hasThumb(s: EngineSession, page: number, scale: number): boolean
   return (
     !!hit &&
     Math.abs(hit.scale - scale) < 1e-9 &&
-    (s.themeScrubActive || hit.gen === pipelineCache.gen || !!hit.raw)
+    (s.themeScrubActive || hit.gen === s.themePipeline.gen || !!hit.raw)
   );
 }
 
@@ -249,7 +249,7 @@ async function renderThumbInternal(
         s.thumbLive.set(canvasId, { page });
         return { ok: true, width: hit.cssW, height: hit.cssH, scale };
       }
-    } else if (hit.gen === pipelineCache.gen) {
+    } else if (hit.gen === s.themePipeline.gen) {
       const size = paintCached(s, canvas, hit);
       if (size) {
         cachePut(s, page, hit);
@@ -303,7 +303,7 @@ async function renderThumbInternal(
     // createImageBitmap used to zero the only unthemed copy, so a theme
     // change could not update visible thumbs until a full pdf.js re-render.
     const raw = off;
-    let display: MaybeCanvas = s.themeScrubActive ? raw : await bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = s.themeScrubActive ? raw : await bakeRaster(raw, readPipeline(s));
     if (display === raw) {
       if (typeof createImageBitmap === "function") {
         try {
@@ -321,7 +321,7 @@ async function renderThumbInternal(
       cssW,
       cssH,
       scale,
-      gen: s.themeScrubActive ? -1 : pipelineCache.gen,
+      gen: s.themeScrubActive ? -1 : s.themePipeline.gen,
       pending: null,
     };
     cachePut(s, page, entry);
@@ -514,7 +514,7 @@ async function prefetchThumbInternal(
     }
     pg.cleanup();
     const raw = off;
-    let display: MaybeCanvas = s.themeScrubActive ? raw : await bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = s.themeScrubActive ? raw : await bakeRaster(raw, readPipeline(s));
     if (display !== raw) display = await cacheDisplay({ display });
     // The epoch check AGAIN: a bake can wait on the theme queue, and a
     // document swap in that window must not file this book's colours into
@@ -525,7 +525,7 @@ async function prefetchThumbInternal(
     }
     cachePut(s, page, { raw, display, cssW: Math.floor(viewport.width),
                      cssH: Math.floor(viewport.height), scale,
-                     gen: s.themeScrubActive ? -1 : pipelineCache.gen, pending: null });
+                     gen: s.themeScrubActive ? -1 : s.themePipeline.gen, pending: null });
     return true;
   } catch (_) {
     s.thumbTasks.delete(taskId);

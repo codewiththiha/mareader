@@ -9,6 +9,7 @@ import { fail, failFrom } from "./errors";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
+import { observeThemeRoot, unobserveThemeRoot } from "./theme/paper";
 import {
   CLEANUP_EVERY,
   REALM_PAGE_LIMIT,
@@ -56,6 +57,21 @@ function blankPage(
   };
 }
 
+/** Pin one session to the pane root that owns its first registered page.
+ *  Reader Rust passes its elements directly; the legacy id-only path resolves
+ *  the same root here. */
+function pinThemeRoot(s: EngineSession, host: HTMLElement | null): void {
+  const paneRoot = host && typeof host.closest === "function"
+    ? host.closest("[data-pane-root]") as HTMLElement | null
+    : null;
+  if (paneRoot && s.themeRoot !== paneRoot) {
+    if (s.themeRoot) unobserveThemeRoot(s);
+    s.themeRoot = paneRoot;
+    s.themePipeline.token = null;
+    observeThemeRoot(s);
+  }
+}
+
 /** Look up or create PageState. Recovers when registerPage ran before the
  *  <canvas> was in the DOM (Leptos mounts the effect one tick early). */
 function ensurePage(
@@ -79,6 +95,7 @@ function ensurePage(
   if (!canvas) return null;
   const hostId = hostIdHint || hostIdFromCanvasId(canvasId);
   const host = el(hostId);
+  pinThemeRoot(s, host);
   const textLayerEl = host ? (host.querySelector(TEXT_LAYER_SELECTOR) as HTMLElement | null) : null;
   if (existing) {
     existing.dead = false;
@@ -120,6 +137,7 @@ export function registerPage(
     // does): pin them. No document-wide lookup can then pick a second
     // pane's page that happens to carry the same id.
     const pinnedHost = host ?? null;
+    pinThemeRoot(s, pinnedHost);
     const textLayerEl = pinnedHost
       ? (pinnedHost.querySelector(TEXT_LAYER_SELECTOR) as HTMLElement | null)
       : null;
@@ -410,13 +428,13 @@ async function renderPageNow(
   // apart, could bake against different theme states or land one raw and one
   // baked — the half-theme seam. The raw pixels are in `target` either way,
   // so the decision is free to move here.
-  const pipeline = s.themeScrubActive ? null : readPipeline();
+  const pipeline = s.themeScrubActive ? null : readPipeline(s);
   const needsBake = pipeline ? !pipelineIsIdentity(pipeline) : false;
 
   if (needsBake && pipeline) {
     const bakeGen = pipeline.gen;
     const baked = await bakeRaster(target, pipeline);
-    if (readPipeline().gen !== bakeGen) {
+    if (readPipeline(s).gen !== bakeGen) {
       releaseBaked(baked, target);
       if (target !== st.canvas) releaseCanvas(target);
       try { page.cleanup(); } catch (_) { /* ignore */ }

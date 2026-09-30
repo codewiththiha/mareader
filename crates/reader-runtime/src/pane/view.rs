@@ -259,13 +259,40 @@ pub(crate) fn pane_content(
     // window theme again. The ink dial is a global text setting, so the
     // paint tracks it alongside the look. The root exists by the time this
     // effect first runs (the view above built it).
+    let last_raster = StoredValue::new_local(None::<(String, String, String)>);
     Effect::new(move |_| {
         let look = vs.viewer.look.get();
         let ink = state.settings.with(|s| s.text.ink_contrast);
+        let global = state.settings.with(|s| s.appearance);
+        let signature_of = |a: reader_core::appearance::Appearance| {
+            (
+                a.canvas_filter(),
+                a.canvas_blend().to_string(),
+                a.base.as_str().to_string(),
+            )
+        };
+        let global_signature = signature_of(global);
+        let signature = signature_of(look.unwrap_or(global));
+        let previous = last_raster.try_get_value().flatten();
+        let changed = previous
+            .as_ref()
+            .is_some_and(|previous| previous != &signature)
+            || (previous.is_none() && look.is_some() && signature != global_signature);
+        last_raster.set_value(Some(signature));
         if let Some(el) = dom.root() {
             match look {
                 Some(a) => app_ui::theme_paint::paint_pane_appearance(el, a, ink),
                 None => app_ui::theme_paint::clear_pane_appearance(el),
+            }
+            // The PDF engine now discovers its pipeline at this pane root.
+            // Notify it only after the new scoped tokens land, and only when
+            // bake inputs changed: texture, grain, ink, and same-look seeding
+            // are CSS-only and must not redraw full PDF page surfaces.
+            if changed
+                && vs.document.format.get_untracked() == reader_core::format::Format::Pdf
+                && !app_ui::appearance::is_scrubbing()
+            {
+                app_ui::appearance::raster::refresh_after_pane_paint();
             }
         }
     });
