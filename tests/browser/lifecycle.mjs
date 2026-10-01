@@ -74,6 +74,72 @@ let currentStage = "boot";
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
 const page = await context.newPage();
+// The runtimes mount in the Shell's document, each in a `.runtime-frame`
+// slot, and every reader pane is an iframe of its own
+// (docs/pane-runtimes.md). The suite addresses a runtime as one surface:
+// a slot's `contentDocument` answers queries across the slot and its
+// visible pane frames, and its `contentWindow` resolves a name on a pane's
+// window when the Shell's window does not carry it (the engine's
+// `PDFReader`, a pane's own hooks).
+await context.addInitScript(() => {
+  if (window !== window.top) return;
+  const panes = (slot) =>
+    [...slot.querySelectorAll("iframe.pane-frame")]
+      .filter((f) => !f.hasAttribute("data-frame-hidden") && f.contentDocument);
+  const one = (slot, sel) =>
+    slot.querySelector(sel) ??
+    panes(slot).map((f) => f.contentDocument.querySelector(sel)).find(Boolean) ??
+    null;
+  const all = (slot, sel) => [
+    ...slot.querySelectorAll(sel),
+    ...panes(slot).flatMap((f) => [...f.contentDocument.querySelectorAll(sel)]),
+  ];
+  const fromPoint = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    if (el?.tagName === "IFRAME" && el.classList.contains("pane-frame") && el.contentDocument) {
+      const r = el.getBoundingClientRect();
+      return el.contentDocument.elementFromPoint(x - r.left, y - r.top);
+    }
+    return el;
+  };
+  const view = (slot) =>
+    new Proxy(document, {
+      get(target, key) {
+        if (key === "querySelector") return (sel) => one(slot, sel);
+        if (key === "querySelectorAll") return (sel) => all(slot, sel);
+        if (key === "getElementById") return (id) => one(slot, `#${CSS.escape(id)}`);
+        if (key === "elementFromPoint") return fromPoint;
+        const value = Reflect.get(target, key);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  const realm = (slot) =>
+    new Proxy(window, {
+      get(target, key) {
+        if (key === "__mareaderDiagnostics") {
+          return target.__mareaderReaderDiagnostics ?? target.__mareaderDiagnostics;
+        }
+        if (!(key in target)) {
+          const pane = panes(slot).find((f) => key in f.contentWindow);
+          if (pane) {
+            const value = pane.contentWindow[key];
+            return typeof value === "function" ? value.bind(pane.contentWindow) : value;
+          }
+        }
+        const value = Reflect.get(target, key);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  const isSlot = (el) => el.classList?.contains("runtime-frame");
+  Object.defineProperty(HTMLDivElement.prototype, "contentDocument", {
+    configurable: true,
+    get() { return isSlot(this) ? view(this) : undefined; },
+  });
+  Object.defineProperty(HTMLDivElement.prototype, "contentWindow", {
+    configurable: true,
+    get() { return isSlot(this) ? realm(this) : undefined; },
+  });
+});
 page.on("pageerror", (e) => {
   // Full stack: a wasm trap's frames name the glue wrapper it came
   // through, which is the difference between "somewhere in the binary"
@@ -147,7 +213,7 @@ async function snap() {
     // Every frame, not only the visible one: a warm runtime's canvases are
     // real backing stores even though nothing is showing them, and a
     // byte-faithful memory sample cannot be frame-blind.
-    for (const frame of document.querySelectorAll("#runtime-host iframe.runtime-frame")) {
+    for (const frame of document.querySelectorAll("#runtime-host .runtime-frame")) {
       if (frame.contentDocument) docs.push(frame.contentDocument);
     }
     for (const d of docs) {
@@ -298,7 +364,7 @@ async function openBook(url) {
  *  the slot on its own). */
 async function assertPaneBox(s, label, pane = s.host.panes[0]) {
   const box = await page.evaluate((id) => {
-    const frame = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]");
+    const frame = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]");
     const doc = frame?.contentDocument ?? document;
     const el = doc.querySelector(`[data-pane-id="${id}"]`);
     if (!el) return null;
@@ -370,7 +436,7 @@ async function clickCloseNow() {
   // swallowed in a plain browser. Dispatch on the button itself: same
   // handler, same close path the packaged app runs.
   await page.evaluate(() => {
-    const btn = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector('button[title*="Close this book"]');
+    const btn = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector('button[title*="Close this book"]');
     if (!btn) throw new Error("close button not found");
     btn.click();
   });
@@ -481,7 +547,7 @@ function assertDrained(s, label, expectedEpoch = 2) {
 // meant to interrupt is actually in flight.
 async function raceCloseDuringRender() {
   return page.evaluate(() => {
-    const frame = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]");
+    const frame = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]");
     const raw = frame?.contentWindow?.__mareaderDiagnostics?.() ?? window.__mareaderDiagnostics?.();
     if (!raw) return false;
     const s = JSON.parse(raw);
@@ -495,7 +561,7 @@ async function raceCloseDuringRender() {
 
 async function raceCloseDuringPrefetch() {
   return page.evaluate(() => {
-    const frame = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]");
+    const frame = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]");
     const raw = frame?.contentWindow?.__mareaderDiagnostics?.() ?? window.__mareaderDiagnostics?.();
     if (!raw) return false;
     const s = JSON.parse(raw);
@@ -611,7 +677,7 @@ async function startHostSampler() {
       // behind it), so the sampler sorts them by slot instead of assuming a
       // single runtime. Every DOM fact below is read from the ACTIVE frame:
       // a warm runtime's grid or page host is on screen nowhere.
-      const frames = host ? [...host.querySelectorAll("iframe.runtime-frame")] : [];
+      const frames = host ? [...host.querySelectorAll(".runtime-frame")] : [];
       let activeDoc = null;
       let warmDoc = null;
       let retiring = 0;
@@ -740,7 +806,7 @@ function firstViolation(violations, context = []) {
 async function libraryDomState() {
   return page.evaluate(() => {
     const host = document.getElementById("runtime-host");
-    const frames = [...(host?.querySelectorAll("iframe.runtime-frame") ?? [])];
+    const frames = [...(host?.querySelectorAll(".runtime-frame") ?? [])];
     const pick = (slot) => frames.find((f) => f.getAttribute("data-mareader-slot") === slot);
     const runtimeDoc = pick("active")?.contentDocument ?? null;
     const warmDoc = pick("warm")?.contentDocument ?? null;
@@ -769,7 +835,7 @@ async function frameSlots() {
   return page.evaluate(() => {
     const host = document.getElementById("runtime-host");
     const out = { active: null, warm: null, retiring: 0, frames: 0 };
-    for (const f of host?.querySelectorAll("iframe.runtime-frame") ?? []) {
+    for (const f of host?.querySelectorAll(".runtime-frame") ?? []) {
       out.frames += 1;
       const generation = Number(f.getAttribute("data-mareader-generation") ?? 0);
       switch (f.getAttribute("data-mareader-slot")) {
@@ -850,12 +916,12 @@ async function waitForDom(label, predicate, timeoutMs = 30_000) {
 
 async function clickBook(title, label, timeout = 45_000) {
   try {
-    await page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
+    await page.locator('.runtime-frame[data-mareader-slot="active"]').locator(`.book-title[title*="${title}"]`).first().click({ timeout: 5_000 });
   } catch {
     // The grid's gesture layer can swallow a synthetic hit; dispatching on
     // the row is the same app open path either way.
     await page.evaluate((needle) => {
-      const doc = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument;
+      const doc = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument;
       const el = [...(doc?.querySelectorAll(".book-title") ?? [])]
         .find((n) => (n.textContent ?? "").includes(needle));
       if (!el) throw new Error("book row not found in the library");
@@ -878,12 +944,12 @@ async function clickBook(title, label, timeout = 45_000) {
 async function signalShelfIntent(label) {
   try {
     await page
-      .frameLocator('iframe.runtime-frame[data-mareader-slot="active"]')
+      .locator('.runtime-frame[data-mareader-slot="active"]')
       .locator("#library-level")
       .hover({ timeout: 5_000, position: { x: 40, y: 40 } });
   } catch {
     const dispatched = await page.evaluate(() => {
-      const doc = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument;
+      const doc = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument;
       const level = doc?.getElementById("library-level");
       if (!level) return false;
       level.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
@@ -1636,9 +1702,9 @@ for (const where of jumpTargets) {
   // A new measurement generation: every raster the engine starts from now
   // carries this id, so the trace assertion reads exactly this jump.
   const gen = await page.evaluate(() =>
-    document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentWindow?.PDFReader.beginRenderGeneration());
+    document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentWindow?.PDFReader.beginRenderGeneration());
   await page.evaluate((w) => {
-    const list = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector("#page-list");
+    const list = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector("#page-list");
     list.scrollTop = w === "end" ? list.scrollHeight
       : w === "top" ? 0
       : list.scrollHeight / 4;
@@ -1680,7 +1746,7 @@ for (const where of jumpTargets) {
   // the trace names the pages.
   const trace = await page.evaluate((g) =>
     {
-      const api = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentWindow?.PDFReader;
+      const api = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentWindow?.PDFReader;
       return api.renderTrace().filter((e) => e.gen === g);
     }, gen);
   if (trace.length === 0) {
@@ -1792,7 +1858,7 @@ for (let attempt = 1; attempt <= 3 && !searchRaceWon; attempt += 1) {
   await openBook(searchBooks[attempt - 1]);
   await page.mouse.click(700, 450);
   await page.keyboard.press("Control+f");
-  const searchBox = page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('input[placeholder^="Search in document"]');
+  const searchBox = page.locator('.runtime-frame[data-mareader-slot="active"]').locator('input[placeholder^="Search in document"]');
   await searchBox.focus();
   await page.keyboard.type("the");
   await page.keyboard.press("Enter");
@@ -1803,7 +1869,7 @@ for (let attempt = 1; attempt <= 3 && !searchRaceWon; attempt += 1) {
       if (!raw) return false;
       const s = JSON.parse(raw);
       if (s.engine.searchActive > 0) {
-        const btn = document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector('button[title*="Close this book"]');
+        const btn = document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelector('button[title*="Close this book"]');
         if (btn) { btn.click(); return true; }
       }
       return false;
@@ -1948,14 +2014,14 @@ currentStage = "stage11-same-page-x10";
 // generation is minted before the click that opens it.
 let lastOpenedGeneration = 0;
 async function openFromLibrary(cycle, fresh = () => true) {
-  const card = page.frameLocator('iframe.runtime-frame[data-mareader-slot="active"]').locator('.book-title[title*="Programming Pearls"]').first();
+  const card = page.locator('.runtime-frame[data-mareader-slot="active"]').locator('.book-title[title*="Programming Pearls"]').first();
   try {
     await card.click({ timeout: 5_000 });
   } catch {
     // The grid's gesture layer can swallow a synthetic hit; dispatching on
     // the row is the same app open path either way.
     await page.evaluate(() => {
-      const t = [...document.querySelector("#runtime-host iframe.runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelectorAll(".book-title")]
+      const t = [...document.querySelector("#runtime-host .runtime-frame[data-mareader-slot=\"active\"]")?.contentDocument?.querySelectorAll(".book-title")]
         .find((el) => (el.textContent ?? "").includes("Programming Pearls"));
       if (!t) throw new Error("book row not found in the library");
       t.click();
@@ -2152,7 +2218,7 @@ currentStage = "stage13-split-workspace";
 // the host owns the layout, the divider and the focus; closing the PDF
 // pane leaves the Markdown pane alive and reading.
 const SPLIT_NOTES = "/samples/Split Notes.md";
-const activeFrame = '#runtime-host iframe.runtime-frame[data-mareader-slot="active"]';
+const activeFrame = '#runtime-host .runtime-frame[data-mareader-slot="active"]';
 
 /** The layout's leaves, in order (the snapshot's `layout` is the tree). */
 function layoutLeaves(node) {
@@ -3196,7 +3262,7 @@ async function writeSettings(patch) {
  *  flat colour when downsampled — a cleared canvas, never a rendered page). */
 async function startZoomSampler() {
   await page.evaluate(() => {
-    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    const f = document.querySelector('#runtime-host .runtime-frame[data-mareader-slot="active"]');
     const w = f.contentWindow;
     const d = f.contentDocument;
     const ext = d.querySelector('[data-strip-extent="vertical"]');
@@ -3288,7 +3354,7 @@ async function startZoomSampler() {
 
 async function stopZoomSampler() {
   return page.evaluate(() => {
-    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    const f = document.querySelector('#runtime-host .runtime-frame[data-mareader-slot="active"]');
     const w = f.contentWindow;
     w.__zoomSampling = false;
     w.__zoomMo?.disconnect();
@@ -3328,7 +3394,7 @@ currentStage = "zoom-animation-off";
   await writeSettings({ animations: { enabled: false } });
   await openBook(plainPearlsUrl);
   const motionOff = await page.evaluate(() => {
-    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    const f = document.querySelector('#runtime-host .runtime-frame[data-mareader-slot="active"]');
     return f.contentDocument.documentElement.classList.contains("animations-off");
   });
   if (!motionOff) throw new Error("zoom-off: the reader frame is not in the animations-off state");
@@ -3348,7 +3414,7 @@ currentStage = "zoom-animation-off";
   await page.waitForTimeout(900);
   const xs = await stopZoomSampler();
   const zoomEvents = await page.evaluate(() => {
-    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    const f = document.querySelector('#runtime-host .runtime-frame[data-mareader-slot="active"]');
     return (f.contentWindow.__zoomEvents ?? []).slice(0, 120);
   });
   const after = await waitCrisp("zoom-off commit");
@@ -3469,7 +3535,7 @@ currentStage = "noise-runtime-state";
   // is a compositor problem; one that does not run is a cascade problem.
   const probeNoise = () => page.evaluate(async () => {
     const read = (slot) => {
-      const f = document.querySelector(`#runtime-host iframe.runtime-frame[data-mareader-slot="${slot}"]`);
+      const f = document.querySelector(`#runtime-host .runtime-frame[data-mareader-slot="${slot}"]`);
       const d = f?.contentDocument;
       if (!d?.body) return null;
       const overlays = d.querySelectorAll(".noise-overlay");
@@ -3500,7 +3566,7 @@ currentStage = "noise-runtime-state";
   // chases (travels) unless the OS asks for reduced motion — the app's own
   // animations switch must not freeze it into three still dots.
   const probeLoader = () => page.evaluate(async () => {
-    const f = document.querySelector('#runtime-host iframe.runtime-frame[data-mareader-slot="active"]');
+    const f = document.querySelector('#runtime-host .runtime-frame[data-mareader-slot="active"]');
     const d = f.contentDocument;
     const w = f.contentWindow;
     const box = d.createElement("div");

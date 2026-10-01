@@ -244,3 +244,27 @@ pub fn has_pdf_reader() -> bool {
         })
         .unwrap_or(false)
 }
+
+/// Release engine session `sid` without awaiting it, looked up on the
+/// window at call time. The drop safety net uses this rather than the typed
+/// import: a session type can be dropped in a realm that never runs the
+/// engine (the workspace host keeps a mirror of each pane's context), and a
+/// static import there would tie that realm's artifact to `PDFReader`.
+pub fn release_session_detached(sid: u32) {
+    if !cfg!(target_arch = "wasm32") {
+        return;
+    }
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let global: js_sys::Object = window.unchecked_into();
+    let Ok(reader) = js_sys::Reflect::get(&global, &JsValue::from_str("PDFReader")) else {
+        return;
+    };
+    let Ok(destroy) = js_sys::Reflect::get(&reader, &JsValue::from_str("destroySession")) else {
+        return;
+    };
+    if let Some(destroy) = destroy.dyn_ref::<js_sys::Function>() {
+        let _ = destroy.call1(&reader, &JsValue::from_f64(f64::from(sid)));
+    }
+}

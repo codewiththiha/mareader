@@ -74,10 +74,7 @@ impl Drop for Inner {
     /// ignores a sid it already forgot).
     fn drop(&mut self) {
         if self.state.get() != State::Disposed && self.registered && bridge::has_pdf_reader() {
-            let sid = self.sid;
-            wasm_bindgen_futures::spawn_local(async move {
-                let _ = bridge::destroy_session(sid).await;
-            });
+            bridge::release_session_detached(self.sid);
         }
     }
 }
