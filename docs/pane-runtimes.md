@@ -7,14 +7,18 @@ object. Nothing else in the window repaints, so a close or an in-place open
 never flickers.
 
 ```text
-Shell (window document, never reloads)
-└─ reader frame = workspace host (reader.wasm, no pdf.js)
-   ├─ title bar, rail, menus, settings modal, dividers, layout, drag/lift
-   ├─ settings + appearance: one source of truth, pushed to every pane
-   ├─ pane A: <iframe pane.html?kind=pdf>    → pane.wasm + pdf.js + worker
-   ├─ pane B: <iframe pane.html?kind=reflow> → pane.wasm, text + themes only
-   └─ pane C: <iframe pane.html?kind=pdf>    → pane.wasm + pdf.js + worker
+Shell / workspace host (window document, never reloads)
+├─ title bar, sidebar, settings, menus, dividers, layout
+├─ settings + appearance: one source of truth, pushed to every pane
+├─ pane A: <iframe pdf.html>    → pdf.wasm    (own realm, pdf.js, worker)
+├─ pane B: <iframe reflow.html> → reflow.wasm (own realm, md/txt + themes)
+└─ pane C: <iframe pdf.html>    → pdf.wasm    (own realm, pdf.js, worker)
 ```
+
+There is no intermediate reader frame: the Shell document itself is the
+workspace host. The two pane runtimes are separate binaries, so a reflow
+pane never links or loads the PDF engine, and a PDF pane never links the
+reflow formats.
 
 ## The seam
 
@@ -25,8 +29,8 @@ type. The split keeps that seam and changes what stands behind it:
 - **Host side: `FramePane`** (`crates/reader-runtime/src/frame_pane/`)
   implements `PaneRuntime`. It owns the iframe, the `MessageChannel` and a
   *mirror* of the pane's chrome-facing state.
-- **Pane side: the pane frame** (`crates/reader-runtime/src/pane_frame/`,
-  bin `pane`) runs the existing `DocumentPane` unchanged, with a `PaneEnv`
+- **Pane side: the pane frames** (`crates/reader-runtime/src/pane_frame/`,
+  bins `pdf` and `reflow`) run the existing `DocumentPane` unchanged, with a `PaneEnv`
   built from the port instead of from the host.
 
 The vocabulary both sides serialize is `runtime_contract::pane`
@@ -124,8 +128,9 @@ and the other balances still hold across frames.
 
 ## Legacy removed
 
-- The in-realm pane path: the reader frame no longer mounts `DocumentPane`
-  or loads pdf.js; `reader.html` drops the engine scripts.
+- The reader frame: the Shell hosts the workspace directly, and nothing
+  outside a PDF pane frame loads pdf.js.
+- The in-realm pane path: the host no longer mounts `DocumentPane`.
 - In-realm presentation recency for the root paper (`presented` in
   `public/engine/state.ts`): a pane realm holds one session, and the host
   owns the recency.
@@ -133,14 +138,17 @@ and the other balances still hold across frames.
 
 ## Stages
 
-1. Contract and pane artifact: `runtime_contract::pane`, `pane.html`,
-   `pane.Trunk.toml`, bin `pane`, the pane frame boot running
-   `DocumentPane`, the build and artifact checks.
+1. Contract and pane artifacts: `runtime_contract::pane`, `pdf.html` /
+   `pdf.wasm` and `reflow.html` / `reflow.wasm` (each with its own Trunk
+   config and feature set), the pane frame boot running `DocumentPane`,
+   the build and artifact checks.
 2. `FramePane` in the host: iframe, handshake, mirror chrome, commands,
    reveal on paint, dispose; the composition root switches to it.
-3. Parity: thumbnails, shared paper and engine hooks, keyboard and focus,
+3. The Shell becomes the workspace host: the workspace mounts in the Shell
+   document and the reader frame is retired.
+4. Parity: thumbnails, shared paper and engine hooks, keyboard and focus,
    grab and lift, shields, the shared raster lane, the warm pane,
    diagnostics aggregation.
-4. Tests and tools follow the frames: the lifecycle suite reaches into pane
+5. Tests and tools follow the frames: the lifecycle suite reaches into pane
    frames, the boundary and artifact checks know the new artifact.
-5. Legacy removal and docs.
+6. Legacy removal and docs.
