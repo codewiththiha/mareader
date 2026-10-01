@@ -136,6 +136,28 @@ if (fs.existsSync(indexHtml)) {
   }
 }
 
+// The Shell hosts the workspace in its own document, but no document runs
+// there: every pane is a frame. Its wasm-bindgen glue must therefore import
+// nothing from the PDF engine (`window.PDFReader`) — an import here means
+// engine code became reachable from the Shell.
+const distDir = path.join(root, "dist");
+if (fs.existsSync(distDir)) {
+  const glue = fs
+    .readdirSync(distDir)
+    .filter((name) => /^mareader(-[0-9a-f]+)?\.js$/.test(name));
+  if (glue.length === 0) {
+    problems.push("dist has no mareader*.js — the Shell's own artifact is missing");
+  }
+  for (const name of glue) {
+    if (fs.readFileSync(path.join(distDir, name), "utf8").includes("PDFReader")) {
+      problems.push(
+        `dist/${name} references PDFReader — the Shell reaches the PDF engine, ` +
+          `which only pane frames may load`,
+      );
+    }
+  }
+}
+
 if (problems.length > 0) {
   console.error("runtime artifact contract FAILED:");
   for (const problem of problems) console.error(`  - ${problem}`);

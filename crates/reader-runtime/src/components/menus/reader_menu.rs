@@ -249,13 +249,6 @@ pub fn ReaderMenu(
                 />
                 <div class="mt-1 flex items-center justify-between border-t border-line px-1 py-1">
                     <span class="text-xs text-muted">"Mareader"</span>
-                    <span class="text-xs text-muted">{
-                        if pdf_engine::has_pdf_reader() {
-                            format!("v{}", pdf_engine::version())
-                        } else {
-                            String::new()
-                        }
-                    }</span>
                 </div>
             </MenuPopover>
         </div>

@@ -25,6 +25,13 @@ pub struct PortWire;
 
 #[cfg(target_arch = "wasm32")]
 impl PortWire {
+    /// A wire over a port the host handed over directly: a runtime mounted
+    /// in the Shell's own document is given its end of the channel instead
+    /// of adopting it from a window message.
+    pub fn new(port: web_sys::MessagePort) -> Self {
+        Self { port }
+    }
+
     /// The raw port, for the session's command side (the Shell's envelopes
     /// arriving IN). The transport itself only ever posts OUT.
     pub fn port(&self) -> &web_sys::MessagePort {

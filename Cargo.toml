@@ -95,6 +95,12 @@ storage = { path = "crates/storage" }
 # format engine, a paginator, a parser or a virtualiser appearing in this
 # manifest is a regression.
 reader-core = { path = "crates/reader-core" }
+# The runtimes the Shell document hosts: the library, and the reader's
+# workspace host. Documents never run here — each pane is a frame of its own
+# (`docs/pane-runtimes.md`), so the reader's engine code is unreachable from
+# this artifact and the linker drops it.
+library-runtime = { path = "crates/library-runtime" }
+reader-runtime = { path = "crates/reader-runtime" }
 
 [workspace]
 members = [

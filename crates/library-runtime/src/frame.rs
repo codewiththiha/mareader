@@ -36,6 +36,100 @@ thread_local! {
     static LAST_EXPECT_READER_MS: Cell<Option<u64>> = const { Cell::new(None) };
 }
 
+thread_local! {
+    /// In the Shell's document: the element this realm's live instance
+    /// mounts into (the Shell's runtime slot), instead of `<body>`.
+    static MOUNT: RefCell<Option<web_sys::Element>> = const { RefCell::new(None) };
+    /// The generation adopted in the Shell's document, so a re-offer of the
+    /// same boot adopts nothing.
+    static ADOPTED: Cell<Option<u64>> = const { Cell::new(None) };
+    /// A boot offered while the previous instance was still disposing: one
+    /// instance per realm, so it is adopted the moment that one is gone.
+    static QUEUED: RefCell<Option<(web_sys::Element, u64, web_sys::MessagePort)>> =
+        const { RefCell::new(None) };
+}
+
+/// Boot inside the Shell's own document: `mount` is the slot the Shell made
+/// for this runtime and `port` its end of the channel. The protocol is the
+/// frame's, word for word; only the adoption differs.
+#[cfg(target_arch = "wasm32")]
+pub fn adopt_in_document(mount: web_sys::Element, generation: u64, port: web_sys::MessagePort) {
+    let queued = QUEUED.with(|q| q.borrow().as_ref().map(|(_, g, _)| *g));
+    if ADOPTED.with(Cell::get) == Some(generation) || queued == Some(generation) {
+        return;
+    }
+    if API.with(|api| api.borrow().is_some()) {
+        QUEUED.with(|q| *q.borrow_mut() = Some((mount, generation, port)));
+        return;
+    }
+    ADOPTED.with(|a| a.set(Some(generation)));
+    MOUNT.with(|m| *m.borrow_mut() = Some(mount));
+    start_frame(PortWire::new(port), generation);
+}
+
+/// After the instance in the Shell's document reported its disposal: let go
+/// of its channel and mount point, and adopt a boot that waited for it.
+#[cfg(target_arch = "wasm32")]
+fn release_in_document() {
+    if MOUNT.with(|m| m.borrow_mut().take()).is_none() {
+        return;
+    }
+    if let Some(api) = API.with(|api| api.borrow_mut().take()) {
+        let port = api.wire().port().clone();
+        port.set_onmessage(None);
+        port.close();
+    }
+    ADOPTED.with(|a| a.set(None));
+    if let Some((mount, generation, port)) = QUEUED.with(|q| q.borrow_mut().take()) {
+        adopt_in_document(mount, generation, port);
+    }
+}
+
+/// The element a session root goes into: the Shell's slot, or `<body>`.
+fn mount_parent(document: &web_sys::Document) -> Option<web_sys::Element> {
+    MOUNT
+        .with(|m| m.borrow().clone())
+        .or_else(|| document.body().map(Into::into))
+}
+
+/// Remove this runtime's previous session roots from where it mounts.
+#[cfg(target_arch = "wasm32")]
+fn remove_roots(kind: &str) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Some(parent) = mount_parent(&document) else {
+        return;
+    };
+    let selector = format!("[data-mareader-runtime=\"{kind}\"]");
+    while let Ok(Some(root)) = parent.query_selector(&selector) {
+        root.remove();
+    }
+}
+
+/// A session root: `#runtime-root` in a document of its own; in the Shell's
+/// document the id stays the Shell's to give (two runtimes share it).
+fn make_root(
+    document: &web_sys::Document,
+    kind: &str,
+    generation: u64,
+) -> Option<web_sys::Element> {
+    let parent = mount_parent(document)?;
+    let root = document.create_element("div").ok()?;
+    if MOUNT.with(|m| m.borrow().is_none()) {
+        root.set_attribute("id", "runtime-root").ok();
+    }
+    root.set_attribute("data-mareader-runtime", kind).ok();
+    root.set_attribute("data-mareader-generation", &generation.to_string())
+        .ok();
+    // `h-full w-full` is load-bearing: a mount point with `height: auto`
+    // hands every full-height child an indefinite measure (the reader's
+    // virtualizer would then mount every page).
+    root.set_attribute("class", "h-full w-full").ok();
+    parent.append_child(&root).ok()?;
+    Some(root)
+}
+
 /// Boot through the frame when this artifact's URL names one.
 ///
 /// Returns `true` as soon as the marker stands — before any offer arrives —
@@ -131,21 +225,9 @@ fn on_init(warm: bool, generation: u64) {
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
         return;
     };
-    let Some(body) = document.body() else {
+    let Some(root) = make_root(&document, "library", generation) else {
         return;
     };
-    let Ok(root) = document.create_element("div") else {
-        return;
-    };
-    root.set_attribute("id", "runtime-root").ok();
-    root.set_attribute("data-mareader-runtime", "library").ok();
-    root.set_attribute("data-mareader-generation", &generation.to_string())
-        .ok();
-    // `h-full w-full` is load-bearing: the same rule the Shell's target obeys
-    // — a mount point with `height: auto` hands every full-height child an
-    // indefinite measure instead of the frame's real one.
-    root.set_attribute("class", "h-full w-full").ok();
-    let _ = body.append_child(&root);
 
     // A warm shelf is hidden behind the reader until `Refresh` reveals it;
     // the document is told so (the animated grain pauses while nobody can
@@ -168,11 +250,7 @@ fn on_rearm(generation: u64) {
     if SESSION_ID.with(|slot| slot.get()).is_some() {
         return;
     }
-    if let Some(document) = web_sys::window().and_then(|w| w.document()) {
-        while let Some(root) = document.get_element_by_id("runtime-root") {
-            root.remove();
-        }
-    }
+    remove_roots("library");
     on_init(true, generation);
 }
 
@@ -242,9 +320,11 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         wasm_bindgen_futures::spawn_local(async move {
                             let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                             emit(RuntimeFrame::DisposeComplete);
+                            release_in_document();
                         });
                     } else {
                         emit(RuntimeFrame::DisposeComplete);
+                        release_in_document();
                     }
                 }
                 ShellFrame::Launch { .. } | ShellFrame::ResolveLaunchAnswer { .. } => {

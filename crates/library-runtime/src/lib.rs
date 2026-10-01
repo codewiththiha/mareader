@@ -30,6 +30,14 @@ pub mod frame {
     /// Off wasm there is no Shell to warn: the shelf's intent hint goes
     /// nowhere (the host lanes render the grid without a reader to boot).
     pub fn expect_reader() {}
+
+    /// Off wasm there is no Shell document to mount in.
+    pub fn adopt_in_document(
+        _mount: web_sys::Element,
+        _generation: u64,
+        _port: web_sys::MessagePort,
+    ) {
+    }
 }
 pub mod services;
 pub mod state;

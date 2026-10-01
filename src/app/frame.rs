@@ -1,35 +1,25 @@
-//! The runtime frame: the disposable execution boundary the Shell hosts (§1,
-//! §5–§12). A runtime is an iframed artifact page (`/library.html`,
-//! `/reader.html`) with a boot marker in its URL (`?hosted=1&g=<generation>
-//! &n=<nonce>`), adopted over a dedicated `MessageChannel` port the Shell
-//! re-offers until the frame answers, and put down in two phases — the
-//! runtime's `DisposeComplete` first, the iframe removal after §12's phase 2,
-//! forced after a strict timeout.
+//! The runtime slot: the unit of runtime lifecycle the Shell hosts (§1,
+//! §5–§12). The library and the reader's workspace host mount in the Shell's
+//! own document, each in a `div.runtime-frame` slot, and speak the frame
+//! protocol over a dedicated `MessageChannel` handed to them directly
+//! (`adopt_in_document` in each runtime's `frame` module). Documents do not
+//! run here: every reader pane is an iframe of its own
+//! (`docs/pane-runtimes.md`), and that is where memory is reclaimed.
 //!
 //! The Shell's invariants live in the type rather than in memory:
 //!
-//! * The URL is the boot descriptor (§6): the frame either fully claims a
-//!   hosted boot with the identity the Shell will echo, or it boots
-//!   standalone — never "hosted at the syntax level".
-//! * Every envelope travelling the port carries the frame's generation
-//!   (§8): a stale iframe — from a replaced session, a crashed one, a
+//! * Every envelope travelling the port carries the slot's generation (§8):
+//!   a stale session — from a replaced runtime, a crashed one, a
 //!   half-disposed one — cannot mutate the current state, because its
-//!   generation is not the live one and both directions of the port check it.
-//! * The nonce authenticates the channel establishment itself (§8): it
-//!   exists only in the URL and in the Shell's memory, and the frame proves
-//!   it heard its own address by echoing the gen back on the port.
-//! * A stage never runs without a bound (§6, §11): offer retries stop at
-//!   60 s, `Ready` must arrive inside 20 s of the frame's insertion,
-//!   `Painted` inside 15 s of `Ready`, and a disposal has 8 s to complete
-//!   phase 1 before the Shell takes phase 2 into its own hands. Every
-//!   timeout becomes the runtime's visible error state — never a silent
-//!   blank, never a fallback (§11).
-//!
-//! What this module is NOT: a loader of code. The artifact pages are the
-//! deployment layout the build owns, and the iframe is where their own
-//! module resolution happens — the Shell neither imports `/library.js` nor
-//! caches its module map (§3's "the layout each deployment stands alone
-//! under" — and §30, once green: no query-string-per-session imports).
+//!   generation is not the live one and both directions check it.
+//! * A runtime realm holds one instance of each runtime; a boot offered
+//!   while the previous instance is still disposing is adopted the moment
+//!   that one reports `DisposeComplete`.
+//! * A stage never runs without a bound (§6, §11): offers stop at 60 s,
+//!   `Ready` must arrive inside 20 s of the slot's insertion, `Painted`
+//!   inside 15 s of `Ready`, and a disposal has 8 s to complete phase 1
+//!   before the Shell takes phase 2 into its own hands. Every timeout
+//!   becomes the runtime's visible error state — never a silent blank.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -219,7 +209,7 @@ pub struct Driver {
     /// warm frame to active in place — the whole point being that no new
     /// frame, document or wasm instance is built.
     slot: Cell<FrameSlot>,
-    iframe: web_sys::HtmlIFrameElement,
+    element: web_sys::HtmlElement,
     host: web_sys::Element,
     /// Offer re-posting until first contact (§7's "re-init must be
     /// idempotent": the Shell keeps addressing the same identity — same
@@ -340,33 +330,6 @@ fn nonce() -> String {
     out
 }
 
-/// The origin the Shell posts at (§8: exact, never "*"). Tauri's webview
-/// serves from a custom origin whose string is the only authority for "the
-/// frame this Shell owns".
-fn target_origin() -> String {
-    window()
-        .and_then(|w| w.location().origin().ok())
-        .filter(|origin| !origin.is_empty() && origin != "null")
-        .unwrap_or_else(|| "*".to_string())
-}
-
-/// Build the offered-contact object the frame's `match_offer` authenticates:
-/// `{kind, generation, nonce}` (frame_transport::CHANNEL_KIND is the kind,
-/// and the frame's own URL is the only place outside this driver where the
-/// nonce exists — §8).
-fn offer_value(generation: u64, nonce: &str) -> JsValue {
-    let obj = js_sys::Object::new();
-    let kind_key = JsValue::from_str("kind");
-    let _ = js_sys::Reflect::set(&obj, &kind_key, &JsValue::from_str("mareader.channel"));
-    let _ = js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("generation"),
-        &JsValue::from_f64(generation as f64),
-    );
-    let _ = js_sys::Reflect::set(&obj, &JsValue::from_str("nonce"), &JsValue::from_str(nonce));
-    obj.into()
-}
-
 /// Serialize the Shell frame into the port's vocabulary: the frame parses
 /// the envelope with `serde_json` against a `JSON.stringify`d event data,
 /// so posting the OBJECT is what each direction reads (the runtime posts
@@ -410,30 +373,27 @@ impl Driver {
         slot: FrameSlot,
     ) -> Option<Rc<Self>> {
         let nonce = nonce();
-        let src = format!("{}?hosted=1&g={}&n={}", kind.page(), generation, nonce);
         let document = window().and_then(|w| w.document())?;
-        let element = document.create_element("iframe").ok()?;
-        let iframe: web_sys::HtmlIFrameElement = element.unchecked_into();
-        iframe.set_class_name("runtime-frame");
-        iframe
-            .set_attribute("title", &format!("MAReader {}", kind.label()))
-            .ok()?;
-        iframe
+        // The runtime's slot in the Shell's own document: the runtime mounts
+        // here, in this realm, and speaks the frame protocol over a channel
+        // handed to it directly.
+        let element: web_sys::HtmlElement = document.create_element("div").ok()?.unchecked_into();
+        element.set_class_name("runtime-frame");
+        element
             .set_attribute("data-mareader-runtime-frame", kind.label())
             .ok()?;
-        iframe
+        element
             .set_attribute("data-mareader-generation", &generation.to_string())
             .ok()?;
-        iframe
+        element
             .set_attribute("data-mareader-slot", slot.attr())
             .ok()?;
-        iframe.set_src(&src);
         Some(Rc::new(Self {
             kind,
             generation,
             nonce,
             slot: Cell::new(slot),
-            iframe,
+            element,
             host: host.clone(),
             offer_ticker: Cell::new(None),
             offer_ticks: Cell::new(0),
@@ -505,7 +465,9 @@ impl Driver {
 
     fn set_slot(&self, slot: FrameSlot) {
         self.slot.set(slot);
-        let _ = self.iframe.set_attribute("data-mareader-slot", slot.attr());
+        let _ = self
+            .element
+            .set_attribute("data-mareader-slot", slot.attr());
     }
 
     /// Insert the frame and start the handshake. The loading cover is the
@@ -516,7 +478,7 @@ impl Driver {
         *self.launch.borrow_mut() = launch;
         // The frame enters the host as the ONLY permanent child (§1's "only
         // the iframe holds focus"): the boot card overlays it until Painted.
-        let _ = self.host.append_child(self.iframe.as_ref());
+        let _ = self.host.append_child(self.element.as_ref());
         self.post_offer();
         self.start_offer_ticker();
         self.arm_ready_timer();
@@ -551,29 +513,15 @@ impl Driver {
             driver.dispatch_port(&event);
         });
         port.set_onmessage(Some(listener.as_ref().unchecked_ref()));
-        let offer = offer_value(self.generation, &self.nonce);
-        let transfer = js_sys::Array::new();
-        transfer.push(channel.port2().as_ref());
-        let Some(target) = self.iframe.content_window() else {
-            // The frame has no window to speak to (document never built):
-            // the ticker will keep the offer alive until the bound expires.
-            return;
-        };
-        // postMessage(message, targetOrigin, transfer-for-ports): the typed
-        // overload with an options dict has no web-sys feature in the pinned
-        // version, so the call goes through reflect — the origin stays the
-        // frame's own, and the offer object is the only thing that crosses.
-        let Ok(post) = js_sys::Reflect::get(target.as_ref(), &JsValue::from_str("postMessage"))
-        else {
-            return;
-        };
-        let post: js_sys::Function = post.unchecked_into();
-        let _ = post.call3(
-            target.as_ref(),
-            &offer,
-            &JsValue::from_str(&target_origin()),
-            transfer.as_ref(),
-        );
+        let mount: web_sys::Element = self.element.clone().into();
+        match self.kind {
+            FrameKind::Library => {
+                library_runtime::frame::adopt_in_document(mount, self.generation, channel.port2());
+            }
+            FrameKind::Reader => {
+                reader_runtime::frame::adopt_in_document(mount, self.generation, channel.port2());
+            }
+        }
         self.offers.borrow_mut().push(Offer { port, listener });
     }
 
@@ -997,8 +945,8 @@ impl Driver {
             lane.port.close();
             drop(lane.listener);
         }
-        if let Some(parent) = self.iframe.parent_node() {
-            let _ = parent.remove_child(self.iframe.as_ref());
+        if let Some(parent) = self.element.parent_node() {
+            let _ = parent.remove_child(self.element.as_ref());
         }
     }
 }

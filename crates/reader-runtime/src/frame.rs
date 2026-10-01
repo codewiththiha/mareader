@@ -47,6 +47,100 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
+thread_local! {
+    /// In the Shell's document: the element this realm's live instance
+    /// mounts into (the Shell's runtime slot), instead of `<body>`.
+    static MOUNT: RefCell<Option<web_sys::Element>> = const { RefCell::new(None) };
+    /// The generation adopted in the Shell's document, so a re-offer of the
+    /// same boot adopts nothing.
+    static ADOPTED: Cell<Option<u64>> = const { Cell::new(None) };
+    /// A boot offered while the previous instance was still disposing: one
+    /// instance per realm, so it is adopted the moment that one is gone.
+    static QUEUED: RefCell<Option<(web_sys::Element, u64, web_sys::MessagePort)>> =
+        const { RefCell::new(None) };
+}
+
+/// Boot inside the Shell's own document: `mount` is the slot the Shell made
+/// for this runtime and `port` its end of the channel. The protocol is the
+/// frame's, word for word; only the adoption differs.
+#[cfg(target_arch = "wasm32")]
+pub fn adopt_in_document(mount: web_sys::Element, generation: u64, port: web_sys::MessagePort) {
+    let queued = QUEUED.with(|q| q.borrow().as_ref().map(|(_, g, _)| *g));
+    if ADOPTED.with(Cell::get) == Some(generation) || queued == Some(generation) {
+        return;
+    }
+    if API.with(|api| api.borrow().is_some()) {
+        QUEUED.with(|q| *q.borrow_mut() = Some((mount, generation, port)));
+        return;
+    }
+    ADOPTED.with(|a| a.set(Some(generation)));
+    MOUNT.with(|m| *m.borrow_mut() = Some(mount));
+    adopt(PortWire::new(port), generation);
+}
+
+/// After the instance in the Shell's document reported its disposal: let go
+/// of its channel and mount point, and adopt a boot that waited for it.
+#[cfg(target_arch = "wasm32")]
+fn release_in_document() {
+    if MOUNT.with(|m| m.borrow_mut().take()).is_none() {
+        return;
+    }
+    if let Some(api) = API.with(|api| api.borrow_mut().take()) {
+        let port = api.wire().port().clone();
+        port.set_onmessage(None);
+        port.close();
+    }
+    ADOPTED.with(|a| a.set(None));
+    if let Some((mount, generation, port)) = QUEUED.with(|q| q.borrow_mut().take()) {
+        adopt_in_document(mount, generation, port);
+    }
+}
+
+/// The element a session root goes into: the Shell's slot, or `<body>`.
+fn mount_parent(document: &web_sys::Document) -> Option<web_sys::Element> {
+    MOUNT
+        .with(|m| m.borrow().clone())
+        .or_else(|| document.body().map(Into::into))
+}
+
+/// Remove this runtime's previous session roots from where it mounts.
+#[cfg(target_arch = "wasm32")]
+fn remove_roots(kind: &str) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Some(parent) = mount_parent(&document) else {
+        return;
+    };
+    let selector = format!("[data-mareader-runtime=\"{kind}\"]");
+    while let Ok(Some(root)) = parent.query_selector(&selector) {
+        root.remove();
+    }
+}
+
+/// A session root: `#runtime-root` in a document of its own; in the Shell's
+/// document the id stays the Shell's to give (two runtimes share it).
+fn make_root(
+    document: &web_sys::Document,
+    kind: &str,
+    generation: u64,
+) -> Option<web_sys::Element> {
+    let parent = mount_parent(document)?;
+    let root = document.create_element("div").ok()?;
+    if MOUNT.with(|m| m.borrow().is_none()) {
+        root.set_attribute("id", "runtime-root").ok();
+    }
+    root.set_attribute("data-mareader-runtime", kind).ok();
+    root.set_attribute("data-mareader-generation", &generation.to_string())
+        .ok();
+    // `h-full w-full` is load-bearing: a mount point with `height: auto`
+    // hands every full-height child an indefinite measure (the reader's
+    // virtualizer would then mount every page).
+    root.set_attribute("class", "h-full w-full").ok();
+    parent.append_child(&root).ok()?;
+    Some(root)
+}
+
 /// One open parked on its resolve answer: the pane that asked, the path it
 /// asked about and where the document is to go once it resolves.
 struct PendingOpen {
@@ -137,22 +231,9 @@ fn on_init(launch: Option<Box<LaunchDocument>>, generation: u64) {
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
         return;
     };
-    let Some(body) = document.body() else {
+    let Some(root) = make_root(&document, "reader", generation) else {
         return;
     };
-    let Ok(root) = document.create_element("div") else {
-        return;
-    };
-    root.set_attribute("id", "runtime-root").ok();
-    root.set_attribute("data-mareader-runtime", "reader").ok();
-    root.set_attribute("data-mareader-generation", &generation.to_string())
-        .ok();
-    // `h-full w-full` is load-bearing (same rule as the Shell's one target):
-    // every runtime root is `h-full`, and a mount target with `height: auto`
-    // hands the reader's scroll area an indefinite height — the virtualizer
-    // then measures the whole column as visible and mounts every page.
-    root.set_attribute("class", "h-full w-full").ok();
-    let _ = body.append_child(&root);
 
     // An init without a descriptor is a reader with nothing open — the same
     // shape as a standalone boot without launch parameters, so the same
@@ -238,12 +319,14 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         wasm_bindgen_futures::spawn_local(async move {
                             let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                             emit(RuntimeFrame::DisposeComplete);
+                            release_in_document();
                         });
                     } else {
                         // Nothing mounted (an init never arrived, or a
                         // duplicate dispose): the answer is still owed, or
                         // the Shell waits out its forced-removal timeout.
                         emit(RuntimeFrame::DisposeComplete);
+                        release_in_document();
                     }
                 }
                 ShellFrame::Rearm => {
@@ -277,21 +360,8 @@ fn on_rearm(generation: u64) {
         return;
     }
     PENDING_OPENS.with(|opens| opens.borrow_mut().clear());
-    remove_runtime_roots();
+    remove_roots("reader");
     on_init(None, generation);
-}
-
-/// Drop the previous session's mount point: the unmount emptied it, but the
-/// element itself belongs to the frame, and a recycled frame must hold
-/// exactly one root.
-#[cfg(target_arch = "wasm32")]
-fn remove_runtime_roots() {
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
-    while let Some(root) = document.get_element_by_id("runtime-root") {
-        root.remove();
-    }
 }
 
 /// A resolve round trip landing: the parked open flow continues with the

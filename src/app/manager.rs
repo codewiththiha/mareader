@@ -1807,7 +1807,7 @@ fn clear_host(host: &web_sys::Element) {
     // Single-quoted: CSS takes either, and it keeps the selector out of the
     // escaping business entirely.
     let selector = format!(
-        "iframe[data-mareader-slot='{}'], iframe[data-mareader-slot='{}']",
+        ".runtime-frame[data-mareader-slot='{}'], .runtime-frame[data-mareader-slot='{}']",
         FrameSlot::Active.attr(),
         FrameSlot::Retiring.attr()
     );

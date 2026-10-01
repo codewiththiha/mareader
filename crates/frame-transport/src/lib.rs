@@ -149,6 +149,11 @@ impl<W: Wire> PortShellApi<W> {
         }
     }
 
+    /// The wire the api posts over.
+    pub fn wire(&self) -> &W {
+        &self.wire
+    }
+
     /// Post one bound message. The runtime's boot handshake messages (ready /
     /// painted / status / dispose-complete) ride this too — same envelope,
     /// same guard, one serialization path for everything the frame emits.

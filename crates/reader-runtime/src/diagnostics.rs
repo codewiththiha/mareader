@@ -643,7 +643,13 @@ pub fn install() {
     };
     let probe = Closure::wrap(Box::new(|| snapshot_json()) as Box<dyn Fn() -> String>);
     let probe: wasm_bindgen::JsValue = probe.into_js_value();
-    let name = wasm_bindgen::JsValue::from_str("__mareaderDiagnostics");
+    // In the Shell's document the window's probe is the Shell's own; the
+    // reader's fresh probe sits beside it.
+    let name = wasm_bindgen::JsValue::from_str(if app_ui::frame_theme::in_shell_document() {
+        "__mareaderReaderDiagnostics"
+    } else {
+        "__mareaderDiagnostics"
+    });
     let target: js_sys::Object = window.unchecked_into();
     _ = js_sys::Reflect::set(&target, &name, &probe);
 }

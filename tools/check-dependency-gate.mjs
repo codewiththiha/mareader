@@ -48,14 +48,11 @@ const READER_ONLY = [
 ];
 
 const RULES = [
-  {
-    // The Shell hosts runtimes and loads no engine: documents run in the
-    // reader frame, and shelf covers in the Shell's own bake page
-    // (`public/bake.html`, a child document, no wasm). An engine reappearing
-    // here would put pdf.js back on the Shell's startup.
-    crate: "mareader",
-    forbid: READER_ONLY,
-  },
+  // The Shell (`mareader`) links the reader runtime on purpose: the
+  // workspace host runs in the Shell's document. Documents never do — each
+  // pane is a frame with its own artifact — so the engine is unreachable
+  // there, and `tools/check-runtime-artifacts.mjs` proves it on the built
+  // Shell (its glue imports nothing from `PDFReader`).
   {
     // The shelf knows the PDF as FORMAT metadata only (`Format::Pdf`); the
     // execution of one — engine and geometry both — belongs to the reader,

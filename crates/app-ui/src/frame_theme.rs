@@ -50,6 +50,21 @@ const ANIMATIONS_OFF_CLASS: &str = "animations-off";
 /// crawl under this class; the Shell's reveal message clears it.
 const FRAME_HIDDEN_CLASS: &str = "frame-hidden";
 
+thread_local! {
+    static IN_SHELL_DOCUMENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Mark this realm as the Shell's: runtimes mount in the window's own
+/// document instead of a frame of their own.
+pub fn set_in_shell_document() {
+    IN_SHELL_DOCUMENT.with(|flag| flag.set(true));
+}
+
+/// Whether runtimes in this realm share the Shell's document.
+pub fn in_shell_document() -> bool {
+    IN_SHELL_DOCUMENT.with(std::cell::Cell::get)
+}
+
 /// The runtime's persistence callback, held for the session.
 type PersistFn = StoredValue<std::rc::Rc<dyn Fn(&Settings)>, LocalStorage>;
 /// The runtime's adopt-time override pass, held for the session.
@@ -210,6 +225,11 @@ pub fn install_frame_theme(
 /// `Refresh` for the shelf). Idempotent; a standalone document never calls
 /// it and never carries the class.
 pub fn mark_frame_hidden(hidden: bool) {
+    // In the Shell's own document the `<html>` is the window's, not a
+    // runtime's: a hidden runtime must not pause the grain for everyone.
+    if crate::frame_theme::in_shell_document() {
+        return;
+    }
     let Some(el) = document_element() else {
         return;
     };

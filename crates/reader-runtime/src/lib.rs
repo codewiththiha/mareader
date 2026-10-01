@@ -53,6 +53,14 @@ pub mod frame {
         _placement: crate::host::contract::Placement,
     ) {
     }
+
+    /// Off wasm there is no Shell document to mount in.
+    pub fn adopt_in_document(
+        _mount: web_sys::Element,
+        _generation: u64,
+        _port: web_sys::MessagePort,
+    ) {
+    }
 }
 pub mod frame_pane;
 pub mod pane;
