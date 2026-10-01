@@ -110,7 +110,7 @@ const shellInset = sole(
   `${TRAFFIC_LIGHT} (TRAFFIC_LIGHT_X_INSET)`,
 );
 const conf = JSON.parse(read(TAURI_CONF)) as {
-  app?: { windows?: { trafficLightPosition?: { x?: number } }[] };
+  app?: { windows?: { trafficLightPosition?: { x?: number; y?: number } }[] };
 };
 const confInset = conf.app?.windows?.[0]?.trafficLightPosition?.x;
 if (shellInset && confInset === undefined) {
@@ -122,6 +122,24 @@ if (shellInset && confInset === undefined) {
   );
 } else if (shellInset) {
   console.log(`traffic-light x inset: ${shellInset}`);
+}
+
+// The y inset is a mirror too, and a load-bearing one: tao re-applies the
+// config's `y` from every `drawRect:`, so a native container height built
+// from any other number fights it on each redraw (the resize blink).
+const shellInsetY = sole(
+  /^    const TRAFFIC_LIGHT_Y_INSET: f64 = ([\d.]+);/mg,
+  read(TRAFFIC_LIGHT),
+  `${TRAFFIC_LIGHT} (TRAFFIC_LIGHT_Y_INSET)`,
+);
+const confInsetY = conf.app?.windows?.[0]?.trafficLightPosition?.y;
+if (shellInsetY && Number(shellInsetY) !== confInsetY) {
+  fail(
+    `traffic-light y inset disagrees: ${TRAFFIC_LIGHT} says ${shellInsetY}, ` +
+      `${TAURI_CONF} says ${confInsetY}`,
+  );
+} else if (shellInsetY) {
+  console.log(`traffic-light y inset: ${shellInsetY}`);
 }
 
 // ── 3. The z-index scale ────────────────────────────────────────────────────

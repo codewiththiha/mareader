@@ -1,27 +1,32 @@
 //! Dynamic traffic-light layout — port of `readest/.../traffic_light.rs` to
 //! `objc2`.
 //!
-//! `tauri.conf.json:trafficLightPosition` is only the pre-mount fallback.
-//! After the webview mounts, the frontend measures the real header height
-//! (ResizeObserver on `#toolbar-row`) and invokes `set_traffic_lights`; Rust
-//! then owns the vertical position:
+//! TWO WRITERS, ONE GEOMETRY. `tauri.conf.json:trafficLightPosition` is not
+//! only a pre-mount fallback: tao keeps it and re-applies it from its view's
+//! `drawRect:` (`inset_traffic_lights`) — container height `button_h + y`,
+//! button `x` — on every redraw, which a live resize produces continuously.
+//! This module used to write a DIFFERENT container height (and collapse it
+//! to zero on a hide), so every resize frame ping-ponged the container
+//! between the two: the lights blinked while the window was dragged, and the
+//! buttons' autoresizing squeezed them into ovals when the container shrank
+//! under them. Now both writers agree on the container (`button_h +`
+//! [`TRAFFIC_LIGHT_Y_INSET`], the config's `y`) and on `x`; the only thing
+//! this module adds is the one coordinate tao never touches — the buttons'
+//! `origin.y` inside that container — which is what centres them on the
+//! measured header:
 //!
 //! ```text
-//! y = ((header_height - button_height) / 2 + natural_origin_y).max(0)
-//! container.height = visible ? button_height + y : 0
-//! container.origin.y = window.height - container.height
-//! button.origin = (x_inset + i*spacing, natural_origin_y) // AppKit's rest
+//! top      = round((header_height - button_h) / 2)       // from the window top
+//! container.height = button_h + TRAFFIC_LIGHT_Y_INSET   // tao's own value
+//! button.origin    = (x_inset + i*spacing, container.height - button_h - top)
+//! button.size      = the natural size, measured once     // never squeezed
 //! ```
 //!
-//! The last requested state is kept process-wide and re-applied on `Resized`
-//! and `ThemeChanged` (AppKit re-lays out the button container on both), and
-//! a hide also hides the buttons themselves. `natural_origin_y` is cached in
-//! `OnceLock` on first read (~5pt on Sonoma/Sequoia, ~7pt on Tahoe):
-//! re-reading after AppKit autoresizes the container would feed back and
-//! drift `y`, so caching makes the formula a fixed point. `objc2` is kept
-//! (not the frozen `cocoa` crate) because this crate already depends on
-//! `objc2-app-kit`; the geometry types are the `objc2_core_foundation` names
-//! used directly, to avoid feature gating.
+//! A hide hides the buttons and leaves the container alone (tao would put it
+//! back on the next redraw anyway). The last requested state is kept
+//! process-wide and re-applied on `Resized` and `ThemeChanged` — in the same
+//! main-thread turn as the event, so AppKit never draws a frame with its own
+//! rest layout in between.
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -30,7 +35,7 @@ mod imp {
 
     use objc2::rc::Retained;
     use objc2_app_kit::{NSButton, NSView, NSWindow, NSWindowButton};
-    use objc2_core_foundation::{CGPoint, CGRect};
+    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use tauri::{
         Window, WindowEvent,
@@ -44,56 +49,40 @@ mod imp {
     // `tools/check-chrome-contracts.ts`.
     const DEFAULT_HEADER_HEIGHT: f64 = 48.0;
     const TRAFFIC_LIGHT_X_INSET: f64 = 20.0;
-    /// AppKit's rest origin for a standard button when nothing better has
-    /// been measured yet (Sonoma's value; Tahoe measures ~7).
-    const FALLBACK_BUTTON_ORIGIN_Y: f64 = 5.0;
-    const FALLBACK_BUTTON_HEIGHT: f64 = 14.0;
+    /// tauri.conf.json's `trafficLightPosition.y`: the value tao re-applies
+    /// from `drawRect:`, so the container height this module writes must be
+    /// built from the same number or the two fight on every redraw.
+    const TRAFFIC_LIGHT_Y_INSET: f64 = 25.0;
+    const FALLBACK_BUTTON_SIZE: (f64, f64) = (14.0, 16.0);
 
     // The last requested state, so `Resized` / `ThemeChanged` can re-apply
     // it without a round trip through the frontend.
     static VISIBLE: AtomicBool = AtomicBool::new(true);
     static HEADER_HEIGHT_BITS: AtomicU64 = AtomicU64::new(DEFAULT_HEADER_HEIGHT.to_bits());
-    static NATURAL_BUTTON_ORIGIN_Y: OnceLock<f64> = OnceLock::new();
+    static NATURAL_BUTTON_SIZE: OnceLock<(f64, f64)> = OnceLock::new();
 
     fn header_height() -> f64 {
         f64::from_bits(HEADER_HEIGHT_BITS.load(Ordering::Relaxed))
     }
 
-    fn natural_origin_y() -> f64 {
-        *NATURAL_BUTTON_ORIGIN_Y
-            .get()
-            .unwrap_or(&FALLBACK_BUTTON_ORIGIN_Y)
-    }
-
-    /// `y` = distance from the title-bar container's top to the button's top.
-    /// After AppKit applies it, the button's window-top position is
-    /// `y - button_origin_y` because `origin.y` (AppKit's rest) is preserved.
-    fn compute_traffic_light_y(
-        header_height: f64,
-        button_height: f64,
-        button_origin_y: f64,
-    ) -> f64 {
-        ((header_height - button_height) / 2.0 + button_origin_y).max(0.0)
-    }
-
-    /// The close button's height, caching its rest `origin.y` along the way.
-    /// Only a laid-out frame is remembered: this runs on every `Resized`, and
-    /// the first can arrive before AppKit has placed the buttons at all
-    /// (origin 0). The rest position is cached for the life of the process,
-    /// so a bogus read would pin the lights off-centre for good — a real rest
-    /// is a small positive inset, anything else keeps the fallback.
-    fn measure_close_button(close: &NSView) -> (f64, f64) {
+    /// The standard button's natural size, read once from a laid-out frame
+    /// and kept for the process: a later read could catch a button that
+    /// autoresizing has squeezed, and writing that back would make the
+    /// squeeze permanent.
+    fn natural_button_size(close: &NSView) -> (f64, f64) {
         let frame: CGRect = close.frame();
-        let laid_out = frame.size.height > 0.0;
-        if laid_out && frame.origin.y > 0.0 && frame.origin.y < 20.0 {
-            let _ = NATURAL_BUTTON_ORIGIN_Y.set(frame.origin.y);
+        if frame.size.width > 0.0 && frame.size.height > 0.0 {
+            let _ = NATURAL_BUTTON_SIZE.set((frame.size.width, frame.size.height));
         }
-        let h = if laid_out {
-            frame.size.height
-        } else {
-            FALLBACK_BUTTON_HEIGHT
-        };
-        (h, natural_origin_y())
+        *NATURAL_BUTTON_SIZE.get().unwrap_or(&FALLBACK_BUTTON_SIZE)
+    }
+
+    /// The buttons' `origin.y` inside a container `container_height` tall
+    /// that centres a `button_height` button on a `header_height` bar.
+    /// Whole points, so the lights never land on a half pixel.
+    fn button_origin_y(header_height: f64, button_height: f64, container_height: f64) -> f64 {
+        let top = ((header_height - button_height) / 2.0).round().max(0.0);
+        (container_height - button_height - top).max(0.0)
     }
 
     /// The three standard buttons, as views, close → miniaturize → zoom.
@@ -105,10 +94,9 @@ mod imp {
         ])
     }
 
-    /// Owns both the container size and the button origins. This is the
-    /// sole authority for traffic-light layout — we do not call Tauri's
-    /// `set_traffic_light_position` (it would ping-pong via tao's
-    /// `inset_traffic_lights` on every `drawRect`).
+    /// Lay the lights out (see the module docs). Agrees with tao's
+    /// `inset_traffic_lights` on everything tao writes, so a redraw between
+    /// two calls changes nothing.
     fn position_traffic_lights(ns_window: &NSWindow, visible: bool, header_height: f64) {
         let Some(buttons) = standard_buttons(ns_window) else {
             return;
@@ -122,41 +110,44 @@ mod imp {
             unsafe { close.superview().and_then(|v| v.superview()) };
         let Some(container) = container else { return };
 
-        // A hide also hides the buttons themselves: collapsing the container
-        // alone is not durable — AppKit re-lays it out on every window resize
-        // and hands back its natural height, which used to pop the lights
-        // onto a hidden bar. Toggle BEFORE measuring: a hidden button is no
-        // ruler.
+        // Measure BEFORE hiding: a hidden button is no ruler.
+        let (button_width, button_height) = natural_button_size(close);
         for v in views {
             v.setHidden(!visible);
         }
-
-        let container_height = if visible {
-            let (button_height, button_origin_y) = measure_close_button(close);
-            button_height + compute_traffic_light_y(header_height, button_height, button_origin_y)
-        } else {
-            0.0
-        };
-
-        // Resize the container and pin it to the window's top edge.
-        let window_height = ns_window.frame().size.height;
-        let mut rect: CGRect = container.frame();
-        rect.size.height = container_height;
-        rect.origin.y = window_height - container_height;
-        container.setFrame(rect);
-
         if !visible {
             return;
         }
 
-        // Re-anchor the buttons horizontally and at their natural y. The
-        // spacing between the first two is stable across macOS versions;
-        // derive it live rather than hardcode 20px vs 18px, falling back
-        // only when a pre-layout read gives a stale zero.
+        let container_height = button_height + TRAFFIC_LIGHT_Y_INSET;
+        let window_height = ns_window.frame().size.height;
+        let mut rect: CGRect = container.frame();
+        let pinned_y = window_height - container_height;
+        let stale = (rect.size.height - container_height).abs() > 0.01
+            || (rect.origin.y - pinned_y).abs() > 0.01;
+        if stale {
+            rect.size.height = container_height;
+            rect.origin.y = pinned_y;
+            container.setFrame(rect);
+        }
+
+        // The spacing between the first two is stable across macOS
+        // versions; derive it live rather than hardcode 20px vs 18px,
+        // falling back only when a pre-layout read gives a stale zero.
         let spacing = views[1].frame().origin.x - close.frame().origin.x;
         let spacing = if spacing.abs() < 0.5 { 20.0 } else { spacing };
-        let y = natural_origin_y();
+        let y = button_origin_y(header_height, button_height, container_height);
+        let size = CGSize {
+            width: button_width,
+            height: button_height,
+        };
         for (i, v) in views.into_iter().enumerate() {
+            let frame = v.frame();
+            if (frame.size.width - size.width).abs() > 0.01
+                || (frame.size.height - size.height).abs() > 0.01
+            {
+                v.setFrameSize(size);
+            }
             v.setFrameOrigin(CGPoint {
                 x: TRAFFIC_LIGHT_X_INSET + i as f64 * spacing,
                 y,
@@ -181,8 +172,16 @@ mod imp {
         f(&ns_window);
     }
 
-    /// Re-apply the last requested state on the main thread (AppKit's).
+    /// Re-apply the last requested state on the main thread (AppKit's) —
+    /// right now when already there, which is where window events arrive:
+    /// a hop through the queue would let AppKit draw its own rest layout
+    /// first, and that frame is the blink.
     fn reapply(window: &Window) {
+        if objc2::MainThreadMarker::new().is_some() {
+            let (visible, h) = (VISIBLE.load(Ordering::Relaxed), header_height());
+            with_ns_window(window, |ns| position_traffic_lights(ns, visible, h));
+            return;
+        }
         let target = window.clone();
         let _ = window.run_on_main_thread(move || {
             let (visible, h) = (VISIBLE.load(Ordering::Relaxed), header_height());
