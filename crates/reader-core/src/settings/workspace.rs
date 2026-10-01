@@ -72,7 +72,7 @@ pub struct WorkspaceSettings {
     /// User-picked outline colour, used only when `pane_outline_color` is
     /// Custom. Kept as a CSS-safe six-digit hex value.
     pub pane_outline_custom: String,
-    /// Space between adjacent pane boxes. The workspace's outer edge stays flush.
+    /// Space between adjacent pane boxes and around all four workspace edges.
     pub pane_gap: u8,
     /// Cast a soft shadow from each pane box, not from the PDF page surface.
     pub pane_shadow: bool,

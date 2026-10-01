@@ -53,13 +53,11 @@ use app_state::ChromeState;
 mod hue_picker;
 mod mode_section;
 mod noise_section;
-pub mod pane_section;
 mod presets;
 mod texture_section;
 
 use mode_section::BaseSection;
 use noise_section::NoiseSection;
-use pane_section::PaneSection;
 use presets::PresetSection;
 use texture_section::TextureSection;
 
@@ -129,8 +127,27 @@ pub fn AppearanceMenu(
                 // The dials below edit whichever look the toggle selects:
                 // the focused pane's own while it is on, the window's
                 // otherwise. Grain stays global either way.
+                <SectionLabel text="Presets" />
+                <PresetSection state=state theme=theme />
+                <Separator vertical=false spacing="my-3" />
+                <SectionLabel text="Mode & colour" />
+                <BaseSection state=state theme=theme />
+                <Show when=move || texture_applies.get()>
+                    <Separator vertical=false spacing="my-3" />
+                    <SectionLabel text="Page texture" />
+                    <TextureSection theme=theme />
+                </Show>
+                <Separator vertical=false spacing="my-3" />
+                <div data-appearance-section="film-grain">
+                    <SectionLabel text="Film grain" />
+                    <NoiseSection state=state theme=theme />
+                </div>
                 <Show when=move || split.get()>
-                    <div class="flex items-center justify-between gap-3">
+                    <Separator vertical=false spacing="my-3" />
+                    <div
+                        class="flex items-center justify-between gap-3"
+                        data-setting="independent-themes"
+                    >
                         <span class="min-w-0">
                             <span class="block text-sm text-ink">"Independent theme for each"</span>
                             <span class="block text-xs text-muted">
@@ -143,23 +160,7 @@ pub fn AppearanceMenu(
                             title="Independent theme for each pane"
                         />
                     </div>
-                    <Separator vertical=false spacing="my-3" />
-                    <PaneSection settings=state.settings visible=split />
-                    <Separator vertical=false spacing="my-3" />
                 </Show>
-                <SectionLabel text="Presets" />
-                <PresetSection state=state theme=theme />
-                <Separator vertical=false spacing="my-3" />
-                <SectionLabel text="Mode & colour" />
-                <BaseSection state=state theme=theme />
-                <Show when=move || texture_applies.get()>
-                    <Separator vertical=false spacing="my-3" />
-                    <SectionLabel text="Page texture" />
-                    <TextureSection theme=theme />
-                </Show>
-                <Separator vertical=false spacing="my-3" />
-                <SectionLabel text="Film grain" />
-                <NoiseSection state=state theme=theme />
             </MenuPopover>
         </div>
     }

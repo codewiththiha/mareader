@@ -152,18 +152,32 @@ pub struct ReaderHost {
     themes: theme::PaneThemes,
 }
 
-/// Inset each visible pane by half the requested gutter. The layout tree
-/// continues to own unmodified split geometry; only the content viewport
-/// receives these decorated bounds, so PDF/reflow dimensions match the box
-/// the user sees.
+/// Apply the requested spacing to every pane edge: half on each side of an
+/// internal divider, and the full spacing along the workspace perimeter.
+/// The layout tree retains unmodified split geometry; only the content
+/// viewport gets these decorated bounds, so its dimensions match the visible
+/// pane box.
 fn inset_pane_bounds(bounds: PaneBounds, workspace: PaneBounds, gap: u8) -> PaneBounds {
-    let half = gap as f64 / 2.0;
-    let has_left = bounds.x > workspace.x;
-    let has_right = bounds.x + bounds.width < workspace.x + workspace.width;
-    let has_top = bounds.y > workspace.y;
-    let has_bottom = bounds.y + bounds.height < workspace.y + workspace.height;
-    let (left, right) = side_insets(bounds.width, has_left, has_right, half);
-    let (top, bottom) = side_insets(bounds.height, has_top, has_bottom, half);
+    let full = gap as f64;
+    let half = full / 2.0;
+    let has_left_divider = bounds.x > workspace.x;
+    let has_right_divider = bounds.x + bounds.width < workspace.x + workspace.width;
+    let has_top_divider = bounds.y > workspace.y;
+    let has_bottom_divider = bounds.y + bounds.height < workspace.y + workspace.height;
+    let (left, right) = side_insets(
+        bounds.width,
+        has_left_divider,
+        has_right_divider,
+        half,
+        full,
+    );
+    let (top, bottom) = side_insets(
+        bounds.height,
+        has_top_divider,
+        has_bottom_divider,
+        half,
+        full,
+    );
     PaneBounds {
         x: bounds.x + left,
         y: bounds.y + top,
@@ -172,17 +186,25 @@ fn inset_pane_bounds(bounds: PaneBounds, workspace: PaneBounds, gap: u8) -> Pane
     }
 }
 
-fn side_insets(size: f64, before: bool, after: bool, half_gap: f64) -> (f64, f64) {
-    if before && after {
-        let inset = half_gap.min(size / 2.0);
-        (inset, inset)
-    } else if before {
-        (half_gap.min(size), 0.0)
-    } else if after {
-        (0.0, half_gap.min(size))
+/// Divider-facing sides receive half a gap; sides on the workspace boundary
+/// receive the full gap. Scale both requests together for very small panes so
+/// their visible dimensions can never become negative.
+fn side_insets(
+    size: f64,
+    before_divider: bool,
+    after_divider: bool,
+    half_gap: f64,
+    outer_gap: f64,
+) -> (f64, f64) {
+    let before = if before_divider { half_gap } else { outer_gap };
+    let after = if after_divider { half_gap } else { outer_gap };
+    let requested = before + after;
+    let scale = if requested > size && requested > 0.0 {
+        size / requested
     } else {
-        (0.0, 0.0)
-    }
+        1.0
+    };
+    (before * scale, after * scale)
 }
 
 impl ReaderHost {
@@ -1184,7 +1206,7 @@ mod pane_bounds_tests {
     use crate::host::model::PaneBounds;
 
     #[test]
-    fn a_split_gutter_insets_only_the_edges_shared_by_panes() {
+    fn pane_spacing_covers_the_outer_edges_and_split_gutter() {
         let workspace = PaneBounds {
             x: 0.0,
             y: 0.0,
@@ -1203,10 +1225,10 @@ mod pane_bounds_tests {
                 12,
             ),
             PaneBounds {
-                x: 0.0,
-                y: 0.0,
-                width: 494.0,
-                height: 500.0
+                x: 12.0,
+                y: 12.0,
+                width: 482.0,
+                height: 476.0
             },
         );
         assert_eq!(
@@ -1222,9 +1244,9 @@ mod pane_bounds_tests {
             ),
             PaneBounds {
                 x: 506.0,
-                y: 0.0,
-                width: 494.0,
-                height: 500.0
+                y: 12.0,
+                width: 482.0,
+                height: 476.0
             },
         );
     }
@@ -1247,9 +1269,9 @@ mod pane_bounds_tests {
             inset_pane_bounds(bounds, workspace, 24),
             PaneBounds {
                 x: 8.0,
-                y: 8.0,
+                y: 13.0,
                 width: 0.0,
-                height: 10.0
+                height: 0.0
             },
         );
     }

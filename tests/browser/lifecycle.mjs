@@ -2288,21 +2288,32 @@ async function paneEntries() {
     throw new Error(`[pane focus] the active outline is not painted above every pane: ${JSON.stringify(focusPaint)}`);
   }
 
-  // The same split-only section appears in both the Appearance popover and
-  // Settings → Workspace. Exercise the shared controls in Settings below.
-  await frameClick('button[title="Appearance"]', "appearance menu split controls");
+  // Pane decoration belongs in Settings → Theme, not the title-bar palette
+  // menu. The independent-theme toggle remains there, after every appearance
+  // dial, so it is easy to find without displacing the main palette controls.
+  await frameClick('button[title="Appearance"]', "appearance menu placement");
   await page.waitForFunction((sel) =>
-    !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="split-pane-appearance"]'), activeFrame, { timeout: 5_000 });
-  const menuDecorationVisible = await page.evaluate((sel) =>
-    !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="split-pane-appearance"]'), activeFrame);
-  if (!menuDecorationVisible) throw new Error("[pane appearance] split-only controls are missing from the Appearance menu");
+    !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="independent-themes"]'), activeFrame, { timeout: 5_000 });
+  const menuPlacement = await page.evaluate((sel) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const grain = doc?.querySelector('[data-appearance-section="film-grain"]');
+    const independent = doc?.querySelector('[data-setting="independent-themes"]');
+    return {
+      paneControls: !!doc?.querySelector('[data-setting="split-pane-appearance"]'),
+      independentAtEnd: !!grain && !!independent &&
+        !!(grain.compareDocumentPosition(independent) & Node.DOCUMENT_POSITION_FOLLOWING),
+    };
+  }, activeFrame);
+  if (menuPlacement.paneControls || !menuPlacement.independentAtEnd) {
+    throw new Error(`[pane appearance] title-bar menu placement is wrong: ${JSON.stringify(menuPlacement)}`);
+  }
   await frameClick('button[title="Appearance"]', "close appearance menu");
 
   // Split decoration is mounted only while two panes are placed. Exercise
-  // the live controls, including their geometry effect: a 12px gutter shrinks
-  // both reader viewports by 6px and leaves the same measured pane gap.
+  // the controls in the Theme tab, including the requested uniform outer
+  // margin and internal gutter.
   await frameClick('button[title="Reader settings"]', "split pane appearance");
-  await frameClick('button[aria-label="Workspace"]', "split pane appearance");
+  await frameClick('button[aria-label="Theme"]', "split pane appearance");
   const decorationVisible = await page.evaluate((sel) =>
     !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="split-pane-appearance"]'), activeFrame);
   if (!decorationVisible) throw new Error("[pane appearance] split-only controls are missing with two panes");
@@ -2319,12 +2330,14 @@ async function paneEntries() {
       input.dispatchEvent(new doc.defaultView.Event("input", { bubbles: true }));
     }
   }, [activeFrame, [["pane-gap", 12], ["pane-outline-width", 5]]]);
-  const originalWidths = new Map(both.host.panes.map((pane) => [pane.paneId, pane.bounds.width]));
+  const originalBounds = new Map(both.host.panes.map((pane) => [pane.paneId, pane.bounds]));
   const decorated = await waitForSettledLayout("split decoration gutter", (s) =>
-    s.host?.panes?.length === 2 && s.host.panes.every((pane) => pane.bounds.width < originalWidths.get(pane.paneId) - 4));
+    s.host?.panes?.length === 2 && s.host.panes.every((pane) => pane.bounds.width < originalBounds.get(pane.paneId).width - 4));
   const paneDecoration = await page.evaluate(([sel, activeId]) => {
     const doc = document.querySelector(sel)?.contentDocument;
     const root = doc?.querySelector(".reader-bg");
+    const slot = doc?.querySelector("main");
+    const slotRect = slot?.getBoundingClientRect();
     const entry = doc?.querySelector(`[data-pane-id="${activeId}"]`);
     const outline = entry?.querySelector(".pane-focus-outline");
     const entries = [...(doc?.querySelectorAll("[data-pane-id]") ?? [])];
@@ -2338,16 +2351,30 @@ async function paneEntries() {
       outline: getComputedStyle(outline).boxShadow,
       activeZ: Number(getComputedStyle(active).zIndex),
       inactiveZ: Number(getComputedStyle(inactive).zIndex),
+      slot: { width: slotRect?.width, height: slotRect?.height },
       boxes: entries.map((node) => {
         const r = node.getBoundingClientRect();
-        return { x: r.x, right: r.right, width: r.width };
+        return {
+          x: r.x - slotRect.left,
+          right: r.right - slotRect.left,
+          y: r.y - slotRect.top,
+          bottom: r.bottom - slotRect.top,
+          width: r.width,
+        };
       }).sort((a, b) => a.x - b.x),
+      outerMargins: {
+        left: Math.min(...entries.map((node) => node.getBoundingClientRect().left - slotRect.left)),
+        right: slotRect.right - Math.max(...entries.map((node) => node.getBoundingClientRect().right)),
+        top: Math.min(...entries.map((node) => node.getBoundingClientRect().top - slotRect.top)),
+        bottom: slotRect.bottom - Math.max(...entries.map((node) => node.getBoundingClientRect().bottom)),
+      },
     };
   }, [activeFrame, decorated.host.activePane]);
   const visibleGap = Math.abs(paneDecoration.boxes[1].x - paneDecoration.boxes[0].right);
+  const outerMargins = Object.values(paneDecoration.outerMargins);
   if (paneDecoration.color !== "#e56b64" || paneDecoration.width !== "5px" || paneDecoration.radius !== "10px" || paneDecoration.shadow === "none"
       || !paneDecoration.outline.includes("5px") || !paneDecoration.outline.includes("rgb(229, 107, 100)") || paneDecoration.activeZ <= paneDecoration.inactiveZ
-      || Math.abs(visibleGap - 12) > 1) {
+      || Math.abs(visibleGap - 12) > 1 || outerMargins.some((margin) => Math.abs(margin - 12) > 1)) {
     throw new Error(`[pane appearance] controls did not paint the requested pane box: ${JSON.stringify({ paneDecoration, visibleGap })}`);
   }
   // Restore product defaults before the remainder of the lifecycle replay.
@@ -2373,7 +2400,11 @@ async function paneEntries() {
   await page.waitForFunction((sel) =>
     !document.querySelector(sel)?.contentDocument?.querySelector('[role="dialog"][aria-label="Reader settings"]'), activeFrame);
   await waitForSettledLayout("split decoration restored", (s) =>
-    s.host?.panes?.length === 2 && s.host.panes.every((pane) => Math.abs(pane.bounds.width - originalWidths.get(pane.paneId)) < 2));
+    s.host?.panes?.length === 2 && s.host.panes.every((pane) => {
+      const original = originalBounds.get(pane.paneId);
+      return Math.abs(pane.bounds.x - original.x) < 2 && Math.abs(pane.bounds.y - original.y) < 2
+        && Math.abs(pane.bounds.width - original.width) < 2 && Math.abs(pane.bounds.height - original.height) < 2;
+    }));
 
   const entries = await paneEntries();
   if (entries.length !== 2 || !entries.every((e) => e.visible)) {
@@ -2586,7 +2617,7 @@ async function paneEntries() {
     s.engine.thumbnailRasterBytesEst === 0, 30_000);
   const survivor = alone.host.panes[0];
   await frameClick('button[title="Reader settings"]', "hide pane controls outside split");
-  await frameClick('button[aria-label="Workspace"]', "hide pane controls outside split");
+  await frameClick('button[aria-label="Theme"]', "hide pane controls outside split");
   const splitControlsAfterClose = await page.evaluate((sel) =>
     !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="split-pane-appearance"]'), activeFrame);
   if (splitControlsAfterClose) throw new Error("[pane appearance] split-only controls remained with one pane");

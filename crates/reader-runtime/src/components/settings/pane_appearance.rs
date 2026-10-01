@@ -1,15 +1,14 @@
-//! Split-only appearance controls for pane boundaries. Shared by the
-//! Appearance popover and Settings → Workspace so both entry points edit the
-//! same persisted workspace fields and paint through the same host tokens.
+//! Split-only appearance controls for pane boundaries. These live in the
+//! Reader Settings → Theme tab, not in the title-bar appearance popover.
 
 use leptos::prelude::*;
 
 use reader_core::settings::{PaneCorners, PaneOutlineColor, Settings};
 
-use crate::components::primitives::controls::switch::Switch;
-use crate::components::primitives::form::row::Row;
-use crate::components::primitives::form::slider::Slider;
-use crate::components::primitives::menu::section_label::SectionLabel;
+use app_ui::components::primitives::controls::switch::Switch;
+use app_ui::components::primitives::form::row::Row;
+use app_ui::components::primitives::form::slider::Slider;
+use app_ui::components::primitives::menu::section_label::SectionLabel;
 
 const OUTLINE_COLORS: [(PaneOutlineColor, &str, &str); 5] = [
     (PaneOutlineColor::Auto, "Auto", "var(--color-accent)"),
@@ -20,7 +19,10 @@ const OUTLINE_COLORS: [(PaneOutlineColor, &str, &str); 5] = [
 ];
 
 #[component]
-pub fn PaneSection(settings: RwSignal<Settings>, visible: Signal<bool>) -> impl IntoView {
+pub(crate) fn PaneAppearanceSection(
+    settings: RwSignal<Settings>,
+    visible: Signal<bool>,
+) -> impl IntoView {
     view! {
         <Show when=move || visible.get()>
             <SectionLabel text="Split pane appearance" />
@@ -43,7 +45,7 @@ pub fn PaneSection(settings: RwSignal<Settings>, visible: Signal<bool>) -> impl 
                 </Row>
                 <div class="flex flex-col gap-3 px-4 py-3.5">
                     <span class="text-sm text-ink">"Outline colour"</span>
-                    <div class="flex flex-wrap items-center gap-3" role="group" aria-label="Pane outline colour">
+                    <div class="grid grid-cols-6 gap-2" role="group" aria-label="Pane outline colour">
                         {OUTLINE_COLORS
                             .iter()
                             .map(|(color, label, background)| {
@@ -61,35 +63,60 @@ pub fn PaneSection(settings: RwSignal<Settings>, visible: Signal<bool>) -> impl 
                                         aria-pressed=move || active().to_string()
                                         data-pane-outline-color=format!("{:?}", color).to_lowercase()
                                         on:click=move |_| settings.update(|s| s.workspace.pane_outline_color = color)
-                                        class=move || {
-                                            let base = "h-8 w-8 rounded-full border border-line";
-                                            if active() {
-                                                format!("{base} ring-2 ring-accent ring-offset-2 ring-offset-surface")
-                                            } else {
-                                                base.to_string()
+                                        class="flex flex-col items-center gap-1.5 rounded-lg py-1 \
+                                               focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                    >
+                                        <span
+                                            class=move || {
+                                                let base = "h-8 w-8 rounded-full border-2 border-line";
+                                                if active() {
+                                                    format!("{base} ring-2 ring-accent ring-offset-2 ring-offset-surface")
+                                                } else {
+                                                    base.to_string()
+                                                }
                                             }
-                                        }
-                                        style=format!("background:{bg}")
-                                    />
+                                            style=format!("background-color:{bg}")
+                                        />
+                                        <span class="text-xs text-muted">{label}</span>
+                                    </button>
                                 }
                             })
                             .collect_view()}
                         <label
                             title="Custom outline colour"
-                            class=move || {
-                                let base = "relative flex h-8 w-8 items-center justify-center rounded-full border border-line";
-                                if settings.with(|s| s.workspace.pane_outline_color == PaneOutlineColor::Custom) {
-                                    format!("{base} ring-2 ring-accent ring-offset-2 ring-offset-surface")
-                                } else {
-                                    base.to_string()
-                                }
-                            }
+                            aria-label="Custom outline colour"
+                            data-pane-outline-color="custom"
+                            class="relative flex cursor-pointer flex-col items-center gap-1.5 rounded-lg py-1 \
+                                   focus-within:outline-none focus-within:ring-2 focus-within:ring-accent"
                         >
+                            <span
+                                class=move || {
+                                    let base = "flex h-8 w-8 items-center justify-center rounded-full p-[3px]";
+                                    if settings.with(|s| s.workspace.pane_outline_color == PaneOutlineColor::Custom) {
+                                        format!("{base} ring-2 ring-accent ring-offset-2 ring-offset-surface")
+                                    } else {
+                                        base.to_string()
+                                    }
+                                }
+                                style="background:conic-gradient(from 90deg,#e56b64,#e8c449,#6fd58c,#6ba3f5,#e56b64)"
+                            >
+                                <span
+                                    class="h-full w-full rounded-full border border-line"
+                                    style=move || {
+                                        format!(
+                                            "background-color:{}",
+                                            settings.with(|s| s.workspace.pane_outline_custom.clone())
+                                        )
+                                    }
+                                />
+                            </span>
+                            <span class="text-xs text-muted">"Custom"</span>
                             <input
                                 type="color"
-                                aria-label="Custom outline colour"
-                                data-pane-outline-color="custom"
+                                aria-label="Choose custom pane outline colour"
+                                data-pane-outline-color-input="custom"
                                 prop:value=move || settings.with(|s| s.workspace.pane_outline_custom.clone())
+                                on:click=move |_| settings.update(|s| s.workspace.pane_outline_color = PaneOutlineColor::Custom)
                                 on:input=move |ev| {
                                     let hex = event_target_value(&ev);
                                     settings.update(|s| {
@@ -97,12 +124,12 @@ pub fn PaneSection(settings: RwSignal<Settings>, visible: Signal<bool>) -> impl 
                                         s.workspace.pane_outline_custom = hex;
                                     });
                                 }
-                                class="h-7 w-7 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                                class="absolute left-1/2 top-1 h-8 w-8 -translate-x-1/2 cursor-pointer opacity-0"
                             />
                         </label>
                     </div>
                 </div>
-                <Row label="Space between panes">
+                <Row label="Space around and between panes">
                     <span class="flex w-40 flex-col gap-1" data-setting="pane-gap">
                         <Slider
                             value=Signal::derive(move || settings.with(|s| s.workspace.pane_gap as f64))
