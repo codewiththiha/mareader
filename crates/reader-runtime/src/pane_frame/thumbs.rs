@@ -6,7 +6,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use leptos::prelude::*;
+use leptos::task::spawn_local;
 use wasm_bindgen::{JsCast, JsValue};
 
 use crate::components::shell::sidebar::panels::thumbnails::geometry::THUMB_SCALE;

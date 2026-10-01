@@ -21,6 +21,7 @@ use std::rc::{Rc, Weak};
 
 use leptos::prelude::*;
 use leptos::tachys::reactive_graph::OwnedView;
+use leptos::task::spawn_local;
 use runtime_contract::boundary::{LaunchDocument, ShellApi};
 use runtime_contract::protocol::{RuntimeEnvelope, RuntimeFrame};
 use wasm_bindgen::closure::Closure;
@@ -565,21 +566,27 @@ impl Inner {
                 }
                 env.request_focus.try_run(());
             }
-            PaneToHost::Focus => env.request_focus.try_run(()),
+            PaneToHost::Focus => {
+                env.request_focus.try_run(());
+            }
             PaneToHost::Settings(settings) => {
                 let settings = *settings;
                 if env.settings.try_with_untracked(|s| *s != settings) == Some(true) {
                     env.settings.set(settings);
                 }
             }
-            PaneToHost::Open { launch, placement } => env.open.try_run(OpenRequest {
-                launch: *launch,
-                placement: placement.into(),
-            }),
+            PaneToHost::Open { launch, placement } => {
+                env.open.try_run(OpenRequest {
+                    launch: *launch,
+                    placement: placement.into(),
+                });
+            }
             PaneToHost::OpenPath { path, placement } => {
                 crate::services::document::open::open_path(self.ctx, path, placement.into());
             }
-            PaneToHost::Relocate { direction } => env.relocate.try_run(direction),
+            PaneToHost::Relocate { direction } => {
+                env.relocate.try_run(direction);
+            }
             PaneToHost::Sidebar { mode } => {
                 let mode: app_state::SidebarMode = mode.into();
                 if env.ui.sidebar.try_get_untracked() != Some(mode) {

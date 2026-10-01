@@ -899,7 +899,7 @@ impl ReaderHost {
         let tail = self.manager.close_now(id, successor)?;
         let _ = self.retiring.try_update(|r| r.push(id));
         let retiring = self.retiring;
-        spawn_local(async move {
+        leptos::task::spawn_local(async move {
             tail.await;
             let _ = retiring.try_update(|r| r.retain(|other| *other != id));
         });
@@ -915,7 +915,11 @@ impl ReaderHost {
     pub fn entries(&self) -> Vec<PaneId> {
         let mut ids = self.manager.placed();
         if let Some(retiring) = self.retiring.try_get() {
-            ids.extend(retiring.into_iter().filter(|id| !ids.contains(id)));
+            for id in retiring {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
         }
         ids.sort();
         ids
