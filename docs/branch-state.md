@@ -617,10 +617,13 @@ deliberately rather than discovering it:
   crosses the nearest split along its axis; the other side is matched level
   by level, so a grid swaps one cell, a pair passes a tall pane as a column,
   and a whole-side swap flips the ratio so each side keeps its size.
-- **Grab and lift** (`host/grab.rs`, `host/lift.rs`). Empty space (not
-  `[data-reader-host]` other than the text stream, not a block, not a
-  control) shows the hand and drags its nearest scroller in both axes with a
-  decaying fling. In a split a still hold of `HOLD_TO_LIFT_MS` (1.2 s, ring
+- **Grab and lift** (`host/grab.rs`, `host/lift.rs`). Empty space is
+  anywhere with nothing to select or press under the pointer: the gutters
+  and the white of a page or block around and between its lines (a glyph
+  hit test on the target's own text runs, `text_at`); links, images, marks
+  and controls are excluded. It shows the hand and drags its nearest
+  scroller in both axes with a decaying fling; the press keeps its default
+  so focus still follows a click. In a split a still hold of `HOLD_TO_LIFT_MS` (1.2 s, ring
   animation in `styles/components/shell.css` matches) lifts the pane; release
   over another pane swaps (`PaneTree::swap`) or docks beside an edge zone
   (`PaneTree::dock`). Layout-only: sessions are untouched. Listeners live on
