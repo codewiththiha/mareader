@@ -53,6 +53,7 @@ import {
 } from "./engine/search";
 import { rebakeTheme, releaseAllEntrySnapshots, setScrubModeInternal } from "./engine/theme/scrub";
 import { releaseBakeWorker } from "./engine/theme/bake";
+import { releaseWarm, warmBytes } from "./engine/warm";
 import { publishBakedPaper, unobserveThemeRoot, watchPaperTokens } from "./engine/theme/paper";
 import { invalidatePipeline, readPipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
@@ -130,6 +131,7 @@ function quiesce(s: EngineSession): void {
   }
   s.thumbTasks.clear();
   resetThumbLane(s);
+  releaseWarm(s);
 }
 
 /** Tear ONE session down, in the order the ownership rules require:
@@ -174,6 +176,7 @@ async function destroySession(sid: Sid): Promise<void> {
     resetThumbLane(s);
     for (const entry of s.thumbCache.values()) s.releaseThumbEntry(entry);
     s.thumbCache.clear();
+    releaseWarm(s);
     s.setSearchQuery("");
     s.setActiveMatchValue(null);
     // Zero and remove the entry snapshots, not just the map: a canvas
@@ -401,7 +404,8 @@ function gauges(s: EngineSession): Omit<Stats, CounterKey> {
       rawRetentionBytes += st.rawCanvas.width * st.rawCanvas.height * 4;
     }
   }
-  let thumbnailRasterBytes = 0;
+  // Underlay rasters: thumbnails plus the warm page copies (warm.ts).
+  let thumbnailRasterBytes = warmBytes(s);
   for (const t of s.thumbCache.values()) {
     for (const c of [t.raw, t.display]) {
       if (c) thumbnailRasterBytes += c.width * c.height * 4;
@@ -504,6 +508,7 @@ function releaseAllSurfaces(): void {
   for (const s of heldSessions()) {
     cancelAndReleasePages(s);
     for (const entry of s.thumbCache.values()) s.releaseThumbEntry(entry);
+    releaseWarm(s);
   }
   try {
     document.querySelectorAll("canvas").forEach((c) => releaseCanvas(c as HTMLCanvasElement));
@@ -522,6 +527,7 @@ try {
           st.rawCanvas = null;
         }
       }
+      releaseWarm(s);
     }
     disposeScratch();
   });

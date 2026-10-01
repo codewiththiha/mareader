@@ -182,9 +182,30 @@ export async function run(): Promise<void> {
     throw new Error(`each session must paint its own pinned canvas (A ${twinA.width}, B ${twinB.width})`);
   }
   if (decoy.width !== 0) throw new Error("a pinned render reached the element the id resolves to in the document");
+  const underlayBefore = PDFReader.sessionStats(sidA)?.thumbnailRasterBytesEst ?? 0;
   A.unregisterPage("twin-cv");
   B.unregisterPage("twin-cv");
   console.log("pinned pages ok: same ids in two sessions, each paints its own element");
+
+  // Warm page cache: the settled page that just unmounted left a copy, and
+  // remounting it paints that copy on the first frame — in ITS session only.
+  const underlayAfter = PDFReader.sessionStats(sidA)?.thumbnailRasterBytesEst ?? 0;
+  if (!(underlayAfter > underlayBefore)) {
+    throw new Error(`an unmounted settled page left no warm copy (${underlayBefore} -> ${underlayAfter})`);
+  }
+  const remountA = fakeDocument.createElement("canvas") as unknown as FakeCanvas & { width: number };
+  A.registerPage(1, "twin-cv", "twin-pg", remountA as unknown as HTMLCanvasElement, null);
+  if (!PDFReader.blitThumb(sidA, "twin-cv", 1) || !(remountA.width > 0)) {
+    throw new Error("a remounted page must paint its warm copy before any render");
+  }
+  const remountB = fakeDocument.createElement("canvas") as unknown as FakeCanvas & { width: number };
+  B.registerPage(1, "twin-cv", "twin-pg", remountB as unknown as HTMLCanvasElement, null);
+  if (PDFReader.blitThumb(sidB, "twin-cv", 1)) {
+    throw new Error("A's warm copy painted into B's page");
+  }
+  A.unregisterPage("twin-cv");
+  B.unregisterPage("twin-cv");
+  console.log("warm page cache ok: remount paints the settled copy, per session", { underlayAfter });
 
   // Prefetch and thumbnails are per session: suspending A's prefetches
   // must not hold B's.

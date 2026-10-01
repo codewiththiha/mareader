@@ -28,6 +28,7 @@ import {
 import { TextLayer } from "./loader";
 import { applyHighlights } from "./highlights";
 import { buildLinkLayer } from "./links";
+import { captureWarm } from "./warm";
 
 /** A page with nothing in flight: no render task, no text layer, no
  *  viewport, no raw raster, both queue counters at zero. Two callers build
@@ -172,6 +173,9 @@ export function registerPage(
 export function unregisterPage(s: EngineSession, canvasId: string): void {
   const st = s.stateByCanvasId.get(canvasId);
   if (st) {
+    // The page leaves the window: keep a small copy of what it showed so a
+    // scroll back paints it on the first frame (warm.ts).
+    captureWarm(s, st);
     st.dead = true;
     try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
     try { st.textLayer && st.textLayer.cancel(); } catch (_) { /* ignore */ }

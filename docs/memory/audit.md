@@ -25,6 +25,7 @@ teardown in the smoke suite and the browser lifecycle baseline.
 | LUT cache | `public/engine/theme/filterKernel.ts` | Pass | Capped at 8; the comment records why clear-beats-LRU here |
 | Cover bake page | `src/app/bake.rs` | Pass | One page, deduplicated queue, removed seconds after the queue drains |
 | Frame recycle/retire policy | `src/app/manager.rs` | Pass | Multi-pane or over-ceiling readers retire (frame removed); warm reader evicted after 60 s idle; heap ceiling 320 MiB |
+| Warm page cache | `public/engine/warm.ts` | Pass | Captured only from pages whose render completed (never mid-fling, mid-render or mid-scrub); ≤10 copies × ≤720 px long side per session; stale pipeline generation dropped on lookup; drained by teardown, quiesce, idle sweep, pagehide, hidden window; counted in `thumbnailRasterBytesEst` |
 | Raw canvas retention | `public/engine/state.ts` | Pass | `dropRawIfIdle` after `RAW_IDLE_MS = 2000`, no-op while scrubbing or the appearance menu is open, cleared outright on teardown |
 
 ## Fix applied in this audit

@@ -658,6 +658,23 @@ deliberately rather than discovering it:
   the raw-raster scrub (and its CSS class, on the pane root) to that pane's
   sessions. The engine smoke asserts an untouched session renders nothing.
 
+## Warm page cache and pane-close memory
+
+- `public/engine/warm.ts`: when a settled PDF page unmounts, `unregisterPage`
+  keeps a downscaled copy (≤720 px long side, ≤10 per session, baked pixels
+  tagged with the pipeline gen). `blitThumb` paints it ahead of the 0.25
+  thumbnail, so a page scrolled back into view shows on its first frame
+  instead of a blank card while the fling gate and render lane catch up.
+  Drains: teardown, quiesce, idle sweep, pagehide, hidden window. Counted in
+  `thumbnailRasterBytesEst`; engine smoke covers capture, remount paint and
+  per-session isolation.
+- Pane close already releases everything its session owns (pages, thumbs,
+  raws, snapshots, pdf.js worker, bake worker when last). The Rust heap mark
+  stays ~2 MiB. What remains after closing panes inside a live reader is
+  process memory the webview has not handed back (freed GPU textures, JS
+  heap awaiting GC, WebKit's lazy release); the frame itself is retired only
+  on the way back to the library (`READER_RECYCLE_PANES_MAX`).
+
 ## Known follow-ups (do not silently expand scope)
 
 - Measured on a2aa19a (Deep CI #242): the cover bake landed from the Shell's
