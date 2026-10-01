@@ -23,7 +23,7 @@
     <script type="module" src="/pdfEngine.js"></script>
     <!-- The reader artifact: its own Trunk config (reader.Trunk.toml) builds
          this page; the bin is the reader runtime alone. -->
-    <link data-trunk rel="rust" href="crates/reader-runtime" data-bin="reader" data-wasm-opt="z" />
+    <link data-trunk rel="rust" href="crates/reader-runtime" data-bin="reader" data-wasm-opt="z" data-cargo-features="engine" />
   </head>
   <body></body>
 </html>

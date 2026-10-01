@@ -18,6 +18,13 @@ path = "src/bin/pdf.rs"
 name = "reflow"
 path = "src/bin/reflow.rs"
 
+[features]
+# The document engines' live probes, for the artifacts that run documents
+# (the pane frames, and the standalone page). The Shell links this crate for
+# the workspace host only and leaves it off, so no engine import reaches its
+# artifact.
+engine = []
+
 [dependencies]
 ai-core = { path = "../ai-core" }
 app-chrome = { path = "../app-chrome" }

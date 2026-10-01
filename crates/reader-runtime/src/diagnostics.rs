@@ -483,14 +483,15 @@ pub(crate) fn snapshot() -> Snapshot {
 }
 
 /// The engine's live counters, or `None` where there is no engine to read:
-/// the probe talks only on wasm, and a host test must not walk into the
-/// wasm-bindgen stubs.
+/// the probe talks only on wasm in an artifact that runs documents (the
+/// `engine` feature), and a host test must not walk into the wasm-bindgen
+/// stubs.
 fn engine_probe() -> Option<pdf_engine::api::EngineStats> {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "engine"))]
     {
         pdf_engine::api::engine_stats()
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", feature = "engine")))]
     {
         None
     }

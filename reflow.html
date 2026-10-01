@@ -13,7 +13,7 @@
     <link data-trunk rel="copy-file" href="public/readerEngine.js" />
     <!-- No PDF engine: a Markdown or text pane never loads pdf.js. -->
     <script type="module" src="/readerEngine.js"></script>
-    <link data-trunk rel="rust" href="crates/reader-runtime" data-bin="reflow" data-wasm-opt="z" />
+    <link data-trunk rel="rust" href="crates/reader-runtime" data-bin="reflow" data-wasm-opt="z" data-cargo-features="engine" />
   </head>
   <body></body>
 </html>
