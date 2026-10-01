@@ -32,7 +32,7 @@ impl PaneId {
 
     /// The id a pane frame was booted with: the host minted it, the frame
     /// only names it back.
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    #[cfg(target_arch = "wasm32")]
     pub(crate) fn from_raw(n: u64) -> Self {
         Self(n)
     }
@@ -157,7 +157,7 @@ pub struct PaneDescriptor {
 impl PaneDescriptor {
     /// The descriptor a pane frame rebuilds from its boot message: the host
     /// minted the id and the request, the frame hands them to its pane.
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    #[cfg(target_arch = "wasm32")]
     pub(crate) fn remote(pane_id: PaneId, request: PaneRequest) -> Self {
         Self::minted(pane_id, request)
     }
