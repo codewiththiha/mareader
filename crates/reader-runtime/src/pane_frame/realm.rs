@@ -132,13 +132,13 @@ pub(super) fn boot(kind: PaneKind) {
     let on_offer =
         Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |ev: web_sys::MessageEvent| {
             let data = ev.data();
-            let kind = js_sys::Reflect::get(&data, &JsValue::from_str("kind"))
+            let tag = js_sys::Reflect::get(&data, &JsValue::from_str("kind"))
                 .ok()
                 .and_then(|v| v.as_string());
             let offered = js_sys::Reflect::get(&data, &JsValue::from_str("nonce"))
                 .ok()
                 .and_then(|v| v.as_string());
-            if kind.as_deref() != Some(PANE_CHANNEL_KIND) || offered.as_deref() != Some(&expected) {
+            if tag.as_deref() != Some(PANE_CHANNEL_KIND) || offered.as_deref() != Some(&expected) {
                 return;
             }
             let Some(port) = ev.ports().get(0).dyn_into::<web_sys::MessagePort>().ok() else {
