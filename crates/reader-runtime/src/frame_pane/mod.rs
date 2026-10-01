@@ -506,15 +506,13 @@ impl Inner {
             PaneToHost::Disposed => {
                 self.with_frame(nonce, |frame| frame.disposed.set(true));
                 self.sweep_retired();
-                return;
             }
             PaneToHost::Api { envelope } => {
                 // A retired frame's last words still count: its final read
                 // point and digest.
                 self.api(nonce, role, &envelope);
-                return;
             }
-            _ if role == Role::Retired => return,
+            _ if role == Role::Retired => {}
             PaneToHost::Painted => {
                 self.with_frame(nonce, |frame| frame.painted = true);
                 match role {

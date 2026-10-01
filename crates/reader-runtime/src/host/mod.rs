@@ -35,6 +35,7 @@ pub mod contract;
 pub mod drag;
 pub mod drop_target;
 pub mod geometry;
+#[cfg(target_arch = "wasm32")]
 pub(crate) mod grab;
 pub mod library;
 pub mod lift;

@@ -165,6 +165,7 @@ impl DocumentPane {
     /// the pane's dispose releases it too.
     /// The pane's reader context: a pane frame reads its chrome-facing state
     /// from it and writes the host's chrome commands into it.
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub(crate) fn context(&self) -> ReaderContext {
         self.ctx
     }

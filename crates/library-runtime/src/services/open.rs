@@ -39,7 +39,7 @@ pub fn open_book(ctx: &LibraryContext, book_id: String) {
         return;
     };
     if book.missing {
-        crate::services::ask_relink(crate::context::LibraryContext::clone(ctx), book_id);
+        crate::services::ask_relink(*ctx, book_id);
         return;
     }
     open_at(ctx, Some(book_id), book.path().to_string());
