@@ -65,7 +65,7 @@ pub fn PdfPageStrip(
     let page_scale = state.viewer.zoom.display.read_only();
     let gesture_owns = state.viewer.gesture_owns();
     // The fling gate's input: while the scroller is still moving, unpainted
-    // pages stay on their thumbnail underlay and rasterise once the strip
+    // pages not yet in view stay blank and rasterise once the strip
     // settles (see the page host's SCROLL-FLING GATE). The prop wraps it in
     // the Option the page-mode hosts default to.
     let settled: Signal<bool> = v.settled().into();
@@ -384,27 +384,24 @@ fn dormant_signal(
     })
 }
 
-/// Main-axis slack on either side of the viewport within which a page can
-/// count as visible for the page host's fling gate exemption: a visible
-/// page rasterises even while the strip still moves — what the reader is
-/// looking at must never sit on an upscaled thumbnail underlay — while
-/// overscan pages a fling sweeps past keep waiting for the settle.
-const IN_VIEW_MARGIN_PX: f64 = 160.0;
+/// Main-axis slack on either side of the viewport within which a page counts
+/// as visible for the page host's fling gate exemption. Generous on purpose:
+/// a page about to scroll in starts rasterising before it arrives.
+const IN_VIEW_MARGIN_PX: f64 = 320.0;
 
-/// How long a page's box must sit inside the band CONTINUOUSLY before it
-/// counts as visible. A fling sweeps a page through the band in tens of
-/// milliseconds; rasterising a page only to scroll away from it is exactly
-/// the full-surface churn the fling gate exists to stop — surfaces created,
-/// painted and discarded every few frames push the webview's resource cache
-/// (and the footprint latched onto it) to a high-water mark that does not
-/// come back down at idle. A page the reader actually lingers on clears the
-/// dwell long before the 150 ms settle would have rendered it anyway, so
-/// crispness while reading is kept and the churn is not. The clock is
-/// `performance.now()` (monotonic) with `Date::now()` as fallback — the
-/// same pair the virtualizer's retention clock uses.
-const IN_VIEW_DWELL_MS: f64 = 120.0;
+/// Scroll speed (CSS px per ms) above which the strip counts as FLINGING.
+/// Below it — reading, a slow drag, a wheel notch — a page in the band is
+/// visible at once and renders immediately.
+const FLING_PX_PER_MS: f64 = 4.0;
 
-/// Milliseconds on the monotonic clock (see [`IN_VIEW_DWELL_MS`]).
+/// How long a page met MID-FLING must stay in the band before it counts as
+/// visible. A fling sweeps a page through in a few frames; rasterising it
+/// only to scroll away is the full-surface churn the fling gate stops. A
+/// timer re-checks at the deadline, so a fling that stops inside the band
+/// renders the page then — never later, never stuck.
+const IN_VIEW_DWELL_MS: f64 = 60.0;
+
+/// Milliseconds on the monotonic clock, with `Date::now()` as fallback.
 fn in_view_now_ms() -> f64 {
     web_sys::window()
         .and_then(|w| w.performance())
@@ -413,25 +410,29 @@ fn in_view_now_ms() -> f64 {
 }
 
 /// Whether one mounted item is inside (or within [`IN_VIEW_MARGIN_PX`] of)
-/// the scroller's visible window, derived from the virtualizer's OWN model —
-/// the same scroll offset, viewport extent and item offsets the windowing
-/// uses, so it agrees with the layout by construction and needs no observer.
-/// The derived value is a BOOL, so the render effect that reads it re-runs
-/// when the page crosses the boundary, not on every scroll tick. Crossing is
-/// not enough on its own: the page must also DWELL inside the band for
-/// [`IN_VIEW_DWELL_MS`] continuously — the clock restarts on every exit —
-/// so pages a fling sweeps through never count as visible. The derive
-/// re-runs on every dependency change, so continuous scrolling observes the
-/// dwell deadline on the next tick after it passes; a scroll that stops
-/// inside the band simply falls back to the settle, which renders the page
-/// through the same gate it always did.
+/// the scroller's visible window, derived from the virtualizer's own model
+/// (scroll offset, viewport, item offsets), so it agrees with the layout by
+/// construction and needs no observer.
+///
+/// Speed-aware: the derive tracks how fast the offset moves. At reading
+/// speed a page in the band is visible immediately. Above
+/// [`FLING_PX_PER_MS`] it must dwell [`IN_VIEW_DWELL_MS`] continuously (the
+/// clock restarts on every exit); a timer wakes the derive at the deadline,
+/// so the answer never depends on another scroll event arriving.
 fn in_view_signal(
     virtualizer: Virtualizer,
     top: Signal<f64, LocalStorage>,
     size: Signal<f64, LocalStorage>,
 ) -> Signal<bool, LocalStorage> {
-    let dwell_start = std::cell::Cell::<Option<f64>>::new(None);
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let dwell_start = Rc::new(Cell::<Option<f64>>::new(None));
+    let last = Cell::<Option<(f64, f64)>>::new(None);
+    let speed = Cell::new(0.0f64);
+    let wake = ArcTrigger::new();
+    let wake_armed = Rc::new(Cell::new(false));
     Signal::derive_local(move || {
+        wake.track();
         let scroll = virtualizer.scroll_offset().get();
         let viewport = virtualizer.viewport().get().main;
         // A layout rebuild moves every offset without a scroll; the total
@@ -439,19 +440,53 @@ fn in_view_signal(
         let _ = virtualizer.total_size().get();
         let start = top.get();
         let span = size.get().max(0.0);
+        let now = in_view_now_ms();
+        // Speed from the last offset sample; a quiet gap decays it to rest.
+        if let Some((at, offset)) = last.get() {
+            let dt = now - at;
+            if dt > 0.0 {
+                // A long quiet gap means the strip was at rest: a fresh move.
+                speed.set(if dt > 120.0 {
+                    0.0
+                } else {
+                    (scroll - offset).abs() / dt
+                });
+            }
+        }
+        last.set(Some((now, scroll)));
         let inside = start + span >= scroll - IN_VIEW_MARGIN_PX
             && start <= scroll + viewport + IN_VIEW_MARGIN_PX;
         if !inside {
             dwell_start.set(None);
             return false;
         }
-        let now = in_view_now_ms();
-        match dwell_start.get() {
+        if speed.get() < FLING_PX_PER_MS {
+            return true;
+        }
+        let started_at = match dwell_start.get() {
+            Some(at) => at,
             None => {
                 dwell_start.set(Some(now));
-                false
+                now
             }
-            Some(started_at) => now - started_at >= IN_VIEW_DWELL_MS,
+        };
+        if now - started_at >= IN_VIEW_DWELL_MS {
+            return true;
         }
+        // One short one-shot (≤ the dwell) per page at a time; an
+        // ArcTrigger, so a wake after the page unmounted notifies nobody.
+        if !wake_armed.replace(true) {
+            let wake = wake.clone();
+            let armed = wake_armed.clone();
+            let wait = (IN_VIEW_DWELL_MS - (now - started_at)).max(0.0) + 4.0;
+            set_timeout(
+                move || {
+                    armed.set(false);
+                    wake.notify();
+                },
+                std::time::Duration::from_millis(wait as u64),
+            );
+        }
+        false
     })
 }

@@ -174,11 +174,6 @@ impl PdfPane {
         self.working().is_some_and(|s| s.has_thumb(page, scale))
     }
 
-    pub fn blit_thumb(&self, canvas_id: &str, page: u32) -> bool {
-        self.working()
-            .is_some_and(|s| s.blit_thumb(canvas_id, page))
-    }
-
     pub async fn prefetch_thumb(&self, page: u32, scale: f64) {
         if let Some(s) = self.working() {
             s.prefetch_thumb(page, scale).await;

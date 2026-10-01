@@ -14,7 +14,6 @@ import {
 } from "./theme/thumbnails";
 import { lifecycleEvent, THUMB_CACHE_MAX } from "./state";
 import type { EngineSession } from "./state";
-import { blitWarm } from "./warm";
 // A cold sidebar can mount a full thumbnail window at once. Limit pdf.js
 // raster work, not clicks: queued jobs are invalidated on unmount and cached
 // paths still paint immediately.
@@ -171,11 +170,6 @@ function targetCanvas(s: EngineSession, canvasId: string): HTMLCanvasElement | n
 
 export function blitThumb(s: EngineSession, canvasId: string, page: number): boolean {
   const dst = targetCanvas(s, canvasId);
-  // A page the reader already saw has a sharper underlay than the 0.25
-  // thumbnail: its warm copy (warm.ts). Page canvases only — the sidebar's
-  // own cells keep their thumbnails.
-  const pageState = s.stateByCanvasId.get(canvasId);
-  if (pageState && blitWarm(s, dst, page)) return true;
   const entry = s.thumbCache.get(page);
   if (!dst || !entry) return false;
   const raw = s.themeScrubActive ? thumbRaw(entry) : null;

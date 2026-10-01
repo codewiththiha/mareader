@@ -164,7 +164,7 @@ pub fn PdfPageCanvas(
     dormant: Option<Signal<bool, LocalStorage>>,
     /// Whether the strip's scroll has SETTLED — the virtualizer's scroll-end
     /// window, published as a signal. While it reads false, an UNPAINTED page
-    /// stays on its thumbnail underlay instead of starting a full-resolution
+    /// that is not in view stays blank instead of starting a full-resolution
     /// rasterisation: the fling gate. `None` (the default) means nothing to
     /// wait for — hosts outside a virtualized strip (single, spread) mount a
     /// page or two and sweep nothing past.
@@ -174,7 +174,7 @@ pub fn PdfPageCanvas(
     /// window, derived from the virtualizer's own model by the strip; page
     /// modes leave it `None`. The fling gate EXEMPTS a visible page: it
     /// rasterises even while the strip still moves — a page the reader is
-    /// looking at must never sit blurry on its thumbnail underlay — while
+    /// looking at must never sit blank — while
     /// overscan pages a fling sweeps past keep waiting for the settle. The
     /// read is tracked, so the crossing itself re-runs the render effect.
     #[prop(optional)]
@@ -293,6 +293,9 @@ pub fn PdfPageCanvas(
     // engine missed) cannot overwrite a newer host size — which would re-add
     // the size jump this unit removes.
     let render_seq = StoredValue::new_local(0u32);
+    // Forces the render effect to run again (a landing that left a stale,
+    // stretched bitmap). Owned by this component; dropped with it.
+    let rerender = Trigger::new();
 
     // `scale` is the DISPLAY scale (stretch target); `render_scale` the crisp
     // render target; `zoom_animating` suspends renders mid-gesture. All three
@@ -350,16 +353,12 @@ pub fn PdfPageCanvas(
         // obsolete scale: it resolves, reports geometry, and is superseded by
         // the commit pass — measured at 3 of 11 renders on one sidebar toggle,
         // whose only visible effect was a page popping in at the wrong size.
-        // The thumbnail underlay covers the gap; the commit pass (~120ms
-        // later) renders once, correctly.
+        // The page stays blank for the gap; the commit pass (~120ms later)
+        // renders once, correctly.
         //
-        // COLD-CACHE FIRST PAINT. If the page has NO bitmap (`!has_geo`) AND
-        // the thumbnail cache misses (`blit_thumb` false — the sidebar was
-        // never opened this session), the page would sit an EMPTY TRANSPARENT
-        // CANVAS for the whole slide plus the commit: "the one in view just
-        // disappeared", and the stretch was invisible because the node had no
-        // bitmap to stretch. Fix: fall through to the render path
-        // below, but at the DISPLAY scale — read untracked so the effect does
+        // FIRST PAINT. A page with NO bitmap (`!has_geo`) would sit blank
+        // for the whole slide plus the commit, so it falls through to the
+        // render path below, but at the DISPLAY scale — read untracked so the effect does
         // NOT re-run every frame of the slide. `on_geometry` ignores writes
         // while a transition is in flight and the commit re-renders crisply at
         // the settled scale; the stretch effect keeps tracking `display_scale`
@@ -369,16 +368,12 @@ pub fn PdfPageCanvas(
             if has_geo {
                 return; // stretch effect owns it
             }
-            if pdf().blit_thumb(&cid_effect, page) {
-                return; // cached thumbnail is fine
-            }
             // A sidebar slide (fit-driven) is NOT a zoom gesture: the display
             // scale is still moving and the commit renders once at the settled
             // scale ~480ms later. Rendering here produces a bitmap at an
             // obsolete scale — 2-3 wasted full-size RGBA bitmaps per toggle.
             // Only a REAL zoom gesture (which owns the layout) gets a live
-            // first render at the display scale; the thumbnail underlay covers
-            // the slide.
+            // first render at the display scale.
             //
             // But a mode flip starts a fit animation as the new view's pages
             // mount: if an UN-PAINTED page bailed here and the commit landed
@@ -417,37 +412,19 @@ pub fn PdfPageCanvas(
         if has_geo && painted.get() && (gs - s).abs() <= 1e-9 {
             return;
         }
-        // SCROLL-FLING GATE. An unpainted page the scroller is still sweeping
-        // past stays on its thumbnail underlay until the strip settles: a
-        // full-resolution rasterisation for every page a fling flies past
-        // creates, paints and discards a full-page surface every few frames,
-        // and that churn — not the mounted ceiling — is what pushes the
-        // webview's resource cache, and the footprint latched onto it, to its
-        // high-water mark. `settled` is read TRACKED, so the settle itself
-        // re-runs this effect and the crisp render lands then, paced by the
-        // engine's render lane. A render already in flight is never touched —
-        // the gate only governs STARTING one, and the underlay blit below is
-        // the same one the cold first paint uses.
-        //
-        // EXEMPTION: a page inside (or within 160 px of) the pane's visible
-        // viewport — per the virtualizer's own model, `in_view`, read
-        // TRACKED so the crossing itself re-runs this effect — rasterises
-        // even while the strip still moves, so what the reader is looking
-        // at never sits blurry on an upscaled thumbnail. The strip's signal
-        // only calls the page visible once it has DWELT in the band
-        // (~120 ms): a fling sweeps a page through in tens of ms, and
-        // rasterising pages the fling is only SWEEPING PAST is the surface
-        // churn this gate exists to stop — it latches the webview's
-        // footprint at its high-water mark and it does not come back at
-        // idle. The lane paces the starts (its cap is realm-wide across
-        // panes) and its generation guards drop a superseded raster
-        // cheaply, so the dwell is the only new raster the moving strip
-        // pays.
+        // SCROLL-FLING GATE. An unpainted page the scroller is sweeping past
+        // at speed stays blank until it is visible or the strip settles:
+        // rasterising every page a fling flies past creates and discards a
+        // full-page surface every few frames. `in_view` (tracked) is the
+        // strip's speed-aware visibility: a page in view at reading speed
+        // renders at once, one met mid-fling after a short dwell that a
+        // timer re-checks, so a page never waits on a scroll event that will
+        // not come. `settled` (tracked) renders the overscan at the end.
+        // A render already in flight is never touched.
         let visible_now = in_view.as_ref().is_none_or(|v| v.get());
+        // Read every time so a forced re-render (below) re-runs this effect.
+        rerender.track();
         if !painted.get() && !visible_now && settled.as_ref().is_some_and(|s| !s.get()) {
-            if !(gw > 0.0 && gh > 0.0) {
-                pdf().blit_thumb(&cid_effect, page);
-            }
             return;
         }
         let page_no = page;
@@ -491,13 +468,7 @@ pub fn PdfPageCanvas(
         let committed_at_landing = render_scale;
         let display_at_landing = scale;
 
-        // First paint for this host: drop in the sidebar's cached thumbnail,
-        // upscaled, so the card reads as a blurry version of the right page
-        // instead of flashing white until the render lands. No-op when nothing
-        // is cached, and immediately overwritten by the real bitmap.
-        if !(lw > 0.0 && lh > 0.0) {
-            pdf().blit_thumb(&cid, page_no);
-        }
+        let rerender_async = rerender;
 
         // The session view this render runs through, captured BEFORE the
         // await: the render, the registration it may need and the paper
@@ -551,6 +522,13 @@ pub fn PdfPageCanvas(
                         Completion::Stale => {
                             geo_async.try_set_value((r.width, r.height, s));
                             painted_async.set(true);
+                            // The bitmap is at a scale that no longer holds:
+                            // never leave it stretched (blurry) — ask for the
+                            // crisp render now instead of waiting for some
+                            // later dependency change that may never come.
+                            if !zooming_now && (committed_now - s).abs() > 1e-9 {
+                                rerender_async.notify();
+                            }
                             if let Some(display) = display_at_landing.try_get_untracked() {
                                 stretch_host(
                                     host_ref,
@@ -644,8 +622,8 @@ pub fn PdfPageCanvas(
             data-host-page=page
         >
             // `data-engine-sid`: whose canvas this is, for the engine's one
-            // lookup that may run before the page registered (the blurry
-            // thumbnail first paint) — another pane's page has this id too.
+            // lookup that may run before the page registered — another
+            // pane's page has this id too.
             <canvas node_ref=canvas_ref id=canvas_id data-engine-sid=mounted.sid() />
             // Placeholder text layer. The engine REPLACES this node on each
             // text render: it builds the spans in a detached `.textLayer` and

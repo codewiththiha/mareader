@@ -1,33 +1,45 @@
-# Branch state — `split-wasm-modules-t10`
+# Reader architecture
 
-Single source of truth for what this branch is and where it stands. Read this
-before planning or editing; when it disagrees with memory, this file wins.
-How the branch got here — the three route-split designs, what each cost and
-why only the third holds — is `docs/route-split-retrospective.md`.
+How the reader is built today: the runtimes, who owns what, the invariants the
+tests enforce, and the known limitations. Read it before changing runtime,
+pane, engine or memory behaviour. Why the runtime split took its current
+shape is in `docs/route-split-retrospective.md`.
 
-## What this branch is
+## Overview
 
-Team 10's migration branch for the runtime split (the migration plan itself
-lives in `wasm-runtime-migration.md`; `AGENTS.md` is now branch-agnostic and
-carries no phase plan). Base: `main`. Commits follow the conventional format
-in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
+- **Three runtimes.** The Shell, the Library and the Reader are separate WASM
+  artifacts. Library and Reader run in shell-owned iframes connected by a
+  `MessageChannel` handshake (`frame-transport`), and each is disposed as a
+  unit by removing its frame.
+- **Explicit lifecycle.** `ReaderRuntime` is a state machine with
+  generations, a resource registry and observable disposal
+  (`crates/reader-runtime/src/runtime.rs`). Counters live in
+  `crates/reader-runtime/src/diagnostics.rs`; the browser lifecycle suite
+  (`tests/browser/lifecycle.mjs`) and `docs/memory-baseline.md` hold the
+  measurements.
+- **Host and panes.** `ReaderHost` and `PaneManager` own the workspace
+  (`crates/reader-runtime/src/host/`); a document pane owns one session
+  (`crates/reader-runtime/src/pane/`). The map is in
+  `docs/lifecycle-ownership.md`.
+- **Session-scoped engines.** Each pane owns one `FormatSession` per open
+  document: `PdfSession` (`crates/pdf-engine/src/session/`, one engine
+  session per sid in `public/engine/state.ts`), `MdSession` and `TxtSession`
+  (`crates/reader-runtime/src/pane/session.rs`). The inventory is in
+  `docs/session-ownership.md`, enforced by `tools/check-session-ownership.mjs`.
+- **Split workspace.** `/reader` runs a `PaneTree` with up to four live
+  panes, host-owned dividers, focus outline and per-pane close; see
+  [Split workspace](#split-workspace).
+- **Document drag and drop.** A file row in the reader's Library panel is
+  the split-drag source; see [Document drag and drop](#document-drag-and-drop).
+- **Appearance.** Split-mode blend with a shared MRU paper, and an
+  independent per-pane theme mode; see
+  [Workspace appearance and blend](#workspace-appearance-and-blend),
+  [Split pane decoration](#split-pane-decoration) and
+  [Independent pane colours](#independent-pane-colours).
+- **Fit, moves and grab.** Fit follows the page on screen, panes move and
+  lift, and empty space grab-pans; see [Fit, pane moves and grab](#fit-pane-moves-and-grab).
 
-## Migration status
-
-| Phase | State |
-| --- | --- |
-| 0 — memory/lifecycle baseline | **done**: browser lifecycle suite (`tests/browser/lifecycle.mjs`), counters in `crates/reader-runtime/src/diagnostics.rs`, results in `docs/memory-baseline.md` |
-| 1 — explicit runtime/session lifecycle | **done**: `ReaderRuntime` state machine, generations, resource registry, observable disposal (`crates/reader-runtime/src/runtime.rs`) |
-| 2 — Shell / Library / Reader split | **done**: three WASM artifacts, shell-owned iframes with a `MessageChannel` handshake, `frame-transport` crate, dispose-as-a-unit |
-| 3 — Reader Host & panes | **done**: `ReaderHost` + `PaneManager` own the workspace (`crates/reader-runtime/src/host/`), the document pane owns one session (`crates/reader-runtime/src/pane/`); `ReaderPage` removed. Map in `docs/lifecycle-ownership.md` (Phase 3 section); what is still a bridge: [Phase 3 bridges](#phase-3-bridges-what-phase-45-inherit) |
-| 4 — session-scoped PDF / Markdown / TXT engines | **done**: each pane owns one `FormatSession` per opened document — `PdfSession` (`crates/pdf-engine/src/session/`, one engine session per sid in `public/engine/state.ts`), `MdSession` / `TxtSession` (`crates/reader-runtime/src/pane/session.rs`); async stamps per pane; inventory, call graph and retained realm state in `docs/session-ownership.md`, enforced by `tools/check-session-ownership.mjs`; what Phase 5 inherits: [Phase 4 bridges](#phase-4-bridges-what-phase-5-inherits) |
-| 5 — production split workspace | **done**: `/reader` runs a `PaneTree` (layout over pane ids only, `crates/reader-runtime/src/host/tree.rs`) under the `ReaderHost`; up to four live panes, each with its own `FormatSession`; `open_document(target)` places a document in a pane or beside it; host-owned dividers, focus outline and per-pane close; see [Phase 5: the split workspace](#phase-5-the-split-workspace) |
-| 6 — smart document drag/drop | **implemented**: a file row of the reader's Library panel (the rail's third tab, `crates/reader-runtime/src/host/library/`) is the one split-drag source; targets come from the measured slot and pane boxes (`crates/reader-runtime/src/host/{geometry,drop_target,drag,commands}.rs`), the preview is geometry only, a drop is one `WorkspaceCommand`; OS file drops import into the library while it is on screen (`src/services/import_drop.rs`); see [Phase 6: document drag and drop](#phase-6-document-drag-and-drop) |
-| 7+ — appearance blend, … | **done** — split-mode blend hold + MRU shared paper; visible independent-theme toggle in the appearance menu and Settings → Workspace; per-pane look routing/token paint; per-session PDF bake/cache and local paper publication; independent blend isolates PDF pages, reflow surfaces, shared gutters and chrome. CI `378686a` green (`36791384567`); Deep CI green (`36791384490`: browser lifecycle, Tauri boot and split memory replay). Visually checked at 1440×900 and 800×900; screenshots `/home/user/independent-theme-final-{1440,800}.png` |
-| 8 — split pane decoration | **revised** in `3bb382e` after the earlier green implementation `d5982b5`. Pane controls belong only in Reader Settings → Theme; the title-bar Appearance menu keeps only the independent-theme toggle at its bottom. Pane spacing extends to all four workspace edges as well as between panes. Palette styling, control placement and uniform-margin browser assertions are updated. CI and Deep CI passed on `d751609` (`36805313405` / `36805313392`): Rust tests/lint/format, web contracts, shell checks, Tauri boot, browser lifecycle and split memory replay. |
-| 9 — fit accuracy, pane moves, grab/lift, macOS lights | **implemented**, CI + deep CI green: see [Fit, pane moves and grab](#fit-pane-moves-and-grab) |
-
-## Architecture as built (do not re-derive)
+## Runtime structure
 
 - Shell (`src/`) owns routing, the runtime manager, diagnostics, persistence.
 - Reader and Library boot inside shell-owned iframes (`src/app/frame.rs`),
@@ -64,19 +76,15 @@ in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   sweeps the document: a window move unmounts pages constantly, and the
   sweep belongs to quiescence (the render cadence `CLEANUP_EVERY`, the idle
   timer, the reader's scroll-idle sweep).
-- The strip's fling gate exempts a page inside — or within 160 px of — the
-  pane's visible viewport, from the virtualizer's OWN model
-  (`in_view_signal` in `formats/pdf/strip.rs`): a page the reader is looking
-  at rasterises even while the strip still moves instead of sitting blurry
-  on its upscaled thumbnail, and overscan pages a fling sweeps past keep
-  waiting for the settle. "Looking at" means a DWELL: the page must sit in
-  the band ~120 ms continuously (`IN_VIEW_DWELL_MS`), because rasterising
-  the pages a fling only sweeps through is the full-surface churn that
-  latches the webview's footprint at its high-water mark and does not come
-  back at idle — the regression the dwell removes. The lane's realm cap and
-  generation guards keep that from stacking rasters. The full story — the
-  gate's history, the regression, the diagnosis playbook — is
-  `docs/memory/fling-gate.md`; read it before touching the gate.
+- PDF pages never show a placeholder: an unrendered page is blank until
+  its full-resolution render lands, and a bitmap left at a stale scale asks
+  for its crisp render at once. The strip's fling gate keeps pages a fling
+  sweeps past from rasterising; its speed-aware visibility
+  (`in_view_signal` in `formats/pdf/strip.rs`) lets a page inside, or
+  within 320 px of, the viewport render immediately at reading speed, and
+  after a 60 ms dwell (`IN_VIEW_DWELL_MS`) mid-fling. A timer re-checks at
+  the dwell deadline, so a page never waits for another scroll event. See
+  `docs/memory/fling-gate.md`.
 - Inside the reader frame: `start_session` (composition root) → runtime →
   `ReaderHost` (chrome placement, `ShellController`, settings modal
   placement, focus/active pane, bounds, status reports, the workspace's
@@ -109,7 +117,7 @@ in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
   `rules.md` is the binding rule set for new code (frame-scoped release,
   dwell before expensive work, bounded caches with drains, zero-and-remove
   for canvases, weak module references, observable teardown); `audit.md`
-  is the 2026-09-30 subsystem audit — every allocation owner checked
+  is the subsystem audit — every allocation owner checked
   against the rules, one fix applied (entry snapshots are now zeroed on
   session teardown, not merely dereferenced); `fling-gate.md` is the
   churn record. New memory-sensitive code reads `rules.md` first; a new
@@ -269,24 +277,14 @@ whatever is on screen:
   the active and warm frames from computed `::after` state. Only reduced
   motion stops the grain; the app's animations-off switch keeps it moving.
 
-## CI is the only build
+## CI
 
-No Rust is compiled in the dev sandbox (disk limits). Push and let GitHub
-Actions judge: `CI` (format, clippy+wasm check+dependency gate, `cargo test`,
-web contracts, macOS shell) on every push; `Deep CI` (browser lifecycle
-baseline + Tauri boot smoke) on pushes touching app/engine paths. Watch the
-run's job logs (`ci_watch.py` at the workspace root polls them), fix, squash
-fixups, force-push. No lane reads `docs/**`, so a docs-only push runs neither
-workflow.
-
-## CI is skippable where it is not needed
-
-- `CI` ignores pushes that only touch `docs/**` — no lane reads those files
-  as input (the contract scripts parse SOURCE comments, never the documents
-  they point at). Any push touching code runs the whole matrix.
-- `Deep CI`'s two 45-minute lanes honour `[skip deep]` in the commit subject;
-  a `workflow_dispatch` can narrow the run to one lane or override the
-  marker. The nightly cron ignores it, so a skip is never the last word.
+GitHub Actions is the build: `CI` (format, clippy, wasm check, dependency
+gate, `cargo test`, web contracts, macOS shell) runs on every push that
+touches code; `Deep CI` (browser lifecycle baseline, Tauri boot smoke, split
+memory replay) runs on pushes touching app or engine paths and honours
+`[skip deep]` in the subject. Neither reads `docs/**`, so a docs-only push
+runs nothing. Details: `docs/ci-architecture.md`.
 
 ## Measured, not assumed
 
@@ -306,13 +304,12 @@ it, and after a read-and-close the recycled reader is evicted the same way.
 The cover bake is proven in the same run without any reader resident
 (`coverBake.covers`, `bakeFrameResident` back to `false`).
 
-## Phase 3 bridges (what Phase 4/5 inherit)
+## Pane ownership boundaries
 
-Phase 3 made the host the workspace owner and the pane the owner of one
-document session. What is still a BRIDGE — correct for one pane per
-session, and named here so the later phases replace it deliberately:
+The host owns the workspace and each pane owns one document session. These
+boundaries are already pane-scoped and must not regress:
 
-- **Scoped already (do not regress):** every pane-owned DOM lookup goes
+- Every pane-owned DOM lookup goes
   through the pane's root (`crates/reader-runtime/src/pane/dom.rs`,
   `ReaderState.dom`) or a `NodeRef`; the reflow measurement queue and the
   spot memo are pane state, not thread-locals; focus is REQUESTED by the
@@ -331,39 +328,24 @@ session, and named here so the later phases replace it deliberately:
   the Shell (`ShellApi::reload`) instead of reloading the frame's own
   document. `tools/check-host-boundary.mjs` fails on any other store write
   or window reload in reader code outside `context.rs`'s `StandaloneApi`.
-- **Phase 4 (session-scoped engines): resolved.** The engine session, its
-  prefetch switch, lanes, caches, page registry, raster theme, paper state
-  machine and search scope are per `PdfSession`; the ownership stamp is the
-  pane's generation. See [Phase 4 bridges](#phase-4-bridges-what-phase-5-inherits).
-- **Phase 5 (split mode):** every pane's box is still the whole
-  `#viewer-slot` (the host has one layout); the chrome slots (title,
-  view menu, rail, settings) are filled by the ACTIVE pane only; the
-  floating document title is portaled at window level and placed from the
-  pane root's box; the key-hold engine is window-level (one keyboard) and
-  captures the active pane's strip per hold; `PaneRequest.initial_zoom`
-  has no host-side source yet (a duplicated or split pane will supply it);
-  the focus request rides bubbling `pointerdown`/`focusin`, so a control
-  that stops propagation inside a background pane will need a capture
-  listener once two panes are visible.
 
-## Phase 4 bridges (what Phase 5 inherits)
+## Realm-wide state
 
-Phase 4 made every document session-owned. What remains realm-wide — each
-safe with one document pane per realm, and listed so split mode replaces it
-deliberately rather than discovering it:
+Every document is session-owned. What remains shared by the reader realm:
 
-- **Element ids.** The engine resolves a page's canvas and host by id
-  (`getElementById`), and the Rust page/thumbnail ids are page-numbered, not
-  pane-scoped. Two panes in one realm need pane-unique ids first.
+- **Element ids.** Page canvas and host ids are page-numbered, not
+  pane-scoped. The engine receives the elements at registration (pinned to
+  the session) and every swept canvas carries `data-engine-sid`, so two
+  panes never cross.
 - **Root backdrop.** `--pdf-paper` on `<html>` has one publisher: the
   presenting session (latest opened, or `presentSession` — a pane going
-  Ready presents). **Split mode (decided):** the workspace stands on the
+  Ready presents). In a split the workspace stands on the
   most recently focused PDF's colour — reflowable panes never present, and
   when the publisher retires the presentation hands over to the most
   recently presented live session instead of dropping the colour
   (`state.ts` `presented` MRU, engine smoke "survivor" assertions). A
   presenting session with nothing detected yet holds the previous colour.
-  Independent per-pane themes are in [Phase 7](#phase-7-workspace): each
+  In independent mode (see [Workspace appearance and blend](#workspace-appearance-and-blend)) each
   PDF now bakes and publishes its pane-local paper from its own pinned root;
   the MRU publisher remains the shared fallback only while independent mode
   is off.
@@ -387,7 +369,7 @@ deliberately rather than discovering it:
   no open awaits or disposes another pane's document, so split mode can
   open several documents at once without a realm-wide lock.
 
-## Phase 5: the split workspace
+## Split workspace
 
 - **Layout.** `PaneTree` is pure data: a leaf is a `PaneId`, a split has an
   axis, a clamped ratio (`MIN_RATIO`..`MAX_RATIO`, and a drag never leaves
@@ -432,7 +414,7 @@ deliberately rather than discovering it:
   and checks the Markdown pane reads on with the PDF's engine session and
   rasters gone.
 
-## Phase 6: document drag and drop
+## Document drag and drop
 
 - **One source.** The reader rail's third tab, **Library**
   (`host/library/`), beside Thumbnails and Outline: a compact tree of the
@@ -494,7 +476,7 @@ deliberately rather than discovering it:
   shows (none on All), as its Add menu would. The Shell paints a dashed
   "Drop to add to your library" hint over the window while an admissible
   drag hovers the library. Over the reader the listener does nothing.
-- **Fixed on the way (Phase 5 surfaces).** A pane's per-pane close sits
+- **Title-bar overlap.** A pane's per-pane close sits
   below the title bar when the pane's top meets it: the bar's root is
   hit-testable over the whole top 48 px. A single pane's close pauses the
   pane's owner before cleaning it: its views stay mounted in the host until
@@ -512,7 +494,7 @@ deliberately rather than discovering it:
   counts back to the PDF-only baseline), then PDF + Markdown + TXT disposed
   with every pane owner released.
 
-## Phase 7: workspace appearance and blend
+## Workspace appearance and blend
 
 - **Confirmed DOM contract:** a split does NOT use one physical paper surface.
   Every pane has its own `[data-pane-root]` box and each PDF page has its own
@@ -552,14 +534,9 @@ deliberately rather than discovering it:
   local papers while the MRU shared paper follows focus. Browser lifecycle
   Stage 13 uses real appearance controls on PDF | MD, asserts Dark MD + Dim
   then Light PDF, and injects divergent paper colours while blend is on to
-  prove the PDF colour cannot recolour MD or shared chrome/gutters. Final
-  Deep CI browser baseline and memory replay passed at `378686a`
-  (run `36791384490`). Manual screenshots are 1440×900 and 800×900
-  (`independent-theme-final-1440.png`, `independent-theme-final-800.png` in
-  the workspace); the split shows Light PDF | Dark Markdown while the global
-  reader backdrop/chrome remain Light.
+  prove the PDF colour cannot recolour MD or shared chrome/gutters.
 
-## Phase 8: split pane decoration
+## Split pane decoration
 
 - **Focus paint:** `.reader-bg.split-workspace [data-pane-id]` creates an
   isolated pane stacking context; the active entry receives the higher
@@ -587,15 +564,6 @@ deliberately rather than discovering it:
   10 px rounded box, outer pane shadow, 12 px inner gap and 12 px margins on
   every workspace edge, then confirms geometry restores when spacing resets.
   Host unit tests cover outer and shared-edge insets plus narrow bounds.
-  `node --check tests/browser/lifecycle.mjs`, `git diff --check`,
-  `tools/check-host-boundary.mjs` and `tools/check-session-ownership.mjs`
-  passed locally before this follow-up. The preceding implementation passed
-  CI and Deep CI on `0c7bf42`. The first follow-up CI (`86cca37`) passed Rust
-  tests/lint and found only rustfmt ordering/wrapping changes; those are
-  fixed in `3bb382e`. The updated CI passed on `d751609`, as did Deep CI's
-  browser lifecycle, Tauri boot and split memory replay. The lifecycle
-  assertions now verify all four 12 px outer margins, the 12 px inter-pane
-  gap, Theme-tab controls and title-bar menu placement.
 
 ## Fit, pane moves and grab
 
@@ -608,10 +576,8 @@ deliberately rather than discovering it:
   page flips, jumps). A tolerance absorbs the engine's whole-pixel rounding so
   no refit/re-render loop can start.
 - **Open at Fit Width (every format).** Markdown and text in the stream
-  seed the startup fit too (`startup_scale` no longer exempts the stream).
-  Before: `startup_scale` treated a PDF in the vertical strip
-  as the reflowable text stream and seeded 100% with no fit — what every new
-  split pane showed. The startup default is Fit Width, with a one-shot gate
+  seed the startup fit too (`startup_scale` does not exempt the stream).
+  The startup default is Fit Width, with a one-shot gate
   (`Settings::startup_fit_width`) moving installs that persisted the old
   default.
 - **Move items.** In a split the view menu shows Move Left/Up/Down/Right
@@ -658,17 +624,8 @@ deliberately rather than discovering it:
   the raw-raster scrub (and its CSS class, on the pane root) to that pane's
   sessions. The engine smoke asserts an untouched session renders nothing.
 
-## Known follow-ups (do not silently expand scope)
+## Known limitations
 
-- Measured on a2aa19a (Deep CI #242): the cover bake landed from the Shell's
-  bake page with no reader resident (`coverBake.covers` 1 in ~5 s,
-  `sawBakeFrame` true), `reusedWarmFrame` 4/4, `peakFrames` 2, idle
-  eviction in 2019 ms for a 2000 ms window with no forced removal,
-  rapid-reopen and same-page slope/drift 0 B, `samePageRecycledOpens` 9/10.
-  The e8b1d18 relay numbers recorded here before (`coverRelay.covers` 1 in
-  1 ms) were the reader's own cover write, not a relay: the relay's ask was
-  dropped before the shelf was registered, which is why the bake now waits
-  for admission in `src/app/bake.rs`.
 - The Shell accepts a digest from a recycled frame only while its kept
   session lives (recycle Pending/Disposing); a `BakeCover` ask is routed
   ahead of both the registry and the live gate, because a cold shelf asks
@@ -681,7 +638,7 @@ deliberately rather than discovering it:
 - Diagnostics hardening: a reader that existed but never reported a terminal
   digest should fail `atBaseline` closed (currently only "last digest says
   drained" is required).
-- Two app-lifetime pieces have had no caller since the split (8bbda0a) and
+- Two app-lifetime pieces have had no caller since the runtime split and
   are kept for the day they are re-armed, not deleted: `DragOverlay`
   (`crates/app-ui/src/components/app_overlays/drag_overlay.rs`, with no
   `tauri://drag-drop` listener in any runtime — drag-and-drop opening is

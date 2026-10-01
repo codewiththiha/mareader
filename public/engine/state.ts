@@ -19,7 +19,6 @@ import type {
   ThumbEntry,
 } from "./types";
 import { disposeScratch, releaseCanvas } from "./canvas";
-import { releaseWarm, type WarmPage } from "./warm";
 import { PAGE_SNAPSHOT_SELECTOR, TEXT_LAYER_SELECTOR } from "./dom-contract";
 
 // The engine's own API version, served as `PDFReader.version()`. It tracks the
@@ -240,9 +239,6 @@ export class EngineSession {
 
   /** LRU-capped thumbnail rasters (≤ THUMB_CACHE_MAX). */
   readonly thumbCache = new Map<number, ThumbEntry>();
-  /** Downscaled copies of settled pages that left the window (warm.ts owns
-   *  the bound, WARM_PAGE_MAX, and the drains). */
-  readonly warmPages = new Map<number, WarmPage>();
   readonly thumbTasks = new Map<string, RenderTask>();
   readonly thumbCancelled = new Set<string>();
   readonly thumbLive = new Map<string, { page: number }>();
@@ -436,7 +432,6 @@ export class EngineSession {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       this.sweepPdf();
-      releaseWarm(this);
       disposeScratch();
     }, SWEEP_IDLE_MS);
   }

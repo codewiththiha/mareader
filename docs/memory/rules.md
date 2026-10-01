@@ -48,10 +48,7 @@ bounds: canvas pool `POOL_MAX = 6` with oversized-return guard, LUT cache
 `LUT_CACHE_MAX = 8`, thumbnail cache `THUMB_CACHE_MAX`, zombies
 `MAX_ZOMBIES = 12` / 120 ms grace, page lane `PAGE_RENDER_LIMIT = 2` and
 realm cap `REALM_PAGE_LIMIT = 2`. Raw canvases survive `RAW_IDLE_MS = 2000`
-after a theme change and no longer. Warm page copies (`public/engine/warm.ts`)
-are capped at `WARM_PAGE_MAX = 10` per session, `WARM_EDGE_PX = 720` on the
-long side, and drain on teardown, quiesce, the idle sweep, pagehide and a
-hidden window. A new cache needs both numbers in the
+after a theme change and no longer. A new cache needs both numbers in the
 same comment.
 
 ## 6. Canvas release means zeroing the backing store

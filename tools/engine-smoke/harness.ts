@@ -498,7 +498,6 @@ interface RenderPayload { width: number; height: number; scale: number }
 interface ThumbPayload { width: number; height: number; scale: number }
 interface StatsPayload {
   pages: number;
-  thumbnailRasterBytesEst: number;
   thumbs: number;
   thumbLimit: number;
   thumbTasks: number;
@@ -573,7 +572,6 @@ interface PDFReaderHandle {
   ): Promise<EngineResult<ThumbPayload>>;
   cancelThumb(sid: number, canvasId: string): void;
   hasThumb(sid: number, page: number, scale: number): boolean;
-  blitThumb(sid: number, canvasId: string, page: number): boolean;
   setPaper(sid: number, hex: string): void;
   setPaperActive(sid: number, on: boolean): void;
   takePaperFrame(sid: number, canvasId: string): PaperFramePayload | null;
