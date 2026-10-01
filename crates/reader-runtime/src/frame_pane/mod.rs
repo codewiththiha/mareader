@@ -456,6 +456,8 @@ impl Inner {
         port.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         let lifecycle = self.lifecycle.get();
         let appearance = self.appearance.get();
+        // Read before borrowing the frame: the board walks every pane's.
+        let paper = board_paper();
         self.with_frame(nonce, move |frame| {
             frame.port = Some(port);
             frame.on_message = Some(on_message);
@@ -464,7 +466,7 @@ impl Inner {
                     boot.motion = appearance.motion.into();
                     boot.look = appearance.look;
                 }
-                boot.paper = board_paper();
+                boot.paper = paper;
                 frame.post(&HostToPane::Boot(Box::new(boot)));
             }
             frame.post(&HostToPane::Lifecycle { lifecycle });
@@ -704,7 +706,8 @@ impl Inner {
         incoming.reveal();
         let mirror = incoming.mirror.clone();
         let outline = incoming.outline.clone();
-        if let Some(old) = self.live.borrow_mut().replace(incoming) {
+        let old = self.live.borrow_mut().replace(incoming);
+        if let Some(old) = old {
             self.retire(old);
         }
         self.thumbs.reset();
