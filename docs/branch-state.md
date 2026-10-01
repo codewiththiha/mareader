@@ -607,7 +607,9 @@ deliberately rather than discovering it:
   active fit when the page under the reader turns out to differ (resume page,
   page flips, jumps). A tolerance absorbs the engine's whole-pixel rounding so
   no refit/re-render loop can start.
-- **Open at Fit Width.** `startup_scale` treated a PDF in the vertical strip
+- **Open at Fit Width (every format).** Markdown and text in the stream
+  seed the startup fit too (`startup_scale` no longer exempts the stream).
+  Before: `startup_scale` treated a PDF in the vertical strip
   as the reflowable text stream and seeded 100% with no fit — what every new
   split pane showed. The startup default is Fit Width, with a one-shot gate
   (`Settings::startup_fit_width`) moving installs that persisted the old
@@ -624,9 +626,10 @@ deliberately rather than discovering it:
   and controls are excluded. It shows the hand and drags its nearest
   scroller in both axes with a decaying fling; the press keeps its default
   so focus still follows a click. In a split a still hold of `HOLD_TO_LIFT_MS` (1.2 s, ring
-  animation in `styles/components/shell.css` matches) lifts the pane; release
-  over another pane swaps (`PaneTree::swap`) or docks beside an edge zone
-  (`PaneTree::dock`). Layout-only: sessions are untouched. Listeners live on
+  animation in `styles/components/shell.css` matches) lifts the pane. While held the
+  workspace is laid out without it (`lay_out` in `host/mod.rs`), so its
+  neighbours fill its place; a release docks it beside the target's nearest
+  edge (`PaneTree::dock`; a pane too small to halve is swapped instead). Layout-only: sessions are untouched. Listeners live on
   the entry element; the hold timer stands down for a detached entry and the
   fling is generation-guarded.
 - **macOS traffic lights.** tao re-applies `trafficLightPosition` from every
