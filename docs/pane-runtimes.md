@@ -9,6 +9,7 @@ never flickers.
 ```text
 Shell / workspace host (window document, never reloads)
 ├─ title bar, sidebar, settings, menus, dividers, layout
+├─ library view (rendered in the Shell, no frame of its own)
 ├─ settings + appearance: one source of truth, pushed to every pane
 ├─ pane A: <iframe pdf.html>    → pdf.wasm    (own realm, pdf.js, worker)
 ├─ pane B: <iframe reflow.html> → reflow.wasm (own realm, md/txt + themes)
@@ -144,8 +145,9 @@ and the other balances still hold across frames.
    the build and artifact checks.
 2. `FramePane` in the host: iframe, handshake, mirror chrome, commands,
    reveal on paint, dispose; the composition root switches to it.
-3. The Shell becomes the workspace host: the workspace mounts in the Shell
-   document and the reader frame is retired.
+3. The Shell becomes the workspace host: the workspace and the library
+   render in the Shell document, and the reader and library frames are
+   retired.
 4. Parity: thumbnails, shared paper and engine hooks, keyboard and focus,
    grab and lift, shields, the shared raster lane, the warm pane,
    diagnostics aggregation.
