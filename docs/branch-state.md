@@ -652,6 +652,11 @@ deliberately rather than discovering it:
   the global base (`PaneThemes::shown`) and a routed base switch writes the
   global base. Off is the earlier fully per-pane behaviour, which the
   lifecycle pane-theme stage exercises by turning the setting off.
+- Re-raster is per pane: `refreshTheme` (public/pdfEngine.ts) refreshes
+  only sessions whose own pipeline generation moved, and a routed slider
+  drag marks `data-appearance-scope` on the document so the engine scopes
+  the raw-raster scrub (and its CSS class, on the pane root) to that pane's
+  sessions. The engine smoke asserts an untouched session renders nothing.
 
 ## Known follow-ups (do not silently expand scope)
 
