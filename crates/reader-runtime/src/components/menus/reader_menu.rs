@@ -7,7 +7,7 @@ use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 
 use crate::host::contract::{OpenRequest, Placement};
-use crate::host::tree::SplitAxis;
+use crate::host::tree::{MoveDirection, SplitAxis};
 use crate::state::ZoomCommand;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
@@ -50,6 +50,16 @@ fn FitButton(
             pressed=pressed
             on_click=move || state.reader.viewer.fit.set(f)
         />
+    }
+}
+
+/// The Move item for `direction`: its arrow and its words.
+fn move_item(direction: MoveDirection) -> (IconName, &'static str) {
+    match direction {
+        MoveDirection::Left => (IconName::MoveLeft, "Move Left"),
+        MoveDirection::Right => (IconName::MoveRight, "Move Right"),
+        MoveDirection::Up => (IconName::MoveUp, "Move Up"),
+        MoveDirection::Down => (IconName::MoveDown, "Move Down"),
     }
 }
 
@@ -136,25 +146,54 @@ pub fn ReaderMenu(
                 {move || {
                     let full = !state.can_split.get();
                     let empty = state.launch.with(|launch| launch.path.is_empty());
+                    let moves = state.moves.get();
+                    // In a split the menu moves THIS pane through the layout
+                    // (the drop-free way to rearrange); with one pane there is
+                    // nothing to move, so it offers the splits instead.
+                    let placement = if moves.any() {
+                        MoveDirection::ALL
+                            .into_iter()
+                            .map(|direction| {
+                                let (icon, label) = move_item(direction);
+                                view! {
+                                    <MenuItem
+                                        icon=icon
+                                        label=label.to_string()
+                                        disabled=!moves.allows(direction)
+                                        on_click=move || {
+                                            open.set(false);
+                                            state.relocate.run(direction);
+                                        }
+                                    />
+                                }
+                            })
+                            .collect_view()
+                            .into_any()
+                    } else {
+                        view! {
+                            <MenuItem
+                                icon=IconName::SplitRight
+                                label="Split Right".to_string()
+                                disabled=full || empty
+                                on_click=move || {
+                                    open.set(false);
+                                    split_beside(state, SplitAxis::Horizontal);
+                                }
+                            />
+                            <MenuItem
+                                icon=IconName::SplitDown
+                                label="Split Down".to_string()
+                                disabled=full || empty
+                                on_click=move || {
+                                    open.set(false);
+                                    split_beside(state, SplitAxis::Vertical);
+                                }
+                            />
+                        }
+                        .into_any()
+                    };
                     view! {
-                        <MenuItem
-                            icon=IconName::SplitRight
-                            label="Split Right".to_string()
-                            disabled=full || empty
-                            on_click=move || {
-                                open.set(false);
-                                split_beside(state, SplitAxis::Horizontal);
-                            }
-                        />
-                        <MenuItem
-                            icon=IconName::SplitDown
-                            label="Split Down".to_string()
-                            disabled=full || empty
-                            on_click=move || {
-                                open.set(false);
-                                split_beside(state, SplitAxis::Vertical);
-                            }
-                        />
+                        {placement}
                         {tauri_bridge::has_tauri().then(|| view! {
                             <MenuItem
                                 icon=IconName::Open

@@ -35,7 +35,9 @@ pub mod contract;
 pub mod drag;
 pub mod drop_target;
 pub mod geometry;
+mod grab;
 pub mod library;
+pub mod lift;
 pub mod manager;
 pub mod model;
 pub mod theme;
@@ -55,13 +57,14 @@ use contract::{
     PaneSurface, Placement,
 };
 use drag::{DocumentDragSource, DragSession, DropIntent};
+use drop_target::Edge;
 use geometry::{DropGeometry, PaneGeometry};
 use manager::PaneManager;
 use model::{
     DocumentId, DocumentRef, MAX_PANES, PaneBounds, PaneError, PaneFormat, PaneId, PaneLifecycle,
     PaneRequest,
 };
-use tree::{LayoutNode, PaneTree, Side, SplitAxis, SplitId, TreeLayout};
+use tree::{LayoutNode, MoveDirection, PaneTree, Side, SplitAxis, SplitId, TreeLayout};
 
 /// Where the workspace puts a document. Explicit on purpose: there is no
 /// hidden "current document" deciding it.
@@ -130,6 +133,9 @@ pub struct ReaderHost {
     /// DOM reference. Idle whenever no drag is live, and cleared by the
     /// workspace's disposal.
     drag: RwSignal<DragSession>,
+    /// A pane lifted by a press-and-hold on its empty space (see [`lift`]):
+    /// plain data, `None` while nothing is held, cleared by disposal.
+    lift: RwSignal<Option<lift::Lift>>,
     /// The tree laid out over the slot: every pane's box and every
     /// divider's strip. What the bounds effect and the view both follow.
     layout: Memo<TreeLayout>,
@@ -157,6 +163,27 @@ pub struct ReaderHost {
 /// The layout tree retains unmodified split geometry; only the content
 /// viewport gets these decorated bounds, so its dimensions match the visible
 /// pane box.
+/// The tree laid out over `rect`. While a pane is lifted the workspace is
+/// laid out as if it were closed, so its neighbours fill its space and a
+/// drop target previews the box the drop really gives; the lifted pane
+/// keeps its own box (listed last, so every other pane wins a hit test) to
+/// ride the pointer from without re-measuring.
+fn lay_out(tree: &PaneTree, rect: PaneBounds, lifted: Option<PaneId>) -> TreeLayout {
+    let full = tree.layout(rect);
+    let Some(pane) = lifted.filter(|pane| tree.contains(*pane) && tree.len() > 1) else {
+        return full;
+    };
+    let mut rest = tree.clone();
+    if rest.remove(pane).is_err() {
+        return full;
+    }
+    let mut layout = rest.layout(rect);
+    if let Some(home) = full.bounds_of(pane) {
+        layout.panes.push((pane, home));
+    }
+    layout
+}
+
 fn inset_pane_bounds(bounds: PaneBounds, workspace: PaneBounds, gap: u8) -> PaneBounds {
     let full = gap as f64;
     let half = full / 2.0;
@@ -276,9 +303,14 @@ impl ReaderHost {
         let slot_size = RwSignal::new((0.0, 0.0));
         let tree = RwSignal::new(PaneTree::new());
         let drag = RwSignal::new(DragSession::Idle);
+        let lift = RwSignal::new(None::<lift::Lift>);
+        // Only WHICH pane is held reshapes the workspace, not every pointer
+        // move of the hold.
+        let lifted_pane = Memo::new(move |_| lift.with(|l| l.map(|l| l.pane)));
         let layout = Memo::new(move |_| {
             let (width, height) = slot_size.get();
-            tree.with(|tree| tree.layout(PaneBounds::filling(width, height)))
+            let lifted = lifted_pane.get();
+            tree.with(|tree| lay_out(tree, PaneBounds::filling(width, height), lifted))
         });
         let host = Self {
             session,
@@ -291,6 +323,7 @@ impl ReaderHost {
             tree,
             has_pdf,
             drag,
+            lift,
             layout,
             pending_ratio: StoredValue::new(None),
             classify,
@@ -433,8 +466,12 @@ impl ReaderHost {
     /// The tree laid out over the slot as measured now (untracked).
     fn layout_now(&self) -> TreeLayout {
         let rect = self.slot_rect();
+        let lifted = self
+            .lift
+            .try_with_untracked(|l| l.map(|l| l.pane))
+            .flatten();
         self.tree
-            .try_with_untracked(|tree| tree.layout(rect))
+            .try_with_untracked(|tree| lay_out(tree, rect, lifted))
             .unwrap_or_default()
     }
 
@@ -589,6 +626,16 @@ impl ReaderHost {
                 }
             }),
             can_split: Signal::derive(move || manager.placed().len() < MAX_PANES),
+            moves: Signal::derive(move || {
+                host.tree
+                    .try_with(|tree| tree.moves_for(id))
+                    .unwrap_or_default()
+            }),
+            relocate: Callback::new(move |direction| {
+                if let Some(Err(error)) = host.in_session(|| host.move_pane(id, direction)) {
+                    leptos::logging::warn!("[reader] pane move refused: {error:?}");
+                }
+            }),
         }
     }
 
@@ -615,6 +662,9 @@ impl ReaderHost {
             }
             PaneError::Layout(tree::TreeError::NoRoom(_)) => {
                 "There is no room to split this pane.".to_string()
+            }
+            PaneError::Layout(tree::TreeError::NoMove(_) | tree::TreeError::InvalidMove) => {
+                "That pane cannot move there.".to_string()
             }
             _ => "That document could not be placed.".to_string(),
         };
@@ -771,6 +821,85 @@ impl ReaderHost {
         Ok(())
     }
 
+    /// Move pane `id` one step toward `direction` through the layout. Only
+    /// the tree changes: every pane keeps its session, and the moved pane
+    /// keeps focus.
+    pub fn move_pane(&self, id: PaneId, direction: MoveDirection) -> Result<(), PaneError> {
+        self.reshape(|tree| tree.move_pane(id, direction))
+    }
+
+    /// Exchange two panes' places (a lifted pane dropped on another).
+    pub fn swap_panes(&self, a: PaneId, b: PaneId) -> Result<(), PaneError> {
+        self.reshape(|tree| tree.swap(a, b))
+    }
+
+    /// Re-dock pane `id` on `edge` of pane `target` (a lifted pane dropped
+    /// near another's edge).
+    pub fn dock_pane(&self, id: PaneId, target: PaneId, edge: Edge) -> Result<(), PaneError> {
+        let (axis, side) = edge.placement();
+        self.reshape(|tree| tree.dock(id, target, axis, side))
+    }
+
+    /// One layout-only change: applied to the tree (a refusal changes
+    /// nothing), then every pane is handed its new box.
+    fn reshape(
+        &self,
+        change: impl FnOnce(&mut PaneTree) -> Result<(), tree::TreeError>,
+    ) -> Result<(), PaneError> {
+        self.tree
+            .try_update(change)
+            .unwrap_or(Err(tree::TreeError::InvalidMove))
+            .map_err(PaneError::Layout)?;
+        self.relayout_now();
+        Ok(())
+    }
+
+    /// The lifted pane (tracked; `None` while nothing is held).
+    pub fn lifted(&self) -> Option<lift::Lift> {
+        self.lift.try_get().flatten()
+    }
+
+    /// Pick pane `id` up at slot point `at`. Only in a split (one pane has
+    /// nowhere to go) and never during a document drag. The lifted pane
+    /// takes focus: it is the one the reader is handling.
+    pub fn begin_lift(&self, id: PaneId, at: (f64, f64)) -> bool {
+        let busy = self.drag.try_with_untracked(DragSession::is_live) != Some(false);
+        if busy || untrack(|| self.pane_count()) < 2 {
+            return false;
+        }
+        let _ = self.set_active(id);
+        self.lift.try_set(Some(lift::Lift::new(id, at))).is_none()
+    }
+
+    /// The lifted pane's pointer moved to slot point `at`.
+    pub fn lift_move(&self, at: (f64, f64)) {
+        let layout = self.layout_now();
+        self.lift.try_update(|lift| {
+            if let Some(lift) = lift {
+                lift.moved(at, &layout);
+            }
+        });
+    }
+
+    /// Put the lifted pane down. With `commit`, a release over a target
+    /// relocates it (a refusal says why and changes nothing); without, or
+    /// over no target, it goes back where it was.
+    pub fn end_lift(&self, commit: bool) {
+        let Some(Some(lift)) = self.lift.try_update(Option::take) else {
+            return;
+        };
+        let Some(target) = lift.target.filter(|_| commit) else {
+            return;
+        };
+        let moved = self.in_session(|| match target {
+            lift::LiftTarget::Swap(other) => self.swap_panes(lift.pane, other),
+            lift::LiftTarget::Dock(other, edge) => self.dock_pane(lift.pane, other, edge),
+        });
+        if let Some(Err(error)) = moved {
+            self.refused(error);
+        }
+    }
+
     /// How many panes the workspace shows (tracked).
     pub fn pane_count(&self) -> usize {
         self.manager.placed().len()
@@ -800,6 +929,7 @@ impl ReaderHost {
         // with no drop. Untracked — the view is being torn down, and the
         // listeners go with the owner.
         self.drag.try_update_untracked(|session| session.cancel());
+        self.lift.try_update_untracked(|lift| *lift = None);
         self.manager.dispose_all();
         // The layout lets go of the panes with the manager. Untracked: the
         // workspace view is being torn down, not re-laid out.

@@ -51,6 +51,10 @@ pub struct ReaderContext {
     /// Whether the workspace would take another pane now (the view menu's
     /// split items follow it).
     pub can_split: Signal<bool>,
+    /// Which ways the host's layout could move this pane now.
+    pub moves: Signal<crate::host::tree::Moves>,
+    /// The host's move command for this pane (the view menu's Move items).
+    pub relocate: Callback<crate::host::tree::MoveDirection>,
 }
 
 /// Which ShellApi implementation backs this session: the hosted frame or the

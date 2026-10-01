@@ -547,6 +547,8 @@ mod tests {
             request_focus: Callback::new(|_| {}),
             open: Callback::new(|_| {}),
             can_split: Signal::stored(false),
+            moves: Signal::stored(Default::default()),
+            relocate: Callback::new(|_| {}),
         }
     }
 

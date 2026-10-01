@@ -27,6 +27,12 @@ pub enum IconName {
     SplitRight,
     /// A pane with a second one below it (split the workspace down).
     SplitDown,
+    /// An arrow out of a pane, one per side: the view menu's Move items,
+    /// which move the focused pane through a split workspace.
+    MoveLeft,
+    MoveRight,
+    MoveUp,
+    MoveDown,
     Continuous,
     HScroll,
     /// The 3-dash menu trigger (Readest-style).
@@ -188,6 +194,10 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
             "0 0 24 24",
             "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='M12 4v16'/>",
         ),
+        IconName::MoveLeft => ("0 0 24 24", "<path d='M19 12H5'/><path d='m11 6-6 6 6 6'/>"),
+        IconName::MoveRight => ("0 0 24 24", "<path d='M5 12h14'/><path d='m13 6 6 6-6 6'/>"),
+        IconName::MoveUp => ("0 0 24 24", "<path d='M12 19V5'/><path d='m6 11 6-6 6 6'/>"),
+        IconName::MoveDown => ("0 0 24 24", "<path d='M12 5v14'/><path d='m6 13 6 6 6-6'/>"),
         IconName::SplitDown => (
             "0 0 24 24",
             "<rect x='3' y='4' width='18' height='16' rx='2'/><path d='M3 12h18'/>",

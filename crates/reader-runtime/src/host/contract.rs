@@ -261,6 +261,11 @@ pub struct PaneEnv {
     /// Whether the workspace would take another pane now (a split the
     /// pane's menu may offer). Derived from the host's placement.
     pub can_split: Signal<bool>,
+    /// Which ways the layout could move this pane now (the view menu's Move
+    /// items). Derived from the host's tree.
+    pub moves: Signal<super::tree::Moves>,
+    /// Ask the host to move THIS pane one step through the layout.
+    pub relocate: Callback<super::tree::MoveDirection>,
 }
 
 /// Where a pane asks the host to put a document, relative to ITSELF: the

@@ -55,6 +55,62 @@ pub enum Side {
     After,
 }
 
+/// Which way a pane is moved through the layout (the view menu's Move
+/// items): toward that side of the workspace.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MoveDirection {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+impl MoveDirection {
+    /// Every direction, in the order the menu lists them.
+    pub const ALL: [MoveDirection; 4] = [
+        MoveDirection::Left,
+        MoveDirection::Up,
+        MoveDirection::Down,
+        MoveDirection::Right,
+    ];
+
+    /// The split axis the move crosses, and the side of such a split the
+    /// pane must START on for the move to go anywhere (`false`: `first`).
+    fn crossing(self) -> (SplitAxis, bool) {
+        match self {
+            MoveDirection::Left => (SplitAxis::Horizontal, true),
+            MoveDirection::Right => (SplitAxis::Horizontal, false),
+            MoveDirection::Up => (SplitAxis::Vertical, true),
+            MoveDirection::Down => (SplitAxis::Vertical, false),
+        }
+    }
+}
+
+/// Which moves the layout would carry out for one pane now.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Moves {
+    pub left: bool,
+    pub right: bool,
+    pub up: bool,
+    pub down: bool,
+}
+
+impl Moves {
+    pub fn allows(self, direction: MoveDirection) -> bool {
+        match direction {
+            MoveDirection::Left => self.left,
+            MoveDirection::Right => self.right,
+            MoveDirection::Up => self.up,
+            MoveDirection::Down => self.down,
+        }
+    }
+
+    pub fn any(self) -> bool {
+        self.left || self.right || self.up || self.down
+    }
+}
+
 /// A split's identity, for the divider that resizes it. Minted by the tree
 /// from a monotonic counter and never reused.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize)]
@@ -193,6 +249,52 @@ impl LayoutNode {
         Some(successor)
     }
 
+    /// The route from this node down to `pane`: each split passed, as its
+    /// axis and whether the route takes its `second` child.
+    fn route_to(&self, pane: PaneId) -> Option<Vec<(SplitAxis, bool)>> {
+        match self {
+            LayoutNode::Leaf(id) => (*id == pane).then(Vec::new),
+            LayoutNode::Split(split) => {
+                let (side, rest) = if let Some(rest) = split.first.route_to(pane) {
+                    (false, rest)
+                } else {
+                    (true, split.second.route_to(pane)?)
+                };
+                let mut route = Vec::with_capacity(rest.len() + 1);
+                route.push((split.axis, side));
+                route.extend(rest);
+                Some(route)
+            }
+        }
+    }
+
+    fn at(&self, sides: &[bool]) -> Option<&LayoutNode> {
+        match (sides.split_first(), self) {
+            (None, node) => Some(node),
+            (Some((side, rest)), LayoutNode::Split(split)) => {
+                let child = if *side { &split.second } else { &split.first };
+                child.at(rest)
+            }
+            (Some(_), LayoutNode::Leaf(_)) => None,
+        }
+    }
+
+    fn at_mut(&mut self, sides: &[bool]) -> Option<&mut LayoutNode> {
+        match sides.split_first() {
+            None => Some(self),
+            Some((side, rest)) => match self {
+                LayoutNode::Split(split) => {
+                    if *side {
+                        split.second.at_mut(rest)
+                    } else {
+                        split.first.at_mut(rest)
+                    }
+                }
+                LayoutNode::Leaf(_) => None,
+            },
+        }
+    }
+
     fn lay_out(&self, rect: PaneBounds, out: &mut TreeLayout) {
         match self {
             LayoutNode::Leaf(id) => out.panes.push((*id, rect)),
@@ -324,6 +426,11 @@ pub enum TreeError {
     /// A drop asked to open in a pane that already shows a document (only
     /// an empty pane takes a document in place from a drop).
     Occupied(PaneId),
+    /// Nothing lies that way from the pane (or a pane was asked to trade
+    /// places with itself).
+    NoMove(PaneId),
+    /// A move between subtrees that are not disjoint.
+    InvalidMove,
 }
 
 impl std::fmt::Display for TreeError {
@@ -336,8 +443,22 @@ impl std::fmt::Display for TreeError {
             TreeError::InvalidRatio => write!(f, "a split ratio must be a finite number"),
             TreeError::NoRoom(id) => write!(f, "{id} has no room for another pane"),
             TreeError::Occupied(id) => write!(f, "{id} already shows a document"),
+            TreeError::NoMove(id) => write!(f, "{id} cannot move that way"),
+            TreeError::InvalidMove => write!(f, "those panes cannot trade places"),
         }
     }
+}
+
+/// What one move exchanges (see `PaneTree::move_plan`).
+struct MovePlan {
+    /// The route to the crossed split.
+    crossed: Vec<bool>,
+    /// The route to the subtree that moves with the pane.
+    mine: Vec<bool>,
+    /// The route to the subtree it trades places with.
+    other: Vec<bool>,
+    /// Whether the two are the crossed split's own children.
+    at_crossing: bool,
 }
 
 /// The workspace layout. Empty, one pane, or a tree of splits.
@@ -436,6 +557,130 @@ impl PaneTree {
             .and_then(|root| root.remove_under(pane))
             .map(Some)
             .ok_or(TreeError::UnknownPane(pane))
+    }
+
+    /// The two subtrees a move of `pane` toward `direction` exchanges, as
+    /// routes of sides from the root, and whether the exchange happens at
+    /// the crossed split itself (`true`) or deeper, between matching cells.
+    ///
+    /// The crossed split is the NEAREST ancestor along the move's axis that
+    /// has `pane` on the side the move leaves. Its other side is matched
+    /// against the route from that split down to `pane`, level by level,
+    /// while the other side is split the same way: a 2×2 grid swaps one
+    /// cell for the cell beside it, while a stacked pair moving past one
+    /// tall pane moves as a column and the tall pane takes its place.
+    fn move_plan(&self, pane: PaneId, direction: MoveDirection) -> Option<MovePlan> {
+        let root = self.root.as_ref()?;
+        let route = root.route_to(pane)?;
+        let (axis, leaving) = direction.crossing();
+        let crossed = route
+            .iter()
+            .rposition(|(step_axis, side)| *step_axis == axis && *side == leaving)?;
+        let mut mine: Vec<bool> = route[..=crossed].iter().map(|(_, side)| *side).collect();
+        let mut other = mine.clone();
+        *other.last_mut().expect("the crossed split is on the route") = !leaving;
+        let mut depth = 0;
+        for (step_axis, side) in &route[crossed + 1..] {
+            match root.at(&other) {
+                Some(LayoutNode::Split(split)) if split.axis == *step_axis => {
+                    mine.push(*side);
+                    other.push(*side);
+                    depth += 1;
+                }
+                _ => break,
+            }
+        }
+        Some(MovePlan {
+            crossed: route[..crossed].iter().map(|(_, side)| *side).collect(),
+            mine,
+            other,
+            at_crossing: depth == 0,
+        })
+    }
+
+    /// Which moves [`PaneTree::move_pane`] would carry out for `pane`.
+    pub fn moves_for(&self, pane: PaneId) -> Moves {
+        let can = |direction| self.move_plan(pane, direction).is_some();
+        Moves {
+            left: can(MoveDirection::Left),
+            right: can(MoveDirection::Right),
+            up: can(MoveDirection::Up),
+            down: can(MoveDirection::Down),
+        }
+    }
+
+    /// Move `pane` one step toward `direction` (see `move_plan` for which
+    /// subtrees trade places). When whole sides of a split trade places the
+    /// split's ratio flips too, so each side keeps the size it had; a swap
+    /// between matching cells keeps every ratio. Refused (nothing changes)
+    /// when there is nothing that way.
+    pub fn move_pane(&mut self, pane: PaneId, direction: MoveDirection) -> Result<(), TreeError> {
+        let plan = self
+            .move_plan(pane, direction)
+            .ok_or(TreeError::NoMove(pane))?;
+        self.swap_nodes(&plan.mine, &plan.other)?;
+        if plan.at_crossing
+            && let Some(LayoutNode::Split(split)) = self
+                .root
+                .as_mut()
+                .and_then(|root| root.at_mut(&plan.crossed))
+        {
+            split.ratio = (1.0 - split.ratio).clamp(MIN_RATIO, MAX_RATIO);
+        }
+        Ok(())
+    }
+
+    /// Exchange two panes' places; every split keeps its shape and ratio.
+    pub fn swap(&mut self, a: PaneId, b: PaneId) -> Result<(), TreeError> {
+        if a == b {
+            return Err(TreeError::NoMove(a));
+        }
+        let root = self.root.as_ref().ok_or(TreeError::UnknownPane(a))?;
+        let to_sides = |pane| {
+            root.route_to(pane)
+                .map(|route| route.into_iter().map(|(_, side)| side).collect::<Vec<_>>())
+                .ok_or(TreeError::UnknownPane(pane))
+        };
+        let (route_a, route_b) = (to_sides(a)?, to_sides(b)?);
+        self.swap_nodes(&route_a, &route_b)
+    }
+
+    /// Take `pane` out of its place and put it on `side` of `target` along
+    /// `axis`, halving `target`'s box. The pane keeps its id (and so its
+    /// session); only the layout changes.
+    pub fn dock(
+        &mut self,
+        pane: PaneId,
+        target: PaneId,
+        axis: SplitAxis,
+        side: Side,
+    ) -> Result<(), TreeError> {
+        if pane == target {
+            return Err(TreeError::NoMove(pane));
+        }
+        if !self.contains(target) {
+            return Err(TreeError::UnknownPane(target));
+        }
+        let before = self.clone();
+        self.remove(pane)?;
+        if let Err(error) = self.split(target, axis, side, pane) {
+            *self = before;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Exchange the subtrees at two disjoint routes.
+    fn swap_nodes(&mut self, a: &[bool], b: &[bool]) -> Result<(), TreeError> {
+        let root = self.root.as_mut().ok_or(TreeError::InvalidMove)?;
+        let first = root.at(a).cloned().ok_or(TreeError::InvalidMove)?;
+        let second = root.at(b).cloned().ok_or(TreeError::InvalidMove)?;
+        if a.starts_with(b) || b.starts_with(a) {
+            return Err(TreeError::InvalidMove);
+        }
+        *root.at_mut(a).ok_or(TreeError::InvalidMove)? = second;
+        *root.at_mut(b).ok_or(TreeError::InvalidMove)? = first;
+        Ok(())
     }
 
     /// The ratio of split `id`.
@@ -985,5 +1230,118 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Left column A over B, beside a tall C on the right.
+    fn column_and_tall() -> PaneTree {
+        let mut tree = PaneTree::new();
+        tree.set_root(p(1)).unwrap();
+        tree.split(p(1), SplitAxis::Horizontal, Side::After, p(3))
+            .unwrap();
+        tree.split(p(1), SplitAxis::Vertical, Side::After, p(2))
+            .unwrap();
+        tree
+    }
+
+    fn boxes(tree: &PaneTree) -> Vec<(PaneId, (f64, f64, f64, f64))> {
+        tree.layout(rect(1000.0, 800.0))
+            .panes
+            .into_iter()
+            .map(|(id, b)| (id, (b.x, b.y, b.width, b.height)))
+            .collect()
+    }
+
+    #[test]
+    fn a_stacked_pair_moves_past_a_tall_pane_as_a_column() {
+        let mut tree = column_and_tall();
+        assert!(tree.moves_for(p(1)).right);
+        assert!(!tree.moves_for(p(1)).left);
+        tree.move_pane(p(1), MoveDirection::Right).unwrap();
+        check(&tree, Some(p(1)));
+        let laid = boxes(&tree);
+        // The tall pane takes the left column; the pair keeps its order.
+        assert_eq!(laid[0], (p(3), (0.0, 0.0, 500.0, 800.0)));
+        assert_eq!(laid[1], (p(1), (500.0, 0.0, 500.0, 400.0)));
+        assert_eq!(laid[2], (p(2), (500.0, 400.0, 500.0, 400.0)));
+    }
+
+    #[test]
+    fn a_tall_pane_moves_past_a_stacked_pair_as_a_whole() {
+        let mut tree = column_and_tall();
+        assert!(tree.moves_for(p(3)).left);
+        assert!(!tree.moves_for(p(3)).up && !tree.moves_for(p(3)).down);
+        tree.move_pane(p(3), MoveDirection::Left).unwrap();
+        check(&tree, Some(p(3)));
+        assert_eq!(tree.leaves(), vec![p(3), p(1), p(2)]);
+    }
+
+    #[test]
+    fn moving_down_swaps_the_two_panes_of_a_column() {
+        let mut tree = column_and_tall();
+        assert!(tree.moves_for(p(1)).down);
+        assert!(!tree.moves_for(p(2)).down);
+        tree.move_pane(p(1), MoveDirection::Down).unwrap();
+        check(&tree, Some(p(1)));
+        assert_eq!(tree.leaves(), vec![p(2), p(1), p(3)]);
+    }
+
+    #[test]
+    fn in_a_grid_only_the_matching_cell_trades_places() {
+        // A over B on the left, C over D on the right.
+        let mut tree = column_and_tall();
+        tree.split(p(3), SplitAxis::Vertical, Side::After, p(4))
+            .unwrap();
+        tree.move_pane(p(1), MoveDirection::Right).unwrap();
+        check(&tree, Some(p(1)));
+        assert_eq!(tree.leaves(), vec![p(3), p(2), p(1), p(4)]);
+        let laid = boxes(&tree);
+        assert_eq!(laid[2], (p(1), (500.0, 0.0, 500.0, 400.0)));
+    }
+
+    #[test]
+    fn a_whole_side_move_keeps_each_side_its_size() {
+        let mut tree = column_and_tall();
+        let Some(LayoutNode::Split(root)) = tree.root() else {
+            panic!("a split root");
+        };
+        let id = root.id;
+        tree.set_ratio(id, 0.3).unwrap();
+        tree.move_pane(p(1), MoveDirection::Right).unwrap();
+        let laid = boxes(&tree);
+        assert_eq!(laid[0], (p(3), (0.0, 0.0, 700.0, 800.0)));
+        assert_eq!(laid[1].1.2, 300.0);
+    }
+
+    #[test]
+    fn a_move_with_nowhere_to_go_changes_nothing() {
+        let mut tree = column_and_tall();
+        let before = tree.clone();
+        assert_eq!(
+            tree.move_pane(p(3), MoveDirection::Right),
+            Err(TreeError::NoMove(p(3)))
+        );
+        assert_eq!(tree, before);
+        let mut single = PaneTree::new();
+        single.set_root(p(1)).unwrap();
+        assert!(!single.moves_for(p(1)).any());
+    }
+
+    #[test]
+    fn swapping_and_docking_keep_every_pane_once() {
+        let mut tree = column_and_tall();
+        tree.swap(p(2), p(3)).unwrap();
+        check(&tree, Some(p(1)));
+        assert_eq!(tree.leaves(), vec![p(1), p(3), p(2)]);
+        assert_eq!(tree.swap(p(2), p(2)), Err(TreeError::NoMove(p(2))));
+        tree.dock(p(1), p(2), SplitAxis::Vertical, Side::After)
+            .unwrap();
+        check(&tree, Some(p(1)));
+        assert_eq!(tree.leaves(), vec![p(3), p(2), p(1)]);
+        let before = tree.clone();
+        assert!(
+            tree.dock(p(1), p(1), SplitAxis::Vertical, Side::After)
+                .is_err()
+        );
+        assert_eq!(tree, before);
     }
 }

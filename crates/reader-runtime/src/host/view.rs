@@ -135,7 +135,11 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
         // keyboard focus anywhere in the pane makes it active before any
         // control inside can swallow the event.
         let entry_ref: NodeRef<html::Div> = NodeRef::new();
-        entry_ref.on_load(move |entry| capture_focus(&entry.into(), manager, id));
+        entry_ref.on_load(move |entry| {
+            let entry: web_sys::Element = entry.into();
+            capture_focus(&entry, manager, id);
+            super::grab::install(&entry, host, id);
+        });
         let bounds = move || {
             manager
                 .bounds_of(id)
@@ -145,10 +149,27 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
         // below the bar, which would otherwise take their presses.
         let under_bar = Signal::derive(move || bounds().is_none_or(|b| b.y < TITLE_BAR_PX));
         let corner = move || if under_bar.get() { "top-14" } else { "top-2" };
+        // While lifted, the entry rides the pointer as a card: shrunk about
+        // the point it was picked up by, offset by how far the pointer went.
+        let lifted = move || host.lifted().filter(|lift| lift.pane == id);
+        let ride = move || {
+            lifted()
+                .map(|l| format!("{}px {}px", l.at.0 - l.origin.0, l.at.1 - l.origin.1))
+                .unwrap_or_default()
+        };
+        let pivot = move || {
+            lifted()
+                .zip(bounds())
+                .map(|(l, b)| format!("{}px {}px", l.origin.0 - b.x, l.origin.1 - b.y))
+                .unwrap_or_default()
+        };
         view! {
             <div
                 node_ref=entry_ref
                 class="pane-entry group absolute"
+                class=("pane-lifted", move || lifted().is_some())
+                style:translate=ride
+                style:transform-origin=pivot
                 style:left=move || bounds().map_or("0px".to_string(), |b| format!("{}px", b.x))
                 style:top=move || bounds().map_or("0px".to_string(), |b| format!("{}px", b.y))
                 style:width=move || {
@@ -288,6 +309,7 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                             children=divider
                         />
                         {move || host.drag_preview().map(preview_view)}
+                        {move || host.lifted().map(|lift| lift_view(manager, lift))}
                         // The pending drop in words, for assistive technology:
                         // the text changes only when the target does.
                         <div class="sr-only" role="status" aria-live="polite" data-drop-announce="">
@@ -338,6 +360,41 @@ fn preview_view(preview: super::drag::Preview) -> impl IntoView {
                 <span class="max-w-full truncate">{preview.name}</span>
                 <span class="text-xs font-normal text-muted">{preview.label}</span>
             </div>
+        </div>
+    }
+}
+
+/// The lifted pane's mark on the workspace: the box it would take if
+/// released now, with what the release does. Its old place is not held
+/// open — the workspace is laid out without it while it is held — so the
+/// neighbours have already filled it. Geometry only, never taking a pointer.
+fn lift_view(manager: PaneManager, lift: super::lift::Lift) -> impl IntoView {
+    let px = |v: f64| format!("{v}px");
+    let target = lift.target.and_then(|target| {
+        let rect = target.predicted_rect(manager.bounds_of(target.pane())?);
+        Some((target, rect))
+    });
+    view! {
+        {target.map(|(target, rect)| view! {
+            <div
+                aria-hidden="true"
+                data-lift-target=target.word()
+                data-lift-pane=target.pane().get()
+                class=format!(
+                    "pane-lift-target pointer-events-none absolute flex items-center \
+                     justify-center {}",
+                    layers::CONTROLS,
+                )
+                style:left=px(rect.x)
+                style:top=px(rect.y)
+                style:width=px(rect.width)
+                style:height=px(rect.height)
+            >
+                <span class="pane-lift-label">{target.describe()}</span>
+            </div>
+        })}
+        <div class="sr-only" role="status" aria-live="polite" data-lift-announce="">
+            {lift.target.map_or("Pane lifted", |target| target.describe())}
         </div>
     }
 }

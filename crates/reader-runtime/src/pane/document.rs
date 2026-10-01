@@ -116,6 +116,8 @@ impl DocumentPane {
                 chrome: env.chrome,
                 open: env.open,
                 can_split: env.can_split,
+                moves: env.moves,
+                relocate: env.relocate,
             };
             let status = reader.document.status;
             let error = reader.document.error;
