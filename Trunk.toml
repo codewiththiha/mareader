@@ -65,6 +65,8 @@ ignore = [
     "./target",
     "./dist-reader",
     "./dist-library",
+    "./dist-pdf",
+    "./dist-reflow",
     # Trees that move without a source edit: npm's store during an
     # install, and the freshness manifest dev.mjs rewrites after each
     # canonical build. Ignoring them keeps those events out of the loop;

@@ -105,6 +105,12 @@ pub fn open_path(ctx: crate::context::ReaderContext, path: String, placement: Pl
         crate::frame::open_path_in_frame(ctx, path, placement);
         return;
     }
+    // A pane frame holds no library either: the workspace host resolves the
+    // path and places the open.
+    if ctx.api == crate::context::ApiHandle::Pane {
+        crate::pane_frame::open_path(path, placement);
+        return;
+    }
     let launch = ctx
         .api
         .resolve_launch(&path)

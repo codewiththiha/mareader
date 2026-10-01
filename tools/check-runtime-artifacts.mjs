@@ -1,7 +1,7 @@
 // The canonical frontend build's artifact contract.
 //
-// `tools/build-dist.sh` produces THREE artifacts — the shell page plus the two
-// runtime artifacts the shell dynamically imports — and merges them into
+// `tools/build-dist.sh` produces the shell page plus every runtime artifact
+// the shell and its workspace load — and merges them into
 // `dist/`. Tauri packages exactly that directory
 // (`build.frontendDist: "../dist"`), and so does the browser suite's server.
 // The failure this check exists for is the one that shipped a blank window:
@@ -51,6 +51,14 @@ const REQUIRED = [
   ["dist/library_bg.wasm", "the Library Runtime wasm module", RUNTIME_FLOOR_BYTES],
   ["dist/reader.js", "the Reader Runtime artifact (imported by the shell)", RUNTIME_FLOOR_BYTES],
   ["dist/reader_bg.wasm", "the Reader Runtime wasm module", RUNTIME_FLOOR_BYTES],
+  // The pane runtimes: the workspace host loads one frame per reader pane
+  // (docs/pane-runtimes.md) — `pdf.html` for a PDF, `reflow.html` for text.
+  ["dist/pdf.html", "the PDF pane page", 0],
+  ["dist/pdf.js", "the PDF pane artifact", RUNTIME_FLOOR_BYTES],
+  ["dist/pdf_bg.wasm", "the PDF pane wasm module", RUNTIME_FLOOR_BYTES],
+  ["dist/reflow.html", "the text pane page", 0],
+  ["dist/reflow.js", "the text pane artifact", RUNTIME_FLOOR_BYTES],
+  ["dist/reflow_bg.wasm", "the text pane wasm module", RUNTIME_FLOOR_BYTES],
   // Shared assets. The shell page links these and both runtimes fetch the
   // engine bundles at session start; a missing one is a runtime failure with
   // the same shape as a missing runtime artifact.

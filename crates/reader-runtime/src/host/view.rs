@@ -138,7 +138,6 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
         entry_ref.on_load(move |entry| {
             let entry: web_sys::Element = entry.into();
             capture_focus(&entry, manager, id);
-            super::grab::install(&entry, host, id);
         });
         let bounds = move || {
             manager
@@ -168,6 +167,9 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                 node_ref=entry_ref
                 class="pane-entry group absolute"
                 class=("pane-lifted", move || lifted().is_some())
+                // A closed pane finishing its teardown: out of sight and out
+                // of reach, but still in the document (see `entries`).
+                class=("pane-retiring", move || host.is_retiring(id))
                 style:translate=ride
                 style:transform-origin=pivot
                 style:left=move || bounds().map_or("0px".to_string(), |b| format!("{}px", b.x))
@@ -244,46 +246,12 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                 class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
                 class=("independent-themes", move || host.themes.independent().get())
                 class=("split-workspace", move || host.pane_count() > 1)
-                style=move || {
-                    host.session.settings.with(|s| {
-                        let workspace = &s.workspace;
-                        let color = workspace
-                            .pane_outline_color
-                            .resolve(&workspace.pane_outline_custom)
-                            .unwrap_or("var(--color-accent)");
-                        let radius = if workspace.pane_corners == reader_core::settings::PaneCorners::Rounded {
-                            "10px"
-                        } else {
-                            "0px"
-                        };
-                        let shadow = if workspace.pane_shadow {
-                            "0 5px 18px rgb(0 0 0 / 0.24)"
-                        } else {
-                            "none"
-                        };
-                        format!(
-                            "--pane-outline-width:{}px;--pane-outline-color:{color};\
-                             --pane-corner-radius:{radius};--pane-box-shadow:{shadow}",
-                            workspace.pane_outline_width
-                        )
-                    })
-                }
-                class=("blend", move || {
-                    // The blend class swaps the backdrop AND the page hosts
-                    // onto the engine's one computed paper colour
-                    // (styles/components/shell.css, styles/page_host.css),
-                    // killing the fractional-edge rim a second paper colour
-                    // under the canvas used to show. The switch is a
-                    // WORKSPACE fact — blend mode exists for raster pages,
-                    // and the colour it publishes is the split's shared
-                    // backdrop: as long as some pane holds a PDF, the
-                    // reflowable panes beside it stand on that PDF's paper
-                    // too (their own paper is per-pane, see the pane root's
-                    // data-format rules), and focusing one — which has no
-                    // page colour to detect — keeps the colour instead of
-                    // dropping the whole workspace back to the theme paper.
-                    settings.with(|st| st.layout.blend_mode) && host.has_pdf()
-                })
+                style=move || host.workspace_look().style
+                // The blend class swaps the backdrop AND the page hosts onto
+                // the engine's one computed paper colour (see
+                // `ReaderHost::workspace_look`).
+                class=("blend", move || host.workspace_look().blend)
+                class=("pane-shield", move || host.shielded())
             >
                 <div class="relative flex min-h-0 flex-1">
                     // DOCKED: the rail is a flex sibling of `<main>`, so the
@@ -297,7 +265,7 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                         class=("no-page-shadow", move || !settings.with(|st| st.layout.page_shadow))
                     >
                         <For
-                            each=move || manager.placed()
+                            each=move || host.entries()
                             key=|id| *id
                             children=pane_entry
                         />
@@ -487,6 +455,7 @@ fn divider_view(host: ReaderHost, split: SplitId) -> impl IntoView {
                 {
                     let _ = el.set_pointer_capture(ev.pointer_id());
                 }
+                host.resizing.set(true);
             }
             on:pointermove=move |ev| {
                 let (Some((left, top)), Some(divider)) = (origin.get_value(), current_untracked())
@@ -498,8 +467,14 @@ fn divider_view(host: ReaderHost, split: SplitId) -> impl IntoView {
                     host.drag_divider(split, ratio);
                 }
             }
-            on:pointerup=move |_| origin.set_value(None)
-            on:pointercancel=move |_| origin.set_value(None)
+            on:pointerup=move |_| {
+                origin.set_value(None);
+                host.resizing.set(false);
+            }
+            on:pointercancel=move |_| {
+                origin.set_value(None);
+                host.resizing.set(false);
+            }
         >
             <div
                 aria-hidden="true"

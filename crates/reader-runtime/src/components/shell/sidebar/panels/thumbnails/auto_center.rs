@@ -20,7 +20,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use super::geometry::{CELL_W, THUMB_SCALE};
+use super::geometry::CELL_W;
 
 /// Debounce for the auto-center glide: the scroll fires once this long after
 /// page writes have settled.
@@ -128,18 +128,10 @@ fn glide_verdict(
 
 /// Warm the thumbnail cache around the page the glide just centered on: the
 /// two before and eight after cover the next flick of scrolling. Warms THIS
-/// pane's session only, and stops the moment the pane stops holding it (a
-/// reopen, a suspend, the dispose).
+/// pane's frame only; the frame's engine queue drops the work when the pane
+/// stops holding the document.
 fn prefetch_neighborhood(pane: crate::pane::handle::PaneHandle, page: u32) {
-    let pdf = pane.pdf();
-    leptos::task::spawn_local(async move {
-        for p in page.saturating_sub(2)..=page + 8 {
-            if !pdf.still_current(&pane) {
-                return;
-            }
-            pdf.prefetch_thumb(p, THUMB_SCALE).await;
-        }
-    });
+    crate::frame_pane::prefetch_thumbs(pane.id(), page.saturating_sub(2)..=page + 8);
 }
 
 /// One frame after the panel opens: re-measure (the aside now has real

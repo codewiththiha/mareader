@@ -510,8 +510,110 @@ pub(crate) fn snapshot_json() -> String {
     // one field instead of re-deriving the rule on the consumer side. The
     // consumer (the Shell) ANDs this with its own manager facts: a drained
     // reader digest means nothing while the manager still holds a session.
-    value["atBaseline"] = serde_json::Value::Bool(snap.at_baseline());
+    let (live, finals) = crate::frame_pane::digests();
+    let at_baseline = merge_pane_digests(&mut value, snap.at_baseline(), &live, &finals);
+    value["atBaseline"] = serde_json::Value::Bool(at_baseline);
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
+}
+
+/// A JSON number, integral when it is one (the counters stay integers).
+fn number(n: f64) -> serde_json::Value {
+    if n.fract() == 0.0 && n >= 0.0 {
+        serde_json::json!(n as u64)
+    } else {
+        serde_json::json!(n)
+    }
+}
+
+/// The document counters a pane frame's realm keeps, summed into the
+/// host's digest. (Pane create/dispose are the host's own books.)
+const PANE_COUNTERS: &[&str] = &[
+    "readerRuntimesCreated",
+    "readerDisposesCompleted",
+    "virtualizersCreated",
+    "virtualizersDisposed",
+];
+
+/// The gauges a live pane frame reports, summed into the host's digest.
+const PANE_GAUGES: &[&str] = &[
+    "virtualizerLive",
+    "liveWindowItems",
+    "retainedVirtualItems",
+    "virtualizerListeners",
+    "virtualizerObservers",
+    "virtualizerTimers",
+    "lookaheadSamplesActive",
+];
+
+/// Fold the pane frames' digests into the host's (docs/pane-runtimes.md,
+/// "Diagnostics"): counters over live panes and the final digests of
+/// disposed ones, gauges over live panes, the engine halves summed. The
+/// verdict holds only when the host AND every pane realm report baseline.
+fn merge_pane_digests(
+    value: &mut serde_json::Value,
+    host_baseline: bool,
+    live: &[String],
+    finals: &[String],
+) -> bool {
+    use serde_json::Value;
+    let mut baseline = host_baseline;
+    let parse = |json: &String| serde_json::from_str::<Value>(json).ok();
+    let live: Vec<Value> = live.iter().filter_map(parse).collect();
+    let finals: Vec<Value> = finals.iter().filter_map(parse).collect();
+    if live.is_empty() && finals.is_empty() {
+        return baseline;
+    }
+    let add = |value: &mut Value, key: &str, pane: &Value| {
+        let sum = value[key].as_f64().unwrap_or(0.0) + pane[key].as_f64().unwrap_or(0.0);
+        value[key] = number(sum);
+    };
+    for (pane, is_live) in live
+        .iter()
+        .map(|p| (p, true))
+        .chain(finals.iter().map(|p| (p, false)))
+    {
+        baseline &= pane["atBaseline"].as_bool().unwrap_or(false);
+        for key in PANE_COUNTERS {
+            add(value, key, pane);
+        }
+        if is_live {
+            for key in PANE_GAUGES {
+                add(value, key, pane);
+            }
+            if pane["readerRuntimeLive"].as_bool() == Some(true) {
+                value["readerRuntimeLive"] = Value::Bool(true);
+            }
+        }
+        if let Some(engine) = pane["engine"].as_object() {
+            let merged = &mut value["engine"];
+            if !merged.is_object() {
+                *merged = Value::Object(serde_json::Map::new());
+            }
+            for (key, field) in engine {
+                let slot = &mut merged[key];
+                match field {
+                    Value::Bool(on) => *slot = Value::Bool(slot.as_bool().unwrap_or(false) || *on),
+                    Value::Number(n) => {
+                        let sum = slot.as_f64().unwrap_or(0.0) + n.as_f64().unwrap_or(0.0);
+                        *slot = number(sum);
+                    }
+                    other if slot.is_null() => *slot = other.clone(),
+                    _ => {}
+                }
+            }
+        }
+    }
+    // The page the digest names is the focused pane's (the first live one).
+    if let Some(page) = live.first().and_then(|p| p["readerPage"].as_u64()) {
+        value["readerPage"] = serde_json::json!(page);
+    }
+    let created = value["virtualizersCreated"].as_u64().unwrap_or(0);
+    let disposed = value["virtualizersDisposed"].as_u64().unwrap_or(0);
+    if disposed > created {
+        value["accountingConsistent"] = Value::Bool(false);
+        baseline = false;
+    }
+    baseline
 }
 
 /// Push the digest across the boundary NOW. Called on the moments the

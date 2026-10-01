@@ -1,9 +1,9 @@
 //! A single thumbnail cell.
 //!
-//! Split out of `panel.rs`: the cell owns its own render lifecycle
-//! (engine registration, the cached-blit fast path, the skeleton crossfade and
-//! cancellation on unmount) and is the only place that talks to the engine's
-//! thumbnail lane. The panel above it only decides WHICH cells exist.
+//! Split out of `panel.rs`: the cell owns its own render lifecycle (the
+//! request to its pane's frame, the cached fast path, the skeleton crossfade
+//! and cancellation on unmount). The panel above it only decides WHICH
+//! cells exist.
 
 // The registry, generation guard, and render slot are shared with
 // `on_cleanup` callbacks and the spawned render task, which Leptos stores in
@@ -11,7 +11,7 @@
 // single-threaded UI code, but the owner's cleanup contract demands
 // thread-safe handles; `Rc` would not compile here.
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -23,7 +23,7 @@ use wasm_bindgen::JsCast;
 use crate::state::ReaderState;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
 
-use super::geometry::{CELL_W, THUMB_SCALE};
+use super::geometry::CELL_W;
 
 /// Delay (ms) before the skeleton pulse is removed after a thumbnail render
 /// resolves.
@@ -140,13 +140,13 @@ pub fn ThumbCell(
     // mounts off-screen) and on both its columns, since both cells remount in
     // the same row node. A cached cell now has no cover state to animate.
     //
-    // The cell is bound to its pane's PDF session at mount (`MountedPdf`):
-    // the probe, the render and the cleanup's cancel all reach that one
-    // session's thumbnail cache — never another pane's, never the next
-    // document's.
-    let mounted = crate::pane::engine::MountedPdf::bind();
-    let starts_cached = mounted.pdf().has_thumb(page, THUMB_SCALE);
-    let engine_sid = mounted.sid();
+    // The cell asks its pane's frame for the picture (the rail lives in the
+    // workspace host, the engine in the pane's frame): the probe, the render
+    // and the cleanup's cancel all reach that one pane — never another's.
+    // `req` holds the request in flight, for the cleanup's cancel.
+    let thumbs = expect_context::<crate::frame_pane::thumbs::RemoteThumbs>();
+    let starts_cached = thumbs.has(page);
+    let req = Arc::new(AtomicU64::new(0));
     let loaded = RwSignal::new(starts_cached);
     // A NodeRef onto the cover (the timer removes the pulse class from the
     // real DOM node). The pending removal is parked in a scope-owned timer
@@ -164,7 +164,6 @@ pub fn ThumbCell(
     // Current page drives the accent ring + badge. The badge is a z-10 overlay
     // so it stays visible on every card, not just the active one.
     let is_current = move || state.viewer.page.get() == page;
-    let cid = format!("thumb-{page}");
     // The cell's own canvas, by reference: the cleanup below zeroes THIS
     // canvas even when it has already left the document (an id lookup only
     // finds attached elements — and would find another pane's twin).
@@ -179,7 +178,7 @@ pub fn ThumbCell(
     // window, document switch, or app teardown). `cancel_thumb` aborts an
     // in-flight render but deliberately KEEPS the cached bitmap, so scrolling
     // this row back into view repaints it instantly instead of re-rendering.
-    let cid_cleanup = cid.clone();
+    let req_cleanup = req.clone();
     let page_cleanup = page;
     let bound_cleanup = bound.clone();
     let render_cleanup = render.clone();
@@ -190,7 +189,7 @@ pub fn ThumbCell(
         // flows through the machine.
         let current = ThumbRenderState::from_u8(render_cleanup.load(Ordering::Relaxed));
         render_cleanup.store(current.unmount().as_u8(), Ordering::Relaxed);
-        mounted.pdf().cancel_thumb(&cid_cleanup);
+        thumbs.cancel(req_cleanup.load(Ordering::Relaxed));
         // WKWebView does not release a canvas backing store on DOM removal
         // alone — every close/open cycle would otherwise leak a batch of
         // IOSurfaces until GC gets around to it. Zero the backing store so
@@ -214,7 +213,6 @@ pub fn ThumbCell(
     // Render on mount and after a heal sweep. A prefetch may populate the
     // cache after `starts_cached` was sampled; every successful engine reply
     // therefore reveals the cover, cached or fresh.
-    let cid_render = cid.clone();
     let doc_gen = generation.clone();
     let bound_render = bound.clone();
     let try_render = {
@@ -228,16 +226,19 @@ pub fn ThumbCell(
             attempts.fetch_add(1, Ordering::Relaxed);
             render.store(slot.start().as_u8(), Ordering::Relaxed);
             let gen_now = doc_gen.load(Ordering::Relaxed);
-            let cid2 = cid_render.clone();
+            let req_async = req.clone();
             let gen_async = doc_gen.clone();
             let bound_async = bound_render.clone();
             let render_async = render.clone();
-            let pdf = mounted.pdf();
             spawn_local(async move {
                 if let Ok(mut guard) = bound_async.lock() {
                     guard.insert(page);
                 }
-                let result = pdf.render_thumb(&cid2, page, THUMB_SCALE).await;
+                let Some(canvas) = canvas_ref.get_untracked() else {
+                    render_async.store(ThumbRenderState::Pending.as_u8(), Ordering::Relaxed);
+                    return;
+                };
+                let result = thumbs.render(page, canvas, req_async).await;
                 // The cell may have unmounted (or the document changed) while
                 // the render was in flight: `Unmounted` is terminal, and the
                 // generation double-guard keeps a stale paint out of a fresh
@@ -284,7 +285,7 @@ pub fn ThumbCell(
                             }
                         }
                     }
-                    Err(e) => {
+                    Err(cancelled) => {
                         // A cache probe can have seeded `loaded` before a stale
                         // cancellation prevents the actual canvas blit. Put the
                         // cover back in that case; the next sweep retries it.
@@ -295,9 +296,9 @@ pub fn ThumbCell(
                         // A stale cancellation against a recycled canvas id is
                         // retried by the next heal sweep. Keep genuine errors
                         // visible without turning cancellation into noise.
-                        if e.name != "cancelled" {
+                        if !cancelled {
                             web_sys::console::warn_1(
-                                &format!("[thumbnails] render page {page}: {e}").into(),
+                                &format!("[thumbnails] render page {page} failed").into(),
                             );
                         }
                         // Tell the panel a cell is stale so it schedules a
@@ -308,8 +309,25 @@ pub fn ThumbCell(
             });
         }
     };
+    // A new look or another document makes every picture stale: a settled
+    // cell renders again (the frame's cache answers what it still holds).
+    let epoch = thumbs.epoch;
+    let render_epoch = render.clone();
+    let attempts_epoch = attempts.clone();
+    Effect::new(move |previous: Option<u64>| {
+        let now = epoch.get();
+        if previous.is_some_and(|p| p != now) {
+            let slot = ThumbRenderState::from_u8(render_epoch.load(Ordering::Relaxed));
+            if slot == ThumbRenderState::Settled {
+                render_epoch.store(ThumbRenderState::Pending.as_u8(), Ordering::Relaxed);
+            }
+            attempts_epoch.store(0, Ordering::Relaxed);
+        }
+        now
+    });
     Effect::new(move |_| {
         _ = heal.get();
+        _ = epoch.get();
         try_render();
     });
 
@@ -343,13 +361,10 @@ pub fn ThumbCell(
                 class=("ring-line", move || !is_current())
                 style:height=move || format!("{}px", cell_h())
             >
-                // `data-engine-sid` names the session this canvas belongs to:
-                // the engine's theme repaint walks thumbnail canvases in the
-                // document, and must leave another session's alone.
+                // The frame's bitmap is drawn here at its own resolution;
+                // CSS sizes it to the card.
                 <canvas
                     node_ref=canvas_ref
-                    id=cid
-                    data-engine-sid=engine_sid
                     class="thumb-canvas absolute inset-0 block h-full w-full"
                     class=("thumb-canvas-blank", move || !loaded.get())
                 />

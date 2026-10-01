@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mareader — PDF pane</title>
+    <!-- One reader pane in its own frame (docs/pane-runtimes.md). The
+         workspace host loads this page in an iframe per pane; the relay
+         republishes the parent's Tauri API on this window first. -->
+    <script src="/tauri-relay.js"></script>
+    <link rel="stylesheet" href="vendor/pdfjs/pdf_viewer.css" />
+    <link data-trunk rel="css" href="styles.css" />
+    <link data-trunk rel="copy-file" href="public/tauri-relay.js" />
+    <link data-trunk rel="copy-file" href="public/pdfEngine.js" />
+    <link data-trunk rel="copy-file" href="public/readerEngine.js" />
+    <link data-trunk rel="copy-file" href="public/bake.worker.js" />
+    <!-- pdf.js itself is imported by the engine on the first PDF open
+         (public/engine/loader.ts, `ensurePdfjs`); the stylesheet above is
+         the text layer geometry. -->
+    <script type="module" src="/readerEngine.js"></script>
+    <script type="module" src="/pdfEngine.js"></script>
+    <link data-trunk rel="rust" href="crates/reader-runtime" data-bin="pdf" data-wasm-opt="z" />
+  </head>
+  <body></body>
+</html>

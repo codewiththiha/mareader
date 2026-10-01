@@ -54,7 +54,10 @@ pub mod frame {
     ) {
     }
 }
+pub mod frame_pane;
 pub mod pane;
+pub mod pane_frame;
+pub mod pane_wire;
 pub mod runtime;
 pub mod services;
 pub mod state;
@@ -200,7 +203,7 @@ pub fn start_session(
                     session_id: id,
                     enter: enter_session,
                 },
-                crate::pane::document::factory(),
+                crate::frame_pane::factory(),
                 crate::pane::document::classify,
             );
             // The session's end, as the unmount runs it: the host disposes
@@ -212,12 +215,12 @@ pub fn start_session(
                 runtime.dispose(api, host.take_teardown());
             });
 
-            // The shared appearance chrome's raster hooks are THIS session's
-            // engine to answer: while the reader is live the menu's
-            // re-bake/scrub/retain-raws calls reach the PDF engine, and the
+            // The shared appearance chrome's raster hooks are answered by
+            // the PDF panes' frames: while the workspace is live the menu's
+            // re-bake/scrub/retain-raws calls are forwarded to them, and the
             // guard's cleanup at unmount takes the answerer away with the
             // session (the library runtime installs none of these).
-            let appearance_hooks_guard = appearance_hooks::install();
+            let appearance_hooks_guard = crate::frame_pane::install_hooks();
             on_cleanup(move || drop(appearance_hooks_guard));
 
             // The AI chunk listener: a session-wide Tauri event bridge (the
@@ -320,13 +323,22 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     // and this is the last moment that state exists (§15: the durable write
     // precedes the disposal, it does not chase it).
     let host = LIVE_SESSION.with(|c| c.borrow().as_ref().map(|live| live.host));
-    if let Some(host) = host {
-        host.dispose();
-    }
-    SESSION.with(|s| {
-        if let Some(session) = s.borrow_mut().take() {
-            (session.unmount)();
-        }
+    let Some(session) = SESSION.with(|s| s.borrow_mut().take()) else {
+        return promise;
+    };
+    let Some(host) = host else {
+        (session.unmount)();
+        return promise;
+    };
+    host.dispose();
+    // Each pane's frame flushes its read point, closes its document and
+    // reports its final digest on `Dispose`: the frames must still be in the
+    // document for that, so the unmount (which removes them) waits for the
+    // panes' tails. The runtime's own disposal then finds them settled.
+    let tails = host.take_teardown();
+    leptos::task::spawn_local(async move {
+        tails.await;
+        (session.unmount)();
     });
     promise
 }
@@ -376,6 +388,13 @@ fn take_dispose_resolver() -> (js_sys::Promise, Option<js_sys::Function>) {
     };
     let promise = js_sys::Promise::new(&mut executor);
     (promise, resolve_fn)
+}
+
+/// Park `done` as what the runtime's disposal completion calls: a pane
+/// frame tells its host it is gone with it.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn on_dispose_complete(done: js_sys::Function) {
+    PENDING_DISPOSE.with(|p| *p.borrow_mut() = Some(done));
 }
 
 /// Called by the runtime's disposal tail when it completed — with or

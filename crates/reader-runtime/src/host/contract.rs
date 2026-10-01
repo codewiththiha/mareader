@@ -145,7 +145,7 @@ pub enum PaneCommand {
 pub type PaneTeardown = Pin<Box<dyn Future<Output = ()>>>;
 
 /// A pane's live resources, as the pane itself counts them.
-#[derive(Clone, Copy, PartialEq, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Debug, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaneResourceCounts {
     pub virtualizers: usize,
@@ -266,6 +266,42 @@ pub struct PaneEnv {
     pub moves: Signal<super::tree::Moves>,
     /// Ask the host to move THIS pane one step through the layout.
     pub relocate: Callback<super::tree::MoveDirection>,
+    /// The workspace facts a pane's own document mirrors (blend, split,
+    /// independent themes, the pane decoration variables), tracked.
+    pub workspace: Signal<WorkspaceLook>,
+    /// A press-and-hold lift that began inside the pane, in the host
+    /// document's client coordinates.
+    pub lift: Callback<LiftStep>,
+}
+
+/// The workspace facts the shared CSS keys off (styles/components/shell.css):
+/// the classes on `.reader-bg` and the pane decoration variables. A pane that
+/// renders in its own document carries them onto its own `.reader-bg`.
+#[derive(Clone, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceLook {
+    pub blend: bool,
+    pub independent: bool,
+    pub split: bool,
+    pub page_shadow: bool,
+    /// The `--pane-*` custom properties, as one inline style string.
+    pub style: String,
+}
+
+/// A phase of a pane lift driven from inside the pane.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LiftPhase {
+    Start,
+    Move,
+    End,
+    Cancel,
+}
+
+/// One lift step: the phase and the pointer in host client coordinates.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct LiftStep {
+    pub phase: LiftPhase,
+    pub at: (f64, f64),
 }
 
 /// Where a pane asks the host to put a document, relative to ITSELF: the

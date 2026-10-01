@@ -1,6 +1,8 @@
 /dist/
 /dist-reader/
 /dist-library/
+/dist-pdf/
+/dist-reflow/
 /target/
 
 # macOS

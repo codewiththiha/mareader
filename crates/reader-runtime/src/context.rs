@@ -66,6 +66,9 @@ pub enum ApiHandle {
     /// The hosted frame: the boundary calls leave over the frame's port,
     /// stamped with the boot's generation (`crate::frame`).
     Frame,
+    /// A pane frame: the calls leave over the pane's port to the workspace
+    /// host, which answers them (`crate::pane_frame`).
+    Pane,
 }
 
 impl ShellApi for ApiHandle {
@@ -75,6 +78,9 @@ impl ShellApi for ApiHandle {
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.open_document(launch));
             }
+            ApiHandle::Pane => {
+                crate::pane_frame::with_api(|api| api.open_document(launch));
+            }
         }
     }
     fn navigate_library(&self) {
@@ -82,6 +88,9 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi.navigate_library(),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.navigate_library());
+            }
+            ApiHandle::Pane => {
+                crate::pane_frame::with_api(|api| api.navigate_library());
             }
         }
     }
@@ -91,6 +100,9 @@ impl ShellApi for ApiHandle {
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.read_point(point));
             }
+            ApiHandle::Pane => {
+                crate::pane_frame::with_api(|api| api.read_point(point));
+            }
         }
     }
     fn save_settings(&self, settings: &Settings) {
@@ -98,6 +110,9 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi.save_settings(settings),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_settings(settings));
+            }
+            ApiHandle::Pane => {
+                crate::pane_frame::with_api(|api| api.save_settings(settings));
             }
         }
     }
@@ -107,6 +122,9 @@ impl ShellApi for ApiHandle {
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_cover(path, image));
             }
+            ApiHandle::Pane => {
+                crate::pane_frame::with_api(|api| api.save_cover(path, image));
+            }
         }
     }
     fn save_gloss(&self, key: &str, marks: String) {
@@ -114,6 +132,9 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi.save_gloss(key, marks),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.save_gloss(key, marks));
+            }
+            ApiHandle::Pane => {
+                crate::pane_frame::with_api(|api| api.save_gloss(key, marks));
             }
         }
     }
@@ -128,6 +149,9 @@ impl ShellApi for ApiHandle {
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.doc_status(report));
             }
+            ApiHandle::Pane => {
+                crate::pane_frame::with_api(|api| api.doc_status(report));
+            }
         }
     }
     fn publish_digest(&self, json: String) {
@@ -135,6 +159,9 @@ impl ShellApi for ApiHandle {
             ApiHandle::Standalone => StandaloneApi.publish_digest(json),
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.publish_digest(json));
+            }
+            ApiHandle::Pane => {
+                crate::pane_frame::with_api(|api| api.publish_digest(json));
             }
         }
     }
@@ -144,12 +171,16 @@ impl ShellApi for ApiHandle {
             ApiHandle::Frame => {
                 crate::frame::with_api(|api| api.reload());
             }
+            ApiHandle::Pane => {
+                crate::pane_frame::with_api(|api| api.reload());
+            }
         }
     }
     fn resolve_launch(&self, path: &str) -> Option<LaunchDocument> {
         match self {
             ApiHandle::Standalone => StandaloneApi.resolve_launch(path),
             ApiHandle::Frame => crate::frame::with_api(|api| api.resolve_launch(path)).flatten(),
+            ApiHandle::Pane => None,
         }
     }
 }

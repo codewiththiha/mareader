@@ -20,7 +20,7 @@
 //! same tree. Pixels enter only when a drag is converted (the minimum pane
 //! size depends on the room there is) and when the tree is laid out.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::model::{PaneBounds, PaneId};
 
@@ -37,7 +37,7 @@ pub const DIVIDER_HIT_PX: f64 = 8.0;
 pub const EVEN: f64 = 0.5;
 
 /// How a split divides its box.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SplitAxis {
     /// Side by side: `first` is left, `second` is right (a vertical seam).
@@ -57,7 +57,7 @@ pub enum Side {
 
 /// Which way a pane is moved through the layout (the view menu's Move
 /// items): toward that side of the workspace.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MoveDirection {
     Left,
@@ -88,7 +88,7 @@ impl MoveDirection {
 }
 
 /// Which moves the layout would carry out for one pane now.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct Moves {
     pub left: bool,
     pub right: bool,

@@ -114,6 +114,12 @@ const PROBED = [
   "/reader.html",
   "/reader.js",
   "/reader_bg.wasm",
+  "/pdf.html",
+  "/pdf.js",
+  "/pdf_bg.wasm",
+  "/reflow.html",
+  "/reflow.js",
+  "/reflow_bg.wasm",
 ];
 
 /** What the merged artifacts are, and where the other two Trunk builds leave
@@ -129,6 +135,14 @@ const MERGED = [
   ["dist-library/index.html", "library.html"],
   ["dist-library/library.js", "library.js"],
   ["dist-library/library_bg.wasm", "library_bg.wasm"],
+  ["dist-pdf/pdf.html", "pdf.html"],
+  ["dist-pdf/index.html", "pdf.html"],
+  ["dist-pdf/pdf.js", "pdf.js"],
+  ["dist-pdf/pdf_bg.wasm", "pdf_bg.wasm"],
+  ["dist-reflow/reflow.html", "reflow.html"],
+  ["dist-reflow/index.html", "reflow.html"],
+  ["dist-reflow/reflow.js", "reflow.js"],
+  ["dist-reflow/reflow_bg.wasm", "reflow_bg.wasm"],
 ];
 
 /** Source trees whose changes require a rebuild of the runtime artifacts. The
@@ -139,9 +153,13 @@ const WATCHED_FILES = [
   "index.html",
   "reader.html",
   "library.html",
+  "pdf.html",
+  "reflow.html",
   "Trunk.toml",
   "reader.Trunk.toml",
   "library.Trunk.toml",
+  "pdf.Trunk.toml",
+  "reflow.Trunk.toml",
 ];
 
 /** Directory entries in Trunk.toml's `[watch] ignore` list. Trunk 0.21.x
@@ -157,6 +175,8 @@ const IGNORE_DIRS = [
   "target",
   "dist-reader",
   "dist-library",
+  "dist-pdf",
+  "dist-reflow",
   "node_modules",
   ".dev-artifacts",
 ];

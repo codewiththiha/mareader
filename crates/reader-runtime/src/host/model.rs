@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Identities
@@ -20,7 +20,7 @@ use serde::Serialize;
 /// a monotonic counter and never reused — not after the pane is disposed,
 /// and not for a pane showing the same document. It is NOT a document id, a
 /// path, or an index into any list.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PaneId(u64);
 
@@ -28,6 +28,12 @@ impl PaneId {
     /// The raw number, for diagnostics and DOM attributes only.
     pub fn get(self) -> u64 {
         self.0
+    }
+
+    /// The id a pane frame was booted with: the host minted it, the frame
+    /// only names it back.
+    pub(crate) fn from_raw(n: u64) -> Self {
+        Self(n)
     }
 
     /// A pane id out of thin air, for the pure layout tests only: ids are
@@ -47,7 +53,7 @@ impl std::fmt::Display for PaneId {
 /// Which document a pane shows: the library row when the library names one,
 /// the address otherwise. Two panes may show one document; a pane's document
 /// may change (an in-place open) while its [`PaneId`] does not.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct DocumentId(String);
 
@@ -70,7 +76,7 @@ impl DocumentId {
 
 /// The document a pane is asked to show, as data: identity plus the address
 /// the pane's open flow resolves. No session, no handle, no engine object.
-#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentRef {
     pub document_id: DocumentId,
@@ -80,7 +86,7 @@ pub struct DocumentRef {
 /// The format tag a pane reports. Format-neutral on purpose: the host reads
 /// it as a label (diagnostics, a DOM attribute) and never branches on it —
 /// the fork into format behaviour lives behind the pane contract.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PaneFormat {
     /// No document yet (a warm pane waiting for its launch), or one whose
@@ -148,6 +154,12 @@ pub struct PaneDescriptor {
 }
 
 impl PaneDescriptor {
+    /// The descriptor a pane frame rebuilds from its boot message: the host
+    /// minted the id and the request, the frame hands them to its pane.
+    pub(crate) fn remote(pane_id: PaneId, request: PaneRequest) -> Self {
+        Self::minted(pane_id, request)
+    }
+
     fn minted(pane_id: PaneId, request: PaneRequest) -> Self {
         Self {
             pane_id,
@@ -167,7 +179,7 @@ impl PaneDescriptor {
 /// A pane's lifecycle: `New → Mounting → Ready → (Suspended) → Disposing →
 /// Disposed`. Disposed is terminal: a disposed pane is never revived and its
 /// id is never handed out again.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PaneLifecycle {
     #[default]

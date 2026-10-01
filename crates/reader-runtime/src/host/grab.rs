@@ -23,10 +23,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 
-use super::ReaderHost;
 use super::lift::HOLD_TO_LIFT_MS;
-use super::model::PaneId;
-use app_chrome::hooks::dom::VIEWER_SLOT_ID;
 
 /// The attribute the entry carries while the pointer is over empty space
 /// (`ready`) or while a grab is under way (`grabbing`); the stylesheet turns
@@ -74,8 +71,6 @@ struct Grab {
     origin: (f64, f64),
     scroller: Option<web_sys::Element>,
     scroll_start: (f64, f64),
-    /// The workspace slot's client origin, read at the press.
-    slot: (f64, f64),
     hold: Option<TimeoutHandle>,
     /// Last pointer sample (client x, y, time) and the smoothed velocity.
     last: (f64, f64, f64),
@@ -94,9 +89,24 @@ impl Grab {
     }
 }
 
-/// Install the grab listeners on pane `id`'s entry element.
-pub(super) fn install(entry: &web_sys::Element, host: ReaderHost, id: PaneId) {
+/// Where a hold-to-lift goes: the workspace that can lift the pane. Points
+/// are in the client coordinates of the document the entry lives in; the
+/// sink maps them into the workspace's own.
+pub trait LiftSink {
+    /// Whether a hold may lift the pane now (the workspace holds others).
+    fn can_lift(&self) -> bool;
+    /// The hold completed at `at`: lift the pane. `false` when refused.
+    fn begin(&self, at: (f64, f64)) -> bool;
+    fn moved(&self, at: (f64, f64));
+    /// The press ended: drop the pane where it is (`commit`) or put it back.
+    fn end(&self, commit: bool);
+}
+
+/// Install the grab listeners on a pane's entry element.
+pub fn install(entry: &web_sys::Element, sink: Rc<dyn LiftSink>) {
     let state = Rc::new(RefCell::new(Grab::default()));
+    let move_sink = sink.clone();
+    let up_sink = sink.clone();
 
     let hover_entry = entry.clone();
     let on_hover =
@@ -149,7 +159,6 @@ pub(super) fn install(entry: &web_sys::Element, host: ReaderHost, id: PaneId) {
                 (f64::from(s.scroll_left()), f64::from(s.scroll_top()))
             });
             grab.scroller = scroller;
-            grab.slot = slot_origin();
             grab.last = (at.0, at.1, now_ms());
             grab.velocity = (0.0, 0.0);
             let _ = down_entry.set_pointer_capture(ev.pointer_id());
@@ -157,7 +166,7 @@ pub(super) fn install(entry: &web_sys::Element, host: ReaderHost, id: PaneId) {
 
             // In a split a still hold lifts the pane. The ring shows the hold
             // filling, at the pointer, so the wait reads as progress.
-            if untrack(|| host.pane_count()) > 1 {
+            if sink.can_lift() {
                 let rect = down_entry.get_bounding_client_rect();
                 if let Some(el) = down_entry.dyn_ref::<web_sys::HtmlElement>() {
                     let style = web_sys::HtmlElement::style(el);
@@ -168,6 +177,7 @@ pub(super) fn install(entry: &web_sys::Element, host: ReaderHost, id: PaneId) {
                 let timer_state = down_state.clone();
                 let timer_entry = down_entry.clone();
                 let generation = grab.generation;
+                let timer_sink = sink.clone();
                 grab.hold = set_timeout_with_handle(
                     move || {
                         let mut grab = timer_state.borrow_mut();
@@ -180,8 +190,7 @@ pub(super) fn install(entry: &web_sys::Element, host: ReaderHost, id: PaneId) {
                         if !current || !timer_entry.is_connected() {
                             return;
                         }
-                        let at = (grab.origin.0 - grab.slot.0, grab.origin.1 - grab.slot.1);
-                        if host.begin_lift(id, at) {
+                        if timer_sink.begin(grab.origin) {
                             grab.phase = Phase::Lifted;
                         }
                     },
@@ -213,9 +222,8 @@ pub(super) fn install(entry: &web_sys::Element, host: ReaderHost, id: PaneId) {
                 }
                 Phase::Panning => pan(&mut grab, at),
                 Phase::Lifted => {
-                    let slot = grab.slot;
                     drop(grab);
-                    host.lift_move((at.0 - slot.0, at.1 - slot.1));
+                    move_sink.moved(at);
                 }
             }
         });
@@ -244,7 +252,7 @@ pub(super) fn install(entry: &web_sys::Element, host: ReaderHost, id: PaneId) {
             }
             Phase::Lifted => {
                 drop(grab);
-                host.end_lift(commit);
+                up_sink.end(commit);
             }
             _ => {}
         }
@@ -391,17 +399,6 @@ fn scroller_for(from: &web_sys::Element, entry: &web_sys::Element) -> Option<web
         node = el.parent_element();
     }
     None
-}
-
-fn slot_origin() -> (f64, f64) {
-    web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id(VIEWER_SLOT_ID))
-        .map(|slot| {
-            let rect = slot.get_bounding_client_rect();
-            (rect.left(), rect.top())
-        })
-        .unwrap_or_default()
 }
 
 fn now_ms() -> f64 {

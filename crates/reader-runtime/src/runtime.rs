@@ -258,14 +258,15 @@ impl ReaderRuntime {
             // which is precisely what the Shell's manager awaits and what the
             // baseline probe reads (§12, §21).
             crate::diagnostics::publish_runtime_view(RuntimeLifecycle::Disposed, generation);
+            // The final push for this session: the runtime is disposed, the
+            // panes are gone, and the Shell's baseline verdict reads this
+            // digest. It leaves BEFORE the completion: whoever awaits the
+            // completion may remove the frame, and the port with it.
+            crate::diagnostics::publish_digest(&api);
             // The Shell's manager awaits the dispose export's promise before
             // it removes or recycles the frame (§5): the tail's end resolves
             // it, document or not.
             crate::resolve_dispose();
-            // The final push for this session: the runtime is disposed, the
-            // panes are gone, and the Shell's baseline verdict reads this
-            // digest.
-            crate::diagnostics::publish_digest(&api);
         });
         true
     }

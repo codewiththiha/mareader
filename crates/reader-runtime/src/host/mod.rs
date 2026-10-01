@@ -35,7 +35,7 @@ pub mod contract;
 pub mod drag;
 pub mod drop_target;
 pub mod geometry;
-mod grab;
+pub(crate) mod grab;
 pub mod library;
 pub mod lift;
 pub mod manager;
@@ -53,8 +53,8 @@ use serde::Serialize;
 use app_ui::components::shell::controller::ShellController;
 use commands::{DropPlan, WorkspaceCommand};
 use contract::{
-    OpenRequest, PaneAppearance, PaneClassifier, PaneCommand, PaneDocStatus, PaneEnv, PaneFactory,
-    PaneSurface, Placement,
+    LiftPhase, LiftStep, OpenRequest, PaneAppearance, PaneClassifier, PaneCommand, PaneDocStatus,
+    PaneEnv, PaneFactory, PaneSurface, Placement, WorkspaceLook,
 };
 use drag::{DocumentDragSource, DragSession, DropIntent};
 use drop_target::Edge;
@@ -129,6 +129,13 @@ pub struct ReaderHost {
     /// Whether SOME pane holds a PDF document (any pane, not just the
     /// focused one): the workspace-wide blend backdrop's gate.
     has_pdf: Signal<bool>,
+    /// Panes closed but still finishing their teardown. Their entries stay
+    /// in the slot, hidden, until the tail resolves: a pane's view may own
+    /// a frame whose realm is still flushing, and removing the entry would
+    /// cut it off mid-write.
+    retiring: RwSignal<Vec<PaneId>>,
+    /// A divider is being dragged (the pane frames let the pointer through).
+    resizing: RwSignal<bool>,
     /// The one document drag session (see [`drag`]): typed data only, no
     /// DOM reference. Idle whenever no drag is live, and cleared by the
     /// workspace's disposal.
@@ -323,6 +330,8 @@ impl ReaderHost {
             slot_size,
             tree,
             has_pdf,
+            retiring: RwSignal::new(Vec::new()),
+            resizing: RwSignal::new(false),
             drag,
             lift,
             layout,
@@ -637,6 +646,74 @@ impl ReaderHost {
                     leptos::logging::warn!("[reader] pane move refused: {error:?}");
                 }
             }),
+            workspace: Signal::derive(move || host.workspace_look()),
+            lift: Callback::new(move |step| host.lift_step(id, step)),
+        }
+    }
+
+    /// The workspace facts the shared CSS keys off, tracked: what the host's
+    /// own `.reader-bg` carries and what every pane frame mirrors onto its
+    /// own.
+    ///
+    /// Blend swaps the backdrop and the page hosts onto the engine's one
+    /// computed paper colour (styles/components/shell.css,
+    /// styles/page_host.css). It is a WORKSPACE fact: blend mode exists for
+    /// raster pages, and the colour it publishes is the split's shared
+    /// backdrop, so while some pane holds a PDF the reflowable panes beside
+    /// it stand on that paper too.
+    pub fn workspace_look(&self) -> WorkspaceLook {
+        let has_pdf = self.has_pdf();
+        let independent = self.themes.independent().get();
+        let split = self.pane_count() > 1;
+        self.session.settings.with(|s| {
+            let workspace = &s.workspace;
+            let color = workspace
+                .pane_outline_color
+                .resolve(&workspace.pane_outline_custom)
+                .unwrap_or("var(--color-accent)");
+            let radius = if workspace.pane_corners == reader_core::settings::PaneCorners::Rounded {
+                "10px"
+            } else {
+                "0px"
+            };
+            let shadow = if workspace.pane_shadow {
+                "0 5px 18px rgb(0 0 0 / 0.24)"
+            } else {
+                "none"
+            };
+            WorkspaceLook {
+                blend: s.layout.blend_mode && has_pdf,
+                independent,
+                split,
+                page_shadow: s.layout.page_shadow,
+                style: format!(
+                    "--pane-outline-width:{}px;--pane-outline-color:{color};\
+                     --pane-corner-radius:{radius};--pane-box-shadow:{shadow}",
+                    workspace.pane_outline_width
+                ),
+            }
+        })
+    }
+
+    /// A lift step from inside a pane, in host client coordinates, mapped
+    /// into the workspace slot's.
+    fn lift_step(&self, id: PaneId, step: LiftStep) {
+        let origin = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id(app_chrome::hooks::dom::VIEWER_SLOT_ID))
+            .map(|slot| {
+                let rect = slot.get_bounding_client_rect();
+                (rect.left(), rect.top())
+            })
+            .unwrap_or_default();
+        let at = (step.at.0 - origin.0, step.at.1 - origin.1);
+        match step.phase {
+            LiftPhase::Start => {
+                self.begin_lift(id, at);
+            }
+            LiftPhase::Move => self.lift_move(at),
+            LiftPhase::End => self.end_lift(true),
+            LiftPhase::Cancel => self.end_lift(false),
         }
     }
 
@@ -819,10 +896,34 @@ impl ReaderHost {
             .tree
             .try_update(|tree| tree.remove(id).ok().flatten())
             .flatten();
-        self.manager.close(id, successor)?;
+        let tail = self.manager.close_now(id, successor)?;
+        let _ = self.retiring.try_update(|r| r.push(id));
+        let retiring = self.retiring;
+        spawn_local(async move {
+            tail.await;
+            let _ = retiring.try_update(|r| r.retain(|other| *other != id));
+        });
         self.themes.forget(id);
         self.relayout_now();
         Ok(())
+    }
+
+    /// The slot's entries: the placed panes and the retiring ones, in id
+    /// order. Ids only grow and the order never changes for the ids that
+    /// stay, so an entry is never moved in the document — moving an element
+    /// that holds a frame would reload the frame.
+    pub fn entries(&self) -> Vec<PaneId> {
+        let mut ids = self.manager.placed();
+        if let Some(retiring) = self.retiring.try_get() {
+            ids.extend(retiring.into_iter().filter(|id| !ids.contains(id)));
+        }
+        ids.sort();
+        ids
+    }
+
+    /// Whether pane `id` is closed and finishing its teardown.
+    pub fn is_retiring(&self, id: PaneId) -> bool {
+        self.retiring.try_with(|r| r.contains(&id)).unwrap_or(false)
     }
 
     /// Move pane `id` one step toward `direction` through the layout. Only
@@ -856,6 +957,15 @@ impl ReaderHost {
             .map_err(PaneError::Layout)?;
         self.relayout_now();
         Ok(())
+    }
+
+    /// The host is dragging something across the panes (a divider, a
+    /// document): the pane frames must let the pointer through to the host
+    /// for the drag (tracked). A lift is not one of these: it is driven
+    /// from inside the lifted pane's frame, which holds the pointer.
+    pub fn shielded(&self) -> bool {
+        self.resizing.try_get().unwrap_or(false)
+            || self.drag.try_with(DragSession::is_live).unwrap_or(false)
     }
 
     /// The lifted pane (tracked; `None` while nothing is held).

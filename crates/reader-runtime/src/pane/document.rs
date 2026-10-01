@@ -87,7 +87,11 @@ impl DocumentPane {
     /// when the descriptor names a document, it resumes at the descriptor's
     /// page, and the descriptor's zoom (if any) seeds the first document in
     /// place of the settings' fit.
-    fn create(env: PaneEnv, descriptor: PaneDescriptor, launch: Option<LaunchDocument>) -> Self {
+    pub(crate) fn create(
+        env: PaneEnv,
+        descriptor: PaneDescriptor,
+        launch: Option<LaunchDocument>,
+    ) -> Self {
         let id = descriptor.pane_id;
         let handle = PaneHandle::new(id, env.runtime);
         handle.seed_initial_zoom(descriptor.initial_zoom);
@@ -159,6 +163,12 @@ impl DocumentPane {
     /// the placement site's chrome context. The view holds the child owner:
     /// dropping the view (the host re-placed the region) releases it, and
     /// the pane's dispose releases it too.
+    /// The pane's reader context: a pane frame reads its chrome-facing state
+    /// from it and writes the host's chrome commands into it.
+    pub(crate) fn context(&self) -> ReaderContext {
+        self.ctx
+    }
+
     fn owned(&self, site: PaneSite, build: impl FnOnce() -> AnyView) -> AnyView {
         let child = self.owner.child();
         let view = child.with(|| {

@@ -116,6 +116,8 @@ fn env(id: PaneId) -> PaneEnv {
         can_split: Signal::stored(false),
         moves: Signal::stored(Default::default()),
         relocate: Callback::new(|_| {}),
+        workspace: Signal::stored(Default::default()),
+        lift: Callback::new(|_| {}),
     }
 }
 

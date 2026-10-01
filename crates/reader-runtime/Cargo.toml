@@ -10,6 +10,14 @@ crate-type = ["rlib"]
 name = "reader"
 path = "src/bin/reader.rs"
 
+[[bin]]
+name = "pdf"
+path = "src/bin/pdf.rs"
+
+[[bin]]
+name = "reflow"
+path = "src/bin/reflow.rs"
+
 [dependencies]
 ai-core = { path = "../ai-core" }
 app-chrome = { path = "../app-chrome" }
@@ -50,6 +58,8 @@ web-sys = { version = "0.3", features = [
   "PerformanceEntry", "console", "DragEvent", "DataTransfer", "CustomEvent",
   "AddEventListenerOptions", "EventTarget", "HtmlDocument", "Navigator",
   "VisibilityState", "HtmlIFrameElement", "MessageEvent", "Worker",
+  "MessageChannel", "MessagePort", "MutationObserver", "MutationObserverInit",
+  "KeyboardEventInit", "ImageBitmap", "PointerEventInit",
 ] }
 
 [dev-dependencies]

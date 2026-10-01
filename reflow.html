@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mareader — text pane</title>
+    <!-- One reader pane in its own frame (docs/pane-runtimes.md). The
+         workspace host loads this page in an iframe per pane; the relay
+         republishes the parent's Tauri API on this window first. -->
+    <script src="/tauri-relay.js"></script>
+    <link data-trunk rel="css" href="styles.css" />
+    <link data-trunk rel="copy-file" href="public/tauri-relay.js" />
+    <link data-trunk rel="copy-file" href="public/readerEngine.js" />
+    <!-- No PDF engine: a Markdown or text pane never loads pdf.js. -->
+    <script type="module" src="/readerEngine.js"></script>
+    <link data-trunk rel="rust" href="crates/reader-runtime" data-bin="reflow" data-wasm-opt="z" />
+  </head>
+  <body></body>
+</html>

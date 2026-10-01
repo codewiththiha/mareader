@@ -194,9 +194,37 @@ body {
   z-index: var(--z-popover);
 }
 
+/* PANE FRAMES — each pane's document runs in its own frame
+   (docs/pane-runtimes.md). A frame booting behind the one on screen waits
+   hidden (never display:none, so it lays out and paints) until its first
+   paint; a closed pane's entry stays in the document, hidden, until its
+   frame has finished its teardown. While the host drags something (a
+   divider, a lifted pane, a library row) the frames let the pointer
+   through to the host. */
+.pane-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color-scheme: normal;
+}
+.pane-frame[data-frame-hidden] {
+  visibility: hidden;
+  pointer-events: none;
+}
+.pane-entry.pane-retiring {
+  visibility: hidden;
+  pointer-events: none;
+}
+.reader-bg.pane-shield .pane-frame {
+  pointer-events: none;
+}
+
 /* GRAB — empty space in a pane (gutters, gaps, the margin beside the text
    stream) takes the hand: drag to pan in any direction, and in a split hold
-   still to lift the pane (crates/reader-runtime/src/host/grab.rs). */
+   still to lift the pane (crates/reader-runtime/src/host/grab.rs, installed inside each pane frame). */
 .pane-entry[data-pan="ready"],
 .pane-entry[data-pan="ready"] * {
   cursor: grab !important;

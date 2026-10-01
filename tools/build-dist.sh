@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # The canonical frontend build: ONE command that produces the shell page and
-# both runtime artifacts the shell dynamically imports, merged into dist/.
+# every runtime artifact the shell dynamically imports, merged into dist/.
 #
 # This is the single source of truth for the frontend artifact set. Tauri's
 # build command runs it (via `npm run build:dist`), CI runs it, the dev
@@ -20,6 +20,9 @@ cd "$(dirname "$0")/.."
 trunk build "$@"
 trunk build --config reader.Trunk.toml --dist dist-reader "$@"
 trunk build --config library.Trunk.toml --dist dist-library "$@"
+# The pane runtimes: one frame per reader pane (docs/pane-runtimes.md).
+trunk build --config pdf.Trunk.toml --dist dist-pdf "$@"
+trunk build --config reflow.Trunk.toml --dist dist-reflow "$@"
 
 # The merge is part of the build, not a convenience: a missing source here
 # means the artifact set is broken, so these copies are allowed to fail loudly.
@@ -58,10 +61,17 @@ cp dist-reader/reader_bg.wasm dist/
 copy_page dist-library library.html
 cp dist-library/library.js dist/
 cp dist-library/library_bg.wasm dist/
+copy_page dist-pdf pdf.html
+cp dist-pdf/pdf.js dist/
+cp dist-pdf/pdf_bg.wasm dist/
+copy_page dist-reflow reflow.html
+cp dist-reflow/reflow.js dist/
+cp dist-reflow/reflow_bg.wasm dist/
 
 # Both runtime pages carry their wasm too: without it the standalone page
 # loads and cannot boot, which is the same failure one level down.
-if [ ! -f dist/reader_bg.wasm ] || [ ! -f dist/library_bg.wasm ]; then
+if [ ! -f dist/reader_bg.wasm ] || [ ! -f dist/library_bg.wasm ] \
+  || [ ! -f dist/pdf_bg.wasm ] || [ ! -f dist/reflow_bg.wasm ]; then
   echo "build-dist.sh: a runtime wasm module did not reach dist/" >&2
   exit 1
 fi
