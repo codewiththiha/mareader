@@ -640,6 +640,19 @@ deliberately rather than discovering it:
   the event's own main-thread turn. `tools/check-chrome-contracts.ts` mirrors
   the y inset.
 
+## Independent pane colours
+
+- Turning independent themes on keeps the focused pane's look and gives
+  every other pane its own tint hue; a pane born while on gets one too.
+  `theme::distinct_hue` picks at random inside the middle half of the
+  widest gap between the hues showing (unit-tested), so no two match;
+  an untinted start gets `PANE_TINT_STRENGTH`.
+- `workspace.shared_base_mode` (default on; Settings → Workspace, "Light,
+  Dark and Dim change every pane"): only colour is per pane. Panes show
+  the global base (`PaneThemes::shown`) and a routed base switch writes the
+  global base. Off is the earlier fully per-pane behaviour, which the
+  lifecycle pane-theme stage exercises by turning the setting off.
+
 ## Known follow-ups (do not silently expand scope)
 
 - Measured on a2aa19a (Deep CI #242): the cover bake landed from the Shell's
