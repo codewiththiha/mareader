@@ -1,12 +1,12 @@
-//! The Workspace tab: how the reader's split workspace behaves. Two knobs:
-//! what a click on a file in the rail's Library panel does (a drag onto the
-//! workspace always opens a split, whatever is chosen here), and whether
-//! each pane in a split keeps its own theme.
+//! The Workspace tab: how the reader's split workspace behaves. The pane
+//! decoration controls are shared with the Appearance popover and stay hidden
+//! unless two or more panes are placed.
 
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use app_ui::appearance::ThemeHandle;
+use app_ui::components::menus::appearance_menu::pane_section::PaneSection;
 use app_ui::components::primitives::controls::switch::Switch;
 use app_ui::components::primitives::menu::section_label::SectionLabel;
 use reader_core::settings::LibraryClick;
@@ -39,6 +39,7 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
     // without one (no workspace in this window) the same toggle persists
     // the setting for the next one.
     let theme = use_context::<ThemeHandle>().unwrap_or_else(|| ThemeHandle::for_settings(s));
+    let split = Signal::derive(move || theme.panes.get() >= 2);
     let toggle = view! {
         <Switch
             checked=theme.independent
@@ -112,5 +113,6 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
             </span>
             {toggle}
         </div>
+        <PaneSection settings=s visible=split />
     }
 }

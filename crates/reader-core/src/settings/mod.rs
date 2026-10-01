@@ -36,7 +36,7 @@ pub use layout::{
 };
 pub use typography::TextSettings;
 /// The reader workspace's knobs (the Workspace tab).
-pub use workspace::{LibraryClick, WorkspaceSettings};
+pub use workspace::{LibraryClick, PaneCorners, PaneOutlineColor, WorkspaceSettings};
 
 /// The AI word card's knobs are part of the persisted schema, so the types
 /// live here rather than in `ai-core`, which stays free of anything the
@@ -218,6 +218,11 @@ pub fn sanitize(settings: &mut Settings) {
     typography::sanitize(&mut settings.text);
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
     settings.gloss_opacity = settings.gloss_opacity.clamp(0.1, 1.0);
+    settings.workspace.pane_outline_width = settings.workspace.pane_outline_width.min(8);
+    settings.workspace.pane_gap = settings.workspace.pane_gap.min(24);
+    if !is_hex6(&settings.workspace.pane_outline_custom) {
+        settings.workspace.pane_outline_custom = WorkspaceSettings::default().pane_outline_custom;
+    }
     settings.layout.page_margin = settings.layout.page_margin.clamp(0.0, 64.0);
     settings.layout.column_width_pct = settings
         .layout

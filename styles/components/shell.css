@@ -170,6 +170,30 @@ body {
   background-color: var(--pdf-paper-baked, var(--color-paper));
   --pane-paper: var(--pdf-paper-baked, var(--color-paper));
 }
+/* Split pane decoration belongs to the pane entry, outside the document's
+   page stack. Each entry gets a local stacking context; the focused entry is
+   raised above its neighbours, so its focus outline cannot disappear under a
+   later-painted pane. The shadow is on this outer box, never on PDF pages. */
+.reader-bg.split-workspace [data-pane-id] {
+  z-index: 1;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--pane-corner-radius, 0);
+  box-shadow: var(--pane-box-shadow, none);
+}
+.reader-bg.split-workspace [data-pane-id][data-pane-active="true"] {
+  z-index: 2;
+}
+.reader-bg.split-workspace .pane-focus-outline {
+  z-index: 40;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--pane-outline-width, 2px)
+    var(--pane-outline-color, var(--color-accent));
+}
+.reader-bg.split-workspace [data-pane-close] {
+  z-index: var(--z-popover);
+}
+
 /* Independent mode preserves the same page/gutter blend inside a PDF pane,
    but never lets that pane's detected paper recolour its neighbours or the
    workspace gutters. The Rust appearance painter provides each pane's

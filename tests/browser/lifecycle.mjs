@@ -2264,6 +2264,117 @@ async function paneEntries() {
   if (both.host.activePane !== md.paneId) throw new Error(`[split] active pane ${both.host.activePane}, expected the new Markdown pane ${md.paneId}`);
   await assertPaneBox(both, "split: pdf", pdf);
   await assertPaneBox(both, "split: markdown", md);
+  await page.waitForFunction((sel) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    return !!doc?.querySelector(".reader-bg.split-workspace [data-pane-active='true'] .pane-focus-outline");
+  }, activeFrame, { timeout: 5_000 });
+  const focusPaint = await page.evaluate(([sel]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const root = doc?.querySelector(".reader-bg");
+    const entries = [...(doc?.querySelectorAll("[data-pane-id]") ?? [])];
+    const active = entries.find((entry) => entry.dataset.paneActive === "true");
+    const inactive = entries.find((entry) => entry !== active);
+    const outline = active?.querySelector(".pane-focus-outline");
+    return {
+      split: root?.classList.contains("split-workspace"),
+      autoColor: root?.style.getPropertyValue("--pane-outline-color").trim(),
+      activeZ: Number(getComputedStyle(active).zIndex),
+      inactiveZ: Number(getComputedStyle(inactive).zIndex),
+      outline: !!outline && getComputedStyle(outline).boxShadow.includes("2px"),
+    };
+  }, [activeFrame]);
+  if (!focusPaint.split || focusPaint.autoColor !== "var(--color-accent)"
+      || focusPaint.activeZ <= focusPaint.inactiveZ || !focusPaint.outline) {
+    throw new Error(`[pane focus] the active outline is not painted above every pane: ${JSON.stringify(focusPaint)}`);
+  }
+
+  // The same split-only section appears in both the Appearance popover and
+  // Settings → Workspace. Exercise the shared controls in Settings below.
+  await frameClick('button[title="Appearance"]', "appearance menu split controls");
+  await page.waitForFunction((sel) =>
+    !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="split-pane-appearance"]'), activeFrame, { timeout: 5_000 });
+  const menuDecorationVisible = await page.evaluate((sel) =>
+    !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="split-pane-appearance"]'), activeFrame);
+  if (!menuDecorationVisible) throw new Error("[pane appearance] split-only controls are missing from the Appearance menu");
+  await frameClick('button[title="Appearance"]', "close appearance menu");
+
+  // Split decoration is mounted only while two panes are placed. Exercise
+  // the live controls, including their geometry effect: a 12px gutter shrinks
+  // both reader viewports by 6px and leaves the same measured pane gap.
+  await frameClick('button[title="Reader settings"]', "split pane appearance");
+  await frameClick('button[aria-label="Workspace"]', "split pane appearance");
+  const decorationVisible = await page.evaluate((sel) =>
+    !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="split-pane-appearance"]'), activeFrame);
+  if (!decorationVisible) throw new Error("[pane appearance] split-only controls are missing with two panes");
+  await frameClick('[data-setting="split-pane-appearance"] [data-pane-outline-color="red"]', "outline color");
+  await frameClick('[data-setting="split-pane-appearance"] [data-pane-corners="rounded"]', "rounded pane corners");
+  await frameClick('[data-setting="pane-shadow"] [role="switch"]', "pane shadow");
+  await page.evaluate(([sel, values]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    for (const [setting, value] of values) {
+      const input = doc?.querySelector(`[data-setting="${setting}"] input[type="range"]`);
+      if (!input) throw new Error(`missing range for ${setting}`);
+      const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype, "value").set;
+      setter.call(input, String(value));
+      input.dispatchEvent(new doc.defaultView.Event("input", { bubbles: true }));
+    }
+  }, [activeFrame, [["pane-gap", 12], ["pane-outline-width", 5]]]);
+  const originalWidths = new Map(both.host.panes.map((pane) => [pane.paneId, pane.bounds.width]));
+  const decorated = await waitForSettledLayout("split decoration gutter", (s) =>
+    s.host?.panes?.length === 2 && s.host.panes.every((pane) => pane.bounds.width < originalWidths.get(pane.paneId) - 4));
+  const paneDecoration = await page.evaluate(([sel, activeId]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const root = doc?.querySelector(".reader-bg");
+    const entry = doc?.querySelector(`[data-pane-id="${activeId}"]`);
+    const outline = entry?.querySelector(".pane-focus-outline");
+    const entries = [...(doc?.querySelectorAll("[data-pane-id]") ?? [])];
+    const active = entries.find((node) => node.dataset.paneActive === "true");
+    const inactive = entries.find((node) => node !== active);
+    return {
+      color: root?.style.getPropertyValue("--pane-outline-color").trim(),
+      width: root?.style.getPropertyValue("--pane-outline-width").trim(),
+      radius: getComputedStyle(entry).borderRadius,
+      shadow: getComputedStyle(entry).boxShadow,
+      outline: getComputedStyle(outline).boxShadow,
+      activeZ: Number(getComputedStyle(active).zIndex),
+      inactiveZ: Number(getComputedStyle(inactive).zIndex),
+      boxes: entries.map((node) => {
+        const r = node.getBoundingClientRect();
+        return { x: r.x, right: r.right, width: r.width };
+      }).sort((a, b) => a.x - b.x),
+    };
+  }, [activeFrame, decorated.host.activePane]);
+  const visibleGap = Math.abs(paneDecoration.boxes[1].x - paneDecoration.boxes[0].right);
+  if (paneDecoration.color !== "#e56b64" || paneDecoration.width !== "5px" || paneDecoration.radius !== "10px" || paneDecoration.shadow === "none"
+      || !paneDecoration.outline.includes("5px") || !paneDecoration.outline.includes("rgb(229, 107, 100)") || paneDecoration.activeZ <= paneDecoration.inactiveZ
+      || Math.abs(visibleGap - 12) > 1) {
+    throw new Error(`[pane appearance] controls did not paint the requested pane box: ${JSON.stringify({ paneDecoration, visibleGap })}`);
+  }
+  // Restore product defaults before the remainder of the lifecycle replay.
+  await frameClick('[data-setting="split-pane-appearance"] [data-pane-outline-color="auto"]', "restore outline auto");
+  await frameClick('[data-setting="split-pane-appearance"] [data-pane-corners="square"]', "restore square pane corners");
+  await frameClick('[data-setting="pane-shadow"] [role="switch"]', "restore pane shadow");
+  await page.evaluate(([sel, setting, value]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const input = doc?.querySelector(`[data-setting="${setting}"] input[type="range"]`);
+    const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype, "value").set;
+    setter.call(input, String(value));
+    input.dispatchEvent(new doc.defaultView.Event("input", { bubbles: true }));
+  }, [activeFrame, "pane-gap", 0]);
+  await page.evaluate(([sel, setting, value]) => {
+    const doc = document.querySelector(sel)?.contentDocument;
+    const input = doc?.querySelector(`[data-setting="${setting}"] input[type="range"]`);
+    const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype, "value").set;
+    setter.call(input, String(value));
+    input.dispatchEvent(new doc.defaultView.Event("input", { bubbles: true }));
+  }, [activeFrame, "pane-outline-width", 2]);
+  await page.evaluate((sel) => document.querySelector(sel).contentWindow.focus(), activeFrame);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction((sel) =>
+    !document.querySelector(sel)?.contentDocument?.querySelector('[role="dialog"][aria-label="Reader settings"]'), activeFrame);
+  await waitForSettledLayout("split decoration restored", (s) =>
+    s.host?.panes?.length === 2 && s.host.panes.every((pane) => Math.abs(pane.bounds.width - originalWidths.get(pane.paneId)) < 2));
+
   const entries = await paneEntries();
   if (entries.length !== 2 || !entries.every((e) => e.visible)) {
     throw new Error(`[split] both panes must be shown and live: ${JSON.stringify(entries)}`);
@@ -2474,6 +2585,15 @@ async function paneEntries() {
     s.engine?.sessionsLive === 0 && s.engine.pageCanvasBytesEst === 0 &&
     s.engine.thumbnailRasterBytesEst === 0, 30_000);
   const survivor = alone.host.panes[0];
+  await frameClick('button[title="Reader settings"]', "hide pane controls outside split");
+  await frameClick('button[aria-label="Workspace"]', "hide pane controls outside split");
+  const splitControlsAfterClose = await page.evaluate((sel) =>
+    !!document.querySelector(sel)?.contentDocument?.querySelector('[data-setting="split-pane-appearance"]'), activeFrame);
+  if (splitControlsAfterClose) throw new Error("[pane appearance] split-only controls remained with one pane");
+  await page.evaluate((sel) => document.querySelector(sel).contentWindow.focus(), activeFrame);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction((sel) =>
+    !document.querySelector(sel)?.contentDocument?.querySelector('[role="dialog"][aria-label="Reader settings"]'), activeFrame);
   if (survivor.lifecycle !== "ready" || survivor.resources.documentSession !== true || survivor.format !== "markdown") {
     throw new Error(`[split] the surviving pane is not reading: ${JSON.stringify(survivor)}`);
   }

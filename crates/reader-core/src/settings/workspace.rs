@@ -18,7 +18,45 @@ pub enum LibraryClick {
     DragOnly,
 }
 
+/// The active pane outline colour. Auto follows the reader's current accent;
+/// custom uses the separately persisted six-digit RGB value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PaneOutlineColor {
+    #[default]
+    Auto,
+    Red,
+    Yellow,
+    Green,
+    Blue,
+    Custom,
+}
+
+impl PaneOutlineColor {
+    /// Resolve a palette choice to CSS. Auto is returned as `None` so the
+    /// reader can keep following its live accent token.
+    pub fn resolve(self, custom: &str) -> Option<&str> {
+        match self {
+            Self::Auto => None,
+            Self::Red => Some("#e56b64"),
+            Self::Yellow => Some("#e8c449"),
+            Self::Green => Some("#6fd58c"),
+            Self::Blue => Some("#6ba3f5"),
+            Self::Custom => Some(custom),
+        }
+    }
+}
+
+/// Shape of a pane's visible box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PaneCorners {
+    #[default]
+    Square,
+    Rounded,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct WorkspaceSettings {
     pub library_click: LibraryClick,
@@ -27,6 +65,34 @@ pub struct WorkspaceSettings {
     /// theme. Persisted as the toggle's rest state; the per-pane colours
     /// themselves are temporary and die with the workspace.
     pub independent_themes: bool,
+    /// Active-pane focus outline width, in CSS pixels. Zero hides the outline.
+    pub pane_outline_width: u8,
+    /// Active-pane outline palette selection.
+    pub pane_outline_color: PaneOutlineColor,
+    /// User-picked outline colour, used only when `pane_outline_color` is
+    /// Custom. Kept as a CSS-safe six-digit hex value.
+    pub pane_outline_custom: String,
+    /// Space between adjacent pane boxes. The workspace's outer edge stays flush.
+    pub pane_gap: u8,
+    /// Cast a soft shadow from each pane box, not from the PDF page surface.
+    pub pane_shadow: bool,
+    /// Pane box corner shape.
+    pub pane_corners: PaneCorners,
+}
+
+impl Default for WorkspaceSettings {
+    fn default() -> Self {
+        Self {
+            library_click: LibraryClick::default(),
+            independent_themes: false,
+            pane_outline_width: 2,
+            pane_outline_color: PaneOutlineColor::Auto,
+            pane_outline_custom: "#6ba3f5".into(),
+            pane_gap: 0,
+            pane_shadow: false,
+            pane_corners: PaneCorners::Square,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -34,11 +100,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_older_blob_loads_the_default_click() {
+    fn older_workspace_blobs_load_the_new_split_defaults() {
         let s: WorkspaceSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.library_click, LibraryClick::Replace);
+        assert!(!s.independent_themes);
+        assert_eq!(s.pane_outline_width, 2);
+        assert_eq!(s.pane_outline_color, PaneOutlineColor::Auto);
+        assert_eq!(s.pane_gap, 0);
+        assert!(!s.pane_shadow);
+        assert_eq!(s.pane_corners, PaneCorners::Square);
+
         let s: WorkspaceSettings = serde_json::from_str(r#"{"libraryClick":"dragOnly"}"#).unwrap();
         assert_eq!(s.library_click, LibraryClick::DragOnly);
-        assert!(!s.independent_themes);
+    }
+
+    #[test]
+    fn outline_palette_resolves_auto_and_named_colours() {
+        assert_eq!(PaneOutlineColor::Auto.resolve("#000000"), None);
+        assert_eq!(PaneOutlineColor::Red.resolve("#000000"), Some("#e56b64"));
+        assert_eq!(PaneOutlineColor::Custom.resolve("#123abc"), Some("#123abc"));
     }
 }

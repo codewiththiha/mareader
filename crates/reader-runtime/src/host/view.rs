@@ -148,7 +148,7 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
         view! {
             <div
                 node_ref=entry_ref
-                class="group absolute"
+                class="pane-entry group absolute"
                 style:left=move || bounds().map_or("0px".to_string(), |b| format!("{}px", b.x))
                 style:top=move || bounds().map_or("0px".to_string(), |b| format!("{}px", b.y))
                 style:width=move || {
@@ -173,10 +173,7 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
                 <Show when=move || split() && active()>
                     <div
                         aria-hidden="true"
-                        class=format!(
-                            "pointer-events-none absolute inset-0 ring-2 ring-inset ring-accent/60 {}",
-                            layers::CONTROLS,
-                        )
+                        class="pane-focus-outline pointer-events-none absolute inset-0"
                     />
                 </Show>
                 // Close THIS pane (with more than one: the last pane closes
@@ -225,6 +222,31 @@ pub fn ReaderHostView(host: ReaderHost) -> impl IntoView {
             <div
                 class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
                 class=("independent-themes", move || host.themes.independent().get())
+                class=("split-workspace", move || host.pane_count() > 1)
+                style=move || {
+                    host.session.settings.with(|s| {
+                        let workspace = &s.workspace;
+                        let color = workspace
+                            .pane_outline_color
+                            .resolve(&workspace.pane_outline_custom)
+                            .unwrap_or("var(--color-accent)");
+                        let radius = if workspace.pane_corners == reader_core::settings::PaneCorners::Rounded {
+                            "10px"
+                        } else {
+                            "0px"
+                        };
+                        let shadow = if workspace.pane_shadow {
+                            "0 5px 18px rgb(0 0 0 / 0.24)"
+                        } else {
+                            "none"
+                        };
+                        format!(
+                            "--pane-outline-width:{}px;--pane-outline-color:{color};\
+                             --pane-corner-radius:{radius};--pane-box-shadow:{shadow}",
+                            workspace.pane_outline_width
+                        )
+                    })
+                }
                 class=("blend", move || {
                     // The blend class swaps the backdrop AND the page hosts
                     // onto the engine's one computed paper colour

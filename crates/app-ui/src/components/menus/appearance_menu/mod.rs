@@ -53,11 +53,13 @@ use app_state::ChromeState;
 mod hue_picker;
 mod mode_section;
 mod noise_section;
+pub mod pane_section;
 mod presets;
 mod texture_section;
 
 use mode_section::BaseSection;
 use noise_section::NoiseSection;
+use pane_section::PaneSection;
 use presets::PresetSection;
 use texture_section::TextureSection;
 
@@ -82,7 +84,7 @@ pub fn AppearanceMenu(
     // more panes) and stands down in a single pane, where per-pane theming
     // has nothing to distinguish. A named closure: `>=` inside a view
     // attribute would end at the `>`.
-    let split = move || theme.panes.get() >= 2;
+    let split = Signal::derive(move || theme.panes.get() >= 2);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
     // The engine's raw-retention gate: while this popover is open, pages
@@ -127,7 +129,7 @@ pub fn AppearanceMenu(
                 // The dials below edit whichever look the toggle selects:
                 // the focused pane's own while it is on, the window's
                 // otherwise. Grain stays global either way.
-                <Show when=split>
+                <Show when=move || split.get()>
                     <div class="flex items-center justify-between gap-3">
                         <span class="min-w-0">
                             <span class="block text-sm text-ink">"Independent theme for each"</span>
@@ -141,6 +143,8 @@ pub fn AppearanceMenu(
                             title="Independent theme for each pane"
                         />
                     </div>
+                    <Separator vertical=false spacing="my-3" />
+                    <PaneSection settings=state.settings visible=split />
                     <Separator vertical=false spacing="my-3" />
                 </Show>
                 <SectionLabel text="Presets" />

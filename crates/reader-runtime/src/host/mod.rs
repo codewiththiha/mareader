@@ -152,6 +152,39 @@ pub struct ReaderHost {
     themes: theme::PaneThemes,
 }
 
+/// Inset each visible pane by half the requested gutter. The layout tree
+/// continues to own unmodified split geometry; only the content viewport
+/// receives these decorated bounds, so PDF/reflow dimensions match the box
+/// the user sees.
+fn inset_pane_bounds(bounds: PaneBounds, workspace: PaneBounds, gap: u8) -> PaneBounds {
+    let half = gap as f64 / 2.0;
+    let has_left = bounds.x > workspace.x;
+    let has_right = bounds.x + bounds.width < workspace.x + workspace.width;
+    let has_top = bounds.y > workspace.y;
+    let has_bottom = bounds.y + bounds.height < workspace.y + workspace.height;
+    let (left, right) = side_insets(bounds.width, has_left, has_right, half);
+    let (top, bottom) = side_insets(bounds.height, has_top, has_bottom, half);
+    PaneBounds {
+        x: bounds.x + left,
+        y: bounds.y + top,
+        width: (bounds.width - left - right).max(0.0),
+        height: (bounds.height - top - bottom).max(0.0),
+    }
+}
+
+fn side_insets(size: f64, before: bool, after: bool, half_gap: f64) -> (f64, f64) {
+    if before && after {
+        let inset = half_gap.min(size / 2.0);
+        (inset, inset)
+    } else if before {
+        (half_gap.min(size), 0.0)
+    } else if after {
+        (0.0, half_gap.min(size))
+    } else {
+        (0.0, 0.0)
+    }
+}
+
 impl ReaderHost {
     /// Build the host inside the session's reactive owner. `factory` is the
     /// pane implementation the composition root chose, `classify` the same
@@ -345,26 +378,34 @@ impl ReaderHost {
             let Some(layout) = host.layout.try_get() else {
                 return;
             };
-            // Tracked on the placement too: a pane placed after the last
-            // layout is handed the current box.
+            // Tracked on the placement and gap: a pane placed after the last
+            // layout, or a changed gap, is handed its visible content box.
             let _ = host.manager.placed();
-            untrack(|| host.hand_out_bounds(&layout));
+            let gap = host.session.settings.with(|s| s.workspace.pane_gap);
+            untrack(|| host.hand_out_bounds(&layout, gap));
         });
     }
 
     /// Every live pane's box from `layout`. A pane the tree does not hold
     /// (none should exist) fills the slot rather than getting nothing.
-    fn hand_out_bounds(&self, layout: &TreeLayout) {
+    fn hand_out_bounds(&self, layout: &TreeLayout, gap: u8) {
         let whole = self.slot_rect();
-        self.manager
-            .resize_all(|id| layout.bounds_of(id).unwrap_or(whole));
+        let split = self.manager.placed().len() > 1;
+        self.manager.resize_all(|id| {
+            let bounds = layout.bounds_of(id).unwrap_or(whole);
+            inset_pane_bounds(bounds, whole, if split { gap } else { 0 })
+        });
     }
 
     /// Re-lay the tree NOW and hand the boxes out: a pane placed by an open
-    /// has its box before its view mounts.
+    /// has its visible content box before its view mounts.
     fn relayout_now(&self) {
         let layout = self.layout_now();
-        self.hand_out_bounds(&layout);
+        let gap = self
+            .session
+            .settings
+            .with_untracked(|s| s.workspace.pane_gap);
+        self.hand_out_bounds(&layout, gap);
     }
 
     /// The tree laid out over the slot as measured now (untracked).
@@ -1135,6 +1176,83 @@ impl HostSnapshot {
 fn still_reading(host: &str, mut panes: impl Iterator<Item = PaneLifecycle>) -> bool {
     host == "live"
         && panes.any(|pane| !matches!(pane, PaneLifecycle::Disposing | PaneLifecycle::Disposed))
+}
+
+#[cfg(test)]
+mod pane_bounds_tests {
+    use super::inset_pane_bounds;
+    use crate::host::model::PaneBounds;
+
+    #[test]
+    fn a_split_gutter_insets_only_the_edges_shared_by_panes() {
+        let workspace = PaneBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 1000.0,
+            height: 500.0,
+        };
+        assert_eq!(
+            inset_pane_bounds(
+                PaneBounds {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 500.0,
+                    height: 500.0
+                },
+                workspace,
+                12,
+            ),
+            PaneBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 494.0,
+                height: 500.0
+            },
+        );
+        assert_eq!(
+            inset_pane_bounds(
+                PaneBounds {
+                    x: 500.0,
+                    y: 0.0,
+                    width: 500.0,
+                    height: 500.0
+                },
+                workspace,
+                12,
+            ),
+            PaneBounds {
+                x: 506.0,
+                y: 0.0,
+                width: 494.0,
+                height: 500.0
+            },
+        );
+    }
+
+    #[test]
+    fn a_gutter_never_makes_a_narrow_pane_negative() {
+        let bounds = PaneBounds {
+            x: 4.0,
+            y: 8.0,
+            width: 8.0,
+            height: 10.0,
+        };
+        let workspace = PaneBounds {
+            x: 0.0,
+            y: 8.0,
+            width: 20.0,
+            height: 10.0,
+        };
+        assert_eq!(
+            inset_pane_bounds(bounds, workspace, 24),
+            PaneBounds {
+                x: 8.0,
+                y: 8.0,
+                width: 0.0,
+                height: 10.0
+            },
+        );
+    }
 }
 
 #[cfg(test)]
