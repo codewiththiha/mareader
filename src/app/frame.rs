@@ -76,14 +76,6 @@ impl FrameSlot {
 }
 
 impl FrameKind {
-    /// The artifact page the iframe loads (§1).
-    pub const fn page(self) -> &'static str {
-        match self {
-            FrameKind::Library => "/library.html",
-            FrameKind::Reader => "/reader.html",
-        }
-    }
-
     /// What the loading card and error state say.
     pub const fn label(self) -> &'static str {
         match self {
