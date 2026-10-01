@@ -20,7 +20,6 @@ use ai_core::gloss::GlossMark;
 use pdf_engine::types::{DocStatus, PageSize};
 use reader_core::format::Format;
 use reader_core::outline::OutlineNode;
-use reader_core::view::ViewMode;
 use reader_core::zoom_math::{FitMode, clamp_scale};
 
 use crate::context::ReaderContext;
@@ -125,32 +124,22 @@ pub(super) fn resume_page(saved_page: u32, num_pages: u32) -> u32 {
 /// first frame already sits where the fit is going to land instead of jumping
 /// to it a moment later. `page_size` is the sheet being fitted: page 1's for
 /// a PDF, the dialled card for a reflowable document.
-///
-/// A document opening straight into the continuous stream is the exception —
-/// and the reason this returns the fit mode, not only the scale: there is no
-/// page to fit, the window IS the page, type size belongs to the typography
-/// settings, and the zoom starts at 1 with no fit to remember.
+/// Every format fits the same way, the continuous text stream included: its
+/// page geometry is the column it is cut at, so a Markdown or text pane opens
+/// at the startup fit for its own box just like a PDF pane. The fit mode is
+/// returned with the scale so the live refits keep following the pane.
 pub(super) fn startup_scale(ctx: &ReaderContext, page_size: (f64, f64)) -> (FitMode, f64) {
     // The zoom the pane was CREATED with (its descriptor's `initial_zoom`)
     // wins over every fit, once: the first document that seeds consumes it,
-    // so a later open in the same pane fits as usual. The stream has no zoom
-    // to seed (below), so there it is consumed and dropped.
-    let requested = ctx.pane.take_initial_zoom();
-    let streaming = ctx.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
-    if let Some(zoom) = requested.filter(|_| !streaming) {
+    // so a later open in the same pane fits as usual.
+    if let Some(zoom) = ctx.pane.take_initial_zoom() {
         return (FitMode::None, clamp_scale(zoom));
     }
     // The startup fit mode is a user setting, not a hard-coded fit-width,
     // and `sanitize` has already replaced a persisted `None` with the
     // default — so this is always a real fit mode here.
-    let startup_fit = if streaming {
-        FitMode::None
-    } else {
-        ctx.settings.with_untracked(|s| s.layout.default_fit)
-    };
-    let scale = if streaming {
-        1.0
-    } else {
+    let startup_fit = ctx.settings.with_untracked(|s| s.layout.default_fit);
+    let scale = {
         // The container CANNOT be asked at seed time: `container_size` is
         // what the mounted scroller reports and nothing is mounted yet —
         // seeding from it fits the first page against the previous document's

@@ -109,6 +109,37 @@ fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
     Some(profile.clamp(state.viewer.zoom.desired.get_untracked()))
 }
 
+/// The render-completion hook a PDF page host reports its true scale-1 size
+/// through. The open seeds every page with page 1's box, so until a page has
+/// rendered the fit maths cannot know it is a different size. When the page
+/// the reader is ON turns out to differ while a fit mode is active, the fit is
+/// re-resolved against it — the resume page of a fresh open, a page flip in
+/// the paged modes, a jump onto a landscape plate. A page that only rendered
+/// as look-ahead is recorded and fitted when the reader asks.
+pub(crate) fn page_rendered(state: ReaderState) -> Callback<(u32, f64, f64)> {
+    Callback::new(move |(page, width, height): (u32, f64, f64)| {
+        if !state
+            .document
+            .content
+            .metrics
+            .record_rendered(page, width, height)
+        {
+            return;
+        }
+        if state.viewer.page.try_get_untracked() != Some(page) {
+            return;
+        }
+        let fitting = state
+            .viewer
+            .fit
+            .try_get_untracked()
+            .is_some_and(|fit| fit != FitMode::None);
+        if fitting && state.viewer.try_zooming_now() == Some(false) {
+            state.viewer.zoom.post(ZoomCommand::Refit, false);
+        }
+    })
+}
+
 /// The plain-geometry inputs of a fit computation, separated from the
 /// reactive state so the arithmetic is unit-testable on the host.
 #[derive(Debug, Clone, Copy)]
@@ -131,19 +162,11 @@ impl FitDims {
     /// placeholder would slam the page to the minimum scale.
     pub(crate) fn of(state: &ReaderState) -> Option<Self> {
         let page = state.viewer.page.get_untracked().max(1);
-        let p1 = state.document.content.metrics.page1_size.get_untracked()?;
-
         // The page under the reader's eyes, not page 1: a landscape plate in
-        // an otherwise-portrait book must fit on its own terms.
-        let (pw, ph) = state
-            .document
-            .content
-            .metrics
-            .intrinsic
-            .with_untracked(|sizes| match sizes.get((page - 1) as usize) {
-                Some(s) if s.width > 0.0 && s.height > 0.0 => (s.width, s.height),
-                _ => (p1.width, p1.height),
-            });
+        // an otherwise-portrait book must fit on its own terms. The open seeds
+        // every page with page 1's box, so the size the engine actually
+        // rendered this page at wins once it is known.
+        let (pw, ph) = state.document.content.metrics.fit_size(page)?;
         // The column-width dial is a reflowable-only setting: a reflowable
         // column already lives inside `PageGeometry`, and a PDF page IS the
         // column. Scaling the fit budget here made "fit width" land at

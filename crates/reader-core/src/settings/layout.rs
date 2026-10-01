@@ -18,7 +18,7 @@ fn default_label_max_pct() -> f64 {
 /// The fit mode a document opens with. `FitMode::None` is not a startup mode,
 /// which is why [`super::sanitize`] retries it.
 pub(super) fn default_startup_fit() -> FitMode {
-    FitMode::Page
+    FitMode::Width
 }
 /// The column-width dial's resting point: the natural column.
 pub const DEFAULT_COLUMN_WIDTH_PCT: f64 = 100.0;

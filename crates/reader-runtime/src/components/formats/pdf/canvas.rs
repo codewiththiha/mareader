@@ -143,6 +143,11 @@ pub fn PdfPageCanvas(
     /// Called with (page, width, height) CSS px after each successful render.
     #[prop(optional)]
     on_geometry: Option<Callback<(u32, f64, f64)>>,
+    /// Called with (page, width, height) at SCALE 1 after each successful
+    /// render: the page's true size, which the open could not afford to ask
+    /// for up front. The fit modes measure against it.
+    #[prop(optional)]
+    on_rendered: Option<Callback<(u32, f64, f64)>>,
     /// The render scale (crisp target). The RENDER effect renders at this;
     /// the `scale` prop is the DISPLAY scale.
     #[prop(into)]
@@ -450,6 +455,7 @@ pub fn PdfPageCanvas(
         let hid = hid_effect.clone();
         let rt = render_text;
         let cb = on_geometry;
+        let rendered_cb = on_rendered;
         let do_register = registered.clone();
         let geo_async = geo;
         let seq_async = render_seq;
@@ -595,6 +601,12 @@ pub fn PdfPageCanvas(
                     // virtualizer models the strip with — is the snapped one,
                     // so painted pixels and computed offsets agree.
                     geo_async.try_set_value((r.width, r.height, s));
+                    // Before the geometry report: that report lifts the
+                    // first-paint gate, and a refit for a resume page whose
+                    // size differs from page 1 belongs in the same beat.
+                    if let Some(rendered) = rendered_cb.filter(|_| s > 0.0) {
+                        rendered.run((page_no, r.width / s, r.height / s));
+                    }
                     if let Some(cb) = cb {
                         cb.run((page_no, sw, sh));
                     }

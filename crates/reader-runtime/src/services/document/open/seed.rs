@@ -57,6 +57,7 @@ pub(super) fn seed(
     // new, so no previous book's colour can reach the reader's first frame.
     crate::effects::reader::blend_backdrop::configure_session(state);
     state.pane.pdf().paper_document_open(path, num_pages);
+    state.reader.document.content.metrics.clear_rendered();
     state
         .reader
         .document

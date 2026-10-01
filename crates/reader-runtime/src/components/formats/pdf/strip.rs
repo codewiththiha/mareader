@@ -280,7 +280,8 @@ pub fn PdfPageStrip(
                                                 host_id=host_id_for_axis(axis, page)
                                                 render_text=true
                                                 on_geometry=on_geometry
-                                                gloss_overlay=GlossOverlayProps::from_gloss(state)
+                                                on_rendered=crate::zoom::target::page_rendered(state)
+                        gloss_overlay=GlossOverlayProps::from_gloss(state)
                                                 class="mx-auto"
                                             />
                                         </div>
@@ -342,7 +343,8 @@ pub fn PdfPageStrip(
                                                 host_id=host_id_for_axis(axis, page)
                                                 render_text=true
                                                 on_geometry=on_geometry
-                                                gloss_overlay=GlossOverlayProps::from_gloss(state)
+                                                on_rendered=crate::zoom::target::page_rendered(state)
+                        gloss_overlay=GlossOverlayProps::from_gloss(state)
                                                 class="my-auto"
                                             />
                                         </div>

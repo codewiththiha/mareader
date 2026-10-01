@@ -27,6 +27,12 @@ use pdf_engine::types::PageSize;
 /// same cut must not read as a change because the scale rounded differently.
 const HEIGHT_EPSILON: f64 = 0.5;
 
+/// How far a rendered page's implied scale-1 size may sit from the size the
+/// fit maths already holds before it counts as a different page size, in
+/// scale-1 CSS px. Covers the engine's whole-pixel rounding down to the 25%
+/// zoom floor.
+const RENDERED_SIZE_TOLERANCE: f64 = 4.0;
+
 /// The open document's page sizes, at scale 1 and as laid out.
 #[derive(Clone, Copy, Default)]
 pub struct PageMetrics {
@@ -37,9 +43,75 @@ pub struct PageMetrics {
     /// Rendered CSS-px heights per page, seeded from `intrinsic` and refined
     /// by `on_geometry` as pages actually render.
     pub css_heights: RwSignal<Vec<f64>>,
+    /// Scale-1 sizes the engine actually rasterised, 0-based, `None` until a
+    /// page has rendered. The open seeds `intrinsic` with page 1's box for
+    /// every page (a serial size probe over a long book looked like a hang),
+    /// so this is the only place a page's TRUE size is known. It feeds the
+    /// fit modes only: never the virtualizers, so recording a render cannot
+    /// rebuild a layout. Written untracked for the same reason.
+    pub rendered: RwSignal<Vec<Option<PageSize>>>,
 }
 
 impl PageMetrics {
+    /// Record the scale-1 size page `page` (1-based) rendered at. Returns
+    /// `true` when it differs from what the fit maths believed before. Safe
+    /// after teardown: a render completion can outlive the reader state.
+    pub fn record_rendered(&self, page: u32, width: f64, height: f64) -> bool {
+        if page == 0 || !(width > 0.0 && height > 0.0) {
+            return false;
+        }
+        let index = (page - 1) as usize;
+        let Some(before) = self.fit_size(page) else {
+            return false;
+        };
+        let size = PageSize { width, height };
+        let stored = self.rendered.try_update_untracked(|store| {
+            if store.len() <= index {
+                store.resize(index + 1, None);
+            }
+            store[index] = Some(size);
+        });
+        // The engine reports whole CSS px at the render scale, so the scale-1
+        // size it implies carries up to `1 / scale` px of rounding. Only a
+        // real difference counts — a rounding wobble must never chain into a
+        // refit, re-render, refit loop.
+        let differs = |a: f64, b: f64| (a - b).abs() > RENDERED_SIZE_TOLERANCE.max(b * 0.005);
+        stored.is_some() && (differs(before.0, width) || differs(before.1, height))
+    }
+
+    /// The scale-1 size a fit should measure page `page` (1-based) by: the
+    /// rendered size when the page has rendered, else its declared box, else
+    /// page 1's. `None` before any document is seeded (or after teardown).
+    pub fn fit_size(&self, page: u32) -> Option<(f64, f64)> {
+        let index = page.max(1) as usize - 1;
+        let usable =
+            |s: &PageSize| (s.width > 0.0 && s.height > 0.0).then_some((s.width, s.height));
+        if let Some(Some(hit)) = self
+            .rendered
+            .try_with_untracked(|store| store.get(index).cloned().flatten())
+            .map(|s| s.as_ref().and_then(usable))
+        {
+            return Some(hit);
+        }
+        if let Some(Some(hit)) = self
+            .intrinsic
+            .try_with_untracked(|sizes| sizes.get(index).and_then(usable))
+        {
+            return Some(hit);
+        }
+        self.page1_size
+            .try_get_untracked()
+            .flatten()
+            .and_then(|s| usable(&s))
+    }
+
+    /// Forget every rendered size: a new document is being seeded.
+    pub fn clear_rendered(&self) {
+        if self.rendered.with_untracked(|store| !store.is_empty()) {
+            self.rendered.update_untracked(Vec::clear);
+        }
+    }
+
     /// Whether the laid-out heights already are `sizes`, within
     /// [`HEIGHT_EPSILON`]. The write guard every writer of `css_heights` owes
     /// the virtualizers' geometry epoch: a write that changes nothing still
@@ -66,6 +138,7 @@ impl PageMetrics {
     /// stream rescales itself; the paged modes go through
     /// `reader_runtime::effects::reader::reflow_layout`).
     pub fn publish_uniform(&self, count: u32, size: &PageSize, css_height: f64) {
+        self.clear_rendered();
         let pages = count as usize;
         let sizes_current = self
             .intrinsic
