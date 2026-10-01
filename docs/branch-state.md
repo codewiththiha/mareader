@@ -24,6 +24,7 @@ in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 5 — production split workspace | **done**: `/reader` runs a `PaneTree` (layout over pane ids only, `crates/reader-runtime/src/host/tree.rs`) under the `ReaderHost`; up to four live panes, each with its own `FormatSession`; `open_document(target)` places a document in a pane or beside it; host-owned dividers, focus outline and per-pane close; see [Phase 5: the split workspace](#phase-5-the-split-workspace) |
 | 6 — smart document drag/drop | **implemented**: a file row of the reader's Library panel (the rail's third tab, `crates/reader-runtime/src/host/library/`) is the one split-drag source; targets come from the measured slot and pane boxes (`crates/reader-runtime/src/host/{geometry,drop_target,drag,commands}.rs`), the preview is geometry only, a drop is one `WorkspaceCommand`; OS file drops import into the library while it is on screen (`src/services/import_drop.rs`); see [Phase 6: document drag and drop](#phase-6-document-drag-and-drop) |
 | 7+ — appearance blend, … | **done** — split-mode blend hold + MRU shared paper; visible independent-theme toggle in the appearance menu and Settings → Workspace; per-pane look routing/token paint; per-session PDF bake/cache and local paper publication; independent blend isolates PDF pages, reflow surfaces, shared gutters and chrome. CI `378686a` green (`36791384567`); Deep CI green (`36791384490`: browser lifecycle, Tauri boot and split memory replay). Visually checked at 1440×900 and 800×900; screenshots `/home/user/independent-theme-final-{1440,800}.png` |
+| 8 — split pane decoration | **implemented** in `d5982b5`: focus outline has pane-local stacking and raised active entry; split-only controls in Appearance and Settings → Workspace for outline width, Auto/palette/custom colour, inter-pane gap, pane-box shadow and corner shape. Browser lifecycle assertions added. All CI checks and Deep CI passed on `0c7bf42` (`36800876359` / `36800876302`): Rust tests/lint/format, web contracts, shell checks, Tauri boot, browser lifecycle and split memory replay. Browser assertions verified `#e56b64`, 5 px stroke, 10 px corners, outer-box shadow, 12 px visible gap and active-pane stacking. |
 
 ## Architecture as built (do not re-derive)
 
@@ -556,6 +557,41 @@ deliberately rather than discovering it:
   (`independent-theme-final-1440.png`, `independent-theme-final-800.png` in
   the workspace); the split shows Light PDF | Dark Markdown while the global
   reader backdrop/chrome remain Light.
+
+## Phase 8: split pane decoration
+
+- **Focus paint:** `.reader-bg.split-workspace [data-pane-id]` creates an
+  isolated pane stacking context; the active entry receives the higher
+  sibling z-index and its focus outline paints above that pane's content.
+  The outline uses a configurable inset stroke rather than a Tailwind ring
+  whose stacking could be obscured by a later pane.
+- **Settings:** one shared `PaneSection` is mounted in both the Appearance
+  popover and Settings → Workspace, only while the host has two or more
+  placed panes. Outline width is 0–8 px (default 2); colour is Auto (follows
+  the global accent), named palette, or custom RGB; gap is 0–24 px (default
+  0); pane-box shadow defaults off; square corners are the default. The new
+  values are persisted in `WorkspaceSettings` and sanitized on load.
+- **Geometry and ownership:** gap is applied only on shared split edges,
+  leaving the workspace's outside edge flush. Pane resize bounds are inset
+  by half the requested gap at each shared side, so PDF and reflow viewports
+  match the visible pane boxes. Pane shadow/radius/clip live on the host's
+  outer `[data-pane-id]` box, not on PDF page hosts. Grain and document
+  appearances are unaffected.
+- **Regression proof added:** browser lifecycle Stage 13 checks the active
+  pane z-order, both split-only entry points, the Auto→customized outline,
+  12 px split gap, rounded box, outer pane shadow, and control disappearance
+  after returning to one pane. Host unit tests cover shared-edge insets and
+  narrow bounds. `node --check tests/browser/lifecycle.mjs`,
+  `git diff --check`, `tools/check-host-boundary.mjs` and
+  `tools/check-session-ownership.mjs` passed locally. Early CI compilation
+  failures (invalid `label=None`, rustfmt changes, a moved Switch view and a
+  missing outline-color format argument) are fixed. On `b675302`, CI passed;
+  its Deep CI browser run caught a bad expected RGB channel (`230` instead of
+  `229` for `#e56b64`). On `0c7bf42`, all CI jobs passed; Deep CI passed the
+  browser lifecycle and split memory replay, as well as Tauri native boot.
+  The browser assertions verified the requested color, 5 px outline, 10 px
+  radius, pane-box shadow, 12 px gap, active-pane stacking and split-only
+  control visibility.
 
 ## Known follow-ups (do not silently expand scope)
 
