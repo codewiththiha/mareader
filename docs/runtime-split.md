@@ -1,6 +1,6 @@
-# The runtime split (Phase 2): how the three runtimes are built, loaded, and disposed
+# The runtime split: how the three runtimes are built, loaded, and disposed
 
-This document is the Phase 2 §1 record: the actual runtime technology, decided
+This document records the actual runtime technology, decided
 from the existing build (Trunk CSR, one `index.html` target, wasm-bindgen
 `--target web` glue, Trunk 0.21.14 in CI), not assumed.
 
@@ -247,7 +247,7 @@ Disposal is a frame round-trip (`dispose_active`, `src/app/manager.rs`):
 
 Nothing of the runtime instance outlives its frame — the realm is disposed
 with it. What does survive is origin-level (localStorage entries, served
-assets), which is what Phase 0 measured as application scope.
+assets), which is what the baseline measured as application scope.
 
 The manager never starts a new runtime until the previous runtime's dispose
 completed (§5). What must not survive is live state, and it does not (the
@@ -296,7 +296,7 @@ entry code runs unhosted; the trait keeps exactly these two implementations
 
 ## Artifact sizes
 
-Released from the build contract's CI log (Deep CI #186 on this branch's tip,
+Released from the build contract's CI log (Deep CI #186,
 2026-09-25 — `tools/check-runtime-artifacts.mjs` prints every artifact's size):
 
 | artifact | bytes | what it says |

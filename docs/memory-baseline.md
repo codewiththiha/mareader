@@ -1,12 +1,9 @@
-# MAReader memory and lifecycle baseline (Phase 0)
+# MAReader memory and lifecycle baseline
 
-Phase 0 deliverable: the repeatable procedure, the instrumentation it reads,
-and what the ownership map says to expect before the runtime migration
-changes anything. Companion to `docs/lifecycle-ownership.md`.
-
-This phase is instrumentation and evidence. Nothing here redesigns the
-architecture; the numbers below exist so the later phases' claims about
-teardown and retention are checkable instead of narrative.
+The repeatable procedure for measuring reader teardown and retention, the
+instrumentation it reads, and the recorded baseline numbers. Companion to
+`docs/lifecycle-ownership.md`. The numbers exist so claims about teardown
+and retention are checkable instead of narrative.
 
 ## The instrumentation
 
@@ -73,8 +70,8 @@ counts OPEN ATTEMPTS that claimed the document state — the boundary hook
 today's architecture has for "a runtime began". A failed open is a create
 whose dispose never needs to run, so the pairing these counters prove is
 the close path's completion, not liveness; the liveness truth is
-`readerRuntimeLive` plus the engine's `hasDocument`. Phase 1's explicit
-runtime object replaces this hook with a real lifetime.
+`readerRuntimeLive` plus the engine's `hasDocument`. The explicit runtime
+object (`ReaderRuntime`) has since replaced this hook with a real lifetime.
 
 ### CI enforcement
 
@@ -172,8 +169,7 @@ with blend (look-ahead) enabled. The numbers below are pasted verbatim from
 the `=== PHASE0 BROWSER BASELINE ===` tables the workflow prints; rerun the
 lane to reproduce or to compare a change against it.
 
-Recorded from Deep CI run **35983608664** (branch `split-wasm-modules-t10`,
-commit `2b58f11`, 2026-09-24) — the full matrix with all three raced closes,
+Recorded from Deep CI run **35983608664** (commit `2b58f11`, 2026-09-24) — the full matrix with all three raced closes,
 the fast-jump page-identity proof, the same-page reopen workload, and
 fail-closed accounting, zero wasm traps::
 
@@ -219,8 +215,8 @@ counts OPEN ATTEMPTS that claimed the document state — the boundary hook
 today's architecture has for "a runtime began". A failed open is a create
 whose dispose never needs to run, so the pairing these counters prove is
 the close path's completion, not liveness; the liveness truth is
-`readerRuntimeLive` plus the engine's `hasDocument`. Phase 1's explicit
-runtime object replaces this hook with a real lifetime.
+`readerRuntimeLive` plus the engine's `hasDocument`. The explicit runtime
+object (`ReaderRuntime`) has since replaced this hook with a real lifetime.
 
 ### CI enforcement
 
@@ -318,8 +314,7 @@ with blend (look-ahead) enabled. The numbers below are pasted verbatim from
 the `=== PHASE0 BROWSER BASELINE ===` tables the workflow prints; rerun the
 lane to reproduce or to compare a change against it.
 
-Recorded from Deep CI run **35977320462** (branch `split-wasm-modules-t10`,
-commit `7db2d91`, 2026-09-24) — the full matrix with all three raced closes,
+Recorded from Deep CI run **35977320462** (commit `7db2d91`, 2026-09-24) — the full matrix with all three raced closes,
 zero wasm traps, verified stable across a repeat run of the same commit:
 
 ```text
@@ -406,7 +401,7 @@ rAF tails. The thumbnail generation bookkeeping gained the same shape: a
 document's lane opens with its document and `resetThumbLane` closes it, so
 a straggling request cannot reseed the map the teardown just cleared.
 
-### Structural findings (hold for any build until later phases change them)
+### Structural findings at baseline
 
 
 ### Expected post-close baseline (every workload)
@@ -439,19 +434,19 @@ retained OWNERSHIP, not a synchronous return of bytes to the OS.
 2. **The search index survives close** (`api/search.rs`, keyed by content
    fingerprint) so a reopen adopts it instead of re-extracting every page.
    A different book's open drops it. This is the deliberate trade the
-   migration keeps until Phase 4 replaces it with an explicit
-   session-scoped owner.
+   baseline kept; it is now a content-keyed, realm-wide index
+   (`docs/session-ownership.md`).
 3. **The covers cache** persists for the app's lifetime (library state).
 4. **The engine session object** is a module singleton — destroyed and
    re-created per open today; it stays reachable from the module, which is
-   correct now and becomes the Phase 1/4 boundary.
+   correct at baseline; it is now one engine session per pane session.
 5. **The paper/backdrop session** is a thread-local, reset on close but
    reachable from module scope — same trajectory.
 6. **WebKit/WebView latching** — freed canvas IOSurfaces and JS arenas may
    not return to the OS; `releaseCanvas`/snapshot sweeping exist to hand
    the surfaces back, and the OS may still hold them under pressure.
 
-### What the map says about ownership (the Phase 0 acceptance)
+### What the map says about ownership
 
 - The PDF session is owned by `public/engine/state.ts`'s `EngineSession`
   (module-global today), driven through `services/document/close.rs` and
@@ -468,10 +463,10 @@ retained OWNERSHIP, not a synchronous return of bytes to the OS.
 - Reader disposal completion is detectable: the close tail emits
   `dispose_complete` AFTER the sweeps, and `disposalEpoch` names the moment.
 
-## Proposed Phase 1 ownership boundary (from the evidence)
+## The ownership boundary that followed
 
-The migration's first ownership change should make the engine session an
-explicit, instance-owned object rather than a module singleton, with the
+The evidence pointed to making the engine session an explicit,
+instance-owned object rather than a module singleton, with the
 close path owning its disposal as today but the lifetime no longer held by
 module scope:
 
@@ -483,9 +478,10 @@ module scope:
    (a scoped transfer on close/open) instead of a thread-local survivor.
 3. Move the backdrop session under the same explicit lifetime (epoch token
    already exists; make the owner explicit).
-4. Leave routing, virtualization and appearance untouched — they are later
-   phases (Shell/Library/Reader split, Host+Pane).
+4. Leave routing, virtualization and appearance untouched; the
+   Shell/Library/Reader split and the host/pane model came separately.
 
-Success for that phase is exactly this document's post-close baseline,
+That boundary is implemented (`docs/architecture.md`). Its success
+criterion is exactly this document's post-close baseline,
 enforced by the same counters, with the module-global owners from
 `docs/lifecycle-ownership.md` gone or reduced to explicit, owned handles.

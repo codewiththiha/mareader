@@ -1,142 +1,89 @@
-# The fling gate, scroll churn, and the dwell fix
+# The fling gate
 
-The in-view exemption shipped in `16bbe4a` regressed idle memory. The fix
-is the dwell in `c9e73dc`. This records what the gate protects, how the
-regression worked, why CI could not see it, and the fix.
+How the PDF strip decides when a page may start a full-resolution raster
+while the reader scrolls, why that decision is a memory device, and the
+rules any change to it must keep.
 
 ## What the gate protects
 
-The render effect in `crates/reader-runtime/src/components/formats/pdf/
-canvas.rs` decides whether a page may start a raster. While the strip
-moves (`settled == Some(false)`), an unpainted page stays on its upscaled
-thumbnail underlay:
+The render effect in
+`crates/reader-runtime/src/components/formats/pdf/canvas.rs` starts a page
+raster. While the strip moves (`settled == Some(false)`), an unpainted page
+that is not in view does not start one; it stays blank. There is no
+placeholder: no thumbnail underlay, no cached low-resolution copy, no
+stretched bitmap.
 
-```rust
-// The gate before the perf work (8f6b099)
-if !painted.get() && settled.as_ref().is_some_and(|s| !s.get()) {
-    if !(gw > 0.0 && gh > 0.0) {
-        pdf().blit_thumb(&cid_effect, page);
-    }
-    return;
-}
-```
-
-The gate is a memory device. Two facts of browser memory make it one:
+Two facts of browser memory make the gate necessary:
 
 1. A raster sets the page canvas to full page pixels (10–25 MB of backing
-   store at reading zoom). The thumbnail path resizes the canvas to the
-   thumbnail's dimensions, a few hundred KB.
+   store at reading zoom).
 2. The webview's resource cache grows to the peak of surfaces it has seen
    and does not hand that peak back at idle. Churn — large surfaces created
    and discarded every few frames — drives the peak up even though no
    single moment holds much.
 
-The gate's comment records the measured history:
+Rasterising every page a fling flies past is exactly that churn.
 
-> a full-resolution rasterisation for every page a fling flies past
-> creates, paints and discards a full-page surface every few frames, and
-> that churn — not the mounted ceiling — is what pushes the webview's
-> resource cache, and the footprint latched onto it, to its high-water
-> mark.
+## Speed-aware visibility
 
-## The regression
-
-`16bbe4a` exempted pages inside the visible band from the gate.
-Visibility is derived from the virtualizer's own model in
-`in_view_signal` (`crates/reader-runtime/src/components/formats/pdf/
-strip.rs`), read tracked so the crossing re-runs the effect:
-
-```rust
-// v1: crossing-based (regressed)
-start + span >= scroll - IN_VIEW_MARGIN_PX
-    && start <= scroll + viewport + IN_VIEW_MARGIN_PX
-```
-
-The mistake: `in_view` went true the moment a page crossed into the band.
-During any real scroll every page crosses the band; a fling sweeps one
-through in tens of milliseconds. Each one started a full-resolution raster
-that was painted and discarded frames later — exactly the churn the gate
-exists to stop, re-introduced for the pages the reader looks at. The
-webview latched the higher footprint, and memory no longer dropped at
-idle.
-
-Nothing in CI could see it:
-
-- The engine smoke suite has no DOM and no scrolling.
-- The browser lifecycle suite asserts behaviour, not memory.
-- The memory replay scrolls each pane once. The latch needs sustained
-  scrolling; one wheel notch cannot produce it.
-
-## The fix
-
-The exemption requires the page to sit inside the band continuously before
-it counts as visible:
-
-```rust
-const IN_VIEW_MARGIN_PX: f64 = 160.0;
-const IN_VIEW_DWELL_MS: f64 = 120.0;
-
-fn in_view_signal(
-    virtualizer: Virtualizer,
-    top: Signal<f64, LocalStorage>,
-    size: Signal<f64, LocalStorage>,
-) -> Signal<bool, LocalStorage> {
-    let dwell_start = std::cell::Cell::<Option<f64>>::new(None);
-    Signal::derive_local(move || {
-        let scroll = virtualizer.scroll_offset().get();
-        let viewport = virtualizer.viewport().get().main;
-        // Layout-version carrier: a rebuild moves every offset without a
-        // scroll.
-        let _ = virtualizer.total_size().get();
-        let start = top.get();
-        let span = size.get().max(0.0);
-        let inside = start + span >= scroll - IN_VIEW_MARGIN_PX
-            && start <= scroll + viewport + IN_VIEW_MARGIN_PX;
-        if !inside {
-            dwell_start.set(None); // the clock restarts on every exit
-            return false;
-        }
-        let now = in_view_now_ms(); // performance.now(), Date::now() fallback
-        match dwell_start.get() {
-            None => { dwell_start.set(Some(now)); false }
-            Some(started_at) => now - started_at >= IN_VIEW_DWELL_MS,
-        }
-    })
-}
-```
-
-The clock is the same monotonic pair the virtualizer's retention clock
-uses. Behaviour by case:
+`in_view_signal` (`crates/reader-runtime/src/components/formats/pdf/strip.rs`)
+derives visibility from the virtualizer's own model (scroll offset,
+viewport, item offsets) and is read tracked by the render effect:
 
 | Situation | Behaviour |
 | --- | --- |
-| Fast fling (<120 ms in the band) | Never `in_view`; gate holds; thumbnail underlay; no churn |
-| Slow scroll, the reader lingers ≥120 ms | `in_view` flips on a scroll tick; the page rasters while moving |
-| Scroll stops inside the band before 120 ms | The 150 ms settle flips `settled`; the gate releases through `settled` as it always did |
-| Zoom in flight | The effect's `anim` early-return runs before the gate |
-| Page modes | No `in_view` signal; `visible_now` defaults true; page modes do not scroll the strip |
+| Page inside, or within `IN_VIEW_MARGIN_PX` of, the viewport at reading speed | Visible at once; renders while the strip moves |
+| Same, while the strip moves faster than `FLING_PX_PER_MS` | Visible after `IN_VIEW_DWELL_MS` continuously in the band; the clock restarts on every exit |
+| Fling stops inside the dwell window | A one-shot timer wakes the derive at the deadline; the page renders then |
+| Page outside the band | Renders at the scroll settle |
+| Zoom in flight | The effect's `anim` branch runs before the gate |
+| Page modes | No `in_view` signal; pages render immediately |
 
-120 ms sits below the 150 ms settle on purpose: a page the reader actually
-reads clears the dwell before the settle would have rendered it anyway, so
-crispness is kept and the churn is not.
+The timer is what keeps the gate from stalling: visibility never depends on
+another scroll event arriving. It is an `ArcTrigger`, one per page at a
+time, at most one dwell long, so a wake after unmount notifies nothing.
 
-## Constants in this neighbourhood
+## Never stuck at a stale scale
+
+A render that lands after the committed scale moved on
+(`Completion::Stale`) leaves a bitmap at the wrong scale, stretched to the
+display size. The page host forces its render effect to run again
+immediately (a component-owned `Trigger`), so the crisp render follows
+without waiting for an unrelated dependency change.
+
+## Rules for changes
+
+- Keep the gate. A visible page renders while moving; a page a fling only
+  sweeps past does not.
+- Never add a path where a page's correctness depends on a later event that
+  may not come. Every deferral needs a guaranteed wake (settle, timer,
+  trigger).
+- Do not reintroduce placeholder pixels. Blank until the full-resolution
+  render lands is the contract.
+- Measure with a scroll-heavy workload. The engine smoke suite has no DOM,
+  the lifecycle suite asserts behaviour, and the memory replay scrolls each
+  pane once, so none of them sees churn on its own.
+
+## Constants
 
 | Constant | Value | Owner |
 | --- | --- | --- |
 | Scroll settle delay | 150 ms | virtualizer `scroll_end_delay` |
-| `IN_VIEW_DWELL_MS` | 120 ms | `formats/pdf/strip.rs` |
-| `IN_VIEW_MARGIN_PX` | 160 px | `formats/pdf/strip.rs` |
+| `IN_VIEW_MARGIN_PX` | 320 px | `formats/pdf/strip.rs` |
+| `FLING_PX_PER_MS` | 4 px/ms | `formats/pdf/strip.rs` |
+| `IN_VIEW_DWELL_MS` | 60 ms | `formats/pdf/strip.rs` |
 | `CLEANUP_EVERY` | 5 renders | `engine/state.ts` |
 | `SWEEP_IDLE_MS` | 30 s | `engine/state.ts` |
 | `RAW_IDLE_MS` | 2 s | `engine/state.ts` |
 | `MAX_ZOMBIES` / `STRIP_SCROLL_GRACE_MS` | 12 / 120 ms | `zoom/config.rs` |
 | `PAGE_RENDER_LIMIT` / `REALM_PAGE_LIMIT` | 2 / 2 | `renderer.ts`, `state.ts` |
 
-## Commits
+## History
 
-| Commit | Change |
-| --- | --- |
-| `16bbe4a` | Exemption, v1, crossing-based; caused the regression |
-| `c9e73dc` | Dwell on the exemption; fix |
-| `8b54337` | This document (first as `docs/fling-gate-retrospective.md`) |
+A first version exempted visible pages the moment they crossed into the
+band. During a fling every page crosses, so each started a raster that was
+discarded frames later; the webview latched the higher footprint. A 120 ms
+dwell fixed the churn but left pages blurry on their thumbnail underlay
+whenever a scroll stopped inside the window, until the settle. The current
+design removes the underlay, renders immediately at reading speed, shortens
+the mid-fling dwell and wakes on a timer.

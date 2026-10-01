@@ -1,16 +1,16 @@
 # The route split, three times — a retrospective
 
 Three designs for "one WASM per route, mounted and unmounted instantly, with
-the other route's memory gone" were built on this branch. The first was
+the other route's memory gone" were built in turn. The first was
 correct about memory and too slow to use; the second was instant and kept
 every byte; the third is instant and lets the memory go. This document
 records what each one was, what it cost to build, why it failed or works,
 and what the numbers say — so the next person does not rebuild the first
 two.
 
-Everything here was reconstructed from the branch's own history (`git log`,
+Everything here was reconstructed from the git history (`git log`,
 the diffs and the docs at each stage), from the GitHub Actions run and job
-records of the branch (509 runs), and from the CI-built `dist/` artifacts
+records (509 runs), and from the CI-built `dist/` artifacts
 of each era replayed in a local browser. Where a number is measured, the
 source is named; where it is an inference from code, it says so.
 
@@ -18,16 +18,15 @@ source is named; where it is an inference from code, it says so.
 
 | | Version 1 — dispose, then boot | Version 2 — warm slot + recycle | Version 3 — intent warming + eviction |
 | --- | --- | --- | --- |
-| Commits | `9a9381d` … `e6b7a65` (Phase 1 reader runtime, the split, frames, transport, build contract, dev flow) | `861d518` … `da06bff` (`perf(shell): keep a runtime warm`, `perf(shell): recycle frames and relay cover bakes`, then zoom/noise polish) | `b737644` … `a2aa19a` (`refactor(shell): bake covers in a shell frame, warm reader on intent` and seven follow-ups) |
+| Commits | `9a9381d` … `e6b7a65` (reader runtime, the split, frames, transport, build contract, dev flow) | `861d518` … `da06bff` (`perf(shell): keep a runtime warm`, `perf(shell): recycle frames and relay cover bakes`, then zoom/noise polish) | `b737644` … `a2aa19a` (`refactor(shell): bake covers in a shell frame, warm reader on intent` and seven follow-ups) |
 | CI window (UTC) | 2026‑09‑24 10:34 → 09‑26 06:50 | 2026‑09‑28 00:46 → 08:52 | 2026‑09‑28 11:20 → 12:04 |
 | Route switch | cover the host, dispose the outgoing frame, await it, create the next frame, boot, open | reveal a frame that booted behind the screen; the one just left is kept and re-armed in place | same reveal, but the reader boots on shelf intent, is evicted after an idle window, and covers never touch it |
 | Memory after a read | freed with the frame, at once | never freed: the reader frame lives as long as the app | freed with the frame, ≤ idle window (60 s) or at once past a heap ceiling |
 | What was wrong | every switch paid a page load + wasm instantiation + Leptos mount + pdf.js, behind two visible loading states | acted like the unified app: the reader realm, its wasm linear memory and pdf.js stayed resident; a reader was booted 700 ms after every library paint even if no book was ever opened; covers were baked in that reader | — (trade‑offs in §4.4) |
 
-Before this branch there were five earlier branches for the same goal
-(`split-wasm-modules`, `-t2` … `-t5`, 2026‑09‑20 → 09‑23): 361 CI runs, 257
-of them failures, 1,016 wall‑minutes, none of it merged. They are not
-analysed here; they are the reason the branch is called `t10`.
+Five earlier attempts at the same goal (2026‑09‑20 → 09‑23) ran 361 CI
+runs, 257 of them failures, 1,016 wall‑minutes, none of it merged. They are
+not analysed here.
 
 ## 2. Version 1 — dispose, then boot
 
@@ -97,7 +96,7 @@ Every later version had to reproduce this property, and version 2 lost it.
 
 ### 2.4 What it cost to build
 
-From the Actions records of the branch, 09‑24 10:34 → 09‑26 06:50:
+From the Actions records, 09‑24 10:34 → 09‑26 06:50:
 
 | | v1 |
 | --- | --- |
@@ -216,7 +215,7 @@ Better hygiene than v1 (one rustfmt failure, and a `ci: let a push skip the
 work it cannot change` commit), but the same loop for the browser lane: the
 two `perf(shell)` subjects were pushed 5 and 6 times each, and the untweened
 zoom work that followed pushed `fixup!` commits ten times against a red
-lifecycle lane. The measurements written into `docs/branch-state.md`
+lifecycle lane. The measurements written into `docs/architecture.md`
 ("Measured, not assumed") were taken from the suite's own summary without
 asking whether the suite measured the right thing — which is how a 1 ms
 "relay" and a `true` baseline with a resident reader got recorded as proof.
@@ -299,7 +298,7 @@ heap slope 0 B/cycle; `samePageRecycledOpens` 9/10.
 Four red pushes is not zero; two of them were compile errors a local
 `cargo clippy --target wasm32-unknown-unknown` would have caught, and the
 sandbox this was built in has no Rust toolchain (a deliberate constraint of
-the session, recorded in `docs/branch-state.md`). The cleanup pass that
+the session, recorded in `docs/architecture.md`). The cleanup pass that
 produced this document added one more (`cb97379`: dropping the workspace
 root's dev‑dependency on `library-core` also dropped the `test-util`
 feature it had been enabling for two other crates' tests as a side effect;
@@ -375,7 +374,7 @@ Scanned book:
 What the tables say:
 
 - All three versions release the *document* on close (the +2 s drop is the
-  engine's destroy: decoded images, canvases, the worker). That is Phase 1's
+  engine's destroy: decoded images, canvases, the worker). That is the runtime lifecycle's
   work and it was never the problem.
 - Version 2 ends every run with a reader frame resident and 14–18 MB above
   version 3 after a GC. That gap is the fixed cost of a reader realm with a
@@ -463,7 +462,7 @@ Removed (nothing referenced them after version 3):
   reader never asks for a bake and the Shell refuses one from any frame
   that is not a shelf.
 
-Kept on purpose, and recorded in `docs/branch-state.md` as follow‑ups
+Kept on purpose, and recorded in `docs/architecture.md` as follow‑ups
 rather than deleted: `DragOverlay` and `install_window_state_bridge` lost
 their callers in the split (`8bbda0a`) — drag‑and‑drop opening and the
 frameless caption's maximize/restore glyph are unwired today. They are
@@ -472,8 +471,7 @@ runtime frames.
 
 ## 9. Sources
 
-- Branch history: `git log --format='%h %ad %s' --date=short` on
-  `split-wasm-modules-t10`; the v1 designs from `git show
+- History: `git log --format='%h %ad %s' --date=short`; the v1 designs from `git show
   8bbda0a:docs/runtime-split.md`, `git show e6b7a65:docs/runtime-split.md`
   and `git show e6b7a65:src/app/manager.rs`; the v2 design from `861d518`,
   `e8b1d18`, `c722bd7`, `a3e3c8f` and `src/app/manager.rs` at `da06bff`.

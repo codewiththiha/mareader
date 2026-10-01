@@ -1,13 +1,13 @@
 # MAReader lifecycle and resource ownership map
 
-Phase 0 deliverable. This is the measured starting point of the runtime
-migration: who owns each resource today, traced from route mount to resource,
-with every global/module-level owner and every piece of async work that can
-outlive a route change named explicitly. It is the map the later phases
-carve ownership boundaries along — and the checklist the disposal baseline
-(`docs/memory-baseline.md`) asserts against.
+Who owns each reader resource, traced from route mount to resource, with
+every global/module-level owner and every piece of async work that can
+outlive a route change named explicitly. The first half records the
+single-runtime app the runtime split started from; the later sections
+describe the runtime and the host/pane ownership that replaced it. The
+disposal baseline (`docs/memory-baseline.md`) asserts against this map.
 
-## The shape of the app today
+## The original single-runtime app
 
 One root Leptos mount (`src/app`), one `AppState`
 (`src/state/app.rs`) spanning library and reader, and a two-route shell:
@@ -21,12 +21,12 @@ mount_to_body -> App
 └── app-lifetime effects (theme, motion, drag-drop, window bridge)
 ```
 
-(That tree is the Phase 0 app; `ReaderPage` has since been replaced by the
-reader host and its panes — see the Phase 3 section at the end.)
+(`ReaderPage` has since been replaced by the reader host and its panes —
+see [The reader host and its panes](#the-reader-host-and-its-panes).)
 
 Route changes mount and unmount component trees, but the STATE and the
-engine session are app-lifetime singletons — that is exactly what the later
-phases replace. The inventory below is what exists now.
+engine session were app-lifetime singletons — what the runtime split
+replaced. The inventory below records that starting point.
 
 ## Resource owners, traced
 
@@ -121,15 +121,15 @@ route change itself:
 - Virtualizer rAF coalescing and retention timer: owned by
   `VirtualizerInner`, cleared in `dispose()`.
 
-## The disposal sequence as it existed at Phase 0
+## The original disposal sequence
 
-Kept as the Phase 0 record. The current sequence is the pane's dispose
+Kept as the starting-point record. The current sequence is the pane's dispose
 ("Disposal" below) ending its `PdfSession` — see `docs/session-ownership.md`.
 
 ```text
 close_document (services/document/close.rs)
 ├── session::claim()                    — invalidate every in-flight open tail
-├── diagnostics: dispose_begin          — Phase 0 instrumentation
+├── diagnostics: dispose_begin          — baseline instrumentation
 ├── flush_read_point                    — persist resume point synchronously
 ├── spawn_local:
 │   ├── engine::destroy().await         — engine session teardown (below)
@@ -151,14 +151,14 @@ engine destroy (public/pdfEngine.ts)
 └── finally: pdf/numPages/path nulled, paper republished, scratch drained
 ```
 
-## What Phase 0 adds on top (and what it deliberately does not)
+## Baseline instrumentation
 
-Phase 0 instruments this map — counters on the create/dispose edges, the
+The baseline instruments this map — counters on the create/dispose edges, the
 `window.__mareaderDiagnostics()` snapshot, and the smoke-test assertions
 that the engine half drains. It does NOT change ownership: the single
 `AppState`, the engine session singleton, and the retained search index are
 exactly as they were, because they are the measured subject, not the fix.
-The proposed Phase 1 boundary that follows from this map is in
+The runtime boundary that follows from this map is in
 `docs/memory-baseline.md`.
 
 The snapshot also reads the bookkeeping this map says the owners hold, so a
@@ -175,8 +175,8 @@ unseen).
 ### Two teardown bugs the baseline caught (and their fixes)
 
 The browser lane's raced closes — close in the same JS turn that observes
-work in flight — found two real holes in this map, both fixed on this
-branch. They are recorded because they shape Phase 1's boundary work:
+work in flight — found two real holes in this map, both fixed. They are recorded because
+they shaped the runtime boundary:
 
 1. **Prefetch born inside the destroy window.** A prefetch enqueued after
    the thumbnail lane's epoch bump but before the document nulls captures
@@ -228,22 +228,20 @@ the dispose rather than what it measures:
    (`searchActive`) so a close landing mid-build is visible and the
    baseline requires the gauge empty. `destroy()` clears the idle timer.
 
-### Notes the next phases must not lose
+### Notes from the starting point
 
 - `window.__mareaderDiagnostics` captures the app state through a
-  window-owned closure. Fine while there is exactly one runtime; when
-  Phase 2 splits library and reader runtimes, this surface needs explicit
-  installation/removal tied to the runtime that owns it, or the shell
-  window itself becomes the thing pinning a "disposable" reader open.
+  window-owned closure. With separate library and reader runtimes this
+  surface needs installation/removal tied to the runtime that owns it, or
+  the shell window becomes the thing pinning a "disposable" reader open.
 - `readerRuntimesCreated`/`readerDisposesCompleted` count document CLAIMS
   (open attempts), not reader-runtime instances — the runtime object does
-  not exist yet. The names describe the shape Phase 1 wants to measure;
-  until then they are claim counters and must not be read as an ownership
-  boundary that already exists.
+  not exist in that design. They are claim counters and must not be read as
+  an ownership boundary.
 
-## What Phase 1 adds: the reader runtime as the lifecycle owner
+## The reader runtime as the lifecycle owner
 
-Phase 1 turns the route boundary into the runtime boundary (`src/runtime.rs`,
+The route boundary is the runtime boundary (`src/runtime.rs`,
 `crate::runtime::ReaderRuntime`):
 
 - **Lifecycle states** (`RuntimeLifecycle`): `New → Mounting → Ready →
@@ -263,7 +261,7 @@ Phase 1 turns the route boundary into the runtime boundary (`src/runtime.rs`,
   the shelf, and the route flip disposes the runtime as a unit. There is no
   second teardown path — a runtime that stayed `Ready` behind a closed
   document would be exactly the hidden retention §12 rules out.
-- **Disposal order** (adapted to the dependency graph Phase 0 mapped):
+- **Disposal order** (adapted to the dependency graph mapped above):
   enter `Disposing` (work refused) → claim the session stamp and flush the
   read point if a document is open → take the registered resources out of
   the registry → tail: close the document session (destroy awaited, sweeps)
@@ -290,14 +288,14 @@ Phase 1 turns the route boundary into the runtime boundary (`src/runtime.rs`,
   `== "disposed"` with an advancing generation after every close, plus one
   NEW runtime generation per same-page open.
 
-Deliberately unchanged: the disposal-completion assertion and the epoch
-stamping (`services::document::session`) are reused, not replaced; the
-Phase 0 drain gates, counters and fail-closed accounting all still gate
+The disposal-completion assertion and the epoch stamping
+(`services::document::session`) are reused, not replaced; the baseline
+drain gates, counters and fail-closed accounting all still gate
 every close; look-ahead, virtualization and retention behavior are
 untouched. `AppState.reader` remains the signals bag (domain models stay in
 `ReaderState`); the shell's `AppState.runtime` handle is coordination-only.
 
-## What Phase 3 adds: the reader host and its panes
+## The reader host and its panes
 
 The production path is now `/reader → ReaderRuntime → ReaderHost →
 PaneManager → document pane` (`crates/reader-runtime/src/lib.rs::start_session`
@@ -397,7 +395,7 @@ responsibilities moved to exactly one owner:
   names a `storage::` function that is not on its read allowlist or reloads
   the window itself — durable writes and the window are the Shell's.
 
-Session-scoped since Phase 4 (`docs/session-ownership.md`): the PDF
+Session-scoped (`docs/session-ownership.md`): the PDF
 engine's document state, lanes, caches, page registry, raster theme, paper
 state machine and search scope are each owned by one pane's `PdfSession`,
 Markdown/TXT documents by an `MdSession`/`TxtSession`, and async stamps by
@@ -405,7 +403,7 @@ the pane's generation. Realm-wide by design: id mints, the appearance
 broadcast, the retained search index (content-keyed), code and allocation
 caches, and the diagnostics totals (renders, prefetches, look-ahead samples
 — summed across sessions in the diagnostics `engine` block, per session in
-`sessionStats`). Page elements are pinned per session (Phase 5), so
+`sessionStats`). Page elements are pinned per session, so
 several panes share the realm. Session-level by
 design, not pane state: the frame's port and parked opens (`frame.rs`), the
 live-session record (`lib.rs`), the diagnostics probes, and the host's

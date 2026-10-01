@@ -1,4 +1,4 @@
-# Memory audit, 2026-09-30
+# Memory audit
 
 Scope: every subsystem that allocates surfaces, caches, timers, or
 workers, checked against [rules.md](rules.md). Method: read each owner's
@@ -10,9 +10,9 @@ teardown in the smoke suite and the browser lifecycle baseline.
 | Subsystem | Owner | Verdict | Evidence |
 | --- | --- | --- | --- |
 | Virtualizer windowing and retention | `crates/virtual-list-leptos` | Pass | Window = viewport + overscan; zombies bounded (`MAX_ZOMBIES = 12`, 120 ms grace); `dispose()` takes the retention timer (`virtualizer.rs:357`) |
-| Fling gate and in-view exemption | `components/formats/pdf/canvas.rs`, `strip.rs` | Pass (fixed) | Dwell on the exemption; see [fling-gate.md](fling-gate.md) |
+| Fling gate and in-view exemption | `components/formats/pdf/canvas.rs`, `strip.rs` | Pass | Speed-aware exemption with a timer wake; no placeholder pixels; see [fling-gate.md](fling-gate.md) |
 | Page render lane | `public/engine/renderer.ts`, `state.ts` | Pass | Per-session queue + realm cap 2; drained unconditionally on teardown; queued jobs drop on `st.dead / s.disposed / queueGen` |
-| Lane pump registry | `public/engine/state.ts` | Pass (fixed) | `WeakRef` entries, pruned on every pump; session entry dropped first in `destroySession` (`a8fddd3`) |
+| Lane pump registry | `public/engine/state.ts` | Pass (fixed) | `WeakRef` entries, pruned on every pump; session entry dropped first in `destroySession` |
 | Thumbnail lane and cache | `public/engine/thumbnails.ts` | Pass | Cache capped (`THUMB_CACHE_MAX`), entries released bitmap-first (`releaseThumbEntry`), prefetch epoch-guarded and cancelled on teardown |
 | Canvas pool and scratch | `public/engine/canvas.ts` | Pass | `POOL_MAX = 6`, oversized-return guard, `releaseCanvas` zeroes the backing store, `disposeScratch` drains on idle and on destroy |
 | Bake worker | `public/engine/theme/bake.ts`, `bake.worker.ts` | Pass | Readbacks happen in the worker via transferred `ImageBitmap`, closed after the draw; dead worker rejects all pending; worker terminated when no session remains (`releaseBakeWorker`) |
@@ -27,7 +27,7 @@ teardown in the smoke suite and the browser lifecycle baseline.
 | Frame recycle/retire policy | `src/app/manager.rs` | Pass | Multi-pane or over-ceiling readers retire (frame removed); warm reader evicted after 60 s idle; heap ceiling 320 MiB |
 | Raw canvas retention | `public/engine/state.ts` | Pass | `dropRawIfIdle` after `RAW_IDLE_MS = 2000`, no-op while scrubbing or the appearance menu is open, cleared outright on teardown |
 
-## Fix applied in this audit
+## Teardown fix from the audit
 
 `destroySession` cleared `scrub.entrySnapshots` by dropping the map, which
 dereferences the snapshot canvases without zeroing them. On WKWebView the
@@ -35,17 +35,15 @@ backing store survives DOM removal until GC. Teardown now calls
 `releaseAllEntrySnapshots`, the same zero-and-remove path the scrub exit
 uses.
 
-## Split-theme memory measurement, 2026-10-01
+## Split-theme memory measurement
 
-Deep CI `378686a` / run `36791384490`, `tools/measure-split-return.mjs`,
-Chromium hands-off scenario: fresh library 181.2 MB renderer PSS; reading
+`tools/measure-split-return.mjs` in Deep CI, Chromium hands-off scenario: fresh library 181.2 MB renderer PSS; reading
 with four panes 271.1 MB; +0 s after returning to Library 222.6 MB; +70 s
 150.8 MB with `readerFramesResident = 0`; after forced GC 125.2 MB. The
 reader WASM high-water gauge stayed 2.3 MB. Measurement is process PSS, not
 a claim that the browser returned every allocation immediately. The same
 replay completed for current and pinned baselines, Chromium/WebKit and both
-pointer-intent modes; the memory artifact is run `36791384490`'s
-`memory-replay` artifact. This change adds pane-root theme observations, not
+pointer-intent modes (Deep CI `memory-replay` artifact). This change adds pane-root theme observations, not
 retained raster copies or page canvases; local papers are computed on one
 1×1 scratch buffer released in `finally`.
 

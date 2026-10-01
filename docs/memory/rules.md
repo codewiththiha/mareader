@@ -17,20 +17,20 @@ frame can die; do not design object graphs that outlive it.
 ## 2. Never start expensive work for an item the strip is sweeping past
 
 A page crossing the visible band during a fling is not commitment. The
-fling gate defers unpainted pages to the scroll settle, and the in-view
-exemption requires a 120 ms dwell before a page counts as visible
-([fling-gate.md](fling-gate.md)). Full surfaces created and discarded every
+fling gate defers unpainted pages to the scroll settle; the in-view
+exemption renders at once at reading speed and only after a short dwell
+mid-fling ([fling-gate.md](fling-gate.md)). Full surfaces created and discarded every
 few frames push the webview's resource cache — and the footprint latched
 onto it — to a high-water mark that does not come back at idle. Any new
 exemption from a gate must carry a time condition or an equivalent
 commitment check.
 
-## 3. Band-crossing signals dwell before they authorize expensive work
+## 3. Band-crossing signals need a commitment check, and a guaranteed wake
 
-Cheap reactions (a CSS class, a thumbnail blit) may fire on the crossing
-itself. Surface-allocating work may not. If a derived signal flips on
-geometry, gate the expensive consumer on continuous duration, not on the
-edge.
+Cheap reactions (a CSS class) may fire on the crossing itself.
+Surface-allocating work needs evidence the reader will stay: low scroll
+speed, or continuous duration in the band. A deferral must carry its own
+wake (a timer or trigger), never wait on a later event that may not come.
 
 ## 4. Sweep on quiescence, not on motion
 
