@@ -23,7 +23,7 @@ in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 4 — session-scoped PDF / Markdown / TXT engines | **done**: each pane owns one `FormatSession` per opened document — `PdfSession` (`crates/pdf-engine/src/session/`, one engine session per sid in `public/engine/state.ts`), `MdSession` / `TxtSession` (`crates/reader-runtime/src/pane/session.rs`); async stamps per pane; inventory, call graph and retained realm state in `docs/session-ownership.md`, enforced by `tools/check-session-ownership.mjs`; what Phase 5 inherits: [Phase 4 bridges](#phase-4-bridges-what-phase-5-inherits) |
 | 5 — production split workspace | **done**: `/reader` runs a `PaneTree` (layout over pane ids only, `crates/reader-runtime/src/host/tree.rs`) under the `ReaderHost`; up to four live panes, each with its own `FormatSession`; `open_document(target)` places a document in a pane or beside it; host-owned dividers, focus outline and per-pane close; see [Phase 5: the split workspace](#phase-5-the-split-workspace) |
 | 6 — smart document drag/drop | **implemented**: a file row of the reader's Library panel (the rail's third tab, `crates/reader-runtime/src/host/library/`) is the one split-drag source; targets come from the measured slot and pane boxes (`crates/reader-runtime/src/host/{geometry,drop_target,drag,commands}.rs`), the preview is geometry only, a drop is one `WorkspaceCommand`; OS file drops import into the library while it is on screen (`src/services/import_drop.rs`); see [Phase 6: document drag and drop](#phase-6-document-drag-and-drop) |
-| 7+ — appearance blend, … | **implemented; final Deep CI rerun in progress** — split-mode blend hold + shared paper publisher; visible independent-theme toggle in the appearance menu and Settings → Workspace; per-pane look routing/token paint; per-session PDF bake/cache and local paper publication; independent blend isolates PDF pages, reflow surfaces, shared gutters and chrome. CI green at `9abf667`; Deep CI browser + memory replay running for the final browser assertion update. Desktop (1440×900) and narrow (800×900) split screenshots captured at `/home/user/independent-theme-final-{1440,800}.png` |
+| 7+ — appearance blend, … | **done** — split-mode blend hold + MRU shared paper; visible independent-theme toggle in the appearance menu and Settings → Workspace; per-pane look routing/token paint; per-session PDF bake/cache and local paper publication; independent blend isolates PDF pages, reflow surfaces, shared gutters and chrome. CI `378686a` green (`36791384567`); Deep CI green (`36791384490`: browser lifecycle, Tauri boot and split memory replay). Visually checked at 1440×900 and 800×900; screenshots `/home/user/independent-theme-final-{1440,800}.png` |
 
 ## Architecture as built (do not re-derive)
 
@@ -551,9 +551,11 @@ deliberately rather than discovering it:
   Stage 13 uses real appearance controls on PDF | MD, asserts Dark MD + Dim
   then Light PDF, and injects divergent paper colours while blend is on to
   prove the PDF colour cannot recolour MD or shared chrome/gutters. Final
-  Deep CI browser baseline must be green. Manual screenshots are 1440×900
-  and 800×900 (`independent-theme-final-1440.png`,
-  `independent-theme-final-800.png` in the workspace).
+  Deep CI browser baseline and memory replay passed at `378686a`
+  (run `36791384490`). Manual screenshots are 1440×900 and 800×900
+  (`independent-theme-final-1440.png`, `independent-theme-final-800.png` in
+  the workspace); the split shows Light PDF | Dark Markdown while the global
+  reader backdrop/chrome remain Light.
 
 ## Known follow-ups (do not silently expand scope)
 

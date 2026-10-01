@@ -21,6 +21,7 @@ teardown in the smoke suite and the browser lifecycle baseline.
 | Zoom masks (page snapshots) | `components/formats/pdf/surface.rs`, `state.ts` | Pass | `remove_snapshots` zeroes backing stores; swept at zoom landings, mode flips, and `sweepSnapshots` |
 | View mode change | `effects/reader/mode_change.rs` | Pass | Fires `pdf.sweep()` and `pdf.sweep_snapshots()` at the flip — the outgoing view's rasters have no later render to sweep them |
 | Paper backdrop and stash | `effects/reader/blend_backdrop.rs`, `engine/paper.ts` | Pass | Backdrop borrows, never clones, on scroll ticks; stash frames are ≤96 px, consumed once (`takePaperFrame`), and reset per document |
+| Pane-scoped PDF theme pipeline and paper observers | `public/engine/state.ts`, `theme/pipeline.ts`, `theme/paper.ts` | Pass | `EngineSession` holds one bounded token/input cache + its pane-root reference; root observer is per session and disconnected at `destroySession` start; weak-map keys do not retain sessions; no subtree-wide observer; 1×1 scratch canvas is returned in `finally`. Two-session bake/paper isolation is covered by engine smoke. |
 | LUT cache | `public/engine/theme/filterKernel.ts` | Pass | Capped at 8; the comment records why clear-beats-LRU here |
 | Cover bake page | `src/app/bake.rs` | Pass | One page, deduplicated queue, removed seconds after the queue drains |
 | Frame recycle/retire policy | `src/app/manager.rs` | Pass | Multi-pane or over-ceiling readers retire (frame removed); warm reader evicted after 60 s idle; heap ceiling 320 MiB |
@@ -33,6 +34,20 @@ dereferences the snapshot canvases without zeroing them. On WKWebView the
 backing store survives DOM removal until GC. Teardown now calls
 `releaseAllEntrySnapshots`, the same zero-and-remove path the scrub exit
 uses.
+
+## Split-theme memory measurement, 2026-10-01
+
+Deep CI `378686a` / run `36791384490`, `tools/measure-split-return.mjs`,
+Chromium hands-off scenario: fresh library 181.2 MB renderer PSS; reading
+with four panes 271.1 MB; +0 s after returning to Library 222.6 MB; +70 s
+150.8 MB with `readerFramesResident = 0`; after forced GC 125.2 MB. The
+reader WASM high-water gauge stayed 2.3 MB. Measurement is process PSS, not
+a claim that the browser returned every allocation immediately. The same
+replay completed for current and pinned baselines, Chromium/WebKit and both
+pointer-intent modes; the memory artifact is run `36791384490`'s
+`memory-replay` artifact. This change adds pane-root theme observations, not
+retained raster copies or page canvases; local papers are computed on one
+1×1 scratch buffer released in `finally`.
 
 ## Known residuals, not defects
 
