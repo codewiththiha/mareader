@@ -25,6 +25,7 @@ in `AGENTS.md` (subject ≤ 72 chars); author is the team identity.
 | 6 — smart document drag/drop | **implemented**: a file row of the reader's Library panel (the rail's third tab, `crates/reader-runtime/src/host/library/`) is the one split-drag source; targets come from the measured slot and pane boxes (`crates/reader-runtime/src/host/{geometry,drop_target,drag,commands}.rs`), the preview is geometry only, a drop is one `WorkspaceCommand`; OS file drops import into the library while it is on screen (`src/services/import_drop.rs`); see [Phase 6: document drag and drop](#phase-6-document-drag-and-drop) |
 | 7+ — appearance blend, … | **done** — split-mode blend hold + MRU shared paper; visible independent-theme toggle in the appearance menu and Settings → Workspace; per-pane look routing/token paint; per-session PDF bake/cache and local paper publication; independent blend isolates PDF pages, reflow surfaces, shared gutters and chrome. CI `378686a` green (`36791384567`); Deep CI green (`36791384490`: browser lifecycle, Tauri boot and split memory replay). Visually checked at 1440×900 and 800×900; screenshots `/home/user/independent-theme-final-{1440,800}.png` |
 | 8 — split pane decoration | **revised** in `3bb382e` after the earlier green implementation `d5982b5`. Pane controls belong only in Reader Settings → Theme; the title-bar Appearance menu keeps only the independent-theme toggle at its bottom. Pane spacing extends to all four workspace edges as well as between panes. Palette styling, control placement and uniform-margin browser assertions are updated. CI and Deep CI passed on `d751609` (`36805313405` / `36805313392`): Rust tests/lint/format, web contracts, shell checks, Tauri boot, browser lifecycle and split memory replay. |
+| 9 — fit accuracy, pane moves, grab/lift, macOS lights | **implemented**, CI + deep CI green: see [Fit, pane moves and grab](#fit-pane-moves-and-grab) |
 
 ## Architecture as built (do not re-derive)
 
@@ -595,6 +596,43 @@ deliberately rather than discovering it:
   browser lifecycle, Tauri boot and split memory replay. The lifecycle
   assertions now verify all four 12 px outer margins, the 12 px inter-pane
   gap, Theme-tab controls and title-bar menu placement.
+
+## Fit, pane moves and grab
+
+- **Fit uses the page on screen.** The open still seeds every page with page
+  1's box (a serial size probe over a long book looked like a hang); page
+  hosts now report the scale-1 size each render produced
+  (`PageMetrics::rendered`, written untracked so it never rebuilds a layout),
+  `FitDims::of` prefers it, and `zoom::target::page_rendered` re-resolves an
+  active fit when the page under the reader turns out to differ (resume page,
+  page flips, jumps). A tolerance absorbs the engine's whole-pixel rounding so
+  no refit/re-render loop can start.
+- **Open at Fit Width.** `startup_scale` treated a PDF in the vertical strip
+  as the reflowable text stream and seeded 100% with no fit — what every new
+  split pane showed. The startup default is Fit Width, with a one-shot gate
+  (`Settings::startup_fit_width`) moving installs that persisted the old
+  default.
+- **Move items.** In a split the view menu shows Move Left/Up/Down/Right
+  (`PaneTree::move_pane`); with one pane it keeps Split Right/Down. A move
+  crosses the nearest split along its axis; the other side is matched level
+  by level, so a grid swaps one cell, a pair passes a tall pane as a column,
+  and a whole-side swap flips the ratio so each side keeps its size.
+- **Grab and lift** (`host/grab.rs`, `host/lift.rs`). Empty space (not
+  `[data-reader-host]` other than the text stream, not a block, not a
+  control) shows the hand and drags its nearest scroller in both axes with a
+  decaying fling. In a split a still hold of `HOLD_TO_LIFT_MS` (1.2 s, ring
+  animation in `styles/components/shell.css` matches) lifts the pane; release
+  over another pane swaps (`PaneTree::swap`) or docks beside an edge zone
+  (`PaneTree::dock`). Layout-only: sessions are untouched. Listeners live on
+  the entry element; the hold timer stands down for a detached entry and the
+  fling is generation-guarded.
+- **macOS traffic lights.** tao re-applies `trafficLightPosition` from every
+  `drawRect:`; the native layout used a different container height (and
+  collapsed it on hide), so resizes ping-ponged it (blink) and autoresizing
+  squeezed the buttons (ovals). It now agrees with tao on container and x,
+  centres via the buttons' `origin.y`, pins their natural size, and applies in
+  the event's own main-thread turn. `tools/check-chrome-contracts.ts` mirrors
+  the y inset.
 
 ## Known follow-ups (do not silently expand scope)
 
