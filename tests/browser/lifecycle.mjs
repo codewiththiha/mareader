@@ -3239,10 +3239,14 @@ async function startZoomSampler() {
       events.push(`${frameNo}:${Math.round(w.performance.now())}:S${samples.length}`);
       const r = sc.getBoundingClientRect();
       const cy = r.top + r.height / 2;
-      const host = [...d.querySelectorAll(".pdf-page")].find((h) => {
+      // The page under the centre line; when the line falls in the gap
+      // between two pages, the nearer of them.
+      const gap = (h) => {
         const b = h.getBoundingClientRect();
-        return b.top <= cy && b.bottom >= cy;
-      });
+        return b.top > cy ? b.top - cy : b.bottom < cy ? cy - b.bottom : 0;
+      };
+      const host = [...d.querySelectorAll(".pdf-page")]
+        .reduce((best, h) => (best && gap(best) <= gap(h) ? best : h), null);
       const canvas = host?.querySelector("canvas:not(.page-snapshot)") ?? null;
       const scale = parseFloat(/--scale-factor:\s*([0-9.]+)/.exec(host?.getAttribute("style") ?? "")?.[1] ?? "NaN");
       samples.push({
