@@ -19,6 +19,15 @@
 //! later single-pane opens and new splits (a new pane seeds from the active
 //! pane's look). The global theme is remembered untouched while the toggle
 //! is on; turning it off clears every override and the panes inherit again.
+//!
+//! Colours: turning the toggle on keeps the active pane's look and gives
+//! every other pane a tint hue of its own, and a pane born while it is on
+//! gets one too — picked at random inside the widest gap between the hues
+//! already showing, so no two panes come out alike.
+//!
+//! Shared mode (`workspace.shared_base_mode`, on by default): only the
+//! colour is per pane. Light / Dark / Dim stays the window's — every pane
+//! shows the global base, and switching it from any pane switches all.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -40,17 +49,83 @@ pub struct PaneThemes {
     /// tracks it and re-pushes each pane's effective look.
     version: RwSignal<u64>,
     overrides: StoredValue<Rc<RefCell<HashMap<PaneId, Appearance>>>, LocalStorage>,
+    /// Whether Light / Dark / Dim stays shared across panes (the setting).
+    shared_base: Signal<bool>,
+}
+
+/// The tint strength a pane's own colour gets when the look it starts from
+/// has none: clearly its own colour, still quiet enough to read on.
+const PANE_TINT_STRENGTH: u8 = 35;
+
+/// A hue for a new pane: somewhere in the middle of the widest gap between
+/// the hues `taken` (degrees), jittered by `random` in `0..1` so a workspace
+/// does not always get the same colours. With nothing taken, any hue.
+pub(crate) fn distinct_hue(taken: &[u16], random: f64) -> u16 {
+    let random = random.clamp(0.0, 1.0);
+    if taken.is_empty() {
+        return ((random * 360.0) as u16) % 360;
+    }
+    let mut hues: Vec<f64> = taken.iter().map(|h| f64::from(h % 360)).collect();
+    hues.sort_by(f64::total_cmp);
+    hues.dedup();
+    let last = hues[hues.len() - 1];
+    let (mut start, mut gap) = (last, hues[0] + 360.0 - last);
+    for pair in hues.windows(2) {
+        if pair[1] - pair[0] > gap {
+            (start, gap) = (pair[0], pair[1] - pair[0]);
+        }
+    }
+    // The middle half of the gap: never hugging a neighbour.
+    let hue = start + gap * (0.25 + 0.5 * random);
+    (hue.round() as u16) % 360
 }
 
 impl PaneThemes {
     /// Themes for one workspace. Call inside the host's owner (the signals
     /// live in the host's arena).
-    pub fn new(independent: RwSignal<bool>) -> Self {
+    pub fn new(independent: RwSignal<bool>, shared_base: Signal<bool>) -> Self {
         Self {
             independent,
             version: RwSignal::new(0),
             overrides: StoredValue::new_local(Rc::new(RefCell::new(HashMap::new()))),
+            shared_base,
         }
+    }
+
+    /// Whether Light / Dark / Dim is shared across the panes right now.
+    pub fn shared_base(self) -> bool {
+        self.shared_base.get_untracked()
+    }
+
+    /// A pane's stored look as it shows: in shared mode the base is the
+    /// window's, whatever the pane stored.
+    fn shown(self, mut look: Appearance, global: Appearance) -> Appearance {
+        if self.shared_base() {
+            look.base = global.base;
+        }
+        look
+    }
+
+    /// A look of its own for a new pane: `from`'s, with a tint hue unlike
+    /// every pane's showing now (and the window's, when it is tinted).
+    pub fn distinct_look(self, from: Appearance, global: Appearance) -> Appearance {
+        let mut taken: Vec<u16> = self.overrides.with_value(|m| {
+            m.borrow()
+                .values()
+                .filter(|look| look.has_tint())
+                .map(|look| look.tint_hue)
+                .collect()
+        });
+        if global.has_tint() {
+            taken.push(global.tint_hue);
+        }
+        let mut look = from;
+        look.tint_hue = distinct_hue(&taken, js_sys::Math::random());
+        if !look.has_tint() {
+            look.tint_strength = PANE_TINT_STRENGTH;
+        }
+        look.sanitize();
+        look
     }
 
     pub fn independent(self) -> Signal<bool> {
@@ -73,19 +148,20 @@ impl PaneThemes {
         if !self.independent.get_untracked() {
             return None;
         }
-        Some(
-            self.overrides
-                .with_value(|m| m.borrow().get(&id).copied())
-                .unwrap_or(global),
-        )
+        let look = self
+            .overrides
+            .with_value(|m| m.borrow().get(&id).copied())
+            .unwrap_or(global);
+        Some(self.shown(look, global))
     }
 
     /// The active pane's current look — what the menu's dials edit and show
     /// while independent themes are on.
     pub fn active_look(self, active: Option<PaneId>, global: Appearance) -> Appearance {
-        active
+        let look = active
             .and_then(|id| self.overrides.with_value(|m| m.borrow().get(&id).copied()))
-            .unwrap_or(global)
+            .unwrap_or(global);
+        self.shown(look, global)
     }
 
     /// Seed (or overwrite) one pane's look. The toggle-on seeds every placed
@@ -107,15 +183,30 @@ impl PaneThemes {
         self.bump();
     }
 
-    /// Turn the toggle on: every placed pane starts from the global look.
-    /// The global theme itself is left untouched (remembered, not shown).
-    pub fn enable(self, placed: impl Iterator<Item = PaneId>, global: Appearance) {
-        self.overrides.with_value(|m| {
-            let mut m = m.borrow_mut();
-            for id in placed {
-                m.insert(id, global);
-            }
-        });
+    /// Turn the toggle on: the `active` pane keeps the global look and
+    /// every other placed pane gets a colour of its own, each unlike the
+    /// rest. The global theme itself is left untouched (remembered).
+    pub fn enable(
+        self,
+        placed: impl Iterator<Item = PaneId>,
+        active: Option<PaneId>,
+        global: Appearance,
+    ) {
+        self.overrides.with_value(|m| m.borrow_mut().clear());
+        let placed: Vec<PaneId> = placed.collect();
+        let first = active
+            .filter(|id| placed.contains(id))
+            .or_else(|| placed.first().copied());
+        for id in placed {
+            let look = if Some(id) == first {
+                global
+            } else {
+                self.distinct_look(global, global)
+            };
+            self.overrides.with_value(|m| {
+                m.borrow_mut().insert(id, look);
+            });
+        }
         self.independent.set(true);
         self.bump();
     }
@@ -187,7 +278,7 @@ pub(crate) fn theme_handle(
         settings.update(|s| s.workspace.independent_themes = on);
         if on {
             let global = settings.get_untracked().appearance;
-            themes.enable(manager.placed().into_iter(), global);
+            themes.enable(manager.placed().into_iter(), manager.active(), global);
         } else {
             themes.disable();
         }
@@ -205,7 +296,19 @@ pub(crate) fn theme_handle(
             if routed {
                 let id = manager.active().expect("checked: active pane exists");
                 let global = settings.get_untracked().appearance;
-                themes.edit(id, global, patch);
+                let before = themes.active_look(Some(id), global);
+                let mut after = before;
+                patch(&mut after);
+                // Shared mode: a Light / Dark / Dim switch from any pane is
+                // the window's, so every pane follows it; the rest of the
+                // edit stays this pane's own.
+                if themes.shared_base() && after.base != before.base {
+                    settings.update(|s| {
+                        s.appearance.base = after.base;
+                        s.touch_appearance();
+                    });
+                }
+                themes.edit(id, global, move |look| *look = after);
             } else {
                 settings.update(|s| {
                     patch(&mut s.appearance);
@@ -251,5 +354,55 @@ pub(crate) fn theme_handle(
         commit,
         scrub,
         panes,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::distinct_hue;
+
+    fn gap(a: u16, b: u16) -> u16 {
+        let d = a.abs_diff(b) % 360;
+        d.min(360 - d)
+    }
+
+    #[test]
+    fn any_hue_when_nothing_is_taken() {
+        assert_eq!(distinct_hue(&[], 0.0), 0);
+        assert_eq!(distinct_hue(&[], 0.5), 180);
+        assert!(distinct_hue(&[], 1.0) < 360);
+    }
+
+    #[test]
+    fn a_new_hue_lands_well_away_from_every_taken_one() {
+        for r in [0.0, 0.3, 0.7, 1.0] {
+            let h = distinct_hue(&[10], r);
+            assert!(gap(h, 10) >= 90, "{h} too near 10");
+            let taken = [0, 120, 240];
+            let h = distinct_hue(&taken, r);
+            assert!(
+                taken.iter().all(|t| gap(h, *t) >= 30),
+                "{h} too near {taken:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_widest_gap_wins_across_zero() {
+        // Taken 100..=200: the free arc is 200 -> 460 (= 100), centre 330.
+        assert_eq!(distinct_hue(&[100, 150, 200], 0.5), 330);
+    }
+
+    #[test]
+    fn successive_panes_all_differ() {
+        let mut taken = vec![];
+        for r in [0.1, 0.9, 0.4, 0.6, 0.2] {
+            let h = distinct_hue(&taken, r);
+            assert!(
+                taken.iter().all(|t: &u16| gap(h, *t) >= 15),
+                "{h} vs {taken:?}"
+            );
+            taken.push(h);
+        }
     }
 }

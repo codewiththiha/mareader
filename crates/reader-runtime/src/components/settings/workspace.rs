@@ -45,6 +45,18 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
             title="Independent theme for each pane"
         />
     };
+    let shared = Signal::derive(move || s.with(|st| st.workspace.shared_base_mode));
+    let set_shared = Callback::new(move |on: bool| {
+        s.update(|st| st.workspace.shared_base_mode = on);
+    });
+    let shared_toggle = view! {
+        <Switch
+            checked=shared
+            on_change=set_shared
+            disabled=Signal::derive(move || !theme.independent.get())
+            title="Light, Dark and Dim change every pane"
+        />
+    };
     view! {
         <SectionLabel text="Library panel" />
         <div
@@ -104,12 +116,27 @@ pub(crate) fn WorkspaceTab(state: crate::context::ReaderContext) -> impl IntoVie
             <span class="min-w-0">
                 <span class="block text-sm text-ink">"Independent theme for each"</span>
                 <span class="block text-xs text-muted">
-                    "While a split is open, each pane keeps its own colour. The film grain \
-                     stays shared, the outer chrome keeps the main theme, and the colours \
-                     are temporary."
+                    "While a split is open, each pane gets its own colour, different from the \
+                     others. The film grain stays shared, the outer chrome keeps the main \
+                     theme, and the colours are temporary."
                 </span>
             </span>
             {toggle}
+        </div>
+        <div
+            class="mt-2 flex items-center justify-between gap-3 rounded-xl border border-line px-4 py-3"
+            class=("opacity-60", move || !theme.independent.get())
+            data-setting="shared-base-mode"
+        >
+            <span class="min-w-0">
+                <span class="block text-sm text-ink">"Light, Dark and Dim change every pane"</span>
+                <span class="block text-xs text-muted">
+                    "Each pane keeps its own colour, but switching between Light, Dark and \
+                     Dim switches all panes together. Turn off to let each pane have its own \
+                     mode as well."
+                </span>
+            </span>
+            {shared_toggle}
         </div>
     }
 }

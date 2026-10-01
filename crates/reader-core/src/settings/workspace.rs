@@ -65,6 +65,10 @@ pub struct WorkspaceSettings {
     /// theme. Persisted as the toggle's rest state; the per-pane colours
     /// themselves are temporary and die with the workspace.
     pub independent_themes: bool,
+    /// With independent themes on, keep Light / Dark / Dim shared: each pane
+    /// keeps its own colour, but switching the mode switches every pane. Off,
+    /// the mode is per pane too, like the rest of its look.
+    pub shared_base_mode: bool,
     /// Active-pane focus outline width, in CSS pixels. Zero hides the outline.
     pub pane_outline_width: u8,
     /// Active-pane outline palette selection.
@@ -85,6 +89,7 @@ impl Default for WorkspaceSettings {
         Self {
             library_click: LibraryClick::default(),
             independent_themes: false,
+            shared_base_mode: true,
             pane_outline_width: 2,
             pane_outline_color: PaneOutlineColor::Auto,
             pane_outline_custom: "#6ba3f5".into(),
@@ -104,6 +109,7 @@ mod tests {
         let s: WorkspaceSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.library_click, LibraryClick::Replace);
         assert!(!s.independent_themes);
+        assert!(s.shared_base_mode);
         assert_eq!(s.pane_outline_width, 2);
         assert_eq!(s.pane_outline_color, PaneOutlineColor::Auto);
         assert_eq!(s.pane_gap, 0);

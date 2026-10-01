@@ -2246,6 +2246,16 @@ async function paneEntries() {
 
 {
   const panicsBefore = panicCount;
+  // This stage proves fully per-pane looks — each pane its own Light / Dark
+  // / Dim — so it runs with the shared-mode setting (on by default) off.
+  // Settings are read at boot; the open below reboots on them.
+  await page.evaluate(() => {
+    const key = "mareader.settings.v1";
+    let s = {};
+    try { s = JSON.parse(localStorage.getItem(key) ?? "{}") ?? {}; } catch { s = {}; }
+    s.workspace = { ...(s.workspace ?? {}), sharedBaseMode: false };
+    localStorage.setItem(key, JSON.stringify(s));
+  });
   const opened = await openBook(pearlsUrl);
   const pdfPane = opened.host.panes[0].paneId;
   const placed = await page.evaluate(([sel, path]) => {

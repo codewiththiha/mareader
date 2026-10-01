@@ -243,9 +243,10 @@ impl ReaderHost {
         let settings = session.settings;
         let initial = settings.with_untracked(|s| app_state::Motion::from_prefs(&s.animations));
         let motion = RwSignal::new(initial);
-        let themes = theme::PaneThemes::new(RwSignal::new(
-            settings.with_untracked(|s| s.workspace.independent_themes),
-        ));
+        let themes = theme::PaneThemes::new(
+            RwSignal::new(settings.with_untracked(|s| s.workspace.independent_themes)),
+            Signal::derive(move || settings.with(|s| s.workspace.shared_base_mode)),
+        );
 
         // What the shared chrome reads about "the reader": the ACTIVE pane's
         // published facts, read through `try_` because a pane's signals die
@@ -725,16 +726,19 @@ impl ReaderHost {
         let id = self
             .manager
             .create(request, launch, move |id| host.env_for(id))?;
-        // A pane born while independent themes are on takes the look of the
-        // pane in front (its colour is the working one); while off it has
-        // no look of its own and inherits the window theme.
+        // A pane born while independent themes are on starts from the look
+        // of the pane in front, in a colour of its own unlike every pane's
+        // showing; while off it has no look of its own and inherits the
+        // window theme.
         if self.themes.independent().get_untracked() {
             let global = self.session.settings.with(|s| s.appearance);
-            let seed = self
+            let from = self
                 .manager
                 .active()
+                .filter(|active| *active != id)
                 .and_then(|active| self.themes.look_for(active, global))
                 .unwrap_or(global);
+            let seed = self.themes.distinct_look(from, global);
             self.themes.seed(id, seed);
         }
         if let Some(pane) = self.manager.pane(id) {
