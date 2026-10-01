@@ -684,8 +684,8 @@ async function startHostSampler() {
       let leaked = 0;
       for (const f of frames) {
         const slot = f.getAttribute("data-mareader-slot");
-        if (slot === "active") activeDoc = f.contentDocument;
-        else if (slot === "warm") warmDoc = f.contentDocument;
+        if (slot === "active") activeDoc = f;
+        else if (slot === "warm") warmDoc = f;
         else retiring += 1;
         // A frame that is not the active one must be invisible: a warm
         // runtime that rendered on screen would be two apps at once.
@@ -808,8 +808,10 @@ async function libraryDomState() {
     const host = document.getElementById("runtime-host");
     const frames = [...(host?.querySelectorAll(".runtime-frame") ?? [])];
     const pick = (slot) => frames.find((f) => f.getAttribute("data-mareader-slot") === slot);
-    const runtimeDoc = pick("active")?.contentDocument ?? null;
-    const warmDoc = pick("warm")?.contentDocument ?? null;
+    // The runtime roots themselves, in the slots: a pane frame renders a
+    // document surface of its own, which is not a second runtime.
+    const runtimeDoc = pick("active") ?? null;
+    const warmDoc = pick("warm") ?? null;
     return {
       path: location.pathname,
       active: host?.getAttribute("data-mareader-active") ?? null,
