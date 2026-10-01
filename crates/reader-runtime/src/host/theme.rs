@@ -245,6 +245,22 @@ impl PaneThemes {
     }
 }
 
+/// Mark the document with the pane a slider drag is editing (`None`: the
+/// whole window). Read by the PDF engine when the drag's scrub begins.
+fn scope_scrub(pane: Option<PaneId>) {
+    const ATTR: &str = "data-appearance-scope";
+    let Some(root) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.document_element())
+    else {
+        return;
+    };
+    let _ = match pane {
+        Some(id) => root.set_attribute(ATTR, &id.get().to_string()),
+        None => root.remove_attribute(ATTR),
+    };
+}
+
 /// Build the menu's theme handle for this workspace. The routed arms follow
 /// the routing rule above; the global arms (and every edit while the toggle
 /// is off) are plain Settings writes. `manager` supplies the active pane and
@@ -323,6 +339,10 @@ pub(crate) fn theme_handle(
             let routed = scope == ThemeScope::Routed
                 && themes.independent.get_untracked()
                 && manager.active().is_some();
+            // The engine scopes the scrub's raw-raster window by this mark:
+            // a drag on one pane's look leaves every other pane's pages as
+            // they are (public/pdfEngine.ts `scrubScope`).
+            scope_scrub(routed.then(|| manager.active()).flatten());
             if routed {
                 let id = manager.active().expect("checked: active pane exists");
                 let global = settings.get_untracked().appearance;

@@ -149,7 +149,14 @@ export async function run(): Promise<void> {
   const rootBNode = rootB as unknown as { _themeComputed: { "--canvas-filter": string; "--canvas-blend": string; paper: string }; _style: string };
   rootBNode._themeComputed = { "--canvas-filter": "brightness(0.5)", "--canvas-blend": "normal", paper: "#808080" };
   rootBNode._style = "b-v2";
+  const rendersABefore = PDFReader.sessionStats(sidA)?.rendersCompleted;
   await PDFReader.refreshTheme();
+  // Untouched means untouched: A is not re-rendered either, however the
+  // broadcast reached it (a re-render to the same pixels still flashes).
+  const rendersAAfter = PDFReader.sessionStats(sidA)?.rendersCompleted;
+  if (rendersAAfter !== rendersABefore) {
+    throw new Error(`B's pane edit re-rendered A: ${rendersABefore} -> ${rendersAAfter}`);
+  }
   const pixelAAfter = firstPixel("two-a-cv");
   const pixelBAfter = firstPixel("two-b-cv");
   if (pixelAAfter[0] !== pixelA[0] || pixelBAfter[0] === pixelB[0]) {

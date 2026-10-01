@@ -54,7 +54,7 @@ import {
 import { rebakeTheme, releaseAllEntrySnapshots, setScrubModeInternal } from "./engine/theme/scrub";
 import { releaseBakeWorker } from "./engine/theme/bake";
 import { publishBakedPaper, unobserveThemeRoot, watchPaperTokens } from "./engine/theme/paper";
-import { invalidatePipeline } from "./engine/theme/pipeline";
+import { invalidatePipeline, readPipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   resetPaperForDocument,
@@ -211,6 +211,8 @@ async function destroySession(sid: Sid): Promise<void> {
 /** The appearance state a session created mid-drag (or with the menu open)
  *  must start in. Global appearance, not document state. */
 let appearanceScrub = false;
+/** Whether the scrub in flight edits one pane only (see `scrubScope`). */
+let appearanceScrubScoped = false;
 let appearanceMenuOpen = false;
 
 function enqueueTheme(s: EngineSession, work: () => Promise<void>): Promise<void> {
@@ -249,17 +251,52 @@ async function refreshSessionTheme(s: EngineSession): Promise<void> {
   paintAllVisibleThumbs(s);
 }
 
+/** Re-bake only the sessions whose own bake inputs moved since they were
+ *  last brought up to date. Split panes share this realm: a pane-local edit
+ *  (independent themes) changes ONE pane root's tokens, and every other
+ *  session reads the same pipeline it already baked with, so it is left
+ *  alone rather than re-rendered. A scrubbing session always settles. */
 function refreshTheme(): Promise<void> {
   const held = liveSessions();
-  for (const session of held) invalidatePipeline(session);
   if (held.length === 0) {
     publishBakedPaper();
     return Promise.resolve();
   }
-  return Promise.all(held.map((s) => enqueueTheme(s, () => refreshSessionTheme(s)))).then(
+  const moved = held.filter((session) => {
+    const before = refreshedGen.get(session) ?? session.themePipeline.gen;
+    invalidatePipeline(session);
+    const gen = readPipeline(session).gen;
+    refreshedGen.set(session, gen);
+    return gen !== before || session.themeScrubActive;
+  });
+  return Promise.all(moved.map((s) => enqueueTheme(s, () => refreshSessionTheme(s)))).then(
     () => undefined,
   );
 }
+
+/** The pipeline generation each session was last refreshed at. Weak: a
+ *  disposed session drops out with its last reference. */
+const refreshedGen = new WeakMap<EngineSession, number>();
+
+/** The pane a scrub is scoped to: the reader marks the document element
+ *  with the edited pane's id while a slider edits ONE pane's look
+ *  (independent themes), and clears it for a window-wide edit. */
+function scrubScope(): string | null {
+  try {
+    return document.documentElement.getAttribute("data-appearance-scope");
+  } catch (_) {
+    return null;
+  }
+}
+
+function inScrubScope(s: EngineSession, scope: string | null): boolean {
+  if (!scope) return true;
+  const entry = s.themeRoot?.closest("[data-pane-id]");
+  return entry?.getAttribute("data-pane-id") === scope;
+}
+
+/** Pane roots carrying the scoped scrub class, cleared on the way out. */
+let scopedScrubRoots: HTMLElement[] = [];
 
 function setScrubMode(on: boolean): Promise<void> {
   appearanceScrub = on;
@@ -270,12 +307,28 @@ function setScrubMode(on: boolean): Promise<void> {
       return null;
     }
   })();
-  if (on) root?.classList.add("appearance-scrubbing");
-  const jobs = liveSessions().map((s) => enqueueTheme(s, () => setScrubModeInternal(s, on)));
+  let held = liveSessions();
+  if (on) {
+    const scope = scrubScope();
+    appearanceScrubScoped = scope !== null;
+    held = held.filter((s) => inScrubScope(s, scope));
+    if (scope === null) {
+      root?.classList.add("appearance-scrubbing");
+    } else {
+      scopedScrubRoots = held.flatMap((s) => (s.themeRoot ? [s.themeRoot] : []));
+      for (const el of scopedScrubRoots) el.classList.add("appearance-scrubbing");
+    }
+  }
+  // Leaving visits every session: one that never entered returns at once.
+  const jobs = held.map((s) => enqueueTheme(s, () => setScrubModeInternal(s, on)));
   return Promise.all(jobs).then(() => {
     // The class leaves once every session has settled out of the scrub —
     // and only if no new scrub began meanwhile.
-    if (!on && !appearanceScrub) root?.classList.remove("appearance-scrubbing");
+    if (!on && !appearanceScrub) {
+      root?.classList.remove("appearance-scrubbing");
+      for (const el of scopedScrubRoots) el.classList.remove("appearance-scrubbing");
+      scopedScrubRoots = [];
+    }
   });
 }
 
@@ -298,7 +351,9 @@ function createEngineSession(sid: Sid): boolean {
   // The registry holds the session WEAKLY and destroySession drops the
   // entry, so it can never outlive the session.
   s.unregisterLanePump = registerLanePump(s);
-  if (appearanceScrub) {
+  // A session opening mid-scrub joins a window-wide scrub; a scoped one
+  // belongs to a pane that already exists.
+  if (appearanceScrub && !appearanceScrubScoped) {
     s.setThemeScrubActive(true);
     s.noteScrub();
   }

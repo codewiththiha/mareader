@@ -70,7 +70,7 @@
    against the gutter. The gutter bleed rests for the length of the drag,
    and the opacity rises to 1 because the layer is a base here, not a
    visible texture. */
-html.appearance-scrubbing .reader-bg.blend .pdf-page::before {
+:is(html.appearance-scrubbing, [data-pane-root].appearance-scrubbing) .reader-bg.blend .pdf-page::before {
   inset: 1px;
   background-color: var(--color-paper);
   opacity: 1;
@@ -94,7 +94,8 @@ html.appearance-scrubbing .reader-bg.blend .pdf-page::before {
    only the tag enables the live filter/blend: a raw canvas is themed and a
    baked one is not, regardless of async thumbnail/page work. The html class
    is cosmetic: it only puts the texture behind an actively blending raw
-   page. */
+   page. A scrub scoped to one pane (independent themes) carries the class
+   on that pane's root instead, so no other pane's pages change. */
 .pdf-page canvas.canvas-raw,
 .thumb-canvas.thumb-raw {
   filter: var(--canvas-filter, none);
@@ -106,7 +107,7 @@ html.appearance-scrubbing .reader-bg.blend .pdf-page::before {
    matching how the blend backdrop composites its texture
    (components/shell.css). soft-light in dim is not identity, so the two
    orders would read as different stroke strengths. */
-html.appearance-scrubbing .pdf-page::before {
+:is(html.appearance-scrubbing, [data-pane-root].appearance-scrubbing) .pdf-page::before {
   z-index: 0;
 }
 
@@ -150,6 +151,6 @@ html.appearance-scrubbing .pdf-page::before {
    (public/engine/theme/scrub.ts), and the wipe those re-renders begin with
    is exactly the flash this hides. Spelled at the higher specificity so no
    appearance-scrubbing rule can accidentally outvote it. */
-html.appearance-scrubbing .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
+:is(html.appearance-scrubbing, [data-pane-root].appearance-scrubbing) .pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
   visibility: hidden;
 }
