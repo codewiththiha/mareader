@@ -25,17 +25,14 @@ thread_local! {
 /// before the OS file handoff: a double-clicked book must not land in the
 /// middle of the library's first measurement pass.
 ///
-/// A WARM session is the exception, and deliberately so. Those passes write
-/// durable state — the migration moves rows, the rescan imports, the backfill
-/// enqueues cover bakes the Shell answers — and a warm shelf runs while a
-/// reader session is live and editing that same store. A runtime that is only
-/// being kept ready must not compete with the one the user is using, so a
-/// warm shelf parks the passes and [`run_deferred_startup`] runs them when
-/// the shelf is actually revealed.
-pub fn library_effects(state: crate::context::LibraryContext, warm: bool) {
+/// Incoming frames render before reveal, but startup passes write durable
+/// state. Defer them until the frame is visible; this is a bounded handoff,
+/// never a Library session retained behind an active Reader.
+pub fn library_effects(state: crate::context::LibraryContext, defer_startup: bool) {
     install_progress_sink(state);
-    if warm {
+    if defer_startup {
         DEFERRED.with(|slot| slot.set(Some(state)));
+        on_cleanup(|| DEFERRED.with(|slot| slot.set(None)));
         return;
     }
     startup_passes(state);
@@ -62,14 +59,13 @@ fn startup_passes(state: crate::context::LibraryContext) {
 }
 
 thread_local! {
-    /// The startup work a warm boot held back. One shelf per frame, so one
-    /// slot is the whole bookkeeping it needs.
+    /// Startup work awaiting this incoming frame's reveal. Cleared during
+    /// unmount so a late reveal timer cannot act on a disposed context.
     static DEFERRED: Cell<Option<crate::context::LibraryContext>> = const { Cell::new(None) };
 }
 
-/// Run the passes a warm boot parked, once, now that the shelf is on screen.
-/// Idempotent: a shelf that was never warm has nothing parked, and a second
-/// refresh must not re-measure the whole library.
+/// Start deferred passes once, after reveal. Repeated Refresh messages do
+/// not reinstall listeners or rescan the whole Library.
 pub fn run_deferred_startup() {
     let Some(state) = DEFERRED.with(|slot| slot.take()) else {
         return;
@@ -77,9 +73,9 @@ pub fn run_deferred_startup() {
     startup_passes(state);
 }
 
-/// App-lifetime rather than page-lifetime: an import started on the library page is still
-/// running after the reader has opened a book. A beat for a task the list does not hold is
-/// dropped — which is how a quiet rescan stays quiet.
+/// The progress sink belongs to this Library realm. Native import jobs may
+/// finish after navigation, but the disposed shelf keeps no listener/task UI.
+/// A fresh Library reconstructs durable results from storage.
 ///
 /// The listener is this sink's own, on the shell's channel, folded straight
 /// into the task list: one parse between the shell and the state, where the

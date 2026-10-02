@@ -592,51 +592,80 @@ function encodeJpeg(canvas: HTMLCanvasElement): Promise<string> {
   });
 }
 
-function renderCoverFromPdf(
-  doc: PDFDocumentProxy,
-  maxWidth: number
-): Promise<{ dataUrl: string; width: number; height: number }> {
-  return doc.getPage(1).then((page) => {
-    const vp1 = page.getViewport({ scale: 1 });
-    const scale = Math.min((maxWidth || 240) / (vp1.width || 1), 2);
-    const viewport = page.getViewport({ scale });
+function checkCoverLive(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const error = new Error("Cover bake cancelled");
+  error.name = "AbortError";
+  throw error;
+}
 
-    const made = offscreenFor(viewport);
-    if (!made) throw new Error("no_context");
-    const { canvas: off, ctx } = made;
-    return page
-      .render({ canvasContext: ctx, viewport })
-      .promise.then(() => {
-        try { page.cleanup(); } catch (_) { /* ignore */ }
-        return encodeJpeg(off).then((dataUrl) => {
-          releaseCanvas(off);
-          return { dataUrl, width: viewport.width, height: viewport.height };
-        });
-      });
-  });
+async function renderCoverFromPdf(
+  doc: PDFDocumentProxy,
+  maxWidth: number,
+  signal?: AbortSignal,
+): Promise<{ dataUrl: string; width: number; height: number }> {
+  checkCoverLive(signal);
+  const page = await doc.getPage(1);
+  checkCoverLive(signal);
+  const vp1 = page.getViewport({ scale: 1 });
+  const scale = Math.min((maxWidth || 240) / (vp1.width || 1), 2);
+  const viewport = page.getViewport({ scale });
+  const made = offscreenFor(viewport);
+  if (!made) throw new Error("no_context");
+  const { canvas: off, ctx } = made;
+  let render: { promise: Promise<unknown>; cancel: () => void } | undefined;
+  const cancel = () => {
+    render?.cancel();
+    releaseCanvas(off);
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    checkCoverLive(signal);
+    render = page.render({ canvasContext: ctx, viewport });
+    await render.promise;
+    checkCoverLive(signal);
+    const dataUrl = await encodeJpeg(off);
+    checkCoverLive(signal);
+    return { dataUrl, width: viewport.width, height: viewport.height };
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    try { page.cleanup(); } catch (_) { /* best-effort page cleanup */ }
+    releaseCanvas(off);
+  }
 }
 
 export async function coverDataUrl(
   s: EngineSession,
   path: string,
-  maxWidth = 240
+  maxWidth = 240,
+  signal?: AbortSignal,
 ): Promise<CoverResult> {
   try {
+    checkCoverLive(signal);
     if (!path) return fail("no_path", "No path");
     let result: { dataUrl: string; width: number; height: number };
     if (s.pdf && s.currentPath === path) {
-      result = await renderCoverFromPdf(s.pdf, maxWidth);
+      result = await renderCoverFromPdf(s.pdf, maxWidth, signal);
     } else {
-      const task = await getDocument({ ...BASE_PARAMS, data: await fetchBytes(path) });
+      const data = await fetchBytes(path);
+      // Native reads can answer after cancellation; never spawn their worker.
+      checkCoverLive(signal);
+      const task = await getDocument({ ...BASE_PARAMS, data });
       noteWorkerCreated(s);
+      let cancelled: Promise<void> | undefined;
+      const cancel = () => { cancelled ??= destroyTask(s, task); };
+      signal?.addEventListener("abort", cancel, { once: true });
+      if (signal?.aborted) cancel();
       try {
+        checkCoverLive(signal);
         const doc = await task.promise;
-        result = await renderCoverFromPdf(doc, maxWidth);
+        checkCoverLive(signal);
+        result = await renderCoverFromPdf(doc, maxWidth, signal);
       } finally {
-        // The cover's own task goes through the shared choke point so the
-        // worker counters stay balanced and the session's open task (if a
-        // document opened meanwhile) is never mistaken for this one.
-        await destroyTask(s, task);
+        signal?.removeEventListener("abort", cancel);
+        // The worker choke point is idempotent; await the original abort's
+        // shutdown rather than counting it twice or mistaking it for open.
+        await (cancelled ?? destroyTask(s, task));
       }
     }
     return { ok: true, dataUrl: result.dataUrl, width: result.width, height: result.height };
@@ -644,4 +673,3 @@ export async function coverDataUrl(
     return failFrom(e);
   }
 }
-

@@ -24,7 +24,7 @@ teardown in the smoke suite and the browser lifecycle baseline.
 | Pane-scoped PDF theme pipeline and paper observers | `public/engine/state.ts`, `theme/pipeline.ts`, `theme/paper.ts` | Pass | `EngineSession` holds one bounded token/input cache + its pane-root reference; root observer is per session and disconnected at `destroySession` start; weak-map keys do not retain sessions; no subtree-wide observer; 1×1 scratch canvas is returned in `finally`. Two-session bake/paper isolation is covered by engine smoke. |
 | LUT cache | `public/engine/theme/filterKernel.ts` | Pass | Capped at 8; the comment records why clear-beats-LRU here |
 | Cover bake page | `src/app/bake.rs` | Pass | One page, deduplicated queue, removed seconds after the queue drains |
-| Route realm policy | `src/app/manager.rs`, `frame.rs` | Pass | Library has its own WASM; every Library return removes the Reader host and all live/incoming/retiring document realms. No Reader prewarm, recycle, empty retention or idle eviction window; only Library may wait behind Reader. Browser cancellation/mixed-close proof and four current Chromium/WebKit return samples pass. |
+| Route realm policy | `src/app/manager.rs`, `frame.rs` | Pass | Library has its own WASM; every Library return removes the Reader host and all live/incoming/retiring document realms. No Reader prewarm, recycle, empty retention or idle eviction window; Library is likewise disposed/removed while reading, including cover-bake queue/task/page. Neither route warms/recycles; both return fresh. Symmetric physical residency, cancelled boots, fresh Library identity and scoped bake cancellation are asserted by the browser/memory harnesses. |
 | Raw canvas retention | `public/engine/state.ts` | Pass | `dropRawIfIdle` after `RAW_IDLE_MS = 2000`, no-op while scrubbing or the appearance menu is open, cleared outright on teardown |
 
 ## Teardown fix from the audit
@@ -90,9 +90,12 @@ churn/peak improvement. Browser process PSS also includes shared resource
 caches and does not imply instantaneous WASM/IOSurface collection.
 
 
-## Disposable route-realm audit (2026-10-02)
+## Historical Reader-only route teardown audit (2026-10-02)
 
 Measured runtime revision: `3448499b5e315b6d6086a69b5d35ac5edd83d3e1`.
+This replay predates symmetric Library teardown: that version retained Library
+behind Reader. These numbers are historical workload evidence, not measurements
+of the current unload-both policy.
 [CI](https://github.com/codewiththiha/mareader/actions/runs/37005308362)
 and [Deep CI](https://github.com/codewiththiha/mareader/actions/runs/37005308324)
 passed for that exact revision. The dist artifact is `11225702961`; memory
@@ -160,3 +163,26 @@ separate heap/native-cache attribution before calling it harmless or fully
 fixed. Do not reinterpret green lifecycle counters as a full-RAM-release
 claim. No local compiler, bundler, dependency/browser installation or
 process-memory test was used.
+
+## Symmetric route ownership
+
+Both route artifacts now use the same lifetime: incoming Ready/Painted,
+reveal, outgoing Dispose/ack, remove the iframe. There is no warm/recycle
+slot or rearm protocol. Reading must report zero Library frames, balanced
+Library creates/disposals and no Library-owned cover-bake page; returning
+must instantiate a fresh Library generation and discard all Reader realms.
+The Shell and durable data survive. A brief bounded handoff overlap is not
+background retention.
+
+Library teardown cancels its queued/in-flight/idle cover page. Abort stops
+cover loading/render tasks and zeros the offscreen backing store before
+frame removal; late cover/boot answers are refused by owner/generation.
+Its deferred startup timer and scoped effects/listeners are cancelled on
+unmount. Cancelling an incoming Library preserves the Reader that remained
+visible; returning to it restores the route phase without a window reload.
+
+The existing Actions memory replay records Library frame residency and
+create/dispose counts during four-pane reading and continuous-reader cycles,
+and requires a new Library identity plus zero Reader/document frames on
+return. No process-RAM savings are inferred from the source change alone;
+WebKit process retention from prior audits remains unresolved until measured.

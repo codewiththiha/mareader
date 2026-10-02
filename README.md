@@ -817,7 +817,9 @@ realm can be released by removing the frame — WASM linear memory only grows,
 and a realm keeps every module it has ever loaded. Five artifacts separate
 Shell, Library, disposable Reader host, PDF and reflow. Library return removes
 the Reader host and every document realm; shelf activity never prewarms one.
-Only Library may warm behind an active Reader. The design and its measurements are in
+Entering Reader also removes Library. Neither route warms/recycles behind
+another; both remount fresh while the small Shell persists. The design and
+its measurements are in
 `docs/runtime-split.md` and `docs/route-split-retrospective.md`. The shell
 page itself loads no engine code and no pdf.js.
 

@@ -392,6 +392,38 @@ async function run({ page, openBook, openIn, waitFor, waitForSettledLayout,
       await page.evaluate(() => window.__paneVerificationMarker) !== marker) {
     throw new Error("a late pane boot survived or the Shell reloaded on Library return");
   }
+  report.libraryScreenshots = [];
+  for (const [name, width] of [["desktop", 1400], ["narrow", 640]]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForFunction((width) => {
+      const frame = document.querySelector('iframe[data-mareader-runtime-frame="library"][data-mareader-slot="active"]');
+      const grid = frame?.contentDocument?.querySelector('.lib-grid');
+      if (!grid) return false;
+      const doc = grid.ownerDocument;
+      // Viewport dimensions change before the Library's resize observers
+      // finish replacing the toolbar's measured center/search width.
+      return Math.abs(doc.defaultView.innerWidth - width) <= 2 &&
+        grid.getBoundingClientRect().width > 0 &&
+        doc.documentElement.scrollWidth <= doc.defaultView.innerWidth + 2;
+    }, width, { timeout: 10_000 });
+    const fresh = await page.evaluate(() => {
+      const frame = document.querySelector('iframe[data-mareader-runtime-frame="library"][data-mareader-slot="active"]');
+      const doc = frame.contentDocument.defaultView.document;
+      return { generation: Number(frame.dataset.mareaderGeneration), src: frame.src,
+        libraryFrames: document.querySelectorAll('iframe[data-mareader-runtime-frame="library"]').length,
+        readerFrames: document.querySelectorAll('iframe[data-mareader-runtime-frame="reader"]').length,
+        paneFrames: doc.querySelectorAll('iframe.pane-frame').length,
+        overflow: doc.documentElement.scrollWidth > doc.defaultView.innerWidth + 2,
+        viewportWidth: doc.defaultView.innerWidth, scrollWidth: doc.documentElement.scrollWidth,
+        shell: window.__paneVerificationMarker };
+    });
+    if (fresh.libraryFrames !== 1 || fresh.readerFrames !== 0 || fresh.paneFrames !== 0 || fresh.overflow || fresh.shell !== marker) {
+      throw new Error(`${name} fresh Library contains stale realms or overflow: ${JSON.stringify(fresh)}`);
+    }
+    await page.screenshot({ path: `${out}/library-${name}.png`, fullPage: true });
+    report.libraryScreenshots.push({ name, width, ...fresh });
+  }
+  await page.setViewportSize({ width: 1400, height: 900 });
   writeFileSync(`${out}/pane-runtimes.json`, JSON.stringify(report, null, 2));
   console.log("PANE_RUNTIME_VERIFICATION_JSON " + JSON.stringify(report));
   return report;

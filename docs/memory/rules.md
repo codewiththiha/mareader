@@ -15,7 +15,10 @@ each Reader document has an independently owned child iframe. Disposal
 removes those frames ([pane-runtimes.md](../pane-runtimes.md)). Shell contains
 neither runtime implementation. Library return must remove the Reader host
 AND every live/incoming/retiring child, with no retained or prewarmed Reader
-behind Library. Settings/persistence authority stays in Shell. Design
+behind Library. Entering Reader must likewise dispose/remove the Library
+realm and its cover-bake queue/page. Neither route may warm or recycle;
+returning creates a fresh realm from durable data. Settings/persistence
+authority stays in Shell. Design
 teardown so the frame can die; do not keep graphs that outlive it.
 
 ## 2. Never start expensive work for an item the strip is sweeping past

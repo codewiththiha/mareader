@@ -36,12 +36,17 @@ no Reader recycling, empty Reader retention, intent hint or idle-eviction
 window. The next open gets a fresh Reader-host realm and independent pane
 realms, even when its served artifact files are already cached.
 
-Only Library may wait behind an active Reader. Its warm session pauses
-startup work and grain. The outgoing Library can recycle after 1.2 seconds:
-its session disposes, then `Rearm` mounts a fresh warm session in the same
-Library iframe. A fresh Library warm boot is delayed 700 ms. Promotion
-reuses that Library iframe and sends `Refresh` to adopt durable state.
-This optimization never permits a Reader to survive on Library.
+**Library is equally disposable.** Once Reader has painted, the outgoing
+Library session unmounts and its iframe/WASM is removed. Returning always
+creates a fresh Library frame/generation, seeded from durable settings,
+books, covers and reading progress. Neither route has a warm slot, recycle
+delay or `Rearm` command. Only the small Shell persists between routes.
+
+Library-owned cover work is cancelled at retirement: queued requests are
+pruned, the in-flight bake/loading task/render is aborted, its offscreen
+canvas is zeroed, and the JS-only bake page/listener/timers are removed.
+A late answer cannot mutate the replacement Library. Native import jobs
+may finish independently, but the old Library retains no listener/task UI.
 
 ## Pixel-preserving handoff
 
@@ -52,10 +57,9 @@ The Shell owns `#runtime-host`. Its actual iframe elements carry
 | --- | --- | --- |
 | `active` | yes | exactly one route on screen |
 | `incoming` | no | a requested cold boot, awaiting Ready **and** Painted |
-| `warm` | no | Library only, awaiting promotion |
 | `retiring` | no | displaced route, awaiting graceful disposal |
 
-A cold open leaves the outgoing frame on screen; it does not remove the
+A fresh route boot leaves the outgoing frame on screen; it does not remove the
 shelf and put a blank incoming iframe in its place. The incoming realm is
 laid out under `visibility: hidden`, never `display: none`. `Ready` is a
 mount verdict; `Painted` is the runtime's two-rAF paint opportunity. A
@@ -69,7 +73,9 @@ Painted, and 8 seconds for graceful route disposal. Failures name runtime,
 stage and cause. Initial boot has the Shell loading card and page placeholder;
 subsequent cold handoffs keep outgoing pixels instead of covering them.
 Newest navigation wins. Cancelling an incoming boot removes its iframe and
-wakes every pending gate; a late response cannot reveal it on Library.
+wakes every pending gate; a late response cannot reveal either cancelled
+route behind its successor. Hidden incoming Library defers startup writes
+until `Refresh` after visible paint; hidden means incoming, not prewarmed.
 
 Incoming status/digest reports are held as one latest plain-data value in
 the driver and replayed after active/launch authority is published. This
@@ -135,16 +141,21 @@ dependencies in the Shell graph, all Reader dependencies in Library, and
 gate rejects `PDFReader` imports in Shell, Library, Reader host and reflow
 glue, plus PDF scripts in their pages. Only `pdf.html` loads the PDF engine.
 Library cover baking remains in the Shell's short-lived JS-only bake page;
-cover work never instantiates Reader WASM.
+cover work never instantiates Reader WASM and stops when Library retires.
 
 ## Observable release, not a RAM promise
 
 At the settled Library baseline, `readerFramesResident == 0`,
 `paneFramesResident == 0`, `readerSessionsCreated == readerDisposesCompleted`,
-`warmRuntime == null`, and root raster active/queued/owners are zero.
+`libraryFramesResident == 1`, and root raster active/queued/owners are zero.
+While reading, `libraryFramesResident == 0`, Library created/disposed counts
+match, and no Library-owned bake page remains. After either handoff settles,
+each route's created minus disposed equals its active count, never a hidden
+counterpart.
 `atBaseline` fails closed if any realm, lease or terminal evidence remains.
 Browser tests cover repeated intent, rapid open/return, fresh host identities,
-cancelled incoming boots and mixed per-pane teardown without reloading Shell.
+cancelled incoming boots of both kinds, Library-bake cancellation, fresh
+Library JS/WASM identity and mixed per-pane teardown without reloading Shell.
 Chromium/WebKit replay asserts zero Reader residency from the +2 second
 sample through +70 seconds, with and without pointer intent.
 

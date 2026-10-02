@@ -48,20 +48,15 @@ pub enum FrameKind {
 
 /// Which half of the host a frame occupies.
 ///
-/// The Shell keeps one runtime on screen and may keep Library booted behind
-/// Reader. Incoming realms paint before reveal (`docs/runtime-split.md`).
-/// A warm frame is a full runtime — its own document, realm and wasm instance
-/// — held at `visibility: hidden`: laid out and painting, but not shown and
-/// not hit-testable, which is what keeps `requestAnimationFrame` (and so the
-/// runtime's own `Painted`) alive inside it.
+/// One route is active; an incoming realm paints before reveal, and the
+/// outgoing realm then retires and is removed. There are no warm slots or
+/// retained route counterparts (`docs/runtime-split.md`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FrameSlot {
     /// On screen: the runtime the user is looking at. Exactly one at a time.
     Active,
     /// Navigation is booting this realm; no reveal before actual Painted.
     Incoming,
-    /// Booted and waiting to be revealed.
-    Warm,
     /// Revealed past: displaced by a handoff, disposing behind the runtime
     /// that replaced it. Still owed its `DisposeComplete`, and still the
     /// author of the terminal digest the baseline reads, so it is hidden but
@@ -77,7 +72,6 @@ impl FrameSlot {
         match self {
             FrameSlot::Active => "active",
             FrameSlot::Incoming => "incoming",
-            FrameSlot::Warm => "warm",
             FrameSlot::Retiring => "retiring",
         }
     }
@@ -224,8 +218,7 @@ pub struct Driver {
     generation: u64,
     nonce: String,
     /// Which half of the host this frame is in. Mutable: promotion moves a
-    /// warm frame to active in place — the whole point being that no new
-    /// frame, document or wasm instance is built.
+    /// incoming frame to active without changing its boot identity.
     slot: Cell<FrameSlot>,
     iframe: web_sys::HtmlIFrameElement,
     host: web_sys::Element,
@@ -255,10 +248,7 @@ pub struct Driver {
     saw_dispose_complete: Cell<bool>,
     /// The manager's reporter hook into the driver's event loop.
     events: RefCell<Option<FrameEventHook>>,
-    /// A warm boot has TWO parties interested in its verdict — the warmer
-    /// that is holding the frame, and a promotion that arrived while it was
-    /// still booting. A single resolve slot would let the second waiter
-    /// replace the first's, so the gate is a list every waiter is added to.
+    /// Cancellation/teardown must wake every task observing the boot gate.
     ready_waiters: RefCell<Vec<js_sys::Function>>,
     ready_pending: RefCell<Option<Result<(), FrameFatalStage>>>,
     paint_waiters: RefCell<Vec<js_sys::Function>>,
@@ -288,7 +278,7 @@ thread_local! {
 }
 
 /// Admit a driver into the page-thread registry. The manager admits a cold
-/// frame on its Ready verdict and a warm one as it starts; the baker is told
+/// incoming frame before its boot starts; the baker is told
 /// either way, because a cold shelf's cover asks precede its own admission
 /// (`bake::frame_registered`).
 pub fn register(driver: Rc<Driver>) {
@@ -325,14 +315,14 @@ pub fn document_frames_resident() -> usize {
 /// Remove a driver from the registry (at teardown). Idempotent: a forced
 /// and a graceful path can both reach it for one generation, and so can a
 /// frame that was never admitted (a boot that failed). The baker prunes the
-/// asks of a frame that is gone (`bake::frame_gone`).
+/// asks of a frame that is gone (`bake::cancel_library`).
 pub fn unregister(generation: u64) {
     DRIVERS.with(|drivers| drivers.borrow_mut().remove(&generation));
-    crate::app::bake::frame_gone(generation);
+    crate::app::bake::cancel_library(generation);
 }
 
 /// How many frames of `kind` are in the page right now, whatever slot they
-/// sit in — active, warm or retiring. The diagnostics probe's
+/// sit in — active, incoming or retiring. The diagnostics probe's
 /// `readerFramesResident`: the number the memory question is actually
 /// about, since a frame that exists holds its realm, its wasm instance and
 /// its heap high-water mark whether or not a session is live in it.
@@ -507,19 +497,8 @@ impl Driver {
         self.slot.get()
     }
 
-    /// True once this frame has answered `Ready` — the question a promotion
-    /// asks before it will reveal a warm frame.
-    pub fn is_ready(&self) -> bool {
-        self.ready_pending
-            .borrow()
-            .as_ref()
-            .is_some_and(Result::is_ok)
-    }
-
-    /// Reveal a warm frame in place. Nothing is rebuilt: the document, the
-    /// realm and the wasm instance were paid for at warm time, and this only
-    /// moves which half of the host the frame sits in.
-    pub fn promote(&self) {
+    /// Reveal the fresh incoming realm only after its Ready/Painted gates.
+    pub fn reveal(&self) {
         self.set_slot(FrameSlot::Active);
     }
 
@@ -542,19 +521,9 @@ impl Driver {
     /// its teardown.
     pub fn begin_retiring(&self) {
         self.set_slot(FrameSlot::Retiring);
-    }
-
-    /// Recycle a frame whose session finished disposing: back to the warm
-    /// slot (hidden, its traffic muted again) and a fresh session mounted in
-    /// the same document. The disposal verdict is cleared so the next
-    /// retirement of this frame awaits its own `DisposeComplete`.
-    pub fn rearm(&self) {
-        self.saw_dispose_complete.set(false);
-        self.saw_painted.set(false);
-        *self.paint_pending.borrow_mut() = None;
-        *self.dispose_pending.borrow_mut() = None;
-        self.set_slot(FrameSlot::Warm);
-        self.send(&ShellFrame::Rearm);
+        if self.kind == FrameKind::Library {
+            crate::app::bake::cancel_library(self.generation);
+        }
     }
 
     fn set_slot(&self, slot: FrameSlot) {
@@ -804,8 +773,7 @@ impl Driver {
             }
             RuntimeFrame::Ready => {
                 self.try_resolve_ready();
-                // A rearmed Library keeps its channel/Ready identity but
-                // owes a NEW paint. Its gate needs the same strict deadline.
+                // Readiness and paint have separate bounded gates.
                 if self.paint_pending.borrow().is_none() {
                     self.arm_painted_timeout();
                 }
@@ -928,10 +896,9 @@ impl Driver {
                     .borrow()
                     .as_ref()
                     .map(|launch| Box::new(launch.clone())),
-                // Read at handshake time, not at creation: a frame created
-                // warm and revealed before it ever spoke boots as the active
-                // runtime it has become.
-                warm: self.slot.get() != FrameSlot::Active,
+                // Incoming frames lay out/paint without starting Library
+                // scans or grain animation before the route is visible.
+                hidden: self.slot.get() != FrameSlot::Active,
             },
         );
     }
@@ -946,11 +913,8 @@ impl Driver {
         }
     }
 
-    /// The manager's "wait for Ready": a promise the READY emission or the
-    /// fatal timeout resolves. Any number of waiters may hold it — a warm
-    /// boot is awaited both by the warmer and by a promotion that caught it
-    /// mid-flight — and each resolves on the one verdict. A boot that has
-    /// already reached a verdict resolves immediately.
+    /// The boot verdict promise. Teardown resolves every waiter so a
+    /// cancelled incoming frame cannot leave its navigation task pending.
     pub fn wait_verdict(&self) -> js_sys::Promise {
         js_sys::Promise::new(&mut |resolve, _reject| {
             if self.ready_pending.borrow().is_some() {
@@ -987,10 +951,7 @@ impl Driver {
         }
     }
 
-    /// The boot verdict, read without consuming it: a warm boot's verdict is
-    /// needed by both the task that ran the warm boot and the promotion that
-    /// may have overtaken it, so a oneshot would leave the second caller
-    /// reading "no verdict" about a frame that had already answered.
+    /// Read the resolved boot gate without consuming its verdict.
     pub fn ready_outcome(&self) -> Option<Result<(), FrameFatalStage>> {
         *self.ready_pending.borrow()
     }

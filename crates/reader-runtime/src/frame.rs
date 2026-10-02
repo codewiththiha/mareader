@@ -194,9 +194,9 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                 ShellFrame::Init {
                     runtime,
                     launch,
-                    warm: _,
+                    hidden: _,
                 } => {
-                    // Only Library can warm. A Reader init must name the
+                    // A Reader init must name the
                     // document this fresh disposable host was opened for.
                     if runtime == RuntimeKind::Reader {
                         on_init(launch, generation);
@@ -238,10 +238,8 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                         emit(RuntimeFrame::DisposeComplete);
                     }
                 }
-                ShellFrame::CoverBaked { .. }
-                | ShellFrame::ImportFiles { .. }
-                | ShellFrame::Rearm => {
-                    // Library-only commands cannot recycle a Reader realm.
+                ShellFrame::CoverBaked { .. } | ShellFrame::ImportFiles { .. } => {
+                    // Cover answers and imports belong to Library.
                 }
             }
         },

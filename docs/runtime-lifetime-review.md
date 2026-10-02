@@ -1,6 +1,8 @@
 # Route and pane lifetime review
 
-Source comparison: `149cbb47e02d563637fe74d6b91b055b59c6211d` (the direct predecessor) versus `887995d3e88ab0571ca7d0a983d6e5411d00cdf0` (the disposable-route change). This review also records the follow-up compiler-boundary cleanup. Read [architecture.md](architecture.md) and [pane-runtimes.md](pane-runtimes.md) for the current implementation contract.
+Source comparison: `149cbb47e02d563637fe74d6b91b055b59c6211d` (the direct predecessor) versus `887995d3e88ab0571ca7d0a983d6e5411d00cdf0` (the disposable-route change). This review records the compiler-boundary cleanup and the later symmetric
+route policy: Library is now removed while reading as well. Historical
+Reader-only measurements below remain labelled by their measured revision. Read [architecture.md](architecture.md) and [pane-runtimes.md](pane-runtimes.md) for the current implementation contract.
 
 ## What changed, and what did not
 
@@ -29,7 +31,7 @@ In `149cbb4`, `src/app/frame.rs::Driver::new` created a `div`, not a route ifram
 Persistent window / Shell WASM
 ├─ Navigation, settings/persistence authority and route manager
 ├─ Library iframe → Library WASM
-│  └─ Visible on Library; may wait behind an active Reader
+│  └─ Visible on Library; removed after Reader's incoming paint
 └─ Reader iframe → disposable, format-free Reader-host WASM
    ├─ The same Reader workspace chrome
    │  ├─ Title bar, sidebar, settings and menus
@@ -41,7 +43,7 @@ Persistent window / Shell WASM
 
 Five artifact types ship: Shell, Library, Reader host, PDF and reflow. That does not mean exactly five live instances: each opened PDF/text pane instantiates its own child runtime. Reader host uses `reader.html` and `--no-default-features`; PDF uses `pdf,engine`; reflow uses `reflow,engine`. The PDF engine is absent from Shell, Library, Reader-host and text glue. Shell no longer links either route implementation.
 
-The existing `ReaderHost`, `PaneManager`, `PaneTree`, document-pane contract and `FramePane` factory remain. Between the compared commits, `crates/reader-runtime/src/host/` and the appearance-menu/floating implementations were unchanged; the document frame changes were limited to scoped raster retirement and leaf theme/grain ownership. The follow-up only adjusts stale lifetime comments, feature-gates document-only helpers, makes crate warnings fatal, and adds a browser geometry regression. It does not replace the pane implementation.
+The existing `ReaderHost`, `PaneManager`, `PaneTree`, document-pane contract and `FramePane` factory remain. Between the compared commits, `crates/reader-runtime/src/host/` and the appearance-menu/floating implementations were unchanged; the document frame changes were limited to scoped raster retirement and leaf theme/grain ownership. The warning follow-up adjusted lifetime comments, feature-gated document-only helpers, made crate warnings fatal and added a browser geometry regression. The symmetric-route follow-up removes Library warm/recycle ownership and cancels Library-owned cover work too; neither change replaces the document-pane implementation.
 
 ## Was the last book left open before?
 
@@ -58,12 +60,12 @@ Therefore, it is not justified to say the last PDF/worker was permanently leaked
 
 ## Current return sequence
 
-1. Shell makes Library incoming, or asks its existing Library frame for fresh visible paint.
+1. Shell creates a fresh incoming Library frame; no previous Library is retained behind Reader.
 2. The outgoing Reader pixels remain until the incoming route reports `Ready` and `Painted`; the window is not reloaded.
 3. Reader becomes retiring. Shell sends `Dispose` rather than `Rearm`.
 4. Reader's `dispose` calls `ReaderHost::dispose` and `PaneManager::dispose_all`: every live/incoming/retiring child rejects stale work, cancels queues, releases sessions/workers/caches/surfaces/virtualizers, closes channels, and removes its iframe.
 5. The Reader host unmounts, completes its runtime teardown and acknowledges disposal. Shell's driver removes the **Reader iframe itself**, closes its offers/channel/listeners/timers, unregisters it, and reclaims its descendant raster scope.
-6. No shelf intent recreates Reader. `warm_counterpart_unasked` only schedules Library, and `may_recycle` only permits Library. A later book open constructs a fresh Reader host and fresh document realm(s).
+6. Neither route creates a background counterpart. Warm scheduling, Library recycling and `Rearm` were removed. A later book open constructs a fresh Reader host and document realm(s); after its paint the Library realm and cover-bake work are disposed/removed too.
 
 Disposal is graceful and bounded, not an assertion that every byte disappears at the instant the URL changes. The host disposal deadline is 8 seconds; children have their existing 1.5-second forced-removal boundary. In the measured four current returns, all Reader/document frames were gone by the +2-second sample and remained absent through +70 seconds.
 
@@ -77,12 +79,12 @@ These are different kinds of reuse:
 | Reader view/realm recycle | Yes | Disabled |
 | Speculative fetch of PDF/reflow assets on Library startup | Not necessarily an instance, but does speculative Reader work | Removed from `public/shellBoot.js` |
 | Packaged assets already on disk, browser HTTP/module-byte/compiled-code caches | No old document/session required | Browser-controlled; fresh instances may benefit |
-| Library kept ready behind Reader | No Reader retained | Allowed |
+| Library kept ready behind Reader | Retains Library | Disabled; return creates a fresh Library |
 | Showing outgoing pixels until incoming paint | No permanent retention; only bounded overlap | Retained |
 
 `tools/dev.mjs` builds and serves the optimized release artifacts, not an unoptimized development Reader. A book click starts the Reader host immediately; its document iframe starts through the existing factory. Once assets have been used, their bytes/compiled code can be cached without keeping the old runtime's mutable memory, PDF proxy or worker alive. In the packaged app there is no internet download for those assets. A small format-free host, optimized code and paint-preserving handoffs can make a genuine fresh mount feel fast.
 
-That explains compatibility between fast appearance and fresh realms; it is not a measured cold-versus-warm latency attribution. We did not instrument the user's native machine or prove which cache supplied its particular fast open. Browser code caches also do not promise full process-memory recovery.
+The previously warm Library accelerated Reader → Library; it is now disabled too. Returns use cached served/compiled code if available, but always instantiate fresh mutable Library state. That explains compatibility between fast appearance and fresh realms; it is not a measured cold-versus-warm latency attribution. We did not instrument the user's native machine or prove which cache supplied its particular fast open. Browser code caches also do not promise full process-memory recovery.
 
 ## Why the unused warnings could coexist with green CI
 
@@ -107,7 +109,7 @@ The source did expose a collision condition in the prior placement: both route v
 
 This is a source-supported explanation for an improvement, not a reproduced diagnosis of the user's exact earlier visual symptom. The added regression opens Appearance by actual hover/click in the Reader document at 1,400 and 640 pixels, moves into the popup past the 400 ms toolbar hide grace, asserts a single Reader toolbar/no Shell toolbar, checks same-document ownership, 288-pixel width, viewport containment and computed anchor placement, and captures both open menus for visual review. It does not change menu geometry to make the test pass. Browser captures are not a native macOS appearance/traffic-light measurement.
 
-## Memory limits
+## Historical Reader-only memory evidence and limits
 
 Final architecture revision `887995d` had all four sampled Chromium/WebKit returns at zero Reader and document frames from +2 through +70 seconds. Chromium hands-off PSS went from 344.7 MiB reading to 148.5 MiB at +70 seconds (fresh Library: 168.4). WebKit went from 832.4 to 773.3 MiB (fresh Library: 470.8); its process footprint did **not** fully recover. Separate continuously-reading neighbor cycles still showed WebKit process retention/growth.
 

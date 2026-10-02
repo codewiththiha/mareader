@@ -125,8 +125,11 @@ async function sample(tag) {
     ...rendererMemory(),
     frames: await frames(),
     readerFramesResident: s?.readerFramesResident ?? null,
+    libraryFramesResident: s?.libraryFramesResident ?? null,
+    librarySessionsCreated: s?.librarySessionsCreated ?? null,
+    libraryDisposesCompleted: s?.libraryDisposesCompleted ?? null,
     paneFramesResident: s?.paneFramesResident ?? null,
-    readerReturnPolicy: s?.readerReturnPolicy ?? null,
+    routeReturnPolicy: s?.routeReturnPolicy ?? null,
     rasterLane: s?.rasterLane ?? null,
     atBaseline: s?.atBaseline ?? null,
     panes: s?.host?.panes?.length ?? null,
@@ -252,6 +255,8 @@ for (let round = 0; round < 6; round += 1) {
   }
 }
 await page.waitForTimeout(2500);
+await waitFor("Library route removed while reading", (s) => label !== "current" ||
+  (s.libraryFramesResident === 0 && s.librarySessionsCreated === s.libraryDisposesCompleted && !s.bakeFrameResident));
 result.reading = await sample("reading, four panes");
 
 // 5. back to the library through the reader's own button
@@ -284,8 +289,11 @@ for (const sec of IDLE_SAMPLES_S) {
   // The current build MUST prove the new no-Reader policy in BOTH engines,
   // even under continuous intent, well before the old 60-second eviction.
   if (label === "current" && sec >= 2 &&
-      (row.readerReturnPolicy !== "unload" || row.readerFramesResident !== 0 ||
-       row.paneFramesResident !== 0 || row.atBaseline !== true ||
+      (row.routeReturnPolicy !== "unload-both" || row.readerFramesResident !== 0 ||
+       row.paneFramesResident !== 0 || row.libraryFramesResident !== 1 || row.atBaseline !== true ||
+       row.librarySessionsCreated - row.libraryDisposesCompleted !== 1 ||
+       row.frames.filter((f) => f.startsWith("library:")).length !== 1 ||
+       row.frames.some((f) => f.startsWith("library:") && result.libraryAtRest.frames.includes(f)) ||
        row.frames.some((f) => /^(reader|pane):/.test(f)) ||
        row.rasterLane?.active !== 0 || row.rasterLane?.queued !== 0 || row.rasterLane?.owners !== 0)) {
     throw new Error(`Reader realms survived Library return: ${JSON.stringify(row)}`);

@@ -126,11 +126,9 @@ html:not([data-base]) {
   background: var(--color-accent-soft, #dbeafe);
 }
 
-/* The runtime host holds up to two frames at once (the warm-slot lifecycle in
-   docs/runtime-split.md): the one on screen and the one booted behind it.
-   Stacking them is what makes a route change a reveal instead of a rebuild —
-   both occupy the same rectangle, so a warm frame lays out and paints at the
-   real size it will be shown at. */
+/* A handoff briefly overlaps the outgoing route with a fresh incoming one.
+   Once the incoming frame paints, the outgoing realm is disposed/removed;
+   no route stays mounted behind another (docs/runtime-split.md). */
 #runtime-host {
   position: relative;
 }
@@ -148,12 +146,11 @@ html:not([data-base]) {
   border: 0;
 }
 
-/* The warm frame is laid out and painting, but not shown and not
+/* The incoming frame is laid out and painting, but not shown and not
    hit-testable. `visibility` rather than `display`: a `display: none` iframe
    gets no layout, and a runtime that cannot lay out cannot run the animation
    frames its own painted handshake is made of. */
 .runtime-frame[data-mareader-slot="incoming"],
-.runtime-frame[data-mareader-slot="warm"],
 .runtime-frame[data-mareader-slot="retiring"] {
   visibility: hidden;
   pointer-events: none;
@@ -169,7 +166,7 @@ html:not([data-base]) {
 /* The Shell's cover-bake page (src/app/bake.rs): a child document that
    loads pdf.js alone and renders shelf covers while the shelf lacks them. It
    sits on <body>, outside the runtime host, and is never shown. Hidden the
-   same way as a warm runtime frame — laid out, `visibility: hidden`, not
+   same way as an incoming runtime frame — laid out, `visibility: hidden`, not
    hit-testable — because pdf.js paces a render on animation frames, and a
    frame that gets no layout gets none of those; `display: none` would stall
    every bake until its timeout. */

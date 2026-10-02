@@ -20,7 +20,8 @@ There are **five artifact types**; reader workspace chrome belongs to its
 own disposable host, not the persistent Shell document. Every Library return
 unloads that host and all live/incoming/retiring document realms. Shelf
 pointer/focus/presses never prewarm Reader or retain an empty reflow realm
-behind Library. Only Library may wait behind an active Reader.
+behind Library. Entering Reader also removes Library; neither route is
+retained/prewarmed behind the other, and both return with fresh instances.
 
 The Reader host builds with `--no-default-features` and no feature selection;
 the pane artifacts select `pdf,engine` for `pdf.html`, `reflow,engine` for

@@ -26,14 +26,9 @@
 //! removed, the cover it owed is answered as a failure (the shelf's
 //! one-retry policy asks again), and the next ask mounts a fresh page.
 //!
-//! The asks are keyed on the shelf's frame generation, and a cold shelf
-//! asks from inside its own mount — before its Ready verdict admits it to
-//! the frame registry. Such an ask waits for the admission
-//! ([`frame_registered`]) while the page already boots, so the wait costs
-//! the shelf nothing; an ask whose frame is torn down instead — a boot
-//! that failed, a shelf that was replaced — is pruned ([`frame_gone`]):
-//! nobody is left to show the cover, and the next shelf asks again for what
-//! it lacks.
+//! Asks are owned by one Library generation. Retirement cancels its queue,
+//! loading/render task and idle page immediately. Registry/source checks
+//! keep late answers from reaching a replacement Library.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -68,6 +63,8 @@ struct BakeRequest {
 
 /// The mounted page and everything JS-side that belongs to it.
 struct Page {
+    /// The Library generation that currently owns this page's work/idle grace.
+    library: u64,
     iframe: web_sys::HtmlIFrameElement,
     /// The window `message` listener. Removed explicitly at teardown; kept
     /// here so it lives exactly as long as the page it listens for.
@@ -95,6 +92,23 @@ struct Baker {
     next_epoch: u64,
     /// Answers delivered to a shelf (success or failure), for the probe.
     answered: u64,
+}
+
+impl Baker {
+    /// Pure ownership transition; DOM/timer release follows outside the borrow.
+    fn forget_library(&mut self, generation: u64) -> (Option<InFlight>, bool) {
+        self.queue.retain(|request| request.library != generation);
+        let owned = self
+            .in_flight
+            .as_ref()
+            .is_some_and(|flight| flight.request.library == generation);
+        let flight = if owned { self.in_flight.take() } else { None };
+        let remove_page = self
+            .page
+            .as_ref()
+            .is_some_and(|page| page.library == generation);
+        (flight, remove_page)
+    }
 }
 
 thread_local! {
@@ -164,20 +178,18 @@ pub fn frame_registered(_generation: u64) {
     pump();
 }
 
-/// A frame was torn down (`frame::unregister`). Its asks are pruned — a
-/// shelf that failed to boot never gets admitted, and a shelf that was
-/// replaced has nobody left to show the cover. An ask of its already in
-/// flight runs to its answer, which [`deliver`] then drops at the boundary.
-pub fn frame_gone(generation: u64) {
-    let pruned = BAKER.with(|baker| {
-        let mut baker = baker.borrow_mut();
-        let before = baker.queue.len();
-        baker.queue.retain(|request| request.library != generation);
-        baker.queue.len() != before
-    });
-    if pruned {
-        pump();
+/// Cancel every cover owned by a Library leaving the active route. The
+/// in-flight worker/render and idle page are stopped as well as the queue;
+/// a retired shelf cannot keep a PDF bake running behind Reader.
+pub fn cancel_library(generation: u64) {
+    let (flight, remove_page) = BAKER.with(|baker| baker.borrow_mut().forget_library(generation));
+    if let Some(flight) = flight {
+        clear_timeout(flight.timer);
     }
+    if remove_page {
+        teardown_page();
+    }
+    pump();
 }
 
 /// Whether the bake page is in the document right now (the probe's
@@ -232,17 +244,17 @@ fn pump() {
     // mount, ahead of its Ready verdict): its bake waits for
     // `frame_registered`, but the page boots meanwhile, so the wait costs
     // nothing. A shelf that is torn down instead has its asks pruned by
-    // `frame_gone`, so this never waits on a frame that is gone.
+    // `cancel_library`, so this never waits on a frame that is gone.
     if crate::app::frame::lookup(request.library).is_none() {
         if matches!(page_state(), PageState::None) {
-            mount_page();
+            mount_page(request.library);
         }
         requeue_front(request);
         return;
     }
     match page_state() {
         PageState::None => {
-            mount_page();
+            mount_page(request.library);
             requeue_front(request);
         }
         PageState::Booting => requeue_front(request),
@@ -257,6 +269,9 @@ fn requeue_front(request: BakeRequest) {
 fn send(window: web_sys::Window, request: BakeRequest) {
     let id = BAKER.with(|baker| {
         let mut baker = baker.borrow_mut();
+        if let Some(page) = baker.page.as_mut() {
+            page.library = request.library;
+        }
         baker.next_id += 1;
         baker.next_id
     });
@@ -300,7 +315,7 @@ fn deliver(request: &BakeRequest, image: Option<CoverImage>) {
 
 /// Insert the page and start listening for it. Nothing is sent until it
 /// says `bake-ready`; the ready timeout bounds that wait.
-fn mount_page() {
+fn mount_page(library: u64) {
     let Some(window) = web_sys::window() else {
         return;
     };
@@ -336,6 +351,7 @@ fn mount_page() {
     let ready_timer = set_timeout(READY_TIMEOUT_MS, move || on_ready_timeout(epoch));
     BAKER.with(|baker| {
         baker.borrow_mut().page = Some(Page {
+            library,
             iframe,
             listener,
             ready: false,
@@ -357,6 +373,14 @@ fn teardown_page() {
     if let Some(window) = web_sys::window() {
         let _ = window
             .remove_event_listener_with_callback("message", page.listener.as_ref().unchecked_ref());
+    }
+    // Abort is synchronous in the page: cancel the render/loading task and
+    // zero its offscreen canvas before removing the browsing context.
+    if let Some(window) = page.iframe.content_window()
+        && let Ok(dispose) = js_sys::Reflect::get(&window, &"__mareaderDisposeBakes".into())
+        && let Ok(dispose) = dispose.dyn_into::<js_sys::Function>()
+    {
+        let _ = dispose.call0(&window);
     }
     page.iframe.remove();
     drop(page.listener);
@@ -552,5 +576,55 @@ fn set_timeout(ms: i32, f: impl FnOnce() + 'static) -> Option<i32> {
 fn clear_timeout(id: Option<i32>) {
     if let (Some(id), Some(window)) = (id, web_sys::window()) {
         window.clear_timeout_with_handle(id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BakeRequest, Baker, InFlight};
+
+    fn request(library: u64) -> BakeRequest {
+        BakeRequest {
+            library,
+            path: format!("/{library}.pdf"),
+        }
+    }
+
+    #[test]
+    fn retiring_library_cancels_its_queue_and_in_flight_without_touching_successor() {
+        let mut baker = Baker {
+            queue: [request(1), request(2), request(1)].into(),
+            in_flight: Some(InFlight {
+                id: 7,
+                request: request(1),
+                timer: None,
+            }),
+            ..Baker::default()
+        };
+        let (cancelled, remove_page) = baker.forget_library(1);
+        assert_eq!(cancelled.unwrap().id, 7);
+        assert!(!remove_page);
+        assert!(baker.in_flight.is_none());
+        assert_eq!(
+            baker.queue.into_iter().collect::<Vec<_>>(),
+            vec![request(2)]
+        );
+    }
+
+    #[test]
+    fn repeated_or_unrelated_retirement_does_not_cancel_another_library() {
+        let mut baker = Baker {
+            queue: [request(1), request(2)].into(),
+            in_flight: Some(InFlight {
+                id: 9,
+                request: request(2),
+                timer: None,
+            }),
+            ..Baker::default()
+        };
+        assert!(baker.forget_library(1).0.is_none());
+        assert!(baker.forget_library(1).0.is_none());
+        assert_eq!(baker.in_flight.as_ref().unwrap().id, 9);
+        assert_eq!(baker.queue.front(), Some(&request(2)));
     }
 }

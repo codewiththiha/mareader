@@ -74,20 +74,16 @@ fn start_frame(wire: PortWire, generation: u64) {
     API.with(|slot| *slot.borrow_mut() = Some(api));
     #[cfg(target_arch = "wasm32")]
     install_shell_listener(wire.port().clone(), generation);
-    // First contact: the shelf no longer mounts on adoption either. The
-    // Shell's `init` carries `warm`, and a boot has to know it is warm
-    // BEFORE its first effect runs — the shelf's startup passes write
-    // durable state a live reader session is meanwhile editing. So this
-    // frame's first word is "alive and waiting", exactly as the reader's is.
+    // The init's visibility flag defers startup writes until reveal. No
+    // route may write another route's store before its incoming paint.
     emit(RuntimeFrame::Status {
         stage: BootStage::Initialized,
     });
 }
 
 /// The Shell's `init`: mount the runtime root (§9) and start the session.
-/// `warm` is the Shell's statement that this boot runs ahead of the
-/// navigation that will use it, so the shelf renders but does not work.
-fn on_init(warm: bool, generation: u64) {
+/// Hidden means an incoming route: paint first, start passes on reveal.
+fn on_init(hidden: bool, generation: u64) {
     // A re-init for a boot that already mounted is not a second session: the
     // Shell mints one identity per frame and never reuses one.
     if SESSION_ID.with(|slot| slot.get()).is_some() {
@@ -111,33 +107,14 @@ fn on_init(warm: bool, generation: u64) {
     // indefinite measure instead of the frame's real one.
     root.set_attribute("class", "h-full w-full").ok();
     let _ = body.append_child(&root);
-    // A warm shelf is hidden behind the reader until `Refresh` reveals it;
-    // the document is told so (the animated grain pauses while nobody can
-    // see it).
-    app_ui::frame_theme::mark_frame_hidden(warm);
-    let id = crate::start_session(&root, ApiHandle::Frame, warm);
+    app_ui::frame_theme::mark_frame_hidden(hidden);
+    let id = crate::start_session(&root, ApiHandle::Frame, hidden);
     SESSION_ID.with(|slot| slot.set(Some(id)));
     emit(RuntimeFrame::Status {
         stage: BootStage::Mounted,
     });
     emit(RuntimeFrame::Ready);
     report_painted();
-}
-
-/// The Shell recycling this frame after a completed disposal: a fresh warm
-/// shelf mounts in the document that already paid for the wasm instance.
-/// Only ever sent after `DisposeComplete`, so the previous session is gone.
-#[cfg(target_arch = "wasm32")]
-fn on_rearm(generation: u64) {
-    if SESSION_ID.with(|slot| slot.get()).is_some() {
-        return;
-    }
-    if let Some(document) = web_sys::window().and_then(|w| w.document()) {
-        while let Some(root) = document.get_element_by_id("runtime-root") {
-            root.remove();
-        }
-    }
-    on_init(true, generation);
 }
 
 /// A Shell envelope arriving over the port. The generation guard is the
@@ -161,14 +138,10 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                 ShellFrame::Init {
                     runtime,
                     launch: _,
-                    warm,
+                    hidden,
                 } => {
-                    // The kind check is the only acknowledgement a
-                    // wrong-frame boot could fake; `warm` is the payload that
-                    // matters — it decides whether this shelf works now or
-                    // when it is revealed.
                     debug_assert_eq!(runtime, RuntimeKind::Library);
-                    on_init(warm, generation);
+                    on_init(hidden, generation);
                 }
                 ShellFrame::CoverBaked { path, image } => {
                     if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
@@ -182,18 +155,12 @@ fn install_shell_listener(port: web_sys::MessagePort, generation: u64) {
                     }
                 }
                 ShellFrame::Refresh => {
-                    // Promoted from warm: the shelf it seeded at boot is a
-                    // snapshot from before the reader session ran, and a
-                    // reader session moves read points and adds books. Re-read
-                    // the store rather than booting a new runtime — that read
-                    // is the whole reason warming is worth its memory.
+                    // Fresh Library has painted. Reconcile late durable
+                    // writes and run its previously deferred startup once.
                     app_ui::frame_theme::mark_frame_hidden(false);
                     if let Some(id) = SESSION_ID.with(|slot| slot.get()) {
                         crate::command(id, crate::LibraryCommand::Refresh);
                     }
-                }
-                ShellFrame::Rearm => {
-                    on_rearm(generation);
                 }
                 ShellFrame::ImportFiles { paths } => {
                     if let Some(id) = SESSION_ID.with(|slot| slot.get()) {

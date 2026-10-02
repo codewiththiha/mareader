@@ -49,7 +49,8 @@ shape is in `docs/route-split-retrospective.md`.
   Reader workspace chrome, layout and mirrors live in the Reader host;
   `FramePane` owns the independent document iframes. Library return removes
   the Reader host and every document realm, with no Reader retention,
-  prewarming or recycling behind Library.
+  prewarming or recycling behind Library. Entering Reader likewise removes
+  Library; both routes remount fresh and only Shell persists.
 - Frame roots must carry `h-full w-full`: a mount with `height: auto` gives
   the virtualizer an indefinite viewport and every page mounts at once
   (the "peak N page hosts" browser failure).
@@ -122,16 +123,20 @@ shape is in `docs/route-split-retrospective.md`.
   churn record. New memory-sensitive code reads `rules.md` first; a new
   audit updates `audit.md`.
 
-## Warm slots and document handoff
+## Fresh route realms and document handoff
 
-The Shell manager owns actual route iframes in `Active`, `Incoming`, `Warm`
-and `Retiring` slots. Only Library may warm/recycle behind an active Reader.
-A Reader boots only on an actual open, with a launch descriptor; returning
-to Library always removes it, regardless of heap size or pane count.
-Pointer activity/focus on Library never allocates Reader or document WASM.
-Cold handoffs retain outgoing pixels until the incoming frame is Ready and
-Painted. Newest navigation cancels a pending incoming host, and a late boot
-cannot reveal it after Library return. See `docs/runtime-split.md`.
+The Shell manager owns actual route iframes in `Active`, `Incoming` and
+`Retiring` slots. Every route departure disposes/removes that realm: Library
+is absent while reading, Reader and all document realms are absent at the
+settled Library baseline. Neither runtime prewarms, rearms or recycles.
+A return creates a fresh iframe/WASM instance from durable data, not a
+window reload. Pointer/focus on Library never allocates Reader.
+
+Handoffs retain outgoing pixels until incoming Ready/Painted. Newest
+navigation cancels a pending incoming host and wakes its gates; late boots
+of either kind cannot reveal a cancelled route. Library defers incoming
+startup writes until reveal, and its cover-bake queue/task/page is cancelled
+when it retires. See `docs/runtime-split.md`.
 
 Every **document replacement** after adoption uses a fresh iframe, even
 within one format. The pane id/layout/focus stay stable; the old document
@@ -159,8 +164,8 @@ coverage, and `docs/memory/audit.md` for measurement limits.
 
 - Shell diagnostic counters are authoritative; runtime digests merge in only
   keys the shell does not already own (`src/diagnostics.rs`, unit-tested).
-- Per kind, `created - completed == (active is X) + (warm-ready is X)`. The
-  equality is checked after retirement/rearm settles. At Library baseline
+- Per kind, `created - completed == (active is X)`. The
+  equality is checked after retirement settles. At Library baseline
   no Reader is active/warm/retiring: Reader created/completed are equal and
   Reader/pane iframe residency plus raster active/queued/owners are zero.
 - Leaving the reader cancels in-flight page renders synchronously with the
@@ -179,12 +184,13 @@ coverage, and `docs/memory/audit.md` for measurement limits.
   frame is part of the reveal, not a follow-up task.
 - Nothing is disposed while it is on screen (`run_retire` re-asserts this for
   any retirement that did not come from a reveal).
-- Per kind, `created − completed == (active is X) + (warm-ready is X)`: the
+- Per kind, `created − completed == (active is X)`: the
   retired session's disposal still runs to completion, just not in front of
   the handoff.
-- A warmed **Library** frame is the frame that gets revealed — `backSlots.active ===
-  warmShelf.warm` — and the revealed generation is the warmed generation.
-  Rebooting at promotion time is a failure, not an optimisation.
+- A Library return creates a new generation/JS realm, never the old Library
+  frame. Reading has zero Library frames and no Library-owned bake page.
+  Cancelled Library boots cannot replace a still-visible Reader or later
+  reappear. Shell identity and durable settings/read points survive.
 - Disposal epoch belongs to the host's document-session count: every open
   and held-document close claims it, and changing a document realm does
   not restart it. The reported runtime generation is Shell-owned — the

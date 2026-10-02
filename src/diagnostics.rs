@@ -54,23 +54,14 @@ fn install_web(state: ShellState) {
             "librarySessionsCreated": state.manager.library_sessions_created.load(std::sync::atomic::Ordering::Relaxed),
             "libraryDisposesCompleted": state.manager.library_disposes_completed.load(std::sync::atomic::Ordering::Relaxed),
             "readerRuntimeLive": state.manager.active() == Some(ActiveRuntime::Reader),
-            // The warm slot: which runtime is booted behind the active one,
-            // whether it finished booting, and the frame identity the suites
-            // match against the frame that is later revealed.
-            "warmRuntime": match state.manager.warm_runtime() {
-                Some(ActiveRuntime::Reader) => serde_json::json!("reader"),
-                Some(ActiveRuntime::Library) => serde_json::json!("library"),
-                None => serde_json::Value::Null,
-            },
-            "warmReady": state.manager.warm_ready(),
-            "warmGeneration": state.manager.warm_generation(),
             // DOM residency includes incoming and retiring realms, not
             // merely whichever route is visible. No Reader may survive the
             // Library baseline, even while the pointer stays on a card.
             "readerFramesResident": state.manager.reader_frames_resident(),
+            "libraryFramesResident": crate::app::frame::resident(crate::app::frame::FrameKind::Library),
             "paneFramesResident": crate::app::frame::document_frames_resident(),
-            "readerReturnPolicy": "unload",
-            "readerPrewarmAllowed": false,
+            "routeReturnPolicy": "unload-both",
+            "routePrewarmAllowed": false,
             "routeArtifacts": 5,
             "rasterLane": raster_snapshot(),
             // The shell's cover baker: whether its page is currently mounted
@@ -78,7 +69,6 @@ fn install_web(state: ShellState) {
             // many covers it has answered, either way, since boot.
             "bakeFrameResident": crate::app::bake::resident(),
             "coversAnswered": crate::app::bake::answered(),
-            "warmTrafficSeen": state.manager.warm_traffic_seen.load(std::sync::atomic::Ordering::Relaxed),
             "staleFramesSeen": state.manager.stale_frames_seen.load(std::sync::atomic::Ordering::Relaxed),
             "docStatus": state.manager.doc_status.lock().unwrap().clone(),
             "docError": state.manager.doc_error.lock().unwrap().clone(),

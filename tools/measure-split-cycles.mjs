@@ -129,8 +129,15 @@ async function sample(tag) {
     workersLive: s?.engine ? s.engine.workersCreated - s.engine.workersTerminated : null,
     pageCanvasMB: MB(s?.engine?.pageCanvasBytesEst),
     readerFrames: s?.readerFramesResident ?? null,
+    libraryFrames: s?.libraryFramesResident ?? null,
+    librarySessionsCreated: s?.librarySessionsCreated ?? null,
+    libraryDisposesCompleted: s?.libraryDisposesCompleted ?? null,
+    bakeFrameResident: s?.bakeFrameResident ?? null,
     ...dom,
   };
+  if (row.libraryFrames !== 0 || row.librarySessionsCreated !== row.libraryDisposesCompleted || row.bakeFrameResident !== false) {
+    throw new Error(`Library survived continuous reading: ${JSON.stringify(row)}`);
+  }
   console.log(JSON.stringify(row));
   return row;
 }

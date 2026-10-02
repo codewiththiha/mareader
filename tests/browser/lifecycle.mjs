@@ -737,8 +737,8 @@ async function startHostSampler() {
         placeholder: document.getElementById("shell-boot") !== null,
         bootState: diag?.bootState ?? null,
         activeRuntime: diag?.activeRuntime ?? null,
-        warmRuntime: diag?.warmRuntime ?? null,
-        warmReady: diag?.warmReady ?? null,
+        libraryFramesResident: diag?.libraryFramesResident ?? null,
+        readerFramesResident: diag?.readerFramesResident ?? null,
         librarySessions: diag?.librarySessionsCreated ?? null,
         libraryDisposes: diag?.libraryDisposesCompleted ?? null,
         readerSessions: diag?.readerSessionsCreated ?? null,
@@ -758,7 +758,7 @@ async function stopHostSampler() {
     if (window.__hostSampler) window.clearInterval(window.__hostSampler);
     const samples = window.__hostSamples ?? [];
     window.__hostSampleContext = [];
-    const violations = { empty: [], twoLive: [], mixed: [], unmarked: [], tooManyFrames: [], leakedWarm: [], twoActive: [] };
+    const violations = { empty: [], twoLive: [], mixed: [], unmarked: [], tooManyFrames: [], leakedHidden: [], twoActive: [] };
     // The samples around a violation are the diagnostic that matters — a bare
     // host is only meaningful next to what came before and after it.
     for (const s of samples) {
@@ -769,7 +769,7 @@ async function stopHostSampler() {
       // with what is mounted.
       // One runtime's DOM in the frame that is on screen — a warm runtime
       // rendering its own shelf or page host is not "two live runtimes", it
-      // is the warm slot working as designed, and `leakedWarm` below is
+      // is the warm slot working as designed, and `leakedHidden` below is
       // what catches the case where it is NOT hidden.
       if (s.library + s.reader > 1) violations.twoLive.push(s);
       if (s.active === "library" && s.reader > 0) violations.mixed.push(s);
@@ -781,7 +781,7 @@ async function stopHostSampler() {
       // the one on screen.
       if (s.frames > 4) violations.tooManyFrames.push(s);
       if (s.actives > 1) violations.twoActive.push(s);
-      if (s.leaked > 0) violations.leakedWarm.push(s);
+      if (s.leaked > 0) violations.leakedHidden.push(s);
       // §11: never a blank window. An empty host is legal only while the
       // page placeholder covers it — that is the loading state before the
       // first paint, and it is visible.
@@ -794,7 +794,7 @@ async function stopHostSampler() {
       }
     }
     for (const kind of [
-      "empty", "twoLive", "mixed", "unmarked", "tooManyFrames", "leakedWarm", "twoActive",
+      "empty", "twoLive", "mixed", "unmarked", "tooManyFrames", "leakedHidden", "twoActive",
     ]) {
       if (violations[kind].length === 0) continue;
       const first = violations[kind][0];
@@ -808,7 +808,7 @@ async function stopHostSampler() {
 
 function firstViolation(violations, context = []) {
   for (const kind of [
-    "empty", "twoLive", "mixed", "unmarked", "tooManyFrames", "leakedWarm", "twoActive",
+    "empty", "twoLive", "mixed", "unmarked", "tooManyFrames", "leakedHidden", "twoActive",
   ]) {
     if (violations[kind].length > 0) {
       const first = violations[kind][0];
@@ -878,39 +878,16 @@ async function frameSlots() {
   });
 }
 
-/** Wait for the runtime behind the active one to finish booting. The warm
- *  slot is the feature under test, so the transition assertions wait for it
- *  rather than racing it — a run where it never comes up is a failure. */
-async function waitForWarm(label, timeoutMs = 30_000) {
-  const started = Date.now();
-  for (;;) {
-    const s = await snap();
-    if (s?.warmReady === true && s?.warmRuntime !== null) return s;
-    if (Date.now() - started > timeoutMs) {
-      throw new Error(
-        `[${label}] the warm runtime never came up (warmRuntime ${s?.warmRuntime}, warmReady ${s?.warmReady})`,
-      );
-    }
-    await page.waitForTimeout(100);
-  }
-}
-
-/** Every session is accounted for. `created - disposed` is exactly the
- *  runtimes that exist: the one on screen, plus the one booted behind it.
- *  A warm runtime counts as created the moment it answers Ready, so the old
- *  "created == disposed after a close" is only true once the warm slot is
- *  empty — and it is never empty while the shell is warm. */
+/** After retirement, only the active route may own a live session. */
 function assertSessionBalance(s, label) {
   for (const kind of ["reader", "library"]) {
-    const live =
-      (s.activeRuntime === kind ? 1 : 0) +
-      (s.warmRuntime === kind && s.warmReady === true ? 1 : 0);
+    const live = s.activeRuntime === kind ? 1 : 0;
     const created = s[`${kind}SessionsCreated`];
     const disposed = s[`${kind}DisposesCompleted`];
     if (created - disposed !== live) {
       throw new Error(
         `[${label}] ${kind}: ${created} created - ${disposed} disposed != ${live} live ` +
-          `(active ${s.activeRuntime}, warm ${s.warmRuntime} ready ${s.warmReady})`,
+          `(active ${s.activeRuntime})`,
       );
     }
   }
@@ -969,13 +946,23 @@ async function clickBook(title, label, timeout = 45_000) {
 /** Exercise the pointer path that formerly prewarmed Reader. It must now
  *  leave Library alone; only an actual open may instantiate a Reader. */
 function assertLibraryOnly(s, label) {
-  if (s.activeRuntime !== "library" || s.readerReturnPolicy !== "unload" ||
-      s.readerPrewarmAllowed !== false || s.readerFramesResident !== 0 ||
-      s.paneFramesResident !== 0 || s.warmRuntime !== null || s.atBaseline !== true ||
+  if (s.activeRuntime !== "library" || s.routeReturnPolicy !== "unload-both" ||
+      s.routePrewarmAllowed !== false || s.readerFramesResident !== 0 || s.libraryFramesResident !== 1 ||
+      s.paneFramesResident !== 0 || s.atBaseline !== true ||
       s.rasterLane?.active !== 0 || s.rasterLane?.queued !== 0 || s.rasterLane?.owners !== 0 ||
       s.readerSessionsCreated !== s.readerDisposesCompleted) {
     throw new Error(`[${label}] Library retained Reader resources: ${JSON.stringify(s)}`);
   }
+}
+
+function assertReaderOnly(s, label) {
+  if (s.activeRuntime !== "reader" || s.routeReturnPolicy !== "unload-both" ||
+      s.routePrewarmAllowed !== false || s.libraryFramesResident !== 0 ||
+      s.readerFramesResident !== 1 || s.bakeFrameResident !== false ||
+      s.librarySessionsCreated !== s.libraryDisposesCompleted) {
+    throw new Error(`[${label}] Reader retained Library resources: ${JSON.stringify(s)}`);
+  }
+  assertSessionBalance(s, label);
 }
 
 async function signalShelfIntent(label) {
@@ -1088,12 +1075,7 @@ if (libraryDom.frames !== 1) {
 }
 {
   const atRest = await snap();
-  if (atRest.warmRuntime !== null || (atRest.readerFramesResident ?? 0) !== 0) {
-    throw new Error(
-      `[/] a reader is resident behind an untouched shelf (warm ${atRest.warmRuntime}, ` +
-        `readerFramesResident ${atRest.readerFramesResident})`,
-    );
-  }
+  assertLibraryOnly(atRest, "untouched shelf");
 }
 assertArtifactLoaded("/mareader.js", "/");
 assertArtifactLoaded("/mareader_bg.wasm", "/");
@@ -1176,6 +1158,13 @@ const warmSlots = await frameSlots();
 const beforeHandoff = await snap();
 assertLibraryOnly(beforeHandoff, "before real open");
 if (warmSlots.warm !== null) throw new Error("shelf intent allocated a warm runtime");
+const libraryInstance = await page.evaluate(() => {
+  const frame = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]');
+  frame.contentWindow.__libraryInstanceMarker = crypto.randomUUID();
+  window.__shellLifetimeMarker = crypto.randomUUID();
+  return { library: frame.contentWindow.__libraryInstanceMarker, shell: window.__shellLifetimeMarker,
+    generation: Number(frame.dataset.mareaderGeneration) };
+});
 const readerActive = await clickBook("Programming Pearls", "library → reader");
 const readerDom = await waitForDom("library → reader: the reader mounted", (s) =>
   s.active === "reader" && s.reader >= 1 && s.library === 0);
@@ -1192,24 +1181,13 @@ assertArtifactLoaded("/reader_bg.wasm", "library → reader");
 // no longer ordered before the handoff, but it must still run to completion.
 const libraryRetired = await waitForRetirement("library → reader", "library",
   beforeHandoff.libraryDisposesCompleted ?? 0);
-assertSessionBalance(libraryRetired, "library → reader");
-// The rearm is asynchronous and outlives the retirement: wait for it rather
-// than expecting it to have landed inside the disposal window.
-const readerRearmed = await waitForWarm(
-  "library → reader: the shelf rearmed behind the reader",
-);
-if (readerRearmed.warmRuntime !== "library") {
-  throw new Error(
-    `[library → reader] the warm slot holds ${readerRearmed.warmRuntime}, expected the library`,
-  );
-}
-assertSessionBalance(readerRearmed, "library → reader (rearmed)");
+assertReaderOnly(libraryRetired, "library → reader");
 assertArtifactLoaded("/pdf.js", "library → reader");
 assertArtifactLoaded("/pdf_bg.wasm", "library → reader");
 
 const beforeHandback = await snap();
-await waitForWarm("reader → library: the shelf warmed behind the reader");
-const warmShelf = await frameSlots();
+const readerOnlySlots = await frameSlots();
+if (readerOnlySlots.frames !== 1 || readerOnlySlots.warm !== null) throw new Error("reading retained another route realm");
 await clickCloseNow();
 const libraryAgain = await waitFor("the library runtime after the handback", (x) =>
   x.bootState === "library" && x.activeRuntime === "library", 45_000);
@@ -1219,12 +1197,20 @@ const backSlots = await frameSlots();
 if (handbackDom.library !== 1 || handbackDom.reader !== 0) {
   throw new Error(`[reader → library] host holds library ${handbackDom.library} / reader ${handbackDom.reader}`);
 }
-if (backSlots.active !== warmShelf.warm) {
-  throw new Error(
-    `[reader → library] the shelf was rebooted: the warmed frame was ` +
-      `${warmShelf.warm}, the frame on screen is ${backSlots.active}`,
-  );
+if (backSlots.active === libraryInstance.generation || backSlots.active === null) {
+  throw new Error("reader → library reused the old Library realm");
 }
+const freshLibrary = await page.evaluate(() => {
+  const frame = document.querySelector('iframe.runtime-frame[data-mareader-slot="active"]');
+  return { marker: frame.contentWindow.__libraryInstanceMarker ?? null, shell: window.__shellLifetimeMarker,
+    generation: Number(frame.dataset.mareaderGeneration) };
+});
+if (freshLibrary.marker !== null || freshLibrary.shell !== libraryInstance.shell) {
+  throw new Error(`fresh Library inherited the old realm or reloaded Shell: ${JSON.stringify(freshLibrary)}`);
+}
+summary.bootContract.libraryUnload = { oldGeneration: libraryInstance.generation,
+  freshGeneration: freshLibrary.generation, oldMarkerAbsent: true, shellPreserved: true,
+  libraryFramesWhileReading: libraryRetired.libraryFramesResident, bakeFrameWhileReading: libraryRetired.bakeFrameResident };
 const readerRetired = await waitForRetirement("reader → library", "reader",
   beforeHandback.readerDisposesCompleted ?? 0);
 assertSessionBalance(readerRetired, "reader → library");
@@ -1233,7 +1219,7 @@ assertLibraryOnly(readerRetired, "reader → library");
 // ---- 0c: the same handoff, back to back ----------------------------------
 // One pair of transitions proves the mechanism; repetition is what finds the
 // hole that only racing starts open — a click that lands while a retirement
-// is still settling, a warm boot that is still in flight when the user asks
+// is still settling, an incoming boot still in flight when the user asks
 // for it, a queued start draining into the same host. The sampler from 0a is
 // still running, so its invariants cover every instant of all of these too,
 // not just the first pair.
@@ -1256,6 +1242,8 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
       cycles.some((c) => c.readerGeneration === revealed.active)) {
     throw new Error(`[rapid ${cycle}] the Reader host was not a fresh realm`);
   }
+  const libraryClosedNow = await waitForRetirement(`rapid ${cycle}: Library removed`, "library", before.libraryDisposesCompleted);
+  assertReaderOnly(libraryClosedNow, `rapid ${cycle} reading`);
   await clickCloseNow();
   const libraryDomNow = await waitForDom(`rapid ${cycle}: the library came back`, (s) =>
     s.active === "library" && s.library >= 1 && s.reader === 0);
@@ -1269,6 +1257,11 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
     intoReader.readerDisposesCompleted ?? 0);
   assertSessionBalance(retired, `rapid ${cycle}`);
   assertLibraryOnly(retired, `rapid ${cycle} returned`);
+  const returned = await frameSlots();
+  if (returned.active === warmed.active || returned.active === null ||
+      cycles.some((c) => c.libraryGeneration === returned.active)) {
+    throw new Error(`[rapid ${cycle}] Library return reused an old realm`);
+  }
   const after = retired;
   if (after.readerRuntimeLive !== false) {
     throw new Error(`[rapid ${cycle}] the reader runtime is still live after the close`);
@@ -1276,6 +1269,8 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
   cycles.push({
     cycle,
     readerGeneration: revealed.active,
+    libraryGeneration: returned.active,
+    libraryFramesWhileReading: libraryClosedNow.libraryFramesResident,
     readerFramesAfterReturn: after.readerFramesResident,
     librarySessions: after.librarySessionsCreated,
     libraryDisposes: after.libraryDisposesCompleted,
@@ -1284,8 +1279,9 @@ for (let cycle = 0; cycle < 4; cycle += 1) {
   });
 }
 if (new Set(cycles.map((c) => c.readerGeneration)).size !== cycles.length ||
-    cycles.some((c) => c.readerFramesAfterReturn !== 0)) {
-  throw new Error("rapid returns reused or retained a Reader realm");
+    new Set(cycles.map((c) => c.libraryGeneration)).size !== cycles.length ||
+    cycles.some((c) => c.readerFramesAfterReturn !== 0 || c.libraryFramesWhileReading !== 0)) {
+  throw new Error("rapid transitions reused or retained the outgoing route realm");
 }
 summary.bootContract.rapidTransitions = cycles;
 console.log(
@@ -1303,7 +1299,7 @@ console.log(
 // every property that ordering was protecting:
 //
 //   * one runtime on screen at every sampled instant (twoLive / mixed /
-//     twoActive), and any other frame hidden (leakedWarm);
+//     twoActive), and any other frame hidden (leakedHidden);
 //   * the host never blank (empty / unmarked);
 //   * every runtime that was ever shown finishes disposing (waitForRetirement
 //     and assertSessionBalance above).
@@ -1321,10 +1317,10 @@ if (readerSamples.length === 0 || librarySamples.length === 0) {
 // frames coexist — the one on screen and the one being retired. That is the
 // new policy working, not a leak; the frame ceiling above is its bound.
 const peakFrames = Math.max(...sampled.samples.map((s) => s.frames ?? 0));
-const warmSamples = sampled.samples.filter((s) => s.retiring > 0).length;
+const overlapSamples = sampled.samples.filter((s) => s.retiring > 0).length;
 if (peakFrames < 2) {
   throw new Error(
-    `the warm slot never held a second frame (peak ${peakFrames}) — the handoff is still a rebuild`,
+    `the incoming handoff never overlapped its predecessor (peak ${peakFrames}) — the handoff is still a rebuild`,
   );
 }
 summary.bootContract.transition = {
@@ -1332,7 +1328,7 @@ summary.bootContract.transition = {
   readerSamples: readerSamples.length,
   librarySamples: librarySamples.length,
   peakFrames,
-  retiringSamples: warmSamples,
+  retiringSamples: overlapSamples,
   libraryDisposes: libraryAgain.libraryDisposesCompleted,
   readerDisposes: libraryAgain.readerDisposesCompleted,
 };
@@ -1363,8 +1359,9 @@ if (readerRouteDom.placeholder) {
 if (readerRouteDom.actives !== 1) {
   throw new Error(`[/reader] expected exactly one active runtime frame, found ${readerRouteDom.actives}`);
 }
-if (readerRouteDom.frames > 2) {
-  throw new Error(`[/reader] expected at most two runtime frames (active + warm), found ${readerRouteDom.frames}`);
+assertReaderOnly(readerRoute, "/reader direct boot");
+if (readerRouteDom.frames !== 1) {
+  throw new Error(`[/reader] expected only Reader, found ${readerRouteDom.frames} route frames`);
 }
 assertArtifactLoaded("/pdf.js", "/reader");
 assertArtifactLoaded("/pdf_bg.wasm", "/reader");
@@ -1407,7 +1404,10 @@ for (let i = 0; i < 2; i += 1) {
   const slots = await frameSlots();
   if (generations.includes(slots.active)) throw new Error("Reader host realm survived a Library return");
   generations.push(slots.active);
-  await waitForWarm(`fresh host ${i}: Library ready`);
+  const reading = await waitFor(`fresh host ${i}: Library realm removed`, (x) =>
+    x.libraryFramesResident === 0 && x.librarySessionsCreated === x.libraryDisposesCompleted &&
+    x.bakeFrameResident === false, 15_000);
+  assertReaderOnly(reading, `fresh host ${i}`);
   await clickCloseNow();
   const returned = await waitFor(`fresh host ${i}: all Reader realms gone`, (x) =>
     x.bootState === "library" && x.atBaseline === true && x.readerFramesResident === 0, 15_000);
@@ -1458,6 +1458,80 @@ summary.bootContract.readerUnload = { generations, intentCreatedReader: false,
   incomingCancelled: cancelled.readerFramesResident === 0, rootPreserved: true };
 assertNoNewPanics("Reader route lifetimes", 0);
 console.log("boot contract: Library holds no Reader/PDF/reflow realms under idle, intent, return or cancelled boot");
+
+// ---- 0f: Reader holds no Library, even after cancelled Library boot/bake --
+currentStage = "stage0-library-unload";
+await clickBook("Programming Pearls", "Library teardown cancellation setup");
+const readingClean = await waitFor("Library gone while reading", (x) =>
+  x.libraryFramesResident === 0 && x.librarySessionsCreated === x.libraryDisposesCompleted && !x.bakeFrameResident);
+assertReaderOnly(readingClean, "before cancelled Library boot");
+const originalReader = (await frameSlots()).active;
+let releaseLibrary;
+const heldLibrary = new Promise((resolve) => { releaseLibrary = resolve; });
+let libraryRequested;
+const requestedLibrary = new Promise((resolve) => { libraryRequested = resolve; });
+const blockLibrary = async (route) => {
+  libraryRequested();
+  await heldLibrary;
+  await route.continue().catch(() => {});
+};
+await page.route("**/library_bg.wasm", blockLibrary);
+await clickCloseNow();
+await Promise.race([requestedLibrary,
+  page.waitForTimeout(5000).then(() => { throw new Error("Library WASM was never held by the cancellation proof"); })]);
+await page.waitForFunction(() => !!document.querySelector('iframe[data-mareader-runtime-frame="library"][data-mareader-slot="incoming"]'));
+await page.evaluate(() => history.back());
+const libraryCancelled = await waitFor("cancelled incoming Library removed", (x) =>
+  x.bootState === "reader" && x.libraryFramesResident === 0 && x.engine?.hasDocument, 15_000);
+releaseLibrary();
+await page.unroute("**/library_bg.wasm", blockLibrary);
+await page.waitForTimeout(800);
+assertReaderOnly(await snap(), "late Library boot response");
+if ((await frameSlots()).active !== originalReader) throw new Error("cancelled Library boot replaced the still-visible Reader host");
+
+// Hold a real cover's file read in the JS-only baker. Opening Reader must
+// kill that Library-owned queue/page, not let it finish behind the reader.
+await page.evaluate(() => localStorage.setItem("mareader.covers.v1", "{}"));
+let releaseCover;
+const heldCover = new Promise((resolve) => { releaseCover = resolve; });
+let coverRequested;
+const requestedCover = new Promise((resolve) => { coverRequested = resolve; });
+const blockCover = async (route) => {
+  if (new URL(route.request().frame().url()).pathname !== "/bake.html") {
+    await route.continue();
+    return;
+  }
+  coverRequested();
+  await heldCover;
+  await route.continue().catch(() => {});
+};
+await page.route("**/samples/**", blockCover);
+await clickCloseNow();
+await waitFor("fresh Library while cover is held", (x) => x.bootState === "library" && x.activeRuntime === "library", 30_000);
+await Promise.race([requestedCover,
+  page.waitForTimeout(15000).then(() => { throw new Error("cover file read was never held by the Library teardown proof"); })]);
+const bakingLibrary = await snap();
+if (!bakingLibrary.bakeFrameResident) throw new Error("held cover had no resident bake page");
+await clickBook("Programming Pearls", "Reader closes baking Library");
+const bakerClosed = await waitFor("Library and held cover page gone", (x) =>
+  x.libraryFramesResident === 0 && !x.bakeFrameResident && x.librarySessionsCreated === x.libraryDisposesCompleted);
+assertReaderOnly(bakerClosed, "Library-owned bake cancellation");
+releaseCover();
+await page.unroute("**/samples/**", blockCover);
+await page.waitForTimeout(800);
+const afterLateCover = await snap();
+assertReaderOnly(afterLateCover, "late cancelled cover response");
+if (afterLateCover.coversAnswered !== bakerClosed.coversAnswered) throw new Error("a cancelled Library cover was answered after its owner disappeared");
+if (await page.evaluate(() => window.__routeLifetimeMarker) !== marker) throw new Error("Library lifetime checks reloaded Shell");
+summary.bootContract.libraryUnload = { ...summary.bootContract.libraryUnload,
+  incomingCancelled: libraryCancelled.libraryFramesResident === 0,
+  readerPreservedDuringCancelledBoot: true, activeBakeCancelled: true, lateCoverIgnored: true };
+await clickCloseNow();
+const finalLibraryOnly = await waitFor("Library after symmetric cancellation proofs", (x) => x.activeRuntime === "library" && x.atBaseline);
+assertLibraryOnly(finalLibraryOnly, "symmetric route lifetime final return");
+assertNoNewPanics("Library route lifetimes", 0);
+console.log("boot contract: Reader holds no Library WASM or cover bake; both routes remount fresh without Shell reload");
+
 
 // ---- 0f: a boot that cannot finish is VISIBLE ------------------------------
 // With a runtime artifact missing, the user must see a named error state,
@@ -3527,7 +3601,9 @@ currentStage = "noise-runtime-state";
       if (r?.transform) transforms.add(r.transform);
       await new Promise((res) => setTimeout(res, 70));
     }
-    return { active, warm: read("warm"), distinctTransforms: transforms.size };
+    return { active, otherRoutes: document.querySelectorAll('#runtime-host .runtime-frame:not([data-mareader-slot="active"])').length,
+      libraryFrames: document.querySelectorAll('iframe[data-mareader-runtime-frame="library"]').length,
+      distinctTransforms: transforms.size };
   });
   // The loading mark, the same way: the real markup mounted in the live
   // frame, its first dot's computed animation and transform sampled. It
@@ -3583,7 +3659,7 @@ currentStage = "noise-runtime-state";
       console.log(`noise ${key}: ${JSON.stringify(r)}`);
       if (r.active?.overlays !== 1) throw new Error(`noise ${key}: ${r.active?.overlays} overlays in the active frame`);
       if (!/\bnoise-animated\b/.test(r.active.body)) throw new Error(`noise ${key}: body lacks noise-animated (${r.active.body})`);
-      if (r.warm && r.warm.overlays > 1) throw new Error(`noise ${key}: ${r.warm.overlays} overlays in the warm frame`);
+      if (r.otherRoutes !== 0) throw new Error(`noise ${key}: ${r.otherRoutes} Library/extra route frames survived while reading`);
       // The grain is content, not UI motion: it crawls unless the OS asks for
       // reduced motion, whatever the app's animation switch says.
       const shouldRun = !reduced;

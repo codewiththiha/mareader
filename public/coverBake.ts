@@ -31,6 +31,26 @@ import { EngineSession } from "./engine/state";
  *  one call — nothing outlives the answer, and no two asks share state.
  *  The page has no facade, so these sessions are never registered. */
 let nextBakeSid = 1;
+let disposed = false;
+let active: AbortController | undefined;
+let listener: ((event: MessageEvent) => void) | undefined;
+
+declare global {
+  interface Window { __mareaderDisposeBakes?: () => void; }
+}
+
+/** One bake at a time, owned by this page. The Shell calls this before
+ * removing the iframe; abort releases the offscreen canvas synchronously. */
+function disposeBakes(): void {
+  if (disposed) return;
+  disposed = true;
+  active?.abort();
+  active = undefined;
+  if (listener) window.removeEventListener("message", listener);
+  window.removeEventListener("pagehide", disposeBakes);
+  delete window.__mareaderDisposeBakes;
+  listener = undefined;
+}
 
 type Ask = { kind: "mareader.bake"; id: number; path: string; width: number };
 
@@ -49,10 +69,13 @@ function isAsk(value: unknown): value is Ask {
 }
 
 async function bake(target: Window, ask: Ask): Promise<void> {
+  if (disposed || active) return;
+  const controller = new AbortController();
+  active = controller;
   const width = typeof ask.width === "number" && ask.width > 0 ? ask.width : 240;
   let answer: Record<string, unknown>;
   try {
-    const result = await coverDataUrl(new EngineSession(nextBakeSid++), ask.path, width);
+    const result = await coverDataUrl(new EngineSession(nextBakeSid++), ask.path, width, controller.signal);
     answer = result.ok
       ? {
           kind: "mareader.baked",
@@ -79,7 +102,8 @@ async function bake(target: Window, ask: Ask): Promise<void> {
       error: String(e),
     };
   }
-  target.postMessage(answer, parentOrigin());
+  if (active === controller) active = undefined;
+  if (!disposed) target.postMessage(answer, parentOrigin());
 }
 
 function main(): void {
@@ -87,14 +111,17 @@ function main(): void {
   // Opened on its own (no Shell above it) the page is inert: nobody can ask
   // it for anything, and answering `window` itself would be talking to no one.
   if (!parent || parent === window) return;
-  window.addEventListener("message", (event: MessageEvent) => {
+  window.__mareaderDisposeBakes = disposeBakes;
+  window.addEventListener("pagehide", disposeBakes, { once: true });
+  listener = (event: MessageEvent) => {
     // Only the document that mounted this page may ask it to read files.
     if (event.source !== parent) return;
     const origin = window.location.origin;
     if (origin && origin !== "null" && event.origin !== origin) return;
     if (!isAsk(event.data)) return;
     void bake(parent, event.data);
-  });
+  };
+  window.addEventListener("message", listener);
   parent.postMessage({ kind: "mareader.bake-ready" }, parentOrigin());
 }
 

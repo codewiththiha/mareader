@@ -50,7 +50,6 @@ pub struct Session {
 thread_local! {
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
     static NEXT_ID: Cell<u32> = const { Cell::new(1) };
-    static PENDING_DISPOSE: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
     /// The live session's context, for the Shell → runtime commands that
     /// land outside any page event (a bake answer; an open handoff).
     static LIVE_CTX: RefCell<Option<LibraryContext>> = const { RefCell::new(None) };
@@ -58,10 +57,9 @@ thread_local! {
 
 /// Mount a library session into `host`.
 ///
-/// `warm` is the Shell's statement that this session boots ahead of the
-/// navigation that will use it: the shelf renders so the reveal is free, but
-/// it holds its startup passes until [`refresh`] runs them.
-pub fn start_session(host: &web_sys::Element, api: context::ApiHandle, warm: bool) -> u32 {
+/// An incoming hosted frame defers startup writes until visible paint;
+/// standalone starts them immediately. Every session owns a fresh realm.
+pub fn start_session(host: &web_sys::Element, api: context::ApiHandle, defer_startup: bool) -> u32 {
     let id = NEXT_ID.with(|n| {
         let id = n.get();
         n.set(id + 1);
@@ -90,7 +88,7 @@ pub fn start_session(host: &web_sys::Element, api: context::ApiHandle, warm: boo
         provide_context(OverlayBoard::default());
         // The library's session effects install INSIDE this scope: the
         // listeners and timers die with the unmount (§5, §17).
-        effects_library::library_effects(state, warm);
+        effects_library::library_effects(state, defer_startup);
         // This frame's own `<html>`: the chrome pipeline only — the shelf has
         // no raster and no reflowable page, so it writes neither token set
         // and never addresses an engine. Edits go to the Shell to persist.
@@ -125,8 +123,7 @@ pub enum LibraryCommand {
         /// Arc-free on the wire; the filing queue re-wraps it.
         image: Option<Box<runtime_contract::covers::CoverImage>>,
     },
-    /// Promoted from warm to visible: re-read the durable state this session
-    /// seeded at boot and has not looked at since.
+    /// Newly revealed: reconcile late durable writes and start deferred work.
     Refresh,
     /// Files dropped on the window from the OS: imported onto the shelf on
     /// screen, exactly as the Add menu's picker would.
@@ -135,19 +132,11 @@ pub enum LibraryCommand {
 
 /// Re-read the store into the live session's signals.
 ///
-/// A warm library boots while the reader is still on screen, so the blob it
-/// seeded from is the one that existed before that reading session: the row
-/// the reader was in has moved, and a book imported two opens ago may not be
-/// in it. This is the cheap half of a cold boot — the wasm instance, the
-/// Leptos mount and the grid's first layout are all already paid for — and it
-/// is what makes a warm handback correct instead of merely fast.
-///
-/// Only the persisted slices are replaced. Everything the user was doing in
-/// the shelf (the query, the open shelf, the selection) is session state, not
-/// durable state, and overwriting it here would be a bug.
+/// The outgoing Reader may flush a read point after this fresh Library
+/// seeded its store. Reconcile changed persisted slices without replacing
+/// this session's query/selection or unnecessarily rebuilding its cover map.
 fn refresh(ctx: LibraryContext) {
-    // Only what moved while the shelf waited. A reading session moves read
-    // points (the library blob) and rarely anything else; re-parsing the
+    // Only what changed between incoming mount and reveal. Re-parsing the
     // cover map — megabytes of data URLs — and re-setting it would re-render
     // every cover on the shelf at the exact moment it is revealed.
     let now = StoreStamps::read();
@@ -165,9 +154,8 @@ fn refresh(ctx: LibraryContext) {
     if now.settings.is_none() || now.settings != seen.settings {
         ctx.settings.set(storage::load_settings());
     }
-    // And the work a warm boot parked: the shelf is on screen now, so its
-    // migration, its measurement pass and its cover bakes are owed — just
-    // not inside the reveal's own frame. They start once it has painted.
+    // Start incoming-frame passes after visible paint, not during the
+    // handoff's own frame. The callback is cancelled with this session.
     after_reveal(effects_library::run_deferred_startup);
 }
 
@@ -193,6 +181,8 @@ thread_local! {
     /// What the live session last read from the store (seeded at session
     /// start, refreshed on every Refresh).
     static SEEN_STAMPS: Cell<StoreStamps> = Cell::new(StoreStamps::default());
+    #[cfg(target_arch = "wasm32")]
+    static REVEAL_TIMER: Cell<Option<i32>> = const { Cell::new(None) };
 }
 
 /// Run `f` shortly after the current frame has been presented.
@@ -203,22 +193,36 @@ fn after_reveal(f: fn()) {
             f();
             return;
         };
-        let run = wasm_bindgen::closure::Closure::once_into_js(f);
-        if window
-            .set_timeout_with_callback_and_timeout_and_arguments_0(
-                run.unchecked_ref(),
-                REVEAL_SETTLE_MS,
-            )
-            .is_err()
-        {
-            f();
+        cancel_reveal();
+        let run = wasm_bindgen::closure::Closure::once_into_js(move || {
+            REVEAL_TIMER.with(|slot| slot.set(None));
+            if LIVE_CTX.with(|ctx| ctx.borrow().is_some()) {
+                f();
+            }
+        });
+        match window.set_timeout_with_callback_and_timeout_and_arguments_0(
+            run.unchecked_ref(),
+            REVEAL_SETTLE_MS,
+        ) {
+            Ok(id) => REVEAL_TIMER.with(|slot| slot.set(Some(id))),
+            Err(_) => f(),
         }
     }
     #[cfg(not(target_arch = "wasm32"))]
     f();
 }
 
-/// How long a revealed shelf gets to paint before its parked passes start.
+/// Cancel the session-owned reveal timer before unmount/removal.
+fn cancel_reveal() {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(id) = REVEAL_TIMER.with(Cell::take)
+        && let Some(window) = web_sys::window()
+    {
+        window.clear_timeout_with_handle(id);
+    }
+}
+
+/// How long a revealed shelf gets to paint before its incoming-frame passes start.
 #[cfg(target_arch = "wasm32")]
 const REVEAL_SETTLE_MS: i32 = 160;
 
@@ -257,6 +261,7 @@ pub fn dispose(id: u32) -> js_sys::Promise {
     if !live {
         return js_sys::Promise::resolve(&wasm_bindgen::JsValue::from_bool(true));
     }
+    cancel_reveal();
     SESSION.with(|s| {
         if let Some(session) = s.borrow_mut().take() {
             LIVE_CTX.with(|c| *c.borrow_mut() = None);
